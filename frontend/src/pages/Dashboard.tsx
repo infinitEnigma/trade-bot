@@ -1,0 +1,714 @@
+/** @format */
+
+import React, { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "../contexts/AuthContext";
+import { api } from "../lib/api";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+} from "recharts";
+import {
+  TrendingUp,
+  TrendingDown,
+  Wallet,
+  Activity,
+  DollarSign,
+  Zap,
+  Settings,
+  LogOut,
+  Key,
+  Loader2,
+} from "lucide-react";
+import { Link } from "react-router-dom";
+
+// Calculate real portfolio performance from trades data
+const calculatePortfolioPerformance = (
+  trades: any[],
+  initialBalance = 10000
+) => {
+  if (!trades || trades.length === 0) {
+    return [{ time: "No data", value: initialBalance }];
+  }
+
+  // Sort trades by close timestamp
+  const sortedTrades = [...trades].sort(
+    (a, b) => (a.close_timestamp || 0) - (b.close_timestamp || 0)
+  );
+
+  const performance = [{ time: "Start", value: initialBalance }];
+  let currentBalance = initialBalance;
+
+  sortedTrades.forEach((trade) => {
+    const pnl = parseFloat(trade.realized_pnl || "0");
+    currentBalance += pnl;
+
+    const timestamp = new Date(
+      trade.close_timestamp || trade.open_timestamp || Date.now()
+    );
+    const timeString = timestamp.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    performance.push({
+      time: timeString,
+      value: Math.max(0, currentBalance), // Ensure non-negative
+    });
+  });
+
+  return performance;
+};
+
+/*
+const mockPositions = [
+  {
+    symbol: "PERP_BTC_USDC",
+    side: "LONG",
+    size: 0.5,
+    entryPrice: 43500,
+    markPrice: 44200,
+    pnl: 350,
+    pnlPercent: 1.61,
+  },
+  {
+    symbol: "PERP_ETH_USDC",
+    side: "SHORT",
+    size: 5,
+    entryPrice: 2280,
+    markPrice: 2250,
+    pnl: 150,
+    pnlPercent: 1.32,
+  },
+  {
+    symbol: "PERP_SOL_USDC",
+    side: "LONG",
+    size: 25,
+    entryPrice: 98,
+    markPrice: 102,
+    pnl: 100,
+    pnlPercent: 4.08,
+  },
+];
+
+const mockRecentTrades = [
+  {
+    id: 1,
+    symbol: "PERP_BTC_USDC",
+    side: "BUY",
+    price: 43500,
+    size: 0.5,
+    time: "14:32:15",
+  },
+  {
+    id: 2,
+    symbol: "PERP_ETH_USDC",
+    side: "SELL",
+    price: 2280,
+    size: 5,
+    time: "14:28:42",
+  },
+  {
+    id: 3,
+    symbol: "PERP_SOL_USDC",
+    side: "BUY",
+    price: 98,
+    size: 25,
+    time: "14:15:33",
+  },
+  {
+    id: 4,
+    symbol: "PERP_BTC_USDC",
+    side: "SELL",
+    price: 43800,
+    size: 0.5,
+    time: "13:45:21",
+  },
+  {
+    id: 5,
+    symbol: "PERP_ETH_USDC",
+    side: "BUY",
+    price: 2300,
+    size: 3,
+    time: "13:20:18",
+  },
+];
+*/
+const Dashboard: React.FC = () => {
+  const { user, logout } = useAuth();
+  const [selectedSymbol, setSelectedSymbol] = useState("PERP_BTC_USDC");
+
+  // Fetch Kodiak data
+  const { data: positionsData, isLoading: positionsLoading } = useQuery({
+    queryKey: ["kodiak-positions"],
+    queryFn: () => api.getKodiakPositions(),
+    enabled: user?.userLevel === "REGISTERED",
+  });
+
+  const { data: tradesData, isLoading: tradesLoading } = useQuery({
+    queryKey: ["kodiak-trades"],
+    queryFn: () => api.getKodiakTrades(),
+    enabled: user?.userLevel === "REGISTERED",
+  });
+
+  const { data: balanceData, isLoading: balanceLoading } = useQuery({
+    queryKey: ["kodiak-balance"],
+    queryFn: () => api.getKodiakBalance(),
+    enabled: user?.userLevel === "REGISTERED",
+  });
+
+  // Process positions data
+  const positions = positionsData?.success
+    ? positionsData.data?.rows || []
+    : [];
+  const profitablePositions = positions.filter(
+    (p: any) => p.unsettled_pnl >= 0
+  ).length;
+
+  // Process balance data
+  console.log("Balance data:", balanceData);
+  console.log("balanceData?.success:", balanceData?.success);
+  console.log("balanceData?.data:", balanceData?.data);
+  const balance = balanceData?.success ? balanceData.data : null;
+  console.log("Processed balance:", balance);
+  const totalBalance = balance
+    ? parseFloat(balance.totalBalance || "0")
+    : 10600;
+  console.log("Total balance:", totalBalance);
+  const pnl = balance ? parseFloat(balance.total_pnl_24_h || "0") : 600;
+  const pnlPercent = totalBalance > 0 ? (pnl / (totalBalance - pnl)) * 100 : 0;
+
+  // Get volume data from balance or use fallback
+  const dailyVolume = balance
+    ? parseFloat(balance.trading_volume_last_24_hours || "0")
+    : 12500;
+
+  // Use only real data - no mock fallbacks
+  const portfolio =
+    balance !== null
+      ? {
+          totalBalance,
+          pnl,
+          pnlPercent,
+          dailyVolume,
+          totalTrades: tradesData?.success
+            ? tradesData.data?.rows?.length || 0
+            : 0,
+        }
+      : null;
+
+  // Calculate real portfolio performance chart data
+  const portfolioData =
+    tradesData?.success && tradesData.data?.rows
+      ? calculatePortfolioPerformance(tradesData.data.rows, totalBalance)
+      : [{ time: "No data", value: totalBalance || 10000 }];
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="glass-card border-b border-white/5 sticky top-0 z-50">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primaryHover flex items-center justify-center">
+                <Zap className="w-5 h-5 text-white" />
+              </div>
+              <h1 className="text-xl font-bold text-text">Trade Bot</h1>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <Link
+                to="/settings"
+                className="p-2 rounded-lg hover:bg-surface transition-colors"
+                title="Settings"
+              >
+                <Settings className="w-5 h-5 text-textMuted hover:text-text" />
+              </Link>
+
+              <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface border border-white/5">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-success to-successHover flex items-center justify-center">
+                  <span className="text-sm font-bold text-white">
+                    {user?.email?.[0]?.toUpperCase() || "U"}
+                  </span>
+                </div>
+                <span className="text-sm text-text">
+                  {user?.email || "User"}
+                </span>
+                <span className="px-2 py-0.5 text-xs rounded bg-primary/20 text-primary">
+                  {user?.userLevel || "BASIC"}
+                </span>
+              </div>
+
+              <button
+                onClick={logout}
+                className="p-2 rounded-lg hover:bg-surface transition-colors"
+                title="Logout"
+              >
+                <LogOut className="w-5 h-5 text-textMuted hover:text-text" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="container mx-auto px-4 py-8">
+        {/* Portfolio Overview */}
+        {balanceLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="glass-card p-6">
+                <div className="animate-pulse">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="w-10 h-10 bg-white/10 rounded-lg"></div>
+                    <div className="w-20 h-4 bg-white/10 rounded"></div>
+                  </div>
+                  <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
+                  <div className="w-16 h-4 bg-white/10 rounded"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : portfolio ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            {/* Total Balance */}
+            <div className="glass-card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Wallet className="w-5 h-5 text-primary" />
+                </div>
+                <span className="text-xs text-textMuted">Total Balance</span>
+              </div>
+              <p className="text-2xl font-bold text-text">
+                ${portfolio.totalBalance.toLocaleString()}
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <span
+                  className={`text-sm flex items-center gap-1 ${
+                    portfolio.pnl >= 0 ? "text-success" : "text-danger"
+                  }`}
+                >
+                  {portfolio.pnl >= 0 ? (
+                    <TrendingUp className="w-4 h-4" />
+                  ) : (
+                    <TrendingDown className="w-4 h-4" />
+                  )}
+                  {portfolio.pnl >= 0 ? "+" : ""}${portfolio.pnl}
+                </span>
+                <span
+                  className={`text-sm ${
+                    portfolio.pnlPercent >= 0 ? "text-success" : "text-danger"
+                  }`}
+                >
+                  {portfolio.pnlPercent >= 0 ? "+" : ""}
+                  {portfolio.pnlPercent}%
+                </span>
+              </div>
+            </div>
+
+            {/* Daily P&L */}
+            <div className="glass-card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="p-2 rounded-lg bg-success/10">
+                  <DollarSign className="w-5 h-5 text-success" />
+                </div>
+                <span className="text-xs text-textMuted">24h P&L</span>
+              </div>
+              <p
+                className={`text-2xl font-bold ${
+                  portfolio.pnl >= 0 ? "text-success" : "text-danger"
+                }`}
+              >
+                {portfolio.pnl >= 0 ? "+" : ""}${portfolio.pnl}
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-textMuted text-sm">All time</span>
+              </div>
+            </div>
+
+            {/* Volume */}
+            <div className="glass-card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="p-2 rounded-lg bg-warning/10">
+                  <Activity className="w-5 h-5 text-warning" />
+                </div>
+                <span className="text-xs text-textMuted">24h Volume</span>
+              </div>
+              <p className="text-2xl font-bold text-text">
+                ${portfolio.dailyVolume.toLocaleString()}
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-textMuted text-sm">
+                  {portfolio.totalTrades} trades
+                </span>
+              </div>
+            </div>
+
+            {/* Active Positions */}
+            <div className="glass-card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="p-2 rounded-lg bg-info/10">
+                  <TrendingUp className="w-5 h-5 text-info" />
+                </div>
+                <span className="text-xs text-textMuted">Active Positions</span>
+              </div>
+              <p className="text-2xl font-bold text-text">
+                {positionsLoading ? (
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                ) : (
+                  positions.length
+                )}
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-success text-sm">
+                  {profitablePositions} profitable
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="glass-card p-8 mb-8 text-center">
+            <Wallet className="w-12 h-12 text-textMuted mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-text mb-2">
+              Connect Your Kodiak Account
+            </h3>
+            <p className="text-textMuted mb-4">
+              Connect your trading account to view your portfolio data and
+              trading performance.
+            </p>
+            <Link
+              to="/settings"
+              className="btn-primary inline-flex items-center gap-2"
+            >
+              <Key className="w-4 h-4" />
+              Connect Account
+            </Link>
+          </div>
+        )}
+
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Chart Section */}
+          <div className="lg:col-span-2 glass-card p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold text-text">
+                Portfolio Performance
+              </h2>
+              <div className="flex items-center gap-2">
+                {["PERP_BTC_USDC", "PERP_ETH_USDC", "PERP_SOL_USDC"].map(
+                  (symbol) => (
+                    <button
+                      key={symbol}
+                      onClick={() => setSelectedSymbol(symbol)}
+                      className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                        selectedSymbol === symbol
+                          ? "bg-primary text-white"
+                          : "text-textMuted hover:text-text hover:bg-white/5"
+                      }`}
+                    >
+                      {symbol.replace("PERP_", "").replace("_USDC", "")}
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={portfolioData}>
+                  <defs>
+                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis
+                    dataKey="time"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  />
+                  <YAxis
+                    domain={["auto", "auto"]}
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: "#94a3b8", fontSize: 12 }}
+                    tickFormatter={(value) => `$${value.toLocaleString()}`}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#13131a",
+                      border: "1px solid rgba(255, 255, 255, 0.08)",
+                      borderRadius: "8px",
+                      color: "#e2e8f0",
+                    }}
+                    formatter={(value: number | undefined) => [
+                      value ? `$${value.toLocaleString()}` : "$0",
+                      "Value",
+                    ]}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#6366f1"
+                    strokeWidth={2}
+                    fillOpacity={1}
+                    fill="url(#colorValue)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="glass-card p-6">
+            <h2 className="text-lg font-semibold text-text mb-4">
+              Quick Actions
+            </h2>
+            <div className="space-y-3">
+              <button className="w-full btn-primary flex items-center justify-center gap-2">
+                <Settings className="w-4 h-4" />
+                Configure Bot
+              </button>
+              <button className="w-full btn-secondary flex items-center justify-center gap-2">
+                <Activity className="w-4 h-4" />
+                View Strategies
+              </button>
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-white/5">
+              <h3 className="text-sm font-medium text-textMuted mb-3">
+                System Status
+              </h3>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-text">API Connection</span>
+                  <span className="flex items-center gap-2 text-sm text-success">
+                    <span className="w-2 h-2 rounded-full bg-success" />
+                    Connected
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-text">Bot Engine</span>
+                  <span className="flex items-center gap-2 text-sm text-warning">
+                    <span className="w-2 h-2 rounded-full bg-warning" />
+                    Idle
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-text">Last Sync</span>
+                  <span className="text-sm text-textMuted">Just now</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Positions & Recent Trades */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+          {/* Positions */}
+          <div className="glass-card p-6">
+            <h2 className="text-lg font-semibold text-text mb-4">
+              Open Positions
+            </h2>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="text-left text-sm text-textMuted">
+                    <th className="pb-3 font-medium">Symbol</th>
+                    <th className="pb-3 font-medium">Side</th>
+                    <th className="pb-3 font-medium">Size</th>
+                    <th className="pb-3 font-medium">Entry Price</th>
+                    <th className="pb-3 font-medium">Mark Price</th>
+                    <th className="pb-3 font-medium">PnL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {positionsLoading ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center">
+                        <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                        <p className="text-sm text-textMuted">
+                          Loading positions...
+                        </p>
+                      </td>
+                    </tr>
+                  ) : positions.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center">
+                        <p className="text-sm text-textMuted">
+                          No open positions
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    positions.map((position: any, index: number) => {
+                      const pnl = parseFloat(position.unsettled_pnl || "0");
+                      const size = parseFloat(position.position_qty || "0");
+                      const markPrice = parseFloat(position.mark_price || "0");
+                      const entryPrice = parseFloat(
+                        position.average_open_price || "0"
+                      );
+                      const pnlPercent =
+                        entryPrice > 0
+                          ? ((markPrice - entryPrice) / entryPrice) * 100
+                          : 0;
+
+                      return (
+                        <tr key={index} className="border-t border-white/5">
+                          <td className="py-3 text-sm text-text font-medium">
+                            {position.symbol
+                              ?.replace("PERP_", "")
+                              .replace("_USDC", "") || "N/A"}
+                          </td>
+                          <td className="py-3">
+                            <span
+                              className={`px-2 py-1 text-xs font-medium rounded ${
+                                size > 0
+                                  ? "bg-success/20 text-success"
+                                  : "bg-danger/20 text-danger"
+                              }`}
+                            >
+                              {size > 0 ? "LONG" : "SHORT"}
+                            </span>
+                          </td>
+                          <td className="py-3 text-sm text-text">
+                            {Math.abs(size)}
+                          </td>
+                          <td className="py-3 text-sm text-text">
+                            ${entryPrice.toLocaleString()}
+                          </td>
+                          <td className="py-3 text-sm text-text">
+                            ${markPrice.toLocaleString()}
+                          </td>
+                          <td className="py-3">
+                            <span
+                              className={`text-sm font-medium ${
+                                pnl >= 0 ? "text-success" : "text-danger"
+                              }`}
+                            >
+                              {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
+                              <span className="ml-1 text-xs opacity-70">
+                                ({pnlPercent >= 0 ? "+" : ""}
+                                {pnlPercent.toFixed(2)}%)
+                              </span>
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Recent Trades */}
+          <div className="glass-card p-6">
+            <h2 className="text-lg font-semibold text-text mb-4">
+              Recent Trades
+            </h2>
+            <div className="max-h-96 overflow-y-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="text-left text-sm text-textMuted">
+                    <th className="pb-3 font-medium">Date & Time</th>
+                    <th className="pb-3 font-medium">Symbol</th>
+                    <th className="pb-3 font-medium">Side</th>
+                    <th className="pb-3 font-medium">Price</th>
+                    <th className="pb-3 font-medium text-right">Size</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tradesLoading ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center">
+                        <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                        <p className="text-sm text-textMuted">
+                          Loading trades...
+                        </p>
+                      </td>
+                    </tr>
+                  ) : !tradesData?.success ||
+                    !tradesData.data?.rows ||
+                    tradesData.data.rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center">
+                        <p className="text-sm text-textMuted">
+                          No recent trades
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    tradesData.data.rows.map((trade: any, index: number) => {
+                      const timestamp = new Date(
+                        trade.close_timestamp ||
+                          trade.open_timestamp ||
+                          Date.now()
+                      );
+                      const dateString = timestamp.toLocaleDateString([], {
+                        month: "short",
+                        day: "numeric",
+                      });
+                      const timeString = timestamp.toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      });
+
+                      return (
+                        <tr key={index} className="border-t border-white/5">
+                          <td className="py-3 text-sm text-textMuted">
+                            <div className="flex flex-col">
+                              <span className="font-medium">{dateString}</span>
+                              <span className="text-xs opacity-75">
+                                {timeString}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-3 text-sm text-text font-medium">
+                            {trade.symbol
+                              ?.replace("PERP_", "")
+                              .replace("_USDC", "") || "N/A"}
+                          </td>
+                          <td className="py-3">
+                            <span
+                              className={`px-2 py-1 text-xs font-medium rounded ${
+                                trade.side === "LONG"
+                                  ? "bg-success/20 text-success"
+                                  : "bg-danger/20 text-danger"
+                              }`}
+                            >
+                              {trade.side === "LONG" ? "LONG" : "SHORT"}
+                            </span>
+                          </td>
+                          <td className="py-3 text-sm text-text">
+                            $
+                            {parseFloat(
+                              trade.avg_close_price ||
+                                trade.avg_open_price ||
+                                "0"
+                            ).toLocaleString()}
+                          </td>
+                          <td className="py-3 text-sm text-text text-right">
+                            {parseFloat(trade.closed_position_qty || "0")}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Dashboard;

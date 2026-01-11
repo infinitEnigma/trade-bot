@@ -1,0 +1,44 @@
+{
+  "name": "trade-bot-monorepo",
+  "version": "1.0.0",
+  "description": "Berachain Perpetual Futures Trading Platform",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend",
+    "engine/kodiak",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:engine\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:engine": "cd engine/kodiak && npm run dev",
+    "build": "npm run build:shared && npm run build:backend && npm run build:frontend && npm run build:engine",
+    "build:shared": "cd shared && npm run build",
+    "build:backend": "cd backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "build:engine": "cd engine/kodiak && npm run build",
+    "test": "npm run test:backend && npm run test:frontend && npm run test:engine",
+    "test:backend": "cd backend && npm run test",
+    "test:frontend": "cd frontend && npm run test",
+    "test:engine": "cd engine/kodiak && npm run test",
+    "db:migrate": "cd backend && npm run db:migrate",
+    "db:seed": "cd backend && npm run db:seed"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "trading",
+    "perpetuals",
+    "berachain",
+    "kodiak",
+    "bot"
+  ],
+  "author": "",
+  "license": "MIT"
+}

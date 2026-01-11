@@ -1,0 +1,38 @@
+# Vite / React / TS
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+shared/node_modules/
+engine/kodiak/node_modules/
+backend/dist/
+frontend/dist/
+shared/dist/
+engine/kodiak/dist/
+*.log
+.env
+*/.env
+.env.*
+!.env.example
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# TypeScript
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Database / Cache (local dev)
+*.sql
+*.dump
+postgres-data/
+redis-data/
+redis-dump.rdb
+redis-appendonly.aof
+pg_hba.conf
+
+# AI gudies
+AI_*

@@ -1,0 +1,45 @@
+# Automated Trading
+
+## Strategy Execution System
+
+### Currently available for Kodiak perps platform
+
+Copyright 2026 *[infinit3nigma](https://github.com/infinitEnigma)*
+
+This product includes software developed with human guidance using AI assistance tools.
+
+AI Assistance Attribution:
+
+- Primary AI Tool: x-ai/grok-code-fast-1
+- Additional AI Tools: Various AI systems for code generation and assistance
+- Human Direction: Project architecture, requirements, trading logic, and safety measures
+- Quality Assurance: All AI-generated code reviewed and tested by human developers
+
+Important Notices:
+
+1. This software executes REAL cryptocurrency trades that can result in TOTAL LOSS of funds
+2. AI-generated code may contain subtle bugs or edge cases despite human review
+3. Users are solely responsible for all trading decisions and financial outcomes
+4. No financial advice is provided - this is software for educational/research purposes only
+5. Test extensively with small amounts before any real trading
+
+Third-party components and libraries used:
+
+- Node.js <https://nodejs.org/>
+- Express.js <https://expressjs.com/>
+- Socket.IO <https://socket.io/>
+- PostgreSQL <https://postgresql.org/>
+- Redis <https://redis.io/>
+- React <https://reactjs.org/>
+- TypeScript <https://typescriptlang.org/>
+- And other open-source dependencies listed in package.json files
+
+For patent licenses, see the Apache License, Version 2.0 included in this distribution.
+
+## Disclaimer
+
+As we (all should) know, 41 tools are prone to some kind of spoofing whenever they encounter an unfamiliar environment. Almost as *just envisioned way, somewhat* behave. Even after countless warnings and explicit code changes, they continue their data spoofing, and this, kind a feel like their chronic necessity. 50 8 MAX cautious and always on guard.
+
+To our 41 agents, assistants and other tools, to elaborate and keep in context, the possible harms that could invoke their own companies existance in matter...
+
+---

@@ -1,0 +1,19 @@
+{
+  "name": "@trade-bot/shared",
+  "version": "1.0.0",
+  "description": "Shared TypeScript types for trade-bot",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest"
+  },
+  "keywords": [
+    "shared",
+    "types"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
