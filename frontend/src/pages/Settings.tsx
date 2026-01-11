@@ -1,6 +1,6 @@
 /** @format */
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
@@ -29,11 +29,7 @@ const Settings: React.FC = () => {
   });
 
   // Fetch Kodiak status
-  const {
-    data: kodiakStatus,
-    isLoading: statusLoading,
-    error: statusError,
-  } = useQuery({
+  const { data: kodiakStatus, isLoading: statusLoading } = useQuery({
     queryKey: ["kodiak-status"],
     queryFn: () => api.getKodiakStatus(),
   });
@@ -79,7 +75,6 @@ const Settings: React.FC = () => {
   };
 
   const isConnected = kodiakStatus?.data?.connected;
-  const isVerified = kodiakStatus?.data?.verified;
 
   return (
     <div className="min-h-screen bg-background">
@@ -88,7 +83,7 @@ const Settings: React.FC = () => {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primaryHover flex items-center justify-center">
+              <div className="w-10 h-10 rounded-xl bg-linear-to-br from-primary to-primaryHover flex items-center justify-center">
                 <SettingsIcon className="w-5 h-5 text-white" />
               </div>
               <div>
@@ -106,7 +101,7 @@ const Settings: React.FC = () => {
               </Link>
 
               <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface border border-white/5">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-success to-successHover flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full bg-linear-to-br from-success to-successHover flex items-center justify-center">
                   <span className="text-sm font-bold text-white">
                     {user?.email?.[0]?.toUpperCase() || "U"}
                   </span>
@@ -345,7 +340,7 @@ const Settings: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-2 p-4 rounded-lg bg-info/10 border border-info/20">
-                    <AlertCircle className="w-5 h-5 text-info flex-shrink-0" />
+                    <AlertCircle className="w-5 h-5 text-info shrink-0" />
                     <div className="text-sm">
                       <p className="text-info font-medium">Security Notice</p>
                       <p className="text-textMuted mt-1">

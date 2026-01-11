@@ -1,6 +1,6 @@
 /** @format */
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -63,7 +63,6 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
     handleSubmit,
     formState: { errors },
     setValue,
-    watch,
     reset,
   } = useForm<StrategyFormData>({
     resolver: zodResolver(strategySchema),
