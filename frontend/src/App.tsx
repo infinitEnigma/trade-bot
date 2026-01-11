@@ -6,7 +6,6 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 
@@ -20,18 +19,15 @@ import Settings from "./pages/Settings";
 // Components
 import LoadingSpinner from "./components/ui/LoadingSpinner";
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      retry: 1,
-    },
-  },
-});
-
 // Protected Route Component
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, loading } = useAuth();
+const ProtectedRoute = ({
+  children,
+  requireVerified = false,
+}: {
+  children: React.ReactNode;
+  requireVerified?: boolean;
+}) => {
+  const { user, isAuthenticated, loading } = useAuth();
 
   if (loading) {
     return <LoadingSpinner />;
@@ -39,6 +35,10 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (requireVerified && user?.userLevel !== "VERIFIED") {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;
@@ -63,7 +63,7 @@ const AppRouter = () => {
           <Route
             path="/strategies"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute requireVerified={true}>
                 <Strategies />
               </ProtectedRoute>
             }
@@ -86,21 +86,19 @@ const AppRouter = () => {
 // Main App Component
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <AppRouter />
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: "#13131a",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
-              color: "#e2e8f0",
-            },
-          }}
-        />
-      </AuthProvider>
-    </QueryClientProvider>
+    <AuthProvider>
+      <AppRouter />
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          style: {
+            background: "#13131a",
+            border: "1px solid rgba(255, 255, 255, 0.08)",
+            color: "#e2e8f0",
+          },
+        }}
+      />
+    </AuthProvider>
   );
 }
 

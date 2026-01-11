@@ -25,8 +25,10 @@ import {
   LogOut,
   Key,
   Loader2,
+  Shield,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { WalletConnectDialog } from "../components/WalletConnectDialog";
 
 // Calculate real portfolio performance from trades data
 const calculatePortfolioPerformance = (
@@ -143,24 +145,25 @@ const mockRecentTrades = [
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const [selectedSymbol, setSelectedSymbol] = useState("PERP_BTC_USDC");
+  const [showWalletDialog, setShowWalletDialog] = useState(false);
 
   // Fetch Kodiak data
   const { data: positionsData, isLoading: positionsLoading } = useQuery({
     queryKey: ["kodiak-positions"],
     queryFn: () => api.getKodiakPositions(),
-    enabled: user?.userLevel === "REGISTERED",
+    enabled: user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED",
   });
 
   const { data: tradesData, isLoading: tradesLoading } = useQuery({
     queryKey: ["kodiak-trades"],
     queryFn: () => api.getKodiakTrades(),
-    enabled: user?.userLevel === "REGISTERED",
+    enabled: user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED",
   });
 
   const { data: balanceData, isLoading: balanceLoading } = useQuery({
     queryKey: ["kodiak-balance"],
     queryFn: () => api.getKodiakBalance(),
-    enabled: user?.userLevel === "REGISTERED",
+    enabled: user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED",
   });
 
   // Process positions data
@@ -230,6 +233,19 @@ const Dashboard: React.FC = () => {
               >
                 <Settings className="w-5 h-5 text-textMuted hover:text-text" />
               </Link>
+
+              {/* Wallet Verification Button - only show if user has Kodiak connection but not verified */}
+              {(user?.userLevel === "REGISTERED" ||
+                user?.userLevel === "VERIFIED") &&
+                user?.userLevel !== "VERIFIED" && (
+                  <button
+                    onClick={() => setShowWalletDialog(true)}
+                    className="p-2 rounded-lg hover:bg-surface transition-colors"
+                    title="Verify Wallet"
+                  >
+                    <Shield className="w-5 h-5 text-yellow-500 hover:text-yellow-400" />
+                  </button>
+                )}
 
               <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface border border-white/5">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-success to-successHover flex items-center justify-center">
@@ -371,7 +387,7 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
           </div>
-        ) : (
+        ) : user?.userLevel === "BASIC" ? (
           <div className="glass-card p-8 mb-8 text-center">
             <Wallet className="w-12 h-12 text-textMuted mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-text mb-2">
@@ -388,6 +404,23 @@ const Dashboard: React.FC = () => {
               <Key className="w-4 h-4" />
               Connect Account
             </Link>
+          </div>
+        ) : (
+          <div className="glass-card p-8 mb-8 text-center">
+            <Activity className="w-12 h-12 text-textMuted mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-text mb-2">
+              No Portfolio Data Available
+            </h3>
+            <p className="text-textMuted mb-4">
+              Unable to fetch portfolio data at this time. Please try refreshing
+              the page or contact support if the issue persists.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="btn-primary inline-flex items-center gap-2"
+            >
+              Refresh Page
+            </button>
           </div>
         )}
 
@@ -471,14 +504,13 @@ const Dashboard: React.FC = () => {
               Quick Actions
             </h2>
             <div className="space-y-3">
-              <button className="w-full btn-primary flex items-center justify-center gap-2">
-                <Settings className="w-4 h-4" />
-                Configure Bot
-              </button>
-              <button className="w-full btn-secondary flex items-center justify-center gap-2">
+              <Link
+                to="/strategies"
+                className="w-full btn-primary flex items-center justify-center gap-2"
+              >
                 <Activity className="w-4 h-4" />
-                View Strategies
-              </button>
+                Manage Strategies
+              </Link>
             </div>
 
             <div className="mt-6 pt-6 border-t border-white/5">
@@ -707,6 +739,12 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Wallet Connect Dialog */}
+      <WalletConnectDialog
+        isOpen={showWalletDialog}
+        onClose={() => setShowWalletDialog(false)}
+      />
     </div>
   );
 };

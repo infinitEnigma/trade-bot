@@ -151,6 +151,36 @@ class ApiClient {
     return response.data;
   }
 
+  async verifyWallet(data: {
+    walletAddress: string;
+    signature: string;
+    message: string;
+  }) {
+    const response = await this.client.post("/api/user/verify-wallet", data);
+    return response.data;
+  }
+
+  // Strategy endpoints
+  async updateStrategy(
+    strategyId: string,
+    data: {
+      name: string;
+      type: string;
+      config: Record<string, unknown>;
+    }
+  ) {
+    const response = await this.client.put(
+      `/api/strategies/${strategyId}`,
+      data
+    );
+    return response.data;
+  }
+
+  async deleteStrategy(strategyId: string) {
+    const response = await this.client.delete(`/api/strategies/${strategyId}`);
+    return response.data;
+  }
+
   // Market endpoints
   async getTicker(symbol?: string) {
     const params = symbol ? { symbol } : {};

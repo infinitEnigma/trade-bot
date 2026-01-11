@@ -173,6 +173,87 @@ export class AuthService {
     }
   }
 
+  async verifyWalletOwnership(
+    userId: string,
+    walletAddress: string,
+    signature: string,
+    message: string
+  ): Promise<{ success: boolean; message?: string }> {
+    try {
+      // Verify the signature matches the wallet address
+      const { ethers } = await import("ethers");
+
+      // Recover the address from the signature
+      const recoveredAddress = ethers.verifyMessage(message, signature);
+
+      // Check if the recovered address matches the expected wallet address
+      if (recoveredAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+        return {
+          success: false,
+          message: "Signature verification failed - address mismatch",
+        };
+      }
+
+      // Check if user has Kodiak credentials with matching wallet address
+      const credentialsResult = await pool.query(
+        "SELECT wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
+        [userId]
+      );
+
+      if (credentialsResult.rows.length === 0) {
+        return {
+          success: false,
+          message: "No verified Kodiak credentials found",
+        };
+      }
+
+      const kodiakWalletAddress = credentialsResult.rows[0].wallet_address;
+      if (
+        !kodiakWalletAddress ||
+        kodiakWalletAddress.toLowerCase() !== walletAddress.toLowerCase()
+      ) {
+        return {
+          success: false,
+          message: "Wallet address does not match Kodiak account",
+        };
+      }
+
+      // Update user level to VERIFIED
+      const updateSuccess = await this.updateUserLevel(
+        userId,
+        UserLevel.VERIFIED
+      );
+
+      if (!updateSuccess) {
+        return {
+          success: false,
+          message: "Failed to update user verification status",
+        };
+      }
+
+      // Log the verification
+      await pool.query(
+        "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
+        [
+          userId,
+          "WALLET_VERIFIED",
+          {
+            walletAddress,
+            kodiakWalletAddress,
+          },
+        ]
+      );
+
+      return { success: true };
+    } catch (error) {
+      console.error("Wallet verification error:", error);
+      return {
+        success: false,
+        message: "Wallet verification failed",
+      };
+    }
+  }
+
   private generateTokens(user: {
     id: string;
     email: string;
