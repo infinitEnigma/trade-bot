@@ -215,6 +215,31 @@ class ApiClient {
     return response.data;
   }
 
+  // TradingView endpoints
+  async getTvConfig() {
+    const response = await this.client.get("/api/market/tv/config");
+    return response.data;
+  }
+
+  async getTvSymbols(params: { symbol?: string }) {
+    const response = await this.client.get("/api/market/tv/symbols", {
+      params,
+    });
+    return response.data;
+  }
+
+  async getTvHistory(params: {
+    symbol?: string;
+    resolution?: string;
+    from?: number;
+    to?: number;
+  }) {
+    const response = await this.client.get("/api/market/tv/history", {
+      params,
+    });
+    return response.data;
+  }
+
   // Strategy endpoints
   async getStrategies() {
     const response = await this.client.get("/api/strategies");

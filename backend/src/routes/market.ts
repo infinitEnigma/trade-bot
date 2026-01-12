@@ -291,4 +291,73 @@ router.get(
   }
 );
 
+// TradingView Public Endpoints (No authentication required)
+
+// GET /api/market/tv/config
+router.get("/tv/config", async (req: Request, res: Response) => {
+  try {
+    const response = await axios.get(`${KODIAK_API_BASE}/tv/config`);
+
+    res.json({
+      success: true,
+      data: response.data,
+      timestamp: Date.now(),
+    });
+  } catch (err: any) {
+    console.error("TV Config error:", err.message);
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to fetch TV config" });
+  }
+});
+
+// GET /api/market/tv/symbols
+router.get("/tv/symbols", async (req: Request, res: Response) => {
+  try {
+    const symbol = (req.query.symbol as string) || "PERP_BTC_USDC";
+
+    const response = await axios.get(`${KODIAK_API_BASE}/tv/symbols`, {
+      params: { symbol },
+    });
+
+    res.json({
+      success: true,
+      data: response.data,
+      timestamp: Date.now(),
+    });
+  } catch (err: any) {
+    console.error("TV Symbols error:", err.message);
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to fetch TV symbols" });
+  }
+});
+
+// GET /api/market/tv/history
+router.get("/tv/history", async (req: Request, res: Response) => {
+  try {
+    const { symbol, resolution, from, to } = req.query;
+
+    const response = await axios.get(`${KODIAK_API_BASE}/tv/history`, {
+      params: {
+        symbol: symbol || "PERP_BTC_USDC",
+        resolution: resolution || "1",
+        from: from || Math.floor(Date.now() / 1000) - 86400, // 24 hours ago
+        to: to || Math.floor(Date.now() / 1000),
+      },
+    });
+
+    res.json({
+      success: true,
+      data: response.data,
+      timestamp: Date.now(),
+    });
+  } catch (err: any) {
+    console.error("TV History error:", err.message);
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to fetch TV history" });
+  }
+});
+
 export { router as marketRoutes };

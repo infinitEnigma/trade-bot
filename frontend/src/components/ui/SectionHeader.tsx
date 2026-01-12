@@ -3,7 +3,7 @@
 import React from "react";
 
 interface SectionHeaderProps {
-  title: string;
+  title: string | React.ReactNode;
   subtitle?: string;
   actions?: React.ReactNode;
 }
