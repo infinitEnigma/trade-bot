@@ -24,7 +24,7 @@ import { StrategyForm } from "../components/StrategyForm";
 import { BotControls } from "../components/BotControls";
 import PriceChart from "../components/PriceChart";
 
-const Strategies: React.FC = () => {
+const Strategies: React.FC = React.memo(() => {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
   const queryClient = useQueryClient();
@@ -375,6 +375,8 @@ const Strategies: React.FC = () => {
       </div>
     </div>
   );
-};
+});
+
+Strategies.displayName = "Strategies";
 
 export default Strategies;
