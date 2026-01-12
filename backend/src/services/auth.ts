@@ -9,8 +9,8 @@ import { pool } from "../database";
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 const JWT_REFRESH_SECRET =
   process.env.JWT_REFRESH_SECRET || "your-refresh-secret";
-const ACCESS_TOKEN_EXPIRY = "1h";
-const REFRESH_TOKEN_EXPIRY = "7d";
+const ACCESS_TOKEN_EXPIRY = "4h"; // Increased from 1h to 4h
+const REFRESH_TOKEN_EXPIRY = "30d"; // Increased from 7d to 30d
 
 export interface TokenPayload {
   userId: string;
@@ -272,7 +272,7 @@ export class AuthService {
       expiresIn: REFRESH_TOKEN_EXPIRY,
     });
 
-    const expiresIn = 60 * 60; // 1 hour in seconds
+    const expiresIn = 4 * 60 * 60; // 4 hours in seconds
 
     return { accessToken, refreshToken, expiresIn };
   }

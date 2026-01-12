@@ -32,10 +32,91 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch (error) {
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
+        setUser(null);
       }
     }
     setLoading(false);
   };
+
+  // Handle logout events from API client
+  useEffect(() => {
+    const handleLogout = () => {
+      setUser(null);
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("refreshToken");
+    };
+
+    window.addEventListener("auth:logout", handleLogout);
+
+    return () => {
+      window.removeEventListener("auth:logout", handleLogout);
+    };
+  }, []);
+
+  // Proactive token refresh for active users
+  useEffect(() => {
+    if (!user) return;
+
+    const refreshInterval = setInterval(async () => {
+      try {
+        const refreshToken = localStorage.getItem("refreshToken");
+        if (refreshToken) {
+          // Only refresh if user has been active (has made API calls recently)
+          const lastActivity = localStorage.getItem("lastActivity");
+          const now = Date.now();
+
+          if (lastActivity && now - parseInt(lastActivity) < 30 * 60 * 1000) {
+            // 30 minutes
+            // Import axios directly to avoid interceptors
+            const { default: axios } = await import("axios");
+            const response = await axios.post(
+              "http://localhost:3000/api/auth/refresh",
+              {
+                refreshToken,
+              }
+            );
+
+            const { accessToken, refreshToken: newRefreshToken } =
+              response.data.tokens;
+            localStorage.setItem("accessToken", accessToken);
+            if (newRefreshToken) {
+              localStorage.setItem("refreshToken", newRefreshToken);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Proactive token refresh failed:", error);
+      }
+    }, 45 * 60 * 1000); // Refresh every 45 minutes
+
+    return () => clearInterval(refreshInterval);
+  }, [user]);
+
+  // Track user activity
+  useEffect(() => {
+    const updateActivity = () => {
+      localStorage.setItem("lastActivity", Date.now().toString());
+    };
+
+    // Track various user activities
+    const events = [
+      "mousedown",
+      "mousemove",
+      "keypress",
+      "scroll",
+      "touchstart",
+      "click",
+    ];
+    events.forEach((event) => {
+      document.addEventListener(event, updateActivity, { passive: true });
+    });
+
+    return () => {
+      events.forEach((event) => {
+        document.removeEventListener(event, updateActivity);
+      });
+    };
+  }, []);
 
   useEffect(() => {
     checkAuth();

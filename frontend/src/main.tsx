@@ -6,14 +6,18 @@ import { createConfig, WagmiProvider } from "wagmi";
 import { mainnet } from "wagmi/chains";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { http } from "wagmi";
+import { injected } from "wagmi/connectors";
 import App from "./App";
 import "./index.css";
+//import "./App.css";
 
 const config = createConfig({
   chains: [mainnet],
+  connectors: [injected()],
   transports: {
     [mainnet.id]: http(),
   },
+  ssr: true, // Enable SSR support which helps with auto-connect
 });
 
 const queryClient = new QueryClient();

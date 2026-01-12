@@ -56,15 +56,15 @@ const StatsCard: React.FC<StatsCardProps> = ({
   }
 
   return (
-    <div className="glass-card p-6 hover-lift group cursor-pointer">
+    <div className="glass-card p-10 m-3 hover-lift group cursor-pointer">
       <div className="flex items-center justify-between mb-4">
         <div
-          className={`p-3 rounded-xl bg-linear-to-br ${colorClasses[color]} bg-opacity-10 group-hover:bg-opacity-20 transition-all`}
+          className={`p-2 rounded-xl bg-linear-to-br ${colorClasses[color]} bg-opacity-10 group-hover:bg-opacity-20 transition-all`}
         >
           {icon}
         </div>
         <div
-          className={`px-3 py-1 rounded-full text-xs font-medium ${
+          className={`px-2 py-1 rounded-full text-xs font-medium ${
             change >= 0
               ? "bg-green-500/20 text-green-400"
               : "bg-red-500/20 text-red-400"
@@ -73,8 +73,8 @@ const StatsCard: React.FC<StatsCardProps> = ({
           {change >= 0 ? "↗" : "↘"} {Math.abs(change)}%
         </div>
       </div>
-      <div className="space-y-2">
-        <p className="text-2xl font-bold text-text-primary group-hover:scale-105 transition-transform">
+      <div className="space-y-2 space-x-3">
+        <p className="text-xl font-bold text-text-primary group-hover:scale-105 transition-transform">
           {formatValue(value)}
         </p>
         <div className="flex items-center justify-between">

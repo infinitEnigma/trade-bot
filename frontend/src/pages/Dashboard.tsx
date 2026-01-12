@@ -51,7 +51,7 @@ import StatsCard from "../components/dashboard/StatsCard";
 // Calculate real portfolio performance from trades data
 const calculatePortfolioPerformance = (
   trades: any[],
-  initialBalance = 10000
+  initialBalance = 10000 // TODO: find first balance, replace arbitrary 10000
 ) => {
   if (!trades || trades.length === 0) {
     return [{ time: "No data", value: initialBalance }];
@@ -89,7 +89,7 @@ const calculatePortfolioPerformance = (
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const [selectedSymbol, setSelectedSymbol] = useState("PERP_BTC_USDC");
-  const [showWalletDialog, setShowWalletDialog] = useState(false);
+  //const [showWalletDialog, setShowWalletDialog] = useState(false);
 
   // Fetch Kodiak data
   const { data: positionsData, isLoading: positionsLoading } = useQuery({
@@ -119,11 +119,11 @@ const Dashboard: React.FC = () => {
   ).length;
 
   // Process balance data
-  console.log("Balance data:", balanceData);
-  console.log("balanceData?.success:", balanceData?.success);
-  console.log("balanceData?.data:", balanceData?.data);
+  //console.log("Balance data:", balanceData);
+  //console.log("balanceData?.success:", balanceData?.success);
+  //console.log("balanceData?.data:", balanceData?.data);
   const balance = balanceData?.success ? balanceData.data : null;
-  console.log("Processed balance:", balance);
+  //console.log("Processed balance:", balance);
   const totalBalance = balance
     ? parseFloat(balance.totalBalance || "0")
     : 10600;
@@ -214,7 +214,7 @@ const Dashboard: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="container mx-auto px-4 py-10 space-y-10 bg-background">
       {/* Enhanced Header */}
       <header className="glass-surface border-b border-white/5 sticky top-0 z-50">
         <div className="container mx-auto px-6 py-4">
@@ -382,7 +382,7 @@ const Dashboard: React.FC = () => {
                 title="Total Balance"
                 value={portfolio?.totalBalance || 0}
                 change={portfolio?.pnlPercent || 0}
-                icon={<Wallet className="w-6 h-6 text-primary" />}
+                icon={<Wallet className="w-5 h-5 text-primary" />}
                 color="primary"
                 format="currency"
                 loading={balanceLoading}
@@ -391,16 +391,16 @@ const Dashboard: React.FC = () => {
                 title="24h P&L"
                 value={portfolio?.pnl || 0}
                 change={portfolio?.pnlPercent || 0}
-                icon={<DollarSign className="w-6 h-6 text-success" />}
-                color="success"
+                icon={<DollarSign className="w-5 h-5 text-success" />}
+                color="primary"
                 format="currency"
               />
               <StatsCard
                 title="24h Volume"
                 value={portfolio?.dailyVolume || 0}
                 change={12.5}
-                icon={<Activity className="w-6 h-6 text-warning" />}
-                color="warning"
+                icon={<Activity className="w-5 h-5 text-warning" />}
+                color="primary"
                 format="currency"
               />
               <StatsCard
@@ -411,8 +411,8 @@ const Dashboard: React.FC = () => {
                     ? (profitablePositions / positions.length) * 100
                     : 0
                 }
-                icon={<TrendingUp className="w-6 h-6 text-info" />}
-                color="info"
+                icon={<TrendingUp className="w-5 h-5 text-info" />}
+                color="primary"
               />
             </div>
           </div>
@@ -541,6 +541,14 @@ const Dashboard: React.FC = () => {
                 Manage Strategies
               </Link>
             </div>
+
+            {/* Wallet Status Widget - only for registered users */}
+            {(user?.userLevel === "REGISTERED" ||
+              user?.userLevel === "VERIFIED") && (
+              <div className="mt-6 pt-6 border-t border-white/5">
+                <WalletConnectDialog />
+              </div>
+            )}
 
             <div className="mt-6 pt-6 border-t border-white/5">
               <h3 className="text-sm font-medium text-textMuted mb-3">
@@ -847,12 +855,6 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* Wallet Connect Dialog */}
-      <WalletConnectDialog
-        isOpen={showWalletDialog}
-        onClose={() => setShowWalletDialog(false)}
-      />
     </div>
   );
 };

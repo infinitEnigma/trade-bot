@@ -18,9 +18,9 @@ const pool = new Pool({
 });
 
 const KODIAK_API_BASE =
-  process.env.KODIAK_API_URL || "https://api-berachain.kodiak.finance/v1";
+  process.env.KODIAK_API_URL || "https://api.orderly.org/v1";
 const WS_BASE =
-  process.env.KODIAK_WS_URL || "wss://ws-berachain.kodiak.finance/ws/stream";
+  process.env.KODIAK_WS_URL || "wss://ws-evm.orderly.org/ws/stream";
 
 interface AuthenticatedRequest extends Request {
   user?: TokenPayload;
@@ -58,7 +58,7 @@ async function getKodiakCredentials(userId: string) {
     return null;
   }
 
-  const { encryptionService } = await import("../services/encryption");
+  const { encryptionService } = await import("../services/encryption.js");
 
   return {
     accountId: result.rows[0].account_id,

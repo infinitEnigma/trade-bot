@@ -90,6 +90,20 @@ trade-bot/
 
 ---
 
+### Contract Addresses
+
+### Bera
+
+| Contract Name | Mainnet Address |
+| -------- | ---------- |
+| USDC | 0x549943e04f40284185054145c6e4e9568c1d3241 |
+| Vault | 0x816f722424B49Cf1275cc86DA9840Fbd5a6167e9 |
+| VaultProxyAdmin | 0xa2ea0a58b083c492adc91a687fac8b53adb7c0fd |
+| VaultCrossChainManager | 0xa0a07a78c7d31E6f8698F48Fc9219f9a3030f38C |
+| CrossChainRelay | 0x173b47edbeca665125edc24c509bfe545cda60a9 |
+
+---
+
 ## 📊 Implementation Phases
 
 ### Phase 1: Infrastructure & Foundation

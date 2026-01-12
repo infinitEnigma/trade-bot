@@ -33,6 +33,9 @@ class ApiClient {
             "Authorization header set:",
             `Bearer ${token.substring(0, 20)}...`
           );
+
+          // Track user activity when making authenticated requests
+          localStorage.setItem("lastActivity", Date.now().toString());
         } else {
           console.log("No token found, not setting Authorization header");
         }
@@ -60,15 +63,25 @@ class ApiClient {
                 }
               );
 
-              const { accessToken } = response.data.tokens;
+              const { accessToken, refreshToken: newRefreshToken } =
+                response.data.tokens;
               localStorage.setItem("accessToken", accessToken);
+              if (newRefreshToken) {
+                localStorage.setItem("refreshToken", newRefreshToken);
+              }
 
               originalRequest.headers.Authorization = `Bearer ${accessToken}`;
               return this.client(originalRequest);
             }
           } catch (refreshError) {
+            // Clear tokens and redirect to login
             localStorage.removeItem("accessToken");
             localStorage.removeItem("refreshToken");
+
+            // Dispatch custom event to notify AuthContext of logout
+            window.dispatchEvent(new CustomEvent("auth:logout"));
+
+            // Redirect to login
             window.location.href = "/login";
           }
         }
