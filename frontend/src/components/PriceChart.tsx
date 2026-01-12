@@ -17,6 +17,7 @@ import { api } from "../lib/api";
 import { Card } from "./ui/Card";
 import { SectionHeader } from "./ui/SectionHeader";
 import { useVisibility } from "../hooks/useVisibility";
+import { useMemoryMonitor } from "../hooks/useMemoryMonitor";
 
 interface PriceChartProps {
   symbol?: string;
@@ -28,6 +29,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
     const [selectedSymbol, setSelectedSymbol] = useState(symbol);
     const [selectedResolution, setSelectedResolution] = useState(resolution);
     const isVisible = useVisibility();
+    useMemoryMonitor(true); // Enable memory monitoring
 
     // Cleanup on unmount to prevent memory leaks
     useEffect(() => {
@@ -65,13 +67,25 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
       error,
     } = useQuery({
       queryKey: ["tv-history", selectedSymbol, selectedResolution],
-      queryFn: () =>
-        api.getTvHistory({
+      queryFn: async () => {
+        console.log(
+          `📊 PriceChart: Fetching ${selectedSymbol}:${selectedResolution} at ${new Date().toLocaleTimeString()}`
+        );
+        const startTime = Date.now();
+        const result = await api.getTvHistory({
           symbol: selectedSymbol,
           resolution: selectedResolution,
           from: Math.floor(Date.now() / 1000) - 86400, // 24 hours ago
           to: Math.floor(Date.now() / 1000),
-        }),
+        });
+        const duration = Date.now() - startTime;
+        console.log(
+          `⚡ PriceChart: ${selectedSymbol}:${selectedResolution} fetched in ${duration}ms, cached: ${
+            result.cached || false
+          }`
+        );
+        return result;
+      },
       refetchInterval: isVisible ? 5000 : false, // Pause when tab not visible
       enabled: isVisible, // Don't fetch when hidden
     });

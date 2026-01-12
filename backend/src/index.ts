@@ -15,6 +15,9 @@ import { marketRoutes } from "./routes/market";
 import { strategyRoutes } from "./routes/strategies";
 import { botRoutes } from "./routes/bot";
 
+// Initialize Redis connection
+import { redisService } from "./services/redis";
+
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {

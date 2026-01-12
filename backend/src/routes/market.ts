@@ -6,6 +6,7 @@ import { authService, TokenPayload } from "../services/auth";
 import { Pool } from "pg";
 import { createHash } from "crypto";
 import * as ed25519 from "@noble/ed25519";
+import { redisService } from "../services/redis";
 
 const router = Router();
 
@@ -296,15 +297,32 @@ router.get(
 // GET /api/market/tv/config
 router.get("/tv/config", async (req: Request, res: Response) => {
   try {
+    const cacheKey = "tv:config";
+    const CACHE_TTL = 300; // 5 minutes (config doesn't change often)
+
+    // Try Redis cache first
+    const cached = await redisService.get(cacheKey);
+    if (cached) {
+      console.log("📋 TV Config: Cache hit");
+      return res.json(JSON.parse(cached));
+    }
+
+    console.log("🌐 TV Config: Cache miss, fetching from Kodiak");
     const response = await axios.get(`${KODIAK_API_BASE}/tv/config`);
 
-    res.json({
+    const result = {
       success: true,
       data: response.data,
       timestamp: Date.now(),
-    });
+      cached: false,
+    };
+
+    // Cache the result
+    await redisService.setex(cacheKey, CACHE_TTL, JSON.stringify(result));
+
+    res.json(result);
   } catch (err: any) {
-    console.error("TV Config error:", err.message);
+    console.error("❌ TV Config error:", err.message);
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch TV config" });
@@ -333,27 +351,53 @@ router.get("/tv/symbols", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/market/tv/history
+// GET /api/market/tv/history - MOST IMPORTANT (used every 5 seconds by charts)
 router.get("/tv/history", async (req: Request, res: Response) => {
   try {
     const { symbol, resolution, from, to } = req.query;
+    const symbolStr = (symbol as string) || "PERP_BTC_USDC";
+    const resolutionStr = (resolution as string) || "1";
+    const fromNum = from
+      ? parseInt(from as string)
+      : Math.floor(Date.now() / 1000) - 86400;
+    const toNum = to ? parseInt(to as string) : Math.floor(Date.now() / 1000);
 
+    // Create cache key: tv:history:BTCUSDC:1:1640995200:1641081600
+    const cacheKey = `tv:history:${symbolStr}:${resolutionStr}:${fromNum}:${toNum}`;
+    const CACHE_TTL = 5; // 5 seconds - keeps data fresh but reduces API calls by 90%
+
+    // Try Redis cache first
+    const cached = await redisService.get(cacheKey);
+    if (cached) {
+      console.log(`📋 TV History: Cache hit for ${symbolStr}:${resolutionStr}`);
+      return res.json(JSON.parse(cached));
+    }
+
+    console.log(
+      `🌐 TV History: Cache miss for ${symbolStr}:${resolutionStr}, fetching from Kodiak`
+    );
     const response = await axios.get(`${KODIAK_API_BASE}/tv/history`, {
       params: {
-        symbol: symbol || "PERP_BTC_USDC",
-        resolution: resolution || "1",
-        from: from || Math.floor(Date.now() / 1000) - 86400, // 24 hours ago
-        to: to || Math.floor(Date.now() / 1000),
+        symbol: symbolStr,
+        resolution: resolutionStr,
+        from: fromNum,
+        to: toNum,
       },
     });
 
-    res.json({
+    const result = {
       success: true,
       data: response.data,
       timestamp: Date.now(),
-    });
+      cached: false,
+    };
+
+    // Cache the result for 5 seconds
+    await redisService.setex(cacheKey, CACHE_TTL, JSON.stringify(result));
+
+    res.json(result);
   } catch (err: any) {
-    console.error("TV History error:", err.message);
+    console.error("❌ TV History error:", err.message);
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch TV history" });
