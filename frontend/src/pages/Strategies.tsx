@@ -78,7 +78,7 @@ const Strategies: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="container mx-auto px-4 py-10 space-y-10 bg-background">
       {/* Header */}
       <header className="glass-card border-b border-white/5 sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">

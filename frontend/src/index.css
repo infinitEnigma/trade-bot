@@ -178,7 +178,7 @@ body {
 
 .table-enhanced th {
   background: rgba(19, 19, 26, 0.8);
-  padding: 16px;
+  padding: 14px 20px;
   font-weight: 600;
   font-size: 13px;
   text-transform: uppercase;
@@ -188,7 +188,7 @@ body {
 }
 
 .table-enhanced td {
-  padding: 16px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--border-light);
   transition: background-color 0.2s ease;
 }

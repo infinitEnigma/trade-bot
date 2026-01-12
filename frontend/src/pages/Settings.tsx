@@ -17,6 +17,10 @@ import {
   LogOut,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { Card } from "../components/ui/Card";
+import { SectionHeader } from "../components/ui/SectionHeader";
+import { MetricIcon } from "../components/ui/MetricIcon";
+import { AppHeader } from "../components/ui/AppHeader";
 
 const Settings: React.FC = () => {
   const { user, logout, refreshUser } = useAuth();
@@ -77,67 +81,17 @@ const Settings: React.FC = () => {
   const isConnected = kodiakStatus?.data?.connected;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="glass-card border-b border-white/5 sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-linear-to-br from-primary to-primaryHover flex items-center justify-center">
-                <SettingsIcon className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-text">Settings</h1>
-                <p className="text-sm text-textMuted">Manage your account</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <Link
-                to="/dashboard"
-                className="px-4 py-2 rounded-lg text-textMuted hover:text-text hover:bg-white/5 transition-colors"
-              >
-                ← Back to Dashboard
-              </Link>
-
-              <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface border border-white/5">
-                <div className="w-8 h-8 rounded-full bg-linear-to-br from-success to-successHover flex items-center justify-center">
-                  <span className="text-sm font-bold text-white">
-                    {user?.email?.[0]?.toUpperCase() || "U"}
-                  </span>
-                </div>
-                <span className="text-sm text-text">
-                  {user?.email || "User"}
-                </span>
-                <span className="px-2 py-0.5 text-xs rounded bg-primary/20 text-primary">
-                  {user?.userLevel || "BASIC"}
-                </span>
-              </div>
-
-              <button
-                onClick={logout}
-                className="p-2 rounded-lg hover:bg-surface transition-colors"
-                title="Logout"
-              >
-                <LogOut className="w-5 h-5 text-textMuted hover:text-text" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="container mx-auto px-4 py-10 space-y-10 bg-background">
+      <AppHeader title="Settings" subtitle="Manage your account" />
 
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto space-y-6">
           {/* Account Overview */}
-          <div className="glass-card p-6">
-            <h2 className="text-lg font-semibold text-text mb-4">
-              Account Overview
-            </h2>
+          <Card>
+            <SectionHeader title="Account Overview" />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="flex items-center gap-3 p-4 rounded-lg bg-surface border border-white/5">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Shield className="w-5 h-5 text-primary" />
-                </div>
+                <MetricIcon icon={Shield} color="primary" />
                 <div>
                   <p className="text-sm text-textMuted">User Level</p>
                   <p className="font-medium text-text">
@@ -147,9 +101,7 @@ const Settings: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-3 p-4 rounded-lg bg-surface border border-white/5">
-                <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
-                  <CheckCircle className="w-5 h-5 text-success" />
-                </div>
+                <MetricIcon icon={CheckCircle} color="success" />
                 <div>
                   <p className="text-sm text-textMuted">Account Status</p>
                   <p className="font-medium text-text">Active</p>
@@ -182,24 +134,15 @@ const Settings: React.FC = () => {
                 </div>
               </div>
             </div>
-          </div>
+          </Card>
 
           {/* Kodiak Credentials Section */}
-          <div className="glass-card p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Key className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-text">
-                  Kodiak Trading Credentials
-                </h2>
-                <p className="text-sm text-textMuted">
-                  Connect your Kodiak account to enable automated trading
-                  strategies
-                </p>
-              </div>
-            </div>
+          <Card>
+            <SectionHeader
+              title="Kodiak Trading Credentials"
+              subtitle="Connect your Kodiak account to enable automated trading strategies"
+              actions={<MetricIcon icon={Key} color="primary" />}
+            />
 
             {isConnected ? (
               /* Connected State */
@@ -382,16 +325,14 @@ const Settings: React.FC = () => {
                 </form>
               </div>
             )}
-          </div>
+          </Card>
 
           {/* Security Notice */}
-          <div className="glass-card p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <Shield className="w-5 h-5 text-warning" />
-              <h3 className="text-lg font-semibold text-text">
-                Security Information
-              </h3>
-            </div>
+          <Card>
+            <SectionHeader
+              title="Security Information"
+              actions={<MetricIcon icon={Shield} color="warning" />}
+            />
             <div className="space-y-3 text-sm text-textMuted">
               <p>
                 • Your Kodiak API credentials are encrypted using AES-256
@@ -406,7 +347,7 @@ const Settings: React.FC = () => {
               </p>
               <p>• You can disconnect your credentials at any time</p>
             </div>
-          </div>
+          </Card>
         </div>
       </div>
     </div>

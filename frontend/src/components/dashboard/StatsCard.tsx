@@ -1,12 +1,13 @@
 /** @format */
 
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, LucideIcon } from "lucide-react";
+import { MetricIcon } from "../ui/MetricIcon";
 
 interface StatsCardProps {
   title: string;
   value: string | number;
   change: number;
-  icon: React.ReactNode;
+  icon: LucideIcon;
   color: "primary" | "success" | "warning" | "info" | "danger";
   format?: "currency" | "percentage" | "number";
   loading?: boolean;
@@ -21,14 +22,6 @@ const StatsCard: React.FC<StatsCardProps> = ({
   format = "number",
   loading = false,
 }) => {
-  const colorClasses = {
-    primary: "from-primary to-accent",
-    success: "from-green-500 to-emerald-500",
-    warning: "from-amber-500 to-yellow-500",
-    info: "from-blue-500 to-cyan-500",
-    danger: "from-red-500 to-pink-500",
-  };
-
   const formatValue = (val: string | number) => {
     if (format === "currency") {
       return `$${Number(val).toLocaleString(undefined, {
@@ -45,36 +38,34 @@ const StatsCard: React.FC<StatsCardProps> = ({
   if (loading) {
     return (
       <div className="glass-card p-6 hover-lift animate-pulse">
-        <div className="flex items-center justify-between mb-4">
-          <div className="w-10 h-10 rounded-lg skeleton"></div>
-          <div className="w-20 h-4 skeleton rounded"></div>
+        <div className="grid grid-rows-[auto_1fr_auto] gap-3">
+          <div className="flex items-center justify-between">
+            <div className="w-10 h-10 bg-white/10 rounded-lg"></div>
+            <div className="w-20 h-4 bg-white/10 rounded"></div>
+          </div>
+          <div className="w-32 h-8 bg-white/10 rounded"></div>
+          <div className="w-16 h-4 bg-white/10 rounded"></div>
         </div>
-        <div className="w-32 h-8 skeleton rounded mb-2"></div>
-        <div className="w-16 h-4 skeleton rounded"></div>
       </div>
     );
   }
 
   return (
-    <div className="glass-card p-10 m-3 hover-lift group cursor-pointer">
-      <div className="flex items-center justify-between mb-4">
-        <div
-          className={`p-2 rounded-xl bg-linear-to-br ${colorClasses[color]} bg-opacity-10 group-hover:bg-opacity-20 transition-all`}
-        >
-          {icon}
+    <div className="glass-card p-6 hover-lift group cursor-pointer">
+      <div className="grid grid-rows-[auto_1fr_auto] gap-3">
+        <div className="flex items-center justify-between">
+          <MetricIcon icon={icon} color={color} />
+          <div
+            className={`px-2 py-1 rounded-full text-xs font-medium ${
+              change >= 0
+                ? "bg-green-500/20 text-green-400"
+                : "bg-red-500/20 text-red-400"
+            }`}
+          >
+            {change >= 0 ? "↗" : "↘"} {Math.abs(change)}%
+          </div>
         </div>
-        <div
-          className={`px-2 py-1 rounded-full text-xs font-medium ${
-            change >= 0
-              ? "bg-green-500/20 text-green-400"
-              : "bg-red-500/20 text-red-400"
-          }`}
-        >
-          {change >= 0 ? "↗" : "↘"} {Math.abs(change)}%
-        </div>
-      </div>
-      <div className="space-y-2 space-x-3">
-        <p className="text-xl font-bold text-text-primary group-hover:scale-105 transition-transform">
+        <p className="text-2xl font-bold text-text-primary group-hover:scale-105 transition-transform">
           {formatValue(value)}
         </p>
         <div className="flex items-center justify-between">
