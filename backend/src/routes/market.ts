@@ -362,25 +362,50 @@ router.get("/tv/history", async (req: Request, res: Response) => {
       : Math.floor(Date.now() / 1000) - 86400;
     const toNum = to ? parseInt(to as string) : Math.floor(Date.now() / 1000);
 
-    // Create cache key: tv:history:BTCUSDC:1:1640995200:1641081600
-    const cacheKey = `tv:history:${symbolStr}:${resolutionStr}:${fromNum}:${toNum}`;
-    const CACHE_TTL = 5; // 5 seconds - keeps data fresh but reduces API calls by 90%
+    // Check if there are active clients before making external API calls
+    const activeClientsStr = await redisService.get("active_clients");
+    const activeClients = activeClientsStr ? parseInt(activeClientsStr) : 0;
+
+    if (activeClients === 0) {
+      console.log("⏸️ TV History: No active clients, skipping external API call");
+      return res.json({
+        success: true,
+        data: [],
+        timestamp: Date.now(),
+        cached: false,
+        message: "No active clients"
+      });
+    }
+
+    // Round timestamps to 5-minute intervals for stable cache keys
+    // This allows requests within the same 5-minute window to share cache
+    const roundTo5Minutes = (timestamp: number) => {
+      return Math.floor(timestamp / 300) * 300; // 300 seconds = 5 minutes
+    };
+
+    const fromRounded = roundTo5Minutes(fromNum);
+    const toRounded = roundTo5Minutes(toNum);
+
+    // Create cache key: tv:history:BTCUSDC:1:1640995200:1641081600 (rounded to 5-min intervals)
+    const cacheKey = `tv:history:${symbolStr}:${resolutionStr}:${fromRounded}:${toRounded}`;
+    const CACHE_TTL = 5; // 5 seconds - keeps data fresh but reduces API calls significantly
 
     // Try Redis cache first
     const cached = await redisService.get(cacheKey);
     if (cached) {
-      console.log(`📋 TV History: Cache hit for ${symbolStr}:${resolutionStr}`);
-      return res.json(JSON.parse(cached));
+      const cachedData = JSON.parse(cached);
+      cachedData.cached = true; // Mark as cached
+      return res.json(cachedData);
     }
 
     console.log(
-      `🌐 TV History: Cache miss for ${symbolStr}:${resolutionStr}, fetching from Kodiak`
+      `🌐 TV History: Cache miss for ${symbolStr}:${resolutionStr}, fetching from Kodiak (key: ${cacheKey})`
     );
     const response = await axios.get(`${KODIAK_API_BASE}/tv/history`, {
       params: {
         symbol: symbolStr,
         resolution: resolutionStr,
-        from: fromNum,
+        from: fromNum, // Use original timestamps for API call
         to: toNum,
       },
     });
@@ -394,6 +419,9 @@ router.get("/tv/history", async (req: Request, res: Response) => {
 
     // Cache the result for 5 seconds
     await redisService.setex(cacheKey, CACHE_TTL, JSON.stringify(result));
+    console.log(
+      `💾 TV History: Cached result for 5 seconds (key: ${cacheKey})`
+    );
 
     res.json(result);
   } catch (err: any) {

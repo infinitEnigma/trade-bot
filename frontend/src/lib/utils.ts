@@ -237,3 +237,24 @@ export function isValidEmail(email: string): boolean {
 export function deepClone<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
 }
+
+/**
+ * Checks if a JWT token is expired
+ */
+export function isTokenExpired(token: string): boolean {
+  try {
+    // JWT format: header.payload.signature
+    const payload = token.split('.')[1];
+    // Decode base64url to base64, then to string
+    const decodedPayload = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    const { exp } = JSON.parse(decodedPayload);
+
+    // Check if current time is past expiration time
+    const currentTime = Math.floor(Date.now() / 1000);
+    return currentTime >= exp;
+  } catch (error) {
+    // If token is malformed, consider it expired
+    console.warn('Error checking token expiration:', error);
+    return true;
+  }
+}

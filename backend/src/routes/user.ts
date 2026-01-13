@@ -4,6 +4,7 @@ import { Router, Request, Response } from "express";
 import Joi from "joi";
 import { authService, TokenPayload } from "../services/auth";
 import { encryptionService } from "../services/encryption";
+import { redisService } from "../services/redis";
 import { Pool } from "pg";
 
 // Configure @noble/ed25519 hash functions BEFORE any usage
@@ -621,9 +622,19 @@ router.get("/kodiak/status", authenticateToken, getKodiakStatus);
 
 async function getKodiakPositions(req: AuthenticatedRequest, res: Response) {
   try {
+    const userId = req.user!.userId;
+    const cacheKey = `kodiak:positions:${userId}`;
+
+    // Try to get cached data first
+    const cachedData = await redisService.get(cacheKey);
+    if (cachedData) {
+      console.log("Returning cached positions data for user:", userId);
+      return res.json(JSON.parse(cachedData));
+    }
+
     const result = await pool.query(
       "SELECT account_id, api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE user_id = $1",
-      [req.user!.userId]
+      [userId]
     );
 
     if (result.rows.length === 0) {
@@ -650,7 +661,12 @@ async function getKodiakPositions(req: AuthenticatedRequest, res: Response) {
     );
 
     if (positionsData.success && positionsData.data) {
-      res.json({ success: true, data: positionsData.data });
+      const responseData = { success: true, data: positionsData.data };
+
+      // Cache the response for 5 seconds (matches BOT_POLL_INTERVAL)
+      await redisService.setex(cacheKey, 5, JSON.stringify(responseData));
+
+      res.json(responseData);
     } else {
       res
         .status(400)
@@ -669,9 +685,19 @@ router.get("/kodiak/positions", authenticateToken, getKodiakPositions);
 
 async function getKodiakTrades(req: AuthenticatedRequest, res: Response) {
   try {
+    const userId = req.user!.userId;
+    const cacheKey = `kodiak:trades:${userId}`;
+
+    // Try to get cached data first
+    const cachedData = await redisService.get(cacheKey);
+    if (cachedData) {
+      console.log("Returning cached trades data for user:", userId);
+      return res.json(JSON.parse(cachedData));
+    }
+
     const result = await pool.query(
       "SELECT account_id, api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE user_id = $1",
-      [req.user!.userId]
+      [userId]
     );
 
     if (result.rows.length === 0) {
@@ -698,7 +724,12 @@ async function getKodiakTrades(req: AuthenticatedRequest, res: Response) {
     );
 
     if (tradesData.success && tradesData.data) {
-      res.json({ success: true, data: tradesData.data });
+      const responseData = { success: true, data: tradesData.data };
+
+      // Cache the response for 5 seconds (matches BOT_POLL_INTERVAL)
+      await redisService.setex(cacheKey, 5, JSON.stringify(responseData));
+
+      res.json(responseData);
     } else {
       res.status(400).json({ success: false, error: "Failed to fetch trades" });
     }
@@ -715,9 +746,19 @@ router.get("/kodiak/trades", authenticateToken, getKodiakTrades);
 
 async function getKodiakBalance(req: AuthenticatedRequest, res: Response) {
   try {
+    const userId = req.user!.userId;
+    const cacheKey = `kodiak:balance:${userId}`;
+
+    // Try to get cached data first
+    const cachedData = await redisService.get(cacheKey);
+    if (cachedData) {
+      console.log("Returning cached balance data for user:", userId);
+      return res.json(JSON.parse(cachedData));
+    }
+
     const result = await pool.query(
       "SELECT account_id, api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE user_id = $1",
-      [req.user!.userId]
+      [userId]
     );
 
     if (result.rows.length === 0) {
@@ -771,15 +812,21 @@ async function getKodiakBalance(req: AuthenticatedRequest, res: Response) {
       }
 
       const responseData = {
-        totalBalance: totalBalance,
-        holdings: holdings,
-        accountInfo: accountInfo?.success ? accountInfo.data : null,
-        total_pnl_24_h: accountInfo?.data?.total_pnl_24_h || "0",
-        trading_volume_last_24_hours:
-          accountInfo?.data?.trading_volume_last_24_hours || "0",
+        success: true,
+        data: {
+          totalBalance: totalBalance,
+          holdings: holdings,
+          accountInfo: accountInfo?.success ? accountInfo.data : null,
+          total_pnl_24_h: accountInfo?.data?.total_pnl_24_h || "0",
+          trading_volume_last_24_hours:
+            accountInfo?.data?.trading_volume_last_24_hours || "0",
+        },
       };
 
-      res.json({ success: true, data: responseData });
+      // Cache the response for 5 seconds (matches BOT_POLL_INTERVAL)
+      await redisService.setex(cacheKey, 5, JSON.stringify(responseData));
+
+      res.json(responseData);
     } else {
       res
         .status(400)

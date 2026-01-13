@@ -5,7 +5,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import {
-  Settings as SettingsIcon,
   Key,
   Shield,
   CheckCircle,
@@ -14,16 +13,14 @@ import {
   Eye,
   EyeOff,
   Loader2,
-  LogOut,
 } from "lucide-react";
-import { Link } from "react-router-dom";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { MetricIcon } from "../components/ui/MetricIcon";
 import { AppHeader } from "../components/ui/AppHeader";
 
 const Settings: React.FC = () => {
-  const { user, logout, refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const [showSecrets, setShowSecrets] = useState(false);
   const [formData, setFormData] = useState({

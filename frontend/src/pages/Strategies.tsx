@@ -1,6 +1,6 @@
 /** @format */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -8,13 +8,6 @@ import { api } from "../lib/api";
 import { Strategy, StrategyType } from "@trade-bot/shared";
 import {
   Plus,
-  Play,
-  Square,
-  Settings,
-  TrendingUp,
-  TrendingDown,
-  Activity,
-  DollarSign,
   BarChart3,
   Trash2,
   Edit,
@@ -28,6 +21,40 @@ const Strategies: React.FC = React.memo(() => {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
   const queryClient = useQueryClient();
+
+  // Memory cleanup effect
+  useEffect(() => {
+    const cleanup = () => {
+      // Clear React Query cache for strategies page
+      queryClient.removeQueries({ queryKey: ["strategies"] });
+      queryClient.removeQueries({ queryKey: ["bot-instances"] });
+
+      // Force garbage collection if available
+      if (window.gc && typeof window.gc === "function") {
+        window.gc();
+      }
+    };
+
+    // Cleanup on page hide/unmount
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Page is hidden, reduce memory usage
+        queryClient.cancelQueries({ queryKey: ["strategies"] });
+        queryClient.cancelQueries({ queryKey: ["bot-instances"] });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    // Periodic cleanup every 5 minutes
+    const cleanupInterval = setInterval(cleanup, 5 * 60 * 1000);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      clearInterval(cleanupInterval);
+      cleanup();
+    };
+  }, [queryClient]);
 
   // Fetch strategies
   const { data: strategiesData, isLoading } = useQuery({
@@ -72,10 +99,6 @@ const Strategies: React.FC = React.memo(() => {
       style: "currency",
       currency: "USD",
     }).format(value);
-  };
-
-  const formatPercentage = (value: number) => {
-    return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
   };
 
   return (

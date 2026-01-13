@@ -18,29 +18,12 @@ import {
   Wallet,
   Activity,
   DollarSign,
-  Zap,
   Settings,
-  LogOut,
   Key,
   Loader2,
-  Shield,
-  ChevronDown,
-  User,
-  CreditCard,
-  BarChart3,
-  Bell,
-  HelpCircle,
-  ExternalLink,
-  ChevronRight,
   Target,
-  Timer,
   RefreshCw,
-  Sparkles,
-  Plus,
   X,
-  Download,
-  Filter,
-  SortAsc,
 } from "lucide-react";
 
 import { Link } from "react-router-dom";
@@ -90,7 +73,7 @@ const calculatePortfolioPerformance = (
 };
 
 const Dashboard: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [selectedSymbol, setSelectedSymbol] = useState("PERP_BTC_USDC");
   //const [showWalletDialog, setShowWalletDialog] = useState(false);
 
@@ -158,63 +141,6 @@ const Dashboard: React.FC = () => {
     tradesData?.success && tradesData.data?.rows
       ? calculatePortfolioPerformance(tradesData.data.rows, totalBalance)
       : [{ time: "No data", value: totalBalance || 10000 }];
-
-  // Progress Indicator Component
-  const ProgressIndicator = ({
-    value,
-    max = 100,
-    label,
-  }: {
-    value: number;
-    max?: number;
-    label: string;
-  }) => (
-    <div className="space-y-2">
-      <div className="flex justify-between text-sm">
-        <span className="text-text-secondary">{label}</span>
-        <span className="font-medium">
-          {value}/{max}
-        </span>
-      </div>
-      <div className="h-2 bg-white/5 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-linear-to-r from-primary to-accent rounded-full transition-all duration-500"
-          style={{ width: `${(value / max) * 100}%` }}
-        />
-      </div>
-    </div>
-  );
-
-  // Metric Card Component
-  const MetricCard = ({
-    label,
-    value,
-    trend,
-    icon,
-  }: {
-    label: string;
-    value: string;
-    trend: "up" | "down" | "neutral";
-    icon: React.ReactNode;
-  }) => (
-    <div className="glass-card p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-text-secondary text-sm">{label}</div>
-        <div
-          className={`p-2 rounded-lg ${
-            trend === "up"
-              ? "bg-green-500/10 text-green-400"
-              : trend === "down"
-              ? "bg-red-500/10 text-red-400"
-              : "bg-gray-500/10 text-gray-400"
-          }`}
-        >
-          {icon}
-        </div>
-      </div>
-      <div className="text-2xl font-bold text-text-primary">{value}</div>
-    </div>
-  );
 
   return (
     <div className="container mx-auto px-4 py-10 space-y-10 bg-background">

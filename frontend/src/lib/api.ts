@@ -2,7 +2,7 @@
 
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from "axios";
 
-const API_BASE_URL = "http://localhost:3000";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 console.log("API_BASE_URL:", API_BASE_URL);
 
 class ApiClient {
@@ -50,7 +50,19 @@ class ApiClient {
       async (error) => {
         const originalRequest = error.config;
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        // Handle connection errors (server unreachable)
+        if (!error.response && error.code === 'ERR_NETWORK') {
+          console.error('Server connection failed - redirecting to login');
+          // Clear tokens on connection failure
+          localStorage.removeItem("accessToken");
+          localStorage.removeItem("refreshToken");
+          window.dispatchEvent(new CustomEvent("auth:logout"));
+          window.location.href = "/login";
+          return Promise.reject(error);
+        }
+
+        // Handle both 401 (unauthorized) and 403 (forbidden) as potential token issues
+        if ((error.response?.status === 401 || error.response?.status === 403) && !originalRequest._retry) {
           originalRequest._retry = true;
 
           try {
@@ -84,6 +96,15 @@ class ApiClient {
             // Redirect to login
             window.location.href = "/login";
           }
+        }
+
+        // Handle 500+ server errors by redirecting to login
+        if (error.response?.status >= 500) {
+          console.error('Server error - redirecting to login');
+          localStorage.removeItem("accessToken");
+          localStorage.removeItem("refreshToken");
+          window.dispatchEvent(new CustomEvent("auth:logout"));
+          window.location.href = "/login";
         }
 
         return Promise.reject(error);

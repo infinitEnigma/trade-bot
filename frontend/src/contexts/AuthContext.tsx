@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { User } from "@trade-bot/shared";
 import { api } from "../lib/api";
+import { isTokenExpired } from "../lib/utils";
 import { toast } from "sonner";
 
 interface AuthContextType {
@@ -26,13 +27,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const checkAuth = async () => {
     const token = localStorage.getItem("accessToken");
     if (token) {
-      try {
-        const response = await api.getProfile();
-        setUser(response.data);
-      } catch (error) {
+      // Check if token is expired before making API call
+      if (isTokenExpired(token)) {
+        console.log("Token is expired, clearing tokens");
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
         setUser(null);
+      } else {
+        try {
+          const response = await api.getProfile();
+          setUser(response.data);
+        } catch (error) {
+          localStorage.removeItem("accessToken");
+          localStorage.removeItem("refreshToken");
+          setUser(null);
+        }
       }
     }
     setLoading(false);

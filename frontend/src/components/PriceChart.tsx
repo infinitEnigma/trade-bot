@@ -84,6 +84,13 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
             result.cached || false
           }`
         );
+
+        // Show cache status in UI
+        if (result.cached) {
+          console.log(
+            `🚀 PriceChart: Served from Redis cache - API call saved!`
+          );
+        }
         return result;
       },
       refetchInterval: isVisible ? 5000 : false, // Pause when tab not visible

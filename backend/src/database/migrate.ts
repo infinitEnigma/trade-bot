@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS kodiak_credentials (
   api_key_encrypted TEXT NOT NULL,
   secret_key_encrypted TEXT NOT NULL,
   wallet_signature TEXT,
+  wallet_address VARCHAR(255),
   verified BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -162,6 +163,9 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   ip_address VARCHAR(45),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Add wallet_address column if it doesn't exist
+ALTER TABLE kodiak_credentials ADD COLUMN IF NOT EXISTS wallet_address VARCHAR(255);
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);

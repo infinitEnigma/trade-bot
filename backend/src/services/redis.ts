@@ -9,6 +9,7 @@ class RedisService {
   private constructor() {
     this.client = createClient({
       url: process.env.REDIS_URL || "redis://localhost:6379",
+      database: 1, // Use database 1 (was likely used in Docker setup)
     });
 
     this.client.on("error", (err) => {
@@ -30,6 +31,9 @@ class RedisService {
   public async connect(): Promise<void> {
     if (!this.client.isOpen) {
       await this.client.connect();
+      // Explicitly select database 1 after connecting
+      await this.client.select(1);
+      console.log("✅ Redis database 1 selected");
     }
   }
 
@@ -58,9 +62,22 @@ class RedisService {
 
   public async setex(key: string, ttl: number, value: string): Promise<void> {
     try {
-      await this.client.setEx(key, ttl, value);
+      // Use multi command to ensure atomicity
+      const multi = this.client.multi();
+      multi.set(key, value);
+      multi.pExpire(key, ttl * 1000); // pExpire uses milliseconds
+      await multi.exec();
+      // console.log(`💾 Redis SETEX: ${key} stored for ${ttl}s`);
     } catch (error) {
-      console.error("Redis SETEX error:", error);
+      console.error("❌ Redis SETEX error:", error);
+      // Fallback to individual commands
+      try {
+        await this.client.set(key, value);
+        await this.client.pExpire(key, ttl * 1000);
+        console.log(`💾 Redis SETEX (fallback): ${key} stored for ${ttl}s`);
+      } catch (fallbackError) {
+        console.error("❌ Redis SETEX fallback error:", fallbackError);
+      }
     }
   }
 

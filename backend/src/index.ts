@@ -18,16 +18,80 @@ import { botRoutes } from "./routes/bot";
 // Initialize Redis connection
 import { redisService } from "./services/redis";
 
+// Connect to Redis on startup
+redisService.connect().catch((error) => {
+  console.error("❌ Failed to connect to Redis:", error);
+});
+
+// Client connection tracking
+let activeClients = 0;
+let lastActivityTime = Date.now();
+
+const updateClientCount = (change: number) => {
+  activeClients = Math.max(0, activeClients + change);
+  lastActivityTime = Date.now();
+  console.log(`👥 Active clients: ${activeClients} (last activity: ${new Date(lastActivityTime).toLocaleTimeString()})`);
+
+  // Store client count in Redis for monitoring
+  redisService.setex("active_clients", 60, activeClients.toString()).catch(() => {
+    // Ignore Redis errors for client tracking
+  });
+};
+
+// Track HTTP API activity
+const trackApiActivity = () => {
+  // If we have API activity but no WebSocket connections, consider it as having clients
+  if (activeClients === 0) {
+    const timeSinceLastActivity = Date.now() - lastActivityTime;
+    // If there was recent API activity (within last 30 seconds), consider clients active
+    if (timeSinceLastActivity < 30000) {
+      console.log(`🔄 API activity detected, treating as active client`);
+      updateClientCount(1);
+      // Reset after 30 seconds of no activity
+      setTimeout(() => {
+        if (activeClients > 0) {
+          updateClientCount(-1);
+        }
+      }, 30000);
+    }
+  }
+  lastActivityTime = Date.now();
+};
+
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: [
-      process.env.FRONTEND_URL || "http://localhost:5173",
-      "http://localhost:3000",
-      "http://localhost:5173",
-    ],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      const allowedOrigins = [
+        process.env.FRONTEND_URL || "http://localhost:5173",
+        "http://localhost:3000",
+        "http://localhost:5173",
+      ];
+
+      // Allow localhost origins
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow any origin from the same network (192.168.x.x or 10.x.x.x)
+      const networkRegex = /^(https?:\/\/)(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)[\d]+\.[\d]+(:[\d]+)?$/;
+      if (networkRegex.test(origin)) {
+        return callback(null, true);
+      }
+
+      // For development, allow all origins
+      if (process.env.NODE_ENV === 'development') {
+        return callback(null, true);
+      }
+
+      return callback(new Error('Not allowed by CORS'));
+    },
     methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 
@@ -35,11 +99,34 @@ const io = new Server(httpServer, {
 app.use(helmet());
 app.use(
   cors({
-    origin: [
-      process.env.FRONTEND_URL || "http://localhost:5173",
-      "http://localhost:3000",
-      "http://localhost:5173",
-    ],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      const allowedOrigins = [
+        process.env.FRONTEND_URL || "http://localhost:5173",
+        "http://localhost:3000",
+        "http://localhost:5173",
+      ];
+
+      // Allow localhost origins
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow any origin from the same network (192.168.x.x or 10.x.x.x)
+      const networkRegex = /^(https?:\/\/)(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)[\d]+\.[\d]+(:[\d]+)?$/;
+      if (networkRegex.test(origin)) {
+        return callback(null, true);
+      }
+
+      // For development, allow all origins
+      if (process.env.NODE_ENV === 'development') {
+        return callback(null, true);
+      }
+
+      return callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
   })
 );
@@ -55,6 +142,12 @@ app.use("/api/", limiter);
 
 // Make io available to routes
 app.set("io", io);
+
+// API activity tracking middleware
+app.use("/api", (req, res, next) => {
+  trackApiActivity();
+  next();
+});
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -88,6 +181,7 @@ app.use(
 // WebSocket connection handling
 io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
+  updateClientCount(1);
 
   socket.on("subscribe", (room: string) => {
     socket.join(room);
@@ -101,6 +195,7 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);
+    updateClientCount(-1);
   });
 });
 
