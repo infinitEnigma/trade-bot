@@ -66,29 +66,25 @@ const io = new Server(httpServer, {
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
 
-      const allowedOrigins = [
-        process.env.FRONTEND_URL || "http://localhost:5173",
-        "http://localhost:3000",
-        "http://localhost:5173",
-      ];
-
-      // Allow localhost origins
+      // Allow explicitly configured origins
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
-      // Allow any origin from the same network (192.168.x.x or 10.x.x.x)
-      const networkRegex = /^(https?:\/\/)(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)[\d]+\.[\d]+(:[\d]+)?$/;
-      if (networkRegex.test(origin)) {
-        return callback(null, true);
-      }
-
-      // For development, allow all origins
+      // For development, allow localhost variations
       if (process.env.NODE_ENV === 'development') {
-        return callback(null, true);
+        const devOrigins = [
+          'http://localhost:3000',
+          'http://localhost:5173',
+          'http://127.0.0.1:3000',
+          'http://127.0.0.1:5173',
+        ];
+        if (devOrigins.includes(origin)) {
+          return callback(null, true);
+        }
       }
 
-      return callback(new Error('Not allowed by CORS'));
+      return callback(new Error('CORS policy violation'));
     },
     methods: ["GET", "POST"],
     credentials: true,
@@ -97,35 +93,39 @@ const io = new Server(httpServer, {
 
 // Middleware
 app.use(helmet());
+
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  process.env.CORS_ORIGIN,
+  'http://localhost:3000',
+  'http://localhost:5173',
+].filter(Boolean); // Remove any undefined values
+
 app.use(
   cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
 
-      const allowedOrigins = [
-        process.env.FRONTEND_URL || "http://localhost:5173",
-        "http://localhost:3000",
-        "http://localhost:5173",
-      ];
-
-      // Allow localhost origins
+      // Allow explicitly configured origins
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
-      // Allow any origin from the same network (192.168.x.x or 10.x.x.x)
-      const networkRegex = /^(https?:\/\/)(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)[\d]+\.[\d]+(:[\d]+)?$/;
-      if (networkRegex.test(origin)) {
-        return callback(null, true);
-      }
-
-      // For development, allow all origins
+      // For development, allow localhost variations
       if (process.env.NODE_ENV === 'development') {
-        return callback(null, true);
+        const devOrigins = [
+          'http://localhost:3000',
+          'http://localhost:5173',
+          'http://127.0.0.1:3000',
+          'http://127.0.0.1:5173',
+        ];
+        if (devOrigins.includes(origin)) {
+          return callback(null, true);
+        }
       }
 
-      return callback(new Error('Not allowed by CORS'));
+      return callback(new Error('CORS policy violation'));
     },
     credentials: true,
   })

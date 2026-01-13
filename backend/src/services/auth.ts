@@ -6,9 +6,23 @@ import bcrypt from "bcryptjs";
 import { UserLevel } from "@trade-bot/shared";
 import { pool } from "../database";
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
-const JWT_REFRESH_SECRET =
-  process.env.JWT_REFRESH_SECRET || "your-refresh-secret";
+const JWT_SECRET = (() => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('JWT_SECRET environment variable required');
+  if (process.env.NODE_ENV === 'production' && secret.length < 32) {
+    throw new Error('JWT_SECRET must be 32+ characters in production');
+  }
+  return secret;
+})();
+
+const JWT_REFRESH_SECRET = (() => {
+  const secret = process.env.JWT_REFRESH_SECRET;
+  if (!secret) throw new Error('JWT_REFRESH_SECRET environment variable required');
+  if (process.env.NODE_ENV === 'production' && secret.length < 32) {
+    throw new Error('JWT_REFRESH_SECRET must be 32+ characters in production');
+  }
+  return secret;
+})();
 const ACCESS_TOKEN_EXPIRY = "4h"; // Increased from 1h to 4h
 const REFRESH_TOKEN_EXPIRY = "30d"; // Increased from 7d to 30d
 

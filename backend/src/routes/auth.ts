@@ -36,10 +36,24 @@ router.post("/register", async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: result.message });
     }
 
+    // Set httpOnly cookies for security
+    res.cookie('accessToken', result.tokens!.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 4 * 60 * 60 * 1000, // 4 hours
+    });
+
+    res.cookie('refreshToken', result.tokens!.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+
     res.status(201).json({
       success: true,
       user: result.user,
-      tokens: result.tokens,
     });
   } catch (err) {
     console.error("Registration error:", err);
@@ -67,10 +81,25 @@ router.post("/login", async (req: Request, res: Response) => {
     }
 
     console.log("Login successful for user:", result.user?.email);
+
+    // Set httpOnly cookies for security
+    res.cookie('accessToken', result.tokens!.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 4 * 60 * 60 * 1000, // 4 hours
+    });
+
+    res.cookie('refreshToken', result.tokens!.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+
     res.json({
       success: true,
       user: result.user,
-      tokens: result.tokens,
     });
   } catch (err) {
     console.error("Login error:", err);
@@ -94,14 +123,54 @@ router.post("/refresh", async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, error: result.message });
     }
 
+    // Set httpOnly cookies for security
+    res.cookie('accessToken', result.tokens!.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 4 * 60 * 60 * 1000, // 4 hours
+    });
+
+    res.cookie('refreshToken', result.tokens!.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+
     res.json({
       success: true,
       user: result.user,
-      tokens: result.tokens,
     });
   } catch (err) {
     console.error("Token refresh error:", err);
     res.status(500).json({ success: false, error: "Token refresh failed" });
+  }
+});
+
+// POST /api/auth/logout
+router.post("/logout", async (req: Request, res: Response) => {
+  try {
+    // Clear httpOnly cookies
+    res.clearCookie('accessToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+    });
+
+    res.clearCookie('refreshToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+    });
+
+    res.json({
+      success: true,
+      message: "Logged out successfully",
+    });
+  } catch (err) {
+    console.error("Logout error:", err);
+    res.status(500).json({ success: false, error: "Logout failed" });
   }
 });
 

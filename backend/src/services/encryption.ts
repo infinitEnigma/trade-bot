@@ -27,9 +27,18 @@ export class EncryptionService {
   private masterKey: string;
 
   constructor() {
-    this.masterKey =
-      process.env.ENCRYPTION_MASTER_KEY ||
-      "default-master-key-change-in-production";
+    // NO DEFAULTS - Fail fast if not configured
+    const key = process.env.ENCRYPTION_MASTER_KEY;
+    if (!key) {
+      throw new Error('ENCRYPTION_MASTER_KEY environment variable required');
+    }
+
+    // Validate production keys are strong (32+ chars)
+    if (process.env.NODE_ENV === 'production' && key.length < 32) {
+      throw new Error('ENCRYPTION_MASTER_KEY must be 32+ characters in production');
+    }
+
+    this.masterKey = key;
   }
 
   encrypt(plaintext: string): string {

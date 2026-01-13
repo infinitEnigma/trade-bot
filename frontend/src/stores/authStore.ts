@@ -11,52 +11,107 @@ interface User {
 
 interface AuthState {
   user: User | null;
-  accessToken: string | null;
-  refreshToken: string | null;
   isAuthenticated: boolean;
-  setAuth: (
-    user: User,
-    tokens: { accessToken: string; refreshToken: string }
-  ) => void;
+  isLoading: boolean;
+  setAuth: (user: User) => void;
   clearAuth: () => void;
   updateUser: (user: Partial<User>) => void;
+  setLoading: (loading: boolean) => void;
+  checkAuth: () => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
-      accessToken: null,
-      refreshToken: null,
       isAuthenticated: false,
+      isLoading: true,
 
-      setAuth: (user, tokens) =>
+      setAuth: (user) =>
         set({
           user,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
           isAuthenticated: true,
+          isLoading: false,
         }),
 
       clearAuth: () =>
         set({
           user: null,
-          accessToken: null,
-          refreshToken: null,
           isAuthenticated: false,
+          isLoading: false,
         }),
 
       updateUser: (updates) =>
         set((state) => ({
           user: state.user ? { ...state.user, ...updates } : null,
         })),
+
+      setLoading: (loading) => set({ isLoading: loading }),
+
+      checkAuth: async () => {
+        try {
+          set({ isLoading: true });
+          // Check if user is authenticated by making a request that requires auth
+          const response = await fetch('/api/user/profile', {
+            credentials: 'include', // Include httpOnly cookies
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+              set({
+                user: data.user,
+                isAuthenticated: true,
+                isLoading: false,
+              });
+            } else {
+              set({
+                user: null,
+                isAuthenticated: false,
+                isLoading: false,
+              });
+            }
+          } else {
+            set({
+              user: null,
+              isAuthenticated: false,
+              isLoading: false,
+            });
+          }
+        } catch (error) {
+          console.error('Auth check failed:', error);
+          set({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+          });
+        }
+      },
+
+      logout: async () => {
+        try {
+          // Call logout endpoint to clear cookies
+          await fetch('/api/auth/logout', {
+            method: 'POST',
+            credentials: 'include',
+          });
+        } catch (error) {
+          console.error('Logout request failed:', error);
+        } finally {
+          // Clear local state regardless of API call success
+          set({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+          });
+        }
+      },
     }),
     {
       name: "auth-storage",
       partialize: (state) => ({
         user: state.user,
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
     }
@@ -67,11 +122,12 @@ export const useAuth = () => {
   const store = useAuthStore();
   return {
     user: store.user,
-    accessToken: store.accessToken,
-    refreshToken: store.refreshToken,
     isAuthenticated: store.isAuthenticated,
+    isLoading: store.isLoading,
     setAuth: store.setAuth,
     clearAuth: store.clearAuth,
     updateUser: store.updateUser,
+    checkAuth: store.checkAuth,
+    logout: store.logout,
   };
 };
