@@ -60,46 +60,30 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
       "PERP_NEAR_USDC",
     ];
 
-    // Fetch chart data
+    // Fetch chart data with real-time updates
     const {
       data: historyData,
       isLoading,
       error,
     } = useQuery({
       queryKey: ["tv-history", selectedSymbol, selectedResolution],
-      queryFn: async () => {
-        console.log(
-          `📊 PriceChart: Fetching ${selectedSymbol}:${selectedResolution} at ${new Date().toLocaleTimeString()}`
-        );
-        const startTime = Date.now();
-        const result = await api.getTvHistory({
-          symbol: selectedSymbol,
-          resolution: selectedResolution,
-          from: Math.floor(Date.now() / 1000) - 86400, // 24 hours ago
-          to: Math.floor(Date.now() / 1000),
-        });
-        const duration = Date.now() - startTime;
-        console.log(
-          `⚡ PriceChart: ${selectedSymbol}:${selectedResolution} fetched in ${duration}ms, cached: ${
-            result.cached || false
-          }`
-        );
-
-        // Show cache status in UI
-        if (result.cached) {
-          console.log(
-            `🚀 PriceChart: Served from Redis cache - API call saved!`
-          );
-        }
-        return result;
-      },
-      refetchInterval: isVisible ? 5000 : false, // Pause when tab not visible
+      queryFn: () => api.getTvHistory({
+        symbol: selectedSymbol,
+        resolution: selectedResolution,
+        from: Math.floor(Date.now() / 1000) - 86400, // 24 hours ago
+        to: Math.floor(Date.now() / 1000),
+      }),
+      refetchInterval: isVisible ? 5000 : false, // Refresh every 5 seconds when visible
       enabled: isVisible, // Don't fetch when hidden
+      staleTime: 30000, // Consider data fresh for 30 seconds
+      gcTime: 300000, // Keep in cache for 5 minutes
     });
 
     // Transform TradingView data to Recharts format
     const transformData = (data: any) => {
-      if (!data?.success || !data.data) return [];
+      if (!data?.success || !data.data) {
+        return [];
+      }
 
       const {
         t: timestamps,
@@ -110,11 +94,16 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         v: volumes,
       } = data.data;
 
-      if (!timestamps || !opens || !highs || !lows || !closes) return [];
+      // Validate required arrays exist and are not empty
+      if (!timestamps || !opens || !highs || !lows || !closes ||
+          !Array.isArray(timestamps) || timestamps.length === 0) {
+        return [];
+      }
 
       const chartData = [];
       const prices: number[] = [];
 
+      // Process data points
       for (let i = 0; i < timestamps.length; i++) {
         const time = new Date(timestamps[i] * 1000);
         const open = opens[i];
@@ -122,6 +111,12 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         const low = lows[i];
         const close = closes[i];
         const volume = volumes?.[i] || 0;
+
+        // Validate data types
+        if (typeof open !== 'number' || typeof high !== 'number' ||
+            typeof low !== 'number' || typeof close !== 'number') {
+          continue;
+        }
 
         chartData.push({
           time: time.toLocaleTimeString([], {
@@ -140,11 +135,13 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         prices.push(close);
       }
 
-      // Calculate MA(20)
-      for (let i = 19; i < chartData.length; i++) {
-        const sum = prices.slice(i - 19, i + 1).reduce((a, b) => a + b, 0);
-        const avg = sum / 20;
-        (chartData[i] as any).ma20 = avg;
+      // Calculate MA(20) - only if we have enough data
+      if (prices.length >= 20) {
+        for (let i = 19; i < chartData.length; i++) {
+          const sum = prices.slice(i - 19, i + 1).reduce((a, b) => a + b, 0);
+          const avg = sum / 20;
+          (chartData[i] as any).ma20 = avg;
+        }
       }
 
       return chartData;

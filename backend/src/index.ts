@@ -84,24 +84,10 @@ const updateClientCount = (change: number) => {
   });
 };
 
-// Track HTTP API activity
+// Track HTTP API activity (simplified - just update timestamp)
 const trackApiActivity = () => {
-  // If we have API activity but no WebSocket connections, consider it as having clients
-  if (activeClients === 0) {
-    const timeSinceLastActivity = Date.now() - lastActivityTime;
-    // If there was recent API activity (within last 30 seconds), consider clients active
-    if (timeSinceLastActivity < 30000) {
-      console.log(`🔄 API activity detected, treating as active client`);
-      updateClientCount(1);
-      // Reset after 30 seconds of no activity
-      setTimeout(() => {
-        if (activeClients > 0) {
-          updateClientCount(-1);
-        }
-      }, 30000);
-    }
-  }
   lastActivityTime = Date.now();
+  // Removed artificial client count manipulation that was causing issues
 };
 
 const app = express();

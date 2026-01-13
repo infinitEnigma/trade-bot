@@ -235,7 +235,6 @@ async function connectKodiak(req: AuthenticatedRequest, res: Response) {
         .status(400)
         .json({ success: false, error: error.details[0].message });
     }
-
     const userId = req.user!.userId;
     let isVerified = false;
 
@@ -587,7 +586,7 @@ async function getKodiakPositions(req: AuthenticatedRequest, res: Response) {
     }
 
     const result = await pool.query(
-      "SELECT account_id, api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE user_id = $1",
+      "SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1",
       [userId]
     );
 
@@ -595,6 +594,12 @@ async function getKodiakPositions(req: AuthenticatedRequest, res: Response) {
       return res
         .status(400)
         .json({ success: false, error: "No Kodiak credentials found" });
+    }
+
+    if (!result.rows[0].verified) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Kodiak credentials not verified. Please reconnect." });
     }
 
     const accountId = result.rows[0].account_id;
@@ -605,6 +610,8 @@ async function getKodiakPositions(req: AuthenticatedRequest, res: Response) {
       result.rows[0].secret_key_encrypted
     );
 
+    console.log("Making Kodiak API call for positions - user:", userId, "account:", accountId);
+
     // Get positions from Kodiak API
     const positionsData = await makeKodiakRequest(
       "GET",
@@ -614,6 +621,8 @@ async function getKodiakPositions(req: AuthenticatedRequest, res: Response) {
       secretKey
     );
 
+    console.log("Kodiak positions response:", positionsData?.success, positionsData?.data?.rows?.length || 0);
+
     if (positionsData.success && positionsData.data) {
       const responseData = { success: true, data: positionsData.data };
 
@@ -622,12 +631,14 @@ async function getKodiakPositions(req: AuthenticatedRequest, res: Response) {
 
       res.json(responseData);
     } else {
+      console.error("Kodiak positions API failed:", positionsData);
       res
         .status(400)
-        .json({ success: false, error: "Failed to fetch positions" });
+        .json({ success: false, error: "Failed to fetch positions from Kodiak API" });
     }
   } catch (err) {
     console.error("Get Kodiak positions error:", err);
+    // Don't return 401 on Kodiak API failures - return 500 instead
     res
       .status(500)
       .json({ success: false, error: "Failed to get Kodiak positions" });

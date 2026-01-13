@@ -48,6 +48,12 @@ const Settings: React.FC = () => {
         setFormData({ accountId: "", apiKey: "", secretKey: "" });
       }
     },
+    onError: (error: any) => {
+      // If Kodiak API returns 401, the credentials are invalid
+      if (error?.response?.status === 401) {
+        console.log("Kodiak credentials invalid - user needs to reconnect");
+      }
+    },
   });
 
   // Disconnect Kodiak mutation

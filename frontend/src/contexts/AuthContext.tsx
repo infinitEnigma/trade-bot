@@ -27,26 +27,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       setLoading(true);
       console.log('AuthContext: Checking authentication...');
-      // Check authentication by making a request that requires auth
-      // Cookies are automatically included with credentials: 'include'
-      const response = await fetch('/api/user/profile', {
-        credentials: 'include',
-      });
 
-      console.log('AuthContext: Profile response status:', response.status);
+      // Check if we're on login/register pages to avoid unnecessary API calls
+      const currentPath = window.location.pathname;
+      if (currentPath === '/login' || currentPath === '/register') {
+        console.log('AuthContext: On auth page, skipping check');
+        setUser(null);
+        setLoading(false);
+        return;
+      }
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log('AuthContext: Profile response data:', data);
-        if (data.success) {
-          console.log('AuthContext: Setting user:', data.data);
-          setUser(data.data);
-        } else {
-          console.log('AuthContext: Profile request failed');
-          setUser(null);
-        }
+      // Use API client which handles cookie-based authentication properly
+      const data = await api.getProfile();
+      console.log('AuthContext: Profile response data:', data);
+      if (data.success) {
+        console.log('AuthContext: Setting user:', data.data);
+        setUser(data.data);
       } else {
-        console.log('AuthContext: Profile request not ok, status:', response.status);
+        console.log('AuthContext: Profile request failed');
         setUser(null);
       }
     } catch (error) {
@@ -66,25 +64,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     console.log("AuthContext: Starting login for:", email);
 
     try {
-      // Make login request - backend sets httpOnly cookies
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include', // Include cookies in request
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Login failed');
-      }
+      // Use API client for consistent cookie handling
+      const data = await api.login(email, password);
 
       if (data.success) {
-        // After successful login, check auth to get user data
-        await checkAuth();
+        // Set user data directly from login response
+        console.log('AuthContext: Login successful, setting user:', data.user);
+        setUser(data.user);
+
         toast.success("Login successful!");
       } else {
         throw new Error(data.error || 'Login failed');
@@ -98,25 +85,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const register = async (email: string, password: string) => {
     try {
-      // Make register request - backend sets httpOnly cookies
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Registration failed');
-      }
+      // Use API client for consistent cookie handling
+      const data = await api.register(email, password);
 
       if (data.success) {
-        // After successful registration, check auth to get user data
-        await checkAuth();
+        // Set user data directly from register response
+        console.log('AuthContext: Registration successful, setting user:', data.user);
+        setUser(data.user);
         toast.success("Account created successfully!");
       } else {
         throw new Error(data.error || 'Registration failed');
@@ -130,7 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const logout = async () => {
     try {
-      // Call logout endpoint to clear cookies
+      // Call logout endpoint to clear cookies - using direct fetch since logout is special
       await fetch('/api/auth/logout', {
         method: 'POST',
         credentials: 'include',

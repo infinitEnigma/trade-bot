@@ -4,6 +4,7 @@ import { Router, Request, Response } from "express";
 import Joi from "joi";
 import { v4 as uuidv4 } from "uuid";
 import { authService, TokenPayload } from "../services/auth";
+import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { Pool } from "pg";
 
 const router = Router();
@@ -15,31 +16,6 @@ const pool = new Pool({
   user: process.env.DB_USER || "postgres",
   password: process.env.DB_PASSWORD || "postgres",
 });
-
-interface AuthenticatedRequest extends Request {
-  user?: TokenPayload;
-}
-
-const authenticateToken = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: () => void
-) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
-
-  if (!token) {
-    return res.status(401).json({ success: false, error: "No token provided" });
-  }
-
-  const payload = await authService.validateToken(token);
-  if (!payload) {
-    return res.status(403).json({ success: false, error: "Invalid token" });
-  }
-
-  req.user = payload;
-  next();
-};
 
 const strategySchema = Joi.object({
   name: Joi.string().min(1).max(100).required(),
@@ -60,7 +36,7 @@ const strategySchema = Joi.object({
 // GET /api/strategies
 router.get(
   "/",
-  authenticateToken,
+  authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const result = await pool.query(
@@ -85,7 +61,7 @@ router.get(
 // POST /api/strategies
 router.post(
   "/",
-  authenticateToken,
+  authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { error, value } = strategySchema.validate(req.body);
@@ -116,10 +92,11 @@ router.post(
   }
 );
 
+
 // GET /api/strategies/:id
 router.get(
   "/:id",
-  authenticateToken,
+  authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const result = await pool.query(
@@ -148,7 +125,7 @@ router.get(
 // PUT /api/strategies/:id
 router.put(
   "/:id",
-  authenticateToken,
+  authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { error, value } = strategySchema.validate(req.body);
@@ -195,7 +172,7 @@ router.put(
 // DELETE /api/strategies/:id
 router.delete(
   "/:id",
-  authenticateToken,
+  authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       // Check if strategy exists
@@ -238,7 +215,7 @@ router.delete(
 // GET /api/strategies/:id/performance
 router.get(
   "/:id/performance",
-  authenticateToken,
+  authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const strategyResult = await pool.query(

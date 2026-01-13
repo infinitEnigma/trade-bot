@@ -167,6 +167,34 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 -- Add wallet_address column if it doesn't exist
 ALTER TABLE kodiak_credentials ADD COLUMN IF NOT EXISTS wallet_address VARCHAR(255);
 
+-- Safety Features Migration (Phase 2)
+-- Add columns for safety features to bot_instances table
+ALTER TABLE bot_instances
+ADD COLUMN IF NOT EXISTS last_heartbeat TIMESTAMP,
+ADD COLUMN IF NOT EXISTS account_balance DECIMAL(20, 8),
+ADD COLUMN IF NOT EXISTS max_leverage INTEGER DEFAULT 20,
+ADD COLUMN IF NOT EXISTS force_stop_reason VARCHAR(255),
+ADD COLUMN IF NOT EXISTS exposure DECIMAL(20, 8) DEFAULT 0,
+ADD COLUMN IF NOT EXISTS position DECIMAL(20, 8) DEFAULT 0;
+
+-- Add safety configuration table for user-specific risk limits
+CREATE TABLE IF NOT EXISTS safety_limits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id),
+  max_exposure_percent DECIMAL(5, 2) DEFAULT 80.0,
+  daily_loss_limit DECIMAL(20, 8),
+  max_position_size DECIMAL(20, 8),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for better query performance
+CREATE INDEX IF NOT EXISTS idx_bot_instances_user_strategy ON bot_instances(user_id, strategy_id);
+CREATE INDEX IF NOT EXISTS idx_bot_instances_status ON bot_instances(status);
+CREATE INDEX IF NOT EXISTS idx_bot_instances_last_heartbeat ON bot_instances(last_heartbeat);
+CREATE INDEX IF NOT EXISTS idx_kodiak_positions_user_symbol ON kodiak_positions(user_id, symbol);
+CREATE INDEX IF NOT EXISTS idx_trades_user_strategy_timestamp ON trades(user_id, strategy_id, executed_at DESC);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_kodiak_credentials_user_id ON kodiak_credentials(user_id);

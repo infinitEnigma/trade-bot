@@ -13,32 +13,20 @@ class ApiClient {
     console.log("Creating API client with baseURL:", API_BASE_URL);
     this.client = axios.create({
       baseURL: API_BASE_URL,
+      withCredentials: true, // Required for sending cookies
       headers: {
         "Content-Type": "application/json",
       },
     });
 
-    // Request interceptor to add auth token
+    // Request interceptor - cookies are sent automatically
     this.client.interceptors.request.use(
       (config: InternalAxiosRequestConfig) => {
-        const token = localStorage.getItem("accessToken");
         console.log("Sending request to:", config.url);
-        console.log(
-          "Token from localStorage:",
-          token ? `${token.substring(0, 20)}...` : "null"
-        );
-        if (token && config.headers) {
-          config.headers.Authorization = `Bearer ${token}`;
-          console.log(
-            "Authorization header set:",
-            `Bearer ${token.substring(0, 20)}...`
-          );
+        console.log("Using cookie-based authentication - no manual token needed");
 
-          // Track user activity when making authenticated requests
-          localStorage.setItem("lastActivity", Date.now().toString());
-        } else {
-          console.log("No token found, not setting Authorization header");
-        }
+        // Cookies are automatically included with credentials: 'include'
+        // No need to manually add Authorization header
         return config;
       },
       (error) => Promise.reject(error)
@@ -53,56 +41,41 @@ class ApiClient {
         // Handle connection errors (server unreachable)
         if (!error.response && error.code === 'ERR_NETWORK') {
           console.error('Server connection failed - redirecting to login');
-          // Clear tokens on connection failure
-          localStorage.removeItem("accessToken");
-          localStorage.removeItem("refreshToken");
+          // With cookie auth, clearing localStorage might still be needed for state
           window.dispatchEvent(new CustomEvent("auth:logout"));
           window.location.href = "/login";
           return Promise.reject(error);
         }
 
-        // Handle both 401 (unauthorized) and 403 (forbidden) as potential token issues
-        if ((error.response?.status === 401 || error.response?.status === 403) && !originalRequest._retry) {
+        // Handle 401 (unauthorized) - token might be expired
+        // But be smart: don't redirect on 401 for Kodiak API calls (external API failures)
+        const isKodiakRequest = originalRequest.url?.includes('/kodiak/') || originalRequest.url?.includes('orderly.org');
+
+        if (error.response?.status === 401 && !originalRequest._retry && !isKodiakRequest) {
+          console.log('Received 401 on backend API - redirecting to login (cookies invalid)');
           originalRequest._retry = true;
 
-          try {
-            const refreshToken = localStorage.getItem("refreshToken");
-            if (refreshToken) {
-              const response = await axios.post(
-                `${API_BASE_URL}/api/auth/refresh`,
-                {
-                  refreshToken,
-                }
-              );
-
-              const { accessToken, refreshToken: newRefreshToken } =
-                response.data.tokens;
-              localStorage.setItem("accessToken", accessToken);
-              if (newRefreshToken) {
-                localStorage.setItem("refreshToken", newRefreshToken);
-              }
-
-              originalRequest.headers.Authorization = `Bearer ${accessToken}`;
-              return this.client(originalRequest);
-            }
-          } catch (refreshError) {
-            // Clear tokens and redirect to login
-            localStorage.removeItem("accessToken");
-            localStorage.removeItem("refreshToken");
-
-            // Dispatch custom event to notify AuthContext of logout
-            window.dispatchEvent(new CustomEvent("auth:logout"));
-
-            // Redirect to login
-            window.location.href = "/login";
-          }
+          // Dispatch logout event to clear frontend state
+          window.dispatchEvent(new CustomEvent("auth:logout"));
+          window.location.href = "/login";
+          return Promise.reject(error);
         }
 
-        // Handle 500+ server errors by redirecting to login
+        // For Kodiak API 401 errors, don't redirect - just return the error
+        if (error.response?.status === 401 && isKodiakRequest) {
+          console.log('Received 401 on Kodiak API - not redirecting (external API credential issue)');
+          return Promise.reject(error);
+        }
+
+        // Handle 403 (forbidden) - user doesn't have permission
+        if (error.response?.status === 403) {
+          console.error('Received 403 - insufficient permissions');
+          return Promise.reject(error);
+        }
+
+        // Handle 500+ server errors
         if (error.response?.status >= 500) {
           console.error('Server error - redirecting to login');
-          localStorage.removeItem("accessToken");
-          localStorage.removeItem("refreshToken");
           window.dispatchEvent(new CustomEvent("auth:logout"));
           window.location.href = "/login";
         }
@@ -150,49 +123,7 @@ class ApiClient {
     return response.data;
   }
 
-  async connectKodiak(data: {
-    accountId: string;
-    apiKey: string;
-    secretKey: string;
-    walletSignature?: string;
-  }) {
-    const response = await this.client.post("/api/user/kodiak/connect", data);
-    return response.data;
-  }
 
-  async disconnectKodiak() {
-    const response = await this.client.delete("/api/user/kodiak/disconnect");
-    return response.data;
-  }
-
-  async getKodiakStatus() {
-    const response = await this.client.get("/api/user/kodiak/status");
-    return response.data;
-  }
-
-  async getKodiakPositions() {
-    const response = await this.client.get("/api/user/kodiak/positions");
-    return response.data;
-  }
-
-  async getKodiakTrades() {
-    const response = await this.client.get("/api/user/kodiak/trades");
-    return response.data;
-  }
-
-  async getKodiakBalance() {
-    const response = await this.client.get("/api/user/kodiak/balance");
-    return response.data;
-  }
-
-  async verifyWallet(data: {
-    walletAddress: string;
-    signature: string;
-    message: string;
-  }) {
-    const response = await this.client.post("/api/user/verify-wallet", data);
-    return response.data;
-  }
 
   // Strategy endpoints
   async updateStrategy(
@@ -294,6 +225,50 @@ class ApiClient {
 
   async emergencyStop(botId: string) {
     const response = await this.client.post("/api/bot/emergency-stop", { botId });
+    return response.data;
+  }
+
+  // Kodiak API methods
+  async connectKodiak(data: {
+    accountId: string;
+    apiKey: string;
+    secretKey: string;
+  }) {
+    const response = await this.client.post("/api/user/kodiak/connect", data);
+    return response.data;
+  }
+
+  async disconnectKodiak() {
+    const response = await this.client.delete("/api/user/kodiak/disconnect");
+    return response.data;
+  }
+
+  async getKodiakStatus() {
+    const response = await this.client.get("/api/user/kodiak/status");
+    return response.data;
+  }
+
+  async getKodiakPositions() {
+    const response = await this.client.get("/api/user/kodiak/positions");
+    return response.data;
+  }
+
+  async getKodiakTrades() {
+    const response = await this.client.get("/api/user/kodiak/trades");
+    return response.data;
+  }
+
+  async getKodiakBalance() {
+    const response = await this.client.get("/api/user/kodiak/balance");
+    return response.data;
+  }
+
+  async verifyWallet(data: {
+    walletAddress: string;
+    signature: string;
+    message: string;
+  }) {
+    const response = await this.client.post("/api/user/verify-wallet", data);
     return response.data;
   }
 }

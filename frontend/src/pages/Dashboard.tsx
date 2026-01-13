@@ -77,23 +77,37 @@ const Dashboard: React.FC = () => {
   const [selectedSymbol, setSelectedSymbol] = useState("PERP_BTC_USDC");
   //const [showWalletDialog, setShowWalletDialog] = useState(false);
 
-  // Fetch Kodiak data
-  const { data: positionsData, isLoading: positionsLoading } = useQuery({
+  // Fetch Kodiak data - re-enabled with proper error handling
+  const { data: positionsData, isLoading: positionsLoading, error: positionsError } = useQuery({
     queryKey: ["kodiak-positions"],
     queryFn: () => api.getKodiakPositions(),
     enabled: user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED",
+    retry: (failureCount, error: any) => {
+      // Don't retry on 400 errors (invalid credentials)
+      if (error?.response?.status === 400) return false;
+      // Retry up to 2 times for other errors
+      return failureCount < 2;
+    },
   });
 
-  const { data: tradesData, isLoading: tradesLoading } = useQuery({
+  const { data: tradesData, isLoading: tradesLoading, error: tradesError } = useQuery({
     queryKey: ["kodiak-trades"],
     queryFn: () => api.getKodiakTrades(),
     enabled: user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED",
+    retry: (failureCount, error: any) => {
+      if (error?.response?.status === 400) return false;
+      return failureCount < 2;
+    },
   });
 
-  const { data: balanceData, isLoading: balanceLoading } = useQuery({
+  const { data: balanceData, isLoading: balanceLoading, error: balanceError } = useQuery({
     queryKey: ["kodiak-balance"],
     queryFn: () => api.getKodiakBalance(),
     enabled: user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED",
+    retry: (failureCount, error: any) => {
+      if (error?.response?.status === 400) return false;
+      return failureCount < 2;
+    },
   });
 
   // Process positions data
