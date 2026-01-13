@@ -3,7 +3,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { User } from "@trade-bot/shared";
 import { api } from "../lib/api";
-import { isTokenExpired } from "../lib/utils";
 import { toast } from "sonner";
 
 interface AuthContextType {
@@ -12,7 +11,7 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
 
@@ -25,102 +24,124 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [loading, setLoading] = useState(true);
 
   const checkAuth = async () => {
-    const token = localStorage.getItem("accessToken");
-    if (token) {
-      // Check if token is expired before making API call
-      if (isTokenExpired(token)) {
-        console.log("Token is expired, clearing tokens");
-        localStorage.removeItem("accessToken");
-        localStorage.removeItem("refreshToken");
-        setUser(null);
-      } else {
-        try {
-          const response = await api.getProfile();
-          setUser(response.data);
-        } catch (error) {
-          localStorage.removeItem("accessToken");
-          localStorage.removeItem("refreshToken");
+    try {
+      setLoading(true);
+      console.log('AuthContext: Checking authentication...');
+      // Check authentication by making a request that requires auth
+      // Cookies are automatically included with credentials: 'include'
+      const response = await fetch('/api/user/profile', {
+        credentials: 'include',
+      });
+
+      console.log('AuthContext: Profile response status:', response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('AuthContext: Profile response data:', data);
+        if (data.success) {
+          console.log('AuthContext: Setting user:', data.data);
+          setUser(data.data);
+        } else {
+          console.log('AuthContext: Profile request failed');
           setUser(null);
         }
+      } else {
+        console.log('AuthContext: Profile request not ok, status:', response.status);
+        setUser(null);
       }
+    } catch (error) {
+      console.error('AuthContext: Auth check failed:', error);
+      setUser(null);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  // Handle logout events from API client
-  useEffect(() => {
-    const handleLogout = () => {
-      setUser(null);
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("refreshToken");
-    };
-
-    window.addEventListener("auth:logout", handleLogout);
-
-    return () => {
-      window.removeEventListener("auth:logout", handleLogout);
-    };
-  }, []);
-
-  // Token refresh handled by API interceptors when needed
-  // No proactive polling to reduce performance overhead
-
-  // Track user activity (single essential event listener)
-  useEffect(() => {
-    const updateActivity = () => {
-      localStorage.setItem("lastActivity", Date.now().toString());
-    };
-
-    // Only track clicks - essential for user activity detection
-    document.addEventListener("click", updateActivity, { passive: true });
-
-    return () => {
-      document.removeEventListener("click", updateActivity);
-    };
-  }, []);
-
+  // Check auth on mount
   useEffect(() => {
     checkAuth();
   }, []);
 
   const login = async (email: string, password: string) => {
     console.log("AuthContext: Starting login for:", email);
-    const response = await api.login(email, password);
-    console.log("AuthContext: Login response:", response);
-    const { tokens, user: userData } = response;
-    const { accessToken, refreshToken } = tokens;
-    console.log("AuthContext: Storing tokens:");
-    console.log(
-      "- accessToken:",
-      accessToken ? `${accessToken.substring(0, 20)}...` : "null"
-    );
-    console.log(
-      "- refreshToken:",
-      refreshToken ? `${refreshToken.substring(0, 20)}...` : "null"
-    );
-    console.log("- userData:", userData);
-    localStorage.setItem("accessToken", accessToken);
-    localStorage.setItem("refreshToken", refreshToken);
-    setUser(userData);
-    console.log("AuthContext: User set to:", userData);
-    toast.success("Login successful!");
+
+    try {
+      // Make login request - backend sets httpOnly cookies
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // Include cookies in request
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Login failed');
+      }
+
+      if (data.success) {
+        // After successful login, check auth to get user data
+        await checkAuth();
+        toast.success("Login successful!");
+      } else {
+        throw new Error(data.error || 'Login failed');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      toast.error(error instanceof Error ? error.message : 'Login failed');
+      throw error;
+    }
   };
 
   const register = async (email: string, password: string) => {
-    const response = await api.register(email, password);
-    const { tokens, user: userData } = response;
-    const { accessToken, refreshToken } = tokens;
-    localStorage.setItem("accessToken", accessToken);
-    localStorage.setItem("refreshToken", refreshToken);
-    setUser(userData);
-    toast.success("Account created successfully!");
+    try {
+      // Make register request - backend sets httpOnly cookies
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Registration failed');
+      }
+
+      if (data.success) {
+        // After successful registration, check auth to get user data
+        await checkAuth();
+        toast.success("Account created successfully!");
+      } else {
+        throw new Error(data.error || 'Registration failed');
+      }
+    } catch (error) {
+      console.error('Registration error:', error);
+      toast.error(error instanceof Error ? error.message : 'Registration failed');
+      throw error;
+    }
   };
 
-  const logout = () => {
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("refreshToken");
-    setUser(null);
-    toast.success("Logged out successfully");
+  const logout = async () => {
+    try {
+      // Call logout endpoint to clear cookies
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('Logout request failed:', error);
+    } finally {
+      // Clear local state regardless of API call success
+      setUser(null);
+      toast.success("Logged out successfully");
+    }
   };
 
   const refreshUser = async () => {

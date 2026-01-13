@@ -291,6 +291,11 @@ class ApiClient {
     const response = await this.client.post("/api/bot/stop", { botId });
     return response.data;
   }
+
+  async emergencyStop(botId: string) {
+    const response = await this.client.post("/api/bot/emergency-stop", { botId });
+    return response.data;
+  }
 }
 
 export const api = ApiClient.getInstance();

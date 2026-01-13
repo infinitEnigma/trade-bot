@@ -62,7 +62,83 @@ export class OrderlyClient {
     };
   }
 
+  async validatePositionSize(
+    request: OrderRequest
+  ): Promise<void> {
+    try {
+      // Get account info for balance and limits
+      const accountInfo = await this.getAccountInfo();
+      const positions = await this.getPositions();
+
+      // Calculate current exposure
+      const currentExposure = positions.reduce((total, position) => {
+        return total + Math.abs(position.position_qty * position.mark_price);
+      }, 0);
+
+      // Get current price for notional calculation
+      const ticker = await this.getTicker(request.symbol);
+      const currentPrice = ticker.price;
+
+      // Calculate order notional value
+      const orderNotional = request.orderQuantity * currentPrice;
+
+      // Validation rules from docs
+      const maxLeverage = accountInfo.max_leverage || 20;
+      const accountBalance = accountInfo.total_value || 0; // Assuming this field exists
+      const maxExposurePercent = 0.8; // 80% of account balance
+
+      // Rule 1: Notional amount <= account_balance * max_leverage
+      const maxAllowedNotional = accountBalance * maxLeverage;
+      if (orderNotional > maxAllowedNotional) {
+        throw new Error(
+          `Order too large. Notional: ${orderNotional}, Max allowed: ${maxAllowedNotional}`
+        );
+      }
+
+      // Rule 2: Total exposure <= 80% of account balance
+      const newTotalExposure = currentExposure + orderNotional;
+      const maxTotalExposure = accountBalance * maxExposurePercent;
+      if (newTotalExposure > maxTotalExposure) {
+        throw new Error(
+          `Total exposure too high. New exposure: ${newTotalExposure}, Max allowed: ${maxTotalExposure}`
+        );
+      }
+
+      // Rule 3: Check position limits per symbol
+      const symbolPosition = positions.find(p => p.symbol === request.symbol);
+      if (symbolPosition) {
+        const symbolExposure = Math.abs(symbolPosition.position_qty * symbolPosition.mark_price);
+        const newSymbolExposure = symbolExposure + orderNotional;
+        const maxSymbolExposure = accountBalance * 0.5; // 50% per symbol limit
+
+        if (newSymbolExposure > maxSymbolExposure) {
+          throw new Error(
+            `Symbol exposure too high. Symbol: ${request.symbol}, New exposure: ${newSymbolExposure}, Max allowed: ${maxSymbolExposure}`
+          );
+        }
+      }
+
+      // Rule 4: Validate against Orderly max_notional limits
+      const maxNotionalLimits = accountInfo.max_notional || {};
+      const symbolMaxNotional = maxNotionalLimits[request.symbol];
+      if (symbolMaxNotional && orderNotional > symbolMaxNotional) {
+        throw new Error(
+          `Order exceeds Orderly max notional limit for ${request.symbol}. Order: ${orderNotional}, Limit: ${symbolMaxNotional}`
+        );
+      }
+
+      console.log(`✅ Position size validation passed for order: ${orderNotional} notional`);
+
+    } catch (error) {
+      console.error('❌ Position size validation failed:', error);
+      throw error;
+    }
+  }
+
   async createOrder(request: OrderRequest): Promise<OrderResponse> {
+    // Validate position size before placing order
+    await this.validatePositionSize(request);
+
     const path = "/v1/order";
     const headers = await this.signRequest("POST", path, request);
 

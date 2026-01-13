@@ -17,6 +17,8 @@ const Login: React.FC = () => {
 
     try {
       await login(email, password);
+      // Give a moment for the auth state to update
+      await new Promise(resolve => setTimeout(resolve, 200));
       navigate("/dashboard");
     } catch (error) {
       // Error is already handled in the context

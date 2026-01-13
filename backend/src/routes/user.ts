@@ -2,7 +2,8 @@
 
 import { Router, Request, Response } from "express";
 import Joi from "joi";
-import { authService, TokenPayload } from "../services/auth";
+import { authService } from "../services/auth";
+import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { encryptionService } from "../services/encryption";
 import { redisService } from "../services/redis";
 import { Pool } from "pg";
@@ -70,56 +71,9 @@ const kodiakConnectionSchema = Joi.object({
   walletSignature: Joi.string().optional(),
 });
 
-interface AuthenticatedRequest extends Request {
-  user?: TokenPayload;
-}
 
-// Middleware to verify JWT token
-const authenticateToken = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: () => void
-) => {
-  console.log(`[${req.method}] ${req.path} - Checking authentication`);
-  const authHeader = req.headers["authorization"];
-  console.log("Authorization header:", authHeader ? "present" : "missing");
 
-  const token = authHeader && authHeader.split(" ")[1];
-  console.log("Token:", token ? "present" : "missing");
-  console.log("Token length:", token?.length);
 
-  if (!token) {
-    console.log("No token provided - returning 401");
-    return res.status(401).json({ success: false, error: "No token provided" });
-  }
-
-  const payload = await authService.validateToken(token);
-  console.log("Token validation result:", payload ? "valid" : "invalid");
-  if (!payload) {
-    console.log("Token validation failed - attempting to decode manually");
-    try {
-      // Try to decode without verification to see token structure
-      const decoded = JSON.parse(
-        Buffer.from(token.split(".")[1], "base64").toString()
-      );
-      console.log("Token payload:", decoded);
-    } catch (e) {
-      console.log(
-        "Could not decode token:",
-        e instanceof Error ? e.message : String(e)
-      );
-    }
-  }
-
-  if (!payload) {
-    console.log("Invalid token - returning 403");
-    return res.status(403).json({ success: false, error: "Invalid token" });
-  }
-
-  req.user = payload;
-  console.log("Authentication successful for user:", payload.userId);
-  next();
-};
 
 // Handler functions
 async function getProfile(req: AuthenticatedRequest, res: Response) {
@@ -162,7 +116,7 @@ async function getProfile(req: AuthenticatedRequest, res: Response) {
 }
 
 // GET /api/user/profile
-router.get("/profile", authenticateToken, getProfile);
+router.get("/profile", authMiddleware, getProfile);
 
 // Helper function to generate Kodiak signature
 async function generateKodiakSignature(
@@ -561,7 +515,7 @@ async function connectKodiak(req: AuthenticatedRequest, res: Response) {
 }
 
 // POST /api/user/kodiak/connect
-router.post("/kodiak/connect", authenticateToken, connectKodiak);
+router.post("/kodiak/connect", authMiddleware, connectKodiak);
 
 async function disconnectKodiak(req: AuthenticatedRequest, res: Response) {
   try {
@@ -587,7 +541,7 @@ async function disconnectKodiak(req: AuthenticatedRequest, res: Response) {
 }
 
 // DELETE /api/user/kodiak/disconnect
-router.delete("/kodiak/disconnect", authenticateToken, disconnectKodiak);
+router.delete("/kodiak/disconnect", authMiddleware, disconnectKodiak);
 
 async function getKodiakStatus(req: AuthenticatedRequest, res: Response) {
   try {
@@ -618,7 +572,7 @@ async function getKodiakStatus(req: AuthenticatedRequest, res: Response) {
 }
 
 // GET /api/user/kodiak/status
-router.get("/kodiak/status", authenticateToken, getKodiakStatus);
+router.get("/kodiak/status", authMiddleware, getKodiakStatus);
 
 async function getKodiakPositions(req: AuthenticatedRequest, res: Response) {
   try {
@@ -681,7 +635,7 @@ async function getKodiakPositions(req: AuthenticatedRequest, res: Response) {
 }
 
 // GET /api/user/kodiak/positions
-router.get("/kodiak/positions", authenticateToken, getKodiakPositions);
+router.get("/kodiak/positions", authMiddleware, getKodiakPositions);
 
 async function getKodiakTrades(req: AuthenticatedRequest, res: Response) {
   try {
@@ -742,7 +696,7 @@ async function getKodiakTrades(req: AuthenticatedRequest, res: Response) {
 }
 
 // GET /api/user/kodiak/trades
-router.get("/kodiak/trades", authenticateToken, getKodiakTrades);
+router.get("/kodiak/trades", authMiddleware, getKodiakTrades);
 
 async function getKodiakBalance(req: AuthenticatedRequest, res: Response) {
   try {
@@ -841,7 +795,7 @@ async function getKodiakBalance(req: AuthenticatedRequest, res: Response) {
 }
 
 // GET /api/user/kodiak/balance
-router.get("/kodiak/balance", authenticateToken, getKodiakBalance);
+router.get("/kodiak/balance", authMiddleware, getKodiakBalance);
 
 // POST /api/user/verify-wallet
 async function verifyWallet(req: AuthenticatedRequest, res: Response) {
@@ -884,6 +838,6 @@ async function verifyWallet(req: AuthenticatedRequest, res: Response) {
 }
 
 // POST /api/user/verify-wallet
-router.post("/verify-wallet", authenticateToken, verifyWallet);
+router.post("/verify-wallet", authMiddleware, verifyWallet);
 
 export { router as userRoutes };

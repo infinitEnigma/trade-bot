@@ -4,7 +4,7 @@ import React from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import { Play, Square, Loader2 } from "lucide-react";
+import { Play, Square, Loader2, AlertTriangle } from "lucide-react";
 
 interface BotControlsProps {
   strategyId: string;
@@ -46,6 +46,18 @@ export const BotControls: React.FC<BotControlsProps> = ({
     },
   });
 
+  // Emergency stop mutation
+  const emergencyStopMutation = useMutation({
+    mutationFn: () => api.emergencyStop(bot!.id),
+    onSuccess: () => {
+      toast.success("Emergency stop initiated!");
+      onStatusChange();
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.error || "Failed to emergency stop bot");
+    },
+  });
+
   const isStarting = startMutation.isPending;
   const isStopping = stopMutation.isPending;
 
@@ -70,18 +82,36 @@ export const BotControls: React.FC<BotControlsProps> = ({
   // Bot exists - show appropriate controls based on status
   if (bot.status === "RUNNING") {
     return (
-      <button
-        onClick={() => stopMutation.mutate()}
-        disabled={isStopping}
-        className="p-2 rounded-lg hover:bg-surface transition-colors disabled:opacity-50"
-        title="Stop Bot"
-      >
-        {isStopping ? (
-          <Loader2 className="w-4 h-4 animate-spin text-orange-400" />
-        ) : (
-          <Square className="w-4 h-4 text-red-400 hover:text-red-300" />
-        )}
-      </button>
+      <div className="flex gap-2">
+        <button
+          onClick={() => stopMutation.mutate()}
+          disabled={isStopping}
+          className="p-2 rounded-lg hover:bg-surface transition-colors disabled:opacity-50"
+          title="Stop Bot"
+        >
+          {isStopping ? (
+            <Loader2 className="w-4 h-4 animate-spin text-orange-400" />
+          ) : (
+            <Square className="w-4 h-4 text-red-400 hover:text-red-300" />
+          )}
+        </button>
+        <button
+          onClick={() => {
+            if (window.confirm('Are you sure you want to EMERGENCY STOP this bot? This will cancel all orders immediately.')) {
+              emergencyStopMutation.mutate();
+            }
+          }}
+          disabled={emergencyStopMutation.isPending}
+          className="p-2 rounded-lg bg-red-600 hover:bg-red-700 transition-colors disabled:opacity-50 border-2 border-red-500"
+          title="Emergency Stop - Cancel All Orders"
+        >
+          {emergencyStopMutation.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin text-white" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-white" />
+          )}
+        </button>
+      </div>
     );
   }
 

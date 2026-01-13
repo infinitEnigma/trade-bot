@@ -2,7 +2,8 @@
 
 import { Router, Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
-import { authService, TokenPayload } from "../services/auth";
+import { authService } from "../services/auth";
+import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { Pool } from "pg";
 
 const router = Router();
@@ -15,35 +16,10 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD || "postgres",
 });
 
-interface AuthenticatedRequest extends Request {
-  user?: TokenPayload;
-}
-
-const authenticateToken = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: () => void
-) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
-
-  if (!token) {
-    return res.status(401).json({ success: false, error: "No token provided" });
-  }
-
-  const payload = await authService.validateToken(token);
-  if (!payload) {
-    return res.status(403).json({ success: false, error: "Invalid token" });
-  }
-
-  req.user = payload;
-  next();
-};
-
 // GET /api/bot/instances
 router.get(
   "/instances",
-  authenticateToken,
+  authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const result = await pool.query(
@@ -72,7 +48,7 @@ router.get(
 // POST /api/bot/start
 router.post(
   "/start",
-  authenticateToken,
+  authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { strategyId } = req.body;
@@ -153,7 +129,7 @@ router.post(
 // POST /api/bot/stop
 router.post(
   "/stop",
-  authenticateToken,
+  authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { botId } = req.body;
@@ -215,7 +191,7 @@ router.post(
 // GET /api/bot/status/:botId
 router.get(
   "/status/:botId",
-  authenticateToken,
+  authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const result = await pool.query(
@@ -247,7 +223,7 @@ router.get(
 // GET /api/bot/performance/:botId
 router.get(
   "/performance/:botId",
-  authenticateToken,
+  authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const botResult = await pool.query(
@@ -311,6 +287,127 @@ router.get(
     }
   }
 );
+
+// POST /api/bot/emergency-stop
+router.post(
+  "/emergency-stop",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { botId } = req.body;
+
+      if (!botId) {
+        return res
+          .status(400)
+          .json({ success: false, error: "Bot ID required" });
+      }
+
+      // Verify bot belongs to user
+      const botResult = await pool.query(
+        "SELECT * FROM bot_instances WHERE id = $1 AND user_id = $2",
+        [botId, req.user!.userId]
+      );
+
+      if (botResult.rows.length === 0) {
+        return res.status(404).json({ success: false, error: "Bot not found" });
+      }
+
+      const bot = botResult.rows[0];
+
+      if (bot.status !== "RUNNING") {
+        return res
+          .status(400)
+          .json({ success: false, error: "Bot is not running" });
+      }
+
+      // Update bot status to FORCE_STOPPING
+      await pool.query(
+        "UPDATE bot_instances SET status = 'FORCE_STOPPING' WHERE id = $1",
+        [botId]
+      );
+
+      // Log emergency stop action
+      await pool.query(
+        "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
+        [req.user!.userId, "EMERGENCY_STOP", { botId, strategyId: bot.strategy_id }]
+      );
+
+      // Emit WebSocket event to notify bot engine - CANCEL_ALL_ORDERS
+      const io = req.app.get("io");
+      io.emit("bot:emergency-stop", {
+        botId,
+        strategyId: bot.strategy_id,
+        action: 'CANCEL_ALL_ORDERS',
+        timestamp: Date.now()
+      });
+
+      // Set timeout to mark as stopped if bot doesn't respond
+      setTimeout(async () => {
+        try {
+          const currentBot = await pool.query(
+            "SELECT status FROM bot_instances WHERE id = $1",
+            [botId]
+          );
+
+          if (currentBot.rows[0]?.status === 'FORCE_STOPPING') {
+            await pool.query(
+              "UPDATE bot_instances SET status = 'STOPPED' WHERE id = $1",
+              [botId]
+            );
+
+            // Update strategy as inactive
+            await pool.query("UPDATE strategies SET active = false WHERE id = $1", [
+              bot.strategy_id,
+            ]);
+          }
+        } catch (error) {
+          console.error('Emergency stop timeout error:', error);
+        }
+      }, 30000); // 30 second timeout
+
+      res.json({
+        success: true,
+        data: {
+          botId,
+          status: "FORCE_STOPPING",
+          message: "Emergency stop initiated. All orders will be cancelled.",
+        },
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      console.error("Emergency stop error:", err);
+      res.status(500).json({ success: false, error: "Failed to initiate emergency stop" });
+    }
+  }
+);
+
+// POST /api/bot/heartbeat (called by bot engine)
+router.post("/heartbeat", async (req: Request, res: Response) => {
+  try {
+    const { bot_id, status, position, exposure, timestamp } = req.body;
+
+    if (!bot_id) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Bot ID required" });
+    }
+
+    // Update bot with heartbeat data
+    await pool.query(
+      `UPDATE bot_instances
+       SET status = $1, position = $2, exposure = $3, last_heartbeat = $4, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $5`,
+      [status, position || 0, exposure || 0, new Date(timestamp || Date.now()), bot_id]
+    );
+
+    console.log(`❤️ Bot ${bot_id} heartbeat: status=${status}, position=${position}, exposure=${exposure}`);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Heartbeat error:", err);
+    res.status(500).json({ success: false, error: "Failed to record heartbeat" });
+  }
+});
 
 // POST /api/bot/report-trade (called by bot engine)
 router.post("/report-trade", async (req: Request, res: Response) => {
@@ -385,5 +482,39 @@ router.post("/report-trade", async (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: "Failed to report trade" });
   }
 });
+
+// Dead bot detection - runs every 10 seconds
+setInterval(async () => {
+  try {
+    const deadBots = await pool.query(
+      `SELECT id, strategy_id FROM bot_instances
+       WHERE status IN ('RUNNING', 'FORCE_STOPPING')
+       AND last_heartbeat < NOW() - INTERVAL '60 seconds'`
+    );
+
+    for (const bot of deadBots.rows) {
+      console.log(`💀 Detected dead bot: ${bot.id}, marking as ERROR`);
+
+      // Mark bot as dead/error
+      await pool.query(
+        "UPDATE bot_instances SET status = 'ERROR', last_error = 'Bot heartbeat timeout - marked as dead' WHERE id = $1",
+        [bot.id]
+      );
+
+      // Update strategy as inactive
+      await pool.query("UPDATE strategies SET active = false WHERE id = $1", [
+        bot.strategy_id,
+      ]);
+
+      // Log the dead bot detection
+      await pool.query(
+        "INSERT INTO audit_logs (user_id, action, details) VALUES ((SELECT user_id FROM bot_instances WHERE id = $1), $2, $3)",
+        [bot.id, "BOT_DEAD_DETECTED", { botId: bot.id, reason: "heartbeat_timeout" }]
+      );
+    }
+  } catch (error) {
+    console.error('Dead bot detection error:', error);
+  }
+}, 10000); // Check every 10 seconds
 
 export { router as botRoutes };

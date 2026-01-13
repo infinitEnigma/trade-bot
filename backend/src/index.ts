@@ -5,8 +5,54 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import cookieParser from "cookie-parser";
 import { createServer } from "http";
 import { Server } from "socket.io";
+
+// Add at the very top of index.ts, before any other code
+const REQUIRED_ENV_VARS = [
+  'DB_HOST',
+  'DB_PORT',
+  'DB_NAME',
+  'DB_USER',
+  'DB_PASSWORD',
+  'REDIS_URL',
+  'JWT_SECRET',
+  'JWT_REFRESH_SECRET',
+  'ENCRYPTION_MASTER_KEY',
+  'NODE_ENV'
+];
+
+function validateEnvironment(): void {
+  const missing = REQUIRED_ENV_VARS.filter(key => !process.env[key]);
+
+  if (missing.length > 0) {
+    console.error('❌ Missing required environment variables:');
+    missing.forEach(key => console.error(`   - ${key}`));
+    console.error('\nCreate .env file or set environment variables.');
+    console.error('See .env.example for template.');
+    process.exit(1);
+  }
+
+  // Validate secret strength in production
+  if (process.env.NODE_ENV === 'production') {
+    const secrets = ['JWT_SECRET', 'JWT_REFRESH_SECRET', 'ENCRYPTION_MASTER_KEY'];
+    secrets.forEach(key => {
+      const value = process.env[key]!;
+      if (value.length < 32) {
+        console.error(
+          `❌ ${key} must be at least 32 characters in production.\n` +
+          `Current length: ${value.length}`
+        );
+        process.exit(1);
+      }
+    });
+  }
+
+  console.log('✅ Environment validation passed');
+}
+
+validateEnvironment();
 
 // Import routes
 import { authRoutes } from "./routes/auth";
@@ -71,7 +117,7 @@ const io = new Server(httpServer, {
         return callback(null, true);
       }
 
-      // For development, allow localhost variations
+      // For development, allow localhost and local network access
       if (process.env.NODE_ENV === 'development') {
         const devOrigins = [
           'http://localhost:3000',
@@ -80,6 +126,12 @@ const io = new Server(httpServer, {
           'http://127.0.0.1:5173',
         ];
         if (devOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+
+        // Allow local network access (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+        const networkRegex = /^(https?:\/\/)(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)[\d]+\.[\d]+(:[\d]+)?$/;
+        if (networkRegex.test(origin)) {
           return callback(null, true);
         }
       }
@@ -112,7 +164,7 @@ app.use(
         return callback(null, true);
       }
 
-      // For development, allow localhost variations
+      // For development, allow localhost and local network access
       if (process.env.NODE_ENV === 'development') {
         const devOrigins = [
           'http://localhost:3000',
@@ -123,6 +175,12 @@ app.use(
         if (devOrigins.includes(origin)) {
           return callback(null, true);
         }
+
+        // Allow local network access (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+        const networkRegex = /^(https?:\/\/)(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)[\d]+\.[\d]+(:[\d]+)?$/;
+        if (networkRegex.test(origin)) {
+          return callback(null, true);
+        }
       }
 
       return callback(new Error('CORS policy violation'));
@@ -130,6 +188,7 @@ app.use(
     credentials: true,
   })
 );
+app.use(cookieParser());
 app.use(express.json());
 
 // Rate limiting
