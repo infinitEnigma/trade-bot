@@ -48,11 +48,15 @@ class ApiClient {
         }
 
         // Handle 401 (unauthorized) - token might be expired
-        // But be smart: don't redirect on 401 for Kodiak API calls (external API failures)
-        const isKodiakRequest = originalRequest.url?.includes('/kodiak/') || originalRequest.url?.includes('orderly.org');
+        // Only redirect on auth endpoints (login/register/me) - other 401s might be external API failures
+        const isAuthEndpoint = originalRequest.url?.includes('/api/auth/');
+        const isUserProfileEndpoint = originalRequest.url?.includes('/api/user/profile');
 
-        if (error.response?.status === 401 && !originalRequest._retry && !isKodiakRequest) {
-          console.log('Received 401 on backend API - redirecting to login (cookies invalid)');
+        if (error.response?.status === 401 && !originalRequest._retry && (isAuthEndpoint || isUserProfileEndpoint)) {
+          console.log('Received 401 on auth endpoint - redirecting to login (authentication required)', {
+            url: originalRequest.url,
+            status: error.response.status
+          });
           originalRequest._retry = true;
 
           // Dispatch logout event to clear frontend state
@@ -61,9 +65,12 @@ class ApiClient {
           return Promise.reject(error);
         }
 
-        // For Kodiak API 401 errors, don't redirect - just return the error
-        if (error.response?.status === 401 && isKodiakRequest) {
-          console.log('Received 401 on Kodiak API - not redirecting (external API credential issue)');
+        // For other 401 errors (market data, external APIs), don't redirect - just return the error
+        if (error.response?.status === 401) {
+          console.log('Received 401 on non-auth endpoint - not redirecting (may be external API)', {
+            url: originalRequest.url,
+            status: error.response.status
+          });
           return Promise.reject(error);
         }
 
@@ -73,9 +80,10 @@ class ApiClient {
           return Promise.reject(error);
         }
 
-        // Handle 500+ server errors
-        if (error.response?.status >= 500) {
-          console.error('Server error - redirecting to login');
+        // Handle 500+ server errors - but don't redirect for client errors (4xx)
+        // Only redirect on server errors that indicate auth system failure
+        if (error.response?.status >= 500 && (isAuthEndpoint || isUserProfileEndpoint)) {
+          console.error('Auth system server error - redirecting to login');
           window.dispatchEvent(new CustomEvent("auth:logout"));
           window.location.href = "/login";
         }

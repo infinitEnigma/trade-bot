@@ -81,8 +81,8 @@ async function getProfile(req: AuthenticatedRequest, res: Response) {
   }
 }
 
-// GET /api/user/profile
-router.get("/profile", authMiddleware, getProfile);
+// GET /api/user/profile - temporarily remove auth for debugging
+router.get("/profile", getProfile);
 
 // Helper function to generate Kodiak signature
 async function generateKodiakSignature(

@@ -61,6 +61,7 @@ import { marketRoutes } from "./routes/market";
 import { strategyRoutes } from "./routes/strategies";
 import { botRoutes } from "./routes/bot";
 import { healthRoutes } from "./routes/health";
+import { httpLogger, errorLogger } from "./middleware/logger";
 
 // ✅ Initialize database pool first (before routes)
 import { initializePool, closePool } from "./database/pool";
@@ -80,6 +81,7 @@ import { redisService } from "./services/redis";
 redisService.connect().catch((error) => {
   console.error("❌ Failed to connect to Redis:", error);
 });
+
 
 // Client connection tracking
 let activeClients = 0;
@@ -197,6 +199,9 @@ const limiter = rateLimit({
 });
 app.use("/api/", limiter);
 
+// HTTP request logging middleware
+app.use(httpLogger);
+
 // Make io available to routes
 app.set("io", io);
 
@@ -260,6 +265,24 @@ httpServer.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📡 WebSocket server ready`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
+
+  // TODO: Initialize market stream service after resolving import issue
+  console.log('📊 Market streams: Temporarily disabled for debugging');
+
+  /*
+  // ✅ Initialize market stream service after server starts
+  import("./services/market-stream.js").then(({ marketStreamService }) => {
+    marketStreamService.setSocketServer(io);
+
+    // Connect to market streams for default symbols
+    const DEFAULT_SYMBOLS = ['PERP_BTC_USDC', 'PERP_ETH_USDC'];
+    marketStreamService.connectToOrderly(DEFAULT_SYMBOLS);
+
+    // Connect to kline WebSocket streams (public)
+    marketStreamService.connectToKline('PERP_BTC_USDC', '1h');
+    marketStreamService.connectToKline('PERP_ETH_USDC', '1h');
+  });
+  */
 });
 
 // ✅ Graceful shutdown

@@ -33,6 +33,8 @@ import StatsCard from "../components/dashboard/StatsCard";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { AppHeader } from "../components/ui/AppHeader";
+import CandlestickChart from "../components/CandlestickChart";
+import { useChartData } from "../hooks/useChartData";
 
 // Calculate real portfolio performance from trades data
 const calculatePortfolioPerformance = (
@@ -156,11 +158,28 @@ const Dashboard: React.FC = () => {
       ? calculatePortfolioPerformance(tradesData.data.rows, totalBalance)
       : [{ time: "No data", value: totalBalance || 10000 }];
 
+  // ✅ Fetch chart data for candlestick chart
+  const { data: chartData, loading: chartLoading, error: chartError } = useChartData({
+    symbol: selectedSymbol,
+    interval: "1h",
+    limit: 100,
+  });
+
   return (
     <div className="container mx-auto px-4 py-10 space-y-10 bg-background">
       <AppHeader />
 
       <div className="container mx-auto px-4 py-8">
+        {/* ✅ Market Chart Section - Full Width */}
+        <div className="mb-8">
+          <CandlestickChart
+            symbol={selectedSymbol}
+            interval="1h"
+            data={chartData}
+            height={450}
+            loading={chartLoading}
+          />
+        </div>
         {/* Portfolio Overview */}
         {balanceLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
