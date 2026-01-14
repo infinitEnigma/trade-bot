@@ -51,12 +51,12 @@ router.post(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const { strategyId } = req.body;
+      const { strategyId, notionalAmount } = req.body;
 
-      if (!strategyId) {
+      if (!strategyId || !notionalAmount) {
         return res
           .status(400)
-          .json({ success: false, error: "Strategy ID required" });
+          .json({ success: false, error: "Strategy ID and notional amount required" });
       }
 
       // Verify strategy belongs to user
@@ -75,7 +75,7 @@ router.post(
 
       // Check if bot already exists
       const existingBot = await pool.query(
-        "SELECT * FROM bot_instances WHERE strategy_id = $1 AND status = 'RUNNING'",
+        "SELECT * FROM bot_instances WHERE strategy_id = $1 AND status IN ('RUNNING', 'STARTING')",
         [strategyId]
       );
 
@@ -86,6 +86,26 @@ router.post(
             success: false,
             error: "Bot already running for this strategy",
           });
+      }
+
+      // ✅ POSITION VALIDATION: Validate position size before starting bot
+      const { validateUserPosition } = await import('../services/position-validator.js');
+      const validation = await validateUserPosition(
+        req.user!.userId,
+        parseFloat(notionalAmount),
+        strategy.config?.symbol || 'PERP_BTC_USDC'
+      );
+
+      if (!validation.isValid) {
+        return res.status(402).json({
+          success: false,
+          error: validation.reason,
+          data: {
+            requested: notionalAmount,
+            max_allowed: validation.maxAllowed,
+            recommended: validation.recommended,
+          },
+        });
       }
 
       // Create bot instance
