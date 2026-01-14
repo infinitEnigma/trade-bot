@@ -10,6 +10,7 @@ import { query } from "../database/pool";  // ✅ Import from centralized module
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";  // ✅ Import centralized auth
 import logger from "../services/logger";  // ✅ Import structured logger
 import { encryptionService } from "../services/encryption";  // ✅ Import encryption service
+import { RateLimiters } from "../services/rate-limiter";
 
 const router = Router();
 
@@ -77,7 +78,7 @@ async function generateKodiakSignature(
 }
 
 // GET /api/market/ticker
-router.get("/ticker", async (req: Request, res: Response) => {
+router.get("/ticker", RateLimiters.market, async (req: Request, res: Response) => {
   try {
     const symbol = (req.query.symbol as string) || "PERP_BTC_USDC";
 
@@ -151,7 +152,7 @@ router.get("/tickers", async (req: Request, res: Response) => {
 });
 
 // GET /api/market/klines - Public WebSocket-based kline data (Phase 4 requirement)
-router.get("/klines", async (req: Request, res: Response) => {
+router.get("/klines", RateLimiters.market, async (req: Request, res: Response) => {
   try {
     const { symbol, interval, limit } = req.query;
 

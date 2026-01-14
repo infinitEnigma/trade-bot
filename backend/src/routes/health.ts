@@ -333,4 +333,40 @@ router.get("/live", (req: Request, res: Response) => {
   logger.debug("Liveness probe passed");
 });
 
+// Rate limit stats endpoint (Phase 4.4)
+router.get("/ratelimit", async (req: Request, res: Response) => {
+  try {
+    const client = redisService.getClient();
+
+    // Get all rate limit keys
+    const keys = await client.keys("ratelimit:*");
+
+    const stats = {
+      activeIps: keys.length,
+      ratelimitConfigs: {
+        auth: "5 requests per 15 minutes",
+        trading: "10 requests per minute",
+        market: "30 requests per minute",
+        balance: "20 requests per minute",
+        public: "60 requests per minute",
+        websocket: "100 subscriptions per minute",
+      },
+    };
+
+    res.json({
+      success: true,
+      data: stats,
+    });
+
+    logger.debug("Rate limit stats endpoint accessed");
+
+  } catch (error) {
+    logger.error("Rate limit stats error", { error: (error as Error).message });
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch rate limit stats",
+    });
+  }
+});
+
 export { router as healthRoutes };

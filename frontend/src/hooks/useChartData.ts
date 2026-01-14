@@ -32,9 +32,9 @@ export const useChartData = ({
         limit,
       });
 
-      if (response.data.success && response.data.data && response.data.data.length > 0) {
+      if (response.success && response.data && response.data.length > 0) {
         // ✅ Transform kline response to chart format
-        const chartData: CandleData[] = response.data.data.map(
+        const chartData: CandleData[] = response.data.map(
           (kline: any) => ({
             time: kline.time,
             open: kline.open,
@@ -50,6 +50,7 @@ export const useChartData = ({
       } else {
         // No data available yet - WebSocket might still be connecting
         setData([]);
+        setError(null); // Clear any previous errors
         console.log(`📊 Dashboard kline: No data available yet for ${symbol} (WebSocket connecting)`);
       }
 

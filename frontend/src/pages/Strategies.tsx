@@ -15,12 +15,21 @@ import {
 } from "lucide-react";
 import { StrategyForm } from "../components/StrategyForm";
 import { BotControls } from "../components/BotControls";
-import PriceChart from "../components/PriceChart";
+import CandlestickChart from "../components/CandlestickChart";
+import { useChartData } from "../hooks/useChartData";
 
 const Strategies: React.FC = React.memo(() => {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
+  const [selectedSymbol, setSelectedSymbol] = useState("PERP_BTC_USDC");
   const queryClient = useQueryClient();
+
+  // ✅ Fetch chart data for candlestick chart
+  const { data: chartData, loading: chartLoading, error: chartError } = useChartData({
+    symbol: selectedSymbol,
+    interval: "1h",
+    limit: 100,
+  });
 
   // Memory cleanup effect
   useEffect(() => {
@@ -175,8 +184,16 @@ const Strategies: React.FC = React.memo(() => {
       </header>
 
       <div className="container mx-auto px-4 py-8">
-        {/* Price Chart */}
-        <PriceChart />
+        {/* Candlestick Chart - Advanced trading data for verified users */}
+        <div className="mb-8">
+          <CandlestickChart
+            symbol={selectedSymbol}
+            interval="1h"
+            data={chartData}
+            height={450}
+            loading={chartLoading}
+          />
+        </div>
 
         {/* Strategies Grid */}
         {isLoading ? (

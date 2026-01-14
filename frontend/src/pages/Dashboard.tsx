@@ -33,8 +33,8 @@ import StatsCard from "../components/dashboard/StatsCard";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { AppHeader } from "../components/ui/AppHeader";
-import CandlestickChart from "../components/CandlestickChart";
-import { useChartData } from "../hooks/useChartData";
+import PriceChart from "../components/PriceChart";
+import { useBalance } from "../hooks/useBalance";
 
 // Calculate real portfolio performance from trades data
 const calculatePortfolioPerformance = (
@@ -158,12 +158,8 @@ const Dashboard: React.FC = () => {
       ? calculatePortfolioPerformance(tradesData.data.rows, totalBalance)
       : [{ time: "No data", value: totalBalance || 10000 }];
 
-  // ✅ Fetch chart data for candlestick chart
-  const { data: chartData, loading: chartLoading, error: chartError } = useChartData({
-    symbol: selectedSymbol,
-    interval: "1h",
-    limit: 100,
-  });
+  // ✅ Fetch real balance data
+  const { balance: realBalance, loading: realBalanceLoading } = useBalance();
 
   return (
     <div className="container mx-auto px-4 py-10 space-y-10 bg-background">
@@ -172,13 +168,7 @@ const Dashboard: React.FC = () => {
       <div className="container mx-auto px-4 py-8">
         {/* ✅ Market Chart Section - Full Width */}
         <div className="mb-8">
-          <CandlestickChart
-            symbol={selectedSymbol}
-            interval="1h"
-            data={chartData}
-            height={450}
-            loading={chartLoading}
-          />
+          <PriceChart />
         </div>
         {/* Portfolio Overview */}
         {balanceLoading ? (
@@ -219,40 +209,37 @@ const Dashboard: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <StatsCard
-                title="Total Balance"
-                value={portfolio?.totalBalance || 0}
-                change={portfolio?.pnlPercent || 0}
+                title="Wallet Balance"
+                value={realBalance?.walletBalance || 0}
+                change={0}
                 icon={Wallet}
                 color="primary"
                 format="currency"
-                loading={balanceLoading}
+                loading={realBalanceLoading}
               />
               <StatsCard
-                title="24h P&L"
-                value={portfolio?.pnl || 0}
-                change={portfolio?.pnlPercent || 0}
+                title="Account Balance"
+                value={realBalance?.accountBalance || 0}
+                change={0}
                 icon={DollarSign}
                 color="success"
                 format="currency"
               />
               <StatsCard
-                title="24h Volume"
-                value={portfolio?.dailyVolume || 0}
-                change={12.5}
+                title="Available Balance"
+                value={realBalance?.availableBalance || 0}
+                change={0}
                 icon={Activity}
                 color="warning"
                 format="currency"
               />
               <StatsCard
-                title="Active Positions"
-                value={positions.length}
-                change={
-                  profitablePositions > 0
-                    ? (profitablePositions / positions.length) * 100
-                    : 0
-                }
+                title="Total Assets"
+                value={realBalance?.totalAssets || 0}
+                change={0}
                 icon={TrendingUp}
                 color="info"
+                format="currency"
               />
             </div>
           </div>

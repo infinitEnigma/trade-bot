@@ -60,8 +60,12 @@ import { userRoutes } from "./routes/user";
 import { marketRoutes } from "./routes/market";
 import { strategyRoutes } from "./routes/strategies";
 import { botRoutes } from "./routes/bot";
+import { balanceRoutes } from "./routes/balance";
 import { healthRoutes } from "./routes/health";
 import { httpLogger, errorLogger } from "./middleware/logger";
+
+// ✅ Import market stream service (fixed import issue)
+import { marketStreamService } from "./services/market-stream";
 
 // ✅ Initialize database pool first (before routes)
 import { initializePool, closePool } from "./database/pool";
@@ -217,6 +221,7 @@ app.use("/api/user", userRoutes);
 app.use("/api/market", marketRoutes);
 app.use("/api/strategies", strategyRoutes);
 app.use("/api/bot", botRoutes);
+app.use("/api/balance", balanceRoutes);
 
 // Health check routes
 app.use("/", healthRoutes);
@@ -253,6 +258,29 @@ io.on("connection", (socket) => {
     console.log(`Client ${socket.id} unsubscribed from ${room}`);
   });
 
+  // ✅ Handle market subscription (Task 4.3)
+  socket.on("subscribe_market", (symbol: string) => {
+    console.log(`Client ${socket.id} subscribed to market: ${symbol}`);
+    socket.join(`market:${symbol}`);
+
+    // Send latest tick immediately if available
+    marketStreamService.getLatestTick(symbol).then((tick) => {
+      if (tick) {
+        socket.emit(`market:${symbol}`, tick);
+      }
+    }).catch((err) => {
+      console.error(`Failed to send initial tick for ${symbol}:`, err);
+    });
+
+    // Connect to Orderly if not already connected
+    marketStreamService.connectToOrderly([symbol]);
+  });
+
+  socket.on("unsubscribe_market", (symbol: string) => {
+    console.log(`Client ${socket.id} unsubscribed from market: ${symbol}`);
+    socket.leave(`market:${symbol}`);
+  });
+
   socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);
     updateClientCount(-1);
@@ -266,23 +294,18 @@ httpServer.listen(PORT, () => {
   console.log(`📡 WebSocket server ready`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
 
-  // TODO: Initialize market stream service after resolving import issue
-  console.log('📊 Market streams: Temporarily disabled for debugging');
+  // ✅ Initialize market stream service (Task 4.3)
+  marketStreamService.setSocketServer(io);
 
-  /*
-  // ✅ Initialize market stream service after server starts
-  import("./services/market-stream.js").then(({ marketStreamService }) => {
-    marketStreamService.setSocketServer(io);
+  // Connect to market streams for default symbols
+  const DEFAULT_SYMBOLS = ['PERP_BTC_USDC', 'PERP_ETH_USDC'];
+  marketStreamService.connectToOrderly(DEFAULT_SYMBOLS);
 
-    // Connect to market streams for default symbols
-    const DEFAULT_SYMBOLS = ['PERP_BTC_USDC', 'PERP_ETH_USDC'];
-    marketStreamService.connectToOrderly(DEFAULT_SYMBOLS);
+  // Connect to kline WebSocket streams (public)
+  marketStreamService.connectToKline('PERP_BTC_USDC', '1h');
+  marketStreamService.connectToKline('PERP_ETH_USDC', '1h');
 
-    // Connect to kline WebSocket streams (public)
-    marketStreamService.connectToKline('PERP_BTC_USDC', '1h');
-    marketStreamService.connectToKline('PERP_ETH_USDC', '1h');
-  });
-  */
+  console.log('📊 Market streams initialized for:', DEFAULT_SYMBOLS);
 });
 
 // ✅ Graceful shutdown

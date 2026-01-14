@@ -10,6 +10,7 @@ import {
   CandlestickSeries,
   HistogramSeries
 } from 'lightweight-charts';
+import { useMarketStream } from '../hooks/useMarketStream';
 
 export interface CandleData {
   time: number;

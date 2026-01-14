@@ -3,6 +3,7 @@
 import { Router, Request, Response } from "express";
 import Joi from "joi";
 import { authService } from "../services/auth";
+import { RateLimiters } from "../services/rate-limiter";
 
 const router = Router();
 
@@ -21,7 +22,7 @@ const refreshSchema = Joi.object({
 });
 
 // POST /api/auth/register
-router.post("/register", async (req: Request, res: Response) => {
+router.post("/register", RateLimiters.auth, async (req: Request, res: Response) => {
   try {
     const { error, value } = registerSchema.validate(req.body);
     if (error) {
@@ -62,7 +63,7 @@ router.post("/register", async (req: Request, res: Response) => {
 });
 
 // POST /api/auth/login
-router.post("/login", async (req: Request, res: Response) => {
+router.post("/login", RateLimiters.auth, async (req: Request, res: Response) => {
   console.log("Login attempt for:", req.body?.email);
   try {
     const { error, value } = loginSchema.validate(req.body);

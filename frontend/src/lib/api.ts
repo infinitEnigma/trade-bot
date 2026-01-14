@@ -36,6 +36,25 @@ class ApiClient {
     this.client.interceptors.response.use(
       (response) => response,
       async (error) => {
+        // Handle 429 (Too Many Requests) - Rate limiting
+        if (error.response?.status === 429) {
+          const retryAfter = error.response.data?.retryAfter || 60;
+          console.warn(`Rate limited: Too many requests. Retry after ${retryAfter} seconds.`, {
+            endpoint: error.config?.url,
+            retryAfter,
+            limit: error.response.headers?.['ratelimit-limit'],
+            remaining: error.response.headers?.['ratelimit-remaining'],
+            reset: error.response.headers?.['ratelimit-reset'],
+          });
+
+          // You could show a user-friendly notification here
+          // For now, just log the rate limit details
+          return Promise.reject({
+            ...error,
+            message: `Rate limited. Please wait ${retryAfter} seconds before retrying.`,
+            retryAfter,
+          });
+        }
         const originalRequest = error.config;
 
         // Handle connection errors (server unreachable)
@@ -257,18 +276,54 @@ class ApiClient {
   }
 
   async getKodiakPositions() {
-    const response = await this.client.get("/api/user/kodiak/positions");
-    return response.data;
+    try {
+      const response = await this.client.get("/api/user/kodiak/positions");
+      return response.data;
+    } catch (error: any) {
+      // Return empty data instead of throwing for missing credentials
+      if (error.response?.status === 403 || error.response?.status === 400) {
+        return {
+          success: true,
+          data: { rows: [] },
+          message: "Kodiak account not connected"
+        };
+      }
+      throw error;
+    }
   }
 
   async getKodiakTrades() {
-    const response = await this.client.get("/api/user/kodiak/trades");
-    return response.data;
+    try {
+      const response = await this.client.get("/api/user/kodiak/trades");
+      return response.data;
+    } catch (error: any) {
+      // Return empty data instead of throwing for missing credentials
+      if (error.response?.status === 403 || error.response?.status === 400) {
+        return {
+          success: true,
+          data: { rows: [] },
+          message: "Kodiak account not connected"
+        };
+      }
+      throw error;
+    }
   }
 
   async getKodiakBalance() {
-    const response = await this.client.get("/api/user/kodiak/balance");
-    return response.data;
+    try {
+      const response = await this.client.get("/api/user/kodiak/balance");
+      return response.data;
+    } catch (error: any) {
+      // Return empty data instead of throwing for missing credentials
+      if (error.response?.status === 403 || error.response?.status === 400) {
+        return {
+          success: true,
+          data: null,
+          message: "Kodiak account not connected"
+        };
+      }
+      throw error;
+    }
   }
 
   async verifyWallet(data: {
@@ -277,6 +332,17 @@ class ApiClient {
     message: string;
   }) {
     const response = await this.client.post("/api/user/verify-wallet", data);
+    return response.data;
+  }
+
+  // Balance endpoints
+  async getCurrentBalance() {
+    const response = await this.client.get("/api/balance/current");
+    return response.data;
+  }
+
+  async refreshBalance() {
+    const response = await this.client.post("/api/balance/refresh");
     return response.data;
   }
 }

@@ -32,7 +32,7 @@ export class MarketStreamService {
   private websockets: Map<string, WebSocket> = new Map();
   private io: Server | null = null;
   private reconnectIntervals: Map<string, NodeJS.Timeout> = new Map();
-  private klineSubscriptions: Map<string, { symbol: string, interval: string }> = new Map();
+  private klineSubscriptions: Map<string, { symbol: string, interval: string, topic?: string }> = new Map();
   private readonly RECONNECT_DELAY = 3000; // 3 seconds
 
   /**
@@ -68,22 +68,90 @@ export class MarketStreamService {
     }
 
     // Get or create kline WebSocket connection
-    const ws = this.websockets.get('kline') || this.createKlineWebSocket();
-    this.websockets.set('kline', ws);
+    let ws = this.websockets.get('kline');
+    if (!ws) {
+      ws = this.createKlineWebSocket();
+      this.websockets.set('kline', ws);
+    }
 
     const topic = `${symbol}@kline_${interval}`;
 
-    // Send subscription message per Orderly docs
+    // Store subscription info for when connection opens
+    this.klineSubscriptions.set(subscriptionId, { symbol, interval, topic });
+
+    // Send subscription message if WebSocket is ready
+    if (ws.readyState === WebSocket.OPEN) {
+      this.sendKlineSubscription(ws, subscriptionId, topic, symbol, interval);
+    } else if (ws.readyState === WebSocket.CONNECTING) {
+      // Wait for connection to open
+      const originalOnOpen = ws.onopen;
+      ws.onopen = (event) => {
+        // Call original handler if exists
+        if (originalOnOpen) {
+          originalOnOpen.call(ws, event);
+        }
+
+        // Send all pending subscriptions
+        this.sendPendingKlineSubscriptions(ws);
+      };
+    }
+
+    logger.info('Kline subscription queued', { symbol, interval, topic, readyState: ws.readyState });
+  }
+
+  /**
+   * Send kline subscription message
+   */
+  private sendKlineSubscription(
+    ws: WebSocket,
+    subscriptionId: string,
+    topic: string,
+    symbol: string,
+    interval: string
+  ): void {
+    if (ws.readyState !== WebSocket.OPEN) {
+      logger.warn('Cannot send kline subscription - WebSocket not open', {
+        symbol,
+        interval,
+        readyState: ws.readyState
+      });
+      return;
+    }
+
     const subscribeMessage = {
       id: subscriptionId,
       topic: topic,
       event: "subscribe"
     };
 
-    ws.send(JSON.stringify(subscribeMessage));
-    this.klineSubscriptions.set(subscriptionId, { symbol, interval });
+    try {
+      ws.send(JSON.stringify(subscribeMessage));
+      logger.info('Kline subscription sent', { symbol, interval, topic });
+    } catch (error) {
+      logger.error('Failed to send kline subscription', {
+        symbol,
+        interval,
+        topic,
+        error: (error as Error).message
+      });
+    }
+  }
 
-    logger.info('Subscribed to kline data', { symbol, interval, topic });
+  /**
+   * Send all pending kline subscriptions
+   */
+  private sendPendingKlineSubscriptions(ws: WebSocket): void {
+    for (const [subscriptionId, subscription] of this.klineSubscriptions.entries()) {
+      if (subscription.topic) {
+        this.sendKlineSubscription(
+          ws,
+          subscriptionId,
+          subscription.topic,
+          subscription.symbol,
+          subscription.interval
+        );
+      }
+    }
   }
 
   /**
