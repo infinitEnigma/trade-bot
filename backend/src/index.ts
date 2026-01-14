@@ -60,6 +60,18 @@ import { userRoutes } from "./routes/user";
 import { marketRoutes } from "./routes/market";
 import { strategyRoutes } from "./routes/strategies";
 import { botRoutes } from "./routes/bot";
+import { healthRoutes } from "./routes/health";
+
+// ✅ Initialize database pool first (before routes)
+import { initializePool, closePool } from "./database/pool";
+
+// Initialize database connection pool
+try {
+  initializePool();
+} catch (error) {
+  console.error("❌ Failed to initialize database pool:", error);
+  process.exit(1);
+}
 
 // Initialize Redis connection
 import { redisService } from "./services/redis";
@@ -201,10 +213,8 @@ app.use("/api/market", marketRoutes);
 app.use("/api/strategies", strategyRoutes);
 app.use("/api/bot", botRoutes);
 
-// Health check
-app.get("/health", (req, res) => {
-  res.json({ status: "healthy", timestamp: Date.now() });
-});
+// Health check routes
+app.use("/", healthRoutes);
 
 // Error handling middleware
 app.use(
@@ -250,6 +260,25 @@ httpServer.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📡 WebSocket server ready`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
+});
+
+// ✅ Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('📛 SIGTERM signal received: closing HTTP server');
+  httpServer.close(async () => {
+    console.log('✅ HTTP server closed');
+    await closePool();  // ✅ Close database pool
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', async () => {
+  console.log('📛 SIGINT signal received: closing HTTP server');
+  httpServer.close(async () => {
+    console.log('✅ HTTP server closed');
+    await closePool();  // ✅ Close database pool
+    process.exit(0);
+  });
 });
 
 export { app, io };

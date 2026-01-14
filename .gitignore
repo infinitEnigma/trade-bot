@@ -37,3 +37,6 @@ pg_hba.conf
 # AI gudies
 AI_*
 docs/
+
+# Log files
+backend/logs/

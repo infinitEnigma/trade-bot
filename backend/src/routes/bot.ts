@@ -4,17 +4,12 @@ import { Router, Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { authService } from "../services/auth";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
-import { Pool } from "pg";
+import { getPool, query } from "../database/pool";  // ✅ Import from centralized module
 
 const router = Router();
 
-const pool = new Pool({
-  host: process.env.DB_HOST || "localhost",
-  port: parseInt(process.env.DB_PORT || "5432"),
-  database: process.env.DB_NAME || "trade_bot",
-  user: process.env.DB_USER || "postgres",
-  password: process.env.DB_PASSWORD || "postgres",
-});
+// ✅ Use centralized pool via helper functions
+// No direct pool creation
 
 // GET /api/bot/instances
 router.get(
@@ -22,7 +17,7 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const result = await pool.query(
+      const result = await query(
         `SELECT bi.*, s.name as strategy_name, s.type as strategy_type, s.config as strategy_config
        FROM bot_instances bi
        JOIN strategies s ON bi.strategy_id = s.id
@@ -60,7 +55,7 @@ router.post(
       }
 
       // Verify strategy belongs to user
-      const strategyResult = await pool.query(
+      const strategyResult = await query(
         "SELECT * FROM strategies WHERE id = $1 AND user_id = $2",
         [strategyId, req.user!.userId]
       );
@@ -74,7 +69,7 @@ router.post(
       const strategy = strategyResult.rows[0];
 
       // Check if bot already exists
-      const existingBot = await pool.query(
+      const existingBot = await query(
         "SELECT * FROM bot_instances WHERE strategy_id = $1 AND status IN ('RUNNING', 'STARTING')",
         [strategyId]
       );
@@ -110,14 +105,14 @@ router.post(
 
       // Create bot instance
       const botId = uuidv4();
-      await pool.query(
+      await query(
         `INSERT INTO bot_instances (id, strategy_id, user_id, status, running_time, total_trades, total_pnl)
        VALUES ($1, $2, $3, 'RUNNING', 0, 0, 0)`,
         [botId, strategyId, req.user!.userId]
       );
 
       // Update strategy as active
-      await pool.query("UPDATE strategies SET active = true WHERE id = $1", [
+      await query("UPDATE strategies SET active = true WHERE id = $1", [
         strategyId,
       ]);
 
@@ -161,7 +156,7 @@ router.post(
       }
 
       // Verify bot belongs to user
-      const botResult = await pool.query(
+      const botResult = await query(
         "SELECT * FROM bot_instances WHERE id = $1 AND user_id = $2",
         [botId, req.user!.userId]
       );
@@ -179,13 +174,13 @@ router.post(
       }
 
       // Update bot status
-      await pool.query(
+      await query(
         "UPDATE bot_instances SET status = 'STOPPED' WHERE id = $1",
         [botId]
       );
 
       // Update strategy as inactive
-      await pool.query("UPDATE strategies SET active = false WHERE id = $1", [
+      await query("UPDATE strategies SET active = false WHERE id = $1", [
         bot.strategy_id,
       ]);
 
@@ -214,7 +209,7 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const result = await pool.query(
+      const result = await query(
         `SELECT bi.*, s.name as strategy_name, s.type as strategy_type
        FROM bot_instances bi
        JOIN strategies s ON bi.strategy_id = s.id
@@ -246,7 +241,7 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const botResult = await pool.query(
+      const botResult = await query(
         "SELECT * FROM bot_instances WHERE id = $1 AND user_id = $2",
         [req.params.botId, req.user!.userId]
       );
@@ -258,7 +253,7 @@ router.get(
       const bot = botResult.rows[0];
 
       // Get trade statistics
-      const statsResult = await pool.query(
+      const statsResult = await query(
         `SELECT
          COUNT(*) as total_trades,
          SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winning_trades,
@@ -272,7 +267,7 @@ router.get(
       );
 
       // Get daily P&L
-      const dailyResult = await pool.query(
+      const dailyResult = await query(
         `SELECT
          DATE(executed_at) as date,
          COALESCE(SUM(pnl), 0) as daily_pnl
@@ -323,7 +318,7 @@ router.post(
       }
 
       // Verify bot belongs to user
-      const botResult = await pool.query(
+      const botResult = await query(
         "SELECT * FROM bot_instances WHERE id = $1 AND user_id = $2",
         [botId, req.user!.userId]
       );
@@ -341,13 +336,13 @@ router.post(
       }
 
       // Update bot status to FORCE_STOPPING
-      await pool.query(
+      await query(
         "UPDATE bot_instances SET status = 'FORCE_STOPPING' WHERE id = $1",
         [botId]
       );
 
       // Log emergency stop action
-      await pool.query(
+      await query(
         "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
         [req.user!.userId, "EMERGENCY_STOP", { botId, strategyId: bot.strategy_id }]
       );
@@ -364,19 +359,19 @@ router.post(
       // Set timeout to mark as stopped if bot doesn't respond
       setTimeout(async () => {
         try {
-          const currentBot = await pool.query(
+          const currentBot = await query(
             "SELECT status FROM bot_instances WHERE id = $1",
             [botId]
           );
 
           if (currentBot.rows[0]?.status === 'FORCE_STOPPING') {
-            await pool.query(
+            await query(
               "UPDATE bot_instances SET status = 'STOPPED' WHERE id = $1",
               [botId]
             );
 
             // Update strategy as inactive
-            await pool.query("UPDATE strategies SET active = false WHERE id = $1", [
+            await query("UPDATE strategies SET active = false WHERE id = $1", [
               bot.strategy_id,
             ]);
           }
@@ -413,7 +408,7 @@ router.post("/heartbeat", async (req: Request, res: Response) => {
     }
 
     // Update bot with heartbeat data
-    await pool.query(
+    await query(
       `UPDATE bot_instances
        SET status = $1, position = $2, exposure = $3, last_heartbeat = $4, updated_at = CURRENT_TIMESTAMP
        WHERE id = $5`,
@@ -452,7 +447,7 @@ router.post("/report-trade", async (req: Request, res: Response) => {
     }
 
     // Insert trade record
-    await pool.query(
+    await query(
       `INSERT INTO trades (user_id, strategy_id, order_id, symbol, side, quantity, price, pnl, fee, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
@@ -471,7 +466,7 @@ router.post("/report-trade", async (req: Request, res: Response) => {
 
     // Update bot statistics
     if (strategyId) {
-      await pool.query(
+      await query(
         `UPDATE bot_instances
          SET total_trades = total_trades + 1,
              total_pnl = total_pnl + COALESCE($1, 0),
@@ -506,7 +501,7 @@ router.post("/report-trade", async (req: Request, res: Response) => {
 // Dead bot detection - runs every 10 seconds
 setInterval(async () => {
   try {
-    const deadBots = await pool.query(
+    const deadBots = await query(
       `SELECT id, strategy_id FROM bot_instances
        WHERE status IN ('RUNNING', 'FORCE_STOPPING')
        AND last_heartbeat < NOW() - INTERVAL '60 seconds'`
@@ -516,18 +511,18 @@ setInterval(async () => {
       console.log(`💀 Detected dead bot: ${bot.id}, marking as ERROR`);
 
       // Mark bot as dead/error
-      await pool.query(
+      await query(
         "UPDATE bot_instances SET status = 'ERROR', last_error = 'Bot heartbeat timeout - marked as dead' WHERE id = $1",
         [bot.id]
       );
 
       // Update strategy as inactive
-      await pool.query("UPDATE strategies SET active = false WHERE id = $1", [
+      await query("UPDATE strategies SET active = false WHERE id = $1", [
         bot.strategy_id,
       ]);
 
       // Log the dead bot detection
-      await pool.query(
+      await query(
         "INSERT INTO audit_logs (user_id, action, details) VALUES ((SELECT user_id FROM bot_instances WHERE id = $1), $2, $3)",
         [bot.id, "BOT_DEAD_DETECTED", { botId: bot.id, reason: "heartbeat_timeout" }]
       );

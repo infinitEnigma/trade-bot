@@ -6,16 +6,17 @@ import { v4 as uuidv4 } from "uuid";
 import { authService, TokenPayload } from "../services/auth";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { Pool } from "pg";
+import { query } from "../database/pool";  // ✅ Import from centralized module
 
 const router = Router();
 
-const pool = new Pool({
+/*const pool = new Pool({
   host: process.env.DB_HOST || "localhost",
   port: parseInt(process.env.DB_PORT || "5432"),
   database: process.env.DB_NAME || "trade_bot",
   user: process.env.DB_USER || "postgres",
   password: process.env.DB_PASSWORD || "postgres",
-});
+});*/
 
 const strategySchema = Joi.object({
   name: Joi.string().min(1).max(100).required(),
@@ -39,7 +40,7 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const result = await pool.query(
+      const result = await query(
         "SELECT * FROM strategies WHERE user_id = $1 ORDER BY created_at DESC",
         [req.user!.userId]
       );
@@ -71,7 +72,7 @@ router.post(
           .json({ success: false, error: error.details[0].message });
       }
 
-      const result = await pool.query(
+      const result = await query(
         `INSERT INTO strategies (user_id, name, type, config)
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
@@ -99,7 +100,7 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const result = await pool.query(
+      const result = await query(
         "SELECT * FROM strategies WHERE id = $1 AND user_id = $2",
         [req.params.id, req.user!.userId]
       );
@@ -135,7 +136,7 @@ router.put(
           .json({ success: false, error: error.details[0].message });
       }
 
-      const result = await pool.query(
+      const result = await query(
         `UPDATE strategies
        SET name = $1, type = $2, config = $3, updated_at = CURRENT_TIMESTAMP
        WHERE id = $4 AND user_id = $5
@@ -176,7 +177,7 @@ router.delete(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       // Check if strategy exists
-      const existing = await pool.query(
+      const existing = await query(
         "SELECT id FROM strategies WHERE id = $1 AND user_id = $2",
         [req.params.id, req.user!.userId]
       );
@@ -188,12 +189,12 @@ router.delete(
       }
 
       // Delete associated bot instances first
-      await pool.query("DELETE FROM bot_instances WHERE strategy_id = $1", [
+      await query("DELETE FROM bot_instances WHERE strategy_id = $1", [
         req.params.id,
       ]);
 
       // Delete the strategy
-      await pool.query(
+      await query(
         "DELETE FROM strategies WHERE id = $1 AND user_id = $2",
         [req.params.id, req.user!.userId]
       );
@@ -218,7 +219,7 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const strategyResult = await pool.query(
+      const strategyResult = await query(
         "SELECT id FROM strategies WHERE id = $1 AND user_id = $2",
         [req.params.id, req.user!.userId]
       );
@@ -230,7 +231,7 @@ router.get(
       }
 
       // Get trade statistics
-      const statsResult = await pool.query(
+      const statsResult = await query(
         `SELECT
          COUNT(*) as total_trades,
          COALESCE(SUM(pnl), 0) as total_pnl,
@@ -241,7 +242,7 @@ router.get(
       );
 
       // Get recent trades
-      const recentTrades = await pool.query(
+      const recentTrades = await query(
         "SELECT * FROM trades WHERE strategy_id = $1 ORDER BY executed_at DESC LIMIT 10",
         [req.params.id]
       );

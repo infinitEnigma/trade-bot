@@ -31,9 +31,12 @@
     "redis": "^5.10.0",
     "socket.io": "^4.8.3",
     "uuid": "^13.0.0",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@types/cookie-parser": "1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jest": "^29.5.14",
@@ -44,7 +47,6 @@
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.50.1",
     "@typescript-eslint/parser": "^8.50.1",
-    "@types/cookie-parser":"1.4.10",
     "eslint": "^9.39.2",
     "jest": "^30.2.0",
     "supertest": "^7.0.0",

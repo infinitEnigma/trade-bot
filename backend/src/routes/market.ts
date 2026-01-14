@@ -3,54 +3,32 @@
 import { Router, Request, Response } from "express";
 import axios from "axios";
 import { authService, TokenPayload } from "../services/auth";
-import { Pool } from "pg";
 import { createHash } from "crypto";
 import * as ed25519 from "@noble/ed25519";
 import { redisService } from "../services/redis";
+import { query } from "../database/pool";  // ✅ Import from centralized module
+import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";  // ✅ Import centralized auth
 
 const router = Router();
 
-const pool = new Pool({
+/*const pool = new Pool({
   host: process.env.DB_HOST || "localhost",
   port: parseInt(process.env.DB_PORT || "5432"),
   database: process.env.DB_NAME || "trade_bot",
   user: process.env.DB_USER || "postgres",
   password: process.env.DB_PASSWORD || "postgres",
-});
+});*/
 
 const KODIAK_API_BASE =
   process.env.KODIAK_API_URL || "https://api.orderly.org/v1";
 const WS_BASE =
   process.env.KODIAK_WS_URL || "wss://ws-evm.orderly.org/ws/stream";
 
-interface AuthenticatedRequest extends Request {
-  user?: TokenPayload;
-}
-
-const authenticateToken = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: () => void
-) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
-
-  if (!token) {
-    return res.status(401).json({ success: false, error: "No token provided" });
-  }
-
-  const payload = await authService.validateToken(token);
-  if (!payload) {
-    return res.status(403).json({ success: false, error: "Invalid token" });
-  }
-
-  req.user = payload;
-  next();
-};
+// ✅ Using centralized AuthenticatedRequest and authMiddleware
 
 // Helper to get Kodiak credentials for user
 async function getKodiakCredentials(userId: string) {
-  const result = await pool.query(
+  const result = await query(
     "SELECT account_id, api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE user_id = $1",
     [userId]
   );
@@ -171,7 +149,7 @@ router.get("/orderbook", async (req: Request, res: Response) => {
 // GET /api/market/positions (requires authentication and Kodiak credentials)
 router.get(
   "/positions",
-  authenticateToken,
+  authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const credentials = await getKodiakCredentials(req.user!.userId);
@@ -218,7 +196,7 @@ router.get(
 // GET /api/market/balance (requires authentication and Kodiak credentials)
 router.get(
   "/balance",
-  authenticateToken,
+  authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const credentials = await getKodiakCredentials(req.user!.userId);
@@ -265,7 +243,7 @@ router.get(
 // GET /api/market/ws-url
 router.get(
   "/ws-url",
-  authenticateToken,
+  authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const credentials = await getKodiakCredentials(req.user!.userId);
