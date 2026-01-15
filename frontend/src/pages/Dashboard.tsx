@@ -1,17 +1,9 @@
 /** @format */
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../lib/api";
-import {
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-} from "recharts";
 import {
   TrendingUp,
   TrendingDown,
@@ -27,14 +19,17 @@ import {
 } from "lucide-react";
 
 import { Link } from "react-router-dom";
-import { WalletConnectDialog } from "../components/WalletConnectDialog";
-import EmptyState from "../components/dashboard/EmptyState";
-import StatsCard from "../components/dashboard/StatsCard";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { AppHeader } from "../components/ui/AppHeader";
-import PriceChart from "../components/PriceChart";
 import { useBalance } from "../hooks/useBalance";
+
+// Lazy load heavy components
+const PriceChart = React.lazy(() => import("../components/PriceChart"));
+const WalletConnectDialog = React.lazy(() => import("../components/WalletConnectDialog").then(module => ({ default: module.WalletConnectDialog })));
+const EmptyState = React.lazy(() => import("../components/dashboard/EmptyState"));
+const StatsCard = React.lazy(() => import("../components/dashboard/StatsCard"));
+const PortfolioChart = React.lazy(() => import("../components/dashboard/PortfolioChart"));
 
 // Calculate real portfolio performance from trades data
 const calculatePortfolioPerformance = (
@@ -79,38 +74,37 @@ const Dashboard: React.FC = () => {
   const [selectedSymbol, setSelectedSymbol] = useState("PERP_BTC_USDC");
   //const [showWalletDialog, setShowWalletDialog] = useState(false);
 
-  // Fetch Kodiak data - re-enabled with proper error handling
-  const { data: positionsData, isLoading: positionsLoading, error: _positionsError } = useQuery({
+  // ✅ Fetch real balance data - moved to top
+  const { balance: realBalance, loading: realBalanceLoading } = useBalance();
+
+  // Fetch Kodiak data - optimized with proper deduplication
+  const hasKodiakAccess = user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
+
+  const { data: positionsData, isLoading: positionsLoading } = useQuery({
     queryKey: ["kodiak-positions"],
     queryFn: () => api.getKodiakPositions(),
-    enabled: user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED",
+    enabled: hasKodiakAccess,
+    staleTime: 30000, // 30 seconds
+    gcTime: 300000, // 5 minutes
     retry: (failureCount, error: any) => {
-      // Don't retry on 400 errors (invalid credentials)
       if (error?.response?.status === 400) return false;
-      // Retry up to 2 times for other errors
       return failureCount < 2;
     },
   });
 
-  const { data: tradesData, isLoading: tradesLoading, error: _tradesError } = useQuery({
+  const { data: tradesData, isLoading: tradesLoading } = useQuery({
     queryKey: ["kodiak-trades"],
     queryFn: () => api.getKodiakTrades(),
-    enabled: user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED",
+    enabled: hasKodiakAccess,
+    staleTime: 30000,
+    gcTime: 300000,
     retry: (failureCount, error: any) => {
       if (error?.response?.status === 400) return false;
       return failureCount < 2;
     },
   });
 
-  const { data: balanceData, isLoading: balanceLoading, error: _balanceError } = useQuery({
-    queryKey: ["kodiak-balance"],
-    queryFn: () => api.getKodiakBalance(),
-    enabled: user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED",
-    retry: (failureCount, error: any) => {
-      if (error?.response?.status === 400) return false;
-      return failureCount < 2;
-    },
-  });
+  // Remove duplicate balance query - use only useBalance hook
 
   // Process positions data
   const positions = positionsData?.success
@@ -120,46 +114,28 @@ const Dashboard: React.FC = () => {
     (p: any) => p.unsettled_pnl >= 0
   ).length;
 
-  // Process balance data
-  //console.log("Balance data:", balanceData);
-  //console.log("balanceData?.success:", balanceData?.success);
-  //console.log("balanceData?.data:", balanceData?.data);
-  const balance = balanceData?.success ? balanceData.data : null;
-  //console.log("Processed balance:", balance);
-  const totalBalance = balance
-    ? parseFloat(balance.totalBalance || "0")
-    : 10600;
-  console.log("Total balance:", totalBalance);
-  const pnl = balance ? parseFloat(balance.total_pnl_24_h || "0") : 600;
-  const pnlPercent = totalBalance > 0 ? (pnl / (totalBalance - pnl)) * 100 : 0;
-
-  // Get volume data from balance or use fallback
-  const dailyVolume = balance
-    ? parseFloat(balance.trading_volume_last_24_hours || "0")
-    : 12500;
+  // Process balance data from useBalance hook
+  const totalBalance = realBalance?.accountBalance || 0;
+  const pnl = 0; // TODO: Add PNL calculation from trading data
+  const pnlPercent = 0; // TODO: Calculate percentage
+  const dailyVolume = 0; // TODO: Add volume tracking
 
   // Use only real data - no mock fallbacks
-  const portfolio =
-    balance !== null
-      ? {
-          totalBalance,
-          pnl,
-          pnlPercent,
-          dailyVolume,
-          totalTrades: tradesData?.success
-            ? tradesData.data?.rows?.length || 0
-            : 0,
-        }
-      : null;
+  const portfolio = realBalance ? {
+    totalBalance: realBalance.accountBalance,
+    pnl,
+    pnlPercent,
+    dailyVolume,
+    totalTrades: tradesData?.success
+      ? tradesData.data?.rows?.length || 0
+      : 0,
+  } : null;
 
   // Calculate real portfolio performance chart data
   const portfolioData =
     tradesData?.success && tradesData.data?.rows
       ? calculatePortfolioPerformance(tradesData.data.rows, totalBalance)
       : [{ time: "No data", value: totalBalance || 10000 }];
-
-  // ✅ Fetch real balance data
-  const { balance: realBalance, loading: realBalanceLoading } = useBalance();
 
   return (
     <div className="container mx-auto px-4 py-10 space-y-10 bg-background">
@@ -168,10 +144,16 @@ const Dashboard: React.FC = () => {
       <div className="container mx-auto px-4 py-8">
         {/* ✅ Market Chart Section - Full Width */}
         <div className="mb-8">
-          <PriceChart />
+          <Suspense fallback={
+            <Card className="h-96 flex items-center justify-center">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </Card>
+          }>
+            <PriceChart />
+          </Suspense>
         </div>
         {/* Portfolio Overview */}
-        {balanceLoading ? (
+        {realBalanceLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {[1, 2, 3, 4].map((i) => (
               <Card key={i}>
@@ -208,39 +190,79 @@ const Dashboard: React.FC = () => {
             />
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <StatsCard
-                title="Wallet Balance"
-                value={realBalance?.walletBalance || 0}
-                change={0}
-                icon={Wallet}
-                color="primary"
-                format="currency"
-                loading={realBalanceLoading}
-              />
-              <StatsCard
-                title="Account Balance"
-                value={realBalance?.accountBalance || 0}
-                change={0}
-                icon={DollarSign}
-                color="success"
-                format="currency"
-              />
-              <StatsCard
-                title="Available Balance"
-                value={realBalance?.availableBalance || 0}
-                change={0}
-                icon={Activity}
-                color="warning"
-                format="currency"
-              />
-              <StatsCard
-                title="Total Assets"
-                value={realBalance?.totalAssets || 0}
-                change={0}
-                icon={TrendingUp}
-                color="info"
-                format="currency"
-              />
+              <Suspense fallback={
+                <Card>
+                  <div className="animate-pulse p-6">
+                    <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
+                    <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
+                    <div className="w-16 h-4 bg-white/10 rounded"></div>
+                  </div>
+                </Card>
+              }>
+                <StatsCard
+                  title="Wallet Balance"
+                  value={realBalance?.walletBalance || 0}
+                  change={0}
+                  icon={Wallet}
+                  color="primary"
+                  format="currency"
+                  loading={realBalanceLoading}
+                />
+              </Suspense>
+              <Suspense fallback={
+                <Card>
+                  <div className="animate-pulse p-6">
+                    <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
+                    <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
+                    <div className="w-16 h-4 bg-white/10 rounded"></div>
+                  </div>
+                </Card>
+              }>
+                <StatsCard
+                  title="Account Balance"
+                  value={realBalance?.accountBalance || 0}
+                  change={0}
+                  icon={DollarSign}
+                  color="success"
+                  format="currency"
+                />
+              </Suspense>
+              <Suspense fallback={
+                <Card>
+                  <div className="animate-pulse p-6">
+                    <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
+                    <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
+                    <div className="w-16 h-4 bg-white/10 rounded"></div>
+                  </div>
+                </Card>
+              }>
+                <StatsCard
+                  title="Available Balance"
+                  value={realBalance?.availableBalance || 0}
+                  change={0}
+                  icon={Activity}
+                  color="warning"
+                  format="currency"
+                />
+              </Suspense>
+              <Suspense fallback={
+                <Card>
+                  <div className="animate-pulse p-6">
+                    <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
+                    <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
+                    <div className="w-16 h-4 bg-white/10 rounded"></div>
+                  </div>
+                </Card>
+              }>
+                <StatsCard
+                  title="Total Assets"
+                  value={realBalance?.totalAssets || 0}
+                  change={0}
+                  icon={TrendingUp}
+                  color="info"
+                  format="currency"
+                />
+              </Suspense>
             </div>
           </div>
         ) : user?.userLevel === "BASIC" ? (
@@ -284,74 +306,17 @@ const Dashboard: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Chart Section */}
           <Card className="lg:col-span-2">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-text">
-                Portfolio Performance
-              </h2>
-              <div className="flex items-center gap-2">
-                {["PERP_BTC_USDC", "PERP_ETH_USDC", "PERP_SOL_USDC"].map(
-                  (symbol) => (
-                    <button
-                      key={symbol}
-                      onClick={() => setSelectedSymbol(symbol)}
-                      className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                        selectedSymbol === symbol
-                          ? "bg-primary text-white"
-                          : "text-textMuted hover:text-text hover:bg-white/5"
-                      }`}
-                    >
-                      {symbol.replace("PERP_", "").replace("_USDC", "")}
-                    </button>
-                  )
-                )}
+            <Suspense fallback={
+              <div className="h-80 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
               </div>
-            </div>
-
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={portfolioData}>
-                  <defs>
-                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis
-                    dataKey="time"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: "#94a3b8", fontSize: 12 }}
-                  />
-                  <YAxis
-                    domain={["auto", "auto"]}
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: "#94a3b8", fontSize: 12 }}
-                    tickFormatter={(value) => `$${value.toLocaleString()}`}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#13131a",
-                      border: "1px solid rgba(255, 255, 255, 0.08)",
-                      borderRadius: "8px",
-                      color: "#e2e8f0",
-                    }}
-                    formatter={(value: number | undefined) => [
-                      value ? `$${value.toLocaleString()}` : "$0",
-                      "Value",
-                    ]}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#6366f1"
-                    strokeWidth={2}
-                    fillOpacity={1}
-                    fill="url(#colorValue)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            }>
+              <PortfolioChart
+                data={portfolioData}
+                selectedSymbol={selectedSymbol}
+                onSymbolChange={setSelectedSymbol}
+              />
+            </Suspense>
           </Card>
 
           {/* Quick Actions */}
@@ -373,7 +338,13 @@ const Dashboard: React.FC = () => {
             {(user?.userLevel === "REGISTERED" ||
               user?.userLevel === "VERIFIED") && (
               <div className="mt-6 pt-6 border-t border-white/5">
-                <WalletConnectDialog />
+                <Suspense fallback={
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  </div>
+                }>
+                  <WalletConnectDialog />
+                </Suspense>
               </div>
             )}
 
@@ -452,16 +423,23 @@ const Dashboard: React.FC = () => {
                   ) : positions.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-8">
-                        <EmptyState
-                          icon={<Target className="w-6 h-6" />}
-                          title="No Open Positions"
-                          description="Start trading by creating a new strategy or opening a position manually."
-                          variant="info"
-                        />
+                        <Suspense fallback={
+                          <div className="flex flex-col items-center justify-center py-4">
+                            <Loader2 className="w-6 h-6 animate-spin text-primary mb-2" />
+                            <p className="text-sm text-textMuted">Loading...</p>
+                          </div>
+                        }>
+                          <EmptyState
+                            icon={<Target className="w-6 h-6" />}
+                            title="No Open Positions"
+                            description="Start trading by creating a new strategy or opening a position manually."
+                            variant="info"
+                          />
+                        </Suspense>
                         <div className="space-y-3">
                           <Link
                             to="/strategies"
-                            className="w-full bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                            className="w-full bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
                           >
                             <Activity className="w-4 h-4" />
                             Manage Strategies

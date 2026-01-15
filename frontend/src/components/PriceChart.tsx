@@ -73,10 +73,10 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         from: Math.floor(Date.now() / 1000) - 86400, // 24 hours ago
         to: Math.floor(Date.now() / 1000),
       }),
-      refetchInterval: isVisible ? 5000 : false, // Refresh every 5 seconds when visible
+      refetchInterval: isVisible ? 30000 : false, // Refresh every 30 seconds when visible
       enabled: isVisible, // Don't fetch when hidden
-      staleTime: 30000, // Consider data fresh for 30 seconds
-      gcTime: 300000, // Keep in cache for 5 minutes
+      staleTime: 60000, // Consider data fresh for 60 seconds
+      gcTime: 600000, // Keep in cache for 10 minutes
     });
 
     // Transform TradingView data to Recharts format
