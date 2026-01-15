@@ -180,6 +180,16 @@ class ApiClient {
     return response.data;
   }
 
+  async getFuturesPrice(symbol: string) {
+    const response = await this.client.get(`/api/market/futures/${symbol}`);
+    return response.data;
+  }
+
+  async getMarkPrice(symbol: string) {
+    const response = await this.client.get(`/api/market/markprice/${symbol}`);
+    return response.data;
+  }
+
   async getKlines(params: {
     symbol?: string;
     interval?: string;

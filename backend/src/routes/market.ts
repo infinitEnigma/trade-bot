@@ -251,6 +251,98 @@ router.get("/orderbook", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/market/futures/:symbol - Futures market data (more detailed than ticker)
+router.get("/futures/:symbol", RateLimiters.market, async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    const cacheKey = `futures:${symbol}`;
+
+    // Try Redis cache first (5 minute TTL for futures data)
+    const cached = await redisService.get(cacheKey);
+    if (cached) {
+      logger.debug("Futures data cache hit", { symbol });
+      return res.json(JSON.parse(cached));
+    }
+
+    logger.debug("Futures data cache miss, fetching from Kodiak", { symbol });
+    const response = await axios.get(`${KODIAK_API_BASE}/public/futures/${symbol}`, {
+      timeout: 5000,
+    });
+
+    const result = {
+      success: true,
+      data: response.data.data || response.data,
+      timestamp: Date.now(),
+      cached: false,
+    };
+
+    // Cache for 10 minutes (futures data changes infrequently)
+    await redisService.setex(cacheKey, 600, JSON.stringify(result));
+
+    res.json(result);
+  } catch (err: any) {
+    logger.error("Futures endpoint error", {
+      symbol: req.params.symbol,
+      error: err.message,
+      status: err.response?.status
+    });
+
+    // Return cached data if available, even if stale
+    const cacheKey = `futures:${req.params.symbol}`;
+    const cached = await redisService.get(cacheKey);
+    if (cached) {
+      logger.debug("Returning stale futures data due to API error", { symbol: req.params.symbol });
+      const staleData = JSON.parse(cached);
+      staleData.stale = true;
+      return res.json(staleData);
+    }
+
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch futures data"
+    });
+  }
+});
+
+// GET /api/market/markprice/:symbol - Mark price data (real-time via WebSocket)
+router.get("/markprice/:symbol", RateLimiters.market, async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    const symbolStr = symbol as string;
+
+    // Get mark price from market stream service (includes WebSocket subscription)
+    const markPriceData = await marketStreamService.getLatestMarkPrice(symbolStr);
+
+    if (markPriceData) {
+      res.json({
+        success: true,
+        data: markPriceData,
+        timestamp: Date.now(),
+        cached: true, // Always from cache/WebSocket
+      });
+      logger.debug("Mark price served from cache", { symbol, price: markPriceData.price });
+    } else {
+      // No cached data yet - WebSocket might still be connecting
+      res.json({
+        success: true,
+        data: null,
+        timestamp: Date.now(),
+        message: "Mark price data not available yet - WebSocket connecting"
+      });
+      logger.debug("Mark price requested but no cached data available", { symbol });
+    }
+  } catch (err: any) {
+    logger.error("Mark price endpoint error", {
+      symbol: req.params.symbol,
+      error: err.message,
+    });
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch mark price data"
+    });
+  }
+});
+
 // GET /api/market/positions (requires authentication and Kodiak credentials)
 router.get(
   "/positions",

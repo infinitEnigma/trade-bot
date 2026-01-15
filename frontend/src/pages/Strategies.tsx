@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { Strategy, StrategyType } from "@trade-bot/shared";
@@ -23,7 +23,6 @@ import { useAuth } from "../contexts/AuthContext";
 
 const Strategies: React.FC = React.memo(() => {
   const { user } = useAuth();
-  const _navigate = useNavigate();
   const [_kodiakCheckComplete, setKodiakCheckComplete] = useState(false);
   const [kodiakError, setKodiakError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);

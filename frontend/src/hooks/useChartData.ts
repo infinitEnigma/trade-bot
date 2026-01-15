@@ -61,7 +61,7 @@ const transformTradingViewData = (tvData: any): CandleData[] => {
 export const useChartData = ({
   symbol,
   interval,
-  limit = 300, // Default to 300 candles (kept for API compatibility)
+  limit: _limit = 300, // Default to 300 candles (kept for API compatibility)
 }: UseChartDataOptions) => {
   const [data, setData] = useState<CandleData[]>([]);
   const [loading, setLoading] = useState(false);

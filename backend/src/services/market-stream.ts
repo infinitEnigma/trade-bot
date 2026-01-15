@@ -36,6 +36,11 @@ export class MarketStreamService {
   private heartbeatIntervals: Map<string, NodeJS.Timeout> = new Map();
   private reconnectAttempts: Map<string, number> = new Map();
   private pendingSubscriptions: Set<string> = new Set();
+
+  // Dynamic subscription management
+  private activeSubscriptions: Map<string, { count: number, lastUsed: number }> = new Map();
+  private subscriptionTimers: Map<string, NodeJS.Timeout> = new Map();
+  private adaptivePollIntervals: Map<string, NodeJS.Timeout> = new Map();
   
   private readonly BASE_URL = 'wss://ws-evm.orderly.org/ws/stream';
   
@@ -82,29 +87,21 @@ export class MarketStreamService {
   /**
    * Connect to Orderly kline stream
    * Kline topics: kline_1m, kline_5m, kline_15m, kline_30m, kline_1h, kline_1d, kline_1w, kline_1M
+   * @deprecated Use subscribe() instead for better resource management
    */
   connectToKline(symbol: string, interval: string): void {
-    // Topic format: PERP_BTC_USDC@kline_1m
     const topic = `${symbol}@kline_${interval}`;
+    this.subscribe('legacy-client', topic, { priority: 'medium' });
+  }
 
-    // Only add if not already subscribed
-    if (!this.pendingSubscriptions.has(topic)) {
-      this.pendingSubscriptions.add(topic);
-      logger.info('Kline subscription queued', { symbol, interval, topic });
-    }
-
-    // Ensure we have a market connection
-    if (!this.websockets.has('market')) {
-      this.createPublicMarketWebSocket().catch((error) => {
-        logger.error('Failed to create market WebSocket connection', { error: error.message });
-      });
-    } else {
-      // Send immediately if already connected
-      const ws = this.websockets.get('market');
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        this.sendPendingSubscriptions(ws);
-      }
-    }
+  /**
+   * Connect to Orderly mark price stream
+   * Mark price topics: {symbol}@markprice (push interval: 1s)
+   * @deprecated Use subscribe() instead for better resource management
+   */
+  connectToMarkPrice(symbol: string): void {
+    const topic = `${symbol}@markprice`;
+    this.subscribe('legacy-client', topic, { priority: 'high' });
   }
 
   /**
@@ -355,6 +352,13 @@ export class MarketStreamService {
           return;
         }
 
+        // Handle mark price messages: topic = 'PERP_BTC_USDC@markprice'
+        if (topic.includes('@markprice')) {
+          logger.info('Detected mark price message, calling handleMarkPriceData', { topic });
+          await this.handleMarkPriceData(message);
+          return;
+        }
+
         logger.debug('Unhandled Orderly message topic', { topic });
       } else {
         logger.debug('Received message without topic/data', { keys: Object.keys(message), message });
@@ -397,6 +401,65 @@ export class MarketStreamService {
     } catch (error) {
       logger.error('Handle ticker data error', {
         symbol,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  /**
+   * Handle mark price data from Orderly
+   * Expected format from Orderly: { topic: 'PERP_BTC_USDC@markprice', data: { symbol, price, timestamp } }
+   */
+  private async handleMarkPriceData(message: any): Promise<void> {
+    try {
+      const markPriceData = message.data;
+
+      if (!markPriceData || !markPriceData.symbol) {
+        logger.error('Invalid mark price data format', { keys: markPriceData ? Object.keys(markPriceData) : 'none', message });
+        return;
+      }
+
+      // Extract symbol from topic (e.g., 'PERP_BTC_USDC@markprice' -> 'PERP_BTC_USDC')
+      const topicParts = message.topic.split('@');
+      if (topicParts.length !== 2 || topicParts[1] !== 'markprice') {
+        logger.error('Invalid mark price topic format', { topic: message.topic });
+        return;
+      }
+
+      const symbol = topicParts[0];
+
+      logger.info('Processing mark price data', {
+        symbol,
+        price: markPriceData.price,
+        timestamp: markPriceData.timestamp,
+      });
+
+      // Create mark price data structure
+      const priceData = {
+        symbol,
+        price: parseFloat(markPriceData.price || 0),
+        timestamp: markPriceData.timestamp || Date.now(),
+      };
+
+      // Cache in Redis (short TTL since mark price updates frequently)
+      const cacheKey = `markprice:${symbol}`;
+      await redisService.setex(cacheKey, 30, JSON.stringify(priceData)); // 30 seconds
+
+      // Broadcast to Socket.io clients
+      if (this.io) {
+        logger.debug('Broadcasting mark price to Socket.io clients');
+        this.io.emit(`markprice:${symbol}`, priceData);
+      } else {
+        logger.warn('Socket.io not available for mark price broadcasting');
+      }
+
+      logger.debug('Mark price data cached and broadcasted', {
+        symbol,
+        price: priceData.price,
+        cacheKey,
+      });
+    } catch (error) {
+      logger.error('Handle mark price data error', {
         error: (error as Error).message,
       });
     }
@@ -625,6 +688,26 @@ export class MarketStreamService {
   }
 
   /**
+   * Get latest mark price data from cache
+   */
+  async getLatestMarkPrice(symbol: string): Promise<any | null> {
+    try {
+      // Ensure WebSocket connection is active for this symbol
+      this.connectToMarkPrice(symbol);
+
+      const cacheKey = `markprice:${symbol}`;
+      const cached = await redisService.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+      return null;
+    } catch (error) {
+      logger.error('Get mark price error', { symbol, error });
+      return null;
+    }
+  }
+
+  /**
    * Disconnect from WebSocket
    */
   disconnect(wsKey: string): void {
@@ -667,7 +750,252 @@ export class MarketStreamService {
     this.reconnectAttempts.clear();
     this.pendingSubscriptions.clear();
 
+    // Clean up dynamic subscription management
+    this.activeSubscriptions.clear();
+    this.subscriptionTimers.forEach((timer) => {
+      clearTimeout(timer);
+    });
+    this.subscriptionTimers.clear();
+    this.adaptivePollIntervals.forEach((timer) => {
+      clearInterval(timer);
+    });
+    this.adaptivePollIntervals.clear();
+
     logger.info('All market streams disconnected');
+  }
+
+  /**
+   * Subscribe to market data with reference counting
+   * Prevents duplicate subscriptions and manages lifecycle
+   */
+  subscribe(clientId: string, topic: string, options: { priority?: 'high' | 'medium' | 'low' } = {}): void {
+    const existing = this.activeSubscriptions.get(topic);
+    const now = Date.now();
+
+    if (existing) {
+      // Increment reference count
+      existing.count += 1;
+      existing.lastUsed = now;
+      logger.debug('Subscription reference incremented', { topic, count: existing.count, clientId });
+    } else {
+      // New subscription
+      this.activeSubscriptions.set(topic, { count: 1, lastUsed: now });
+
+      // Start adaptive polling for this topic
+      this.startAdaptivePolling(topic, options.priority || 'medium');
+
+      // Send WebSocket subscription if connected
+      const ws = this.websockets.get('market');
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        this.subscribeToTopic(ws, topic);
+      } else {
+        // Queue for when connection is ready
+        this.pendingSubscriptions.add(topic);
+      }
+
+      logger.info('New subscription activated', { topic, clientId, priority: options.priority });
+    }
+
+    // Clear any cleanup timer for this topic
+    const cleanupTimer = this.subscriptionTimers.get(topic);
+    if (cleanupTimer) {
+      clearTimeout(cleanupTimer);
+      this.subscriptionTimers.delete(topic);
+    }
+  }
+
+  /**
+   * Unsubscribe from market data with reference counting
+   * Only unsubscribes when no more clients need the data
+   */
+  unsubscribe(clientId: string, topic: string): void {
+    const existing = this.activeSubscriptions.get(topic);
+
+    if (!existing) {
+      logger.warn('Attempted to unsubscribe from non-existent topic', { topic, clientId });
+      return;
+    }
+
+    existing.count -= 1;
+    existing.lastUsed = Date.now();
+
+    if (existing.count <= 0) {
+      // No more clients need this data - schedule cleanup
+      const cleanupDelay = this.getCleanupDelay(topic);
+      const cleanupTimer = setTimeout(() => {
+        this.cleanupSubscription(topic);
+      }, cleanupDelay);
+
+      this.subscriptionTimers.set(topic, cleanupTimer);
+      logger.debug('Subscription scheduled for cleanup', { topic, delay: cleanupDelay });
+    } else {
+      logger.debug('Subscription reference decremented', { topic, count: existing.count, clientId });
+    }
+  }
+
+  /**
+   * Start adaptive polling based on data type and priority
+   */
+  private startAdaptivePolling(topic: string, priority: 'high' | 'medium' | 'low'): void {
+    // Clear any existing polling for this topic
+    const existingInterval = this.adaptivePollIntervals.get(topic);
+    if (existingInterval) {
+      clearInterval(existingInterval);
+    }
+
+    const pollingInterval = this.getPollingInterval(topic, priority);
+
+    // Only start polling for topics that need it (not pure WebSocket topics)
+    if (pollingInterval > 0) {
+      const interval = setInterval(() => {
+        this.pollDataForTopic(topic);
+      }, pollingInterval);
+
+      this.adaptivePollIntervals.set(topic, interval);
+      logger.debug('Adaptive polling started', { topic, interval: pollingInterval, priority });
+    }
+  }
+
+  /**
+   * Get appropriate polling interval based on topic type and priority
+   */
+  private getPollingInterval(topic: string, priority: 'high' | 'medium' | 'low'): number {
+    // WebSocket-only topics don't need polling
+    if (topic.includes('@kline_') || topic.includes('@markprice')) {
+      return 0; // WebSocket handles these
+    }
+
+    // HTTP-based topics need polling
+    if (topic.includes('@ticker')) {
+      // Tickers: high priority = poll every 5s, medium = 15s, low = 60s
+      switch (priority) {
+        case 'high': return 5000;
+        case 'medium': return 15000;
+        case 'low': return 60000;
+        default: return 30000;
+      }
+    }
+
+    // Futures data: changes infrequently, poll every 5 minutes
+    if (topic.includes('futures:')) {
+      return 300000; // 5 minutes
+    }
+
+    return 30000; // Default 30 seconds
+  }
+
+  /**
+   * Get cleanup delay based on topic type
+   * High-frequency data should be cleaned up quickly, low-frequency can linger longer
+   */
+  private getCleanupDelay(topic: string): number {
+    if (topic.includes('@markprice')) return 30000; // 30s - high frequency
+    if (topic.includes('@kline_1m') || topic.includes('@kline_5m')) return 60000; // 1m - medium frequency
+    if (topic.includes('@kline_1h')) return 300000; // 5m - low frequency
+    if (topic.includes('@ticker')) return 120000; // 2m - moderate frequency
+
+    return 60000; // Default 1 minute
+  }
+
+  /**
+   * Poll data for a topic (HTTP-based data that needs refreshing)
+   */
+  private async pollDataForTopic(topic: string): Promise<void> {
+    try {
+      // This would be called for HTTP-based topics that need polling
+      // For now, WebSocket topics are handled automatically
+      logger.debug('Polling data for topic', { topic });
+    } catch (error) {
+      logger.error('Error polling data for topic', { topic, error: (error as Error).message });
+    }
+  }
+
+  /**
+   * Clean up subscription when no longer needed
+   */
+  private cleanupSubscription(topic: string): void {
+    // Remove from active subscriptions
+    this.activeSubscriptions.delete(topic);
+
+    // Stop adaptive polling
+    const pollingInterval = this.adaptivePollIntervals.get(topic);
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      this.adaptivePollIntervals.delete(topic);
+    }
+
+    // Send unsubscribe message if WebSocket is connected
+    const ws = this.websockets.get('market');
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      this.unsubscribeFromTopic(ws, topic);
+    }
+
+    // Remove from pending subscriptions
+    this.pendingSubscriptions.delete(topic);
+
+    logger.info('Subscription cleaned up', { topic });
+  }
+
+  /**
+   * Send unsubscribe message for a topic
+   */
+  private unsubscribeFromTopic(ws: WebSocket, topic: string): void {
+    if (ws.readyState !== WebSocket.OPEN) {
+      logger.warn('Cannot unsubscribe - WebSocket not open', { topic, readyState: ws.readyState });
+      return;
+    }
+
+    try {
+      const message = JSON.stringify({
+        id: `unsub_${topic}_${Date.now()}`,
+        event: 'unsubscribe',
+        topic: topic,
+      });
+
+      ws.send(message);
+      logger.info('Unsubscribe message sent to Orderly', { topic, message });
+    } catch (error) {
+      logger.error('Failed to send unsubscribe', {
+        topic,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  /**
+   * Update subscription priority (for when user switches to a chart)
+   */
+  updateSubscriptionPriority(clientId: string, topic: string, newPriority: 'high' | 'medium' | 'low'): void {
+    const existing = this.activeSubscriptions.get(topic);
+    if (!existing) {
+      logger.warn('Cannot update priority for non-existent subscription', { topic, clientId });
+      return;
+    }
+
+    // Restart adaptive polling with new priority
+    this.startAdaptivePolling(topic, newPriority);
+    logger.debug('Subscription priority updated', { topic, clientId, newPriority });
+  }
+
+  /**
+   * Get subscription statistics
+   */
+  getSubscriptionStats(): {
+    activeSubscriptions: number;
+    totalReferences: number;
+    topics: string[];
+    pollingIntervals: number;
+  } {
+    const topics = Array.from(this.activeSubscriptions.keys());
+    const totalReferences = Array.from(this.activeSubscriptions.values())
+      .reduce((sum, sub) => sum + sub.count, 0);
+
+    return {
+      activeSubscriptions: this.activeSubscriptions.size,
+      totalReferences,
+      topics,
+      pollingIntervals: this.adaptivePollIntervals.size,
+    };
   }
 
   /**
@@ -678,12 +1006,18 @@ export class MarketStreamService {
     websockets: string[];
     pendingSubscriptions: number;
     activeHeartbeats: number;
+    activeSubscriptions: number;
+    totalReferences: number;
   } {
+    const stats = this.getSubscriptionStats();
+
     return {
       connected: this.websockets.size,
       websockets: Array.from(this.websockets.keys()),
       pendingSubscriptions: this.pendingSubscriptions.size,
       activeHeartbeats: this.heartbeatIntervals.size,
+      activeSubscriptions: stats.activeSubscriptions,
+      totalReferences: stats.totalReferences,
     };
   }
 }

@@ -65,11 +65,11 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     if (!containerRef.current || error) return;
 
     try {
-      // Create chart instance
+      // Create chart instance with dark theme to match page style
       const chart = createChart(containerRef.current, {
         layout: {
-          background: { type: ColorType.Solid, color: '#ffffff' },
-          textColor: '#1f2937',
+          background: { type: ColorType.Solid, color: '#0f0f23' }, // Dark background
+          textColor: '#e2e8f0', // Light text
           fontFamily: 'system-ui, -apple-system, sans-serif',
         },
         width: containerRef.current.clientWidth,
@@ -77,12 +77,12 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         timeScale: {
           timeVisible: true,
           secondsVisible: false,
-          borderColor: '#d1d5db',
+          borderColor: '#334155', // Dark border
           fixLeftEdge: false,
           fixRightEdge: false,
         },
         rightPriceScale: {
-          borderColor: '#d1d5db',
+          borderColor: '#334155', // Dark border
           scaleMargins: {
             top: 0.1,
             bottom: 0.25, // Leave space for volume
@@ -93,11 +93,11 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         },
         grid: {
           vertLines: {
-            color: '#f3f4f6',
+            color: '#1e293b', // Dark grid lines
             style: 1,
           },
           horzLines: {
-            color: '#f3f4f6',
+            color: '#1e293b', // Dark grid lines
             style: 1,
           },
         },
@@ -216,32 +216,32 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   }, [candleData, isChartReady, isVisible]);
 
   return (
-    <div className="w-full bg-white rounded-lg shadow-sm border border-gray-200">
-      <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+    <div className="w-full bg-surface rounded-lg shadow-sm border border-white/10">
+      <div className="p-4 border-b border-white/10 flex justify-between items-center">
         <div className="flex items-center gap-3">
-          <h3 className="text-lg font-semibold text-gray-900">
+          <h3 className="text-lg font-semibold text-text">
             {symbol.replace('PERP_', '').replace('_USDC', '')}
           </h3>
-          <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+          <span className="px-2 py-1 text-xs bg-primary/20 text-primary rounded-full">
             {interval}
           </span>
         </div>
         {error && (
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-            <span className="text-sm text-red-600">{error}</span>
+            <div className="w-2 h-2 bg-danger rounded-full"></div>
+            <span className="text-sm text-danger">{error}</span>
           </div>
         )}
         {loading && !error && (
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-            <span className="text-sm text-gray-600">Loading...</span>
+            <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
+            <span className="text-sm text-textMuted">Loading...</span>
           </div>
         )}
         {!loading && !error && candleData.length > 0 && (
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-            <span className="text-sm text-green-600">
+            <div className="w-2 h-2 bg-success rounded-full"></div>
+            <span className="text-sm text-success">
               Live • {candleData.length} candles
             </span>
           </div>
@@ -253,35 +253,35 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         style={{ height: `${height}px` }}
       >
         {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10">
             <div className="text-center">
-              <div className="w-8 h-8 mx-auto mb-2 animate-spin border-2 border-blue-300 border-t-blue-600 rounded-full"></div>
-              <p className="text-sm font-medium text-gray-700">Loading chart data...</p>
-              <p className="text-xs text-gray-500 mt-1">Fetching historical data</p>
+              <div className="w-8 h-8 mx-auto mb-2 animate-spin border-2 border-primary/30 border-t-primary rounded-full"></div>
+              <p className="text-sm font-medium text-text">Loading chart data...</p>
+              <p className="text-xs text-textMuted mt-1">Fetching historical data</p>
             </div>
           </div>
         )}
 
         {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10">
             <div className="text-center">
               <div className="w-12 h-12 mx-auto mb-2">
                 ⚠️
               </div>
-              <p className="text-sm font-medium text-red-700">Error loading chart</p>
-              <p className="text-xs text-gray-500 mt-2">{error}</p>
+              <p className="text-sm font-medium text-danger">Error loading chart</p>
+              <p className="text-xs text-textMuted mt-2">{error}</p>
             </div>
           </div>
         )}
 
         {!loading && !error && candleData.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10">
             <div className="text-center">
               <div className="w-12 h-12 mx-auto mb-2">
                 📡
               </div>
-              <p className="text-sm font-medium text-gray-700">Waiting for live data...</p>
-              <p className="text-xs text-gray-500 mt-1">WebSocket connected, awaiting ticks</p>
+              <p className="text-sm font-medium text-text">Waiting for live data...</p>
+              <p className="text-xs text-textMuted mt-1">WebSocket connected, awaiting ticks</p>
             </div>
           </div>
         )}
