@@ -189,6 +189,17 @@ class ApiClient {
     return response.data;
   }
 
+  async getKlineHistory(params: {
+    symbol?: string;
+    resolution?: string;
+    from?: number;
+    to?: number;
+    limit?: number;
+  }) {
+    const response = await this.client.get("/api/market/kline-history", { params });
+    return response.data;
+  }
+
   async getPositions() {
     const response = await this.client.get("/api/market/positions");
     return response.data;

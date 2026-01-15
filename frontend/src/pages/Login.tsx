@@ -1,6 +1,6 @@
 /** @format */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -8,8 +8,15 @@ const Login: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+
+  // Redirect when authentication succeeds
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate("/dashboard");
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,9 +24,7 @@ const Login: React.FC = () => {
 
     try {
       await login(email, password);
-      // Give a moment for the auth state to update
-      await new Promise(resolve => setTimeout(resolve, 200));
-      navigate("/dashboard");
+      // AuthContext will handle redirect when isAuthenticated becomes true
     } catch (error) {
       // Error is already handled in the context
     } finally {

@@ -22,39 +22,42 @@ export const useChartData = ({
   const maxRetries = 10;
   const retryInterval = 2000; // 2 seconds
 
-  // ✅ Fetch historical OHLC data using kline WebSocket cache (Phase 4 requirement)
+  // ✅ Fetch historical OHLC data using WebSocket cache (more reliable than TradingView)
   const fetchChartData = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Use kline endpoint which serves WebSocket-cached data
+      // Use WebSocket klines endpoint which has cached data from live trading
       const response = await api.getKlines({
         symbol: symbol,
-        interval,
-        limit,
+        interval: interval,
+        limit: 300, // Get up to 300 candles from WebSocket cache
       });
 
       if (response.success && response.data && response.data.length > 0) {
         // ✅ Transform kline response to chart format
         const chartData: CandleData[] = response.data.map(
           (kline: any) => ({
-            time: kline.time,
-            open: kline.open,
-            high: kline.high,
-            low: kline.low,
-            close: kline.close,
-            volume: kline.volume,
+            time: kline.time, // Already in seconds
+            open: parseFloat(kline.open),
+            high: parseFloat(kline.high),
+            low: parseFloat(kline.low),
+            close: parseFloat(kline.close),
+            volume: parseFloat(kline.volume),
           })
         );
 
+        // Sort by time to ensure chronological order
+        chartData.sort((a, b) => a.time - b.time);
+
         setData(chartData);
         setRetryCount(0); // Reset on success
-        console.log(`📊 Loaded ${chartData.length} klines for ${symbol}`);
+        console.log(`📊 Loaded ${chartData.length} WebSocket klines for ${symbol}`);
       } else {
-        // No data available yet - retry if not at max attempts
+        // No cached WebSocket data yet - retry
         if (retryCount < maxRetries) {
-          console.log(`📊 No kline data yet (attempt ${retryCount + 1}/${maxRetries}), will retry in 2s`);
+          console.log(`📊 No WebSocket data yet (attempt ${retryCount + 1}/${maxRetries}), will retry in 2s`);
           setRetryCount(retryCount + 1);
         } else {
           console.warn(`📊 Failed to load klines after ${maxRetries} attempts`);
@@ -64,12 +67,12 @@ export const useChartData = ({
       }
 
     } catch (err: any) {
-      // API error - fail silently and retry
+      // API error - retry
       setData([]);
       setError(null);
-      
+
       if (retryCount < maxRetries) {
-        console.log(`⚠️ API error fetching klines, will retry: ${err.message}`);
+        console.log(`⚠️ WebSocket API error, will retry: ${err.message}`);
         setRetryCount(retryCount + 1);
       } else {
         console.warn(`⚠️ Failed to fetch klines after ${maxRetries} attempts:`, err.message);

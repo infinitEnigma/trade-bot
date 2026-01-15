@@ -33,7 +33,7 @@ const WS_BASE =
 // Helper to get Kodiak credentials for user
 async function getKodiakCredentials(userId: string) {
   const result = await query(
-    "SELECT account_id, api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE user_id = $1",
+    "SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1",
     [userId]
   );
 
@@ -47,6 +47,7 @@ async function getKodiakCredentials(userId: string) {
     secretKey: encryptionService.decryptSecretKey(
       result.rows[0].secret_key_encrypted
     ),
+    verified: result.rows[0].verified,
   };
 }
 
@@ -170,6 +171,23 @@ router.get("/klines", RateLimiters.market, async (req: Request, res: Response) =
 
     // Get kline data from WebSocket cache
     const klines = await marketStreamService.getKlines(symbolStr, intervalStr, limitNum);
+
+    // Check for duplicate timestamps before returning
+    const timestamps = klines.map(k => k.time);
+    const uniqueTimestamps = new Set(timestamps);
+    const hasDuplicates = timestamps.length !== uniqueTimestamps.size;
+
+    logger.debug("Klines endpoint returning data", {
+      symbol: symbolStr,
+      interval: intervalStr,
+      requestedLimit: limitNum,
+      actualCount: klines.length,
+      hasDuplicates,
+      firstCandle: klines[0],
+      secondCandle: klines[1], // Check second candle for duplicates
+      lastCandle: klines[klines.length - 1],
+      allTimestamps: timestamps.slice(0, 10) // First 10 timestamps
+    });
 
     if (klines.length > 0) {
       res.json({
@@ -504,6 +522,207 @@ router.get("/tv/history", async (req: Request, res: Response) => {
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch TV history" });
+  }
+});
+
+// GET /api/market/kline-history - Historical kline data with credential verification (security requirement)
+router.get("/kline-history", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { symbol, resolution, from, to, limit } = req.query;
+
+    const symbolStr = (symbol as string) || "PERP_BTC_USDC";
+    const resolutionStr = (resolution as string) || "60"; // TradingView format: 60 = 1 hour
+    // Request only 7 days of data instead of 30 to avoid "no_data" response
+    const fromNum = from ? parseInt(from as string) : Math.floor(Date.now() / 1000) - (7 * 24 * 60 * 60); // 7 days ago
+    const toNum = to ? parseInt(to as string) : Math.floor(Date.now() / 1000);
+
+    // SECURITY REQUIREMENT: Only allow access to historical data if user has verified Kodiak credentials
+    // This ensures trading features are only available to properly connected users
+    const credentials = await getKodiakCredentials(req.user!.userId);
+
+    if (!credentials) {
+      return res.status(403).json({
+        success: false,
+        error: "Kodiak credentials required. Please connect your trading account."
+      });
+    }
+
+    if (!credentials.verified) {
+      return res.status(403).json({
+        success: false,
+        error: "Kodiak credentials not verified. Please reconnect your account."
+      });
+    }
+
+    logger.debug("Fetching historical kline data with credential verification", {
+      userId: req.user!.userId,
+      symbol: symbolStr,
+      resolution: resolutionStr,
+      from: fromNum,
+      to: toNum,
+      hasVerifiedCredentials: true
+    });
+
+    // Since authenticated kline history endpoint doesn't exist, use public TV history
+    // but maintain security by requiring verified credentials
+    const response = await axios.get(`${KODIAK_API_BASE}/tv/history`, {
+      params: {
+        symbol: symbolStr,
+        resolution: resolutionStr,
+        from: fromNum,
+        to: toNum,
+      },
+      timeout: 10000, // 10 second timeout
+    });
+
+    logger.debug("Historical kline data response received", {
+      status: response.status,
+      responseKeys: Object.keys(response.data || {}),
+      dataType: typeof response.data,
+      dataLength: Array.isArray(response.data) ? response.data.length : 'not array',
+      symbol: symbolStr,
+      fullResponse: JSON.stringify(response.data).substring(0, 500)
+    });
+
+    // Handle TradingView format - separated OHLC arrays
+    let tvData = response.data;
+
+    if (typeof tvData !== 'object' || !tvData) {
+      logger.error("Invalid TradingView response - not an object", {
+        tvData,
+        dataType: typeof tvData
+      });
+      return res.status(500).json({
+        success: false,
+        error: "Market data API returned invalid format"
+      });
+    }
+
+    // Check if there's no data available
+    if (tvData.s === 'no_data' || !tvData.t || tvData.t.length === 0) {
+      logger.debug("No historical data available for the requested period", {
+        symbol: symbolStr,
+        resolution: resolutionStr,
+        from: fromNum,
+        to: toNum,
+        status: tvData.s
+      });
+
+      // Return empty data array instead of error
+      return res.json({
+        success: true,
+        data: [],
+        timestamp: Date.now(),
+        meta: {
+          symbol: symbolStr,
+          resolution: resolutionStr,
+          from: fromNum,
+          to: toNum,
+          actualCount: 0,
+          source: "tv_history_with_verification",
+          note: "No historical data available for this time period"
+        }
+      });
+    }
+
+    // Validate that we have all required OHLC arrays
+    if (!tvData.t || !tvData.o || !tvData.h || !tvData.l || !tvData.c) {
+      logger.error("Missing required OHLC arrays in TradingView response", {
+        hasTimestamps: !!tvData.t,
+        hasOpens: !!tvData.o,
+        hasHighs: !!tvData.h,
+        hasLows: !!tvData.l,
+        hasCloses: !!tvData.c,
+        hasVolumes: !!tvData.v
+      });
+      return res.status(500).json({
+        success: false,
+        error: "Market data API returned incomplete OHLC data"
+      });
+    }
+
+    // Ensure all arrays have the same length
+    const length = tvData.t.length;
+    if (tvData.o.length !== length || tvData.h.length !== length ||
+        tvData.l.length !== length || tvData.c.length !== length) {
+      logger.error("OHLC arrays have different lengths", {
+        timestamps: tvData.t.length,
+        opens: tvData.o.length,
+        highs: tvData.h.length,
+        lows: tvData.l.length,
+        closes: tvData.c.length
+      });
+      return res.status(500).json({
+        success: false,
+        error: "Market data API returned inconsistent OHLC data"
+      });
+    }
+
+    // Transform TradingView separated arrays to our kline format
+    const transformedData = [];
+    for (let i = 0; i < length; i++) {
+      transformedData.push({
+        startTime: tvData.t[i] * 1000, // Convert seconds to milliseconds
+        open: parseFloat(tvData.o[i]),
+        high: parseFloat(tvData.h[i]),
+        low: parseFloat(tvData.l[i]),
+        close: parseFloat(tvData.c[i]),
+        volume: parseFloat(tvData.v?.[i] || 0),
+        symbol: symbolStr,
+        type: resolutionStr === "60" ? "1h" : resolutionStr
+      });
+    }
+
+    logger.debug("Successfully transformed TradingView data", {
+      symbol: symbolStr,
+      candleCount: transformedData.length,
+      firstCandle: transformedData[0],
+      lastCandle: transformedData[transformedData.length - 1]
+    });
+
+    res.json({
+      success: true,
+      data: transformedData,
+      timestamp: Date.now(),
+      meta: {
+        symbol: symbolStr,
+        resolution: resolutionStr,
+        from: fromNum,
+        to: toNum,
+        actualCount: transformedData.length,
+        source: "tv_history_with_verification"
+      }
+    });
+
+  } catch (err: any) {
+    logger.error("Historical kline data error", {
+      userId: req.user?.userId,
+      symbol: req.query.symbol,
+      error: err.message,
+      status: err.response?.status,
+      response: err.response?.data
+    });
+
+    // Handle specific error cases
+    if (err.response?.status === 429) {
+      return res.status(429).json({
+        success: false,
+        error: "Rate limit exceeded. Please try again later.",
+        retryAfter: err.response.headers?.['retry-after'] || 10
+      });
+    }
+
+    if (err.code === 'ECONNABORTED' || err.code === 'ENOTFOUND') {
+      return res.status(503).json({
+        success: false,
+        error: "Market data service temporarily unavailable. Please try again later."
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch historical kline data"
+    });
   }
 });
 

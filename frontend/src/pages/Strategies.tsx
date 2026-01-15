@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { Strategy, StrategyType } from "@trade-bot/shared";
@@ -12,17 +12,73 @@ import {
   Trash2,
   Edit,
   Zap,
+  AlertTriangle,
+  Settings,
 } from "lucide-react";
 import { StrategyForm } from "../components/StrategyForm";
 import { BotControls } from "../components/BotControls";
 import CandlestickChart from "../components/CandlestickChart";
 import { useBalance } from "../hooks/useBalance";
+import { useAuth } from "../contexts/AuthContext";
 
 const Strategies: React.FC = React.memo(() => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [kodiakCheckComplete, setKodiakCheckComplete] = useState(false);
+  const [kodiakError, setKodiakError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
   const [selectedSymbol, setSelectedSymbol] = useState("PERP_BTC_USDC");
   const queryClient = useQueryClient();
+
+  // ✅ Kodiak connectivity check - required for trading features
+  useEffect(() => {
+    const checkKodiakConnectivity = async () => {
+      try {
+        setKodiakError(null);
+
+        console.log("Strategies: Checking Kodiak connectivity");
+        console.log("Strategies: User object:", user);
+        console.log("Strategies: User hasKodiak:", (user as any)?.hasKodiak);
+        console.log("Strategies: User kodiakStatus:", (user as any)?.kodiakStatus);
+
+        // Check if user has Kodiak credentials
+        if (!(user as any)?.hasKodiak) {
+          console.log("Strategies: No Kodiak credentials found, showing error screen");
+          setKodiakError("No Kodiak account connected");
+          return;
+        }
+
+        // Get Kodiak status
+        const statusResponse = await api.getKodiakStatus();
+        if (!statusResponse.success || !statusResponse.data?.verified) {
+          setKodiakError("Kodiak credentials not verified");
+          return;
+        }
+
+        // Try a simple API call to verify connectivity
+        await api.getCurrentBalance();
+
+        // All checks passed
+        setKodiakCheckComplete(true);
+
+      } catch (error: any) {
+        console.error("Kodiak connectivity check failed:", error);
+
+        if (error.response?.status === 403) {
+          setKodiakError("Kodiak authentication failed. Please reconnect your account.");
+        } else if (error.response?.status === 503) {
+          setKodiakError("Kodiak service temporarily unavailable.");
+        } else {
+          setKodiakError("Unable to connect to Kodiak services.");
+        }
+      }
+    };
+
+    if (user) {
+      checkKodiakConnectivity();
+    }
+  }, [user]);
 
   // Memory cleanup effect
   useEffect(() => {
@@ -105,6 +161,40 @@ const Strategies: React.FC = React.memo(() => {
       currency: "USD",
     }).format(value);
   };
+
+  // Show Kodiak connectivity error if check failed
+  if (kodiakError) {
+    return (
+      <div className="container mx-auto px-4 py-10 space-y-10 bg-background min-h-screen flex items-center justify-center">
+        <div className="glass-card p-8 text-center max-w-md">
+          <div className="w-16 h-16 mx-auto mb-6 bg-red-500/10 rounded-full flex items-center justify-center">
+            <AlertTriangle className="w-8 h-8 text-red-500" />
+          </div>
+          <h1 className="text-2xl font-bold text-text mb-4">
+            Trading Features Unavailable
+          </h1>
+          <p className="text-textMuted mb-6">
+            {kodiakError}
+          </p>
+          <div className="space-y-3">
+            <Link
+              to="/settings"
+              className="btn-primary w-full inline-flex items-center justify-center gap-2"
+            >
+              <Settings className="w-4 h-4" />
+              Connect Kodiak Account
+            </Link>
+            <Link
+              to="/dashboard"
+              className="btn-secondary w-full inline-flex items-center justify-center gap-2"
+            >
+              Return to Dashboard
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 py-10 space-y-10 bg-background">

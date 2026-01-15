@@ -23,15 +23,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const checkAuth = async () => {
+  const checkAuth = async (forceCheck = false) => {
     try {
       setLoading(true);
-      console.log('AuthContext: Checking authentication...');
+      console.log('AuthContext: Checking authentication...', { forceCheck });
 
       // Check if we're on login/register pages to avoid unnecessary API calls
+      // But allow forced checks (like after login)
       const currentPath = window.location.pathname;
-      if (currentPath === '/login' || currentPath === '/register') {
-        console.log('AuthContext: On auth page, skipping check');
+      if (!forceCheck && (currentPath === '/login' || currentPath === '/register')) {
+        console.log('AuthContext: On auth page, skipping check (not forced)');
         setUser(null);
         setLoading(false);
         return;
@@ -68,9 +69,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const data = await api.login(email, password);
 
       if (data.success) {
-        // Set user data directly from login response
-        console.log('AuthContext: Login successful, setting user:', data.user);
-        setUser(data.user);
+        // After successful login, refresh user data to get complete profile including Kodiak status
+        console.log('AuthContext: Login successful, refreshing user profile');
+        await refreshUser();
 
         toast.success("Login successful!");
       } else {
@@ -120,7 +121,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const refreshUser = async () => {
-    await checkAuth();
+    await checkAuth(true); // Force check even on auth pages
   };
 
   return (

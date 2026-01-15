@@ -441,18 +441,22 @@ export class MarketStreamService {
         logger.warn('Symbol mismatch in kline data', { topicSymbol: symbol, dataSymbol: klineData.symbol });
       }
 
-      logger.debug('Handling kline data', {
+      logger.info('Handling kline data', {
         symbol,
         interval,
         close: klineData.close,
+        startTime: klineData.startTime,
       });
 
       // Cache key: kline:PERP_BTC_USDC:1h
       const cacheKey = `kline:${symbol}:${interval}`;
+      logger.info('Cache key created', { cacheKey });
 
       // Get existing klines from cache
+      logger.info('Fetching existing klines from Redis');
       const existing = await redisService.get(cacheKey);
       let klines = existing ? JSON.parse(existing) : [];
+      logger.info('Existing klines loaded', { count: klines.length });
 
       // Create candle in chart format
       const newCandle = {
@@ -463,23 +467,44 @@ export class MarketStreamService {
         close: parseFloat(klineData.close.toString()),
         volume: parseFloat(klineData.volume.toString()),
       };
+      logger.info('New candle created', { newCandle });
 
-      // Add to array and keep only last 300 candles
+      // Add to array, remove duplicates by timestamp, and keep only last 300 candles
       klines.push(newCandle);
-      klines = klines.slice(-300);
+
+      // Remove duplicates by timestamp (keep the latest one)
+      const seen = new Set();
+      klines = klines
+        .reverse() // Process from newest to oldest
+        .filter((candle: any) => {
+          if (seen.has(candle.time)) {
+            return false; // Duplicate timestamp, skip
+          }
+          seen.add(candle.time);
+          return true; // Keep this candle
+        })
+        .reverse() // Back to chronological order
+        .slice(-300); // Keep only last 300
+      logger.info('Klines array updated', { totalCount: klines.length });
 
       // Cache for 1 hour
+      logger.info('Caching klines in Redis');
       await redisService.setex(cacheKey, 3600, JSON.stringify(klines));
+      logger.info('Klines cached successfully');
 
       // Broadcast to Socket.io clients
       if (this.io) {
+        logger.info('Broadcasting to Socket.io clients');
         this.io.emit(`kline:${symbol}:${interval}`, {
           ...klineData,
           interval,
         });
+        logger.info('Broadcast completed');
+      } else {
+        logger.warn('Socket.io not available for broadcasting');
       }
 
-      logger.debug('Kline data cached and broadcasted', {
+      logger.info('Kline data cached and broadcasted', {
         symbol,
         interval,
         candleCount: klines.length,
