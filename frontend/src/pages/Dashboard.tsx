@@ -80,7 +80,7 @@ const Dashboard: React.FC = () => {
   //const [showWalletDialog, setShowWalletDialog] = useState(false);
 
   // Fetch Kodiak data - re-enabled with proper error handling
-  const { data: positionsData, isLoading: positionsLoading, error: positionsError } = useQuery({
+  const { data: positionsData, isLoading: positionsLoading, error: _positionsError } = useQuery({
     queryKey: ["kodiak-positions"],
     queryFn: () => api.getKodiakPositions(),
     enabled: user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED",
@@ -92,7 +92,7 @@ const Dashboard: React.FC = () => {
     },
   });
 
-  const { data: tradesData, isLoading: tradesLoading, error: tradesError } = useQuery({
+  const { data: tradesData, isLoading: tradesLoading, error: _tradesError } = useQuery({
     queryKey: ["kodiak-trades"],
     queryFn: () => api.getKodiakTrades(),
     enabled: user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED",
@@ -102,7 +102,7 @@ const Dashboard: React.FC = () => {
     },
   });
 
-  const { data: balanceData, isLoading: balanceLoading, error: balanceError } = useQuery({
+  const { data: balanceData, isLoading: balanceLoading, error: _balanceError } = useQuery({
     queryKey: ["kodiak-balance"],
     queryFn: () => api.getKodiakBalance(),
     enabled: user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED",

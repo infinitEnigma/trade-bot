@@ -23,12 +23,12 @@ import { useAuth } from "../contexts/AuthContext";
 
 const Strategies: React.FC = React.memo(() => {
   const { user } = useAuth();
-  const navigate = useNavigate();
-  const [kodiakCheckComplete, setKodiakCheckComplete] = useState(false);
+  const _navigate = useNavigate();
+  const [_kodiakCheckComplete, setKodiakCheckComplete] = useState(false);
   const [kodiakError, setKodiakError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
-  const [selectedSymbol, setSelectedSymbol] = useState("PERP_BTC_USDC");
+  const [_selectedSymbol, _setSelectedSymbol] = useState("PERP_BTC_USDC");
   const queryClient = useQueryClient();
 
   // ✅ Kodiak connectivity check - required for trading features
@@ -273,7 +273,7 @@ const Strategies: React.FC = React.memo(() => {
         {/* Candlestick Chart - Advanced trading data for verified users */}
         <div className="mb-8">
           <CandlestickChart
-            symbol={selectedSymbol}
+            symbol={_selectedSymbol}
             interval="1h"
             height={450}
           />

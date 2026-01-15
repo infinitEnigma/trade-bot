@@ -9,6 +9,9 @@ import cookieParser from "cookie-parser";
 import { createServer } from "http";
 import { Server } from "socket.io";
 
+// Import logger first before any other code
+import logger from "./services/logger";
+
 // Add at the very top of index.ts, before any other code
 const REQUIRED_ENV_VARS = [
   'DB_HOST',
@@ -62,7 +65,6 @@ import { botRoutes } from "./routes/bot";
 import { balanceRoutes } from "./routes/balance";
 import { healthRoutes } from "./routes/health";
 import { httpLogger, errorLogger } from "./middleware/logger";
-import logger from "./services/logger";
 
 // ✅ Import market stream service (fixed import issue)
 import { marketStreamService } from "./services/market-stream";
