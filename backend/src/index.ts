@@ -294,18 +294,9 @@ httpServer.listen(PORT, () => {
   console.log(`📡 WebSocket server ready`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
 
-  // ✅ Initialize market stream service (Task 4.3)
+  // ✅ Initialize market stream service (lazy-loaded - connects on-demand)
   marketStreamService.setSocketServer(io);
-
-  // Connect to market streams for default symbols
-  const DEFAULT_SYMBOLS = ['PERP_BTC_USDC', 'PERP_ETH_USDC'];
-  marketStreamService.connectToOrderly(DEFAULT_SYMBOLS);
-
-  // Connect to kline WebSocket streams (public)
-  marketStreamService.connectToKline('PERP_BTC_USDC', '1h');
-  marketStreamService.connectToKline('PERP_ETH_USDC', '1h');
-
-  console.log('📊 Market streams initialized for:', DEFAULT_SYMBOLS);
+  console.log('📊 Market stream service initialized (lazy-loaded - connects when needed)');
 });
 
 // ✅ Graceful shutdown

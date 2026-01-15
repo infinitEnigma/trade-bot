@@ -11,6 +11,7 @@ import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";  // �
 import logger from "../services/logger";  // ✅ Import structured logger
 import { encryptionService } from "../services/encryption";  // ✅ Import encryption service
 import { RateLimiters } from "../services/rate-limiter";
+import { marketStreamService } from "../services/market-stream";
 
 const router = Router();
 
@@ -90,7 +91,11 @@ router.get("/ticker", RateLimiters.market, async (req: Request, res: Response) =
         timeout: 5000,
       });
     } catch (apiError: any) {
-      console.warn("Ticker API failed, using mock data:", apiError.message);
+      logger.warn("Ticker API failed, using mock data", {
+        symbol,
+        error: apiError.message,
+        status: apiError.response?.status,
+      });
 
       // Return mock ticker data so dashboard can load
       const mockPrice = 50000 + (Math.random() - 0.5) * 1000;
@@ -115,7 +120,10 @@ router.get("/ticker", RateLimiters.market, async (req: Request, res: Response) =
       timestamp: Date.now(),
     });
   } catch (err: any) {
-    console.error("Ticker error:", err.message);
+    logger.error("Ticker endpoint error", {
+      symbol: req.query.symbol,
+      error: err.message,
+    });
 
     // Fallback to mock data even on other errors
     const mockPrice = 50000 + (Math.random() - 0.5) * 1000;
@@ -146,7 +154,7 @@ router.get("/tickers", async (req: Request, res: Response) => {
       timestamp: Date.now(),
     });
   } catch (err: any) {
-    console.error("Tickers error:", err.message);
+    logger.error("Tickers endpoint error", { error: err.message });
     res.status(500).json({ success: false, error: "Failed to fetch tickers" });
   }
 });
@@ -155,9 +163,6 @@ router.get("/tickers", async (req: Request, res: Response) => {
 router.get("/klines", RateLimiters.market, async (req: Request, res: Response) => {
   try {
     const { symbol, interval, limit } = req.query;
-
-    // Import market stream service dynamically to avoid circular dependency
-    const { marketStreamService } = await import("../services/market-stream.js");
 
     const symbolStr = (symbol as string) || "PERP_BTC_USDC";
     const intervalStr = (interval as string) || "1h";
@@ -193,7 +198,12 @@ router.get("/klines", RateLimiters.market, async (req: Request, res: Response) =
       });
     }
   } catch (err: any) {
-    console.error("Klines error:", err.message);
+    logger.error("Klines endpoint error", {
+      symbol: req.query.symbol,
+      interval: req.query.interval,
+      limit: req.query.limit,
+      error: err.message,
+    });
     res.status(500).json({
       success: false,
       error: "Failed to fetch kline data"
@@ -216,7 +226,7 @@ router.get("/orderbook", async (req: Request, res: Response) => {
       timestamp: Date.now(),
     });
   } catch (err: any) {
-    console.error("Orderbook error:", err.message);
+    logger.error("Orderbook endpoint error", { error: err.message });
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch orderbook" });
@@ -262,7 +272,10 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err: any) {
-      console.error("Positions error:", err.message);
+      logger.error("Positions endpoint error", {
+        userId: req.user!.userId,
+        error: err.message,
+      });
       res
         .status(500)
         .json({ success: false, error: "Failed to fetch positions" });
@@ -309,7 +322,10 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err: any) {
-      console.error("Balance error:", err.message);
+      logger.error("Balance endpoint error", {
+        userId: req.user!.userId,
+        error: err.message,
+      });
       res
         .status(500)
         .json({ success: false, error: "Failed to fetch balance" });
@@ -339,7 +355,10 @@ router.get(
         },
       });
     } catch (err: any) {
-      console.error("WS URL error:", err.message);
+      logger.error("WS URL endpoint error", {
+        userId: req.user!.userId,
+        error: err.message,
+      });
       res
         .status(500)
         .json({ success: false, error: "Failed to get WebSocket URL" });
@@ -358,15 +377,18 @@ router.get("/tv/config", async (req: Request, res: Response) => {
     // Try Redis cache first
     const cached = await redisService.get(cacheKey);
     if (cached) {
-      console.log("📋 TV Config: Cache hit");
+      logger.debug("TV Config cache hit");
       return res.json(JSON.parse(cached));
     }
 
-    console.log("🌐 TV Config: Cache miss, fetching from Kodiak");
+    logger.debug("TV Config cache miss, fetching from Kodiak");
     const response = await axios.get(`${KODIAK_API_BASE}/tv/config`);
 
     // Log the actual response structure for debugging
-    console.log("TV History API Response:", JSON.stringify(response.data, null, 2));
+    logger.debug("TV History API response structure", {
+      dataKeys: Object.keys(response.data),
+      data: response.data,
+    });
 
     const result = {
       success: true,
@@ -380,7 +402,7 @@ router.get("/tv/config", async (req: Request, res: Response) => {
 
     res.json(result);
   } catch (err: any) {
-    console.error("❌ TV Config error:", err.message);
+    logger.error("TV Config endpoint error", { error: err.message });
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch TV config" });
@@ -402,7 +424,7 @@ router.get("/tv/symbols", async (req: Request, res: Response) => {
       timestamp: Date.now(),
     });
   } catch (err: any) {
-    console.error("TV Symbols error:", err.message);
+    logger.error("TV Symbols endpoint error", { error: err.message });
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch TV symbols" });
@@ -411,14 +433,15 @@ router.get("/tv/symbols", async (req: Request, res: Response) => {
 
 // GET /api/market/tv/history - MOST IMPORTANT (used every 5 seconds by charts)
 router.get("/tv/history", async (req: Request, res: Response) => {
+  const { symbol, resolution, from, to } = req.query;
+  const symbolStr = (symbol as string) || "PERP_BTC_USDC";
+  const resolutionStr = (resolution as string) || "1";
+  const fromNum = from
+    ? parseInt(from as string)
+    : Math.floor(Date.now() / 1000) - 86400;
+  const toNum = to ? parseInt(to as string) : Math.floor(Date.now() / 1000);
+
   try {
-    const { symbol, resolution, from, to } = req.query;
-    const symbolStr = (symbol as string) || "PERP_BTC_USDC";
-    const resolutionStr = (resolution as string) || "1";
-    const fromNum = from
-      ? parseInt(from as string)
-      : Math.floor(Date.now() / 1000) - 86400;
-    const toNum = to ? parseInt(to as string) : Math.floor(Date.now() / 1000);
 
     // Round timestamps to 5-minute intervals for stable cache keys
     // This allows requests within the same 5-minute window to share cache
@@ -461,13 +484,23 @@ router.get("/tv/history", async (req: Request, res: Response) => {
     // Cache the result for 5 seconds
     const CACHE_TTL = 5; // 5 seconds - keeps data fresh but reduces API calls significantly
     await redisService.setex(cacheKey, CACHE_TTL, JSON.stringify(result));
-    console.log(
-      `💾 TV History: Cached result for 5 seconds (key: ${cacheKey})`
-    );
+
+    logger.debug("TV History cached successfully", {
+      cacheKey,
+      symbol: symbolStr,
+      resolution: resolutionStr,
+      ttl: CACHE_TTL,
+    });
 
     res.json(result);
   } catch (err: any) {
-    console.error("❌ TV History error:", err.message);
+    logger.error("TV History endpoint error", {
+      symbol: symbolStr,
+      resolution: resolutionStr,
+      from: fromNum,
+      to: toNum,
+      error: err.message,
+    });
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch TV history" });

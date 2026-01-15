@@ -10,7 +10,8 @@ import {
   CandlestickSeries,
   HistogramSeries
 } from 'lightweight-charts';
-import { useMarketStream } from '../hooks/useMarketStream';
+import { useChartData } from '../hooks/useChartData';
+import { useVisibility } from '../hooks/useVisibility';
 
 export interface CandleData {
   time: number;
@@ -24,25 +25,40 @@ export interface CandleData {
 interface CandlestickChartProps {
   symbol: string;
   interval: string;
-  data: CandleData[];
   height?: number;
-  loading?: boolean;
-  error?: string | null;
 }
 
 export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   symbol,
   interval,
-  data,
   height = 400,
-  loading = false,
-  error = null,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const [isChartReady, setIsChartReady] = useState(false);
+  const [candleData, setCandleData] = useState<CandleData[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  // Visibility detection - pause WebSocket when page loses focus
+  const isVisible = useVisibility();
+
+  // Get chart data with live updates - only active when page is visible
+  const { data: chartData, loading, error: chartError } = useChartData({
+    symbol: symbol, // Use full symbol name for WebSocket subscriptions
+    interval,
+  });
+
+  // Update candle data when chart data changes
+  useEffect(() => {
+    if (chartData && chartData.length > 0) {
+      setCandleData(chartData);
+      setError(null);
+    } else if (chartError) {
+      setError(chartError);
+    }
+  }, [chartData, chartError]);
 
   // Initialize chart
   useEffect(() => {
@@ -158,15 +174,15 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     }
   }, [height, error]);
 
-  // Update data when it changes
+  // Update chart data when candleData changes
   useEffect(() => {
-    if (!isChartReady || !candlestickSeriesRef.current || !volumeSeriesRef.current || data.length === 0) {
+    if (!isChartReady || !candlestickSeriesRef.current || !volumeSeriesRef.current || candleData.length === 0) {
       return;
     }
 
     try {
       // Transform data for the chart
-      const chartData = data.map((item) => ({
+      const chartData = candleData.map((item) => ({
         time: item.time as any, // Lightweight-charts expects number | string
         open: item.open,
         high: item.high,
@@ -178,7 +194,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       candlestickSeriesRef.current.setData(chartData);
 
       // Set volume data if available
-      const volumeData = data
+      const volumeData = candleData
         .filter((item) => item.volume !== undefined)
         .map((item) => ({
           time: item.time as any,
@@ -197,7 +213,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     } catch (dataError) {
       console.error('Failed to update chart data:', dataError);
     }
-  }, [data, isChartReady]);
+  }, [candleData, isChartReady]);
 
   return (
     <div className="w-full bg-white rounded-lg shadow-sm border border-gray-200">
@@ -222,11 +238,11 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
             <span className="text-sm text-gray-600">Loading...</span>
           </div>
         )}
-        {!loading && !error && data.length > 0 && (
+        {!loading && !error && candleData.length > 0 && (
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-green-500 rounded-full"></div>
             <span className="text-sm text-green-600">
-              {data.length} candles
+              Live • {candleData.length} candles
             </span>
           </div>
         )}
@@ -236,16 +252,36 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         className="w-full relative"
         style={{ height: `${height}px` }}
       >
-        {!loading && !error && data.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center text-gray-500">
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
             <div className="text-center">
-              <div className="w-12 h-12 mx-auto mb-2 opacity-50">
-                📊
+              <div className="w-8 h-8 mx-auto mb-2 animate-spin border-2 border-blue-300 border-t-blue-600 rounded-full"></div>
+              <p className="text-sm font-medium text-gray-700">Loading chart data...</p>
+              <p className="text-xs text-gray-500 mt-1">Fetching historical data</p>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
+            <div className="text-center">
+              <div className="w-12 h-12 mx-auto mb-2">
+                ⚠️
               </div>
-              <p>No chart data available</p>
-              <p className="text-xs text-gray-400 mt-1">
-                WebSocket connection may still be initializing
-              </p>
+              <p className="text-sm font-medium text-red-700">Error loading chart</p>
+              <p className="text-xs text-gray-500 mt-2">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {!loading && !error && candleData.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
+            <div className="text-center">
+              <div className="w-12 h-12 mx-auto mb-2">
+                📡
+              </div>
+              <p className="text-sm font-medium text-gray-700">Waiting for live data...</p>
+              <p className="text-xs text-gray-500 mt-1">WebSocket connected, awaiting ticks</p>
             </div>
           </div>
         )}

@@ -16,20 +16,13 @@ import {
 import { StrategyForm } from "../components/StrategyForm";
 import { BotControls } from "../components/BotControls";
 import CandlestickChart from "../components/CandlestickChart";
-import { useChartData } from "../hooks/useChartData";
+import { useBalance } from "../hooks/useBalance";
 
 const Strategies: React.FC = React.memo(() => {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
   const [selectedSymbol, setSelectedSymbol] = useState("PERP_BTC_USDC");
   const queryClient = useQueryClient();
-
-  // ✅ Fetch chart data for candlestick chart
-  const { data: chartData, loading: chartLoading, error: chartError } = useChartData({
-    symbol: selectedSymbol,
-    interval: "1h",
-    limit: 100,
-  });
 
   // Memory cleanup effect
   useEffect(() => {
@@ -102,6 +95,9 @@ const Strategies: React.FC = React.memo(() => {
   const getBotForStrategy = (strategyId: string) => {
     return bots.find((bot: any) => bot.strategy_id === strategyId);
   };
+
+  // ✅ Fetch real balance data (WebSocket for verified users)
+  const { balance: realBalance, loading: realBalanceLoading } = useBalance();
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -189,10 +185,108 @@ const Strategies: React.FC = React.memo(() => {
           <CandlestickChart
             symbol={selectedSymbol}
             interval="1h"
-            data={chartData}
             height={450}
-            loading={chartLoading}
           />
+        </div>
+
+        {/* Account Balance Overview - WebSocket data for verified users */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-semibold text-text">
+              Account Balance
+            </h2>
+          </div>
+
+          {realBalanceLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="glass-card p-6">
+                  <div className="animate-pulse">
+                    <div className="grid grid-rows-[auto_1fr_auto] gap-3">
+                      <div className="flex items-center justify-between">
+                        <div className="w-10 h-10 bg-white/10 rounded-lg"></div>
+                        <div className="w-20 h-4 bg-white/10 rounded"></div>
+                      </div>
+                      <div className="w-24 h-8 bg-white/10 rounded"></div>
+                      <div className="w-16 h-4 bg-white/10 rounded"></div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : realBalance ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="glass-card p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                    <div className="w-5 h-5 bg-blue-500 rounded"></div>
+                  </div>
+                  <span className="text-sm text-textMuted">Wallet</span>
+                </div>
+                <div className="text-2xl font-bold text-text mb-1">
+                  ${realBalance.walletBalance.toLocaleString()}
+                </div>
+                <p className="text-xs text-textMuted">Available funds</p>
+              </div>
+
+              <div className="glass-card p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
+                    <div className="w-5 h-5 bg-green-500 rounded"></div>
+                  </div>
+                  <span className="text-sm text-textMuted">Account</span>
+                </div>
+                <div className="text-2xl font-bold text-text mb-1">
+                  ${realBalance.accountBalance.toLocaleString()}
+                </div>
+                <p className="text-xs text-textMuted">Trading account</p>
+              </div>
+
+              <div className="glass-card p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-10 h-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
+                    <div className="w-5 h-5 bg-orange-500 rounded"></div>
+                  </div>
+                  <span className="text-sm text-textMuted">Available</span>
+                </div>
+                <div className="text-2xl font-bold text-text mb-1">
+                  ${realBalance.availableBalance.toLocaleString()}
+                </div>
+                <p className="text-xs text-textMuted">For trading</p>
+              </div>
+
+              <div className="glass-card p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
+                    <div className="w-5 h-5 bg-purple-500 rounded"></div>
+                  </div>
+                  <span className="text-sm text-textMuted">Total Assets</span>
+                </div>
+                <div className="text-2xl font-bold text-text mb-1">
+                  ${realBalance.totalAssets.toLocaleString()}
+                </div>
+                <p className="text-xs text-textMuted">Portfolio value</p>
+              </div>
+            </div>
+          ) : (
+            <div className="glass-card p-8 text-center">
+              <div className="w-12 h-12 mx-auto mb-4 bg-red-500/10 rounded-full flex items-center justify-center">
+                <div className="w-6 h-6 bg-red-500 rounded"></div>
+              </div>
+              <h3 className="text-lg font-semibold text-text mb-2">
+                Kodiak Account Required
+              </h3>
+              <p className="text-textMuted mb-4">
+                Connect your Kodiak trading account in Settings to view your balance and trading data.
+              </p>
+              <Link
+                to="/settings"
+                className="btn-primary inline-flex items-center gap-2"
+              >
+                Connect Account
+              </Link>
+            </div>
+          )}
         </div>
 
         {/* Strategies Grid */}

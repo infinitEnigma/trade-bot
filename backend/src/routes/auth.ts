@@ -4,6 +4,7 @@ import { Router, Request, Response } from "express";
 import Joi from "joi";
 import { authService } from "../services/auth";
 import { RateLimiters } from "../services/rate-limiter";
+import logger from "../services/logger";
 
 const router = Router();
 
@@ -57,31 +58,44 @@ router.post("/register", RateLimiters.auth, async (req: Request, res: Response) 
       user: result.user,
     });
   } catch (err) {
-    console.error("Registration error:", err);
+    logger.error("Registration error", {
+      error: (err as Error).message,
+      email: req.body?.email,
+    });
     res.status(500).json({ success: false, error: "Registration failed" });
   }
 });
 
 // POST /api/auth/login
 router.post("/login", RateLimiters.auth, async (req: Request, res: Response) => {
-  console.log("Login attempt for:", req.body?.email);
+  logger.info("Login attempt", { email: req.body?.email });
   try {
     const { error, value } = loginSchema.validate(req.body);
     if (error) {
-      console.log("Login validation error:", error.details[0].message);
+      logger.warn("Login validation error", {
+        email: req.body?.email,
+        error: error.details[0].message,
+      });
       return res
         .status(400)
         .json({ success: false, error: error.details[0].message });
     }
 
     const result = await authService.login(value.email, value.password);
-    console.log("Login result:", result.success ? "success" : result.message);
+    logger.info("Login result", {
+      email: value.email,
+      success: result.success,
+      message: result.success ? "success" : result.message,
+    });
 
     if (!result.success) {
       return res.status(401).json({ success: false, error: result.message });
     }
 
-    console.log("Login successful for user:", result.user?.email);
+    logger.info("Login successful", {
+      email: result.user?.email,
+      userId: result.user?.id,
+    });
 
     // Set httpOnly cookies for security
     res.cookie('accessToken', result.tokens!.accessToken, {
@@ -103,7 +117,10 @@ router.post("/login", RateLimiters.auth, async (req: Request, res: Response) => 
       user: result.user,
     });
   } catch (err) {
-    console.error("Login error:", err);
+    logger.error("Login error", {
+      email: req.body?.email,
+      error: (err as Error).message,
+    });
     res.status(500).json({ success: false, error: "Login failed" });
   }
 });
@@ -144,7 +161,9 @@ router.post("/refresh", async (req: Request, res: Response) => {
       user: result.user,
     });
   } catch (err) {
-    console.error("Token refresh error:", err);
+    logger.error("Token refresh error", {
+      error: (err as Error).message,
+    });
     res.status(500).json({ success: false, error: "Token refresh failed" });
   }
 });
@@ -170,7 +189,9 @@ router.post("/logout", async (req: Request, res: Response) => {
       message: "Logged out successfully",
     });
   } catch (err) {
-    console.error("Logout error:", err);
+    logger.error("Logout error", {
+      error: (err as Error).message,
+    });
     res.status(500).json({ success: false, error: "Logout failed" });
   }
 });

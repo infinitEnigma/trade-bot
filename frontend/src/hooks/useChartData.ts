@@ -18,6 +18,9 @@ export const useChartData = ({
   const [data, setData] = useState<CandleData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 10;
+  const retryInterval = 2000; // 2 seconds
 
   // ✅ Fetch historical OHLC data using kline WebSocket cache (Phase 4 requirement)
   const fetchChartData = async () => {
@@ -27,7 +30,7 @@ export const useChartData = ({
 
       // Use kline endpoint which serves WebSocket-cached data
       const response = await api.getKlines({
-        symbol: `PERP_${symbol}`,
+        symbol: symbol,
         interval,
         limit,
       });
@@ -46,19 +49,32 @@ export const useChartData = ({
         );
 
         setData(chartData);
-        console.log(`📊 Dashboard kline: Loaded ${chartData.length} data points for ${symbol}`);
+        setRetryCount(0); // Reset on success
+        console.log(`📊 Loaded ${chartData.length} klines for ${symbol}`);
       } else {
-        // No data available yet - WebSocket might still be connecting
+        // No data available yet - retry if not at max attempts
+        if (retryCount < maxRetries) {
+          console.log(`📊 No kline data yet (attempt ${retryCount + 1}/${maxRetries}), will retry in 2s`);
+          setRetryCount(retryCount + 1);
+        } else {
+          console.warn(`📊 Failed to load klines after ${maxRetries} attempts`);
+          setError('Unable to load chart data. WebSocket may still be connecting.');
+        }
         setData([]);
-        setError(null); // Clear any previous errors
-        console.log(`📊 Dashboard kline: No data available yet for ${symbol} (WebSocket connecting)`);
       }
 
     } catch (err: any) {
-      // API failed - show empty chart
-      setError(null);
+      // API error - fail silently and retry
       setData([]);
-      console.warn(`Dashboard kline data unavailable for ${symbol}:`, err.message);
+      setError(null);
+      
+      if (retryCount < maxRetries) {
+        console.log(`⚠️ API error fetching klines, will retry: ${err.message}`);
+        setRetryCount(retryCount + 1);
+      } else {
+        console.warn(`⚠️ Failed to fetch klines after ${maxRetries} attempts:`, err.message);
+        setError('Unable to reach API. Check connection.');
+      }
     } finally {
       setLoading(false);
     }
@@ -70,6 +86,20 @@ export const useChartData = ({
       fetchChartData();
     }
   }, [symbol, interval, limit]);
+
+  // ✅ Retry polling when retry count changes
+  useEffect(() => {
+    if (retryCount === 0 || retryCount >= maxRetries || data.length > 0) {
+      return; // Don't retry if not needed
+    }
+
+    const timer = setTimeout(() => {
+      console.log(`📊 Retrying kline fetch (${retryCount}/${maxRetries})...`);
+      fetchChartData();
+    }, retryInterval);
+
+    return () => clearTimeout(timer);
+  }, [retryCount, data.length, symbol, interval, limit]);
 
   return {
     data,

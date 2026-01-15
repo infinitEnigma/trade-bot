@@ -32,11 +32,11 @@ export class OrderlyClient {
     path: string,
     body?: string
   ): Promise<string> {
+    const bs58 = await import("bs58");
     const message = `${timestamp}${method}${path}${body || ""}`;
-    const privateKeyBytes = Buffer.from(this.config.orderlySecret, "base64");
+    const privateKey = bs58.default.decode(this.config.orderlySecret);
     const messageBytes = new TextEncoder().encode(message);
-    const hash = createHash("sha256").update(messageBytes).digest();
-    const signature = await ed25519.sign(hash, privateKeyBytes);
+    const signature = await ed25519.sign(messageBytes, privateKey);
     return Buffer.from(signature).toString("base64url");
   }
 
