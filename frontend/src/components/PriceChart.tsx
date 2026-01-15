@@ -1,6 +1,6 @@
 /** @format */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   LineChart,
@@ -10,14 +10,11 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  BarChart,
-  Bar,
 } from "recharts";
 import { api } from "../lib/api";
 import { Card } from "./ui/Card";
 import { SectionHeader } from "./ui/SectionHeader";
 import { useVisibility } from "../hooks/useVisibility";
-import { useMemoryMonitor } from "../hooks/useMemoryMonitor";
 
 interface PriceChartProps {
   symbol?: string;
@@ -29,7 +26,6 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
     const [selectedSymbol, setSelectedSymbol] = useState(symbol);
     const [selectedResolution, setSelectedResolution] = useState(resolution);
     const isVisible = useVisibility();
-    useMemoryMonitor(true); // Enable memory monitoring
 
     // Cleanup on unmount to prevent memory leaks
     useEffect(() => {
@@ -79,9 +75,9 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
       gcTime: 600000, // Keep in cache for 10 minutes
     });
 
-    // Transform TradingView data to Recharts format
-    const transformData = (data: any) => {
-      if (!data?.success || !data.data) {
+    // Transform TradingView data to Recharts format - memoized for performance
+    const chartData = useMemo(() => {
+      if (!historyData?.success || !historyData.data) {
         return [];
       }
 
@@ -92,7 +88,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         l: lows,
         c: closes,
         v: volumes,
-      } = data.data;
+      } = historyData.data;
 
       // Validate required arrays exist and are not empty
       if (!timestamps || !opens || !highs || !lows || !closes ||
@@ -100,7 +96,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         return [];
       }
 
-      const chartData = [];
+      const data = [];
       const prices: number[] = [];
 
       // Process data points
@@ -118,7 +114,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
           continue;
         }
 
-        chartData.push({
+        data.push({
           time: time.toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
@@ -137,20 +133,17 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
 
       // Calculate MA(20) - only if we have enough data
       if (prices.length >= 20) {
-        for (let i = 19; i < chartData.length; i++) {
+        for (let i = 19; i < data.length; i++) {
           const sum = prices.slice(i - 19, i + 1).reduce((a, b) => a + b, 0);
           const avg = sum / 20;
-          (chartData[i] as any).ma20 = avg;
+          (data[i] as any).ma20 = avg;
         }
       }
 
-      return chartData;
-    };
-
-    const rawChartData = historyData ? transformData(historyData) : [];
-    // Limit data points to prevent memory accumulation
-    const maxDataPoints = 200; // Keep last 200 data points
-    const chartData = rawChartData.slice(-maxDataPoints);
+      // Limit data points to prevent memory accumulation
+      const maxDataPoints = 200; // Keep last 200 data points
+      return data.slice(-maxDataPoints);
+    }, [historyData]);
 
     // Get current price (latest close price)
     const currentPrice =
@@ -275,91 +268,45 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
           )}
 
           {!isLoading && !error && chartData.length > 0 && (
-            <div className="space-y-4">
-              {/* Price Chart */}
-              <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="rgba(255,255,255,0.1)"
-                    />
-                    <XAxis
-                      dataKey="time"
-                      stroke="#94a3b8"
-                      fontSize={12}
-                      tick={{ fill: "#94a3b8" }}
-                    />
-                    <YAxis
-                      stroke="#94a3b8"
-                      fontSize={12}
-                      tick={{ fill: "#94a3b8" }}
-                      domain={["dataMin - 0.1", "dataMax + 0.1"]}
-                    />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Line
-                      type="monotone"
-                      dataKey="price"
-                      stroke="#10b981"
-                      strokeWidth={2}
-                      dot={false}
-                      name="Price"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="ma20"
-                      stroke="#f59e0b"
-                      strokeWidth={1}
-                      strokeDasharray="5 5"
-                      dot={false}
-                      name="MA(20)"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* Volume Chart */}
-              <div className="h-[100px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="rgba(255,255,255,0.1)"
-                    />
-                    <XAxis
-                      dataKey="time"
-                      stroke="#94a3b8"
-                      fontSize={12}
-                      tick={{ fill: "#94a3b8" }}
-                    />
-                    <YAxis
-                      stroke="#94a3b8"
-                      fontSize={12}
-                      tick={{ fill: "#94a3b8" }}
-                    />
-                    <Tooltip
-                      content={({ active, payload, label }) => {
-                        if (active && payload && payload.length) {
-                          const data = payload[0].payload;
-                          return (
-                            <div className="glass-card p-2 border border-white/10">
-                              <p className="text-sm">{`Time: ${label}`}</p>
-                              <p className="text-sm text-info">{`Volume: ${data.volume?.toLocaleString()}`}</p>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }}
-                    />
-                    <Bar
-                      dataKey="volume"
-                      fill="#3b82f6"
-                      opacity={0.6}
-                      name="Volume"
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+            <div className="h-[400px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="rgba(255,255,255,0.1)"
+                  />
+                  <XAxis
+                    dataKey="time"
+                    stroke="#94a3b8"
+                    fontSize={12}
+                    tick={{ fill: "#94a3b8" }}
+                  />
+                  <YAxis
+                    stroke="#94a3b8"
+                    fontSize={12}
+                    tick={{ fill: "#94a3b8" }}
+                    domain={["dataMin - 0.1", "dataMax + 0.1"]}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Line
+                    type="monotone"
+                    dataKey="price"
+                    stroke="#10b981"
+                    strokeWidth={2}
+                    dot={false}
+                    name="Price"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="ma20"
+                    stroke="#f59e0b"
+                    strokeWidth={1}
+                    strokeDasharray="5 5"
+                    dot={false}
+                    name="MA(20)"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           )}
 

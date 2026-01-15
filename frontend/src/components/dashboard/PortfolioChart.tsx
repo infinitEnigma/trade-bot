@@ -16,7 +16,7 @@ interface PortfolioChartProps {
   onSymbolChange: (symbol: string) => void;
 }
 
-const PortfolioChart: React.FC<PortfolioChartProps> = ({
+const PortfolioChart: React.FC<PortfolioChartProps> = React.memo(({
   data,
   selectedSymbol,
   onSymbolChange,
@@ -91,6 +91,8 @@ const PortfolioChart: React.FC<PortfolioChartProps> = ({
       </ResponsiveContainer>
     </div>
   );
-};
+});
+
+PortfolioChart.displayName = "PortfolioChart";
 
 export default PortfolioChart;
