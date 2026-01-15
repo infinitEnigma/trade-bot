@@ -7,6 +7,7 @@ import { authService, TokenPayload } from "../services/auth";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { Pool } from "pg";
 import { query } from "../database/pool";  // ✅ Import from centralized module
+import logger from "../services/logger";
 
 const router = Router();
 
@@ -51,7 +52,7 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      console.error("Get strategies error:", err);
+      logger.error("Get strategies error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
       res
         .status(500)
         .json({ success: false, error: "Failed to get strategies" });
@@ -85,7 +86,7 @@ router.post(
         timestamp: Date.now(),
       });
     } catch (err) {
-      console.error("Create strategy error:", err);
+      logger.error("Create strategy error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
       res
         .status(500)
         .json({ success: false, error: "Failed to create strategy" });
@@ -117,7 +118,7 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      console.error("Get strategy error:", err);
+      logger.error("Get strategy error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId, strategyId: req.params.id });
       res.status(500).json({ success: false, error: "Failed to get strategy" });
     }
   }
@@ -162,7 +163,7 @@ router.put(
         timestamp: Date.now(),
       });
     } catch (err) {
-      console.error("Update strategy error:", err);
+      logger.error("Update strategy error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId, strategyId: req.params.id });
       res
         .status(500)
         .json({ success: false, error: "Failed to update strategy" });
@@ -205,7 +206,7 @@ router.delete(
         timestamp: Date.now(),
       });
     } catch (err) {
-      console.error("Delete strategy error:", err);
+      logger.error("Delete strategy error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId, strategyId: req.params.id });
       res
         .status(500)
         .json({ success: false, error: "Failed to delete strategy" });
@@ -256,7 +257,7 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      console.error("Get performance error:", err);
+      logger.error("Get performance error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId, strategyId: req.params.id });
       res
         .status(500)
         .json({ success: false, error: "Failed to get performance" });

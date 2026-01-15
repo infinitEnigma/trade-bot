@@ -27,10 +27,10 @@ function validateEnvironment(): void {
   const missing = REQUIRED_ENV_VARS.filter(key => !process.env[key]);
 
   if (missing.length > 0) {
-    console.error('❌ Missing required environment variables:');
-    missing.forEach(key => console.error(`   - ${key}`));
-    console.error('\nCreate .env file or set environment variables.');
-    console.error('See .env.example for template.');
+    logger.error('Missing required environment variables');
+    missing.forEach(key => logger.error(`   - ${key}`));
+    logger.error('Create .env file or set environment variables.');
+    logger.error('See .env.example for template.');
     process.exit(1);
   }
 
@@ -40,16 +40,15 @@ function validateEnvironment(): void {
     secrets.forEach(key => {
       const value = process.env[key]!;
       if (value.length < 32) {
-        console.error(
-          `❌ ${key} must be at least 32 characters in production.\n` +
-          `Current length: ${value.length}`
+        logger.error(
+          `${key} must be at least 32 characters in production. Current length: ${value.length}`
         );
         process.exit(1);
       }
     });
   }
 
-  console.log('✅ Environment validation passed');
+  logger.info('Environment validation passed');
 }
 
 validateEnvironment();
@@ -63,6 +62,7 @@ import { botRoutes } from "./routes/bot";
 import { balanceRoutes } from "./routes/balance";
 import { healthRoutes } from "./routes/health";
 import { httpLogger, errorLogger } from "./middleware/logger";
+import logger from "./services/logger";
 
 // ✅ Import market stream service (fixed import issue)
 import { marketStreamService } from "./services/market-stream";
@@ -74,7 +74,7 @@ import { initializePool, closePool } from "./database/pool";
 try {
   initializePool();
 } catch (error) {
-  console.error("❌ Failed to initialize database pool:", error);
+  logger.error("Failed to initialize database pool", { error: error instanceof Error ? error.message : String(error) });
   process.exit(1);
 }
 
@@ -83,7 +83,7 @@ import { redisService } from "./services/redis";
 
 // Connect to Redis on startup
 redisService.connect().catch((error) => {
-  console.error("❌ Failed to connect to Redis:", error);
+  logger.error("Failed to connect to Redis", { error: error instanceof Error ? error.message : String(error) });
 });
 
 
@@ -94,7 +94,7 @@ let lastActivityTime = Date.now();
 const updateClientCount = (change: number) => {
   activeClients = Math.max(0, activeClients + change);
   lastActivityTime = Date.now();
-  console.log(`👥 Active clients: ${activeClients} (last activity: ${new Date(lastActivityTime).toLocaleTimeString()})`);
+  logger.info(`Active clients: ${activeClients}`, { lastActivity: new Date(lastActivityTime).toLocaleTimeString() });
 
   // Store client count in Redis for monitoring
   redisService.setex("active_clients", 60, activeClients.toString()).catch(() => {
@@ -234,7 +234,7 @@ app.use(
     res: express.Response,
     next: express.NextFunction
   ) => {
-    console.error("Error:", err);
+    logger.error("Unhandled error", { error: err.message, stack: err.stack });
     res.status(500).json({
       success: false,
       error: "Internal server error",
@@ -245,22 +245,22 @@ app.use(
 
 // WebSocket connection handling
 io.on("connection", (socket) => {
-  console.log("Client connected:", socket.id);
+  logger.info("Client connected", { socketId: socket.id });
   updateClientCount(1);
 
   socket.on("subscribe", (room: string) => {
     socket.join(room);
-    console.log(`Client ${socket.id} subscribed to ${room}`);
+    logger.info("Client subscribed to room", { socketId: socket.id, room });
   });
 
   socket.on("unsubscribe", (room: string) => {
     socket.leave(room);
-    console.log(`Client ${socket.id} unsubscribed from ${room}`);
+    logger.info("Client unsubscribed from room", { socketId: socket.id, room });
   });
 
   // ✅ Handle market subscription (Task 4.3)
   socket.on("subscribe_market", (symbol: string) => {
-    console.log(`Client ${socket.id} subscribed to market: ${symbol}`);
+    logger.info("Client subscribed to market", { socketId: socket.id, symbol });
     socket.join(`market:${symbol}`);
 
     // Send latest tick immediately if available
@@ -269,7 +269,7 @@ io.on("connection", (socket) => {
         socket.emit(`market:${symbol}`, tick);
       }
     }).catch((err) => {
-      console.error(`Failed to send initial tick for ${symbol}:`, err);
+      logger.error("Failed to send initial tick", { symbol, error: err instanceof Error ? err.message : String(err) });
     });
 
     // Connect to Orderly if not already connected
@@ -277,12 +277,12 @@ io.on("connection", (socket) => {
   });
 
   socket.on("unsubscribe_market", (symbol: string) => {
-    console.log(`Client ${socket.id} unsubscribed from market: ${symbol}`);
+    logger.info("Client unsubscribed from market", { socketId: socket.id, symbol });
     socket.leave(`market:${symbol}`);
   });
 
   socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
+    logger.info("Client disconnected", { socketId: socket.id });
     updateClientCount(-1);
   });
 });
@@ -290,29 +290,29 @@ io.on("connection", (socket) => {
 const PORT = process.env.PORT || 3000;
 
 httpServer.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 WebSocket server ready`);
-  console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
+  logger.info(`Server running on port ${PORT}`);
+  logger.info('WebSocket server ready');
+  logger.info(`Environment: ${process.env.NODE_ENV || "development"}`);
 
   // ✅ Initialize market stream service (lazy-loaded - connects on-demand)
   marketStreamService.setSocketServer(io);
-  console.log('📊 Market stream service initialized (lazy-loaded - connects when needed)');
+  logger.info('Market stream service initialized (lazy-loaded - connects when needed)');
 });
 
 // ✅ Graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('📛 SIGTERM signal received: closing HTTP server');
+  logger.info('SIGTERM signal received: closing HTTP server');
   httpServer.close(async () => {
-    console.log('✅ HTTP server closed');
+    logger.info('HTTP server closed');
     await closePool();  // ✅ Close database pool
     process.exit(0);
   });
 });
 
 process.on('SIGINT', async () => {
-  console.log('📛 SIGINT signal received: closing HTTP server');
+  logger.info('SIGINT signal received: closing HTTP server');
   httpServer.close(async () => {
-    console.log('✅ HTTP server closed');
+    logger.info('HTTP server closed');
     await closePool();  // ✅ Close database pool
     process.exit(0);
   });

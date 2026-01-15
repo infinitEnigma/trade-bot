@@ -1,6 +1,7 @@
 /** @format */
 
 import { Pool, PoolClient } from 'pg';
+import logger from '../services/logger';
 
 // ✅ Singleton pattern - only one pool instance ever created
 let pool: Pool | null = null;
@@ -19,7 +20,7 @@ const getRequiredEnv = (key: string): string => {
  */
 export function initializePool(): Pool {
   if (pool) {
-    console.warn('⚠️  Pool already initialized, returning existing instance');
+    logger.warn('Pool already initialized, returning existing instance');
     return pool;
   }
 
@@ -38,16 +39,16 @@ export function initializePool(): Pool {
 
   // ✅ Error event handler
   pool.on('error', (err) => {
-    console.error('❌ Unexpected error on idle client:', err);
+    logger.error('Unexpected error on idle client', { error: err.message });
     process.exit(-1);
   });
 
   // ✅ Connect event handler
   pool.on('connect', () => {
-    console.log('✅ New database connection established');
+    logger.info('New database connection established');
   });
 
-  console.log('✅ Database pool initialized');
+  logger.info('Database pool initialized');
   return pool;
 }
 
@@ -82,10 +83,10 @@ export async function closePool(): Promise<void> {
     return;
   }
 
-  console.log('📦 Closing database pool...');
+  logger.info('Closing database pool...');
   await pool.end();
   pool = null;
-  console.log('✅ Database pool closed');
+  logger.info('Database pool closed');
 }
 
 /**

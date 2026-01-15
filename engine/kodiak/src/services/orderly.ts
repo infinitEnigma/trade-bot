@@ -4,6 +4,7 @@ import axios, { AxiosInstance } from "axios";
 import { OrderRequest, OrderResponse } from "../types/strategy";
 import { createHash } from "crypto";
 import * as ed25519 from "@noble/ed25519";
+import { logger } from "../utils/logger";
 
 interface OrderlyConfig {
   accountId: string;
@@ -127,10 +128,10 @@ export class OrderlyClient {
         );
       }
 
-      console.log(`✅ Position size validation passed for order: ${orderNotional} notional`);
+      logger.info('Position size validation passed', { orderNotional, symbol: request.symbol });
 
     } catch (error) {
-      console.error('❌ Position size validation failed:', error);
+      logger.error('Position size validation failed', { error: error instanceof Error ? error.message : String(error), symbol: request.symbol });
       throw error;
     }
   }

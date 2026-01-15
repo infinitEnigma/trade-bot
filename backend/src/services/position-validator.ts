@@ -2,6 +2,7 @@
 
 import axios from 'axios';
 import { Pool } from 'pg';
+import logger from './logger';
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -87,10 +88,10 @@ export async function getAccountLimits(
     );
 
     const accountData = accountResponse.data.data;
-    console.log('Account info retrieved:', {
-      max_leverage: accountData.max_leverage,
-      taker_fee: accountData.taker_fee_rate,
-      maker_fee: accountData.maker_fee_rate,
+    logger.info('Account info retrieved', {
+      maxLeverage: accountData.max_leverage,
+      takerFee: accountData.taker_fee_rate,
+      makerFee: accountData.maker_fee_rate,
     });
 
     // Get current positions for exposure calculation
@@ -125,7 +126,7 @@ export async function getAccountLimits(
       totalExposure += notionalValue;
     }
 
-    console.log('Current exposure calculated:', {
+    logger.info('Current exposure calculated', {
       totalExposure,
       positionsCount: positions.length,
     });
@@ -139,7 +140,7 @@ export async function getAccountLimits(
       makerFeeRate: parseFloat(accountData.maker_fee_rate || '0.001'),
     };
   } catch (error: any) {
-    console.error('Failed to get account limits:', error.message);
+    logger.error('Failed to get account limits', { error: error.message, orderlyAccountId });
     throw new Error(`Account validation failed: ${error.message}`);
   }
 }
@@ -154,7 +155,7 @@ export async function validatePositionSize(
   maxExposurePercent: number = 0.8,
   maxSinglePositionPercent: number = 0.25
 ): Promise<PositionValidationResult> {
-  console.log('Validating position size:', {
+  logger.debug('Validating position size', {
     notionalAmount,
     symbol,
     accountLimits: {
@@ -233,7 +234,7 @@ export async function validatePositionSize(
     };
   }
 
-  console.log('Position validation passed:', {
+  logger.debug('Position validation passed', {
     notionalAmount,
     maxAllowed: Math.min(maxSinglePosition, maxAccountExposure),
   });
@@ -271,7 +272,7 @@ export async function getUserKodiakCredentials(userId: string): Promise<{
       secretKey: encryptionService.decryptSecretKey(row.secret_key_encrypted),
     };
   } catch (error) {
-    console.error('Failed to get user Kodiak credentials:', error);
+    logger.error('Failed to get user Kodiak credentials', { error: error instanceof Error ? error.message : String(error), userId });
     return null;
   }
 }
@@ -310,7 +311,7 @@ export async function validateUserPosition(
       maxExposurePercent
     );
   } catch (error: any) {
-    console.error('Position validation failed:', error);
+    logger.error('Position validation failed', { error: error.message, userId, notionalAmount, symbol });
     return {
       isValid: false,
       reason: `Validation error: ${error.message}`,

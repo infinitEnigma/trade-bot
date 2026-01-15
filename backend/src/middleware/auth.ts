@@ -3,6 +3,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { authService } from '../services/auth';
+import logger from '../services/logger';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -50,7 +51,7 @@ export async function authMiddleware(
     req.user = payload;
     next();
   } catch (error) {
-    console.error('Auth middleware error:', error);
+    logger.error('Auth middleware error', { error: error instanceof Error ? error.message : String(error) });
 
     if (error instanceof jwt.TokenExpiredError) {
       res.status(401).json({

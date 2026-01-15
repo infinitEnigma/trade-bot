@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { UserLevel } from "@trade-bot/shared";
 import { pool } from "../database";
+import logger from "./logger";
 
 const JWT_SECRET = (() => {
   const secret = process.env.JWT_SECRET;
@@ -78,7 +79,7 @@ export class AuthService {
         tokens,
       };
     } catch (error) {
-      console.error("Registration error:", error);
+      logger.error("Registration error", { error: error instanceof Error ? error.message : String(error), email });
       return { success: false, message: "Registration failed" };
     }
   }
@@ -114,7 +115,7 @@ export class AuthService {
         tokens,
       };
     } catch (error) {
-      console.error("Login error:", error);
+      logger.error("Login error", { error: error instanceof Error ? error.message : String(error), email });
       return { success: false, message: "Login failed" };
     }
   }
@@ -260,7 +261,7 @@ export class AuthService {
 
       return { success: true };
     } catch (error) {
-      console.error("Wallet verification error:", error);
+      logger.error("Wallet verification error", { error: error instanceof Error ? error.message : String(error), userId, walletAddress });
       return {
         success: false,
         message: "Wallet verification failed",

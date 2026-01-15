@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { authService } from "../services/auth";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { getPool, query } from "../database/pool";  // ✅ Import from centralized module
+import logger from "../services/logger";
 
 const router = Router();
 
@@ -32,7 +33,7 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      console.error("Get bot instances error:", err);
+      logger.error("Get bot instances error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
       res
         .status(500)
         .json({ success: false, error: "Failed to get bot instances" });
@@ -135,7 +136,7 @@ router.post(
         timestamp: Date.now(),
       });
     } catch (err) {
-      console.error("Start bot error:", err);
+      logger.error("Start bot error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
       res.status(500).json({ success: false, error: "Failed to start bot" });
     }
   }
@@ -197,7 +198,7 @@ router.post(
         timestamp: Date.now(),
       });
     } catch (err) {
-      console.error("Stop bot error:", err);
+      logger.error("Stop bot error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
       res.status(500).json({ success: false, error: "Failed to stop bot" });
     }
   }
@@ -227,7 +228,7 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      console.error("Get bot status error:", err);
+      logger.error("Get bot status error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId, botId: req.params.botId });
       res
         .status(500)
         .json({ success: false, error: "Failed to get bot status" });
@@ -295,7 +296,7 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      console.error("Get bot performance error:", err);
+      logger.error("Get bot performance error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId, botId: req.params.botId });
       res
         .status(500)
         .json({ success: false, error: "Failed to get bot performance" });
@@ -376,7 +377,7 @@ router.post(
             ]);
           }
         } catch (error) {
-          console.error('Emergency stop timeout error:', error);
+          logger.error('Emergency stop timeout error', { error: error instanceof Error ? error.message : String(error), botId });
         }
       }, 30000); // 30 second timeout
 
@@ -390,7 +391,7 @@ router.post(
         timestamp: Date.now(),
       });
     } catch (err) {
-      console.error("Emergency stop error:", err);
+      logger.error("Emergency stop error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
       res.status(500).json({ success: false, error: "Failed to initiate emergency stop" });
     }
   }
@@ -415,11 +416,11 @@ router.post("/heartbeat", async (req: Request, res: Response) => {
       [status, position || 0, exposure || 0, new Date(timestamp || Date.now()), bot_id]
     );
 
-    console.log(`❤️ Bot ${bot_id} heartbeat: status=${status}, position=${position}, exposure=${exposure}`);
+    logger.info("Bot heartbeat received", { botId: bot_id, status, position, exposure });
 
     res.json({ success: true });
   } catch (err) {
-    console.error("Heartbeat error:", err);
+    logger.error("Heartbeat error", { error: err instanceof Error ? err.message : String(err) });
     res.status(500).json({ success: false, error: "Failed to record heartbeat" });
   }
 });
@@ -493,7 +494,7 @@ router.post("/report-trade", async (req: Request, res: Response) => {
 
     res.json({ success: true });
   } catch (err) {
-    console.error("Report trade error:", err);
+    logger.error("Report trade error", { error: err instanceof Error ? err.message : String(err) });
     res.status(500).json({ success: false, error: "Failed to report trade" });
   }
 });
@@ -508,7 +509,7 @@ setInterval(async () => {
     );
 
     for (const bot of deadBots.rows) {
-      console.log(`💀 Detected dead bot: ${bot.id}, marking as ERROR`);
+      logger.warn("Detected dead bot, marking as ERROR", { botId: bot.id, strategyId: bot.strategy_id });
 
       // Mark bot as dead/error
       await query(
@@ -528,7 +529,7 @@ setInterval(async () => {
       );
     }
   } catch (error) {
-    console.error('Dead bot detection error:', error);
+    logger.error('Dead bot detection error', { error: error instanceof Error ? error.message : String(error) });
   }
 }, 10000); // Check every 10 seconds
 

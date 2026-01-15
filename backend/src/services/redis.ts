@@ -1,6 +1,7 @@
 /** @format */
 
 import { createClient, RedisClientType } from "redis";
+import logger from "./logger";
 
 class RedisService {
   private client: RedisClientType;
@@ -13,11 +14,11 @@ class RedisService {
     });
 
     this.client.on("error", (err) => {
-      console.error("❌ Redis Client Error:", err);
+      logger.error("Redis Client Error", { error: err.message });
     });
 
     this.client.on("connect", () => {
-      console.log("✅ Redis Client Connected");
+      logger.info("Redis Client Connected");
     });
   }
 
@@ -33,7 +34,7 @@ class RedisService {
       await this.client.connect();
       // Explicitly select database 1 after connecting
       await this.client.select(1);
-      console.log("✅ Redis database 1 selected");
+      logger.info("Redis database 1 selected");
     }
   }
 
@@ -47,7 +48,7 @@ class RedisService {
     try {
       return await this.client.get(key);
     } catch (error) {
-      console.error("Redis GET error:", error);
+      logger.error("Redis GET error", { key, error: error instanceof Error ? error.message : String(error) });
       return null;
     }
   }
@@ -56,7 +57,7 @@ class RedisService {
     try {
       await this.client.set(key, value);
     } catch (error) {
-      console.error("Redis SET error:", error);
+      logger.error("Redis SET error", { key, error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -67,16 +68,16 @@ class RedisService {
       multi.set(key, value);
       multi.pExpire(key, ttl * 1000); // pExpire uses milliseconds
       await multi.exec();
-      // console.log(`💾 Redis SETEX: ${key} stored for ${ttl}s`);
+      // logger.debug(`Redis SETEX: ${key} stored for ${ttl}s`);
     } catch (error) {
-      console.error("❌ Redis SETEX error:", error);
+      logger.error("Redis SETEX error", { key, ttl, error: error instanceof Error ? error.message : String(error) });
       // Fallback to individual commands
       try {
         await this.client.set(key, value);
         await this.client.pExpire(key, ttl * 1000);
-        console.log(`💾 Redis SETEX (fallback): ${key} stored for ${ttl}s`);
+        logger.info("Redis SETEX fallback successful", { key, ttl });
       } catch (fallbackError) {
-        console.error("❌ Redis SETEX fallback error:", fallbackError);
+        logger.error("Redis SETEX fallback error", { key, ttl, error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError) });
       }
     }
   }
@@ -85,7 +86,7 @@ class RedisService {
     try {
       await this.client.del(key);
     } catch (error) {
-      console.error("Redis DEL error:", error);
+      logger.error("Redis DEL error", { key, error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -94,7 +95,7 @@ class RedisService {
       const result = await this.client.exists(key);
       return result === 1;
     } catch (error) {
-      console.error("Redis EXISTS error:", error);
+      logger.error("Redis EXISTS error", { key, error: error instanceof Error ? error.message : String(error) });
       return false;
     }
   }

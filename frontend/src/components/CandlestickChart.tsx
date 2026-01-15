@@ -213,7 +213,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     } catch (dataError) {
       console.error('Failed to update chart data:', dataError);
     }
-  }, [candleData, isChartReady]);
+  }, [candleData, isChartReady, isVisible]);
 
   return (
     <div className="w-full bg-white rounded-lg shadow-sm border border-gray-200">

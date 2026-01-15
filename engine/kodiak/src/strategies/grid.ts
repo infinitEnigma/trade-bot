@@ -9,6 +9,7 @@ import {
   OrderRequest,
   Trade,
 } from "../types/strategy";
+import { logger } from "../utils/logger";
 
 export class GridTradingStrategy {
   private config: GridStrategyConfig;
@@ -45,17 +46,19 @@ export class GridTradingStrategy {
       });
     }
 
-    console.log(
-      `[GridStrategy] Initialized ${this.config.symbol} with ${
-        this.levels.length
-      } levels, range: ${minPrice.toFixed(2)} - ${maxPrice.toFixed(2)}`
-    );
+    logger.info('Grid strategy initialized', {
+      symbol: this.config.symbol,
+      levels: this.levels.length,
+      minPrice: minPrice.toFixed(2),
+      maxPrice: maxPrice.toFixed(2),
+      botId: this.botId
+    });
   }
 
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
-    console.log(`[GridStrategy] Bot ${this.botId} started`);
+    logger.info('Grid strategy bot started', { botId: this.botId, symbol: this.config.symbol });
   }
 
   async stop(): Promise<void> {
@@ -77,7 +80,7 @@ export class GridTradingStrategy {
         }
       }
     }
-    console.log(`[GridStrategy] Bot ${this.botId} stopped`);
+    logger.info('Grid strategy bot stopped', { botId: this.botId, symbol: this.config.symbol });
   }
 
   async tick(): Promise<void> {
@@ -114,7 +117,7 @@ export class GridTradingStrategy {
       // Check order status
       await this.checkOrders();
     } catch (error) {
-      console.error(`[GridStrategy] Tick error:`, error);
+      logger.error('Grid strategy tick error', { error: error instanceof Error ? error.message : String(error), botId: this.botId, symbol: this.config.symbol });
     }
   }
 
@@ -132,14 +135,9 @@ export class GridTradingStrategy {
 
       const result = await this.orderly.createOrder(order);
       level.buyOrderId = result.orderId;
-      console.log(
-        `[GridStrategy] Placed buy order at ${level.price}, orderId: ${result.orderId}`
-      );
+      logger.info('Placed buy order', { price: level.price, orderId: result.orderId, botId: this.botId, symbol: this.config.symbol });
     } catch (error) {
-      console.error(
-        `[GridStrategy] Failed to place buy order at ${level.price}:`,
-        error
-      );
+      logger.error('Failed to place buy order', { price: level.price, error: error instanceof Error ? error.message : String(error), botId: this.botId, symbol: this.config.symbol });
     }
   }
 
@@ -157,14 +155,9 @@ export class GridTradingStrategy {
 
       const result = await this.orderly.createOrder(order);
       level.sellOrderId = result.orderId;
-      console.log(
-        `[GridStrategy] Placed sell order at ${level.price}, orderId: ${result.orderId}`
-      );
+      logger.info('Placed sell order', { price: level.price, orderId: result.orderId, botId: this.botId, symbol: this.config.symbol });
     } catch (error) {
-      console.error(
-        `[GridStrategy] Failed to place sell order at ${level.price}:`,
-        error
-      );
+      logger.error('Failed to place sell order', { price: level.price, error: error instanceof Error ? error.message : String(error), botId: this.botId, symbol: this.config.symbol });
     }
   }
 
@@ -196,11 +189,7 @@ export class GridTradingStrategy {
                 pnl: tradePnl,
               });
 
-              console.log(
-                `[GridStrategy] Buy order filled at ${
-                  level.price
-                }, PnL: ${tradePnl.toFixed(2)}`
-              );
+              logger.info('Buy order filled', { price: level.price, pnl: tradePnl.toFixed(2), botId: this.botId, symbol: this.config.symbol, orderId: order.orderId });
             } else if (
               order.status === "CANCELLED" ||
               order.status === "REJECTED"
@@ -242,11 +231,7 @@ export class GridTradingStrategy {
                 pnl: tradePnl,
               });
 
-              console.log(
-                `[GridStrategy] Sell order filled at ${
-                  level.price
-                }, PnL: ${tradePnl.toFixed(2)}`
-              );
+              logger.info('Sell order filled', { price: level.price, pnl: tradePnl.toFixed(2), botId: this.botId, symbol: this.config.symbol, orderId: order.orderId });
             } else if (
               order.status === "CANCELLED" ||
               order.status === "REJECTED"

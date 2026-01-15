@@ -76,7 +76,7 @@ async function getProfile(req: AuthenticatedRequest, res: Response) {
     });
     logger.info("Authentication successful for user", { userId: user.id, hasKodiak });
   } catch (err) {
-    console.error("Get profile error:", err);
+    logger.error("Get profile error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
     res.status(500).json({ success: false, error: "Failed to get profile" });
   }
 }
@@ -222,7 +222,7 @@ async function connectKodiak(req: AuthenticatedRequest, res: Response) {
         // Account verification logic would go here
       }
     } catch (verificationError) {
-      console.warn("Credential verification failed:", verificationError);
+      logger.warn("Credential verification failed", { error: verificationError instanceof Error ? verificationError.message : String(verificationError), userId });
       isVerified = false;
     }
 
@@ -253,7 +253,7 @@ async function connectKodiak(req: AuthenticatedRequest, res: Response) {
       },
     });
   } catch (err) {
-    console.error("Kodiak connect error:", err);
+    logger.error("Kodiak connect error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
     res.status(500).json({ success: false, error: "Failed to connect Kodiak credentials" });
   }
 }
@@ -270,7 +270,7 @@ async function disconnectKodiak(req: AuthenticatedRequest, res: Response) {
 
     res.json({ success: true, message: "Kodiak credentials disconnected" });
   } catch (err) {
-    console.error("Kodiak disconnect error:", err);
+    logger.error("Kodiak disconnect error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
     res.status(500).json({ success: false, error: "Failed to disconnect Kodiak credentials" });
   }
 }
@@ -299,7 +299,7 @@ async function getKodiakStatus(req: AuthenticatedRequest, res: Response) {
       },
     });
   } catch (err) {
-    console.error("Get Kodiak status error:", err);
+    logger.error("Get Kodiak status error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
     res.status(500).json({ success: false, error: "Failed to get Kodiak status" });
   }
 }
@@ -353,7 +353,7 @@ async function getKodiakPositions(req: AuthenticatedRequest, res: Response) {
       res.status(400).json({ success: false, error: "Failed to fetch positions from Kodiak API" });
     }
   } catch (err) {
-    console.error("Get Kodiak positions error:", err);
+    logger.error("Get Kodiak positions error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
     res.status(500).json({ success: false, error: "Failed to get Kodiak positions" });
   }
 }
@@ -395,7 +395,7 @@ async function getKodiakTrades(req: AuthenticatedRequest, res: Response) {
       res.status(400).json({ success: false, error: "Failed to fetch trades" });
     }
   } catch (err) {
-    console.error("Get Kodiak trades error:", err);
+    logger.error("Get Kodiak trades error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
     res.status(500).json({ success: false, error: "Failed to get Kodiak trades" });
   }
 }
@@ -441,7 +441,7 @@ async function getKodiakBalance(req: AuthenticatedRequest, res: Response) {
       try {
         accountInfo = await makeKodiakRequest("GET", "/client/info", accountId, apiKey, secretKey);
       } catch (infoError) {
-        console.warn("Could not fetch account info:", infoError);
+        logger.warn("Could not fetch account info", { error: infoError instanceof Error ? infoError.message : String(infoError), userId });
       }
 
       const responseData = {
@@ -461,7 +461,7 @@ async function getKodiakBalance(req: AuthenticatedRequest, res: Response) {
       res.status(400).json({ success: false, error: "Failed to fetch balance" });
     }
   } catch (err) {
-    console.error("Get Kodiak balance error:", err);
+    logger.error("Get Kodiak balance error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
     res.status(500).json({ success: false, error: "Failed to get Kodiak balance" });
   }
 }
@@ -493,7 +493,7 @@ async function verifyWallet(req: AuthenticatedRequest, res: Response) {
       message: "Wallet verified successfully. User level updated to VERIFIED.",
     });
   } catch (err) {
-    console.error("Wallet verification error:", err);
+    logger.error("Wallet verification error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
     res.status(500).json({ success: false, error: "Failed to verify wallet" });
   }
 }

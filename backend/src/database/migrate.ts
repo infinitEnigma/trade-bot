@@ -1,6 +1,7 @@
 /** @format */
 
 import { Pool } from "pg";
+import logger from "../services/logger";
 
 // PostgreSQL connection pool
 const pool = new Pool({
@@ -208,13 +209,13 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DE
 `;
 
 async function runMigrations() {
-  console.log("Running database migrations...");
+  logger.info("Running database migrations...");
 
   try {
     await pool.query(migrations);
-    console.log("Migrations completed successfully!");
+    logger.info("Migrations completed successfully!");
   } catch (error) {
-    console.error("Migration failed:", error);
+    logger.error("Migration failed", { error: error instanceof Error ? error.message : String(error) });
     throw error;
   } finally {
     await pool.end();
