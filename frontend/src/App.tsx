@@ -1,5 +1,6 @@
 /** @format */
 
+import React, { Suspense } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -9,15 +10,15 @@ import {
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 
-// Pages
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import Dashboard from "./pages/Dashboard";
-import Strategies from "./pages/Strategies";
-import Settings from "./pages/Settings";
-
 // Components
 import LoadingSpinner from "./components/ui/LoadingSpinner";
+
+// Lazy load pages
+const Login = React.lazy(() => import("./pages/Login"));
+const Register = React.lazy(() => import("./pages/Register"));
+const Dashboard = React.lazy(() => import("./pages/Dashboard"));
+const Strategies = React.lazy(() => import("./pages/Strategies"));
+const Settings = React.lazy(() => import("./pages/Settings"));
 
 // Protected Route Component
 const ProtectedRoute = ({
@@ -49,35 +50,37 @@ const AppRouter = () => {
   return (
     <Router>
       <div className="min-h-screen bg-background text-text">
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/strategies"
-            element={
-              <ProtectedRoute requireVerified={true}>
-                <Strategies />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <ProtectedRoute>
-                <Settings />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+        <Suspense fallback={<LoadingSpinner />}>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/strategies"
+              element={(
+                <ProtectedRoute requireVerified={true}>
+                  <Strategies />
+                </ProtectedRoute>
+              )}
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <Settings />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </Suspense>
       </div>
     </Router>
   );
