@@ -9,7 +9,11 @@
     "start": "node dist/index.js",
     "test": "jest",
     "db:migrate": "ts-node src/database/migrate.ts",
-    "db:seed": "ts-node src/database/seed.ts"
+    "db:migrate:files": "node ../scripts/run-migrations.js",
+    "db:reset": "npm run db:drop && npm run db:migrate:files",
+    "db:drop": "ts-node scripts/drop-tables.ts",
+    "db:seed": "ts-node src/database/seed.ts",
+    "db:status": "ts-node scripts/migration-status.ts"
   },
   "dependencies": {
     "@noble/ed25519": "^3.0.0",

@@ -42,7 +42,7 @@ export async function generateKodiakSignature(
 
     const signature = await ed25519.sign(messageBytes, privateKey);
     return Buffer.from(signature).toString("base64url");
-}
+  }
   catch (error) {
     throw new Error(
       `Failed to generate Kodiak signature: ${
