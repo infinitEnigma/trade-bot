@@ -252,10 +252,15 @@ router.get("/futures/:symbol", RateLimiters.market, async (req: Request, res: Re
     const cacheKey = `futures:${symbol}`;
 
     // Try Redis cache first (5 minute TTL for futures data)
-    const cached = await redisService.get(cacheKey);
-    if (cached) {
+    const cacheResult = await redisService.get(cacheKey);
+    if (cacheResult.success && cacheResult.data) {
       logger.debug("Futures data cache hit", { symbol });
-      return res.json(JSON.parse(cached));
+      return res.json(JSON.parse(cacheResult.data));
+    } else if (!cacheResult.success) {
+      logger.warn("Futures data cache read failed", {
+        symbol,
+        error: cacheResult.error
+      });
     }
 
     logger.debug("Futures data cache miss, fetching from Kodiak", { symbol });
@@ -283,12 +288,17 @@ router.get("/futures/:symbol", RateLimiters.market, async (req: Request, res: Re
 
     // Return cached data if available, even if stale
     const cacheKey = `futures:${req.params.symbol}`;
-    const cached = await redisService.get(cacheKey);
-    if (cached) {
+    const cacheResult = await redisService.get(cacheKey);
+    if (cacheResult.success && cacheResult.data) {
       logger.debug("Returning stale futures data due to API error", { symbol: req.params.symbol });
-      const staleData = JSON.parse(cached);
+      const staleData = JSON.parse(cacheResult.data);
       staleData.stale = true;
       return res.json(staleData);
+    } else if (!cacheResult.success) {
+      logger.warn("Stale futures cache read failed", {
+        symbol: req.params.symbol,
+        error: cacheResult.error
+      });
     }
 
     res.status(500).json({
@@ -479,10 +489,14 @@ router.get("/tv/config", async (req: Request, res: Response) => {
     const CACHE_TTL = 300; // 5 minutes (config doesn't change often)
 
     // Try Redis cache first
-    const cached = await redisService.get(cacheKey);
-    if (cached) {
+    const cacheResult = await redisService.get(cacheKey);
+    if (cacheResult.success && cacheResult.data) {
       logger.debug("TV Config cache hit");
-      return res.json(JSON.parse(cached));
+      return res.json(JSON.parse(cacheResult.data));
+    } else if (!cacheResult.success) {
+      logger.warn("TV Config cache read failed", {
+        error: cacheResult.error
+      });
     }
 
     logger.debug("TV Config cache miss, fetching from Kodiak");
@@ -561,11 +575,16 @@ router.get("/tv/history", async (req: Request, res: Response) => {
 
     // Always allow TV History calls - charts should work regardless of WebSocket connections
     // Check for cached data first (always preferable)
-    const cached = await redisService.get(cacheKey);
-    if (cached) {
-      const cachedData = JSON.parse(cached);
+    const cacheResult = await redisService.get(cacheKey);
+    if (cacheResult.success && cacheResult.data) {
+      const cachedData = JSON.parse(cacheResult.data);
       cachedData.cached = true;
       return res.json(cachedData);
+    } else if (!cacheResult.success) {
+      logger.warn("TV History cache read failed, falling back to API", {
+        cacheKey,
+        error: cacheResult.error
+      });
     }
 
     // No cached data - make external API call to get fresh chart data

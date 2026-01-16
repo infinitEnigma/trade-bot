@@ -44,58 +44,83 @@ class RedisService {
     }
   }
 
-  public async get(key: string): Promise<string | null> {
+  public async get(key: string): Promise<{ success: boolean; data: string | null; error?: string }> {
     try {
-      return await this.client.get(key);
+      const data = await this.client.get(key);
+      return { success: true, data };
     } catch (error) {
-      logger.error("Redis GET error", { key, error: error instanceof Error ? error.message : String(error) });
-      return null;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error("Redis GET error", { key, error: errorMessage });
+      return { success: false, data: null, error: errorMessage };
     }
   }
 
-  public async set(key: string, value: string): Promise<void> {
+  public async set(key: string, value: string): Promise<{ success: boolean; error?: string }> {
     try {
       await this.client.set(key, value);
+      return { success: true };
     } catch (error) {
-      logger.error("Redis SET error", { key, error: error instanceof Error ? error.message : String(error) });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error("Redis SET error", { key, error: errorMessage });
+      return { success: false, error: errorMessage };
     }
   }
 
-  public async setex(key: string, ttl: number, value: string): Promise<void> {
+  public async setex(key: string, ttl: number, value: string): Promise<{ success: boolean; error?: string }> {
     try {
       // Use multi command to ensure atomicity
       const multi = this.client.multi();
       multi.set(key, value);
       multi.pExpire(key, ttl * 1000); // pExpire uses milliseconds
       await multi.exec();
-      // logger.debug(`Redis SETEX: ${key} stored for ${ttl}s`);
+      return { success: true };
     } catch (error) {
-      logger.error("Redis SETEX error", { key, ttl, error: error instanceof Error ? error.message : String(error) });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error("Redis SETEX error", { key, ttl, error: errorMessage });
       // Fallback to individual commands
       try {
         await this.client.set(key, value);
         await this.client.pExpire(key, ttl * 1000);
         logger.info("Redis SETEX fallback successful", { key, ttl });
+        return { success: true };
       } catch (fallbackError) {
-        logger.error("Redis SETEX fallback error", { key, ttl, error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError) });
+        const fallbackErrorMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        logger.error("Redis SETEX fallback error", { key, ttl, error: fallbackErrorMessage });
+        return { success: false, error: fallbackErrorMessage };
       }
     }
   }
 
-  public async del(key: string): Promise<void> {
+  public async del(key: string): Promise<{ success: boolean; error?: string }> {
     try {
       await this.client.del(key);
+      return { success: true };
     } catch (error) {
-      logger.error("Redis DEL error", { key, error: error instanceof Error ? error.message : String(error) });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error("Redis DEL error", { key, error: errorMessage });
+      return { success: false, error: errorMessage };
     }
   }
 
-  public async exists(key: string): Promise<boolean> {
+  public async exists(key: string): Promise<{ success: boolean; data: boolean; error?: string }> {
     try {
       const result = await this.client.exists(key);
-      return result === 1;
+      return { success: true, data: result === 1 };
     } catch (error) {
-      logger.error("Redis EXISTS error", { key, error: error instanceof Error ? error.message : String(error) });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error("Redis EXISTS error", { key, error: errorMessage });
+      return { success: false, data: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Check if Redis is currently healthy
+   */
+  public async isHealthy(): Promise<boolean> {
+    try {
+      await this.client.ping();
+      return true;
+    } catch (error) {
       return false;
     }
   }

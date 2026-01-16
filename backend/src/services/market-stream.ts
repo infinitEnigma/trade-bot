@@ -222,53 +222,79 @@ class AuthManager {
  */
 class CacheManager {
   async cacheTick(symbol: string, data: TickData): Promise<void> {
-    await redisService.setex(`tick:${symbol}`, 60, JSON.stringify(data));
+    const result = await redisService.setex(`tick:${symbol}`, 60, JSON.stringify(data));
+    if (!result.success) {
+      logger.warn('Tick cache write failed', {
+        symbol,
+        error: result.error
+      });
+    }
   }
 
   async getTick(symbol: string): Promise<TickData | null> {
-    try {
-      const cached = await redisService.get(`tick:${symbol}`);
-      return cached ? JSON.parse(cached) : null;
-    } catch (error) {
-      logger.error('Get tick error', { symbol, error });
-      return null;
+    const result = await redisService.get(`tick:${symbol}`);
+    if (result.success && result.data) {
+      return JSON.parse(result.data);
+    } else if (!result.success) {
+      logger.warn('Tick cache read failed', {
+        symbol,
+        error: result.error
+      });
     }
+    return null;
   }
 
   async cacheKlines(symbol: string, interval: string, klines: any[]): Promise<void> {
     const cacheKey = `kline:${symbol}:${interval}`;
-    await redisService.setex(cacheKey, 3600, JSON.stringify(klines));
+    const result = await redisService.setex(cacheKey, 3600, JSON.stringify(klines));
+    if (!result.success) {
+      logger.warn('Klines cache write failed', {
+        symbol,
+        interval,
+        error: result.error
+      });
+    }
   }
 
   async getKlines(symbol: string, interval: string, limit: number = 300): Promise<any[]> {
-    try {
-      const cacheKey = `kline:${symbol}:${interval}`;
-      const cached = await redisService.get(cacheKey);
-      if (cached) {
-        const klines = JSON.parse(cached);
-        return klines.slice(-limit);
-      }
-      return [];
-    } catch (error) {
-      logger.error('Get klines error', { symbol, interval, error });
-      return [];
+    const cacheKey = `kline:${symbol}:${interval}`;
+    const result = await redisService.get(cacheKey);
+    if (result.success && result.data) {
+      const klines = JSON.parse(result.data);
+      return klines.slice(-limit);
+    } else if (!result.success) {
+      logger.warn('Klines cache read failed', {
+        symbol,
+        interval,
+        error: result.error
+      });
     }
+    return [];
   }
 
   async cacheMarkPrice(symbol: string, data: any): Promise<void> {
     const cacheKey = `markprice:${symbol}`;
-    await redisService.setex(cacheKey, 30, JSON.stringify(data));
+    const result = await redisService.setex(cacheKey, 30, JSON.stringify(data));
+    if (!result.success) {
+      logger.warn('Mark price cache write failed', {
+        symbol,
+        error: result.error
+      });
+    }
   }
 
   async getMarkPrice(symbol: string): Promise<any | null> {
-    try {
-      const cacheKey = `markprice:${symbol}`;
-      const cached = await redisService.get(cacheKey);
-      return cached ? JSON.parse(cached) : null;
-    } catch (error) {
-      logger.error('Get mark price error', { symbol, error });
-      return null;
+    const cacheKey = `markprice:${symbol}`;
+    const result = await redisService.get(cacheKey);
+    if (result.success && result.data) {
+      return JSON.parse(result.data);
+    } else if (!result.success) {
+      logger.warn('Mark price cache read failed', {
+        symbol,
+        error: result.error
+      });
     }
+    return null;
   }
 }
 

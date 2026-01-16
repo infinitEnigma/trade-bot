@@ -21,24 +21,36 @@ export async function getUserBalance(userId: string): Promise<{
   try {
     // ✅ Check Redis cache first (60 second TTL)
     const cacheKey = `balance:${userId}`;
-    const cached = await redisService.get(cacheKey);
+    const cacheResult = await redisService.get(cacheKey);
 
-    if (cached) {
+    if (cacheResult.success && cacheResult.data) {
       logger.debug('Balance cache hit', { userId });
-      return JSON.parse(cached);
+      return JSON.parse(cacheResult.data);
+    } else if (!cacheResult.success) {
+      logger.warn('Balance cache read failed, falling back to API', {
+        userId,
+        error: cacheResult.error
+      });
     }
 
     // ✅ Fetch balance from Orderly API (fetchOrderlyBalance now gets account ID internally)
     const balance = await fetchOrderlyBalance(userId);
 
     // ✅ Cache for 60 seconds
-    await redisService.setex(cacheKey, 60, JSON.stringify(balance));
+    const cacheWriteResult = await redisService.setex(cacheKey, 60, JSON.stringify(balance));
+    if (!cacheWriteResult.success) {
+      logger.warn('Balance cache write failed', {
+        userId,
+        error: cacheWriteResult.error
+      });
+    }
 
     logger.info('Balance fetched and cached', {
       userId,
       walletBalance: balance.walletBalance,
       accountBalance: balance.accountBalance,
       totalAssets: balance.totalAssets,
+      cacheSuccess: cacheWriteResult.success,
     });
 
     return balance;
@@ -256,8 +268,17 @@ async function fetchOrderlyBalance(
  */
 export async function invalidateBalanceCache(userId: string): Promise<void> {
   const cacheKey = `balance:${userId}`;
-  await redisService.del(cacheKey);
+  const delResult = await redisService.del(cacheKey);
+  if (!delResult.success) {
+    logger.warn('Balance cache invalidation failed', {
+      userId,
+      error: delResult.error
+    });
+  }
   // Also invalidate credential cache when balance cache is invalidated
   credentialCacheService.invalidateCredentials(userId);
-  logger.info('Balance and credential caches invalidated', { userId });
+  logger.info('Balance and credential caches invalidated', {
+    userId,
+    redisSuccess: delResult.success
+  });
 }

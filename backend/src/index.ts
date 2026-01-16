@@ -96,15 +96,19 @@ redisService.connect().catch((error) => {
 let activeClients = 0;
 let lastActivityTime = Date.now();
 
-const updateClientCount = (change: number) => {
+const updateClientCount = async (change: number) => {
   activeClients = Math.max(0, activeClients + change);
   lastActivityTime = Date.now();
   logger.info(`Active clients: ${activeClients}`, { lastActivity: new Date(lastActivityTime).toLocaleTimeString() });
 
   // Store client count in Redis for monitoring
-  redisService.setex("active_clients", 60, activeClients.toString()).catch(() => {
-    // Ignore Redis errors for client tracking
-  });
+  const clientCountResult = await redisService.setex("active_clients", 60, activeClients.toString());
+  if (!clientCountResult.success) {
+    logger.warn('Failed to store active client count in Redis', {
+      activeClients,
+      error: clientCountResult.error
+    });
+  }
 };
 
 // Track HTTP API activity (simplified - just update timestamp)

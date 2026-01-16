@@ -312,10 +312,15 @@ async function getKodiakPositions(req: AuthenticatedRequest, res: Response) {
     const userId = req.user!.userId;
     const cacheKey = `kodiak:positions:${userId}`;
 
-    const cachedData = await redisService.get(cacheKey);
-    if (cachedData) {
+    const cacheResult = await redisService.get(cacheKey);
+    if (cacheResult.success && cacheResult.data) {
       logger.debug("Returning cached positions data", { userId });
-      return res.json(JSON.parse(cachedData));
+      return res.json(JSON.parse(cacheResult.data));
+    } else if (!cacheResult.success) {
+      logger.warn("Positions cache read failed", {
+        userId,
+        error: cacheResult.error
+      });
     }
 
     const result = await query(
@@ -366,10 +371,15 @@ async function getKodiakTrades(req: AuthenticatedRequest, res: Response) {
     const userId = req.user!.userId;
     const cacheKey = `kodiak:trades:${userId}`;
 
-    const cachedData = await redisService.get(cacheKey);
-    if (cachedData) {
+    const cacheResult = await redisService.get(cacheKey);
+    if (cacheResult.success && cacheResult.data) {
       logger.debug("Returning cached trades data", { userId });
-      return res.json(JSON.parse(cachedData));
+      return res.json(JSON.parse(cacheResult.data));
+    } else if (!cacheResult.success) {
+      logger.warn("Trades cache read failed", {
+        userId,
+        error: cacheResult.error
+      });
     }
 
     const result = await query(
@@ -408,10 +418,15 @@ async function getKodiakBalance(req: AuthenticatedRequest, res: Response) {
     const userId = req.user!.userId;
     const cacheKey = `kodiak:balance:${userId}`;
 
-    const cachedData = await redisService.get(cacheKey);
-    if (cachedData) {
+    const cacheResult = await redisService.get(cacheKey);
+    if (cacheResult.success && cacheResult.data) {
       logger.debug("Returning cached balance data", { userId });
-      return res.json(JSON.parse(cachedData));
+      return res.json(JSON.parse(cacheResult.data));
+    } else if (!cacheResult.success) {
+      logger.warn("Balance cache read failed", {
+        userId,
+        error: cacheResult.error
+      });
     }
 
     const result = await query(
