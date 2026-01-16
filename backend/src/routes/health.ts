@@ -1,7 +1,7 @@
 /** @format */
 
 import { Router, Request, Response } from "express";
-import { getPool } from "../database/pool";
+import { getPool, getPoolMetrics } from "../database/pool";
 import { redisService } from "../services/redis";
 import logger from "../services/logger";
 
@@ -165,6 +165,31 @@ router.get("/health/database", async (req: Request, res: Response) => {
       status: "unhealthy",
       timestamp: new Date().toISOString(),
       error: "Database health check failed",
+      message: (error as Error).message,
+    });
+  }
+});
+
+// Database pool metrics endpoint
+router.get("/metrics/database", (req: Request, res: Response) => {
+  try {
+    const metrics = getPoolMetrics();
+
+    res.json({
+      timestamp: new Date().toISOString(),
+      pool: metrics.pool,
+      performance: metrics.performance,
+      config: metrics.config,
+      health: metrics.health,
+    });
+
+    logger.debug("Database metrics endpoint accessed");
+
+  } catch (error) {
+    logger.error("Database metrics error", { error: (error as Error).message });
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch database metrics",
       message: (error as Error).message,
     });
   }

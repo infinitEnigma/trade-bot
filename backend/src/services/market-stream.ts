@@ -34,6 +34,15 @@ interface KlineData {
 // ===========================================
 
 /**
+ * Circuit breaker states for WebSocket reconnection
+ */
+enum CircuitState {
+  CLOSED = 'closed',     // Normal operation, reconnections allowed
+  OPEN = 'open',         // Circuit open, stop retrying
+  HALF_OPEN = 'half_open' // Testing if service recovered
+}
+
+/**
  * Manages WebSocket connections, reconnections, and heartbeats
  */
 class WebSocketManager {
@@ -41,10 +50,15 @@ class WebSocketManager {
   private reconnectIntervals: Map<string, NodeJS.Timeout> = new Map();
   private heartbeatIntervals: Map<string, NodeJS.Timeout> = new Map();
   private reconnectAttempts: Map<string, number> = new Map();
+  private circuitStates: Map<string, CircuitState> = new Map();
+  private lastFailureTime: Map<string, number> = new Map();
+  private circuitBreakerTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
   private readonly BASE_URL = 'wss://ws-evm.orderly.org/ws/stream';
   private readonly MIN_RECONNECT_DELAY = 1000;
   private readonly MAX_RECONNECT_DELAY = 30000;
+  private readonly MAX_RECONNECT_ATTEMPTS = 12; // Stop after 12 attempts (~30 minutes)
+  private readonly CIRCUIT_BREAKER_TIMEOUT = 5 * 60 * 1000; // 5 minutes before trying again
 
   async createConnection(accountId: string): Promise<WebSocket> {
     if (this.websockets.has('market')) {
@@ -62,6 +76,8 @@ class WebSocketManager {
         logger.info('Orderly market WebSocket connected successfully');
         this.websockets.set('market', ws);
         this.reconnectAttempts.set('market', 0);
+        // Reset circuit breaker on successful connection
+        this.circuitStates.set('market', CircuitState.CLOSED);
         this.startHeartbeat('market', ws);
         resolve(ws);
       });
@@ -129,9 +145,52 @@ class WebSocketManager {
     if (this.reconnectIntervals.has(wsKey)) return;
 
     const attempts = this.reconnectAttempts.get(wsKey) || 0;
-    const delay = this.calculateBackoff(wsKey);
+    const circuitState = this.circuitStates.get(wsKey) || CircuitState.CLOSED;
 
-    logger.info('Scheduling reconnect', { wsKey, attempt: attempts + 1, delayMs: Math.round(delay) });
+    // Check if circuit breaker is open (stop retrying)
+    if (circuitState === CircuitState.OPEN) {
+      const lastFailure = this.lastFailureTime.get(wsKey) || 0;
+      const timeSinceFailure = Date.now() - lastFailure;
+
+      // If enough time has passed, try half-open state
+      if (timeSinceFailure >= this.CIRCUIT_BREAKER_TIMEOUT) {
+        logger.info('Circuit breaker transitioning to half-open', { wsKey, timeSinceFailureMs: timeSinceFailure });
+        this.circuitStates.set(wsKey, CircuitState.HALF_OPEN);
+        this.reconnectAttempts.set(wsKey, 0); // Reset attempts for half-open
+      } else {
+        logger.debug('Circuit breaker open, skipping reconnect', {
+          wsKey,
+          attempts,
+          timeSinceFailureMs: timeSinceFailure,
+          remainingMs: this.CIRCUIT_BREAKER_TIMEOUT - timeSinceFailure
+        });
+        return;
+      }
+    }
+
+    // Check if we've exceeded maximum retry attempts
+    if (attempts >= this.MAX_RECONNECT_ATTEMPTS) {
+      logger.error('Maximum reconnection attempts exceeded, opening circuit breaker', {
+        wsKey,
+        attempts,
+        maxAttempts: this.MAX_RECONNECT_ATTEMPTS
+      });
+      this.circuitStates.set(wsKey, CircuitState.OPEN);
+      this.lastFailureTime.set(wsKey, Date.now());
+
+      // Schedule circuit breaker reset
+      this.scheduleCircuitBreakerReset(wsKey);
+      return;
+    }
+
+    const delay = this.calculateBackoff(wsKey);
+    logger.info('Scheduling reconnect', {
+      wsKey,
+      attempt: attempts + 1,
+      maxAttempts: this.MAX_RECONNECT_ATTEMPTS,
+      delayMs: Math.round(delay),
+      circuitState
+    });
 
     const timer = setTimeout(async () => {
       logger.info('Attempting reconnect', { wsKey, attempt: attempts + 1 });
@@ -141,6 +200,23 @@ class WebSocketManager {
     }, delay);
 
     this.reconnectIntervals.set(wsKey, timer);
+  }
+
+  private scheduleCircuitBreakerReset(wsKey: string): void {
+    if (this.circuitBreakerTimeouts.has(wsKey)) return;
+
+    logger.info('Scheduling circuit breaker reset', {
+      wsKey,
+      resetDelayMs: this.CIRCUIT_BREAKER_TIMEOUT
+    });
+
+    const timer = setTimeout(() => {
+      logger.info('Circuit breaker reset timeout reached', { wsKey });
+      this.circuitBreakerTimeouts.delete(wsKey);
+      // Note: circuit breaker will transition to half-open on next reconnect attempt
+    }, this.CIRCUIT_BREAKER_TIMEOUT);
+
+    this.circuitBreakerTimeouts.set(wsKey, timer);
   }
 
   disconnect(wsKey: string): void {
@@ -168,7 +244,12 @@ class WebSocketManager {
     this.heartbeatIntervals.forEach(timer => clearInterval(timer));
     this.heartbeatIntervals.clear();
     this.reconnectAttempts.clear();
-    logger.info('All WebSocket connections disconnected');
+    // Clear circuit breaker state
+    this.circuitStates.clear();
+    this.lastFailureTime.clear();
+    this.circuitBreakerTimeouts.forEach(timer => clearTimeout(timer));
+    this.circuitBreakerTimeouts.clear();
+    logger.info('All WebSocket connections and circuit breaker state cleared');
   }
 }
 
