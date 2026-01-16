@@ -72,8 +72,8 @@ import { balanceRoutes } from "./routes/balance";
 import { healthRoutes } from "./routes/health";
 import { httpLogger, errorLogger } from "./middleware/logger";
 
-// ✅ Import market stream service (fixed import issue)
-import { marketStreamService } from "./services/market-stream";
+// ✅ Import market stream service (refactored)
+import { marketStreamService } from "./services/market-stream/index";
 
 // ✅ Import authentication service for WebSocket JWT validation
 import { authService } from "./services/auth";

@@ -1,0 +1,236 @@
+/** @format */
+
+import WebSocket from 'ws';
+import { Server } from 'socket.io';
+import logger from '../../services/logger';
+import { query } from '../../database/pool';
+
+import { TickData, KlineData, MarketStreamStatus } from './types';
+import { WebSocketManager } from './websocket-manager';
+import { AuthManager } from './auth-manager';
+import { CacheManager } from './cache-manager';
+import { SubscriptionManager } from './subscription-manager';
+import { MessageHandler } from './message-handler';
+
+/**
+ * Main market stream service that orchestrates all components
+ * Provides high-level API for market data streaming functionality
+ */
+export class MarketStreamService {
+  private wsManager: WebSocketManager;
+  private authManager: AuthManager;
+  private cacheManager: CacheManager;
+  private messageHandler: MessageHandler;
+  private subscriptionManager: SubscriptionManager;
+  private io: Server | null = null;
+
+  constructor() {
+    this.wsManager = new WebSocketManager();
+    this.authManager = new AuthManager();
+    this.cacheManager = new CacheManager();
+    this.messageHandler = new MessageHandler(this.cacheManager);
+    this.subscriptionManager = new SubscriptionManager();
+  }
+
+  /**
+   * Initialize market stream service with Socket.io instance
+   */
+  setSocketServer(io: Server): void {
+    this.io = io;
+    this.messageHandler.setSocketServer(io);
+    logger.info('Market stream service initialized with Socket.io');
+  }
+
+  /**
+   * Connect to Orderly public market WebSocket
+   * Uses: wss://ws-evm.orderly.org/ws/stream/public
+   */
+  async connectToOrderly(symbols: string[]): Promise<void> {
+    logger.info('connectToOrderly called with symbols', { symbols });
+
+    try {
+      // Get account ID for WebSocket URL
+      const accountId = await this.authManager.getAccountId();
+      if (!accountId) {
+        logger.error('No account found for WebSocket connection');
+        return;
+      }
+
+      const ws = await this.wsManager.createConnection(accountId);
+
+      // Authenticate the connection
+      await this.authManager.authenticate(ws, accountId);
+
+      // Set up message handling
+      ws.on('message', (data: WebSocket.Data) => {
+        try {
+          const message = JSON.parse(data.toString());
+          this.messageHandler.handleMessage(message);
+        } catch (error) {
+          logger.error('Failed to parse WebSocket message', {
+            error: (error as Error).message
+          });
+        }
+      });
+
+      // Queue subscriptions for these symbols
+      symbols.forEach((symbol) => {
+        const topic = `${symbol}@kline_1m`;
+        this.subscriptionManager.addPendingSubscription(topic);
+        logger.info('Added topic to pending subscriptions', { symbol, topic });
+      });
+
+      // Send pending subscriptions
+      this.sendPendingSubscriptions();
+
+    } catch (error) {
+      logger.error('Failed to connect to Orderly', {
+        error: (error as Error).message
+      });
+    }
+  }
+
+  /**
+   * Send all pending subscriptions
+   */
+  private sendPendingSubscriptions(): void {
+    const ws = this.wsManager.getConnection();
+    if (!ws || !this.wsManager.isConnected()) {
+      logger.warn('Cannot send subscriptions - WebSocket not connected');
+      return;
+    }
+
+    const topics = this.subscriptionManager.getPendingSubscriptions();
+    logger.info('Sending pending subscriptions', { count: topics.length, topics });
+
+    topics.forEach(topic => {
+      this.subscribeToTopic(ws, topic);
+      this.subscriptionManager.clearPendingSubscription(topic);
+    });
+  }
+
+  /**
+   * Send subscription message for a topic
+   */
+  private subscribeToTopic(ws: WebSocket, topic: string): void {
+    if (ws.readyState !== WebSocket.OPEN) {
+      logger.warn('Cannot subscribe - WebSocket not open', { topic, readyState: ws.readyState });
+      return;
+    }
+
+    try {
+      const message = JSON.stringify({
+        id: `sub_${topic}_${Date.now()}`,
+        event: 'subscribe',
+        topic: topic,
+      });
+
+      ws.send(message);
+      logger.info('Subscription message sent to Orderly', { topic });
+    } catch (error) {
+      logger.error('Failed to send subscription', {
+        topic,
+        error: (error as Error).message
+      });
+    }
+  }
+
+  /**
+   * Connect to Orderly kline stream
+   * Kline topics: kline_1m, kline_5m, kline_15m, kline_30m, kline_1h, kline_1d, kline_1w, kline_1M
+   * @deprecated Use subscribe() instead for better resource management
+   */
+  connectToKline(symbol: string, interval: string): void {
+    const topic = `${symbol}@kline_${interval}`;
+    this.subscriptionManager.subscribe('legacy-client', topic);
+  }
+
+  /**
+   * Connect to Orderly mark price stream
+   * Mark price topics: {symbol}@markprice (push interval: 1s)
+   * @deprecated Use subscribe() instead for better resource management
+   */
+  connectToMarkPrice(symbol: string): void {
+    const topic = `${symbol}@markprice`;
+    this.subscriptionManager.subscribe('legacy-client', topic);
+  }
+
+  /**
+   * Subscribe to market data with reference counting
+   */
+  subscribe(clientId: string, topic: string, options: { priority?: 'high' | 'medium' | 'low' } = {}): void {
+    this.subscriptionManager.subscribe(clientId, topic);
+  }
+
+  /**
+   * Unsubscribe from market data with reference counting
+   */
+  unsubscribe(clientId: string, topic: string): void {
+    this.subscriptionManager.unsubscribe(clientId, topic);
+  }
+
+  /**
+   * Get latest tick data from cache
+   */
+  async getLatestTick(symbol: string): Promise<TickData | null> {
+    return this.cacheManager.getTick(symbol);
+  }
+
+  /**
+   * Get kline data from cache
+   */
+  async getKlines(symbol: string, interval: string, limit: number = 300): Promise<KlineData[]> {
+    return this.cacheManager.getKlines(symbol, interval, limit);
+  }
+
+  /**
+   * Get latest mark price data from cache
+   */
+  async getLatestMarkPrice(symbol: string): Promise<any | null> {
+    return this.cacheManager.getMarkPrice(symbol);
+  }
+
+  /**
+   * Disconnect all connections (shutdown)
+   */
+  disconnectAll(): void {
+    this.wsManager.disconnectAll();
+    this.subscriptionManager.clearAll();
+    logger.info('Market stream service disconnected');
+  }
+
+  /**
+   * Get service status
+   */
+  getStatus(): MarketStreamStatus {
+    const subscriptionStats = this.subscriptionManager.getStats();
+
+    return {
+      connected: this.wsManager.isConnected(),
+      websockets: this.wsManager.isConnected() ? ['market'] : [],
+      pendingSubscriptions: this.subscriptionManager.getPendingSubscriptions().length,
+      activeHeartbeats: 0, // Simplified - could be enhanced
+      subscriptionStats,
+    };
+  }
+
+  /**
+   * Get detailed service statistics
+   */
+  getDetailedStats(): {
+    websocket: any;
+    cache: any;
+    subscriptions: any;
+    messageHandler: any;
+  } {
+    return {
+      websocket: this.wsManager.getStats(),
+      cache: this.cacheManager.getStats(),
+      subscriptions: this.subscriptionManager.getDetailedStats(),
+      messageHandler: this.messageHandler.getStats(),
+    };
+  }
+}
+
+// Export singleton instance
+export const marketStreamService = new MarketStreamService();
