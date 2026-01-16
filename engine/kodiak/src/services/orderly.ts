@@ -33,12 +33,42 @@ export class OrderlyClient {
     path: string,
     body?: string
   ): Promise<string> {
-    const bs58 = await import("bs58");
-    const message = `${timestamp}${method}${path}${body || ""}`;
-    const privateKey = bs58.default.decode(this.config.orderlySecret);
+    try {
+      // Create the message string as required by Kodiak API
+      const message = `${timestamp}${method}${path}${body || ""}`;
+
+      // Decode base64 secret key to bytes
+      let privateKeyBytes = Buffer.from(this.config.orderlySecret, "base64");
+
+      // Handle different key formats - Ed25519 expects 32 bytes
+      if (privateKeyBytes.length > 32) {
+        // If key is longer than 32 bytes, take first 32 bytes (private key part)
+        privateKeyBytes = privateKeyBytes.subarray(0, 32);
+      } else if (privateKeyBytes.length < 32) {
+        // If key is shorter, pad with zeros (defensive programming)
+        const padded = Buffer.alloc(32);
+        privateKeyBytes.copy(padded);
+        privateKeyBytes = padded;
+      }
+
+    // Convert message to bytes
     const messageBytes = new TextEncoder().encode(message);
-    const signature = await ed25519.sign(messageBytes, privateKey);
-    return Buffer.from(signature).toString("base64url");
+
+    // Hash the message with SHA256 as required by Kodiak API
+    const hash = createHash("sha256").update(messageBytes).digest();
+
+    // Sign the hash using Ed25519
+    const signature = await ed25519.sign(hash, privateKeyBytes);
+
+      // Return base64url-encoded signature
+      return Buffer.from(signature).toString("base64url");
+    } catch (error) {
+      throw new Error(
+        `Failed to generate Kodiak signature: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
   }
 
   private async signRequest(

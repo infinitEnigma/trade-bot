@@ -3,6 +3,7 @@
 import axios from 'axios';
 import { query } from '../database/pool';
 import logger from './logger';
+import { generateOrderlySignature } from '../utils/orderly-signature'; // ✅ Import backend crypto utility
 
 export interface AccountLimits {
   balance: number;
@@ -20,32 +21,7 @@ export interface PositionValidationResult {
   recommended?: number;
 }
 
-/**
- * Generate Orderly API signature
- */
-async function generateOrderlySignature(
-  timestamp: number,
-  method: string,
-  path: string,
-  body: string,
-  secretKey: string
-): Promise<string> {
-  const message = `${timestamp}${method}${path}${body}`;
-  const privateKeyBytes = Buffer.from(secretKey, 'base64');
-  const messageBytes = new TextEncoder().encode(message);
 
-  // Use Web Crypto API for Ed25519 signing
-  const key = await crypto.subtle.importKey(
-    'raw',
-    privateKeyBytes,
-    { name: 'Ed25519', namedCurve: 'Ed25519' },
-    false,
-    ['sign']
-  );
-
-  const signature = await crypto.subtle.sign('Ed25519', key, messageBytes);
-  return Buffer.from(signature).toString('base64url');
-}
 
 /**
  * Get account limits and current exposure from Orderly API

@@ -3,6 +3,7 @@
 import { query } from '../database/pool';
 import { redisService } from './redis';
 import logger from './logger';
+import { generateKodiakSignature } from '../utils/orderly-signature'; // ✅ Import backend crypto utility
 
 /**
  * Fetch user's account balance from Orderly
@@ -87,7 +88,7 @@ async function fetchOrderlyBalance(
 
     // Get Kodiak credentials for authentication
     const credsResult = await query(
-      'SELECT api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE account_id = $1',
+      'SELECT api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE account_id = $1',
       [accountId]
     );
 
@@ -96,16 +97,38 @@ async function fetchOrderlyBalance(
       throw new Error('Kodiak credentials not found');
     }
 
+    const row = credsResult.rows[0];
+    if (!row.verified) {
+      logger.error('Kodiak credentials found but not verified', { row });
+      throw new Error('Kodiak credentials not verified');
+    }
+
     const apiKey = require('../services/encryption').encryptionService.decryptApiKey(
-      credsResult.rows[0].api_key_encrypted
+      row.api_key_encrypted
     );
     const secretKey = require('../services/encryption').encryptionService.decryptSecretKey(
-      credsResult.rows[0].secret_key_encrypted
+      row.secret_key_encrypted
     );
+
+    logger.info('Using Kodiak credentials for balance fetch', {
+      accountId,
+      apiKeyPrefix: apiKey.substring(0, 8) + '...',
+      secretKeyPrefix: secretKey.substring(0, 8) + '...',
+      verified: row.verified
+    });
 
     const timestamp = Date.now();
     const path = '/v1/client/info';
     const signature = await generateKodiakSignature(timestamp, 'GET', path, '', secretKey);
+
+    logger.info('Generated signature for balance request', {
+      accountId,
+      timestamp,
+      path,
+      body: '',
+      signaturePrefix: signature.substring(0, 16) + '...',
+      signatureLength: signature.length
+    });
 
     const requestHeaders = {
       'orderly-account-id': accountId,
@@ -235,27 +258,7 @@ async function fetchOrderlyBalance(
   }
 }
 
-/**
- * Generate Kodiak signature using Ed25519
- */
-async function generateKodiakSignature(
-  timestamp: number,
-  method: string,
-  path: string,
-  body: string,
-  secretKey: string
-): Promise<string> {
-  const bs58 = await import("bs58");
-  const ed25519 = await import("@noble/ed25519");
 
-  const message = `${timestamp}${method}${path}${body}`;
-
-  const privateKey = bs58.default.decode(secretKey);
-  const messageBytes = new TextEncoder().encode(message);
-
-  const signature = await ed25519.sign(messageBytes, privateKey);
-  return Buffer.from(signature).toString("base64url");
-}
 
 /**
  * Invalidate balance cache (call when user deposits/withdraws)

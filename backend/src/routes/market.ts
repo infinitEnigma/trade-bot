@@ -3,8 +3,6 @@
 import { Router, Request, Response } from "express";
 import axios from "axios";
 import { authService, TokenPayload } from "../services/auth";
-import { createHash } from "crypto";
-import * as ed25519 from "@noble/ed25519";
 import { redisService } from "../services/redis";
 import { query } from "../database/pool";  // ✅ Import from centralized module
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";  // ✅ Import centralized auth
@@ -12,6 +10,7 @@ import logger from "../services/logger";  // ✅ Import structured logger
 import { encryptionService } from "../services/encryption";  // ✅ Import encryption service
 import { RateLimiters } from "../services/rate-limiter";
 import { marketStreamService } from "../services/market-stream";
+import { generateKodiakSignature } from "../utils/orderly-signature";  // ✅ Import backend crypto utility
 
 const router = Router();
 
@@ -54,10 +53,13 @@ async function getKodiakCredentials(userId: string): Promise<{
       return null;
     }
 
+    const apiKey = encryptionService.decryptApiKey(row.api_key_encrypted);
+    const secretKey = encryptionService.decryptSecretKey(row.secret_key_encrypted);
+
     return {
       accountId: row.account_id,
-      apiKey: encryptionService.decryptApiKey(row.api_key_encrypted),
-      secretKey: encryptionService.decryptSecretKey(row.secret_key_encrypted),
+      apiKey,
+      secretKey,
       verified: row.verified,
     };
   } catch (error) {
@@ -69,33 +71,7 @@ async function getKodiakCredentials(userId: string): Promise<{
   }
 }
 
-// Generate Kodiak signature using Ed25519
-async function generateKodiakSignature(
-  timestamp: number,
-  method: string,
-  path: string,
-  body: string,
-  secretKey: string
-): Promise<string> {
-  const message = `${timestamp}${method}${path}${body}`;
-  let privateKeyBytes = Buffer.from(secretKey, "base64");
 
-  // Handle different key formats - Ed25519 expects 32 bytes
-  if (privateKeyBytes.length > 32) {
-    // If key is longer than 32 bytes, take first 32 bytes (private key part)
-    privateKeyBytes = privateKeyBytes.subarray(0, 32);
-  } else if (privateKeyBytes.length < 32) {
-    // If key is shorter, pad with zeros (unlikely but defensive)
-    const padded = Buffer.alloc(32);
-    privateKeyBytes.copy(padded);
-    privateKeyBytes = padded;
-  }
-
-  const messageBytes = new TextEncoder().encode(message);
-  const hash = createHash("sha256").update(messageBytes).digest();
-  const signature = await ed25519.sign(hash, privateKeyBytes);
-  return Buffer.from(signature).toString("base64url");
-}
 
 // GET /api/market/ticker
 router.get("/ticker", RateLimiters.market, async (req: Request, res: Response) => {

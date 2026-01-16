@@ -29,6 +29,7 @@ router.get(
     } catch (error) {
       logger.error('Get balance error', {
         userId: (req as AuthenticatedRequest).user?.userId,
+        userLevel: (req as AuthenticatedRequest).user?.userLevel,
         error: (error as Error).message,
       });
 
