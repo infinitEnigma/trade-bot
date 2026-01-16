@@ -1,16 +1,8 @@
 /** @format */
 
 import axios from 'axios';
-import { Pool } from 'pg';
+import { query } from '../database/pool';
 import logger from './logger';
-
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME || 'trade_bot',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
-});
 
 export interface AccountLimits {
   balance: number;
@@ -254,7 +246,7 @@ export async function getUserKodiakCredentials(userId: string): Promise<{
   secretKey: string;
 } | null> {
   try {
-    const result = await pool.query(
+    const result = await query(
       'SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1',
       [userId]
     );

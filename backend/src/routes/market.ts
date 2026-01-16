@@ -31,24 +31,42 @@ const WS_BASE =
 // ✅ Using centralized AuthenticatedRequest and authMiddleware
 
 // Helper to get Kodiak credentials for user
-async function getKodiakCredentials(userId: string) {
-  const result = await query(
-    "SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1",
-    [userId]
-  );
+async function getKodiakCredentials(userId: string): Promise<{
+  accountId: string;
+  apiKey: string;
+  secretKey: string;
+  verified: boolean;
+} | null> {
+  try {
+    const result = await query(
+      "SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1",
+      [userId]
+    );
 
-  if (result.rows.length === 0) {
+    if (result.rows.length === 0) {
+      logger.debug("No Kodiak credentials found for user", { userId });
+      return null;
+    }
+
+    const row = result.rows[0];
+    if (!row.verified) {
+      logger.debug("Kodiak credentials found but not verified", { userId });
+      return null;
+    }
+
+    return {
+      accountId: row.account_id,
+      apiKey: encryptionService.decryptApiKey(row.api_key_encrypted),
+      secretKey: encryptionService.decryptSecretKey(row.secret_key_encrypted),
+      verified: row.verified,
+    };
+  } catch (error) {
+    logger.error("Failed to get Kodiak credentials", {
+      userId,
+      error: error instanceof Error ? error.message : String(error)
+    });
     return null;
   }
-
-  return {
-    accountId: result.rows[0].account_id,
-    apiKey: encryptionService.decryptApiKey(result.rows[0].api_key_encrypted),
-    secretKey: encryptionService.decryptSecretKey(
-      result.rows[0].secret_key_encrypted
-    ),
-    verified: result.rows[0].verified,
-  };
 }
 
 // Generate Kodiak signature using Ed25519

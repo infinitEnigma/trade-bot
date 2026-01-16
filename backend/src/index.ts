@@ -23,7 +23,10 @@ const REQUIRED_ENV_VARS = [
   'JWT_SECRET',
   'JWT_REFRESH_SECRET',
   'ENCRYPTION_MASTER_KEY',
-  'NODE_ENV'
+  'NODE_ENV',
+  'KODIAK_API_URL',
+  'KODIAK_WS_URL',
+  'FRONTEND_URL'
 ];
 
 function validateEnvironment(): void {

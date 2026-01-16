@@ -53,12 +53,82 @@ export async function authMiddleware(
   } catch (error) {
     logger.error('Auth middleware error', { error: error instanceof Error ? error.message : String(error) });
 
+    // Handle token expiration - attempt automatic refresh
     if (error instanceof jwt.TokenExpiredError) {
-      res.status(401).json({
-        success: false,
-        code: -1003,
-        message: 'Unauthorized - token expired'
-      });
+      logger.debug('Access token expired, attempting automatic refresh');
+
+      try {
+        // Get refresh token from httpOnly cookie
+        const refreshToken = req.cookies?.refreshToken;
+        if (!refreshToken) {
+          logger.debug('No refresh token available');
+          res.status(401).json({
+            success: false,
+            code: -1003,
+            message: 'Unauthorized - token expired and no refresh token'
+          });
+          return;
+        }
+
+        // Attempt to refresh the token
+        const refreshResult = await authService.refreshToken(refreshToken);
+        if (!refreshResult.success || !refreshResult.tokens) {
+          logger.debug('Token refresh failed', { message: refreshResult.message });
+          res.status(401).json({
+            success: false,
+            code: -1004,
+            message: 'Unauthorized - token refresh failed'
+          });
+          return;
+        }
+
+        logger.info('Token automatically refreshed', {
+          userId: refreshResult.user?.id,
+          email: refreshResult.user?.email
+        });
+
+        // Set new httpOnly cookies
+        res.cookie('accessToken', refreshResult.tokens.accessToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 4 * 60 * 60 * 1000, // 4 hours
+        });
+
+        res.cookie('refreshToken', refreshResult.tokens.refreshToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        });
+
+        // Verify the new access token and set user on request
+        const newPayload = await authService.validateToken(refreshResult.tokens.accessToken);
+        if (!newPayload) {
+          logger.error('New access token validation failed after refresh');
+          res.status(500).json({
+            success: false,
+            code: -1005,
+            message: 'Token refresh succeeded but validation failed'
+          });
+          return;
+        }
+
+        req.user = newPayload;
+        next();
+
+      } catch (refreshError) {
+        logger.error('Token refresh process failed', {
+          error: refreshError instanceof Error ? refreshError.message : String(refreshError)
+        });
+        res.status(401).json({
+          success: false,
+          code: -1006,
+          message: 'Unauthorized - token refresh error'
+        });
+        return;
+      }
+
       return;
     }
 
