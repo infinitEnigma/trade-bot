@@ -3,6 +3,7 @@
 import winston from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
 import path from 'path';
+import { getContextForLogging } from '../utils/context';
 
 // ✅ Define log levels
 const LOG_LEVELS = {
@@ -22,19 +23,25 @@ const LOG_COLORS = {
   debug: 'white',
 };
 
+// ✅ Custom format that includes correlation ID
+const customFormat = winston.format.combine(
+  winston.format.timestamp({
+    format: 'YYYY-MM-DD HH:mm:ss:ms',
+  }),
+  winston.format.printf((info: any) => {
+    const context = getContextForLogging();
+    const contextStr = Object.keys(context).length > 0
+      ? ` [${Object.entries(context).map(([k, v]) => `${k}=${v}`).join(' ')}]`
+      : '';
+
+    return `${info.timestamp} ${info.level}: ${info.message}${contextStr}`;
+  })
+);
+
 // ✅ Create logger instance
 const logger = winston.createLogger({
   levels: LOG_LEVELS,
-  format: winston.format.combine(
-    // ✅ Add timestamp to all logs
-    winston.format.timestamp({
-      format: 'YYYY-MM-DD HH:mm:ss:ms',
-    }),
-    // ✅ Add severity level
-        winston.format.printf(
-          (info: any) => `${info.timestamp} ${info.level}: ${info.message}`
-        )
-  ),
+  format: customFormat,
   defaultMeta: { service: 'trade-bot' },
 });
 

@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from "uuid";
 import { authService } from "../services/auth";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { getPool, query } from "../database/pool";  // ✅ Import from centralized module
+import { ValidationError, NotFoundError, DatabaseError, createErrorResponse } from "../types/errors";
+import { getCorrelationId } from "../utils/context";
 import logger from "../services/logger";
 
 const router = Router();

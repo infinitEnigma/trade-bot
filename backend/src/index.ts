@@ -12,6 +12,9 @@ import { Server } from "socket.io";
 // Import logger first before any other code
 import logger from "./services/logger";
 
+// Application start time for uptime tracking
+const START_TIME = Date.now();
+
 // Add at the very top of index.ts, before any other code
 const REQUIRED_ENV_VARS = [
   'DB_HOST',
@@ -376,23 +379,111 @@ httpServer.listen(PORT, () => {
   logger.info('Market stream service initialized (lazy-loaded - connects when needed)');
 });
 
-// ✅ Graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM signal received: closing HTTP server');
-  httpServer.close(async () => {
-    logger.info('HTTP server closed');
-    await closePool();  // ✅ Close database pool
-    process.exit(0);
+/**
+ * Graceful shutdown handler
+ * Ensures all connections are properly closed before exiting
+ */
+const gracefulShutdown = async (signal: string): Promise<void> => {
+  logger.info(`${signal} received, starting graceful shutdown sequence`, {
+    uptime: Math.floor((Date.now() - START_TIME) / 1000),
+    activeClients,
   });
+
+  const shutdownStart = Date.now();
+  let shutdownCompleted = false;
+
+  // Set a maximum shutdown timeout (30 seconds)
+  const shutdownTimeout = setTimeout(() => {
+    if (!shutdownCompleted) {
+      logger.error('Forced shutdown after timeout - some connections may not be cleanly closed', {
+        shutdownDuration: Date.now() - shutdownStart,
+      });
+      process.exit(1);
+    }
+  }, 30000);
+
+  try {
+    // Phase 1: Stop accepting new connections
+    logger.info('Phase 1: Stopping new connections');
+    httpServer.close((err) => {
+      if (err) {
+        logger.error('Error closing HTTP server', { error: err.message });
+      } else {
+        logger.info('HTTP server closed - no longer accepting connections');
+      }
+    });
+
+    // Phase 2: Close external service connections
+    logger.info('Phase 2: Closing external connections');
+
+    // Disconnect market stream WebSockets
+    try {
+      marketStreamService.disconnectAll();
+      logger.info('Market stream connections closed');
+    } catch (error) {
+      logger.error('Error closing market stream connections', { error: error instanceof Error ? error.message : String(error) });
+    }
+
+    // Disconnect Redis
+    try {
+      await redisService.disconnect();
+      logger.info('Redis connection closed');
+    } catch (error) {
+      logger.error('Error closing Redis connection', { error: error instanceof Error ? error.message : String(error) });
+    }
+
+    // Phase 3: Close database connections
+    logger.info('Phase 3: Closing database connections');
+    try {
+      await closePool();
+      logger.info('Database pool closed');
+    } catch (error) {
+      logger.error('Error closing database pool', { error: error instanceof Error ? error.message : String(error) });
+    }
+
+    // Phase 4: Final cleanup
+    logger.info('Phase 4: Final cleanup completed');
+
+    const shutdownDuration = Date.now() - shutdownStart;
+    logger.info('Graceful shutdown completed successfully', {
+      shutdownDurationMs: shutdownDuration,
+      shutdownDurationSec: Math.floor(shutdownDuration / 1000),
+    });
+
+    shutdownCompleted = true;
+    clearTimeout(shutdownTimeout);
+    process.exit(0);
+
+  } catch (error) {
+    logger.error('Critical error during graceful shutdown', {
+      error: error instanceof Error ? error.message : String(error),
+      shutdownDuration: Date.now() - shutdownStart,
+    });
+    shutdownCompleted = true;
+    clearTimeout(shutdownTimeout);
+    process.exit(1);
+  }
+};
+
+// ✅ Register graceful shutdown handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle uncaught exceptions (development safety net)
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception - initiating emergency shutdown', {
+    error: error.message,
+    stack: error.stack,
+  });
+  gracefulShutdown('uncaughtException');
 });
 
-process.on('SIGINT', async () => {
-  logger.info('SIGINT signal received: closing HTTP server');
-  httpServer.close(async () => {
-    logger.info('HTTP server closed');
-    await closePool();  // ✅ Close database pool
-    process.exit(0);
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled promise rejection - initiating emergency shutdown', {
+    reason: reason instanceof Error ? reason.message : String(reason),
   });
+  gracefulShutdown('unhandledRejection');
 });
 
 export { app, io };

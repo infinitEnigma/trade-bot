@@ -3,6 +3,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { authService } from '../services/auth';
+import { setUserContext } from '../utils/context';
 import logger from '../services/logger';
 
 export interface AuthenticatedRequest extends Request {
@@ -49,6 +50,10 @@ export async function authMiddleware(
     }
 
     req.user = payload;
+
+    // Set user context for logging and tracing
+    setUserContext(payload.userId, payload.userLevel);
+
     next();
   } catch (error) {
     logger.error('Auth middleware error', { error: error instanceof Error ? error.message : String(error) });
