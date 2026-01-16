@@ -4,6 +4,7 @@ import { query } from '../database/pool';
 import { redisService } from './redis';
 import logger from './logger';
 import { generateKodiakSignature } from '../utils/orderly-signature'; // ✅ Import backend crypto utility
+import { credentialCacheService } from './credential-cache';
 
 /**
  * Fetch user's account balance from Orderly
@@ -27,31 +28,14 @@ export async function getUserBalance(userId: string): Promise<{
       return JSON.parse(cached);
     }
 
-    // ✅ Fetch user's Orderly account ID from kodiak_credentials table
-    const userResult = await query(
-      'SELECT account_id FROM kodiak_credentials WHERE user_id = $1',
-      [userId]
-    );
-
-    if (userResult.rows.length === 0) {
-      throw new Error('User not found or no Kodiak account connected');
-    }
-
-    const orderlyAccountId = userResult.rows[0].account_id;
-
-    if (!orderlyAccountId) {
-      throw new Error('User has no Orderly account connected');
-    }
-
-    // ✅ Fetch balance from Orderly API
-    const balance = await fetchOrderlyBalance(orderlyAccountId);
+    // ✅ Fetch balance from Orderly API (fetchOrderlyBalance now gets account ID internally)
+    const balance = await fetchOrderlyBalance(userId);
 
     // ✅ Cache for 60 seconds
     await redisService.setex(cacheKey, 60, JSON.stringify(balance));
 
     logger.info('Balance fetched and cached', {
       userId,
-      orderlyAccountId,
       walletBalance: balance.walletBalance,
       accountBalance: balance.accountBalance,
       totalAssets: balance.totalAssets,
@@ -71,7 +55,7 @@ export async function getUserBalance(userId: string): Promise<{
  * Fetch balance directly from Orderly API
  */
 async function fetchOrderlyBalance(
-  accountId: string
+  userId: string
 ): Promise<{
   walletBalance: number;
   accountBalance: number;
@@ -80,37 +64,44 @@ async function fetchOrderlyBalance(
   totalAssets: number;
   timestamp: string;
 }> {
-  try {
-    logger.info('Fetching balance from Orderly API', {
-      accountId,
-      endpoint: `https://api.orderly.org/v1/client/info`,
-    });
+  let accountId = 'unknown'; // For error logging
 
-    // Get Kodiak credentials for authentication
+  try {
+    // Get Kodiak credentials for authentication and use cached decrypted keys
     const credsResult = await query(
-      'SELECT api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE account_id = $1',
-      [accountId]
+      'SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1',
+      [userId]
     );
 
     if (credsResult.rows.length === 0) {
-      logger.error('No Kodiak credentials found for account', { accountId });
+      logger.error('No Kodiak credentials found for user', { userId });
       throw new Error('Kodiak credentials not found');
     }
 
     const row = credsResult.rows[0];
     if (!row.verified) {
-      logger.error('Kodiak credentials found but not verified', { row });
+      logger.error('Kodiak credentials found but not verified', { row, userId });
       throw new Error('Kodiak credentials not verified');
     }
 
-    const apiKey = require('../services/encryption').encryptionService.decryptApiKey(
-      row.api_key_encrypted
-    );
-    const secretKey = require('../services/encryption').encryptionService.decryptSecretKey(
-      row.secret_key_encrypted
+    const accountId = row.account_id;
+
+    logger.info('Fetching balance from Orderly API', {
+      userId,
+      accountId,
+      endpoint: `https://api.orderly.org/v1/client/info`,
+    });
+
+    // ✅ Use cached decrypted credentials instead of decrypting every time
+    const { apiKey, secretKey } = await credentialCacheService.getOrCacheCredentials(
+      userId,
+      row.api_key_encrypted,
+      row.secret_key_encrypted,
+      accountId
     );
 
-    logger.info('Using Kodiak credentials for balance fetch', {
+    logger.info('Using cached Kodiak credentials for balance fetch', {
+      userId,
       accountId,
       apiKeyPrefix: apiKey.substring(0, 8) + '...',
       secretKeyPrefix: secretKey.substring(0, 8) + '...',
@@ -266,5 +257,7 @@ async function fetchOrderlyBalance(
 export async function invalidateBalanceCache(userId: string): Promise<void> {
   const cacheKey = `balance:${userId}`;
   await redisService.del(cacheKey);
-  logger.info('Balance cache invalidated', { userId });
+  // Also invalidate credential cache when balance cache is invalidated
+  credentialCacheService.invalidateCredentials(userId);
+  logger.info('Balance and credential caches invalidated', { userId });
 }
