@@ -72,6 +72,9 @@ import { httpLogger, errorLogger } from "./middleware/logger";
 // ✅ Import market stream service (fixed import issue)
 import { marketStreamService } from "./services/market-stream";
 
+// ✅ Import authentication service for WebSocket JWT validation
+import { authService } from "./services/auth";
+
 // ✅ Initialize database pool first (before routes)
 import { initializePool, closePool } from "./database/pool";
 
@@ -252,9 +255,74 @@ app.use(
   }
 );
 
+// ✅ WebSocket JWT Authentication Middleware
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.replace('Bearer ', '');
+
+    if (!token) {
+      logger.warn("WebSocket connection rejected: No JWT token", {
+        socketId: socket.id,
+        ip: socket.handshake.address
+      });
+      return next(new Error("Authentication required"));
+    }
+
+    // Verify JWT token
+    const decoded = await authService.validateToken(token);
+    if (!decoded) {
+      logger.warn("WebSocket connection rejected: Invalid JWT token", {
+        socketId: socket.id,
+        ip: socket.handshake.address
+      });
+      return next(new Error("Invalid token"));
+    }
+
+    // Verify user still exists and is active
+    const user = await authService.getUserById(decoded.userId);
+    if (!user) {
+      logger.warn("WebSocket connection rejected: User not found", {
+        socketId: socket.id,
+        userId: decoded.userId,
+        ip: socket.handshake.address
+      });
+      return next(new Error("User not found"));
+    }
+
+    // Attach user context to socket
+    (socket as any).user = {
+      userId: decoded.userId,
+      userLevel: user.userLevel,
+      email: user.email
+    };
+
+    logger.info("WebSocket connection authenticated", {
+      socketId: socket.id,
+      userId: decoded.userId,
+      userLevel: user.userLevel,
+      ip: socket.handshake.address
+    });
+
+    next();
+  } catch (error) {
+    logger.error("WebSocket authentication error", {
+      socketId: socket.id,
+      error: error instanceof Error ? error.message : String(error),
+      ip: socket.handshake.address
+    });
+    next(new Error("Authentication failed"));
+  }
+});
+
 // WebSocket connection handling
 io.on("connection", (socket) => {
-  logger.info("Client connected", { socketId: socket.id });
+  const user = (socket as any).user;
+  logger.info("Authenticated client connected", {
+    socketId: socket.id,
+    userId: user.userId,
+    userLevel: user.userLevel,
+    ip: socket.handshake.address
+  });
   updateClientCount(1);
 
   socket.on("subscribe", (room: string) => {

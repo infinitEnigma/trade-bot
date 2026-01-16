@@ -3,6 +3,7 @@
 import { Router, Request, Response } from "express";
 import { getPool, getPoolMetrics } from "../database/pool";
 import { redisService } from "../services/redis";
+import { keyManagementService } from "../services/key-management";
 import logger from "../services/logger";
 
 const router = Router();
@@ -190,6 +191,36 @@ router.get("/metrics/database", (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: "Failed to fetch database metrics",
+      message: (error as Error).message,
+    });
+  }
+});
+
+// Key management status endpoint
+router.get("/health/encryption", async (req: Request, res: Response) => {
+  try {
+    const keyStatus = keyManagementService.getKeyStatus();
+    const encryptionValid = await keyManagementService.validateEncryption();
+
+    res.json({
+      status: encryptionValid ? "healthy" : "unhealthy",
+      timestamp: new Date().toISOString(),
+      encryption: {
+        keyStatus,
+        validation: {
+          roundtripTest: encryptionValid,
+        },
+      },
+    });
+
+    logger.debug("Encryption health check passed");
+
+  } catch (error) {
+    logger.error("Encryption health check failed", { error: (error as Error).message });
+    res.status(503).json({
+      status: "unhealthy",
+      timestamp: new Date().toISOString(),
+      error: "Encryption health check failed",
       message: (error as Error).message,
     });
   }
