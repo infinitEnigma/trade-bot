@@ -274,10 +274,26 @@
     </div>
 
     <script>
-        // Auto-refresh every 30 seconds to check if service is back
-        setTimeout(() => {
-            window.location.reload();
-        }, 30000);
+        // Check backend health and redirect if service is back
+        function checkBackendHealth() {
+            fetch('/api/health-check')
+                .then(response => {
+                    if (response.ok) {
+                        // Backend is healthy, redirect to main app
+                        window.location.href = '/';
+                    } else {
+                        // Backend still down, check again in 10 seconds
+                        setTimeout(checkBackendHealth, 10000);
+                    }
+                })
+                .catch(() => {
+                    // Network error, check again in 10 seconds
+                    setTimeout(checkBackendHealth, 10000);
+                });
+        }
+
+        // Start checking immediately
+        checkBackendHealth();
     </script>
 </body>
 </html>

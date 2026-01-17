@@ -14,13 +14,29 @@
 
     <!-- Health check script - loads immediately -->
     <script>
-    // Health check on page load
-    window.addEventListener('load', function() {
-        fetch('/api/health-check')
-            .then(r => r.ok ? null : window.location='/maintenance.html')
-            .catch(() => window.location='/maintenance.html');
-    });
-</script>
+    // Health check on page load - only redirect to maintenance if backend is actually down
+    (function() {
+        // Give React app time to start loading
+        setTimeout(function() {
+            fetch('/api/health-check', {
+                method: 'GET',
+                headers: { 'Cache-Control': 'no-cache' }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    // Backend is down, redirect to maintenance
+                    window.location.href = '/maintenance.html';
+                }
+                // If response is OK, continue loading React app normally
+            })
+            .catch(error => {
+                // Network error, assume backend is down
+                console.warn('Backend health check failed:', error);
+                window.location.href = '/maintenance.html';
+            });
+        }, 100); // Small delay to allow React to start
+    })();
+    </script>
 
   </body>
 </html>
