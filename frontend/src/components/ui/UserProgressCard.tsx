@@ -32,15 +32,15 @@ export const UserProgressCard: React.FC = () => {
       id: 'basic',
       label: 'Account Created',
       description: 'Successfully registered and verified email',
-      completed: user.userLevel === UserLevel.REGISTERED || user.userLevel === UserLevel.VERIFIED,
+      completed: user.userLevel === UserLevel.BASIC || user.userLevel === UserLevel.REGISTERED || user.userLevel === UserLevel.VERIFIED,
       icon: <UserCheck className="w-4 h-4" />
     },
     {
       id: 'registered',
       label: 'Trading Verified',
       description: 'Connected and verified Kodiak trading account',
-      completed: user.userLevel === UserLevel.VERIFIED,
-      current: user.userLevel === UserLevel.REGISTERED,
+      completed: user.userLevel === UserLevel.REGISTERED || user.userLevel === UserLevel.VERIFIED,
+      current: user.userLevel === UserLevel.BASIC,
       icon: <Wallet className="w-4 h-4" />
     },
     {
@@ -55,8 +55,8 @@ export const UserProgressCard: React.FC = () => {
       id: 'qualified_alpha',
       label: 'Alpha Access',
       description: 'Qualified for private testing features',
-      completed: user.roles?.includes(UserRole.QUALIFIED_ALPHA) || false,
-      current: user.userLevel === UserLevel.VERIFIED && !user.roles?.includes(UserRole.QUALIFIED_ALPHA),
+      completed: (user.roles && user.roles.includes(UserRole.QUALIFIED_ALPHA)) || false,
+      current: user.userLevel === UserLevel.VERIFIED && (!user.roles || !user.roles.includes(UserRole.QUALIFIED_ALPHA)),
       icon: <Shield className="w-4 h-4" />
     }
   ];
@@ -171,7 +171,7 @@ const ProgressStepItem: React.FC<{
 );
 
 const NextActionPrompt: React.FC<{ user: any }> = ({ user }) => {
-  if (user.roles?.includes(UserRole.QUALIFIED_ALPHA)) {
+  if (user.roles && user.roles.includes(UserRole.QUALIFIED_ALPHA)) {
     return (
       <div className="mt-6 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
         <div className="flex items-center gap-3">
@@ -227,7 +227,7 @@ const NextActionPrompt: React.FC<{ user: any }> = ({ user }) => {
 };
 
 const getNextStepLabel = (user: any): string => {
-  if (user.roles?.includes(UserRole.QUALIFIED_ALPHA)) {
+  if (user.roles && user.roles.includes(UserRole.QUALIFIED_ALPHA)) {
     return "Complete";
   }
   if (user.userLevel === UserLevel.VERIFIED) {
@@ -236,5 +236,8 @@ const getNextStepLabel = (user: any): string => {
   if (user.userLevel === UserLevel.REGISTERED) {
     return "Wallet Verification";
   }
-  return "Trading Setup";
+  if (user.userLevel === UserLevel.BASIC) {
+    return "Trading Setup";
+  }
+  return "Account Setup";
 };

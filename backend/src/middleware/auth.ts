@@ -51,8 +51,18 @@ export async function authMiddleware(
       return;
     }
 
-    // Load user roles
-    const userRoles = await roleManagementService.getUserRoles(payload.userId);
+    // Load user roles (with error handling)
+    let userRoles: string[] = [];
+    try {
+      userRoles = await roleManagementService.getUserRoles(payload.userId);
+    } catch (roleError) {
+      logger.error("Failed to load user roles in auth middleware", {
+        userId: payload.userId,
+        error: roleError instanceof Error ? roleError.message : String(roleError),
+      });
+      // Continue without roles - user can still access basic features
+      userRoles = [];
+    }
 
     req.user = {
       ...payload,
@@ -133,8 +143,18 @@ export async function authMiddleware(
           return;
         }
 
-        // Load user roles for refreshed token
-        const refreshedUserRoles = await roleManagementService.getUserRoles(newPayload.userId);
+        // Load user roles for refreshed token (with error handling)
+        let refreshedUserRoles: string[] = [];
+        try {
+          refreshedUserRoles = await roleManagementService.getUserRoles(newPayload.userId);
+        } catch (roleError) {
+          logger.error("Failed to load user roles for refreshed token", {
+            userId: newPayload.userId,
+            error: roleError instanceof Error ? roleError.message : String(roleError),
+          });
+          // Continue without roles
+          refreshedUserRoles = [];
+        }
 
         req.user = {
           ...newPayload,

@@ -62,9 +62,9 @@ async function getProfile(req: AuthenticatedRequest, res: Response) {
     const hasKodiak = credentialsResult.rows.length > 0;
     const kodiakStatus = hasKodiak
       ? {
-          accountId: credentialsResult.rows[0].account_id,
-          verified: credentialsResult.rows[0].verified,
-        }
+        accountId: credentialsResult.rows[0].account_id,
+        verified: credentialsResult.rows[0].verified,
+      }
       : null;
 
     res.json({
@@ -73,6 +73,7 @@ async function getProfile(req: AuthenticatedRequest, res: Response) {
         id: user.id,
         email: user.email,
         userLevel: user.userLevel,
+        roles: req.user!.roles || [], // Include roles from auth middleware
         hasKodiak,
         kodiakStatus,
       },
@@ -249,8 +250,8 @@ async function connectKodiak(req: AuthenticatedRequest, res: Response) {
         logger.debug("Public API test response received", {
           success:
             publicData &&
-            typeof publicData === "object" &&
-            "success" in publicData
+              typeof publicData === "object" &&
+              "success" in publicData
               ? publicData.success
               : false,
         });
@@ -268,8 +269,8 @@ async function connectKodiak(req: AuthenticatedRequest, res: Response) {
         logger.debug("Get all accounts response received", {
           success:
             accountsData &&
-            typeof accountsData === "object" &&
-            "success" in accountsData
+              typeof accountsData === "object" &&
+              "success" in accountsData
               ? accountsData.success
               : false,
         });
