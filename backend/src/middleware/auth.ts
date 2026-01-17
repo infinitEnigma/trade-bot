@@ -4,6 +4,7 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { authService } from "../services/auth";
 import { setUserContext } from "../utils/context";
+import { roleManagementService } from "../services/role-management";
 import logger from "../services/logger";
 
 export interface AuthenticatedRequest extends Request {
@@ -11,6 +12,7 @@ export interface AuthenticatedRequest extends Request {
     userId: string;
     email: string;
     userLevel: string;
+    roles: string[];
   };
 }
 
@@ -49,7 +51,13 @@ export async function authMiddleware(
       return;
     }
 
-    req.user = payload;
+    // Load user roles
+    const userRoles = await roleManagementService.getUserRoles(payload.userId);
+
+    req.user = {
+      ...payload,
+      roles: userRoles
+    };
 
     // Set user context for logging and tracing
     setUserContext(payload.userId, payload.userLevel);
@@ -125,7 +133,13 @@ export async function authMiddleware(
           return;
         }
 
-        req.user = newPayload;
+        // Load user roles for refreshed token
+        const refreshedUserRoles = await roleManagementService.getUserRoles(newPayload.userId);
+
+        req.user = {
+          ...newPayload,
+          roles: refreshedUserRoles
+        };
         next();
       } catch (refreshError) {
         logger.error("Token refresh process failed", {

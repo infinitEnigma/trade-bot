@@ -10,6 +10,10 @@ export enum UserLevel {
   VERIFIED = "VERIFIED",
 }
 
+export enum UserRole {
+  QUALIFIED_ALPHA = "QUALIFIED_ALPHA",
+}
+
 export interface User {
   id: string;
   email: string;

@@ -3,6 +3,7 @@
 import { Router, Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
+import { requireRole } from "../middleware/role-protection";
 import { getPool, query } from "../database/pool"; // ✅ Import from centralized module
 import {
   ValidationError,
@@ -13,6 +14,7 @@ import {
 import { getCorrelationId, getContextForLogging } from "../utils/context";
 import { encryptionService } from "../services/encryption";
 import { engineManager } from "../services/engine-manager";
+import { UserRole } from "@trade-bot/shared";
 import logger from "../services/logger";
 
 const router = Router();
@@ -56,6 +58,7 @@ router.get(
 router.post(
   "/start",
   authMiddleware,
+  requireRole(UserRole.QUALIFIED_ALPHA),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { strategyId, notionalAmount } = req.body;
@@ -196,6 +199,7 @@ router.post(
 router.post(
   "/stop",
   authMiddleware,
+  requireRole(UserRole.QUALIFIED_ALPHA),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { botId } = req.body;

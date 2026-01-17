@@ -3,6 +3,10 @@
 import { Router, Request, Response } from "express";
 import Joi from "joi";
 import { authService } from "../services/auth";
+import { walletQualificationService } from "../services/wallet-qualification";
+import { roleManagementService } from "../services/role-management";
+import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
+import { UserRole, UserLevel } from "@trade-bot/shared";
 import { RateLimiters } from "../services/rate-limiter";
 import logger from "../services/logger";
 
@@ -203,5 +207,88 @@ router.post("/logout", async (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: "Logout failed" });
   }
 });
+
+// POST /api/auth/check-qualification
+router.post(
+  "/check-qualification",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const userLevel = req.user!.userLevel;
+
+      // Only VERIFIED users can check qualifications
+      if (userLevel !== UserLevel.VERIFIED) {
+        return res.status(403).json({
+          success: false,
+          error: "Must be VERIFIED to check qualifications",
+          requiredLevel: UserLevel.VERIFIED,
+          currentLevel: userLevel
+        });
+      }
+
+      // Check qualification for QUALIFIED_ALPHA role
+      const result = await walletQualificationService.checkAlphaQualification(userId);
+
+      if (result.qualified) {
+        // Assign QUALIFIED_ALPHA role
+        await roleManagementService.assignRole(
+          userId,
+          UserRole.QUALIFIED_ALPHA,
+          'system',
+          result.criteria
+        );
+
+        logger.info("User qualified for QUALIFIED_ALPHA role", {
+          userId,
+          criteria: result.criteria
+        });
+      }
+
+      res.json({
+        success: true,
+        qualified: result.qualified,
+        walletConnected: result.walletConnected,
+        chainValid: result.chainValid,
+        criteria: result.criteria,
+        reasons: result.reasons,
+        config: walletQualificationService.getQualificationConfig()
+      });
+
+    } catch (error) {
+      logger.error("Qualification check error", {
+        userId: req.user!.userId,
+        error: (error as Error).message
+      });
+      res.status(500).json({
+        success: false,
+        error: "Qualification check failed"
+      });
+    }
+  }
+);
+
+// GET /api/auth/qualification-config
+router.get(
+  "/qualification-config",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const config = walletQualificationService.getQualificationConfig();
+      res.json({
+        success: true,
+        config
+      });
+    } catch (error) {
+      logger.error("Qualification config error", {
+        error: (error as Error).message
+      });
+      res.status(500).json({
+        success: false,
+        error: "Failed to get qualification config"
+      });
+    }
+  }
+);
 
 export { router as authRoutes };
