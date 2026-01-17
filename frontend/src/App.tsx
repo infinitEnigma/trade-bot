@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { UserRole } from "@trade-bot/shared";
 
 // Components
 import LoadingSpinner from "./components/ui/LoadingSpinner";
@@ -19,14 +20,18 @@ const Register = React.lazy(() => import("./pages/Register"));
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
 const Strategies = React.lazy(() => import("./pages/Strategies"));
 const Settings = React.lazy(() => import("./pages/Settings"));
+const Analytics = React.lazy(() => import("./pages/Analytics"));
+const Profile = React.lazy(() => import("./pages/Profile"));
 
 // Protected Route Component
 const ProtectedRoute = ({
   children,
   requireVerified = false,
+  requireRole,
 }: {
   children: React.ReactNode;
   requireVerified?: boolean;
+  requireRole?: UserRole;
 }) => {
   const { user, isAuthenticated, loading } = useAuth();
 
@@ -39,6 +44,10 @@ const ProtectedRoute = ({
   }
 
   if (requireVerified && user?.userLevel !== "VERIFIED") {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (requireRole && !user?.roles?.includes(requireRole)) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -67,6 +76,22 @@ const AppRouter = () => {
               element={
                 <ProtectedRoute requireVerified={true}>
                   <Strategies />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/analytics"
+              element={
+                <ProtectedRoute requireRole={UserRole.QUALIFIED_ALPHA}>
+                  <Analytics />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <Profile />
                 </ProtectedRoute>
               }
             />

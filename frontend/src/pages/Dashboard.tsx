@@ -22,6 +22,8 @@ import { Link } from "react-router-dom";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { AppHeader } from "../components/ui/AppHeader";
+import { UserProgressCard } from "../components/ui/UserProgressCard";
+import { DashboardCardSkeleton } from "../components/ui/EnhancedLoading";
 import { useBalance } from "../hooks/useBalance";
 
 // Lazy load heavy components
@@ -153,6 +155,11 @@ const Dashboard: React.FC = () => {
       <AppHeader />
 
       <div className="container mx-auto px-4 py-8">
+        {/* ✅ User Progress Card - Shows account progression */}
+        <div className="mb-8">
+          <UserProgressCard />
+        </div>
+
         {/* ✅ Market Chart Section - Full Width */}
         <div className="mb-8">
           <Suspense
@@ -168,20 +175,10 @@ const Dashboard: React.FC = () => {
         {/* Portfolio Overview */}
         {realBalanceLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {[1, 2, 3, 4].map(i => (
-              <Card key={i}>
-                <div className="animate-pulse">
-                  <div className="grid grid-rows-[auto_1fr_auto] gap-3">
-                    <div className="flex items-center justify-between">
-                      <div className="w-10 h-10 bg-white/10 rounded-lg"></div>
-                      <div className="w-20 h-4 bg-white/10 rounded"></div>
-                    </div>
-                    <div className="w-24 h-8 bg-white/10 rounded"></div>
-                    <div className="w-16 h-4 bg-white/10 rounded"></div>
-                  </div>
-                </div>
-              </Card>
-            ))}
+            <DashboardCardSkeleton />
+            <DashboardCardSkeleton />
+            <DashboardCardSkeleton />
+            <DashboardCardSkeleton />
           </div>
         ) : portfolio ? (
           <div className="mb-8">
@@ -203,17 +200,7 @@ const Dashboard: React.FC = () => {
             />
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <Suspense
-                fallback={
-                  <Card>
-                    <div className="animate-pulse p-6">
-                      <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
-                      <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
-                      <div className="w-16 h-4 bg-white/10 rounded"></div>
-                    </div>
-                  </Card>
-                }
-              >
+              <Suspense fallback={<DashboardCardSkeleton />}>
                 <StatsCard
                   title="Wallet Balance"
                   value={realBalance?.walletBalance || 0}
@@ -224,17 +211,7 @@ const Dashboard: React.FC = () => {
                   loading={realBalanceLoading}
                 />
               </Suspense>
-              <Suspense
-                fallback={
-                  <Card>
-                    <div className="animate-pulse p-6">
-                      <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
-                      <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
-                      <div className="w-16 h-4 bg-white/10 rounded"></div>
-                    </div>
-                  </Card>
-                }
-              >
+              <Suspense fallback={<DashboardCardSkeleton />}>
                 <StatsCard
                   title="Account Balance"
                   value={realBalance?.accountBalance || 0}
@@ -244,17 +221,7 @@ const Dashboard: React.FC = () => {
                   format="currency"
                 />
               </Suspense>
-              <Suspense
-                fallback={
-                  <Card>
-                    <div className="animate-pulse p-6">
-                      <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
-                      <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
-                      <div className="w-16 h-4 bg-white/10 rounded"></div>
-                    </div>
-                  </Card>
-                }
-              >
+              <Suspense fallback={<DashboardCardSkeleton />}>
                 <StatsCard
                   title="Available Balance"
                   value={realBalance?.availableBalance || 0}
@@ -264,17 +231,7 @@ const Dashboard: React.FC = () => {
                   format="currency"
                 />
               </Suspense>
-              <Suspense
-                fallback={
-                  <Card>
-                    <div className="animate-pulse p-6">
-                      <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
-                      <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
-                      <div className="w-16 h-4 bg-white/10 rounded"></div>
-                    </div>
-                  </Card>
-                }
-              >
+              <Suspense fallback={<DashboardCardSkeleton />}>
                 <StatsCard
                   title="Total Assets"
                   value={realBalance?.totalAssets || 0}

@@ -3,8 +3,8 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { SmartNavigation } from "./SmartNavigation";
 import {
-  Settings as SettingsIcon,
   LogOut,
   User,
   CreditCard,
@@ -46,26 +46,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
           <div className="flex items-center gap-3">
             {showNavigation && (
-              <div className="hidden md:flex items-center gap-4">
-                <Link
-                  to="/strategies"
-                  className="px-4 py-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-white/5 transition-all duration-200 flex items-center gap-2"
-                >
-                  Strategies
-                </Link>
-                <Link
-                  to="/analytics"
-                  className="px-4 py-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-white/5 transition-all duration-200 flex items-center gap-2"
-                >
-                  Analytics
-                </Link>
-                <Link
-                  to="/settings"
-                  className="px-4 py-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-white/5 transition-all duration-200 flex items-center gap-2"
-                >
-                  <SettingsIcon className="w-4 h-4" />
-                  Settings
-                </Link>
+              <div className="hidden md:flex">
+                <SmartNavigation />
               </div>
             )}
 

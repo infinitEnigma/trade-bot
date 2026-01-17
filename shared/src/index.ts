@@ -18,6 +18,7 @@ export interface User {
   id: string;
   email: string;
   userLevel: UserLevel;
+  roles?: UserRole[];
   createdAt: Date;
   updatedAt: Date;
 }

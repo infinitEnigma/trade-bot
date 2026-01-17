@@ -387,6 +387,17 @@ class ApiClient {
     const response = await this.client.post("/api/balance/refresh");
     return response.data;
   }
+
+  // Qualification endpoints
+  async checkQualification() {
+    const response = await this.client.post("/api/auth/check-qualification");
+    return response.data;
+  }
+
+  async getQualificationConfig() {
+    const response = await this.client.get("/api/auth/qualification-config");
+    return response.data;
+  }
 }
 
 export const api = ApiClient.getInstance();

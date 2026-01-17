@@ -20,6 +20,7 @@ import { BotControls } from "../components/BotControls";
 import CandlestickChart from "../components/CandlestickChart";
 import { useBalance } from "../hooks/useBalance";
 import { useAuth } from "../contexts/AuthContext";
+import { UserProgressCard } from "../components/ui/UserProgressCard";
 
 const Strategies: React.FC = React.memo(() => {
   const { user } = useAuth();
@@ -273,6 +274,11 @@ const Strategies: React.FC = React.memo(() => {
       </header>
 
       <div className="container mx-auto px-4 py-8">
+        {/* ✅ User Progress Card - Shows qualification status */}
+        <div className="mb-8">
+          <UserProgressCard />
+        </div>
+
         {/* Candlestick Chart - Advanced trading data for verified users */}
         <div className="mb-8">
           <CandlestickChart
