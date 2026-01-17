@@ -38,6 +38,33 @@ server {
         try_files $uri =404;
     }
 
+    # Health check for backend (used for error handling)
+    location /api/health-check {
+        proxy_pass http://localhost:3000/api/health;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 3s;
+        proxy_intercept_errors on;
+        error_page 500 502 503 504 =503 /maintenance.html;
+    }
+
+    # Maintenance page
+    location = /maintenance.html {
+        root /home/dusan/trade-bot/frontend/dist;
+        internal;
+    }
+    
+    # Check backend 
+    location = /health-check.js {
+        # Return JavaScript that checks backend health
+        return 200 "
+            fetch('/api/health-check')
+                .then(r => r.ok ? null : window.location='/maintenance.html')
+                .catch(() => window.location='/maintenance.html');
+        ";
+        add_header Content-Type application/javascript;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+    
     # Proxy API requests to Node.js backend
     location /api/ {
         proxy_pass http://localhost:3000;
@@ -50,11 +77,14 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
 
-        # Timeouts
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+        # Error handling - serve maintenance page when backend is down
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 10s;
+        proxy_intercept_errors on;
+        error_page 500 502 503 504 =503 /maintenance.html;
     }
+
 
     # Proxy WebSocket connections for real-time features
     location /socket.io/ {

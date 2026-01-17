@@ -11,5 +11,16 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Health check script - loads immediately -->
+    <script>
+    // Health check on page load
+    window.addEventListener('load', function() {
+        fetch('/api/health-check')
+            .then(r => r.ok ? null : window.location='/maintenance.html')
+            .catch(() => window.location='/maintenance.html');
+    });
+</script>
+
   </body>
 </html>

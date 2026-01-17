@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trade Bot - Maintenance</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-surface: #13131a;
+            --bg-surface-light: #1a1a24;
+            --primary: #6366f1;
+            --primary-hover: #818cf8;
+            --accent: #8b5cf6;
+            --secondary: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-tertiary: #64748b;
+            --border-light: rgba(255, 255, 255, 0.08);
+            --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.1);
+            --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100vh;
+            width: 100vw;
+            font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #1e1b4b 100%);
+            background-attachment: fixed;
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .maintenance-container {
+            max-width: 600px;
+            width: 90%;
+            text-align: center;
+        }
+
+        .maintenance-card {
+            background: linear-gradient(135deg, rgba(30, 30, 46, 0.8) 0%, rgba(19, 19, 26, 0.9) 100%);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-light);
+            border-radius: 24px;
+            box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            padding: 48px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .maintenance-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--accent), var(--secondary));
+            animation: pulseGlow 3s ease-in-out infinite;
+        }
+
+        .logo {
+            font-size: 32px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 24px;
+            animation: fadeIn 1s ease-out;
+        }
+
+        .status-indicator {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--warning), #fbbf24);
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.6);
+            display: inline-block;
+            margin-right: 12px;
+            animation: pulseGlow 2s ease-in-out infinite;
+        }
+
+        .title {
+            font-size: 28px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+            animation: fadeIn 1.2s ease-out;
+        }
+
+        .subtitle {
+            font-size: 18px;
+            color: var(--text-secondary);
+            margin-bottom: 32px;
+            line-height: 1.6;
+            animation: fadeIn 1.4s ease-out;
+        }
+
+        .message {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 32px;
+            animation: fadeIn 1.6s ease-out;
+        }
+
+        .message p {
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+
+        .message p:last-child {
+            margin-bottom: 0;
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .feature {
+            background: rgba(99, 102, 241, 0.05);
+            border: 1px solid rgba(99, 102, 241, 0.1);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            animation: fadeIn 1.8s ease-out;
+        }
+
+        .feature-icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .feature-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 4px;
+        }
+
+        .feature-desc {
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        .contact {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            animation: fadeIn 2s ease-out;
+        }
+
+        .contact p {
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+
+        .contact a {
+            color: var(--secondary);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .contact a:hover {
+            text-decoration: underline;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes pulseGlow {
+            0%, 100% {
+                box-shadow: 0 0 20px rgba(245, 158, 11, 0.6);
+            }
+            50% {
+                box-shadow: 0 0 30px rgba(245, 158, 11, 0.9);
+            }
+        }
+
+        @media (max-width: 640px) {
+            .maintenance-card {
+                padding: 32px 24px;
+            }
+
+            .title {
+                font-size: 24px;
+            }
+
+            .subtitle {
+                font-size: 16px;
+            }
+
+            .features {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="maintenance-container">
+        <div class="maintenance-card">
+            <div class="logo">Trade Bot</div>
+
+            <div class="title">
+                <span class="status-indicator"></span>
+                Scheduled Maintenance
+            </div>
+
+            <div class="subtitle">
+                We're currently performing maintenance to improve your automated trading experience on Berachain.
+            </div>
+
+            <div class="message">
+                <p><strong>What we're working on:</strong></p>
+                <p>• Enhanced trading algorithms for better performance</p>
+                <p>• Improved risk management systems</p>
+                <p>• New features for advanced strategy configuration</p>
+                <p><strong>Expected downtime:</strong> 15-30 minutes</p>
+            </div>
+
+            <div class="features">
+                <div class="feature">
+                    <div class="feature-icon">🤖</div>
+                    <div class="feature-title">Grid Trading</div>
+                    <div class="feature-desc">Automated buy/sell grids</div>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">📊</div>
+                    <div class="feature-title">Real-Time Charts</div>
+                    <div class="feature-desc">Live market data visualization</div>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🔒</div>
+                    <div class="feature-title">Secure API</div>
+                    <div class="feature-desc">JWT authentication & encryption</div>
+                </div>
+            </div>
+
+            <div class="contact">
+                <p><strong>Need immediate assistance?</strong></p>
+                <p>Our systems are being monitored 24/7. For urgent trading matters, contact our support team.</p>
+                <p><a href="mailto:support@rewireapp.ddns.net">support@rewireapp.ddns.net</a></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Auto-refresh every 30 seconds to check if service is back
+        setTimeout(() => {
+            window.location.reload();
+        }, 30000);
+    </script>
+</body>
+</html>
