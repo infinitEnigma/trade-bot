@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
+import { UserLevel } from "@trade-bot/shared";
 
 export interface Balance {
   walletBalance: number;
@@ -13,12 +15,21 @@ export interface Balance {
 }
 
 export const useBalance = (autoRefresh: boolean = true) => {
+  const { user } = useAuth();
   const [balance, setBalance] = useState<Balance | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ Fetch balance from backend
+  // ✅ Fetch balance from backend (only for VERIFIED users)
   const fetchBalance = async () => {
+    // Don't fetch for BASIC users
+    if (user?.userLevel !== UserLevel.VERIFIED) {
+      setBalance(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -62,16 +73,18 @@ export const useBalance = (autoRefresh: boolean = true) => {
     }
   };
 
-  // ✅ Initial fetch
+  // ✅ Initial fetch and auto-refresh (only for VERIFIED users)
   useEffect(() => {
     fetchBalance();
 
-    // Auto-refresh every 60 seconds
-    if (autoRefresh) {
+    // Only auto-refresh for VERIFIED users
+    const shouldAutoRefresh = autoRefresh && user?.userLevel === UserLevel.VERIFIED;
+
+    if (shouldAutoRefresh) {
       const interval = setInterval(fetchBalance, 60000);
       return () => clearInterval(interval);
     }
-  }, [autoRefresh]);
+  }, [user?.userLevel, autoRefresh]);
 
   return {
     balance,

@@ -5,6 +5,7 @@ import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { getUserBalance, invalidateBalanceCache } from "../services/balance";
 import logger from "../services/logger";
 import { RateLimiters } from "../services/rate-limiter";
+import { UserLevel } from "@trade-bot/shared";
 
 const router = Router();
 
@@ -17,9 +18,24 @@ router.get(
   RateLimiters.balance,
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const userId = req.user!.userId;
+    const userId = req.user!.userId;
+    const userLevel = req.user!.userLevel;
 
+    try {
+      // BASIC users don't have balance data yet - skip API calls
+      if (userLevel === UserLevel.BASIC) {
+        logger.debug("Balance request from BASIC user, skipping API call", {
+          userId,
+          userLevel
+        });
+        return res.json({
+          success: true,
+          data: null,
+          message: "Balance data available after Kodiak account setup"
+        });
+      }
+
+      // VERIFIED users get real balance data
       const balance = await getUserBalance(userId);
 
       res.json({
@@ -27,14 +43,28 @@ router.get(
         data: balance,
       });
     } catch (error) {
-      logger.error("Get balance error", {
-        userId: (req as AuthenticatedRequest).user?.userId,
-        userLevel: (req as AuthenticatedRequest).user?.userLevel,
-        error: (error as Error).message,
-      });
+      const errorMessage = (error as Error).message;
+
+      // Log differently based on user level
+      if (userLevel === UserLevel.VERIFIED) {
+        // Only log as error for VERIFIED users (unexpected failures)
+        logger.error("Balance fetch failed for VERIFIED user", {
+          userId,
+          userLevel,
+          error: errorMessage,
+        });
+      } else {
+        // Log as debug for non-VERIFIED users (expected behavior)
+        logger.debug("Balance fetch skipped/failed for non-VERIFIED user", {
+          userId,
+          userLevel,
+          error: errorMessage,
+        });
+      }
 
       // Return user-friendly error for missing Kodiak credentials
-      if ((error as Error).message.includes("no Kodiak account connected")) {
+      if (errorMessage.includes("no Kodiak account connected") ||
+        errorMessage.includes("Kodiak credentials not found")) {
         return res.status(400).json({
           success: false,
           error:
@@ -44,7 +74,7 @@ router.get(
 
       res.status(500).json({
         success: false,
-        error: (error as Error).message,
+        error: errorMessage,
       });
     }
   }
