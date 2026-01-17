@@ -147,7 +147,7 @@ export function formatDate(
 export function capitalize(str: string): string {
   return str
     .split(" ")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(" ");
 }
 
@@ -157,7 +157,7 @@ export function capitalize(str: string): string {
 export function getInitials(name: string): string {
   return name
     .split(" ")
-    .map((word) => word[0])
+    .map(word => word[0])
     .join("")
     .toUpperCase()
     .slice(0, 2);
@@ -167,7 +167,7 @@ export function getInitials(name: string): string {
  * Sleep utility for async operations
  */
 export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
@@ -244,9 +244,9 @@ export function deepClone<T>(obj: T): T {
 export function isTokenExpired(token: string): boolean {
   try {
     // JWT format: header.payload.signature
-    const payload = token.split('.')[1];
+    const payload = token.split(".")[1];
     // Decode base64url to base64, then to string
-    const decodedPayload = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    const decodedPayload = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
     const { exp } = JSON.parse(decodedPayload);
 
     // Check if current time is past expiration time
@@ -254,7 +254,7 @@ export function isTokenExpired(token: string): boolean {
     return currentTime >= exp;
   } catch (error) {
     // If token is malformed, consider it expired
-    console.warn('Error checking token expiration:', error);
+    console.warn("Error checking token expiration:", error);
     return true;
   }
 }

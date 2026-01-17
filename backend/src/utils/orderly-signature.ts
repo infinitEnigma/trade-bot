@@ -23,7 +23,7 @@ export async function generateOrderlySignature(
 
 /**
  * Generate Kodiak signature using Ed25519
-*/ 
+ */
 export async function generateKodiakSignature(
   timestamp: number,
   method: string,
@@ -42,8 +42,7 @@ export async function generateKodiakSignature(
 
     const signature = await ed25519.sign(messageBytes, privateKey);
     return Buffer.from(signature).toString("base64url");
-  }
-  catch (error) {
+  } catch (error) {
     throw new Error(
       `Failed to generate Kodiak signature: ${
         error instanceof Error ? error.message : String(error)

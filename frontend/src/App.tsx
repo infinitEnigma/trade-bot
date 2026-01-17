@@ -64,11 +64,11 @@ const AppRouter = () => {
             />
             <Route
               path="/strategies"
-              element={(
+              element={
                 <ProtectedRoute requireVerified={true}>
                   <Strategies />
                 </ProtectedRoute>
-              )}
+              }
             />
             <Route
               path="/settings"

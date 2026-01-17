@@ -63,12 +63,13 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
       error,
     } = useQuery({
       queryKey: ["tv-history", selectedSymbol, selectedResolution],
-      queryFn: () => api.getTvHistory({
-        symbol: selectedSymbol,
-        resolution: selectedResolution,
-        from: Math.floor(Date.now() / 1000) - 86400, // 24 hours ago
-        to: Math.floor(Date.now() / 1000),
-      }),
+      queryFn: () =>
+        api.getTvHistory({
+          symbol: selectedSymbol,
+          resolution: selectedResolution,
+          from: Math.floor(Date.now() / 1000) - 86400, // 24 hours ago
+          to: Math.floor(Date.now() / 1000),
+        }),
       refetchInterval: isVisible ? 30000 : false, // Refresh every 30 seconds when visible
       enabled: isVisible, // Don't fetch when hidden
       staleTime: 60000, // Consider data fresh for 60 seconds
@@ -91,8 +92,15 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
       } = historyData.data;
 
       // Validate required arrays exist and are not empty
-      if (!timestamps || !opens || !highs || !lows || !closes ||
-          !Array.isArray(timestamps) || timestamps.length === 0) {
+      if (
+        !timestamps ||
+        !opens ||
+        !highs ||
+        !lows ||
+        !closes ||
+        !Array.isArray(timestamps) ||
+        timestamps.length === 0
+      ) {
         return [];
       }
 
@@ -109,8 +117,12 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         const volume = volumes?.[i] || 0;
 
         // Validate data types
-        if (typeof open !== 'number' || typeof high !== 'number' ||
-            typeof low !== 'number' || typeof close !== 'number') {
+        if (
+          typeof open !== "number" ||
+          typeof high !== "number" ||
+          typeof low !== "number" ||
+          typeof close !== "number"
+        ) {
           continue;
         }
 
@@ -224,10 +236,10 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
               {/* Symbol selector */}
               <select
                 value={selectedSymbol}
-                onChange={(e) => setSelectedSymbol(e.target.value)}
+                onChange={e => setSelectedSymbol(e.target.value)}
                 className="px-3 py-1 text-sm bg-surface border border-white/10 rounded-lg"
               >
-                {symbols.map((sym) => (
+                {symbols.map(sym => (
                   <option key={sym} value={sym}>
                     {sym.replace("PERP_", "").replace("_USDC", "")}
                   </option>
@@ -236,7 +248,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
 
               {/* Timeframe selector */}
               <div className="flex gap-1">
-                {timeframes.map((tf) => (
+                {timeframes.map(tf => (
                   <button
                     key={tf.value}
                     onClick={() => setSelectedResolution(tf.value)}

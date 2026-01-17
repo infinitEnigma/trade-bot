@@ -1,7 +1,7 @@
 /** @format */
 
-import { Pool, PoolClient } from 'pg';
-import logger from '../services/logger';
+import { Pool, PoolClient } from "pg";
+import logger from "../services/logger";
 
 // ✅ Singleton pattern - only one pool instance ever created
 let pool: Pool | null = null;
@@ -43,46 +43,49 @@ const getRequiredEnv = (key: string): string => {
  */
 export function initializePool(): Pool {
   if (pool) {
-    logger.warn('Pool already initialized, returning existing instance');
+    logger.warn("Pool already initialized, returning existing instance");
     return pool;
   }
 
   pool = new Pool({
-    host: getRequiredEnv('DB_HOST'),
-    port: parseInt(getRequiredEnv('DB_PORT'), 10),
-    database: getRequiredEnv('DB_NAME'),
-    user: getRequiredEnv('DB_USER'),
-    password: getRequiredEnv('DB_PASSWORD'),
+    host: getRequiredEnv("DB_HOST"),
+    port: parseInt(getRequiredEnv("DB_PORT"), 10),
+    database: getRequiredEnv("DB_NAME"),
+    user: getRequiredEnv("DB_USER"),
+    password: getRequiredEnv("DB_PASSWORD"),
     // ✅ Connection pool settings for production reliability
-    max: 20,                          // Maximum pool size
-    idleTimeoutMillis: 30000,         // Idle connection timeout (30 seconds)
-    connectionTimeoutMillis: 2000,    // Connection timeout (2 seconds)
-    application_name: 'trade-bot',    // Identifies connections in PostgreSQL logs
+    max: 20, // Maximum pool size
+    idleTimeoutMillis: 30000, // Idle connection timeout (30 seconds)
+    connectionTimeoutMillis: 2000, // Connection timeout (2 seconds)
+    application_name: "trade-bot", // Identifies connections in PostgreSQL logs
   });
 
   // ✅ Error event handler
-  pool.on('error', (err) => {
-    logger.error('Unexpected error on idle client', { error: err.message });
+  pool.on("error", err => {
+    logger.error("Unexpected error on idle client", { error: err.message });
     process.exit(-1);
   });
 
   // ✅ Connect event handler
-  pool.on('connect', (client) => {
+  pool.on("connect", client => {
     poolMetrics.totalConnections++;
-    logger.info('New database connection established', {
-      totalConnections: poolMetrics.totalConnections
+    logger.info("New database connection established", {
+      totalConnections: poolMetrics.totalConnections,
     });
   });
 
   // ✅ Connection removed from pool
-  pool.on('remove', (client) => {
-    poolMetrics.totalConnections = Math.max(0, poolMetrics.totalConnections - 1);
-    logger.debug('Database connection removed from pool', {
-      totalConnections: poolMetrics.totalConnections
+  pool.on("remove", client => {
+    poolMetrics.totalConnections = Math.max(
+      0,
+      poolMetrics.totalConnections - 1
+    );
+    logger.debug("Database connection removed from pool", {
+      totalConnections: poolMetrics.totalConnections,
     });
   });
 
-  logger.info('Database pool initialized');
+  logger.info("Database pool initialized");
   return pool;
 }
 
@@ -93,7 +96,7 @@ export function initializePool(): Pool {
 export function getPool(): Pool {
   if (!pool) {
     throw new Error(
-      'Database pool not initialized. Call initializePool() at startup.'
+      "Database pool not initialized. Call initializePool() at startup."
     );
   }
   return pool;
@@ -117,10 +120,10 @@ export async function closePool(): Promise<void> {
     return;
   }
 
-  logger.info('Closing database pool...');
+  logger.info("Closing database pool...");
   await pool.end();
   pool = null;
-  logger.info('Database pool closed');
+  logger.info("Database pool closed");
 }
 
 /**
@@ -146,12 +149,12 @@ export async function transaction<T>(
 ): Promise<T> {
   const client = await getClient();
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
     const result = await callback(client);
-    await client.query('COMMIT');
+    await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     throw error;
   } finally {
     client.release();
@@ -169,10 +172,11 @@ export async function getClientWithMetrics(): Promise<PoolClient> {
     const client = await pool.connect();
     const waitTime = Date.now() - startTime;
 
-    if (waitTime > 10) { // Log waits > 10ms
+    if (waitTime > 10) {
+      // Log waits > 10ms
       poolMetrics.connectionWaitTimes.push(waitTime);
       poolMetrics.totalWaits++;
-      logger.debug('Connection wait time', { waitTimeMs: waitTime });
+      logger.debug("Connection wait time", { waitTimeMs: waitTime });
     }
 
     const clientId = `${Date.now()}-${Math.random()}`;
@@ -186,7 +190,7 @@ export async function getClientWithMetrics(): Promise<PoolClient> {
       if (checkoutTime) {
         const duration = Date.now() - checkoutTime;
         poolMetrics.connectionCheckoutTimes.delete(clientId);
-        logger.debug('Connection checkout duration', { durationMs: duration });
+        logger.debug("Connection checkout duration", { durationMs: duration });
       }
       originalRelease();
     };
@@ -213,7 +217,10 @@ function updatePoolMetrics(): void {
 
     // Clean up old checkout times (older than 5 minutes)
     const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
-    for (const [clientId, checkoutTime] of poolMetrics.connectionCheckoutTimes.entries()) {
+    for (const [
+      clientId,
+      checkoutTime,
+    ] of poolMetrics.connectionCheckoutTimes.entries()) {
       if (checkoutTime < fiveMinutesAgo) {
         poolMetrics.connectionCheckoutTimes.delete(clientId);
       }
@@ -221,10 +228,13 @@ function updatePoolMetrics(): void {
 
     // Keep only last 100 wait times for memory efficiency
     if (poolMetrics.connectionWaitTimes.length > 100) {
-      poolMetrics.connectionWaitTimes = poolMetrics.connectionWaitTimes.slice(-100);
+      poolMetrics.connectionWaitTimes =
+        poolMetrics.connectionWaitTimes.slice(-100);
     }
   } catch (error) {
-    logger.warn('Failed to update pool metrics', { error: (error as Error).message });
+    logger.warn("Failed to update pool metrics", {
+      error: (error as Error).message,
+    });
   }
 }
 
@@ -252,44 +262,53 @@ export function getPoolMetrics(): {
     connectionTimeoutMs: number;
   };
   health: {
-    status: 'healthy' | 'warning' | 'critical';
+    status: "healthy" | "warning" | "critical";
     issues: string[];
   };
 } {
   updatePoolMetrics();
 
-  const activeConnections = poolMetrics.totalConnections - poolMetrics.idleConnections;
-  const utilizationPercent = poolMetrics.totalConnections > 0
-    ? Math.round((activeConnections / poolMetrics.totalConnections) * 100)
-    : 0;
+  const activeConnections =
+    poolMetrics.totalConnections - poolMetrics.idleConnections;
+  const utilizationPercent =
+    poolMetrics.totalConnections > 0
+      ? Math.round((activeConnections / poolMetrics.totalConnections) * 100)
+      : 0;
 
-  const averageWaitTime = poolMetrics.connectionWaitTimes.length > 0
-    ? Math.round(poolMetrics.connectionWaitTimes.reduce((a, b) => a + b, 0) / poolMetrics.connectionWaitTimes.length)
-    : 0;
+  const averageWaitTime =
+    poolMetrics.connectionWaitTimes.length > 0
+      ? Math.round(
+          poolMetrics.connectionWaitTimes.reduce((a, b) => a + b, 0) /
+            poolMetrics.connectionWaitTimes.length
+        )
+      : 0;
 
-  const maxWaitTime = poolMetrics.connectionWaitTimes.length > 0
-    ? Math.max(...poolMetrics.connectionWaitTimes)
-    : 0;
+  const maxWaitTime =
+    poolMetrics.connectionWaitTimes.length > 0
+      ? Math.max(...poolMetrics.connectionWaitTimes)
+      : 0;
 
   const issues: string[] = [];
-  let status: 'healthy' | 'warning' | 'critical' = 'healthy';
+  let status: "healthy" | "warning" | "critical" = "healthy";
 
   if (utilizationPercent > 90) {
     issues.push(`Pool utilization is ${utilizationPercent}% (very high)`);
-    status = 'critical';
+    status = "critical";
   } else if (utilizationPercent > 75) {
     issues.push(`Pool utilization is ${utilizationPercent}% (high)`);
-    status = 'warning';
+    status = "warning";
   }
 
   if (poolMetrics.waitingClients > 5) {
-    issues.push(`${poolMetrics.waitingClients} clients waiting for connections`);
-    status = status === 'healthy' ? 'warning' : status;
+    issues.push(
+      `${poolMetrics.waitingClients} clients waiting for connections`
+    );
+    status = status === "healthy" ? "warning" : status;
   }
 
   if (averageWaitTime > 1000) {
     issues.push(`Average connection wait time is ${averageWaitTime}ms`);
-    status = status === 'healthy' ? 'warning' : status;
+    status = status === "healthy" ? "warning" : status;
   }
 
   return {

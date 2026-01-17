@@ -1,7 +1,7 @@
 /** @format */
 
-import { useEffect, useState, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { useEffect, useState, useCallback } from "react";
+import { io, Socket } from "socket.io-client";
 
 export interface TickData {
   symbol: string;
@@ -22,7 +22,7 @@ interface UseMarketStreamOptions {
 export const useMarketStream = ({
   symbols,
   onTick,
-  autoConnect = true
+  autoConnect = true,
 }: UseMarketStreamOptions) => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [ticks, setTicks] = useState<Record<string, TickData>>({});
@@ -35,25 +35,25 @@ export const useMarketStream = ({
 
     setConnecting(true);
 
-    const socketInstance = io('https://rewireapp.ddns.net', {
+    const socketInstance = io("https://rewireapp.ddns.net", {
       withCredentials: true,
-      transports: ['websocket', 'polling'],
+      transports: ["websocket", "polling"],
     });
 
-    socketInstance.on('connect', () => {
-      console.log('Market stream connected');
+    socketInstance.on("connect", () => {
+      console.log("Market stream connected");
       setConnected(true);
       setConnecting(false);
     });
 
-    socketInstance.on('disconnect', () => {
-      console.log('Market stream disconnected');
+    socketInstance.on("disconnect", () => {
+      console.log("Market stream disconnected");
       setConnected(false);
       setConnecting(false);
     });
 
-    socketInstance.on('connect_error', (error) => {
-      console.error('Market stream connection error:', error);
+    socketInstance.on("connect_error", error => {
+      console.error("Market stream connection error:", error);
       setConnecting(false);
     });
 
@@ -71,9 +71,9 @@ export const useMarketStream = ({
   useEffect(() => {
     if (!socket) return;
 
-    symbols.forEach((symbol) => {
+    symbols.forEach(symbol => {
       socket.on(`market:${symbol}`, (tick: TickData) => {
-        setTicks((prev) => ({
+        setTicks(prev => ({
           ...prev,
           [symbol]: tick,
         }));
@@ -85,7 +85,7 @@ export const useMarketStream = ({
     });
 
     return () => {
-      symbols.forEach((symbol) => {
+      symbols.forEach(symbol => {
         socket.off(`market:${symbol}`);
       });
     };
@@ -95,13 +95,13 @@ export const useMarketStream = ({
   useEffect(() => {
     if (!socket || !connected) return;
 
-    symbols.forEach((symbol) => {
-      socket.emit('subscribe_market', symbol);
+    symbols.forEach(symbol => {
+      socket.emit("subscribe_market", symbol);
     });
 
     return () => {
-      symbols.forEach((symbol) => {
-        socket.emit('unsubscribe_market', symbol);
+      symbols.forEach(symbol => {
+        socket.emit("unsubscribe_market", symbol);
       });
     };
   }, [socket, connected, symbols]);
@@ -110,7 +110,7 @@ export const useMarketStream = ({
   const subscribe = useCallback(
     (symbol: string) => {
       if (socket && connected) {
-        socket.emit('subscribe_market', symbol);
+        socket.emit("subscribe_market", symbol);
       }
     },
     [socket, connected]
@@ -120,7 +120,7 @@ export const useMarketStream = ({
   const unsubscribe = useCallback(
     (symbol: string) => {
       if (socket) {
-        socket.emit('unsubscribe_market', symbol);
+        socket.emit("unsubscribe_market", symbol);
       }
     },
     [socket]
@@ -130,7 +130,7 @@ export const useMarketStream = ({
   const sendTestMessage = useCallback(
     (message: any) => {
       if (socket && connected) {
-        socket.emit('test', message);
+        socket.emit("test", message);
       }
     },
     [socket, connected]

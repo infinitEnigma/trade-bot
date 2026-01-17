@@ -1,10 +1,10 @@
 /** @format */
 
-import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import { authService } from '../services/auth';
-import { setUserContext } from '../utils/context';
-import logger from '../services/logger';
+import { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
+import { authService } from "../services/auth";
+import { setUserContext } from "../utils/context";
+import logger from "../services/logger";
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -21,8 +21,8 @@ export async function authMiddleware(
 ): Promise<void> {
   try {
     // Get token from Authorization header or httpOnly cookie
-    const authHeader = req.headers['authorization'];
-    let token = authHeader && authHeader.split(' ')[1];
+    const authHeader = req.headers["authorization"];
+    let token = authHeader && authHeader.split(" ")[1];
 
     // If no token in header, try to get from httpOnly cookie
     if (!token) {
@@ -33,7 +33,7 @@ export async function authMiddleware(
       res.status(401).json({
         success: false,
         code: -1001,
-        message: 'Unauthorized - no token provided'
+        message: "Unauthorized - no token provided",
       });
       return;
     }
@@ -44,7 +44,7 @@ export async function authMiddleware(
       res.status(403).json({
         success: false,
         code: -1002,
-        message: 'Unauthorized - invalid token'
+        message: "Unauthorized - invalid token",
       });
       return;
     }
@@ -56,21 +56,23 @@ export async function authMiddleware(
 
     next();
   } catch (error) {
-    logger.error('Auth middleware error', { error: error instanceof Error ? error.message : String(error) });
+    logger.error("Auth middleware error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
 
     // Handle token expiration - attempt automatic refresh
     if (error instanceof jwt.TokenExpiredError) {
-      logger.debug('Access token expired, attempting automatic refresh');
+      logger.debug("Access token expired, attempting automatic refresh");
 
       try {
         // Get refresh token from httpOnly cookie
         const refreshToken = req.cookies?.refreshToken;
         if (!refreshToken) {
-          logger.debug('No refresh token available');
+          logger.debug("No refresh token available");
           res.status(401).json({
             success: false,
             code: -1003,
-            message: 'Unauthorized - token expired and no refresh token'
+            message: "Unauthorized - token expired and no refresh token",
           });
           return;
         }
@@ -78,58 +80,64 @@ export async function authMiddleware(
         // Attempt to refresh the token
         const refreshResult = await authService.refreshToken(refreshToken);
         if (!refreshResult.success || !refreshResult.tokens) {
-          logger.debug('Token refresh failed', { message: refreshResult.message });
+          logger.debug("Token refresh failed", {
+            message: refreshResult.message,
+          });
           res.status(401).json({
             success: false,
             code: -1004,
-            message: 'Unauthorized - token refresh failed'
+            message: "Unauthorized - token refresh failed",
           });
           return;
         }
 
-        logger.info('Token automatically refreshed', {
+        logger.info("Token automatically refreshed", {
           userId: refreshResult.user?.id,
-          email: refreshResult.user?.email
+          email: refreshResult.user?.email,
         });
 
         // Set new httpOnly cookies
-        res.cookie('accessToken', refreshResult.tokens.accessToken, {
+        res.cookie("accessToken", refreshResult.tokens.accessToken, {
           httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "strict",
           maxAge: 4 * 60 * 60 * 1000, // 4 hours
         });
 
-        res.cookie('refreshToken', refreshResult.tokens.refreshToken, {
+        res.cookie("refreshToken", refreshResult.tokens.refreshToken, {
           httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "strict",
           maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
         });
 
         // Verify the new access token and set user on request
-        const newPayload = await authService.validateToken(refreshResult.tokens.accessToken);
+        const newPayload = await authService.validateToken(
+          refreshResult.tokens.accessToken
+        );
         if (!newPayload) {
-          logger.error('New access token validation failed after refresh');
+          logger.error("New access token validation failed after refresh");
           res.status(500).json({
             success: false,
             code: -1005,
-            message: 'Token refresh succeeded but validation failed'
+            message: "Token refresh succeeded but validation failed",
           });
           return;
         }
 
         req.user = newPayload;
         next();
-
       } catch (refreshError) {
-        logger.error('Token refresh process failed', {
-          error: refreshError instanceof Error ? refreshError.message : String(refreshError)
+        logger.error("Token refresh process failed", {
+          error:
+            refreshError instanceof Error
+              ? refreshError.message
+              : String(refreshError),
         });
         res.status(401).json({
           success: false,
           code: -1006,
-          message: 'Unauthorized - token refresh error'
+          message: "Unauthorized - token refresh error",
         });
         return;
       }
@@ -140,7 +148,7 @@ export async function authMiddleware(
     res.status(500).json({
       success: false,
       code: -1000,
-      message: 'Authentication error'
+      message: "Authentication error",
     });
   }
 }

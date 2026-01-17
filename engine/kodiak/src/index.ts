@@ -1,12 +1,12 @@
 /** @format */
 
-import { io, Socket } from 'socket.io-client';
-import { GridTradingStrategy } from './strategies/grid';
-import { OrderlyClient, createOrderlyClient } from './services/orderly';
-import { logger } from './utils/logger';
+import { io, Socket } from "socket.io-client";
+import { GridTradingStrategy } from "./strategies/grid";
+import { OrderlyClient, createOrderlyClient } from "./services/orderly";
+import { logger } from "./utils/logger";
 
 // Environment variables
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3000";
 
 // Bot instance management
 interface BotInstance {
@@ -25,38 +25,38 @@ class TradingEngine {
   constructor() {
     // Connect to backend WebSocket
     this.socket = io(BACKEND_URL, {
-      transports: ['websocket', 'polling'],
+      transports: ["websocket", "polling"],
     });
 
     this.setupSocketListeners();
   }
 
   private setupSocketListeners(): void {
-    this.socket.on('connect', () => {
-      logger.info('Engine connected to backend WebSocket');
+    this.socket.on("connect", () => {
+      logger.info("Engine connected to backend WebSocket");
     });
 
-    this.socket.on('disconnect', () => {
-      logger.warn('Engine disconnected from backend WebSocket');
+    this.socket.on("disconnect", () => {
+      logger.warn("Engine disconnected from backend WebSocket");
     });
 
     // Handle bot start events
-    this.socket.on('bot:start', async (data: any) => {
+    this.socket.on("bot:start", async (data: any) => {
       await this.handleBotStart(data);
     });
 
     // Handle bot stop events
-    this.socket.on('bot:stop', async (data: any) => {
+    this.socket.on("bot:stop", async (data: any) => {
       await this.handleBotStop(data);
     });
 
     // Handle emergency stop events
-    this.socket.on('bot:emergency-stop', async (data: any) => {
+    this.socket.on("bot:emergency-stop", async (data: any) => {
       await this.handleEmergencyStop(data);
     });
 
-    this.socket.on('connect_error', (error) => {
-      logger.error('WebSocket connection error', { error: error.message });
+    this.socket.on("connect_error", error => {
+      logger.error("WebSocket connection error", { error: error.message });
     });
   }
 
@@ -64,23 +64,34 @@ class TradingEngine {
     const { botId, strategyId, strategy, kodiakCredentials } = data;
 
     try {
-      logger.info('Starting bot', { botId, strategyId, strategyType: strategy.type });
+      logger.info("Starting bot", {
+        botId,
+        strategyId,
+        strategyType: strategy.type,
+      });
 
       // Check if bot already exists
       if (this.bots.has(botId)) {
-        logger.warn('Bot already exists, skipping start', { botId });
+        logger.warn("Bot already exists, skipping start", { botId });
         return;
       }
 
       // Validate that we have Kodiak credentials
-      if (!kodiakCredentials || !kodiakCredentials.accountId || !kodiakCredentials.accessKey || !kodiakCredentials.secretKey) {
-        logger.error('Missing Kodiak credentials for bot', { botId });
+      if (
+        !kodiakCredentials ||
+        !kodiakCredentials.accountId ||
+        !kodiakCredentials.accessKey ||
+        !kodiakCredentials.secretKey
+      ) {
+        logger.error("Missing Kodiak credentials for bot", { botId });
         return;
       }
 
       // Validate strategy type
-      if (strategy.type !== 'GRID') {
-        logger.error('Unsupported strategy type', { strategyType: strategy.type });
+      if (strategy.type !== "GRID") {
+        logger.error("Unsupported strategy type", {
+          strategyType: strategy.type,
+        });
         return;
       }
 
@@ -89,7 +100,7 @@ class TradingEngine {
         kodiakCredentials.accountId,
         kodiakCredentials.accessKey,
         kodiakCredentials.secretKey,
-        process.env.NODE_ENV !== 'production' // Use testnet for development
+        process.env.NODE_ENV !== "production" // Use testnet for development
       );
 
       // Get current market price for initialization
@@ -98,7 +109,7 @@ class TradingEngine {
       const currentPrice = Number(ticker.mark_price || ticker.price);
 
       if (!currentPrice) {
-        logger.error('Could not get current price', { symbol });
+        logger.error("Could not get current price", { symbol });
         return;
       }
 
@@ -124,12 +135,11 @@ class TradingEngine {
           await gridStrategy.tick();
 
           // Send heartbeat to backend
-          this.sendHeartbeat(botId, 'RUNNING');
-
+          this.sendHeartbeat(botId, "RUNNING");
         } catch (error) {
-          logger.error('Strategy tick error', {
+          logger.error("Strategy tick error", {
             error: error instanceof Error ? error.message : String(error),
-            botId
+            botId,
           });
         }
       }, 5000);
@@ -140,26 +150,25 @@ class TradingEngine {
         strategyId,
         strategy: gridStrategy,
         intervalId,
-        userId: data.userId || 'unknown',
+        userId: data.userId || "unknown",
         orderlyClient,
       };
 
       this.bots.set(botId, botInstance);
 
       // Send initial heartbeat
-      this.sendHeartbeat(botId, 'RUNNING');
+      this.sendHeartbeat(botId, "RUNNING");
 
-      logger.info('Bot started successfully', { botId, symbol, currentPrice });
-
+      logger.info("Bot started successfully", { botId, symbol, currentPrice });
     } catch (error) {
-      logger.error('Failed to start bot', {
+      logger.error("Failed to start bot", {
         error: error instanceof Error ? error.message : String(error),
         botId,
-        strategyId
+        strategyId,
       });
 
       // Send error heartbeat
-      this.sendHeartbeat(botId, 'ERROR');
+      this.sendHeartbeat(botId, "ERROR");
     }
   }
 
@@ -167,11 +176,11 @@ class TradingEngine {
     const { botId } = data;
 
     try {
-      logger.info('Stopping bot', { botId });
+      logger.info("Stopping bot", { botId });
 
       const botInstance = this.bots.get(botId);
       if (!botInstance) {
-        logger.warn('Bot not found for stop', { botId });
+        logger.warn("Bot not found for stop", { botId });
         return;
       }
 
@@ -185,14 +194,13 @@ class TradingEngine {
       this.bots.delete(botId);
 
       // Send final heartbeat
-      this.sendHeartbeat(botId, 'STOPPED');
+      this.sendHeartbeat(botId, "STOPPED");
 
-      logger.info('Bot stopped successfully', { botId });
-
+      logger.info("Bot stopped successfully", { botId });
     } catch (error) {
-      logger.error('Failed to stop bot', {
+      logger.error("Failed to stop bot", {
         error: error instanceof Error ? error.message : String(error),
-        botId
+        botId,
       });
     }
   }
@@ -201,15 +209,15 @@ class TradingEngine {
     const { botId, action } = data;
 
     try {
-      logger.warn('Emergency stop initiated', { botId, action });
+      logger.warn("Emergency stop initiated", { botId, action });
 
       const botInstance = this.bots.get(botId);
       if (!botInstance) {
-        logger.warn('Bot not found for emergency stop', { botId });
+        logger.warn("Bot not found for emergency stop", { botId });
         return;
       }
 
-      if (action === 'CANCEL_ALL_ORDERS') {
+      if (action === "CANCEL_ALL_ORDERS") {
         // Strategy stop() method already cancels all orders
         await botInstance.strategy.stop();
       }
@@ -221,14 +229,13 @@ class TradingEngine {
       this.bots.delete(botId);
 
       // Send emergency stop heartbeat
-      this.sendHeartbeat(botId, 'STOPPED');
+      this.sendHeartbeat(botId, "STOPPED");
 
-      logger.warn('Emergency stop completed', { botId });
-
+      logger.warn("Emergency stop completed", { botId });
     } catch (error) {
-      logger.error('Emergency stop failed', {
+      logger.error("Emergency stop failed", {
         error: error instanceof Error ? error.message : String(error),
-        botId
+        botId,
       });
     }
   }
@@ -248,9 +255,9 @@ class TradingEngine {
 
       // Send heartbeat via HTTP to backend
       fetch(`${BACKEND_URL}/api/bot/heartbeat`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           bot_id: botId,
@@ -260,13 +267,12 @@ class TradingEngine {
           timestamp: Date.now(),
         }),
       }).catch(error => {
-        logger.error('Heartbeat send failed', { error: error.message, botId });
+        logger.error("Heartbeat send failed", { error: error.message, botId });
       });
-
     } catch (error) {
-      logger.error('Heartbeat preparation failed', {
+      logger.error("Heartbeat preparation failed", {
         error: error instanceof Error ? error.message : String(error),
-        botId
+        botId,
       });
     }
   }
@@ -275,7 +281,7 @@ class TradingEngine {
     // Send periodic heartbeats for all running bots
     setInterval(() => {
       for (const [botId, botInstance] of this.bots) {
-        this.sendHeartbeat(botId, 'RUNNING');
+        this.sendHeartbeat(botId, "RUNNING");
       }
     }, 30000); // Every 30 seconds
   }
@@ -303,18 +309,18 @@ class TradingEngine {
   }
 
   public async shutdown(): Promise<void> {
-    logger.info('Shutting down trading engine...');
+    logger.info("Shutting down trading engine...");
 
     // Stop all bots
     for (const [botId, botInstance] of this.bots) {
       try {
         await botInstance.strategy.stop();
         clearInterval(botInstance.intervalId);
-        this.sendHeartbeat(botId, 'STOPPED');
+        this.sendHeartbeat(botId, "STOPPED");
       } catch (error) {
-        logger.error('Error stopping bot during shutdown', {
+        logger.error("Error stopping bot during shutdown", {
           error: error instanceof Error ? error.message : String(error),
-          botId
+          botId,
         });
       }
     }
@@ -322,19 +328,19 @@ class TradingEngine {
     this.bots.clear();
     this.socket.disconnect();
 
-    logger.info('Trading engine shutdown complete');
+    logger.info("Trading engine shutdown complete");
   }
 }
 
 // Graceful shutdown handling
-process.on('SIGINT', async () => {
-  logger.info('Received SIGINT, initiating graceful shutdown...');
+process.on("SIGINT", async () => {
+  logger.info("Received SIGINT, initiating graceful shutdown...");
   await engine.shutdown();
   process.exit(0);
 });
 
-process.on('SIGTERM', async () => {
-  logger.info('Received SIGTERM, initiating graceful shutdown...');
+process.on("SIGTERM", async () => {
+  logger.info("Received SIGTERM, initiating graceful shutdown...");
   await engine.shutdown();
   process.exit(0);
 });
@@ -342,7 +348,7 @@ process.on('SIGTERM', async () => {
 // Create and start the trading engine
 const engine = new TradingEngine();
 
-logger.info('Trading Engine started', {
+logger.info("Trading Engine started", {
   backendUrl: BACKEND_URL,
 });
 

@@ -149,8 +149,8 @@ export const WalletConnectDialog: React.FC<WalletConnectDialogProps> = ({
                           {isSigning
                             ? "Signing..."
                             : isVerifying
-                            ? "Verifying..."
-                            : "Verify Wallet"}
+                              ? "Verifying..."
+                              : "Verify Wallet"}
                         </button>
                         <button
                           onClick={handleDisconnect}
@@ -275,8 +275,8 @@ export const WalletConnectDialog: React.FC<WalletConnectDialogProps> = ({
                     {isSigning
                       ? "Signing..."
                       : isVerifying
-                      ? "Verifying..."
-                      : "Verify Wallet"}
+                        ? "Verifying..."
+                        : "Verify Wallet"}
                   </button>
                 </div>
               )}

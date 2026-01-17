@@ -1,8 +1,14 @@
 /** @format */
 
-import { createCipheriv, createDecipheriv, randomBytes, scrypt, hkdf } from 'crypto';
-import { promisify } from 'util';
-import logger from './logger';
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  scrypt,
+  hkdf,
+} from "crypto";
+import { promisify } from "util";
+import logger from "./logger";
 
 const scryptAsync = promisify(scrypt);
 const hkdfAsync = promisify(hkdf);
@@ -20,7 +26,7 @@ interface KeyConfig {
 // Current key configuration
 const KEY_CONFIG: KeyConfig = {
   version: 1,
-  algorithm: 'aes-256-gcm',
+  algorithm: "aes-256-gcm",
   keyLength: 32,
   saltLength: 32,
   ivLength: 16,
@@ -29,10 +35,10 @@ const KEY_CONFIG: KeyConfig = {
 
 // Key hierarchy for different data types
 enum KeyPurpose {
-  API_KEYS = 'api_keys',
-  USER_CREDENTIALS = 'user_credentials',
-  FINANCIAL_DATA = 'financial_data',
-  GENERAL_ENCRYPTION = 'general_encryption',
+  API_KEYS = "api_keys",
+  USER_CREDENTIALS = "user_credentials",
+  FINANCIAL_DATA = "financial_data",
+  GENERAL_ENCRYPTION = "general_encryption",
 }
 
 export class KeyManagementService {
@@ -51,17 +57,20 @@ export class KeyManagementService {
   private initializeMasterKey(): void {
     const envKey = process.env.ENCRYPTION_MASTER_KEY;
     if (!envKey) {
-      throw new Error('ENCRYPTION_MASTER_KEY environment variable required');
+      throw new Error("ENCRYPTION_MASTER_KEY environment variable required");
     }
 
-    if (process.env.NODE_ENV === 'production' && envKey.length < 32) {
-      throw new Error('ENCRYPTION_MASTER_KEY must be 32+ characters in production');
+    if (process.env.NODE_ENV === "production" && envKey.length < 32) {
+      throw new Error(
+        "ENCRYPTION_MASTER_KEY must be 32+ characters in production"
+      );
     }
 
     // Additional key derivation to protect against env key exposure
-    const envSalt = process.env.ENCRYPTION_KEY_SALT || 'default-salt-change-in-production';
-    this.masterKeySeed = Buffer.from(envKey + envSalt, 'utf8');
-    logger.info('Key management service initialized with derived master key');
+    const envSalt =
+      process.env.ENCRYPTION_KEY_SALT || "default-salt-change-in-production";
+    this.masterKeySeed = Buffer.from(envKey + envSalt, "utf8");
+    logger.info("Key management service initialized with derived master key");
   }
 
   /**
@@ -74,9 +83,9 @@ export class KeyManagementService {
       try {
         // Use HKDF to derive purpose-specific keys
         const derivedKey = await hkdfAsync(
-          'sha256',
+          "sha256",
           this.masterKeySeed,
-          Buffer.from(purpose, 'utf8'),
+          Buffer.from(purpose, "utf8"),
           Buffer.alloc(32), // Empty salt for HKDF
           KEY_CONFIG.keyLength
         );
@@ -86,7 +95,9 @@ export class KeyManagementService {
 
         logger.debug(`Derived key for purpose: ${purpose}`);
       } catch (error) {
-        logger.error(`Failed to derive key for purpose ${purpose}`, { error: (error as Error).message });
+        logger.error(`Failed to derive key for purpose ${purpose}`, {
+          error: (error as Error).message,
+        });
         throw error;
       }
     }
@@ -106,18 +117,29 @@ export class KeyManagementService {
   /**
    * Encrypt data with purpose-specific key
    */
-  async encrypt(data: string, purpose: KeyPurpose = KeyPurpose.GENERAL_ENCRYPTION): Promise<string> {
+  async encrypt(
+    data: string,
+    purpose: KeyPurpose = KeyPurpose.GENERAL_ENCRYPTION
+  ): Promise<string> {
     try {
       const key = this.getKeyForPurpose(purpose);
       const salt = randomBytes(KEY_CONFIG.saltLength);
       const iv = randomBytes(KEY_CONFIG.ivLength);
 
       // Derive final key using scrypt with the purpose-specific key as password
-      const derivedKey = await scryptAsync(key, salt, KEY_CONFIG.keyLength) as Buffer;
+      const derivedKey = (await scryptAsync(
+        key,
+        salt,
+        KEY_CONFIG.keyLength
+      )) as Buffer;
 
-      const cipher = createCipheriv(KEY_CONFIG.algorithm, derivedKey, iv) as any;
-      let encrypted = cipher.update(data, 'utf8', 'hex');
-      encrypted += cipher.final('hex');
+      const cipher = createCipheriv(
+        KEY_CONFIG.algorithm,
+        derivedKey,
+        iv
+      ) as any;
+      let encrypted = cipher.update(data, "utf8", "hex");
+      encrypted += cipher.final("hex");
 
       const tag = cipher.getAuthTag();
 
@@ -130,12 +152,14 @@ export class KeyManagementService {
         salt,
         iv,
         tag,
-        Buffer.from(encrypted, 'hex'),
+        Buffer.from(encrypted, "hex"),
       ]);
 
-      return resultBuffer.toString('base64');
+      return resultBuffer.toString("base64");
     } catch (error) {
-      logger.error(`Encryption failed for purpose ${purpose}`, { error: (error as Error).message });
+      logger.error(`Encryption failed for purpose ${purpose}`, {
+        error: (error as Error).message,
+      });
       throw error;
     }
   }
@@ -143,9 +167,12 @@ export class KeyManagementService {
   /**
    * Decrypt data with purpose-specific key
    */
-  async decrypt(encryptedData: string, purpose: KeyPurpose = KeyPurpose.GENERAL_ENCRYPTION): Promise<string> {
+  async decrypt(
+    encryptedData: string,
+    purpose: KeyPurpose = KeyPurpose.GENERAL_ENCRYPTION
+  ): Promise<string> {
     try {
-      const buffer = Buffer.from(encryptedData, 'base64');
+      const buffer = Buffer.from(encryptedData, "base64");
 
       // Parse format: version(1) + salt + iv + tag + encrypted
       const version = buffer.readUInt8(0);
@@ -154,27 +181,42 @@ export class KeyManagementService {
       }
 
       const salt = buffer.subarray(1, 1 + KEY_CONFIG.saltLength);
-      const iv = buffer.subarray(1 + KEY_CONFIG.saltLength, 1 + KEY_CONFIG.saltLength + KEY_CONFIG.ivLength);
+      const iv = buffer.subarray(
+        1 + KEY_CONFIG.saltLength,
+        1 + KEY_CONFIG.saltLength + KEY_CONFIG.ivLength
+      );
       const tag = buffer.subarray(
         1 + KEY_CONFIG.saltLength + KEY_CONFIG.ivLength,
         1 + KEY_CONFIG.saltLength + KEY_CONFIG.ivLength + KEY_CONFIG.tagLength
       );
-      const encrypted = buffer.subarray(1 + KEY_CONFIG.saltLength + KEY_CONFIG.ivLength + KEY_CONFIG.tagLength);
+      const encrypted = buffer.subarray(
+        1 + KEY_CONFIG.saltLength + KEY_CONFIG.ivLength + KEY_CONFIG.tagLength
+      );
 
       const key = this.getKeyForPurpose(purpose);
 
       // Derive the same key used for encryption
-      const derivedKey = await scryptAsync(key, salt, KEY_CONFIG.keyLength) as Buffer;
+      const derivedKey = (await scryptAsync(
+        key,
+        salt,
+        KEY_CONFIG.keyLength
+      )) as Buffer;
 
-      const decipher = createDecipheriv(KEY_CONFIG.algorithm, derivedKey, iv) as any;
+      const decipher = createDecipheriv(
+        KEY_CONFIG.algorithm,
+        derivedKey,
+        iv
+      ) as any;
       decipher.setAuthTag(tag);
 
-      let decrypted = decipher.update(encrypted.toString('hex'), 'hex', 'utf8');
-      decrypted += decipher.final('utf8');
+      let decrypted = decipher.update(encrypted.toString("hex"), "hex", "utf8");
+      decrypted += decipher.final("utf8");
 
       return decrypted;
     } catch (error) {
-      logger.error(`Decryption failed for purpose ${purpose}`, { error: (error as Error).message });
+      logger.error(`Decryption failed for purpose ${purpose}`, {
+        error: (error as Error).message,
+      });
       throw error;
     }
   }
@@ -260,13 +302,17 @@ export class KeyManagementService {
   /**
    * Validate encryption/decryption roundtrip
    */
-  async validateEncryption(testData = 'test-validation-data'): Promise<boolean> {
+  async validateEncryption(
+    testData = "test-validation-data"
+  ): Promise<boolean> {
     try {
       const encrypted = await this.encrypt(testData);
       const decrypted = await this.decrypt(encrypted);
       return decrypted === testData;
     } catch (error) {
-      logger.error('Encryption validation failed', { error: (error as Error).message });
+      logger.error("Encryption validation failed", {
+        error: (error as Error).message,
+      });
       return false;
     }
   }

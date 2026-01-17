@@ -1,16 +1,16 @@
 /** @format */
 
-import WebSocket from 'ws';
-import { Server } from 'socket.io';
-import logger from '../../services/logger';
-import { query } from '../../database/pool';
+import WebSocket from "ws";
+import { Server } from "socket.io";
+import logger from "../../services/logger";
+import { query } from "../../database/pool";
 
-import { TickData, KlineData, MarketStreamStatus } from './types';
-import { WebSocketManager } from './websocket-manager';
-import { AuthManager } from './auth-manager';
-import { CacheManager } from './cache-manager';
-import { SubscriptionManager } from './subscription-manager';
-import { MessageHandler } from './message-handler';
+import { TickData, KlineData, MarketStreamStatus } from "./types";
+import { WebSocketManager } from "./websocket-manager";
+import { AuthManager } from "./auth-manager";
+import { CacheManager } from "./cache-manager";
+import { SubscriptionManager } from "./subscription-manager";
+import { MessageHandler } from "./message-handler";
 
 /**
  * Main market stream service that orchestrates all components
@@ -38,7 +38,7 @@ export class MarketStreamService {
   setSocketServer(io: Server): void {
     this.io = io;
     this.messageHandler.setSocketServer(io);
-    logger.info('Market stream service initialized with Socket.io');
+    logger.info("Market stream service initialized with Socket.io");
   }
 
   /**
@@ -46,13 +46,13 @@ export class MarketStreamService {
    * Uses: wss://ws-evm.orderly.org/ws/stream/public
    */
   async connectToOrderly(symbols: string[]): Promise<void> {
-    logger.info('connectToOrderly called with symbols', { symbols });
+    logger.info("connectToOrderly called with symbols", { symbols });
 
     try {
       // Get account ID for WebSocket URL
       const accountId = await this.authManager.getAccountId();
       if (!accountId) {
-        logger.error('No account found for WebSocket connection');
+        logger.error("No account found for WebSocket connection");
         return;
       }
 
@@ -62,30 +62,29 @@ export class MarketStreamService {
       await this.authManager.authenticate(ws, accountId);
 
       // Set up message handling
-      ws.on('message', (data: WebSocket.Data) => {
+      ws.on("message", (data: WebSocket.Data) => {
         try {
           const message = JSON.parse(data.toString());
           this.messageHandler.handleMessage(message);
         } catch (error) {
-          logger.error('Failed to parse WebSocket message', {
-            error: (error as Error).message
+          logger.error("Failed to parse WebSocket message", {
+            error: (error as Error).message,
           });
         }
       });
 
       // Queue subscriptions for these symbols
-      symbols.forEach((symbol) => {
+      symbols.forEach(symbol => {
         const topic = `${symbol}@kline_1m`;
         this.subscriptionManager.addPendingSubscription(topic);
-        logger.info('Added topic to pending subscriptions', { symbol, topic });
+        logger.info("Added topic to pending subscriptions", { symbol, topic });
       });
 
       // Send pending subscriptions
       this.sendPendingSubscriptions();
-
     } catch (error) {
-      logger.error('Failed to connect to Orderly', {
-        error: (error as Error).message
+      logger.error("Failed to connect to Orderly", {
+        error: (error as Error).message,
       });
     }
   }
@@ -96,12 +95,15 @@ export class MarketStreamService {
   private sendPendingSubscriptions(): void {
     const ws = this.wsManager.getConnection();
     if (!ws || !this.wsManager.isConnected()) {
-      logger.warn('Cannot send subscriptions - WebSocket not connected');
+      logger.warn("Cannot send subscriptions - WebSocket not connected");
       return;
     }
 
     const topics = this.subscriptionManager.getPendingSubscriptions();
-    logger.info('Sending pending subscriptions', { count: topics.length, topics });
+    logger.info("Sending pending subscriptions", {
+      count: topics.length,
+      topics,
+    });
 
     topics.forEach(topic => {
       this.subscribeToTopic(ws, topic);
@@ -114,23 +116,26 @@ export class MarketStreamService {
    */
   private subscribeToTopic(ws: WebSocket, topic: string): void {
     if (ws.readyState !== WebSocket.OPEN) {
-      logger.warn('Cannot subscribe - WebSocket not open', { topic, readyState: ws.readyState });
+      logger.warn("Cannot subscribe - WebSocket not open", {
+        topic,
+        readyState: ws.readyState,
+      });
       return;
     }
 
     try {
       const message = JSON.stringify({
         id: `sub_${topic}_${Date.now()}`,
-        event: 'subscribe',
+        event: "subscribe",
         topic: topic,
       });
 
       ws.send(message);
-      logger.info('Subscription message sent to Orderly', { topic });
+      logger.info("Subscription message sent to Orderly", { topic });
     } catch (error) {
-      logger.error('Failed to send subscription', {
+      logger.error("Failed to send subscription", {
         topic,
-        error: (error as Error).message
+        error: (error as Error).message,
       });
     }
   }
@@ -142,7 +147,7 @@ export class MarketStreamService {
    */
   connectToKline(symbol: string, interval: string): void {
     const topic = `${symbol}@kline_${interval}`;
-    this.subscriptionManager.subscribe('legacy-client', topic);
+    this.subscriptionManager.subscribe("legacy-client", topic);
   }
 
   /**
@@ -152,13 +157,17 @@ export class MarketStreamService {
    */
   connectToMarkPrice(symbol: string): void {
     const topic = `${symbol}@markprice`;
-    this.subscriptionManager.subscribe('legacy-client', topic);
+    this.subscriptionManager.subscribe("legacy-client", topic);
   }
 
   /**
    * Subscribe to market data with reference counting
    */
-  subscribe(clientId: string, topic: string, options: { priority?: 'high' | 'medium' | 'low' } = {}): void {
+  subscribe(
+    clientId: string,
+    topic: string,
+    options: { priority?: "high" | "medium" | "low" } = {}
+  ): void {
     this.subscriptionManager.subscribe(clientId, topic);
   }
 
@@ -179,7 +188,11 @@ export class MarketStreamService {
   /**
    * Get kline data from cache
    */
-  async getKlines(symbol: string, interval: string, limit: number = 300): Promise<KlineData[]> {
+  async getKlines(
+    symbol: string,
+    interval: string,
+    limit: number = 300
+  ): Promise<KlineData[]> {
     return this.cacheManager.getKlines(symbol, interval, limit);
   }
 
@@ -196,7 +209,7 @@ export class MarketStreamService {
   disconnectAll(): void {
     this.wsManager.disconnectAll();
     this.subscriptionManager.clearAll();
-    logger.info('Market stream service disconnected');
+    logger.info("Market stream service disconnected");
   }
 
   /**
@@ -207,8 +220,9 @@ export class MarketStreamService {
 
     return {
       connected: this.wsManager.isConnected(),
-      websockets: this.wsManager.isConnected() ? ['market'] : [],
-      pendingSubscriptions: this.subscriptionManager.getPendingSubscriptions().length,
+      websockets: this.wsManager.isConnected() ? ["market"] : [],
+      pendingSubscriptions:
+        this.subscriptionManager.getPendingSubscriptions().length,
       activeHeartbeats: 0, // Simplified - could be enhanced
       subscriptionStats,
     };

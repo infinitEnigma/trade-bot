@@ -212,7 +212,7 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
               </label>
               <select
                 {...register("type")}
-                onChange={(e) => {
+                onChange={e => {
                   const newType = e.target.value as StrategyType;
                   setSelectedType(newType);
                   setValue("type", newType);
@@ -237,7 +237,7 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
               {...register("symbol")}
               className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
             >
-              {AVAILABLE_SYMBOLS.map((symbol) => (
+              {AVAILABLE_SYMBOLS.map(symbol => (
                 <option key={symbol} value={symbol}>
                   {symbol.replace("PERP_", "").replace("_USDC", "")}
                 </option>

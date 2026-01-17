@@ -46,19 +46,22 @@ export class GridTradingStrategy {
       });
     }
 
-    logger.info('Grid strategy initialized', {
+    logger.info("Grid strategy initialized", {
       symbol: this.config.symbol,
       levels: this.levels.length,
       minPrice: minPrice.toFixed(2),
       maxPrice: maxPrice.toFixed(2),
-      botId: this.botId
+      botId: this.botId,
     });
   }
 
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
-    logger.info('Grid strategy bot started', { botId: this.botId, symbol: this.config.symbol });
+    logger.info("Grid strategy bot started", {
+      botId: this.botId,
+      symbol: this.config.symbol,
+    });
   }
 
   async stop(): Promise<void> {
@@ -80,7 +83,10 @@ export class GridTradingStrategy {
         }
       }
     }
-    logger.info('Grid strategy bot stopped', { botId: this.botId, symbol: this.config.symbol });
+    logger.info("Grid strategy bot stopped", {
+      botId: this.botId,
+      symbol: this.config.symbol,
+    });
   }
 
   async tick(): Promise<void> {
@@ -117,7 +123,11 @@ export class GridTradingStrategy {
       // Check order status
       await this.checkOrders();
     } catch (error) {
-      logger.error('Grid strategy tick error', { error: error instanceof Error ? error.message : String(error), botId: this.botId, symbol: this.config.symbol });
+      logger.error("Grid strategy tick error", {
+        error: error instanceof Error ? error.message : String(error),
+        botId: this.botId,
+        symbol: this.config.symbol,
+      });
     }
   }
 
@@ -135,9 +145,19 @@ export class GridTradingStrategy {
 
       const result = await this.orderly.createOrder(order);
       level.buyOrderId = result.orderId;
-      logger.info('Placed buy order', { price: level.price, orderId: result.orderId, botId: this.botId, symbol: this.config.symbol });
+      logger.info("Placed buy order", {
+        price: level.price,
+        orderId: result.orderId,
+        botId: this.botId,
+        symbol: this.config.symbol,
+      });
     } catch (error) {
-      logger.error('Failed to place buy order', { price: level.price, error: error instanceof Error ? error.message : String(error), botId: this.botId, symbol: this.config.symbol });
+      logger.error("Failed to place buy order", {
+        price: level.price,
+        error: error instanceof Error ? error.message : String(error),
+        botId: this.botId,
+        symbol: this.config.symbol,
+      });
     }
   }
 
@@ -155,9 +175,19 @@ export class GridTradingStrategy {
 
       const result = await this.orderly.createOrder(order);
       level.sellOrderId = result.orderId;
-      logger.info('Placed sell order', { price: level.price, orderId: result.orderId, botId: this.botId, symbol: this.config.symbol });
+      logger.info("Placed sell order", {
+        price: level.price,
+        orderId: result.orderId,
+        botId: this.botId,
+        symbol: this.config.symbol,
+      });
     } catch (error) {
-      logger.error('Failed to place sell order', { price: level.price, error: error instanceof Error ? error.message : String(error), botId: this.botId, symbol: this.config.symbol });
+      logger.error("Failed to place sell order", {
+        price: level.price,
+        error: error instanceof Error ? error.message : String(error),
+        botId: this.botId,
+        symbol: this.config.symbol,
+      });
     }
   }
 
@@ -189,7 +219,13 @@ export class GridTradingStrategy {
                 pnl: tradePnl,
               });
 
-              logger.info('Buy order filled', { price: level.price, pnl: tradePnl.toFixed(2), botId: this.botId, symbol: this.config.symbol, orderId: order.orderId });
+              logger.info("Buy order filled", {
+                price: level.price,
+                pnl: tradePnl.toFixed(2),
+                botId: this.botId,
+                symbol: this.config.symbol,
+                orderId: order.orderId,
+              });
             } else if (
               order.status === "CANCELLED" ||
               order.status === "REJECTED"
@@ -231,7 +267,13 @@ export class GridTradingStrategy {
                 pnl: tradePnl,
               });
 
-              logger.info('Sell order filled', { price: level.price, pnl: tradePnl.toFixed(2), botId: this.botId, symbol: this.config.symbol, orderId: order.orderId });
+              logger.info("Sell order filled", {
+                price: level.price,
+                pnl: tradePnl.toFixed(2),
+                botId: this.botId,
+                symbol: this.config.symbol,
+                orderId: order.orderId,
+              });
             } else if (
               order.status === "CANCELLED" ||
               order.status === "REJECTED"

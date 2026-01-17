@@ -1,10 +1,10 @@
 /** @format */
 
-import WebSocket from 'ws';
-import { Server } from 'socket.io';
-import logger from './logger';
-import { redisService } from './redis';
-import { query } from '../database/pool';
+import WebSocket from "ws";
+import { Server } from "socket.io";
+import logger from "./logger";
+import { redisService } from "./redis";
+import { query } from "../database/pool";
 
 interface TickData {
   symbol: string;
@@ -37,9 +37,9 @@ interface KlineData {
  * Circuit breaker states for WebSocket reconnection
  */
 enum CircuitState {
-  CLOSED = 'closed',     // Normal operation, reconnections allowed
-  OPEN = 'open',         // Circuit open, stop retrying
-  HALF_OPEN = 'half_open' // Testing if service recovered
+  CLOSED = "closed", // Normal operation, reconnections allowed
+  OPEN = "open", // Circuit open, stop retrying
+  HALF_OPEN = "half_open", // Testing if service recovered
 }
 
 /**
@@ -54,58 +54,63 @@ class WebSocketManager {
   private lastFailureTime: Map<string, number> = new Map();
   private circuitBreakerTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
-  private readonly BASE_URL = 'wss://ws-evm.orderly.org/ws/stream';
+  private readonly BASE_URL = "wss://ws-evm.orderly.org/ws/stream";
   private readonly MIN_RECONNECT_DELAY = 1000;
   private readonly MAX_RECONNECT_DELAY = 30000;
   private readonly MAX_RECONNECT_ATTEMPTS = 12; // Stop after 12 attempts (~30 minutes)
   private readonly CIRCUIT_BREAKER_TIMEOUT = 5 * 60 * 1000; // 5 minutes before trying again
 
   async createConnection(accountId: string): Promise<WebSocket> {
-    if (this.websockets.has('market')) {
-      logger.debug('Market WebSocket already exists');
-      return this.websockets.get('market')!;
+    if (this.websockets.has("market")) {
+      logger.debug("Market WebSocket already exists");
+      return this.websockets.get("market")!;
     }
 
     const wsUrl = `${this.BASE_URL}/${accountId}`;
-    logger.info('Connecting to Orderly market WebSocket', { url: wsUrl, accountId });
+    logger.info("Connecting to Orderly market WebSocket", {
+      url: wsUrl,
+      accountId,
+    });
 
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(wsUrl);
 
-      ws.on('open', () => {
-        logger.info('Orderly market WebSocket connected successfully');
-        this.websockets.set('market', ws);
-        this.reconnectAttempts.set('market', 0);
+      ws.on("open", () => {
+        logger.info("Orderly market WebSocket connected successfully");
+        this.websockets.set("market", ws);
+        this.reconnectAttempts.set("market", 0);
         // Reset circuit breaker on successful connection
-        this.circuitStates.set('market', CircuitState.CLOSED);
-        this.startHeartbeat('market', ws);
+        this.circuitStates.set("market", CircuitState.CLOSED);
+        this.startHeartbeat("market", ws);
         resolve(ws);
       });
 
-      ws.on('error', (error: Error) => {
-        logger.error('Orderly market WebSocket error', { error: error.message });
+      ws.on("error", (error: Error) => {
+        logger.error("Orderly market WebSocket error", {
+          error: error.message,
+        });
         reject(error);
       });
 
-      ws.on('close', (code: number, reason: string) => {
-        logger.warn('Orderly market WebSocket closed', { code, reason });
-        this.websockets.delete('market');
-        this.stopHeartbeat('market');
-        this.scheduleReconnect('market');
+      ws.on("close", (code: number, reason: string) => {
+        logger.warn("Orderly market WebSocket closed", { code, reason });
+        this.websockets.delete("market");
+        this.stopHeartbeat("market");
+        this.scheduleReconnect("market");
       });
 
-      ws.on('pong', () => {
-        logger.debug('Heartbeat pong received from Orderly');
+      ws.on("pong", () => {
+        logger.debug("Heartbeat pong received from Orderly");
       });
     });
   }
 
   getConnection(): WebSocket | null {
-    return this.websockets.get('market') || null;
+    return this.websockets.get("market") || null;
   }
 
   isConnected(): boolean {
-    const ws = this.websockets.get('market');
+    const ws = this.websockets.get("market");
     return ws ? ws.readyState === WebSocket.OPEN : false;
   }
 
@@ -114,7 +119,7 @@ class WebSocketManager {
     const heartbeat = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.ping();
-        logger.debug('Heartbeat ping sent', { wsKey });
+        logger.debug("Heartbeat ping sent", { wsKey });
       } else {
         clearInterval(heartbeat);
         this.heartbeatIntervals.delete(wsKey);
@@ -154,15 +159,18 @@ class WebSocketManager {
 
       // If enough time has passed, try half-open state
       if (timeSinceFailure >= this.CIRCUIT_BREAKER_TIMEOUT) {
-        logger.info('Circuit breaker transitioning to half-open', { wsKey, timeSinceFailureMs: timeSinceFailure });
+        logger.info("Circuit breaker transitioning to half-open", {
+          wsKey,
+          timeSinceFailureMs: timeSinceFailure,
+        });
         this.circuitStates.set(wsKey, CircuitState.HALF_OPEN);
         this.reconnectAttempts.set(wsKey, 0); // Reset attempts for half-open
       } else {
-        logger.debug('Circuit breaker open, skipping reconnect', {
+        logger.debug("Circuit breaker open, skipping reconnect", {
           wsKey,
           attempts,
           timeSinceFailureMs: timeSinceFailure,
-          remainingMs: this.CIRCUIT_BREAKER_TIMEOUT - timeSinceFailure
+          remainingMs: this.CIRCUIT_BREAKER_TIMEOUT - timeSinceFailure,
         });
         return;
       }
@@ -170,11 +178,14 @@ class WebSocketManager {
 
     // Check if we've exceeded maximum retry attempts
     if (attempts >= this.MAX_RECONNECT_ATTEMPTS) {
-      logger.error('Maximum reconnection attempts exceeded, opening circuit breaker', {
-        wsKey,
-        attempts,
-        maxAttempts: this.MAX_RECONNECT_ATTEMPTS
-      });
+      logger.error(
+        "Maximum reconnection attempts exceeded, opening circuit breaker",
+        {
+          wsKey,
+          attempts,
+          maxAttempts: this.MAX_RECONNECT_ATTEMPTS,
+        }
+      );
       this.circuitStates.set(wsKey, CircuitState.OPEN);
       this.lastFailureTime.set(wsKey, Date.now());
 
@@ -184,16 +195,16 @@ class WebSocketManager {
     }
 
     const delay = this.calculateBackoff(wsKey);
-    logger.info('Scheduling reconnect', {
+    logger.info("Scheduling reconnect", {
       wsKey,
       attempt: attempts + 1,
       maxAttempts: this.MAX_RECONNECT_ATTEMPTS,
       delayMs: Math.round(delay),
-      circuitState
+      circuitState,
     });
 
     const timer = setTimeout(async () => {
-      logger.info('Attempting reconnect', { wsKey, attempt: attempts + 1 });
+      logger.info("Attempting reconnect", { wsKey, attempt: attempts + 1 });
       this.reconnectIntervals.delete(wsKey);
       this.reconnectAttempts.set(wsKey, attempts + 1);
       // Note: reconnection logic will be handled by the main service
@@ -205,13 +216,13 @@ class WebSocketManager {
   private scheduleCircuitBreakerReset(wsKey: string): void {
     if (this.circuitBreakerTimeouts.has(wsKey)) return;
 
-    logger.info('Scheduling circuit breaker reset', {
+    logger.info("Scheduling circuit breaker reset", {
       wsKey,
-      resetDelayMs: this.CIRCUIT_BREAKER_TIMEOUT
+      resetDelayMs: this.CIRCUIT_BREAKER_TIMEOUT,
     });
 
     const timer = setTimeout(() => {
-      logger.info('Circuit breaker reset timeout reached', { wsKey });
+      logger.info("Circuit breaker reset timeout reached", { wsKey });
       this.circuitBreakerTimeouts.delete(wsKey);
       // Note: circuit breaker will transition to half-open on next reconnect attempt
     }, this.CIRCUIT_BREAKER_TIMEOUT);
@@ -234,7 +245,7 @@ class WebSocketManager {
 
     this.stopHeartbeat(wsKey);
     this.reconnectAttempts.delete(wsKey);
-    logger.info('WebSocket disconnected', { wsKey });
+    logger.info("WebSocket disconnected", { wsKey });
   }
 
   disconnectAll(): void {
@@ -249,7 +260,7 @@ class WebSocketManager {
     this.lastFailureTime.clear();
     this.circuitBreakerTimeouts.forEach(timer => clearTimeout(timer));
     this.circuitBreakerTimeouts.clear();
-    logger.info('All WebSocket connections and circuit breaker state cleared');
+    logger.info("All WebSocket connections and circuit breaker state cleared");
   }
 }
 
@@ -260,17 +271,21 @@ class AuthManager {
   async authenticate(ws: WebSocket, accountId: string): Promise<void> {
     try {
       const credsResult = await query(
-        'SELECT api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE account_id = $1',
+        "SELECT api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE account_id = $1",
         [accountId]
       );
 
       if (credsResult.rows.length === 0) {
-        throw new Error('No credentials found for WebSocket authentication');
+        throw new Error("No credentials found for WebSocket authentication");
       }
 
-      const { encryptionService } = await import('./encryption.js');
-      const apiKey = encryptionService.decryptApiKey(credsResult.rows[0].api_key_encrypted);
-      const secretKey = encryptionService.decryptSecretKey(credsResult.rows[0].secret_key_encrypted);
+      const { encryptionService } = await import("./encryption.js");
+      const apiKey = encryptionService.decryptApiKey(
+        credsResult.rows[0].api_key_encrypted
+      );
+      const secretKey = encryptionService.decryptSecretKey(
+        credsResult.rows[0].secret_key_encrypted
+      );
 
       const timestamp = Date.now();
       const message = `${timestamp}GET/ws/auth${accountId}`;
@@ -284,15 +299,17 @@ class AuthManager {
       const signatureB64 = Buffer.from(signature).toString("base64url");
 
       const authMessage = JSON.stringify({
-        event: 'auth',
+        event: "auth",
         id: `auth_${Date.now()}`,
         params: { accountId, apiKey, signature: signatureB64, timestamp },
       });
 
       ws.send(authMessage);
-      logger.info('WebSocket authentication message sent', { accountId });
+      logger.info("WebSocket authentication message sent", { accountId });
     } catch (error) {
-      logger.error('Failed to send WebSocket authentication', { error: (error as Error).message });
+      logger.error("Failed to send WebSocket authentication", {
+        error: (error as Error).message,
+      });
       throw error;
     }
   }
@@ -303,11 +320,15 @@ class AuthManager {
  */
 class CacheManager {
   async cacheTick(symbol: string, data: TickData): Promise<void> {
-    const result = await redisService.setex(`tick:${symbol}`, 60, JSON.stringify(data));
+    const result = await redisService.setex(
+      `tick:${symbol}`,
+      60,
+      JSON.stringify(data)
+    );
     if (!result.success) {
-      logger.warn('Tick cache write failed', {
+      logger.warn("Tick cache write failed", {
         symbol,
-        error: result.error
+        error: result.error,
       });
     }
   }
@@ -317,37 +338,49 @@ class CacheManager {
     if (result.success && result.data) {
       return JSON.parse(result.data);
     } else if (!result.success) {
-      logger.warn('Tick cache read failed', {
+      logger.warn("Tick cache read failed", {
         symbol,
-        error: result.error
+        error: result.error,
       });
     }
     return null;
   }
 
-  async cacheKlines(symbol: string, interval: string, klines: any[]): Promise<void> {
+  async cacheKlines(
+    symbol: string,
+    interval: string,
+    klines: any[]
+  ): Promise<void> {
     const cacheKey = `kline:${symbol}:${interval}`;
-    const result = await redisService.setex(cacheKey, 3600, JSON.stringify(klines));
+    const result = await redisService.setex(
+      cacheKey,
+      3600,
+      JSON.stringify(klines)
+    );
     if (!result.success) {
-      logger.warn('Klines cache write failed', {
+      logger.warn("Klines cache write failed", {
         symbol,
         interval,
-        error: result.error
+        error: result.error,
       });
     }
   }
 
-  async getKlines(symbol: string, interval: string, limit: number = 300): Promise<any[]> {
+  async getKlines(
+    symbol: string,
+    interval: string,
+    limit: number = 300
+  ): Promise<any[]> {
     const cacheKey = `kline:${symbol}:${interval}`;
     const result = await redisService.get(cacheKey);
     if (result.success && result.data) {
       const klines = JSON.parse(result.data);
       return klines.slice(-limit);
     } else if (!result.success) {
-      logger.warn('Klines cache read failed', {
+      logger.warn("Klines cache read failed", {
         symbol,
         interval,
-        error: result.error
+        error: result.error,
       });
     }
     return [];
@@ -357,9 +390,9 @@ class CacheManager {
     const cacheKey = `markprice:${symbol}`;
     const result = await redisService.setex(cacheKey, 30, JSON.stringify(data));
     if (!result.success) {
-      logger.warn('Mark price cache write failed', {
+      logger.warn("Mark price cache write failed", {
         symbol,
-        error: result.error
+        error: result.error,
       });
     }
   }
@@ -370,9 +403,9 @@ class CacheManager {
     if (result.success && result.data) {
       return JSON.parse(result.data);
     } else if (!result.success) {
-      logger.warn('Mark price cache read failed', {
+      logger.warn("Mark price cache read failed", {
         symbol,
-        error: result.error
+        error: result.error,
       });
     }
     return null;
@@ -397,21 +430,23 @@ class MessageHandler {
   async handleMessage(message: any): Promise<void> {
     try {
       // Handle authentication responses
-      if (message.event === 'auth' || message.method === 'AUTH') {
+      if (message.event === "auth" || message.method === "AUTH") {
         if (message.success || message.code === 0) {
-          logger.info('WebSocket authentication successful');
+          logger.info("WebSocket authentication successful");
         } else {
-          logger.error('WebSocket authentication failed', { message });
+          logger.error("WebSocket authentication failed", { message });
         }
         return;
       }
 
       // Handle subscription responses
-      if (message.event === 'subscribed' || message.method === 'SUBSCRIBE') {
+      if (message.event === "subscribed" || message.method === "SUBSCRIBE") {
         if (message.success || message.code === 0) {
-          logger.info('WebSocket subscription successful', { topic: message.topic || message.params });
+          logger.info("WebSocket subscription successful", {
+            topic: message.topic || message.params,
+          });
         } else {
-          logger.error('WebSocket subscription failed', { message });
+          logger.error("WebSocket subscription failed", { message });
         }
         return;
       }
@@ -419,20 +454,20 @@ class MessageHandler {
       // Handle market data messages
       if (message.topic && message.data) {
         const topic = message.topic;
-        logger.info('Processing market data message', { topic });
+        logger.info("Processing market data message", { topic });
 
-        if (topic.includes('@kline_')) {
+        if (topic.includes("@kline_")) {
           await this.handleKlineData(message);
-        } else if (topic === 'ticker') {
+        } else if (topic === "ticker") {
           await this.handleTickerData(message.data.symbol, message.data);
-        } else if (topic.includes('@markprice')) {
+        } else if (topic.includes("@markprice")) {
           await this.handleMarkPriceData(message);
         } else {
-          logger.debug('Unhandled message topic', { topic });
+          logger.debug("Unhandled message topic", { topic });
         }
       }
     } catch (error) {
-      logger.error('Handle message error', { error: (error as Error).message });
+      logger.error("Handle message error", { error: (error as Error).message });
     }
   }
 
@@ -454,9 +489,15 @@ class MessageHandler {
         this.io.emit(`market:${symbol}`, tickData);
       }
 
-      logger.debug('Ticker data cached and broadcasted', { symbol, price: tickData.price });
+      logger.debug("Ticker data cached and broadcasted", {
+        symbol,
+        price: tickData.price,
+      });
     } catch (error) {
-      logger.error('Handle ticker data error', { symbol, error: (error as Error).message });
+      logger.error("Handle ticker data error", {
+        symbol,
+        error: (error as Error).message,
+      });
     }
   }
 
@@ -464,11 +505,11 @@ class MessageHandler {
     try {
       const markPriceData = message.data;
       if (!markPriceData?.symbol) {
-        logger.error('Invalid mark price data format', { message });
+        logger.error("Invalid mark price data format", { message });
         return;
       }
 
-      const symbol = message.topic.split('@')[0];
+      const symbol = message.topic.split("@")[0];
       const priceData = {
         symbol,
         price: parseFloat(markPriceData.price || 0),
@@ -481,9 +522,14 @@ class MessageHandler {
         this.io.emit(`markprice:${symbol}`, priceData);
       }
 
-      logger.debug('Mark price data cached and broadcasted', { symbol, price: priceData.price });
+      logger.debug("Mark price data cached and broadcasted", {
+        symbol,
+        price: priceData.price,
+      });
     } catch (error) {
-      logger.error('Handle mark price data error', { error: (error as Error).message });
+      logger.error("Handle mark price data error", {
+        error: (error as Error).message,
+      });
     }
   }
 
@@ -491,12 +537,12 @@ class MessageHandler {
     try {
       const klineData = message.data;
       if (!klineData?.symbol) {
-        logger.error('Invalid kline data format', { message });
+        logger.error("Invalid kline data format", { message });
         return;
       }
 
-      const [symbol, klinePart] = message.topic.split('@');
-      const interval = klinePart.replace('kline_', '');
+      const [symbol, klinePart] = message.topic.split("@");
+      const interval = klinePart.replace("kline_", "");
 
       const newCandle = {
         time: Math.floor(klineData.startTime / 1000),
@@ -507,9 +553,16 @@ class MessageHandler {
         volume: parseFloat(klineData.volume.toString()),
       };
 
-      const existingKlines = await this.cacheManager.getKlines(symbol, interval, 300);
+      const existingKlines = await this.cacheManager.getKlines(
+        symbol,
+        interval,
+        300
+      );
       const updatedKlines = [...existingKlines, newCandle]
-        .filter((candle, index, arr) => arr.findIndex(c => c.time === candle.time) === index)
+        .filter(
+          (candle, index, arr) =>
+            arr.findIndex(c => c.time === candle.time) === index
+        )
         .slice(-300);
 
       await this.cacheManager.cacheKlines(symbol, interval, updatedKlines);
@@ -518,9 +571,15 @@ class MessageHandler {
         this.io.emit(`kline:${symbol}:${interval}`, { ...klineData, interval });
       }
 
-      logger.debug('Kline data cached and broadcasted', { symbol, interval, candleCount: updatedKlines.length });
+      logger.debug("Kline data cached and broadcasted", {
+        symbol,
+        interval,
+        candleCount: updatedKlines.length,
+      });
     } catch (error) {
-      logger.error('Handle kline data error', { error: (error as Error).message });
+      logger.error("Handle kline data error", {
+        error: (error as Error).message,
+      });
     }
   }
 }
@@ -529,7 +588,10 @@ class MessageHandler {
  * Manages subscriptions with reference counting and cleanup
  */
 class SubscriptionManager {
-  private activeSubscriptions: Map<string, { count: number, lastUsed: number }> = new Map();
+  private activeSubscriptions: Map<
+    string,
+    { count: number; lastUsed: number }
+  > = new Map();
   private subscriptionTimers: Map<string, NodeJS.Timeout> = new Map();
   private pendingSubscriptions: Set<string> = new Set();
 
@@ -540,10 +602,14 @@ class SubscriptionManager {
     if (existing) {
       existing.count += 1;
       existing.lastUsed = now;
-      logger.debug('Subscription reference incremented', { topic, count: existing.count, clientId });
+      logger.debug("Subscription reference incremented", {
+        topic,
+        count: existing.count,
+        clientId,
+      });
     } else {
       this.activeSubscriptions.set(topic, { count: 1, lastUsed: now });
-      logger.info('New subscription activated', { topic, clientId });
+      logger.info("New subscription activated", { topic, clientId });
     }
 
     const cleanupTimer = this.subscriptionTimers.get(topic);
@@ -556,7 +622,10 @@ class SubscriptionManager {
   unsubscribe(clientId: string, topic: string): void {
     const existing = this.activeSubscriptions.get(topic);
     if (!existing) {
-      logger.warn('Attempted to unsubscribe from non-existent topic', { topic, clientId });
+      logger.warn("Attempted to unsubscribe from non-existent topic", {
+        topic,
+        clientId,
+      });
       return;
     }
 
@@ -570,9 +639,16 @@ class SubscriptionManager {
       }, cleanupDelay);
 
       this.subscriptionTimers.set(topic, cleanupTimer);
-      logger.debug('Subscription scheduled for cleanup', { topic, delay: cleanupDelay });
+      logger.debug("Subscription scheduled for cleanup", {
+        topic,
+        delay: cleanupDelay,
+      });
     } else {
-      logger.debug('Subscription reference decremented', { topic, count: existing.count, clientId });
+      logger.debug("Subscription reference decremented", {
+        topic,
+        count: existing.count,
+        clientId,
+      });
     }
   }
 
@@ -589,25 +665,35 @@ class SubscriptionManager {
   }
 
   private getCleanupDelay(topic: string): number {
-    if (topic.includes('@markprice')) return 30000;
-    if (topic.includes('@kline_1m') || topic.includes('@kline_5m')) return 60000;
-    if (topic.includes('@kline_1h')) return 300000;
-    if (topic.includes('@ticker')) return 120000;
+    if (topic.includes("@markprice")) return 30000;
+    if (topic.includes("@kline_1m") || topic.includes("@kline_5m"))
+      return 60000;
+    if (topic.includes("@kline_1h")) return 300000;
+    if (topic.includes("@ticker")) return 120000;
     return 60000;
   }
 
   private cleanupSubscription(topic: string): void {
     this.activeSubscriptions.delete(topic);
     this.pendingSubscriptions.delete(topic);
-    logger.info('Subscription cleaned up', { topic });
+    logger.info("Subscription cleaned up", { topic });
   }
 
-  getStats(): { activeSubscriptions: number, totalReferences: number, topics: string[] } {
+  getStats(): {
+    activeSubscriptions: number;
+    totalReferences: number;
+    topics: string[];
+  } {
     const topics = Array.from(this.activeSubscriptions.keys());
-    const totalReferences = Array.from(this.activeSubscriptions.values())
-      .reduce((sum, sub) => sum + sub.count, 0);
+    const totalReferences = Array.from(
+      this.activeSubscriptions.values()
+    ).reduce((sum, sub) => sum + sub.count, 0);
 
-    return { activeSubscriptions: this.activeSubscriptions.size, totalReferences, topics };
+    return {
+      activeSubscriptions: this.activeSubscriptions.size,
+      totalReferences,
+      topics,
+    };
   }
 
   clearAll(): void {
@@ -640,7 +726,7 @@ export class MarketStreamService {
   setSocketServer(io: Server): void {
     this.io = io;
     this.messageHandler.setSocketServer(io);
-    logger.info('Market stream service initialized with Socket.io');
+    logger.info("Market stream service initialized with Socket.io");
   }
 
   /**
@@ -648,13 +734,15 @@ export class MarketStreamService {
    * Uses: wss://ws-evm.orderly.org/ws/stream/public
    */
   async connectToOrderly(symbols: string[]): Promise<void> {
-    logger.info('connectToOrderly called with symbols', { symbols });
+    logger.info("connectToOrderly called with symbols", { symbols });
 
     try {
       // Get account ID for WebSocket URL
-      const accountResult = await query('SELECT account_id FROM kodiak_credentials LIMIT 1');
+      const accountResult = await query(
+        "SELECT account_id FROM kodiak_credentials LIMIT 1"
+      );
       if (accountResult.rows.length === 0) {
-        logger.error('No account found for WebSocket connection');
+        logger.error("No account found for WebSocket connection");
         return;
       }
 
@@ -665,27 +753,30 @@ export class MarketStreamService {
       await this.authManager.authenticate(ws, accountId);
 
       // Set up message handling
-      ws.on('message', (data: WebSocket.Data) => {
+      ws.on("message", (data: WebSocket.Data) => {
         try {
           const message = JSON.parse(data.toString());
           this.messageHandler.handleMessage(message);
         } catch (error) {
-          logger.error('Failed to parse WebSocket message', { error: (error as Error).message });
+          logger.error("Failed to parse WebSocket message", {
+            error: (error as Error).message,
+          });
         }
       });
 
       // Queue subscriptions for these symbols
-      symbols.forEach((symbol) => {
+      symbols.forEach(symbol => {
         const topic = `${symbol}@kline_1m`;
         this.subscriptionManager.addPendingSubscription(topic);
-        logger.info('Added topic to pending subscriptions', { symbol, topic });
+        logger.info("Added topic to pending subscriptions", { symbol, topic });
       });
 
       // Send pending subscriptions
       this.sendPendingSubscriptions();
-
     } catch (error) {
-      logger.error('Failed to connect to Orderly', { error: (error as Error).message });
+      logger.error("Failed to connect to Orderly", {
+        error: (error as Error).message,
+      });
     }
   }
 
@@ -695,12 +786,15 @@ export class MarketStreamService {
   private sendPendingSubscriptions(): void {
     const ws = this.wsManager.getConnection();
     if (!ws || !this.wsManager.isConnected()) {
-      logger.warn('Cannot send subscriptions - WebSocket not connected');
+      logger.warn("Cannot send subscriptions - WebSocket not connected");
       return;
     }
 
     const topics = this.subscriptionManager.getPendingSubscriptions();
-    logger.info('Sending pending subscriptions', { count: topics.length, topics });
+    logger.info("Sending pending subscriptions", {
+      count: topics.length,
+      topics,
+    });
 
     topics.forEach(topic => {
       this.subscribeToTopic(ws, topic);
@@ -713,21 +807,27 @@ export class MarketStreamService {
    */
   private subscribeToTopic(ws: WebSocket, topic: string): void {
     if (ws.readyState !== WebSocket.OPEN) {
-      logger.warn('Cannot subscribe - WebSocket not open', { topic, readyState: ws.readyState });
+      logger.warn("Cannot subscribe - WebSocket not open", {
+        topic,
+        readyState: ws.readyState,
+      });
       return;
     }
 
     try {
       const message = JSON.stringify({
         id: `sub_${topic}_${Date.now()}`,
-        event: 'subscribe',
+        event: "subscribe",
         topic: topic,
       });
 
       ws.send(message);
-      logger.info('Subscription message sent to Orderly', { topic });
+      logger.info("Subscription message sent to Orderly", { topic });
     } catch (error) {
-      logger.error('Failed to send subscription', { topic, error: (error as Error).message });
+      logger.error("Failed to send subscription", {
+        topic,
+        error: (error as Error).message,
+      });
     }
   }
 
@@ -738,7 +838,7 @@ export class MarketStreamService {
    */
   connectToKline(symbol: string, interval: string): void {
     const topic = `${symbol}@kline_${interval}`;
-    this.subscriptionManager.subscribe('legacy-client', topic);
+    this.subscriptionManager.subscribe("legacy-client", topic);
   }
 
   /**
@@ -748,13 +848,17 @@ export class MarketStreamService {
    */
   connectToMarkPrice(symbol: string): void {
     const topic = `${symbol}@markprice`;
-    this.subscriptionManager.subscribe('legacy-client', topic);
+    this.subscriptionManager.subscribe("legacy-client", topic);
   }
 
   /**
    * Subscribe to market data with reference counting
    */
-  subscribe(clientId: string, topic: string, options: { priority?: 'high' | 'medium' | 'low' } = {}): void {
+  subscribe(
+    clientId: string,
+    topic: string,
+    options: { priority?: "high" | "medium" | "low" } = {}
+  ): void {
     this.subscriptionManager.subscribe(clientId, topic);
   }
 
@@ -775,7 +879,11 @@ export class MarketStreamService {
   /**
    * Get kline data from cache
    */
-  async getKlines(symbol: string, interval: string, limit: number = 300): Promise<any[]> {
+  async getKlines(
+    symbol: string,
+    interval: string,
+    limit: number = 300
+  ): Promise<any[]> {
     return this.cacheManager.getKlines(symbol, interval, limit);
   }
 
@@ -792,7 +900,7 @@ export class MarketStreamService {
   disconnectAll(): void {
     this.wsManager.disconnectAll();
     this.subscriptionManager.clearAll();
-    logger.info('Market stream service disconnected');
+    logger.info("Market stream service disconnected");
   }
 
   /**
@@ -801,8 +909,9 @@ export class MarketStreamService {
   getStatus(): any {
     return {
       connected: this.wsManager.isConnected() ? 1 : 0,
-      websockets: this.wsManager.isConnected() ? ['market'] : [],
-      pendingSubscriptions: this.subscriptionManager.getPendingSubscriptions().length,
+      websockets: this.wsManager.isConnected() ? ["market"] : [],
+      pendingSubscriptions:
+        this.subscriptionManager.getPendingSubscriptions().length,
       activeHeartbeats: 0, // Simplified
       ...this.subscriptionManager.getStats(),
     };

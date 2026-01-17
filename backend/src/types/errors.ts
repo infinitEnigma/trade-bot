@@ -7,41 +7,41 @@
 
 export enum ErrorCode {
   // Validation Errors (400)
-  VALIDATION_ERROR = 'VALIDATION_ERROR',
-  MISSING_REQUIRED_FIELD = 'MISSING_REQUIRED_FIELD',
-  INVALID_FORMAT = 'INVALID_FORMAT',
-  OUT_OF_RANGE = 'OUT_OF_RANGE',
+  VALIDATION_ERROR = "VALIDATION_ERROR",
+  MISSING_REQUIRED_FIELD = "MISSING_REQUIRED_FIELD",
+  INVALID_FORMAT = "INVALID_FORMAT",
+  OUT_OF_RANGE = "OUT_OF_RANGE",
 
   // Authentication/Authorization Errors (401/403)
-  UNAUTHENTICATED = 'UNAUTHENTICATED',
-  INSUFFICIENT_PERMISSIONS = 'INSUFFICIENT_PERMISSIONS',
-  INVALID_CREDENTIALS = 'INVALID_CREDENTIALS',
-  TOKEN_EXPIRED = 'TOKEN_EXPIRED',
+  UNAUTHENTICATED = "UNAUTHENTICATED",
+  INSUFFICIENT_PERMISSIONS = "INSUFFICIENT_PERMISSIONS",
+  INVALID_CREDENTIALS = "INVALID_CREDENTIALS",
+  TOKEN_EXPIRED = "TOKEN_EXPIRED",
 
   // Resource Errors (404/409)
-  NOT_FOUND = 'NOT_FOUND',
-  ALREADY_EXISTS = 'ALREADY_EXISTS',
-  CONFLICT = 'CONFLICT',
+  NOT_FOUND = "NOT_FOUND",
+  ALREADY_EXISTS = "ALREADY_EXISTS",
+  CONFLICT = "CONFLICT",
 
   // Database Errors (500)
-  DATABASE_ERROR = 'DATABASE_ERROR',
-  CONNECTION_ERROR = 'CONNECTION_ERROR',
-  QUERY_ERROR = 'QUERY_ERROR',
+  DATABASE_ERROR = "DATABASE_ERROR",
+  CONNECTION_ERROR = "CONNECTION_ERROR",
+  QUERY_ERROR = "QUERY_ERROR",
 
   // External Service Errors (502/503)
-  EXTERNAL_SERVICE_ERROR = 'EXTERNAL_SERVICE_ERROR',
-  API_RATE_LIMITED = 'API_RATE_LIMITED',
-  SERVICE_UNAVAILABLE = 'SERVICE_UNAVAILABLE',
+  EXTERNAL_SERVICE_ERROR = "EXTERNAL_SERVICE_ERROR",
+  API_RATE_LIMITED = "API_RATE_LIMITED",
+  SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE",
 
   // Business Logic Errors (400/422)
-  INSUFFICIENT_BALANCE = 'INSUFFICIENT_BALANCE',
-  INVALID_TRADE = 'INVALID_TRADE',
-  POSITION_SIZE_EXCEEDED = 'POSITION_SIZE_EXCEEDED',
+  INSUFFICIENT_BALANCE = "INSUFFICIENT_BALANCE",
+  INVALID_TRADE = "INVALID_TRADE",
+  POSITION_SIZE_EXCEEDED = "POSITION_SIZE_EXCEEDED",
 
   // System Errors (500)
-  INTERNAL_ERROR = 'INTERNAL_ERROR',
-  CONFIGURATION_ERROR = 'CONFIGURATION_ERROR',
-  ENCRYPTION_ERROR = 'ENCRYPTION_ERROR',
+  INTERNAL_ERROR = "INTERNAL_ERROR",
+  CONFIGURATION_ERROR = "CONFIGURATION_ERROR",
+  ENCRYPTION_ERROR = "ENCRYPTION_ERROR",
 }
 
 export interface ErrorContext {
@@ -96,7 +96,7 @@ export class AppError extends Error {
       error: this.getUserMessage(),
       code: this.code,
       correlationId: correlationId || this.context.correlationId,
-      ...(this.getAdditionalData()),
+      ...this.getAdditionalData(),
     };
   }
 
@@ -132,19 +132,24 @@ export class ValidationError extends AppError {
 export class MissingRequiredFieldError extends ValidationError {
   constructor(field: string, context: ErrorContext = {}) {
     super(`Field '${field}' is required`, { ...context, field });
-    this.name = 'MissingRequiredFieldError';
+    this.name = "MissingRequiredFieldError";
   }
 }
 
 export class InvalidFormatError extends ValidationError {
-  constructor(field: string, expected: string, received?: any, context: ErrorContext = {}) {
+  constructor(
+    field: string,
+    expected: string,
+    received?: any,
+    context: ErrorContext = {}
+  ) {
     super(`Field '${field}' has invalid format. Expected: ${expected}`, {
       ...context,
       field,
       expected,
-      received
+      received,
     });
-    this.name = 'InvalidFormatError';
+    this.name = "InvalidFormatError";
   }
 }
 
@@ -152,21 +157,32 @@ export class InvalidFormatError extends ValidationError {
  * Authentication/Authorization errors (401/403)
  */
 export class AuthenticationError extends AppError {
-  constructor(message: string = 'Authentication required', context: ErrorContext = {}) {
+  constructor(
+    message: string = "Authentication required",
+    context: ErrorContext = {}
+  ) {
     super(message, ErrorCode.UNAUTHENTICATED, 401, context);
   }
 }
 
 export class AuthorizationError extends AppError {
-  constructor(message: string = 'Insufficient permissions', context: ErrorContext = {}) {
+  constructor(
+    message: string = "Insufficient permissions",
+    context: ErrorContext = {}
+  ) {
     super(message, ErrorCode.INSUFFICIENT_PERMISSIONS, 403, context);
   }
 }
 
 export class InvalidCredentialsError extends AppError {
   constructor(context: ErrorContext = {}) {
-    super('Invalid credentials provided', ErrorCode.INVALID_CREDENTIALS, 401, context);
-    this.name = 'InvalidCredentialsError';
+    super(
+      "Invalid credentials provided",
+      ErrorCode.INVALID_CREDENTIALS,
+      401,
+      context
+    );
+    this.name = "InvalidCredentialsError";
   }
 }
 
@@ -189,24 +205,27 @@ export class ConflictError extends AppError {
  * Database errors (500)
  */
 export class DatabaseError extends AppError {
-  constructor(message: string = 'Database operation failed', context: ErrorContext = {}) {
+  constructor(
+    message: string = "Database operation failed",
+    context: ErrorContext = {}
+  ) {
     super(message, ErrorCode.DATABASE_ERROR, 500, context);
   }
 
   protected getUserMessage(): string {
-    return 'A temporary database issue occurred. Please try again.';
+    return "A temporary database issue occurred. Please try again.";
   }
 }
 
 export class ConnectionError extends DatabaseError {
   constructor(context: ErrorContext = {}) {
-    super('Database connection failed', context);
-    this.name = 'ConnectionError';
+    super("Database connection failed", context);
+    this.name = "ConnectionError";
     this.code = ErrorCode.CONNECTION_ERROR;
   }
 
   protected getUserMessage(): string {
-    return 'Database temporarily unavailable. Please try again in a moment.';
+    return "Database temporarily unavailable. Please try again in a moment.";
   }
 }
 
@@ -215,10 +234,15 @@ export class ConnectionError extends DatabaseError {
  */
 export class ExternalServiceError extends AppError {
   constructor(service: string, context: ErrorContext = {}) {
-    super(`${service} service unavailable`, ErrorCode.EXTERNAL_SERVICE_ERROR, 502, {
-      ...context,
-      service
-    });
+    super(
+      `${service} service unavailable`,
+      ErrorCode.EXTERNAL_SERVICE_ERROR,
+      502,
+      {
+        ...context,
+        service,
+      }
+    );
   }
 
   protected getUserMessage(): string {
@@ -229,7 +253,7 @@ export class ExternalServiceError extends AppError {
 export class ServiceUnavailableError extends ExternalServiceError {
   constructor(service: string, context: ErrorContext = {}) {
     super(service, context);
-    this.name = 'ServiceUnavailableError';
+    this.name = "ServiceUnavailableError";
     this.statusCode = 503;
     this.code = ErrorCode.SERVICE_UNAVAILABLE;
   }
@@ -240,12 +264,15 @@ export class ServiceUnavailableError extends ExternalServiceError {
  */
 export class InsufficientBalanceError extends ValidationError {
   constructor(required: number, available: number, context: ErrorContext = {}) {
-    super(`Insufficient balance. Required: ${required}, Available: ${available}`, {
-      ...context,
-      required,
-      available
-    });
-    this.name = 'InsufficientBalanceError';
+    super(
+      `Insufficient balance. Required: ${required}, Available: ${available}`,
+      {
+        ...context,
+        required,
+        available,
+      }
+    );
+    this.name = "InsufficientBalanceError";
     this.code = ErrorCode.INSUFFICIENT_BALANCE;
   }
 
@@ -258,13 +285,17 @@ export class InsufficientBalanceError extends ValidationError {
 }
 
 export class PositionSizeExceededError extends ValidationError {
-  constructor(requested: number, maxAllowed: number, context: ErrorContext = {}) {
+  constructor(
+    requested: number,
+    maxAllowed: number,
+    context: ErrorContext = {}
+  ) {
     super(`Position size ${requested} exceeds maximum allowed ${maxAllowed}`, {
       ...context,
       requested,
-      maxAllowed
+      maxAllowed,
     });
-    this.name = 'PositionSizeExceededError';
+    this.name = "PositionSizeExceededError";
     this.code = ErrorCode.POSITION_SIZE_EXCEEDED;
   }
 
@@ -280,19 +311,22 @@ export class PositionSizeExceededError extends ValidationError {
  * System errors (500)
  */
 export class InternalError extends AppError {
-  constructor(message: string = 'Internal server error', context: ErrorContext = {}) {
+  constructor(
+    message: string = "Internal server error",
+    context: ErrorContext = {}
+  ) {
     super(message, ErrorCode.INTERNAL_ERROR, 500, context);
   }
 
   protected getUserMessage(): string {
-    return 'An unexpected error occurred. Please try again or contact support if the issue persists.';
+    return "An unexpected error occurred. Please try again or contact support if the issue persists.";
   }
 }
 
 export class ConfigurationError extends InternalError {
   constructor(message: string, context: ErrorContext = {}) {
     super(message, context);
-    this.name = 'ConfigurationError';
+    this.name = "ConfigurationError";
     this.code = ErrorCode.CONFIGURATION_ERROR;
   }
 }
@@ -319,7 +353,7 @@ export function createErrorResponse(error: Error, correlationId?: string) {
   // Fallback for unknown errors
   return {
     success: false,
-    error: 'An unexpected error occurred',
+    error: "An unexpected error occurred",
     code: ErrorCode.INTERNAL_ERROR,
     correlationId,
   };

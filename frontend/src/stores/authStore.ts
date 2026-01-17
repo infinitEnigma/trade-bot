@@ -28,7 +28,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isLoading: true,
 
-      setAuth: (user) =>
+      setAuth: user =>
         set({
           user,
           isAuthenticated: true,
@@ -42,19 +42,19 @@ export const useAuthStore = create<AuthState>()(
           isLoading: false,
         }),
 
-      updateUser: (updates) =>
-        set((state) => ({
+      updateUser: updates =>
+        set(state => ({
           user: state.user ? { ...state.user, ...updates } : null,
         })),
 
-      setLoading: (loading) => set({ isLoading: loading }),
+      setLoading: loading => set({ isLoading: loading }),
 
       checkAuth: async () => {
         try {
           set({ isLoading: true });
           // Check if user is authenticated by making a request that requires auth
-          const response = await fetch('/api/user/profile', {
-            credentials: 'include', // Include httpOnly cookies
+          const response = await fetch("/api/user/profile", {
+            credentials: "include", // Include httpOnly cookies
           });
 
           if (response.ok) {
@@ -84,7 +84,7 @@ export const useAuthStore = create<AuthState>()(
             });
           }
         } catch (error) {
-          console.error('Auth check failed:', error);
+          console.error("Auth check failed:", error);
           set({
             user: null,
             isAuthenticated: false,
@@ -96,12 +96,12 @@ export const useAuthStore = create<AuthState>()(
       logout: async () => {
         try {
           // Call logout endpoint to clear cookies
-          await fetch('/api/auth/logout', {
-            method: 'POST',
-            credentials: 'include',
+          await fetch("/api/auth/logout", {
+            method: "POST",
+            credentials: "include",
           });
         } catch (error) {
-          console.error('Logout request failed:', error);
+          console.error("Logout request failed:", error);
         } finally {
           // Clear local state regardless of API call success
           set({
@@ -114,7 +114,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: "auth-storage",
-      partialize: (state) => ({
+      partialize: state => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,
       }),

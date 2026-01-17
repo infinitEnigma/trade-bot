@@ -1,14 +1,21 @@
 /** @format */
 
-import logger from '../../services/logger';
-import { SubscriptionStats, SubscriptionConfig, DEFAULT_SUBSCRIPTION_CONFIG } from './types';
+import logger from "../../services/logger";
+import {
+  SubscriptionStats,
+  SubscriptionConfig,
+  DEFAULT_SUBSCRIPTION_CONFIG,
+} from "./types";
 
 /**
  * Manages market data subscriptions with reference counting and cleanup
  * Handles automatic cleanup of unused subscriptions to prevent resource leaks
  */
 export class SubscriptionManager {
-  private activeSubscriptions: Map<string, { count: number; lastUsed: number }> = new Map();
+  private activeSubscriptions: Map<
+    string,
+    { count: number; lastUsed: number }
+  > = new Map();
   private subscriptionTimers: Map<string, NodeJS.Timeout> = new Map();
   private pendingSubscriptions: Set<string> = new Set();
 
@@ -28,14 +35,14 @@ export class SubscriptionManager {
     if (existing) {
       existing.count += 1;
       existing.lastUsed = now;
-      logger.debug('Subscription reference incremented', {
+      logger.debug("Subscription reference incremented", {
         topic,
         count: existing.count,
-        clientId
+        clientId,
       });
     } else {
       this.activeSubscriptions.set(topic, { count: 1, lastUsed: now });
-      logger.info('New subscription activated', { topic, clientId });
+      logger.info("New subscription activated", { topic, clientId });
     }
 
     // Cancel any pending cleanup timer
@@ -52,9 +59,9 @@ export class SubscriptionManager {
   unsubscribe(clientId: string, topic: string): void {
     const existing = this.activeSubscriptions.get(topic);
     if (!existing) {
-      logger.warn('Attempted to unsubscribe from non-existent topic', {
+      logger.warn("Attempted to unsubscribe from non-existent topic", {
         topic,
-        clientId
+        clientId,
       });
       return;
     }
@@ -70,15 +77,15 @@ export class SubscriptionManager {
       }, cleanupDelay);
 
       this.subscriptionTimers.set(topic, cleanupTimer);
-      logger.debug('Subscription scheduled for cleanup', {
+      logger.debug("Subscription scheduled for cleanup", {
         topic,
-        delay: cleanupDelay
+        delay: cleanupDelay,
       });
     } else {
-      logger.debug('Subscription reference decremented', {
+      logger.debug("Subscription reference decremented", {
         topic,
         count: existing.count,
-        clientId
+        clientId,
       });
     }
   }
@@ -88,7 +95,7 @@ export class SubscriptionManager {
    */
   addPendingSubscription(topic: string): void {
     this.pendingSubscriptions.add(topic);
-    logger.debug('Topic added to pending subscriptions', { topic });
+    logger.debug("Topic added to pending subscriptions", { topic });
   }
 
   /**
@@ -96,7 +103,7 @@ export class SubscriptionManager {
    */
   clearPendingSubscription(topic: string): void {
     this.pendingSubscriptions.delete(topic);
-    logger.debug('Topic cleared from pending subscriptions', { topic });
+    logger.debug("Topic cleared from pending subscriptions", { topic });
   }
 
   /**
@@ -118,19 +125,19 @@ export class SubscriptionManager {
    * Get cleanup delay based on topic type
    */
   private getCleanupDelay(topic: string): number {
-    if (topic.includes('@markprice')) {
+    if (topic.includes("@markprice")) {
       return this.config.markPriceDelay;
     }
 
-    if (topic.includes('@kline_1m') || topic.includes('@kline_5m')) {
+    if (topic.includes("@kline_1m") || topic.includes("@kline_5m")) {
       return this.config.klineShortDelay;
     }
 
-    if (topic.includes('@kline_1h')) {
+    if (topic.includes("@kline_1h")) {
       return this.config.klineHourDelay;
     }
 
-    if (topic.includes('@ticker')) {
+    if (topic.includes("@ticker")) {
       return this.config.tickerDelay;
     }
 
@@ -143,7 +150,7 @@ export class SubscriptionManager {
   private cleanupSubscription(topic: string): void {
     this.activeSubscriptions.delete(topic);
     this.pendingSubscriptions.delete(topic);
-    logger.info('Subscription cleaned up', { topic });
+    logger.info("Subscription cleaned up", { topic });
   }
 
   /**
@@ -151,8 +158,9 @@ export class SubscriptionManager {
    */
   getStats(): SubscriptionStats {
     const topics = Array.from(this.activeSubscriptions.keys());
-    const totalReferences = Array.from(this.activeSubscriptions.values())
-      .reduce((sum, sub) => sum + sub.count, 0);
+    const totalReferences = Array.from(
+      this.activeSubscriptions.values()
+    ).reduce((sum, sub) => sum + sub.count, 0);
 
     return {
       activeSubscriptions: this.activeSubscriptions.size,
@@ -175,7 +183,7 @@ export class SubscriptionManager {
     this.subscriptionTimers.forEach(timer => clearTimeout(timer));
     this.subscriptionTimers.clear();
 
-    logger.info('All subscriptions cleared');
+    logger.info("All subscriptions cleared");
   }
 
   /**
@@ -191,13 +199,14 @@ export class SubscriptionManager {
     pendingSubscriptions: string[];
     cleanupTimers: number;
   } {
-    const activeSubscriptions = Array.from(this.activeSubscriptions.entries())
-      .map(([topic, data]) => ({
-        topic,
-        count: data.count,
-        lastUsed: data.lastUsed,
-        age: Date.now() - data.lastUsed,
-      }));
+    const activeSubscriptions = Array.from(
+      this.activeSubscriptions.entries()
+    ).map(([topic, data]) => ({
+      topic,
+      count: data.count,
+      lastUsed: data.lastUsed,
+      age: Date.now() - data.lastUsed,
+    }));
 
     return {
       activeSubscriptions,
@@ -209,7 +218,8 @@ export class SubscriptionManager {
   /**
    * Force cleanup of stale subscriptions
    */
-  cleanupStale(maxAge: number = 300000): number { // 5 minutes default
+  cleanupStale(maxAge: number = 300000): number {
+    // 5 minutes default
     const now = Date.now();
     let cleaned = 0;
 
@@ -221,7 +231,7 @@ export class SubscriptionManager {
     }
 
     if (cleaned > 0) {
-      logger.info('Stale subscriptions cleaned up', { cleaned });
+      logger.info("Stale subscriptions cleaned up", { cleaned });
     }
 
     return cleaned;

@@ -1,9 +1,9 @@
 /** @format */
 
-import { Server } from 'socket.io';
-import logger from '../../services/logger';
-import { TickData, KlineData } from './types';
-import { CacheManager } from './cache-manager';
+import { Server } from "socket.io";
+import logger from "../../services/logger";
+import { TickData, KlineData } from "./types";
+import { CacheManager } from "./cache-manager";
 
 /**
  * Handles WebSocket message processing and broadcasting
@@ -22,7 +22,7 @@ export class MessageHandler {
    */
   setSocketServer(io: Server): void {
     this.io = io;
-    logger.debug('Message handler Socket.io server set');
+    logger.debug("Message handler Socket.io server set");
   }
 
   /**
@@ -31,13 +31,13 @@ export class MessageHandler {
   async handleMessage(message: any): Promise<void> {
     try {
       // Handle authentication responses
-      if (message.event === 'auth' || message.method === 'AUTH') {
+      if (message.event === "auth" || message.method === "AUTH") {
         this.handleAuthResponse(message);
         return;
       }
 
       // Handle subscription responses
-      if (message.event === 'subscribed' || message.method === 'SUBSCRIBE') {
+      if (message.event === "subscribed" || message.method === "SUBSCRIBE") {
         this.handleSubscriptionResponse(message);
         return;
       }
@@ -49,13 +49,12 @@ export class MessageHandler {
       }
 
       // Log unhandled messages for debugging
-      logger.debug('Unhandled WebSocket message', { message });
-
+      logger.debug("Unhandled WebSocket message", { message });
     } catch (error) {
-      logger.error('Message handler error', {
+      logger.error("Message handler error", {
         error: (error as Error).message,
         messageType: message?.event || message?.method,
-        topic: message?.topic
+        topic: message?.topic,
       });
     }
   }
@@ -67,9 +66,9 @@ export class MessageHandler {
     const isSuccess = message.success || message.code === 0;
 
     if (isSuccess) {
-      logger.info('WebSocket authentication successful');
+      logger.info("WebSocket authentication successful");
     } else {
-      logger.error('WebSocket authentication failed', { message });
+      logger.error("WebSocket authentication failed", { message });
     }
   }
 
@@ -81,9 +80,9 @@ export class MessageHandler {
     const topic = message.topic || message.params;
 
     if (isSuccess) {
-      logger.info('WebSocket subscription successful', { topic });
+      logger.info("WebSocket subscription successful", { topic });
     } else {
-      logger.error('WebSocket subscription failed', { topic, message });
+      logger.error("WebSocket subscription failed", { topic, message });
     }
   }
 
@@ -93,22 +92,22 @@ export class MessageHandler {
   private async handleMarketData(message: any): Promise<void> {
     const topic = message.topic;
 
-    logger.debug('Processing market data message', { topic });
+    logger.debug("Processing market data message", { topic });
 
     try {
-      if (topic.includes('@kline_')) {
+      if (topic.includes("@kline_")) {
         await this.handleKlineData(message);
-      } else if (topic === 'ticker') {
+      } else if (topic === "ticker") {
         await this.handleTickerData(message.data.symbol, message.data);
-      } else if (topic.includes('@markprice')) {
+      } else if (topic.includes("@markprice")) {
         await this.handleMarkPriceData(message);
       } else {
-        logger.debug('Unknown market data topic', { topic });
+        logger.debug("Unknown market data topic", { topic });
       }
     } catch (error) {
-      logger.error('Error processing market data', {
+      logger.error("Error processing market data", {
         topic,
-        error: (error as Error).message
+        error: (error as Error).message,
       });
     }
   }
@@ -134,15 +133,14 @@ export class MessageHandler {
       // Broadcast to all clients subscribed to this symbol
       this.broadcastToSymbol(symbol, tickData);
 
-      logger.debug('Ticker data processed and broadcasted', {
+      logger.debug("Ticker data processed and broadcasted", {
         symbol,
-        price: tickData.price
+        price: tickData.price,
       });
-
     } catch (error) {
-      logger.error('Error handling ticker data', {
+      logger.error("Error handling ticker data", {
         symbol,
-        error: (error as Error).message
+        error: (error as Error).message,
       });
     }
   }
@@ -154,30 +152,37 @@ export class MessageHandler {
     try {
       const klineData = message.data;
       if (!klineData?.symbol) {
-        logger.warn('Invalid kline data format', { message });
+        logger.warn("Invalid kline data format", { message });
         return;
       }
 
-      const [symbol, klinePart] = message.topic.split('@');
-      const interval = klinePart.replace('kline_', '');
+      const [symbol, klinePart] = message.topic.split("@");
+      const interval = klinePart.replace("kline_", "");
 
       const newCandle: KlineData = {
         symbol,
-        type: 'kline',
-        open: parseFloat(klineData.open?.toString() || '0'),
-        close: parseFloat(klineData.close?.toString() || '0'),
-        high: parseFloat(klineData.high?.toString() || '0'),
-        low: parseFloat(klineData.low?.toString() || '0'),
-        volume: parseFloat(klineData.volume?.toString() || '0'),
-        amount: parseFloat(klineData.amount?.toString() || '0'),
-        startTime: parseInt(klineData.startTime?.toString() || '0'),
-        endTime: parseInt(klineData.endTime?.toString() || '0'),
+        type: "kline",
+        open: parseFloat(klineData.open?.toString() || "0"),
+        close: parseFloat(klineData.close?.toString() || "0"),
+        high: parseFloat(klineData.high?.toString() || "0"),
+        low: parseFloat(klineData.low?.toString() || "0"),
+        volume: parseFloat(klineData.volume?.toString() || "0"),
+        amount: parseFloat(klineData.amount?.toString() || "0"),
+        startTime: parseInt(klineData.startTime?.toString() || "0"),
+        endTime: parseInt(klineData.endTime?.toString() || "0"),
       };
 
       // Get existing klines and add the new one
-      const existingKlines = await this.cacheManager.getKlines(symbol, interval, 300);
+      const existingKlines = await this.cacheManager.getKlines(
+        symbol,
+        interval,
+        300
+      );
       const updatedKlines = [...existingKlines, newCandle]
-        .filter((candle, index, arr) => arr.findIndex(c => c.startTime === candle.startTime) === index)
+        .filter(
+          (candle, index, arr) =>
+            arr.findIndex(c => c.startTime === candle.startTime) === index
+        )
         .slice(-300);
 
       // Cache the updated klines
@@ -187,16 +192,15 @@ export class MessageHandler {
       const broadcastData = { ...klineData, interval };
       this.broadcastToKlines(symbol, interval, broadcastData);
 
-      logger.debug('Kline data processed and broadcasted', {
+      logger.debug("Kline data processed and broadcasted", {
         symbol,
         interval,
-        candleCount: updatedKlines.length
+        candleCount: updatedKlines.length,
       });
-
     } catch (error) {
-      logger.error('Error handling kline data', {
+      logger.error("Error handling kline data", {
         topic: message.topic,
-        error: (error as Error).message
+        error: (error as Error).message,
       });
     }
   }
@@ -208,11 +212,11 @@ export class MessageHandler {
     try {
       const markPriceData = message.data;
       if (!markPriceData?.symbol) {
-        logger.warn('Invalid mark price data format', { message });
+        logger.warn("Invalid mark price data format", { message });
         return;
       }
 
-      const symbol = message.topic.split('@')[0];
+      const symbol = message.topic.split("@")[0];
       const priceData = {
         symbol,
         price: parseFloat(markPriceData.price || 0),
@@ -225,15 +229,14 @@ export class MessageHandler {
       // Broadcast to all clients subscribed to mark price for this symbol
       this.broadcastToMarkPrice(symbol, priceData);
 
-      logger.debug('Mark price data processed and broadcasted', {
+      logger.debug("Mark price data processed and broadcasted", {
         symbol,
-        price: priceData.price
+        price: priceData.price,
       });
-
     } catch (error) {
-      logger.error('Error handling mark price data', {
+      logger.error("Error handling mark price data", {
         topic: message.topic,
-        error: (error as Error).message
+        error: (error as Error).message,
       });
     }
   }
@@ -243,7 +246,7 @@ export class MessageHandler {
    */
   private broadcastToSymbol(symbol: string, data: TickData): void {
     if (!this.io) {
-      logger.warn('Cannot broadcast - no Socket.io server');
+      logger.warn("Cannot broadcast - no Socket.io server");
       return;
     }
 
@@ -255,11 +258,13 @@ export class MessageHandler {
    */
   private broadcastToKlines(symbol: string, interval: string, data: any): void {
     if (!this.io) {
-      logger.warn('Cannot broadcast - no Socket.io server');
+      logger.warn("Cannot broadcast - no Socket.io server");
       return;
     }
 
-    this.io.to(`kline:${symbol}:${interval}`).emit(`kline:${symbol}:${interval}`, data);
+    this.io
+      .to(`kline:${symbol}:${interval}`)
+      .emit(`kline:${symbol}:${interval}`, data);
   }
 
   /**
@@ -267,7 +272,7 @@ export class MessageHandler {
    */
   private broadcastToMarkPrice(symbol: string, data: any): void {
     if (!this.io) {
-      logger.warn('Cannot broadcast - no Socket.io server');
+      logger.warn("Cannot broadcast - no Socket.io server");
       return;
     }
 
@@ -279,7 +284,7 @@ export class MessageHandler {
    */
   broadcastToRoom(room: string, event: string, data: any): void {
     if (!this.io) {
-      logger.warn('Cannot broadcast - no Socket.io server');
+      logger.warn("Cannot broadcast - no Socket.io server");
       return;
     }
 
@@ -295,7 +300,9 @@ export class MessageHandler {
   } {
     return {
       hasSocketServer: this.io !== null,
-      activeRooms: this.io ? Array.from(this.io.sockets.adapter.rooms.keys()) : [],
+      activeRooms: this.io
+        ? Array.from(this.io.sockets.adapter.rooms.keys())
+        : [],
     };
   }
 }

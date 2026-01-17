@@ -23,29 +23,34 @@ class ApiClient {
     this.client.interceptors.request.use(
       (config: InternalAxiosRequestConfig) => {
         console.log("Sending request to:", config.url);
-        console.log("Using cookie-based authentication - no manual token needed");
+        console.log(
+          "Using cookie-based authentication - no manual token needed"
+        );
 
         // Cookies are automatically included with credentials: 'include'
         // No need to manually add Authorization header
         return config;
       },
-      (error) => Promise.reject(error)
+      error => Promise.reject(error)
     );
 
     // Response interceptor for error handling
     this.client.interceptors.response.use(
-      (response) => response,
-      async (error) => {
+      response => response,
+      async error => {
         // Handle 429 (Too Many Requests) - Rate limiting
         if (error.response?.status === 429) {
           const retryAfter = error.response.data?.retryAfter || 60;
-          console.warn(`Rate limited: Too many requests. Retry after ${retryAfter} seconds.`, {
-            endpoint: error.config?.url,
-            retryAfter,
-            limit: error.response.headers?.['ratelimit-limit'],
-            remaining: error.response.headers?.['ratelimit-remaining'],
-            reset: error.response.headers?.['ratelimit-reset'],
-          });
+          console.warn(
+            `Rate limited: Too many requests. Retry after ${retryAfter} seconds.`,
+            {
+              endpoint: error.config?.url,
+              retryAfter,
+              limit: error.response.headers?.["ratelimit-limit"],
+              remaining: error.response.headers?.["ratelimit-remaining"],
+              reset: error.response.headers?.["ratelimit-reset"],
+            }
+          );
 
           // You could show a user-friendly notification here
           // For now, just log the rate limit details
@@ -58,8 +63,8 @@ class ApiClient {
         const originalRequest = error.config;
 
         // Handle connection errors (server unreachable)
-        if (!error.response && error.code === 'ERR_NETWORK') {
-          console.error('Server connection failed - redirecting to login');
+        if (!error.response && error.code === "ERR_NETWORK") {
+          console.error("Server connection failed - redirecting to login");
           // With cookie auth, clearing localStorage might still be needed for state
           window.dispatchEvent(new CustomEvent("auth:logout"));
           window.location.href = "/login";
@@ -68,14 +73,22 @@ class ApiClient {
 
         // Handle 401 (unauthorized) - token might be expired
         // Only redirect on auth endpoints (login/register/me) - other 401s might be external API failures
-        const isAuthEndpoint = originalRequest.url?.includes('/api/auth/');
-        const isUserProfileEndpoint = originalRequest.url?.includes('/api/user/profile');
+        const isAuthEndpoint = originalRequest.url?.includes("/api/auth/");
+        const isUserProfileEndpoint =
+          originalRequest.url?.includes("/api/user/profile");
 
-        if (error.response?.status === 401 && !originalRequest._retry && (isAuthEndpoint || isUserProfileEndpoint)) {
-          console.log('Received 401 on auth endpoint - redirecting to login (authentication required)', {
-            url: originalRequest.url,
-            status: error.response.status
-          });
+        if (
+          error.response?.status === 401 &&
+          !originalRequest._retry &&
+          (isAuthEndpoint || isUserProfileEndpoint)
+        ) {
+          console.log(
+            "Received 401 on auth endpoint - redirecting to login (authentication required)",
+            {
+              url: originalRequest.url,
+              status: error.response.status,
+            }
+          );
           originalRequest._retry = true;
 
           // Dispatch logout event to clear frontend state
@@ -86,23 +99,29 @@ class ApiClient {
 
         // For other 401 errors (market data, external APIs), don't redirect - just return the error
         if (error.response?.status === 401) {
-          console.log('Received 401 on non-auth endpoint - not redirecting (may be external API)', {
-            url: originalRequest.url,
-            status: error.response.status
-          });
+          console.log(
+            "Received 401 on non-auth endpoint - not redirecting (may be external API)",
+            {
+              url: originalRequest.url,
+              status: error.response.status,
+            }
+          );
           return Promise.reject(error);
         }
 
         // Handle 403 (forbidden) - user doesn't have permission
         if (error.response?.status === 403) {
-          console.error('Received 403 - insufficient permissions');
+          console.error("Received 403 - insufficient permissions");
           return Promise.reject(error);
         }
 
         // Handle 500+ server errors - but don't redirect for client errors (4xx)
         // Only redirect on server errors that indicate auth system failure
-        if (error.response?.status >= 500 && (isAuthEndpoint || isUserProfileEndpoint)) {
-          console.error('Auth system server error - redirecting to login');
+        if (
+          error.response?.status >= 500 &&
+          (isAuthEndpoint || isUserProfileEndpoint)
+        ) {
+          console.error("Auth system server error - redirecting to login");
           window.dispatchEvent(new CustomEvent("auth:logout"));
           window.location.href = "/login";
         }
@@ -149,8 +168,6 @@ class ApiClient {
     const response = await this.client.get("/api/user/profile");
     return response.data;
   }
-
-
 
   // Strategy endpoints
   async updateStrategy(
@@ -206,7 +223,9 @@ class ApiClient {
     to?: number;
     limit?: number;
   }) {
-    const response = await this.client.get("/api/market/kline-history", { params });
+    const response = await this.client.get("/api/market/kline-history", {
+      params,
+    });
     return response.data;
   }
 
@@ -272,7 +291,9 @@ class ApiClient {
   }
 
   async emergencyStop(botId: string) {
-    const response = await this.client.post("/api/bot/emergency-stop", { botId });
+    const response = await this.client.post("/api/bot/emergency-stop", {
+      botId,
+    });
     return response.data;
   }
 
@@ -306,7 +327,7 @@ class ApiClient {
         return {
           success: true,
           data: { rows: [] },
-          message: "Kodiak account not connected"
+          message: "Kodiak account not connected",
         };
       }
       throw error;
@@ -323,7 +344,7 @@ class ApiClient {
         return {
           success: true,
           data: { rows: [] },
-          message: "Kodiak account not connected"
+          message: "Kodiak account not connected",
         };
       }
       throw error;
@@ -340,7 +361,7 @@ class ApiClient {
         return {
           success: true,
           data: null,
-          message: "Kodiak account not connected"
+          message: "Kodiak account not connected",
         };
       }
       throw error;

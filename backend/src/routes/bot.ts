@@ -3,8 +3,13 @@
 import { Router, Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
-import { getPool, query } from "../database/pool";  // ✅ Import from centralized module
-import { ValidationError, NotFoundError, DatabaseError, createErrorResponse } from "../types/errors";
+import { getPool, query } from "../database/pool"; // ✅ Import from centralized module
+import {
+  ValidationError,
+  NotFoundError,
+  DatabaseError,
+  createErrorResponse,
+} from "../types/errors";
 import { getCorrelationId, getContextForLogging } from "../utils/context";
 import { encryptionService } from "../services/encryption";
 import { engineManager } from "../services/engine-manager";
@@ -36,7 +41,10 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Get bot instances error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
+      logger.error("Get bot instances error", {
+        error: err instanceof Error ? err.message : String(err),
+        userId: req.user!.userId,
+      });
       res
         .status(500)
         .json({ success: false, error: "Failed to get bot instances" });
@@ -55,7 +63,10 @@ router.post(
       if (!strategyId || !notionalAmount) {
         return res
           .status(400)
-          .json({ success: false, error: "Strategy ID and notional amount required" });
+          .json({
+            success: false,
+            error: "Strategy ID and notional amount required",
+          });
       }
 
       // Ensure trading engine is running
@@ -82,20 +93,19 @@ router.post(
       );
 
       if (existingBot.rows.length > 0) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            error: "Bot already running for this strategy",
-          });
+        return res.status(400).json({
+          success: false,
+          error: "Bot already running for this strategy",
+        });
       }
 
       // ✅ POSITION VALIDATION: Validate position size before starting bot
-      const { validateUserPosition } = await import('../services/position-validator.js');
+      const { validateUserPosition } =
+        await import("../services/position-validator.js");
       const validation = await validateUserPosition(
         req.user!.userId,
         parseFloat(notionalAmount),
-        strategy.config?.symbol || 'PERP_BTC_USDC'
+        strategy.config?.symbol || "PERP_BTC_USDC"
       );
 
       if (!validation.isValid) {
@@ -127,7 +137,10 @@ router.post(
       if (credentialsResult.rows.length === 0) {
         return res
           .status(403)
-          .json({ success: false, error: "No verified Kodiak credentials found" });
+          .json({
+            success: false,
+            error: "No verified Kodiak credentials found",
+          });
       }
 
       const credentials = credentialsResult.rows[0];
@@ -151,7 +164,7 @@ router.post(
         strategyId,
         strategy,
         userId: req.user!.userId,
-        kodiakCredentials: decryptedCredentials
+        kodiakCredentials: decryptedCredentials,
       });
 
       res.json({
@@ -172,7 +185,7 @@ router.post(
       logger.error("Start bot error", {
         ...getContextForLogging(),
         error: err instanceof Error ? err.message : String(err),
-        userId: req.user!.userId
+        userId: req.user!.userId,
       });
       res.status(500).json({ success: false, error: "Failed to start bot" });
     }
@@ -212,10 +225,9 @@ router.post(
       }
 
       // Update bot status
-      await query(
-        "UPDATE bot_instances SET status = 'STOPPED' WHERE id = $1",
-        [botId]
-      );
+      await query("UPDATE bot_instances SET status = 'STOPPED' WHERE id = $1", [
+        botId,
+      ]);
 
       // Update strategy as inactive
       await query("UPDATE strategies SET active = false WHERE id = $1", [
@@ -240,7 +252,10 @@ router.post(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Stop bot error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
+      logger.error("Stop bot error", {
+        error: err instanceof Error ? err.message : String(err),
+        userId: req.user!.userId,
+      });
       res.status(500).json({ success: false, error: "Failed to stop bot" });
     }
   }
@@ -270,7 +285,11 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Get bot status error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId, botId: req.params.botId });
+      logger.error("Get bot status error", {
+        error: err instanceof Error ? err.message : String(err),
+        userId: req.user!.userId,
+        botId: req.params.botId,
+      });
       res
         .status(500)
         .json({ success: false, error: "Failed to get bot status" });
@@ -338,7 +357,11 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Get bot performance error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId, botId: req.params.botId });
+      logger.error("Get bot performance error", {
+        error: err instanceof Error ? err.message : String(err),
+        userId: req.user!.userId,
+        botId: req.params.botId,
+      });
       res
         .status(500)
         .json({ success: false, error: "Failed to get bot performance" });
@@ -387,7 +410,11 @@ router.post(
       // Log emergency stop action
       await query(
         "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
-        [req.user!.userId, "EMERGENCY_STOP", { botId, strategyId: bot.strategy_id }]
+        [
+          req.user!.userId,
+          "EMERGENCY_STOP",
+          { botId, strategyId: bot.strategy_id },
+        ]
       );
 
       // Emit WebSocket event to notify bot engine - CANCEL_ALL_ORDERS
@@ -395,8 +422,8 @@ router.post(
       io.emit("bot:emergency-stop", {
         botId,
         strategyId: bot.strategy_id,
-        action: 'CANCEL_ALL_ORDERS',
-        timestamp: Date.now()
+        action: "CANCEL_ALL_ORDERS",
+        timestamp: Date.now(),
       });
 
       // Set timeout to mark as stopped if bot doesn't respond
@@ -407,7 +434,7 @@ router.post(
             [botId]
           );
 
-          if (currentBot.rows[0]?.status === 'FORCE_STOPPING') {
+          if (currentBot.rows[0]?.status === "FORCE_STOPPING") {
             await query(
               "UPDATE bot_instances SET status = 'STOPPED' WHERE id = $1",
               [botId]
@@ -419,7 +446,10 @@ router.post(
             ]);
           }
         } catch (error) {
-          logger.error('Emergency stop timeout error', { error: error instanceof Error ? error.message : String(error), botId });
+          logger.error("Emergency stop timeout error", {
+            error: error instanceof Error ? error.message : String(error),
+            botId,
+          });
         }
       }, 30000); // 30 second timeout
 
@@ -433,8 +463,13 @@ router.post(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Emergency stop error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
-      res.status(500).json({ success: false, error: "Failed to initiate emergency stop" });
+      logger.error("Emergency stop error", {
+        error: err instanceof Error ? err.message : String(err),
+        userId: req.user!.userId,
+      });
+      res
+        .status(500)
+        .json({ success: false, error: "Failed to initiate emergency stop" });
     }
   }
 );
@@ -445,9 +480,7 @@ router.post("/heartbeat", async (req: Request, res: Response) => {
     const { bot_id, status, position, exposure, timestamp } = req.body;
 
     if (!bot_id) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Bot ID required" });
+      return res.status(400).json({ success: false, error: "Bot ID required" });
     }
 
     // Update bot with heartbeat data
@@ -455,15 +488,30 @@ router.post("/heartbeat", async (req: Request, res: Response) => {
       `UPDATE bot_instances
        SET status = $1, position = $2, exposure = $3, last_heartbeat = $4, updated_at = CURRENT_TIMESTAMP
        WHERE id = $5`,
-      [status, position || 0, exposure || 0, new Date(timestamp || Date.now()), bot_id]
+      [
+        status,
+        position || 0,
+        exposure || 0,
+        new Date(timestamp || Date.now()),
+        bot_id,
+      ]
     );
 
-    logger.info("Bot heartbeat received", { botId: bot_id, status, position, exposure });
+    logger.info("Bot heartbeat received", {
+      botId: bot_id,
+      status,
+      position,
+      exposure,
+    });
 
     res.json({ success: true });
   } catch (err) {
-    logger.error("Heartbeat error", { error: err instanceof Error ? err.message : String(err) });
-    res.status(500).json({ success: false, error: "Failed to record heartbeat" });
+    logger.error("Heartbeat error", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to record heartbeat" });
   }
 });
 
@@ -536,7 +584,9 @@ router.post("/report-trade", async (req: Request, res: Response) => {
 
     res.json({ success: true });
   } catch (err) {
-    logger.error("Report trade error", { error: err instanceof Error ? err.message : String(err) });
+    logger.error("Report trade error", {
+      error: err instanceof Error ? err.message : String(err),
+    });
     res.status(500).json({ success: false, error: "Failed to report trade" });
   }
 });
@@ -551,7 +601,10 @@ setInterval(async () => {
     );
 
     for (const bot of deadBots.rows) {
-      logger.warn("Detected dead bot, marking as ERROR", { botId: bot.id, strategyId: bot.strategy_id });
+      logger.warn("Detected dead bot, marking as ERROR", {
+        botId: bot.id,
+        strategyId: bot.strategy_id,
+      });
 
       // Mark bot as dead/error
       await query(
@@ -567,7 +620,11 @@ setInterval(async () => {
       // Log the dead bot detection
       await query(
         "INSERT INTO audit_logs (user_id, action, details) VALUES ((SELECT user_id FROM bot_instances WHERE id = $1), $2, $3)",
-        [bot.id, "BOT_DEAD_DETECTED", { botId: bot.id, reason: "heartbeat_timeout" }]
+        [
+          bot.id,
+          "BOT_DEAD_DETECTED",
+          { botId: bot.id, reason: "heartbeat_timeout" },
+        ]
       );
 
       // Check if engine should be stopped after cleaning up dead bot
@@ -576,7 +633,9 @@ setInterval(async () => {
       }, 2000);
     }
   } catch (error) {
-    logger.error('Dead bot detection error', { error: error instanceof Error ? error.message : String(error) });
+    logger.error("Dead bot detection error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }, 10000); // Check every 10 seconds
 

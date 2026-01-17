@@ -1,7 +1,7 @@
 /** @format */
 
-import { useState, useEffect } from 'react';
-import { api } from '../lib/api';
+import { useState, useEffect } from "react";
+import { api } from "../lib/api";
 
 export interface PriceData {
   symbol: string;
@@ -31,17 +31,22 @@ export const usePrice = (symbol: string) => {
 
         if (mounted) {
           // Use mark price if available (more current), otherwise use futures price
-          const priceData = markPriceResponse.success && markPriceResponse.data
-            ? markPriceResponse.data
-            : futuresResponse.success && futuresResponse.data
-              ? { symbol, price: futuresResponse.data.price, timestamp: futuresResponse.timestamp }
-              : null;
+          const priceData =
+            markPriceResponse.success && markPriceResponse.data
+              ? markPriceResponse.data
+              : futuresResponse.success && futuresResponse.data
+                ? {
+                    symbol,
+                    price: futuresResponse.data.price,
+                    timestamp: futuresResponse.timestamp,
+                  }
+                : null;
 
           setPrice(priceData);
         }
       } catch (err: any) {
         if (mounted) {
-          setError(err.message || 'Failed to fetch price data');
+          setError(err.message || "Failed to fetch price data");
         }
       } finally {
         if (mounted) {
@@ -67,15 +72,20 @@ export const usePrice = (symbol: string) => {
       const futuresResponse = await api.getFuturesPrice(symbol);
       const markPriceResponse = await api.getMarkPrice(symbol);
 
-      const priceData = markPriceResponse.success && markPriceResponse.data
-        ? markPriceResponse.data
-        : futuresResponse.success && futuresResponse.data
-          ? { symbol, price: futuresResponse.data.price, timestamp: futuresResponse.timestamp }
-          : null;
+      const priceData =
+        markPriceResponse.success && markPriceResponse.data
+          ? markPriceResponse.data
+          : futuresResponse.success && futuresResponse.data
+            ? {
+                symbol,
+                price: futuresResponse.data.price,
+                timestamp: futuresResponse.timestamp,
+              }
+            : null;
 
       setPrice(priceData);
     } catch (err: any) {
-      setError(err.message || 'Failed to fetch price data');
+      setError(err.message || "Failed to fetch price data");
     } finally {
       setLoading(false);
     }

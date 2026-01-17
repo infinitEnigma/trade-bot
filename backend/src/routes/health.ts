@@ -13,7 +13,10 @@ const START_TIME = Date.now();
 
 // Basic health check endpoint
 router.get("/health", (req: Request, res: Response) => {
-  logger.http("Health check requested", { userAgent: req.get('User-Agent'), ip: req.ip });
+  logger.http("Health check requested", {
+    userAgent: req.get("User-Agent"),
+    ip: req.ip,
+  });
 
   res.json({
     status: "healthy",
@@ -45,7 +48,9 @@ router.get("/health/detailed", async (req: Request, res: Response) => {
       logger.debug("Database health check passed");
     } catch (dbError) {
       errors.push(`Database: ${(dbError as Error).message}`);
-      logger.warn("Database health check failed", { error: (dbError as Error).message });
+      logger.warn("Database health check failed", {
+        error: (dbError as Error).message,
+      });
     }
 
     // Redis health check
@@ -56,7 +61,9 @@ router.get("/health/detailed", async (req: Request, res: Response) => {
       logger.debug("Redis health check passed");
     } catch (redisError) {
       errors.push(`Redis: ${(redisError as Error).message}`);
-      logger.warn("Redis health check failed", { error: (redisError as Error).message });
+      logger.warn("Redis health check failed", {
+        error: (redisError as Error).message,
+      });
     }
 
     // Memory health check
@@ -70,7 +77,9 @@ router.get("/health/detailed", async (req: Request, res: Response) => {
 
     // Consider unhealthy if heap usage > 80% or RSS > 500MB
     if (memUsage.heapUsed / memUsage.heapTotal > 0.8 || memUsageMB.rss > 500) {
-      errors.push(`Memory: High usage - Heap: ${memUsageMB.heapUsed}MB/${memUsageMB.heapTotal}MB, RSS: ${memUsageMB.rss}MB`);
+      errors.push(
+        `Memory: High usage - Heap: ${memUsageMB.heapUsed}MB/${memUsageMB.heapTotal}MB, RSS: ${memUsageMB.rss}MB`
+      );
       logger.warn("Memory health check failed", { memUsageMB });
     } else {
       checks.memory = true;
@@ -79,7 +88,8 @@ router.get("/health/detailed", async (req: Request, res: Response) => {
 
     // Response time check
     const responseTime = Date.now() - startTime;
-    if (responseTime > 5000) { // 5 seconds timeout
+    if (responseTime > 5000) {
+      // 5 seconds timeout
       errors.push(`Response time: ${responseTime}ms (too slow)`);
       logger.warn("Response time health check failed", { responseTime });
     } else {
@@ -106,10 +116,9 @@ router.get("/health/detailed", async (req: Request, res: Response) => {
       overallHealth,
       responseTime,
       errorCount: errors.length,
-      userAgent: req.get('User-Agent'),
-      ip: req.ip
+      userAgent: req.get("User-Agent"),
+      ip: req.ip,
     });
-
   } catch (error) {
     logger.error("Health check error", { error: (error as Error).message });
     res.status(503).json({
@@ -159,9 +168,10 @@ router.get("/health/database", async (req: Request, res: Response) => {
     });
 
     logger.debug("Database health check passed", { responseTime, connections });
-
   } catch (error) {
-    logger.error("Database health check failed", { error: (error as Error).message });
+    logger.error("Database health check failed", {
+      error: (error as Error).message,
+    });
     res.status(503).json({
       status: "unhealthy",
       timestamp: new Date().toISOString(),
@@ -185,7 +195,6 @@ router.get("/metrics/database", (req: Request, res: Response) => {
     });
 
     logger.debug("Database metrics endpoint accessed");
-
   } catch (error) {
     logger.error("Database metrics error", { error: (error as Error).message });
     res.status(500).json({
@@ -214,9 +223,10 @@ router.get("/health/encryption", async (req: Request, res: Response) => {
     });
 
     logger.debug("Encryption health check passed");
-
   } catch (error) {
-    logger.error("Encryption health check failed", { error: (error as Error).message });
+    logger.error("Encryption health check failed", {
+      error: (error as Error).message,
+    });
     res.status(503).json({
       status: "unhealthy",
       timestamp: new Date().toISOString(),
@@ -251,9 +261,10 @@ router.get("/health/redis", async (req: Request, res: Response) => {
     });
 
     logger.debug("Redis health check passed", { responseTime });
-
   } catch (error) {
-    logger.error("Redis health check failed", { error: (error as Error).message });
+    logger.error("Redis health check failed", {
+      error: (error as Error).message,
+    });
     res.status(503).json({
       status: "unhealthy",
       timestamp: new Date().toISOString(),
@@ -272,9 +283,12 @@ router.get("/health/external", async (req: Request, res: Response) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    const kodiakResponse = await fetch("https://api.orderly.org/v1/public/ticker?symbol=PERP_BTC_USDC", {
-      signal: controller.signal,
-    });
+    const kodiakResponse = await fetch(
+      "https://api.orderly.org/v1/public/ticker?symbol=PERP_BTC_USDC",
+      {
+        signal: controller.signal,
+      }
+    );
 
     clearTimeout(timeoutId);
     const responseTime = Date.now() - startTime;
@@ -283,7 +297,7 @@ router.get("/health/external", async (req: Request, res: Response) => {
       throw new Error(`Kodiak API returned ${kodiakResponse.status}`);
     }
 
-    const data = await kodiakResponse.json() as any;
+    const data = (await kodiakResponse.json()) as any;
 
     res.json({
       status: "healthy",
@@ -299,9 +313,10 @@ router.get("/health/external", async (req: Request, res: Response) => {
     });
 
     logger.debug("External API health check passed", { responseTime });
-
   } catch (error) {
-    logger.warn("External API health check failed", { error: (error as Error).message });
+    logger.warn("External API health check failed", {
+      error: (error as Error).message,
+    });
     res.status(503).json({
       status: "degraded",
       timestamp: new Date().toISOString(),
@@ -366,7 +381,6 @@ router.get("/ready", async (req: Request, res: Response) => {
     });
 
     logger.debug("Readiness probe passed");
-
   } catch (error) {
     logger.error("Readiness probe failed", { error: (error as Error).message });
     res.status(503).json({
@@ -415,7 +429,6 @@ router.get("/ratelimit", async (req: Request, res: Response) => {
     });
 
     logger.debug("Rate limit stats endpoint accessed");
-
   } catch (error) {
     logger.error("Rate limit stats error", { error: (error as Error).message });
     res.status(500).json({

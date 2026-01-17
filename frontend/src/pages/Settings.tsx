@@ -38,7 +38,7 @@ const Settings: React.FC = () => {
   // Connect Kodiak mutation
   const connectMutation = useMutation({
     mutationFn: (data: typeof formData) => api.connectKodiak(data),
-    onSuccess: async (response) => {
+    onSuccess: async response => {
       queryClient.invalidateQueries({ queryKey: ["kodiak-status"] });
       queryClient.invalidateQueries({ queryKey: ["profile"] });
       // Refresh user data to update user level
@@ -131,8 +131,8 @@ const Settings: React.FC = () => {
                     {statusLoading
                       ? "Loading..."
                       : isConnected
-                      ? "Connected"
-                      : "Not Connected"}
+                        ? "Connected"
+                        : "Not Connected"}
                   </p>
                 </div>
               </div>
@@ -208,8 +208,8 @@ const Settings: React.FC = () => {
                       <input
                         type="text"
                         value={formData.accountId}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
+                        onChange={e =>
+                          setFormData(prev => ({
                             ...prev,
                             accountId: e.target.value,
                           }))
@@ -228,8 +228,8 @@ const Settings: React.FC = () => {
                         <input
                           type={showSecrets ? "text" : "password"}
                           value={formData.apiKey}
-                          onChange={(e) =>
-                            setFormData((prev) => ({
+                          onChange={e =>
+                            setFormData(prev => ({
                               ...prev,
                               apiKey: e.target.value,
                             }))
@@ -260,8 +260,8 @@ const Settings: React.FC = () => {
                         <input
                           type={showSecrets ? "text" : "password"}
                           value={formData.secretKey}
-                          onChange={(e) =>
-                            setFormData((prev) => ({
+                          onChange={e =>
+                            setFormData(prev => ({
                               ...prev,
                               secretKey: e.target.value,
                             }))

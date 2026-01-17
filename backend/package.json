@@ -13,7 +13,11 @@
     "db:reset": "npm run db:drop && npm run db:migrate:files",
     "db:drop": "ts-node scripts/drop-tables.ts",
     "db:seed": "ts-node src/database/seed.ts",
-    "db:status": "ts-node scripts/migration-status.ts"
+    "db:status": "ts-node scripts/migration-status.ts",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src"
   },
   "dependencies": {
     "@noble/ed25519": "^3.0.0",
@@ -53,6 +57,7 @@
     "@typescript-eslint/parser": "^8.53.0",
     "eslint": "^9.39.2",
     "jest": "^30.2.0",
+    "prettier": "^3.4.2",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.6",
     "ts-node-dev": "^2.0.0",

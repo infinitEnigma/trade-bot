@@ -1,7 +1,7 @@
 /** @format */
 
-import { encryptionService } from './encryption';
-import logger from './logger';
+import { encryptionService } from "./encryption";
+import logger from "./logger";
 
 interface CachedCredentials {
   apiKey: string;
@@ -19,7 +19,9 @@ class CredentialCacheService {
    * Get cached decrypted credentials for a user
    * Returns null if not cached or expired
    */
-  getCachedCredentials(userId: string): { apiKey: string; secretKey: string; accountId: string } | null {
+  getCachedCredentials(
+    userId: string
+  ): { apiKey: string; secretKey: string; accountId: string } | null {
     const cached = this.cache.get(userId);
 
     if (!cached) {
@@ -29,11 +31,11 @@ class CredentialCacheService {
     // Check if expired
     if (Date.now() - cached.cachedAt > cached.ttl) {
       this.cache.delete(userId);
-      logger.debug('Credential cache expired', { userId });
+      logger.debug("Credential cache expired", { userId });
       return null;
     }
 
-    logger.debug('Credential cache hit', { userId });
+    logger.debug("Credential cache hit", { userId });
     return {
       apiKey: cached.apiKey,
       secretKey: cached.secretKey,
@@ -66,7 +68,7 @@ class CredentialCacheService {
 
       this.cache.set(userId, credentials);
 
-      logger.debug('Credentials cached', {
+      logger.debug("Credentials cached", {
         userId,
         accountId,
         ttlMinutes: ttl / (60 * 1000),
@@ -74,7 +76,7 @@ class CredentialCacheService {
 
       return { apiKey, secretKey, accountId };
     } catch (error) {
-      logger.error('Failed to cache credentials', {
+      logger.error("Failed to cache credentials", {
         userId,
         error: (error as Error).message,
       });
@@ -100,7 +102,13 @@ class CredentialCacheService {
     }
 
     // Not cached or expired, decrypt and cache
-    return this.cacheCredentials(userId, encryptedApiKey, encryptedSecretKey, accountId, ttl);
+    return this.cacheCredentials(
+      userId,
+      encryptedApiKey,
+      encryptedSecretKey,
+      accountId,
+      ttl
+    );
   }
 
   /**
@@ -109,7 +117,7 @@ class CredentialCacheService {
   invalidateCredentials(userId: string): void {
     const deleted = this.cache.delete(userId);
     if (deleted) {
-      logger.debug('Credentials invalidated', { userId });
+      logger.debug("Credentials invalidated", { userId });
     }
   }
 
@@ -119,7 +127,7 @@ class CredentialCacheService {
   clearAll(): void {
     const count = this.cache.size;
     this.cache.clear();
-    logger.info('All credential caches cleared', { count });
+    logger.info("All credential caches cleared", { count });
   }
 
   /**
@@ -147,14 +155,17 @@ class CredentialCacheService {
     }
 
     if (cleaned > 0) {
-      logger.debug('Credential cache cleanup completed', { cleaned });
+      logger.debug("Credential cache cleanup completed", { cleaned });
     }
   }
 }
 
 // Start cleanup interval (run every 5 minutes)
-setInterval(() => {
-  credentialCacheService.cleanup();
-}, 5 * 60 * 1000);
+setInterval(
+  () => {
+    credentialCacheService.cleanup();
+  },
+  5 * 60 * 1000
+);
 
 export const credentialCacheService = new CredentialCacheService();

@@ -9,18 +9,19 @@ import logger from "./logger";
 
 const JWT_SECRET = (() => {
   const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error('JWT_SECRET environment variable required');
-  if (process.env.NODE_ENV === 'production' && secret.length < 32) {
-    throw new Error('JWT_SECRET must be 32+ characters in production');
+  if (!secret) throw new Error("JWT_SECRET environment variable required");
+  if (process.env.NODE_ENV === "production" && secret.length < 32) {
+    throw new Error("JWT_SECRET must be 32+ characters in production");
   }
   return secret;
 })();
 
 const JWT_REFRESH_SECRET = (() => {
   const secret = process.env.JWT_REFRESH_SECRET;
-  if (!secret) throw new Error('JWT_REFRESH_SECRET environment variable required');
-  if (process.env.NODE_ENV === 'production' && secret.length < 32) {
-    throw new Error('JWT_REFRESH_SECRET must be 32+ characters in production');
+  if (!secret)
+    throw new Error("JWT_REFRESH_SECRET environment variable required");
+  if (process.env.NODE_ENV === "production" && secret.length < 32) {
+    throw new Error("JWT_REFRESH_SECRET must be 32+ characters in production");
   }
   return secret;
 })();
@@ -79,7 +80,10 @@ export class AuthService {
         tokens,
       };
     } catch (error) {
-      logger.error("Registration error", { error: error instanceof Error ? error.message : String(error), email });
+      logger.error("Registration error", {
+        error: error instanceof Error ? error.message : String(error),
+        email,
+      });
       return { success: false, message: "Registration failed" };
     }
   }
@@ -115,7 +119,10 @@ export class AuthService {
         tokens,
       };
     } catch (error) {
-      logger.error("Login error", { error: error instanceof Error ? error.message : String(error), email });
+      logger.error("Login error", {
+        error: error instanceof Error ? error.message : String(error),
+        email,
+      });
       return { success: false, message: "Login failed" };
     }
   }
@@ -261,7 +268,11 @@ export class AuthService {
 
       return { success: true };
     } catch (error) {
-      logger.error("Wallet verification error", { error: error instanceof Error ? error.message : String(error), userId, walletAddress });
+      logger.error("Wallet verification error", {
+        error: error instanceof Error ? error.message : String(error),
+        userId,
+        walletAddress,
+      });
       return {
         success: false,
         message: "Wallet verification failed",

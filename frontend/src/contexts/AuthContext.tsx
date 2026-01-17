@@ -26,13 +26,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const checkAuth = async (forceCheck = false) => {
     try {
       setLoading(true);
-      console.log('AuthContext: Checking authentication...', { forceCheck });
+      console.log("AuthContext: Checking authentication...", { forceCheck });
 
       // Check if we're on login/register pages to avoid unnecessary API calls
       // But allow forced checks (like after login)
       const currentPath = window.location.pathname;
-      if (!forceCheck && (currentPath === '/login' || currentPath === '/register')) {
-        console.log('AuthContext: On auth page, skipping check (not forced)');
+      if (
+        !forceCheck &&
+        (currentPath === "/login" || currentPath === "/register")
+      ) {
+        console.log("AuthContext: On auth page, skipping check (not forced)");
         setUser(null);
         setLoading(false);
         return;
@@ -40,16 +43,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Use API client which handles cookie-based authentication properly
       const data = await api.getProfile();
-      console.log('AuthContext: Profile response data:', data);
+      console.log("AuthContext: Profile response data:", data);
       if (data.success) {
-        console.log('AuthContext: Setting user:', data.data);
+        console.log("AuthContext: Setting user:", data.data);
         setUser(data.data);
       } else {
-        console.log('AuthContext: Profile request failed');
+        console.log("AuthContext: Profile request failed");
         setUser(null);
       }
     } catch (error) {
-      console.error('AuthContext: Auth check failed:', error);
+      console.error("AuthContext: Auth check failed:", error);
       setUser(null);
     } finally {
       setLoading(false);
@@ -70,16 +73,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (data.success) {
         // After successful login, refresh user data to get complete profile including Kodiak status
-        console.log('AuthContext: Login successful, refreshing user profile');
+        console.log("AuthContext: Login successful, refreshing user profile");
         await refreshUser();
 
         toast.success("Login successful!");
       } else {
-        throw new Error(data.error || 'Login failed');
+        throw new Error(data.error || "Login failed");
       }
     } catch (error) {
-      console.error('Login error:', error);
-      toast.error(error instanceof Error ? error.message : 'Login failed');
+      console.error("Login error:", error);
+      toast.error(error instanceof Error ? error.message : "Login failed");
       throw error;
     }
   };
@@ -91,15 +94,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (data.success) {
         // Set user data directly from register response
-        console.log('AuthContext: Registration successful, setting user:', data.user);
+        console.log(
+          "AuthContext: Registration successful, setting user:",
+          data.user
+        );
         setUser(data.user);
         toast.success("Account created successfully!");
       } else {
-        throw new Error(data.error || 'Registration failed');
+        throw new Error(data.error || "Registration failed");
       }
     } catch (error) {
-      console.error('Registration error:', error);
-      toast.error(error instanceof Error ? error.message : 'Registration failed');
+      console.error("Registration error:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Registration failed"
+      );
       throw error;
     }
   };
@@ -107,12 +115,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const logout = async () => {
     try {
       // Call logout endpoint to clear cookies - using direct fetch since logout is special
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
       });
     } catch (error) {
-      console.error('Logout request failed:', error);
+      console.error("Logout request failed:", error);
     } finally {
       // Clear local state regardless of API call success
       setUser(null);

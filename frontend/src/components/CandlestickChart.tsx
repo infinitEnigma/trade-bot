@@ -1,6 +1,6 @@
 /** @format */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from "react";
 import {
   createChart,
   IChartApi,
@@ -8,10 +8,10 @@ import {
   ColorType,
   CrosshairMode,
   CandlestickSeries,
-  HistogramSeries
-} from 'lightweight-charts';
-import { useChartData } from '../hooks/useChartData';
-import { useVisibility } from '../hooks/useVisibility';
+  HistogramSeries,
+} from "lightweight-charts";
+import { useChartData } from "../hooks/useChartData";
+import { useVisibility } from "../hooks/useVisibility";
 
 export interface CandleData {
   time: number;
@@ -35,8 +35,8 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const [isChartReady, setIsChartReady] = useState(false);
   const [candleData, setCandleData] = useState<CandleData[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +45,11 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   const isVisible = useVisibility();
 
   // Get chart data with live updates - only active when page is visible
-  const { data: chartData, loading, error: chartError } = useChartData({
+  const {
+    data: chartData,
+    loading,
+    error: chartError,
+  } = useChartData({
     symbol: symbol, // Use full symbol name for WebSocket subscriptions
     interval,
   });
@@ -68,21 +72,21 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       // Create chart instance with dark theme to match page style
       const chart = createChart(containerRef.current, {
         layout: {
-          background: { type: ColorType.Solid, color: '#0f0f23' }, // Dark background
-          textColor: '#e2e8f0', // Light text
-          fontFamily: 'system-ui, -apple-system, sans-serif',
+          background: { type: ColorType.Solid, color: "#0f0f23" }, // Dark background
+          textColor: "#e2e8f0", // Light text
+          fontFamily: "system-ui, -apple-system, sans-serif",
         },
         width: containerRef.current.clientWidth,
         height: height,
         timeScale: {
           timeVisible: true,
           secondsVisible: false,
-          borderColor: '#334155', // Dark border
+          borderColor: "#334155", // Dark border
           fixLeftEdge: false,
           fixRightEdge: false,
         },
         rightPriceScale: {
-          borderColor: '#334155', // Dark border
+          borderColor: "#334155", // Dark border
           scaleMargins: {
             top: 0.1,
             bottom: 0.25, // Leave space for volume
@@ -93,11 +97,11 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         },
         grid: {
           vertLines: {
-            color: '#1e293b', // Dark grid lines
+            color: "#1e293b", // Dark grid lines
             style: 1,
           },
           horzLines: {
-            color: '#1e293b', // Dark grid lines
+            color: "#1e293b", // Dark grid lines
             style: 1,
           },
         },
@@ -116,14 +120,14 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
 
       // Create candlestick series
       const candlestickSeries = chart.addSeries(CandlestickSeries, {
-        upColor: '#10b981',      // Green for bullish
-        downColor: '#ef4444',    // Red for bearish
-        borderUpColor: '#10b981',
-        borderDownColor: '#ef4444',
-        wickUpColor: '#10b981',
-        wickDownColor: '#ef4444',
+        upColor: "#10b981", // Green for bullish
+        downColor: "#ef4444", // Red for bearish
+        borderUpColor: "#10b981",
+        borderDownColor: "#ef4444",
+        wickUpColor: "#10b981",
+        wickDownColor: "#ef4444",
         priceFormat: {
-          type: 'price',
+          type: "price",
           precision: 2,
           minMove: 0.01,
         },
@@ -131,11 +135,11 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
 
       // Create volume series
       const volumeSeries = chart.addSeries(HistogramSeries, {
-        color: '#6b7280',
+        color: "#6b7280",
         priceFormat: {
-          type: 'volume',
+          type: "volume",
         },
-        priceScaleId: 'volume',
+        priceScaleId: "volume",
       });
 
       // Set volume series options
@@ -160,29 +164,34 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         }
       };
 
-      window.addEventListener('resize', handleResize);
+      window.addEventListener("resize", handleResize);
 
       return () => {
-        window.removeEventListener('resize', handleResize);
+        window.removeEventListener("resize", handleResize);
         if (chart) {
           chart.remove();
         }
         setIsChartReady(false);
       };
     } catch (chartError) {
-      console.error('Failed to create chart:', chartError);
+      console.error("Failed to create chart:", chartError);
     }
   }, [height, error]);
 
   // Update chart data when candleData changes
   useEffect(() => {
-    if (!isChartReady || !candlestickSeriesRef.current || !volumeSeriesRef.current || candleData.length === 0) {
+    if (
+      !isChartReady ||
+      !candlestickSeriesRef.current ||
+      !volumeSeriesRef.current ||
+      candleData.length === 0
+    ) {
       return;
     }
 
     try {
       // Transform data for the chart
-      const chartData = candleData.map((item) => ({
+      const chartData = candleData.map(item => ({
         time: item.time as any, // Lightweight-charts expects number | string
         open: item.open,
         high: item.high,
@@ -195,11 +204,11 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
 
       // Set volume data if available
       const volumeData = candleData
-        .filter((item) => item.volume !== undefined)
-        .map((item) => ({
+        .filter(item => item.volume !== undefined)
+        .map(item => ({
           time: item.time as any,
           value: item.volume || 0,
-          color: item.close >= item.open ? '#10b981' : '#ef4444', // Green for up, red for down
+          color: item.close >= item.open ? "#10b981" : "#ef4444", // Green for up, red for down
         }));
 
       if (volumeData.length > 0) {
@@ -211,7 +220,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         chartRef.current.timeScale().fitContent();
       }
     } catch (dataError) {
-      console.error('Failed to update chart data:', dataError);
+      console.error("Failed to update chart data:", dataError);
     }
   }, [candleData, isChartReady, isVisible]);
 
@@ -220,7 +229,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       <div className="p-4 border-b border-white/10 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <h3 className="text-lg font-semibold text-text">
-            {symbol.replace('PERP_', '').replace('_USDC', '')}
+            {symbol.replace("PERP_", "").replace("_USDC", "")}
           </h3>
           <span className="px-2 py-1 text-xs bg-primary/20 text-primary rounded-full">
             {interval}
@@ -256,8 +265,12 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
           <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10">
             <div className="text-center">
               <div className="w-8 h-8 mx-auto mb-2 animate-spin border-2 border-primary/30 border-t-primary rounded-full"></div>
-              <p className="text-sm font-medium text-text">Loading chart data...</p>
-              <p className="text-xs text-textMuted mt-1">Fetching historical data</p>
+              <p className="text-sm font-medium text-text">
+                Loading chart data...
+              </p>
+              <p className="text-xs text-textMuted mt-1">
+                Fetching historical data
+              </p>
             </div>
           </div>
         )}
@@ -265,10 +278,10 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10">
             <div className="text-center">
-              <div className="w-12 h-12 mx-auto mb-2">
-                ⚠️
-              </div>
-              <p className="text-sm font-medium text-danger">Error loading chart</p>
+              <div className="w-12 h-12 mx-auto mb-2">⚠️</div>
+              <p className="text-sm font-medium text-danger">
+                Error loading chart
+              </p>
               <p className="text-xs text-textMuted mt-2">{error}</p>
             </div>
           </div>
@@ -277,11 +290,13 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         {!loading && !error && candleData.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10">
             <div className="text-center">
-              <div className="w-12 h-12 mx-auto mb-2">
-                📡
-              </div>
-              <p className="text-sm font-medium text-text">Waiting for live data...</p>
-              <p className="text-xs text-textMuted mt-1">WebSocket connected, awaiting ticks</p>
+              <div className="w-12 h-12 mx-auto mb-2">📡</div>
+              <p className="text-sm font-medium text-text">
+                Waiting for live data...
+              </p>
+              <p className="text-xs text-textMuted mt-1">
+                WebSocket connected, awaiting ticks
+              </p>
             </div>
           </div>
         )}

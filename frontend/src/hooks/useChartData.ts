@@ -1,8 +1,8 @@
 /** @format */
 
-import { useEffect, useState } from 'react';
-import { api } from '../lib/api';
-import { CandleData } from '../components/CandlestickChart';
+import { useEffect, useState } from "react";
+import { api } from "../lib/api";
+import { CandleData } from "../components/CandlestickChart";
 
 interface UseChartDataOptions {
   symbol: string;
@@ -12,15 +12,29 @@ interface UseChartDataOptions {
 
 // Transform TradingView separated arrays to candle objects
 const transformTradingViewData = (tvData: any): CandleData[] => {
-  if (!tvData || typeof tvData !== 'object') {
+  if (!tvData || typeof tvData !== "object") {
     return [];
   }
 
-  const { t: timestamps, o: opens, h: highs, l: lows, c: closes, v: volumes } = tvData;
+  const {
+    t: timestamps,
+    o: opens,
+    h: highs,
+    l: lows,
+    c: closes,
+    v: volumes,
+  } = tvData;
 
   // Validate required arrays exist and are not empty
-  if (!timestamps || !opens || !highs || !lows || !closes ||
-      !Array.isArray(timestamps) || timestamps.length === 0) {
+  if (
+    !timestamps ||
+    !opens ||
+    !highs ||
+    !lows ||
+    !closes ||
+    !Array.isArray(timestamps) ||
+    timestamps.length === 0
+  ) {
     return [];
   }
 
@@ -36,9 +50,13 @@ const transformTradingViewData = (tvData: any): CandleData[] => {
     const volume = volumes?.[i] || 0;
 
     // Validate data types
-    if (typeof time !== 'number' || typeof open !== 'number' ||
-        typeof high !== 'number' || typeof low !== 'number' ||
-        typeof close !== 'number') {
+    if (
+      typeof time !== "number" ||
+      typeof open !== "number" ||
+      typeof high !== "number" ||
+      typeof low !== "number" ||
+      typeof close !== "number"
+    ) {
       continue;
     }
 
@@ -77,23 +95,34 @@ export const useChartData = ({
       console.log(`📊 Fetching historical data for ${symbol} ${interval}`);
 
       // Fetch last 24 hours of historical data (same as Dashboard)
-      const fromTimestamp = Math.floor(Date.now() / 1000) - (24 * 60 * 60); // 24 hours ago
+      const fromTimestamp = Math.floor(Date.now() / 1000) - 24 * 60 * 60; // 24 hours ago
       const toTimestamp = Math.floor(Date.now() / 1000);
 
       // Map interval to TradingView resolution format
       const getResolution = (interval: string): string => {
         switch (interval) {
-          case '1m': return '1';
-          case '5m': return '5';
-          case '15m': return '15';
-          case '30m': return '30';
-          case '1h': return '60'; // 60 minutes = 1 hour
-          case '4h': return '240'; // 240 minutes = 4 hours
-          case '12h': return '720'; // 720 minutes = 12 hours
-          case '1d': return '1D';
-          case '1w': return '1W';
-          case '1M': return '1M';
-          default: return '60'; // Default to 1h
+          case "1m":
+            return "1";
+          case "5m":
+            return "5";
+          case "15m":
+            return "15";
+          case "30m":
+            return "30";
+          case "1h":
+            return "60"; // 60 minutes = 1 hour
+          case "4h":
+            return "240"; // 240 minutes = 4 hours
+          case "12h":
+            return "720"; // 720 minutes = 12 hours
+          case "1d":
+            return "1D";
+          case "1w":
+            return "1W";
+          case "1M":
+            return "1M";
+          default:
+            return "60"; // Default to 1h
         }
       };
 
@@ -108,7 +137,9 @@ export const useChartData = ({
         const historicalCandles = transformTradingViewData(response.data);
 
         if (historicalCandles.length > 0) {
-          console.log(`📊 Loaded ${historicalCandles.length} historical candles for ${symbol}`);
+          console.log(
+            `📊 Loaded ${historicalCandles.length} historical candles for ${symbol}`
+          );
           setData(historicalCandles);
           setHistoricalLoaded(true);
           setRetryCount(0); // Reset on success
@@ -150,7 +181,9 @@ export const useChartData = ({
         const mergedData = mergeCandleData(existingData, realtimeCandles);
 
         if (mergedData.length !== existingData.length) {
-          console.log(`📊 Merged data: ${existingData.length} historical + realtime = ${mergedData.length} total`);
+          console.log(
+            `📊 Merged data: ${existingData.length} historical + realtime = ${mergedData.length} total`
+          );
           setData(mergedData);
         }
 
@@ -165,7 +198,10 @@ export const useChartData = ({
   };
 
   // ✅ Merge historical and realtime candle data, avoiding duplicates
-  const mergeCandleData = (historical: CandleData[], realtime: CandleData[]): CandleData[] => {
+  const mergeCandleData = (
+    historical: CandleData[],
+    realtime: CandleData[]
+  ): CandleData[] => {
     const timeMap = new Map<number, CandleData>();
 
     // Add historical data first
@@ -201,13 +237,14 @@ export const useChartData = ({
 
       if (currentData.length === 0) {
         if (retryCount < maxRetries) {
-          console.log(`📊 No data available (attempt ${retryCount + 1}/${maxRetries}), will retry in 2s`);
+          console.log(
+            `📊 No data available (attempt ${retryCount + 1}/${maxRetries}), will retry in 2s`
+          );
           setRetryCount(retryCount + 1);
         } else {
-          setError('Unable to load chart data. Please check your connection.');
+          setError("Unable to load chart data. Please check your connection.");
         }
       }
-
     } catch (err: any) {
       setData([]);
       setError(null);
@@ -216,8 +253,11 @@ export const useChartData = ({
         console.log(`⚠️ Chart data API error, will retry: ${err.message}`);
         setRetryCount(retryCount + 1);
       } else {
-        console.warn(`⚠️ Failed to fetch chart data after ${maxRetries} attempts:`, err.message);
-        setError('Unable to reach API. Check connection.');
+        console.warn(
+          `⚠️ Failed to fetch chart data after ${maxRetries} attempts:`,
+          err.message
+        );
+        setError("Unable to reach API. Check connection.");
       }
     } finally {
       setLoading(false);

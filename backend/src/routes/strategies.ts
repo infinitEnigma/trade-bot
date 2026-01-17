@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { authService, TokenPayload } from "../services/auth";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { Pool } from "pg";
-import { query } from "../database/pool";  // ✅ Import from centralized module
+import { query } from "../database/pool"; // ✅ Import from centralized module
 import logger from "../services/logger";
 
 const router = Router();
@@ -52,7 +52,10 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Get strategies error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
+      logger.error("Get strategies error", {
+        error: err instanceof Error ? err.message : String(err),
+        userId: req.user!.userId,
+      });
       res
         .status(500)
         .json({ success: false, error: "Failed to get strategies" });
@@ -86,14 +89,16 @@ router.post(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Create strategy error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
+      logger.error("Create strategy error", {
+        error: err instanceof Error ? err.message : String(err),
+        userId: req.user!.userId,
+      });
       res
         .status(500)
         .json({ success: false, error: "Failed to create strategy" });
     }
   }
 );
-
 
 // GET /api/strategies/:id
 router.get(
@@ -118,7 +123,11 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Get strategy error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId, strategyId: req.params.id });
+      logger.error("Get strategy error", {
+        error: err instanceof Error ? err.message : String(err),
+        userId: req.user!.userId,
+        strategyId: req.params.id,
+      });
       res.status(500).json({ success: false, error: "Failed to get strategy" });
     }
   }
@@ -163,7 +172,11 @@ router.put(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Update strategy error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId, strategyId: req.params.id });
+      logger.error("Update strategy error", {
+        error: err instanceof Error ? err.message : String(err),
+        userId: req.user!.userId,
+        strategyId: req.params.id,
+      });
       res
         .status(500)
         .json({ success: false, error: "Failed to update strategy" });
@@ -195,10 +208,10 @@ router.delete(
       ]);
 
       // Delete the strategy
-      await query(
-        "DELETE FROM strategies WHERE id = $1 AND user_id = $2",
-        [req.params.id, req.user!.userId]
-      );
+      await query("DELETE FROM strategies WHERE id = $1 AND user_id = $2", [
+        req.params.id,
+        req.user!.userId,
+      ]);
 
       res.json({
         success: true,
@@ -206,7 +219,11 @@ router.delete(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Delete strategy error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId, strategyId: req.params.id });
+      logger.error("Delete strategy error", {
+        error: err instanceof Error ? err.message : String(err),
+        userId: req.user!.userId,
+        strategyId: req.params.id,
+      });
       res
         .status(500)
         .json({ success: false, error: "Failed to delete strategy" });
@@ -257,7 +274,11 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Get performance error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId, strategyId: req.params.id });
+      logger.error("Get performance error", {
+        error: err instanceof Error ? err.message : String(err),
+        userId: req.user!.userId,
+        strategyId: req.params.id,
+      });
       res
         .status(500)
         .json({ success: false, error: "Failed to get performance" });

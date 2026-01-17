@@ -23,7 +23,10 @@ const sha512Hash = (message: Uint8Array) => {
 if ((ed25519 as any).hashes) {
   logger.debug("Using direct hashes access: ed25519.hashes.sha512");
   (ed25519 as any).hashes.sha512 = sha512Hash;
-} else if ((ed25519 as any).etc && typeof (ed25519 as any).etc.sha512Sync !== "undefined") {
+} else if (
+  (ed25519 as any).etc &&
+  typeof (ed25519 as any).etc.sha512Sync !== "undefined"
+) {
   logger.debug("Using v3 API: ed25519.etc.sha512Sync");
   (ed25519 as any).etc.sha512Sync = sha512Hash;
 } else if ((ed25519 as any).utils) {
@@ -74,9 +77,15 @@ async function getProfile(req: AuthenticatedRequest, res: Response) {
         kodiakStatus,
       },
     });
-    logger.info("Authentication successful for user", { userId: user.id, hasKodiak });
+    logger.info("Authentication successful for user", {
+      userId: user.id,
+      hasKodiak,
+    });
   } catch (err) {
-    logger.error("Get profile error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
+    logger.error("Get profile error", {
+      error: err instanceof Error ? err.message : String(err),
+      userId: req.user!.userId,
+    });
     res.status(500).json({ success: false, error: "Failed to get profile" });
   }
 }
@@ -126,7 +135,10 @@ async function makeKodiakRequest(
   const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org/v1";
 
   const headers: Record<string, string> = {
-    "Content-Type": method === "GET" ? "application/x-www-form-urlencoded" : "application/json",
+    "Content-Type":
+      method === "GET"
+        ? "application/x-www-form-urlencoded"
+        : "application/json",
     "orderly-account-id": accountId,
     "orderly-key": apiKey,
     "orderly-signature": signature,
@@ -146,12 +158,21 @@ async function makeKodiakRequest(
 
   const response = await fetch(`${baseUrl}${path}`, requestOptions);
 
-  logger.debug("Kodiak API response", { status: response.status, statusText: response.statusText });
+  logger.debug("Kodiak API response", {
+    status: response.status,
+    statusText: response.statusText,
+  });
 
   if (!response.ok) {
     const errorText = await response.text();
-    logger.error("Kodiak API error", { status: response.status, statusText: response.statusText, error: errorText });
-    throw new Error(`Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`);
+    logger.error("Kodiak API error", {
+      status: response.status,
+      statusText: response.statusText,
+      error: errorText,
+    });
+    throw new Error(
+      `Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`
+    );
   }
 
   const responseData = await response.json();
@@ -162,14 +183,18 @@ async function connectKodiak(req: AuthenticatedRequest, res: Response) {
   try {
     const { error, value } = kodiakConnectionSchema.validate(req.body);
     if (error) {
-      return res.status(400).json({ success: false, error: error.details[0].message });
+      return res
+        .status(400)
+        .json({ success: false, error: error.details[0].message });
     }
 
     const userId = req.user!.userId;
     let isVerified = false;
 
     const encryptedApiKey = encryptionService.encryptApiKey(value.apiKey);
-    const encryptedSecretKey = encryptionService.encryptSecretKey(value.secretKey);
+    const encryptedSecretKey = encryptionService.encryptSecretKey(
+      value.secretKey
+    );
 
     await query(
       `INSERT INTO kodiak_credentials (user_id, account_id, api_key_encrypted, secret_key_encrypted, wallet_signature, verified)
@@ -181,26 +206,58 @@ async function connectKodiak(req: AuthenticatedRequest, res: Response) {
        wallet_signature = EXCLUDED.wallet_signature,
        verified = EXCLUDED.verified,
        updated_at = CURRENT_TIMESTAMP`,
-      [userId, value.accountId, encryptedApiKey, encryptedSecretKey, value.walletSignature || null, false]
+      [
+        userId,
+        value.accountId,
+        encryptedApiKey,
+        encryptedSecretKey,
+        value.walletSignature || null,
+        false,
+      ]
     );
 
     try {
-      logger.debug("Testing Kodiak API connectivity", { accountId: value.accountId });
+      logger.debug("Testing Kodiak API connectivity", {
+        accountId: value.accountId,
+      });
       let walletAddress = null;
 
       try {
-        const publicResponse = await fetch(`https://api.orderly.org/v1/public/account?account_id=${value.accountId}`);
+        const publicResponse = await fetch(
+          `https://api.orderly.org/v1/public/account?account_id=${value.accountId}`
+        );
         const publicData = await publicResponse.json();
 
-        if (publicData && typeof publicData === 'object' && 'success' in publicData && publicData.success && 'data' in publicData && publicData.data && typeof publicData.data === 'object' && 'address' in publicData.data) {
+        if (
+          publicData &&
+          typeof publicData === "object" &&
+          "success" in publicData &&
+          publicData.success &&
+          "data" in publicData &&
+          publicData.data &&
+          typeof publicData.data === "object" &&
+          "address" in publicData.data
+        ) {
           walletAddress = publicData.data.address;
           logger.info("Wallet address discovered", { walletAddress });
 
-          await query("UPDATE kodiak_credentials SET wallet_address = $1 WHERE user_id = $2", [walletAddress, userId]);
+          await query(
+            "UPDATE kodiak_credentials SET wallet_address = $1 WHERE user_id = $2",
+            [walletAddress, userId]
+          );
         }
-        logger.debug("Public API test response received", { success: publicData && typeof publicData === 'object' && 'success' in publicData ? publicData.success : false });
+        logger.debug("Public API test response received", {
+          success:
+            publicData &&
+            typeof publicData === "object" &&
+            "success" in publicData
+              ? publicData.success
+              : false,
+        });
       } catch (publicError) {
-        logger.warn("Public API test failed", { error: (publicError as Error).message });
+        logger.warn("Public API test failed", {
+          error: (publicError as Error).message,
+        });
       }
 
       try {
@@ -208,13 +265,30 @@ async function connectKodiak(req: AuthenticatedRequest, res: Response) {
           `https://api.orderly.org/v1/get_all_accounts?address=${walletAddress || value.accountId}&broker_id=kodiak&chain_type=EVM`
         );
         const accountsData = await accountsResponse.json();
-        logger.debug("Get all accounts response received", { success: accountsData && typeof accountsData === 'object' && 'success' in accountsData ? accountsData.success : false });
+        logger.debug("Get all accounts response received", {
+          success:
+            accountsData &&
+            typeof accountsData === "object" &&
+            "success" in accountsData
+              ? accountsData.success
+              : false,
+        });
       } catch (accountsError) {
-        logger.warn("Get all accounts test failed", { error: (accountsError as Error).message });
+        logger.warn("Get all accounts test failed", {
+          error: (accountsError as Error).message,
+        });
       }
 
-      logger.debug("Verifying Kodiak credentials", { accountId: value.accountId });
-      const accountInfo = await makeKodiakRequest("GET", "/client/info", value.accountId, value.apiKey, value.secretKey);
+      logger.debug("Verifying Kodiak credentials", {
+        accountId: value.accountId,
+      });
+      const accountInfo = await makeKodiakRequest(
+        "GET",
+        "/client/info",
+        value.accountId,
+        value.apiKey,
+        value.secretKey
+      );
       logger.debug("Account info retrieved", { success: accountInfo.success });
 
       if (accountInfo.success) {
@@ -222,11 +296,20 @@ async function connectKodiak(req: AuthenticatedRequest, res: Response) {
         // Account verification logic would go here
       }
     } catch (verificationError) {
-      logger.warn("Credential verification failed", { error: verificationError instanceof Error ? verificationError.message : String(verificationError), userId });
+      logger.warn("Credential verification failed", {
+        error:
+          verificationError instanceof Error
+            ? verificationError.message
+            : String(verificationError),
+        userId,
+      });
       isVerified = false;
     }
 
-    await query("UPDATE kodiak_credentials SET verified = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2", [isVerified, userId]);
+    await query(
+      "UPDATE kodiak_credentials SET verified = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2",
+      [isVerified, userId]
+    );
 
     if (isVerified) {
       logger.info("Updating user level to REGISTERED", { userId });
@@ -235,11 +318,14 @@ async function connectKodiak(req: AuthenticatedRequest, res: Response) {
       logger.info("User verification failed, keeping BASIC level", { userId });
     }
 
-    await query("INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)", [
-      userId,
-      "KODIAK_CONNECTED",
-      { accountId: value.accountId, verified: isVerified },
-    ]);
+    await query(
+      "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
+      [
+        userId,
+        "KODIAK_CONNECTED",
+        { accountId: value.accountId, verified: isVerified },
+      ]
+    );
 
     res.json({
       success: true,
@@ -253,8 +339,13 @@ async function connectKodiak(req: AuthenticatedRequest, res: Response) {
       },
     });
   } catch (err) {
-    logger.error("Kodiak connect error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
-    res.status(500).json({ success: false, error: "Failed to connect Kodiak credentials" });
+    logger.error("Kodiak connect error", {
+      error: err instanceof Error ? err.message : String(err),
+      userId: req.user!.userId,
+    });
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to connect Kodiak credentials" });
   }
 }
 
@@ -266,12 +357,23 @@ async function disconnectKodiak(req: AuthenticatedRequest, res: Response) {
     const userId = req.user!.userId;
 
     await query("DELETE FROM kodiak_credentials WHERE user_id = $1", [userId]);
-    await query("INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)", [userId, "KODIAK_DISCONNECTED", {}]);
+    await query(
+      "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
+      [userId, "KODIAK_DISCONNECTED", {}]
+    );
 
     res.json({ success: true, message: "Kodiak credentials disconnected" });
   } catch (err) {
-    logger.error("Kodiak disconnect error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
-    res.status(500).json({ success: false, error: "Failed to disconnect Kodiak credentials" });
+    logger.error("Kodiak disconnect error", {
+      error: err instanceof Error ? err.message : String(err),
+      userId: req.user!.userId,
+    });
+    res
+      .status(500)
+      .json({
+        success: false,
+        error: "Failed to disconnect Kodiak credentials",
+      });
   }
 }
 
@@ -299,8 +401,13 @@ async function getKodiakStatus(req: AuthenticatedRequest, res: Response) {
       },
     });
   } catch (err) {
-    logger.error("Get Kodiak status error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
-    res.status(500).json({ success: false, error: "Failed to get Kodiak status" });
+    logger.error("Get Kodiak status error", {
+      error: err instanceof Error ? err.message : String(err),
+      userId: req.user!.userId,
+    });
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to get Kodiak status" });
   }
 }
 
@@ -319,7 +426,7 @@ async function getKodiakPositions(req: AuthenticatedRequest, res: Response) {
     } else if (!cacheResult.success) {
       logger.warn("Positions cache read failed", {
         userId,
-        error: cacheResult.error
+        error: cacheResult.error,
       });
     }
 
@@ -329,24 +436,41 @@ async function getKodiakPositions(req: AuthenticatedRequest, res: Response) {
     );
 
     if (result.rows.length === 0) {
-      return res.status(400).json({ success: false, error: "No Kodiak credentials found" });
+      return res
+        .status(400)
+        .json({ success: false, error: "No Kodiak credentials found" });
     }
 
     if (!result.rows[0].verified) {
-      return res.status(400).json({ success: false, error: "Kodiak credentials not verified. Please reconnect." });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          error: "Kodiak credentials not verified. Please reconnect.",
+        });
     }
 
     const accountId = result.rows[0].account_id;
-    const apiKey = encryptionService.decryptApiKey(result.rows[0].api_key_encrypted);
-    const secretKey = encryptionService.decryptSecretKey(result.rows[0].secret_key_encrypted);
+    const apiKey = encryptionService.decryptApiKey(
+      result.rows[0].api_key_encrypted
+    );
+    const secretKey = encryptionService.decryptSecretKey(
+      result.rows[0].secret_key_encrypted
+    );
 
     logger.debug("Fetching Kodiak positions", { userId, accountId });
 
-    const positionsData = await makeKodiakRequest("GET", "/positions", accountId, apiKey, secretKey);
+    const positionsData = await makeKodiakRequest(
+      "GET",
+      "/positions",
+      accountId,
+      apiKey,
+      secretKey
+    );
 
     logger.debug("Kodiak positions response", {
       success: positionsData?.success,
-      rowCount: positionsData?.data?.rows?.length || 0
+      rowCount: positionsData?.data?.rows?.length || 0,
     });
 
     if (positionsData.success && positionsData.data) {
@@ -355,11 +479,21 @@ async function getKodiakPositions(req: AuthenticatedRequest, res: Response) {
       res.json(responseData);
     } else {
       logger.error("Kodiak positions API failed", { response: positionsData });
-      res.status(400).json({ success: false, error: "Failed to fetch positions from Kodiak API" });
+      res
+        .status(400)
+        .json({
+          success: false,
+          error: "Failed to fetch positions from Kodiak API",
+        });
     }
   } catch (err) {
-    logger.error("Get Kodiak positions error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
-    res.status(500).json({ success: false, error: "Failed to get Kodiak positions" });
+    logger.error("Get Kodiak positions error", {
+      error: err instanceof Error ? err.message : String(err),
+      userId: req.user!.userId,
+    });
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to get Kodiak positions" });
   }
 }
 
@@ -378,7 +512,7 @@ async function getKodiakTrades(req: AuthenticatedRequest, res: Response) {
     } else if (!cacheResult.success) {
       logger.warn("Trades cache read failed", {
         userId,
-        error: cacheResult.error
+        error: cacheResult.error,
       });
     }
 
@@ -388,14 +522,26 @@ async function getKodiakTrades(req: AuthenticatedRequest, res: Response) {
     );
 
     if (result.rows.length === 0) {
-      return res.status(400).json({ success: false, error: "No Kodiak credentials found" });
+      return res
+        .status(400)
+        .json({ success: false, error: "No Kodiak credentials found" });
     }
 
     const accountId = result.rows[0].account_id;
-    const apiKey = encryptionService.decryptApiKey(result.rows[0].api_key_encrypted);
-    const secretKey = encryptionService.decryptSecretKey(result.rows[0].secret_key_encrypted);
+    const apiKey = encryptionService.decryptApiKey(
+      result.rows[0].api_key_encrypted
+    );
+    const secretKey = encryptionService.decryptSecretKey(
+      result.rows[0].secret_key_encrypted
+    );
 
-    const tradesData = await makeKodiakRequest("GET", "/position_history?limit=50", accountId, apiKey, secretKey);
+    const tradesData = await makeKodiakRequest(
+      "GET",
+      "/position_history?limit=50",
+      accountId,
+      apiKey,
+      secretKey
+    );
 
     if (tradesData.success && tradesData.data) {
       const responseData = { success: true, data: tradesData.data };
@@ -405,8 +551,13 @@ async function getKodiakTrades(req: AuthenticatedRequest, res: Response) {
       res.status(400).json({ success: false, error: "Failed to fetch trades" });
     }
   } catch (err) {
-    logger.error("Get Kodiak trades error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
-    res.status(500).json({ success: false, error: "Failed to get Kodiak trades" });
+    logger.error("Get Kodiak trades error", {
+      error: err instanceof Error ? err.message : String(err),
+      userId: req.user!.userId,
+    });
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to get Kodiak trades" });
   }
 }
 
@@ -425,7 +576,7 @@ async function getKodiakBalance(req: AuthenticatedRequest, res: Response) {
     } else if (!cacheResult.success) {
       logger.warn("Balance cache read failed", {
         userId,
-        error: cacheResult.error
+        error: cacheResult.error,
       });
     }
 
@@ -435,28 +586,54 @@ async function getKodiakBalance(req: AuthenticatedRequest, res: Response) {
     );
 
     if (result.rows.length === 0) {
-      return res.status(400).json({ success: false, error: "No Kodiak credentials found" });
+      return res
+        .status(400)
+        .json({ success: false, error: "No Kodiak credentials found" });
     }
 
     const accountId = result.rows[0].account_id;
-    const apiKey = encryptionService.decryptApiKey(result.rows[0].api_key_encrypted);
-    const secretKey = encryptionService.decryptSecretKey(result.rows[0].secret_key_encrypted);
+    const apiKey = encryptionService.decryptApiKey(
+      result.rows[0].api_key_encrypted
+    );
+    const secretKey = encryptionService.decryptSecretKey(
+      result.rows[0].secret_key_encrypted
+    );
 
-    const holdingsData = await makeKodiakRequest("GET", "/client/holding?all=true", accountId, apiKey, secretKey);
+    const holdingsData = await makeKodiakRequest(
+      "GET",
+      "/client/holding?all=true",
+      accountId,
+      apiKey,
+      secretKey
+    );
 
     if (holdingsData.success && holdingsData.data) {
-      const holdings = Array.isArray(holdingsData.data) ? holdingsData.data : holdingsData.data.holding || [];
+      const holdings = Array.isArray(holdingsData.data)
+        ? holdingsData.data
+        : holdingsData.data.holding || [];
       const totalBalance = holdings.reduce((sum: number, holding: any) => {
-        const holdingBalance = parseFloat(holding.holding || holding.balance || "0");
+        const holdingBalance = parseFloat(
+          holding.holding || holding.balance || "0"
+        );
         const price = parseFloat(holding.price || "0");
         return sum + holdingBalance * price;
       }, 0);
 
       let accountInfo = null;
       try {
-        accountInfo = await makeKodiakRequest("GET", "/client/info", accountId, apiKey, secretKey);
+        accountInfo = await makeKodiakRequest(
+          "GET",
+          "/client/info",
+          accountId,
+          apiKey,
+          secretKey
+        );
       } catch (infoError) {
-        logger.warn("Could not fetch account info", { error: infoError instanceof Error ? infoError.message : String(infoError), userId });
+        logger.warn("Could not fetch account info", {
+          error:
+            infoError instanceof Error ? infoError.message : String(infoError),
+          userId,
+        });
       }
 
       const responseData = {
@@ -466,18 +643,26 @@ async function getKodiakBalance(req: AuthenticatedRequest, res: Response) {
           holdings: holdings,
           accountInfo: accountInfo?.success ? accountInfo.data : null,
           total_pnl_24_h: accountInfo?.data?.total_pnl_24_h || "0",
-          trading_volume_last_24_hours: accountInfo?.data?.trading_volume_last_24_hours || "0",
+          trading_volume_last_24_hours:
+            accountInfo?.data?.trading_volume_last_24_hours || "0",
         },
       };
 
       await redisService.setex(cacheKey, 5, JSON.stringify(responseData));
       res.json(responseData);
     } else {
-      res.status(400).json({ success: false, error: "Failed to fetch balance" });
+      res
+        .status(400)
+        .json({ success: false, error: "Failed to fetch balance" });
     }
   } catch (err) {
-    logger.error("Get Kodiak balance error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
-    res.status(500).json({ success: false, error: "Failed to get Kodiak balance" });
+    logger.error("Get Kodiak balance error", {
+      error: err instanceof Error ? err.message : String(err),
+      userId: req.user!.userId,
+    });
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to get Kodiak balance" });
   }
 }
 
@@ -497,7 +682,12 @@ async function verifyWallet(req: AuthenticatedRequest, res: Response) {
     }
 
     const userId = req.user!.userId;
-    const result = await authService.verifyWalletOwnership(userId, walletAddress, signature, message);
+    const result = await authService.verifyWalletOwnership(
+      userId,
+      walletAddress,
+      signature,
+      message
+    );
 
     if (!result.success) {
       return res.status(400).json({ success: false, error: result.message });
@@ -508,7 +698,10 @@ async function verifyWallet(req: AuthenticatedRequest, res: Response) {
       message: "Wallet verified successfully. User level updated to VERIFIED.",
     });
   } catch (err) {
-    logger.error("Wallet verification error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
+    logger.error("Wallet verification error", {
+      error: err instanceof Error ? err.message : String(err),
+      userId: req.user!.userId,
+    });
     res.status(500).json({ success: false, error: "Failed to verify wallet" });
   }
 }

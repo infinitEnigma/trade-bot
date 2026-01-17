@@ -215,7 +215,9 @@ async function runMigrations() {
     await pool.query(migrations);
     logger.info("Migrations completed successfully!");
   } catch (error) {
-    logger.error("Migration failed", { error: error instanceof Error ? error.message : String(error) });
+    logger.error("Migration failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     throw error;
   } finally {
     await pool.end();

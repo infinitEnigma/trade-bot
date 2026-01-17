@@ -1,7 +1,7 @@
 /** @format */
 
-import { useEffect, useState } from 'react';
-import { api } from '../lib/api';
+import { useEffect, useState } from "react";
+import { api } from "../lib/api";
 
 export interface Balance {
   walletBalance: number;
@@ -29,16 +29,16 @@ export const useBalance = (autoRefresh: boolean = true) => {
         setBalance(response.data);
       } else {
         // Handle missing Kodiak credentials gracefully
-        if (response.error?.includes('Kodiak account not connected')) {
+        if (response.error?.includes("Kodiak account not connected")) {
           setBalance(null); // No balance data available
           setError(null); // Don't show as error
         } else {
-          setError(response.error || 'Failed to fetch balance');
+          setError(response.error || "Failed to fetch balance");
         }
       }
     } catch (err) {
       setError((err as Error).message);
-      console.error('Balance fetch error:', err);
+      console.error("Balance fetch error:", err);
     } finally {
       setLoading(false);
     }

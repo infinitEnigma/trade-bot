@@ -13,7 +13,7 @@ class RedisService {
       database: 1, // Use database 1 (was likely used in Docker setup)
     });
 
-    this.client.on("error", (err) => {
+    this.client.on("error", err => {
       logger.error("Redis Client Error", { error: err.message });
     });
 
@@ -44,29 +44,40 @@ class RedisService {
     }
   }
 
-  public async get(key: string): Promise<{ success: boolean; data: string | null; error?: string }> {
+  public async get(
+    key: string
+  ): Promise<{ success: boolean; data: string | null; error?: string }> {
     try {
       const data = await this.client.get(key);
       return { success: true, data };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       logger.error("Redis GET error", { key, error: errorMessage });
       return { success: false, data: null, error: errorMessage };
     }
   }
 
-  public async set(key: string, value: string): Promise<{ success: boolean; error?: string }> {
+  public async set(
+    key: string,
+    value: string
+  ): Promise<{ success: boolean; error?: string }> {
     try {
       await this.client.set(key, value);
       return { success: true };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       logger.error("Redis SET error", { key, error: errorMessage });
       return { success: false, error: errorMessage };
     }
   }
 
-  public async setex(key: string, ttl: number, value: string): Promise<{ success: boolean; error?: string }> {
+  public async setex(
+    key: string,
+    ttl: number,
+    value: string
+  ): Promise<{ success: boolean; error?: string }> {
     try {
       // Use multi command to ensure atomicity
       const multi = this.client.multi();
@@ -75,7 +86,8 @@ class RedisService {
       await multi.exec();
       return { success: true };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       logger.error("Redis SETEX error", { key, ttl, error: errorMessage });
       // Fallback to individual commands
       try {
@@ -84,8 +96,15 @@ class RedisService {
         logger.info("Redis SETEX fallback successful", { key, ttl });
         return { success: true };
       } catch (fallbackError) {
-        const fallbackErrorMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-        logger.error("Redis SETEX fallback error", { key, ttl, error: fallbackErrorMessage });
+        const fallbackErrorMessage =
+          fallbackError instanceof Error
+            ? fallbackError.message
+            : String(fallbackError);
+        logger.error("Redis SETEX fallback error", {
+          key,
+          ttl,
+          error: fallbackErrorMessage,
+        });
         return { success: false, error: fallbackErrorMessage };
       }
     }
@@ -96,18 +115,22 @@ class RedisService {
       await this.client.del(key);
       return { success: true };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       logger.error("Redis DEL error", { key, error: errorMessage });
       return { success: false, error: errorMessage };
     }
   }
 
-  public async exists(key: string): Promise<{ success: boolean; data: boolean; error?: string }> {
+  public async exists(
+    key: string
+  ): Promise<{ success: boolean; data: boolean; error?: string }> {
     try {
       const result = await this.client.exists(key);
       return { success: true, data: result === 1 };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       logger.error("Redis EXISTS error", { key, error: errorMessage });
       return { success: false, data: false, error: errorMessage };
     }

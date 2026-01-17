@@ -51,14 +51,14 @@ export class OrderlyClient {
         privateKeyBytes = padded;
       }
 
-    // Convert message to bytes
-    const messageBytes = new TextEncoder().encode(message);
+      // Convert message to bytes
+      const messageBytes = new TextEncoder().encode(message);
 
-    // Hash the message with SHA256 as required by Kodiak API
-    const hash = createHash("sha256").update(messageBytes).digest();
+      // Hash the message with SHA256 as required by Kodiak API
+      const hash = createHash("sha256").update(messageBytes).digest();
 
-    // Sign the hash using Ed25519
-    const signature = await ed25519.sign(hash, privateKeyBytes);
+      // Sign the hash using Ed25519
+      const signature = await ed25519.sign(hash, privateKeyBytes);
 
       // Return base64url-encoded signature
       return Buffer.from(signature).toString("base64url");
@@ -93,9 +93,7 @@ export class OrderlyClient {
     };
   }
 
-  async validatePositionSize(
-    request: OrderRequest
-  ): Promise<void> {
+  async validatePositionSize(request: OrderRequest): Promise<void> {
     try {
       // Get account info for balance and limits
       const accountInfo = await this.getAccountInfo();
@@ -138,7 +136,9 @@ export class OrderlyClient {
       // Rule 3: Check position limits per symbol
       const symbolPosition = positions.find(p => p.symbol === request.symbol);
       if (symbolPosition) {
-        const symbolExposure = Math.abs(symbolPosition.position_qty * symbolPosition.mark_price);
+        const symbolExposure = Math.abs(
+          symbolPosition.position_qty * symbolPosition.mark_price
+        );
         const newSymbolExposure = symbolExposure + orderNotional;
         const maxSymbolExposure = accountBalance * 0.5; // 50% per symbol limit
 
@@ -158,10 +158,15 @@ export class OrderlyClient {
         );
       }
 
-      logger.info('Position size validation passed', { orderNotional, symbol: request.symbol });
-
+      logger.info("Position size validation passed", {
+        orderNotional,
+        symbol: request.symbol,
+      });
     } catch (error) {
-      logger.error('Position size validation failed', { error: error instanceof Error ? error.message : String(error), symbol: request.symbol });
+      logger.error("Position size validation failed", {
+        error: error instanceof Error ? error.message : String(error),
+        symbol: request.symbol,
+      });
       throw error;
     }
   }

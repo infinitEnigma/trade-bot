@@ -1,9 +1,9 @@
 /** @format */
 
-import axios from 'axios';
-import { query } from '../database/pool';
-import logger from './logger';
-import { generateOrderlySignature } from '../utils/orderly-signature'; // ✅ Import backend crypto utility
+import axios from "axios";
+import { query } from "../database/pool";
+import logger from "./logger";
+import { generateOrderlySignature } from "../utils/orderly-signature"; // ✅ Import backend crypto utility
 
 export interface AccountLimits {
   balance: number;
@@ -21,8 +21,6 @@ export interface PositionValidationResult {
   recommended?: number;
 }
 
-
-
 /**
  * Get account limits and current exposure from Orderly API
  */
@@ -33,53 +31,53 @@ export async function getAccountLimits(
 ): Promise<AccountLimits> {
   try {
     const timestamp = Date.now();
-    const path = '/v1/client/info';
+    const path = "/v1/client/info";
     const signature = await generateOrderlySignature(
       timestamp,
-      'GET',
+      "GET",
       path,
-      '',
+      "",
       orderlySecretKey
     );
 
     // Get account info
     const accountResponse = await axios.get(
-      `${process.env.KODIAK_API_URL || 'https://api.orderly.org'}${path}`,
+      `${process.env.KODIAK_API_URL || "https://api.orderly.org"}${path}`,
       {
         headers: {
-          'orderly-account-id': orderlyAccountId,
-          'orderly-key': orderlyApiKey,
-          'orderly-signature': signature,
-          'orderly-timestamp': timestamp.toString(),
+          "orderly-account-id": orderlyAccountId,
+          "orderly-key": orderlyApiKey,
+          "orderly-signature": signature,
+          "orderly-timestamp": timestamp.toString(),
         },
       }
     );
 
     const accountData = accountResponse.data.data;
-    logger.info('Account info retrieved', {
+    logger.info("Account info retrieved", {
       maxLeverage: accountData.max_leverage,
       takerFee: accountData.taker_fee_rate,
       makerFee: accountData.maker_fee_rate,
     });
 
     // Get current positions for exposure calculation
-    const positionsPath = '/v1/positions';
+    const positionsPath = "/v1/positions";
     const positionsSignature = await generateOrderlySignature(
       timestamp,
-      'GET',
+      "GET",
       positionsPath,
-      '',
+      "",
       orderlySecretKey
     );
 
     const positionsResponse = await axios.get(
-      `${process.env.KODIAK_API_URL || 'https://api.orderly.org'}${positionsPath}`,
+      `${process.env.KODIAK_API_URL || "https://api.orderly.org"}${positionsPath}`,
       {
         headers: {
-          'orderly-account-id': orderlyAccountId,
-          'orderly-key': orderlyApiKey,
-          'orderly-signature': positionsSignature,
-          'orderly-timestamp': timestamp.toString(),
+          "orderly-account-id": orderlyAccountId,
+          "orderly-key": orderlyApiKey,
+          "orderly-signature": positionsSignature,
+          "orderly-timestamp": timestamp.toString(),
         },
       }
     );
@@ -89,26 +87,30 @@ export async function getAccountLimits(
     const positions = positionsResponse.data.data?.rows || [];
     for (const position of positions) {
       const notionalValue = Math.abs(
-        parseFloat(position.position_qty || 0) * parseFloat(position.mark_price || 0)
+        parseFloat(position.position_qty || 0) *
+          parseFloat(position.mark_price || 0)
       );
       totalExposure += notionalValue;
     }
 
-    logger.info('Current exposure calculated', {
+    logger.info("Current exposure calculated", {
       totalExposure,
       positionsCount: positions.length,
     });
 
     return {
-      balance: parseFloat(accountData.total_balance || '0'),
-      maxLeverage: parseInt(accountData.max_leverage || '1'),
+      balance: parseFloat(accountData.total_balance || "0"),
+      maxLeverage: parseInt(accountData.max_leverage || "1"),
       totalExposure,
       maxNotional: accountData.max_notional || {},
-      takerFeeRate: parseFloat(accountData.taker_fee_rate || '0.001'),
-      makerFeeRate: parseFloat(accountData.maker_fee_rate || '0.001'),
+      takerFeeRate: parseFloat(accountData.taker_fee_rate || "0.001"),
+      makerFeeRate: parseFloat(accountData.maker_fee_rate || "0.001"),
     };
   } catch (error: any) {
-    logger.error('Failed to get account limits', { error: error.message, orderlyAccountId });
+    logger.error("Failed to get account limits", {
+      error: error.message,
+      orderlyAccountId,
+    });
     throw new Error(`Account validation failed: ${error.message}`);
   }
 }
@@ -123,7 +125,7 @@ export async function validatePositionSize(
   maxExposurePercent: number = 0.8,
   maxSinglePositionPercent: number = 0.25
 ): Promise<PositionValidationResult> {
-  logger.debug('Validating position size', {
+  logger.debug("Validating position size", {
     notionalAmount,
     symbol,
     accountLimits: {
@@ -202,14 +204,18 @@ export async function validatePositionSize(
     };
   }
 
-  logger.debug('Position validation passed', {
+  logger.debug("Position validation passed", {
     notionalAmount,
     maxAllowed: Math.min(maxSinglePosition, maxAccountExposure),
   });
 
   return {
     isValid: true,
-    maxAllowed: Math.min(maxSinglePosition, maxAccountExposure, maxTotalExposure - accountLimits.totalExposure),
+    maxAllowed: Math.min(
+      maxSinglePosition,
+      maxAccountExposure,
+      maxTotalExposure - accountLimits.totalExposure
+    ),
   };
 }
 
@@ -223,7 +229,7 @@ export async function getUserKodiakCredentials(userId: string): Promise<{
 } | null> {
   try {
     const result = await query(
-      'SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1',
+      "SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1",
       [userId]
     );
 
@@ -231,7 +237,7 @@ export async function getUserKodiakCredentials(userId: string): Promise<{
       return null;
     }
 
-    const { encryptionService } = await import('./encryption.js');
+    const { encryptionService } = await import("./encryption.js");
     const row = result.rows[0];
 
     return {
@@ -240,7 +246,10 @@ export async function getUserKodiakCredentials(userId: string): Promise<{
       secretKey: encryptionService.decryptSecretKey(row.secret_key_encrypted),
     };
   } catch (error) {
-    logger.error('Failed to get user Kodiak credentials', { error: error instanceof Error ? error.message : String(error), userId });
+    logger.error("Failed to get user Kodiak credentials", {
+      error: error instanceof Error ? error.message : String(error),
+      userId,
+    });
     return null;
   }
 }
@@ -260,7 +269,7 @@ export async function validateUserPosition(
     if (!credentials) {
       return {
         isValid: false,
-        reason: 'Kodiak credentials not configured or verified',
+        reason: "Kodiak credentials not configured or verified",
       };
     }
 
@@ -279,7 +288,12 @@ export async function validateUserPosition(
       maxExposurePercent
     );
   } catch (error: any) {
-    logger.error('Position validation failed', { error: error.message, userId, notionalAmount, symbol });
+    logger.error("Position validation failed", {
+      error: error.message,
+      userId,
+      notionalAmount,
+      symbol,
+    });
     return {
       isValid: false,
       reason: `Validation error: ${error.message}`,

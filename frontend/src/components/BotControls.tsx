@@ -54,7 +54,9 @@ export const BotControls: React.FC<BotControlsProps> = ({
       onStatusChange();
     },
     onError: (error: any) => {
-      toast.error(error?.response?.data?.error || "Failed to emergency stop bot");
+      toast.error(
+        error?.response?.data?.error || "Failed to emergency stop bot"
+      );
     },
   });
 
@@ -97,7 +99,11 @@ export const BotControls: React.FC<BotControlsProps> = ({
         </button>
         <button
           onClick={() => {
-            if (window.confirm('Are you sure you want to EMERGENCY STOP this bot? This will cancel all orders immediately.')) {
+            if (
+              window.confirm(
+                "Are you sure you want to EMERGENCY STOP this bot? This will cancel all orders immediately."
+              )
+            ) {
               emergencyStopMutation.mutate();
             }
           }}

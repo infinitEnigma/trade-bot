@@ -24,10 +24,31 @@
     "test:frontend": "cd frontend && npm run test",
     "test:engine": "cd engine/kodiak && npm run test",
     "db:migrate": "cd backend && npm run db:migrate",
-    "db:seed": "cd backend && npm run db:seed"
+    "db:seed": "cd backend && npm run db:seed",
+    "lint": "npm run lint:backend && npm run lint:frontend && npm run lint:engine && npm run lint:shared",
+    "lint:fix": "npm run lint:fix:backend && npm run lint:fix:frontend && npm run lint:fix:engine && npm run lint:fix:shared",
+    "format": "npm run format:backend && npm run format:frontend && npm run format:engine && npm run format:shared",
+    "format:check": "npm run format:check:backend && npm run format:check:frontend && npm run format:check:engine && npm run format:check:shared",
+    "lint:backend": "cd backend && npm run lint",
+    "lint:fix:backend": "cd backend && npm run lint:fix",
+    "format:backend": "cd backend && npm run format",
+    "format:check:backend": "cd backend && npm run format:check",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint:fix:frontend": "cd frontend && npm run lint:fix",
+    "format:frontend": "cd frontend && npm run format",
+    "format:check:frontend": "cd frontend && npm run format:check",
+    "lint:engine": "cd engine/kodiak && npm run lint",
+    "lint:fix:engine": "cd engine/kodiak && npm run lint:fix",
+    "format:engine": "cd engine/kodiak && npm run format",
+    "format:check:engine": "cd engine/kodiak && npm run format:check",
+    "lint:shared": "cd shared && npm run lint",
+    "lint:fix:shared": "cd shared && npm run lint:fix",
+    "format:shared": "cd shared && npm run format",
+    "format:check:shared": "cd shared && npm run format:check"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "prettier": "^3.4.2"
   },
   "engines": {
     "node": ">=25.0.9"

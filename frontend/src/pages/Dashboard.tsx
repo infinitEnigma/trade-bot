@@ -26,10 +26,18 @@ import { useBalance } from "../hooks/useBalance";
 
 // Lazy load heavy components
 const PriceChart = React.lazy(() => import("../components/PriceChart"));
-const WalletConnectDialog = React.lazy(() => import("../components/WalletConnectDialog").then(module => ({ default: module.WalletConnectDialog })));
-const EmptyState = React.lazy(() => import("../components/dashboard/EmptyState"));
+const WalletConnectDialog = React.lazy(() =>
+  import("../components/WalletConnectDialog").then(module => ({
+    default: module.WalletConnectDialog,
+  }))
+);
+const EmptyState = React.lazy(
+  () => import("../components/dashboard/EmptyState")
+);
 const StatsCard = React.lazy(() => import("../components/dashboard/StatsCard"));
-const PortfolioChart = React.lazy(() => import("../components/dashboard/PortfolioChart"));
+const PortfolioChart = React.lazy(
+  () => import("../components/dashboard/PortfolioChart")
+);
 
 // Calculate real portfolio performance from trades data
 const calculatePortfolioPerformance = (
@@ -48,7 +56,7 @@ const calculatePortfolioPerformance = (
   const performance = [{ time: "Start", value: initialBalance }];
   let currentBalance = initialBalance;
 
-  sortedTrades.forEach((trade) => {
+  sortedTrades.forEach(trade => {
     const pnl = parseFloat(trade.realized_pnl || "0");
     currentBalance += pnl;
 
@@ -78,7 +86,8 @@ const Dashboard: React.FC = () => {
   const { balance: realBalance, loading: realBalanceLoading } = useBalance();
 
   // Fetch Kodiak data - optimized with proper deduplication
-  const hasKodiakAccess = user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
+  const hasKodiakAccess =
+    user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
 
   const { data: positionsData, isLoading: positionsLoading } = useQuery({
     queryKey: ["kodiak-positions"],
@@ -121,15 +130,17 @@ const Dashboard: React.FC = () => {
   const dailyVolume = 0; // TODO: Add volume tracking
 
   // Use only real data - no mock fallbacks
-  const portfolio = realBalance ? {
-    totalBalance: realBalance.accountBalance,
-    pnl,
-    pnlPercent,
-    dailyVolume,
-    totalTrades: tradesData?.success
-      ? tradesData.data?.rows?.length || 0
-      : 0,
-  } : null;
+  const portfolio = realBalance
+    ? {
+        totalBalance: realBalance.accountBalance,
+        pnl,
+        pnlPercent,
+        dailyVolume,
+        totalTrades: tradesData?.success
+          ? tradesData.data?.rows?.length || 0
+          : 0,
+      }
+    : null;
 
   // Calculate real portfolio performance chart data
   const portfolioData =
@@ -144,18 +155,20 @@ const Dashboard: React.FC = () => {
       <div className="container mx-auto px-4 py-8">
         {/* ✅ Market Chart Section - Full Width */}
         <div className="mb-8">
-          <Suspense fallback={
-            <Card className="h-96 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            </Card>
-          }>
+          <Suspense
+            fallback={
+              <Card className="h-96 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              </Card>
+            }
+          >
             <PriceChart />
           </Suspense>
         </div>
         {/* Portfolio Overview */}
         {realBalanceLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {[1, 2, 3, 4].map((i) => (
+            {[1, 2, 3, 4].map(i => (
               <Card key={i}>
                 <div className="animate-pulse">
                   <div className="grid grid-rows-[auto_1fr_auto] gap-3">
@@ -190,15 +203,17 @@ const Dashboard: React.FC = () => {
             />
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <Suspense fallback={
-                <Card>
-                  <div className="animate-pulse p-6">
-                    <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
-                    <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
-                    <div className="w-16 h-4 bg-white/10 rounded"></div>
-                  </div>
-                </Card>
-              }>
+              <Suspense
+                fallback={
+                  <Card>
+                    <div className="animate-pulse p-6">
+                      <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
+                      <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
+                      <div className="w-16 h-4 bg-white/10 rounded"></div>
+                    </div>
+                  </Card>
+                }
+              >
                 <StatsCard
                   title="Wallet Balance"
                   value={realBalance?.walletBalance || 0}
@@ -209,15 +224,17 @@ const Dashboard: React.FC = () => {
                   loading={realBalanceLoading}
                 />
               </Suspense>
-              <Suspense fallback={
-                <Card>
-                  <div className="animate-pulse p-6">
-                    <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
-                    <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
-                    <div className="w-16 h-4 bg-white/10 rounded"></div>
-                  </div>
-                </Card>
-              }>
+              <Suspense
+                fallback={
+                  <Card>
+                    <div className="animate-pulse p-6">
+                      <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
+                      <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
+                      <div className="w-16 h-4 bg-white/10 rounded"></div>
+                    </div>
+                  </Card>
+                }
+              >
                 <StatsCard
                   title="Account Balance"
                   value={realBalance?.accountBalance || 0}
@@ -227,15 +244,17 @@ const Dashboard: React.FC = () => {
                   format="currency"
                 />
               </Suspense>
-              <Suspense fallback={
-                <Card>
-                  <div className="animate-pulse p-6">
-                    <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
-                    <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
-                    <div className="w-16 h-4 bg-white/10 rounded"></div>
-                  </div>
-                </Card>
-              }>
+              <Suspense
+                fallback={
+                  <Card>
+                    <div className="animate-pulse p-6">
+                      <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
+                      <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
+                      <div className="w-16 h-4 bg-white/10 rounded"></div>
+                    </div>
+                  </Card>
+                }
+              >
                 <StatsCard
                   title="Available Balance"
                   value={realBalance?.availableBalance || 0}
@@ -245,15 +264,17 @@ const Dashboard: React.FC = () => {
                   format="currency"
                 />
               </Suspense>
-              <Suspense fallback={
-                <Card>
-                  <div className="animate-pulse p-6">
-                    <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
-                    <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
-                    <div className="w-16 h-4 bg-white/10 rounded"></div>
-                  </div>
-                </Card>
-              }>
+              <Suspense
+                fallback={
+                  <Card>
+                    <div className="animate-pulse p-6">
+                      <div className="w-10 h-10 bg-white/10 rounded-lg mb-4"></div>
+                      <div className="w-24 h-8 bg-white/10 rounded mb-2"></div>
+                      <div className="w-16 h-4 bg-white/10 rounded"></div>
+                    </div>
+                  </Card>
+                }
+              >
                 <StatsCard
                   title="Total Assets"
                   value={realBalance?.totalAssets || 0}
@@ -306,11 +327,13 @@ const Dashboard: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Chart Section */}
           <Card className="lg:col-span-2">
-            <Suspense fallback={
-              <div className="h-80 flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
-              </div>
-            }>
+            <Suspense
+              fallback={
+                <div className="h-80 flex items-center justify-center">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+              }
+            >
               <PortfolioChart
                 data={portfolioData}
                 selectedSymbol={selectedSymbol}
@@ -338,11 +361,13 @@ const Dashboard: React.FC = () => {
             {(user?.userLevel === "REGISTERED" ||
               user?.userLevel === "VERIFIED") && (
               <div className="mt-6 pt-6 border-t border-white/5">
-                <Suspense fallback={
-                  <div className="flex items-center justify-center py-4">
-                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                  </div>
-                }>
+                <Suspense
+                  fallback={
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                    </div>
+                  }
+                >
                   <WalletConnectDialog />
                 </Suspense>
               </div>
@@ -423,12 +448,16 @@ const Dashboard: React.FC = () => {
                   ) : positions.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-8">
-                        <Suspense fallback={
-                          <div className="flex flex-col items-center justify-center py-4">
-                            <Loader2 className="w-6 h-6 animate-spin text-primary mb-2" />
-                            <p className="text-sm text-textMuted">Loading...</p>
-                          </div>
-                        }>
+                        <Suspense
+                          fallback={
+                            <div className="flex flex-col items-center justify-center py-4">
+                              <Loader2 className="w-6 h-6 animate-spin text-primary mb-2" />
+                              <p className="text-sm text-textMuted">
+                                Loading...
+                              </p>
+                            </div>
+                          }
+                        >
                           <EmptyState
                             icon={<Target className="w-6 h-6" />}
                             title="No Open Positions"

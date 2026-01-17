@@ -32,9 +32,9 @@ export interface KlineData {
  * Circuit breaker states for WebSocket reconnection
  */
 export enum CircuitState {
-  CLOSED = 'closed',     // Normal operation, reconnections allowed
-  OPEN = 'open',         // Circuit open, stop retrying
-  HALF_OPEN = 'half_open' // Testing if service recovered
+  CLOSED = "closed", // Normal operation, reconnections allowed
+  OPEN = "open", // Circuit open, stop retrying
+  HALF_OPEN = "half_open", // Testing if service recovered
 }
 
 /**
@@ -53,7 +53,7 @@ export interface WebSocketConfig {
  * Default WebSocket configuration
  */
 export const DEFAULT_WS_CONFIG: WebSocketConfig = {
-  baseUrl: 'wss://ws-evm.orderly.org/ws/stream',
+  baseUrl: "wss://ws-evm.orderly.org/ws/stream",
   minReconnectDelay: 1000,
   maxReconnectDelay: 30000,
   maxReconnectAttempts: 12,
@@ -73,27 +73,27 @@ export interface SubscriptionConfig {
 }
 
 export const DEFAULT_SUBSCRIPTION_CONFIG: SubscriptionConfig = {
-  markPriceDelay: 30000,    // 30 seconds
-  klineShortDelay: 60000,   // 1 minute
-  klineHourDelay: 300000,   // 5 minutes
-  tickerDelay: 120000,      // 2 minutes
-  defaultDelay: 60000,      // 1 minute
+  markPriceDelay: 30000, // 30 seconds
+  klineShortDelay: 60000, // 1 minute
+  klineHourDelay: 300000, // 5 minutes
+  tickerDelay: 120000, // 2 minutes
+  defaultDelay: 60000, // 1 minute
 };
 
 /**
  * Market data topics and their types
  */
 export enum MarketTopicType {
-  TICKER = 'ticker',
-  KLINE = 'kline',
-  MARK_PRICE = 'markprice',
+  TICKER = "ticker",
+  KLINE = "kline",
+  MARK_PRICE = "markprice",
 }
 
 export interface MarketTopic {
   symbol: string;
   type: MarketTopicType;
   interval?: string; // For kline topics (1m, 5m, etc.)
-  topic: string;     // Full topic string (e.g., "BTC_USDC@kline_1m")
+  topic: string; // Full topic string (e.g., "BTC_USDC@kline_1m")
 }
 
 /**

@@ -39,11 +39,16 @@ const Strategies: React.FC = React.memo(() => {
         console.log("Strategies: Checking Kodiak connectivity");
         console.log("Strategies: User object:", user);
         console.log("Strategies: User hasKodiak:", (user as any)?.hasKodiak);
-        console.log("Strategies: User kodiakStatus:", (user as any)?.kodiakStatus);
+        console.log(
+          "Strategies: User kodiakStatus:",
+          (user as any)?.kodiakStatus
+        );
 
         // Check if user has Kodiak credentials
         if (!(user as any)?.hasKodiak) {
-          console.log("Strategies: No Kodiak credentials found, showing error screen");
+          console.log(
+            "Strategies: No Kodiak credentials found, showing error screen"
+          );
           setKodiakError("No Kodiak account connected");
           return;
         }
@@ -60,12 +65,13 @@ const Strategies: React.FC = React.memo(() => {
 
         // All checks passed
         setKodiakCheckComplete(true);
-
       } catch (error: any) {
         console.error("Kodiak connectivity check failed:", error);
 
         if (error.response?.status === 403) {
-          setKodiakError("Kodiak authentication failed. Please reconnect your account.");
+          setKodiakError(
+            "Kodiak authentication failed. Please reconnect your account."
+          );
         } else if (error.response?.status === 503) {
           setKodiakError("Kodiak service temporarily unavailable.");
         } else {
@@ -172,9 +178,7 @@ const Strategies: React.FC = React.memo(() => {
           <h1 className="text-2xl font-bold text-text mb-4">
             Trading Features Unavailable
           </h1>
-          <p className="text-textMuted mb-6">
-            {kodiakError}
-          </p>
+          <p className="text-textMuted mb-6">{kodiakError}</p>
           <div className="space-y-3">
             <Link
               to="/settings"
@@ -281,14 +285,12 @@ const Strategies: React.FC = React.memo(() => {
         {/* Account Balance Overview - WebSocket data for verified users */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-text">
-              Account Balance
-            </h2>
+            <h2 className="text-lg font-semibold text-text">Account Balance</h2>
           </div>
 
           {realBalanceLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {[1, 2, 3, 4].map((i) => (
+              {[1, 2, 3, 4].map(i => (
                 <div key={i} className="glass-card p-6">
                   <div className="animate-pulse">
                     <div className="grid grid-rows-[auto_1fr_auto] gap-3">
@@ -366,7 +368,8 @@ const Strategies: React.FC = React.memo(() => {
                 Kodiak Account Required
               </h3>
               <p className="text-textMuted mb-4">
-                Connect your Kodiak trading account in Settings to view your balance and trading data.
+                Connect your Kodiak trading account in Settings to view your
+                balance and trading data.
               </p>
               <Link
                 to="/settings"
@@ -381,7 +384,7 @@ const Strategies: React.FC = React.memo(() => {
         {/* Strategies Grid */}
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3].map((i) => (
+            {[1, 2, 3].map(i => (
               <div key={i} className="glass-card p-6">
                 <div className="animate-pulse">
                   <div className="flex items-center justify-between mb-4">
@@ -496,8 +499,8 @@ const Strategies: React.FC = React.memo(() => {
                             bot.status === "RUNNING"
                               ? "bg-success/20 text-success"
                               : bot.status === "STOPPED"
-                              ? "bg-warning/20 text-warning"
-                              : "bg-danger/20 text-danger"
+                                ? "bg-warning/20 text-warning"
+                                : "bg-danger/20 text-danger"
                           }`}
                         >
                           {bot.status}

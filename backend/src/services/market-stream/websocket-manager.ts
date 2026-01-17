@@ -1,8 +1,8 @@
 /** @format */
 
-import WebSocket from 'ws';
-import logger from '../../services/logger';
-import { CircuitState, WebSocketConfig, DEFAULT_WS_CONFIG } from './types';
+import WebSocket from "ws";
+import logger from "../../services/logger";
+import { CircuitState, WebSocketConfig, DEFAULT_WS_CONFIG } from "./types";
 
 /**
  * Manages WebSocket connections, reconnections, and heartbeats
@@ -26,21 +26,28 @@ export class WebSocketManager {
   /**
    * Create a new WebSocket connection with circuit breaker protection
    */
-  async createConnection(accountId: string, connectionKey: string = 'market'): Promise<WebSocket> {
+  async createConnection(
+    accountId: string,
+    connectionKey: string = "market"
+  ): Promise<WebSocket> {
     // Check if already connected
     if (this.websockets.has(connectionKey)) {
-      logger.debug('WebSocket already exists', { connectionKey });
+      logger.debug("WebSocket already exists", { connectionKey });
       return this.websockets.get(connectionKey)!;
     }
 
     const wsUrl = `${this.config.baseUrl}/${accountId}`;
-    logger.info('Connecting to WebSocket', { url: wsUrl, accountId, connectionKey });
+    logger.info("Connecting to WebSocket", {
+      url: wsUrl,
+      accountId,
+      connectionKey,
+    });
 
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(wsUrl);
 
-      ws.on('open', () => {
-        logger.info('WebSocket connected successfully', { connectionKey });
+      ws.on("open", () => {
+        logger.info("WebSocket connected successfully", { connectionKey });
         this.websockets.set(connectionKey, ws);
         this.reconnectAttempts.set(connectionKey, 0);
 
@@ -51,27 +58,27 @@ export class WebSocketManager {
         resolve(ws);
       });
 
-      ws.on('error', (error: Error) => {
-        logger.error('WebSocket connection error', {
+      ws.on("error", (error: Error) => {
+        logger.error("WebSocket connection error", {
           connectionKey,
-          error: error.message
+          error: error.message,
         });
         reject(error);
       });
 
-      ws.on('close', (code: number, reason: string) => {
-        logger.warn('WebSocket closed', {
+      ws.on("close", (code: number, reason: string) => {
+        logger.warn("WebSocket closed", {
           connectionKey,
           code,
-          reason
+          reason,
         });
         this.websockets.delete(connectionKey);
         this.stopHeartbeat(connectionKey);
         this.scheduleReconnect(connectionKey);
       });
 
-      ws.on('pong', () => {
-        logger.debug('Heartbeat pong received', { connectionKey });
+      ws.on("pong", () => {
+        logger.debug("Heartbeat pong received", { connectionKey });
       });
     });
   }
@@ -79,14 +86,14 @@ export class WebSocketManager {
   /**
    * Get an existing WebSocket connection
    */
-  getConnection(connectionKey: string = 'market'): WebSocket | null {
+  getConnection(connectionKey: string = "market"): WebSocket | null {
     return this.websockets.get(connectionKey) || null;
   }
 
   /**
    * Check if a WebSocket connection is active
    */
-  isConnected(connectionKey: string = 'market'): boolean {
+  isConnected(connectionKey: string = "market"): boolean {
     const ws = this.websockets.get(connectionKey);
     return ws ? ws.readyState === WebSocket.OPEN : false;
   }
@@ -100,7 +107,7 @@ export class WebSocketManager {
     const heartbeat = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.ping();
-        logger.debug('Heartbeat ping sent', { connectionKey });
+        logger.debug("Heartbeat ping sent", { connectionKey });
       } else {
         clearInterval(heartbeat);
         this.heartbeatIntervals.delete(connectionKey);
@@ -141,7 +148,8 @@ export class WebSocketManager {
     if (this.reconnectIntervals.has(connectionKey)) return;
 
     const attempts = this.reconnectAttempts.get(connectionKey) || 0;
-    const circuitState = this.circuitStates.get(connectionKey) || CircuitState.CLOSED;
+    const circuitState =
+      this.circuitStates.get(connectionKey) || CircuitState.CLOSED;
 
     // Check if circuit breaker is open (stop retrying)
     if (circuitState === CircuitState.OPEN) {
@@ -150,18 +158,18 @@ export class WebSocketManager {
 
       // If enough time has passed, try half-open state
       if (timeSinceFailure >= this.config.circuitBreakerTimeout) {
-        logger.info('Circuit breaker transitioning to half-open', {
+        logger.info("Circuit breaker transitioning to half-open", {
           connectionKey,
-          timeSinceFailureMs: timeSinceFailure
+          timeSinceFailureMs: timeSinceFailure,
         });
         this.circuitStates.set(connectionKey, CircuitState.HALF_OPEN);
         this.reconnectAttempts.set(connectionKey, 0); // Reset attempts for half-open
       } else {
-        logger.debug('Circuit breaker open, skipping reconnect', {
+        logger.debug("Circuit breaker open, skipping reconnect", {
           connectionKey,
           attempts,
           timeSinceFailureMs: timeSinceFailure,
-          remainingMs: this.config.circuitBreakerTimeout - timeSinceFailure
+          remainingMs: this.config.circuitBreakerTimeout - timeSinceFailure,
         });
         return;
       }
@@ -169,11 +177,14 @@ export class WebSocketManager {
 
     // Check if we've exceeded maximum retry attempts
     if (attempts >= this.config.maxReconnectAttempts) {
-      logger.error('Maximum reconnection attempts exceeded, opening circuit breaker', {
-        connectionKey,
-        attempts,
-        maxAttempts: this.config.maxReconnectAttempts
-      });
+      logger.error(
+        "Maximum reconnection attempts exceeded, opening circuit breaker",
+        {
+          connectionKey,
+          attempts,
+          maxAttempts: this.config.maxReconnectAttempts,
+        }
+      );
       this.circuitStates.set(connectionKey, CircuitState.OPEN);
       this.lastFailureTime.set(connectionKey, Date.now());
 
@@ -183,18 +194,18 @@ export class WebSocketManager {
     }
 
     const delay = this.calculateBackoff(connectionKey);
-    logger.info('Scheduling reconnect', {
+    logger.info("Scheduling reconnect", {
       connectionKey,
       attempt: attempts + 1,
       maxAttempts: this.config.maxReconnectAttempts,
       delayMs: Math.round(delay),
-      circuitState
+      circuitState,
     });
 
     const timer = setTimeout(async () => {
-      logger.info('Attempting reconnect', {
+      logger.info("Attempting reconnect", {
         connectionKey,
-        attempt: attempts + 1
+        attempt: attempts + 1,
       });
       this.reconnectIntervals.delete(connectionKey);
       this.reconnectAttempts.set(connectionKey, attempts + 1);
@@ -212,13 +223,13 @@ export class WebSocketManager {
   private scheduleCircuitBreakerReset(connectionKey: string): void {
     if (this.circuitBreakerTimeouts.has(connectionKey)) return;
 
-    logger.info('Scheduling circuit breaker reset', {
+    logger.info("Scheduling circuit breaker reset", {
       connectionKey,
-      resetDelayMs: this.config.circuitBreakerTimeout
+      resetDelayMs: this.config.circuitBreakerTimeout,
     });
 
     const timer = setTimeout(() => {
-      logger.info('Circuit breaker reset timeout reached', { connectionKey });
+      logger.info("Circuit breaker reset timeout reached", { connectionKey });
       this.circuitBreakerTimeouts.delete(connectionKey);
       // Note: circuit breaker will transition to half-open on next reconnect attempt
     }, this.config.circuitBreakerTimeout);
@@ -245,7 +256,7 @@ export class WebSocketManager {
 
     this.stopHeartbeat(connectionKey);
     this.reconnectAttempts.delete(connectionKey);
-    logger.info('WebSocket disconnected', { connectionKey });
+    logger.info("WebSocket disconnected", { connectionKey });
   }
 
   /**
@@ -257,9 +268,9 @@ export class WebSocketManager {
       try {
         ws.close();
       } catch (error) {
-        logger.warn('Error closing WebSocket', {
+        logger.warn("Error closing WebSocket", {
           connectionKey,
-          error: (error as Error).message
+          error: (error as Error).message,
         });
       }
     });
@@ -281,7 +292,7 @@ export class WebSocketManager {
     this.circuitBreakerTimeouts.forEach(timer => clearTimeout(timer));
     this.circuitBreakerTimeouts.clear();
 
-    logger.info('All WebSocket connections and circuit breaker state cleared');
+    logger.info("All WebSocket connections and circuit breaker state cleared");
   }
 
   /**

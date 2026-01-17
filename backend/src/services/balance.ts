@@ -1,10 +1,10 @@
 /** @format */
 
-import { query } from '../database/pool';
-import { redisService } from './redis';
-import logger from './logger';
-import { generateKodiakSignature } from '../utils/orderly-signature'; // ✅ Import backend crypto utility
-import { credentialCacheService } from './credential-cache';
+import { query } from "../database/pool";
+import { redisService } from "./redis";
+import logger from "./logger";
+import { generateKodiakSignature } from "../utils/orderly-signature"; // ✅ Import backend crypto utility
+import { credentialCacheService } from "./credential-cache";
 
 /**
  * Fetch user's account balance from Orderly
@@ -24,12 +24,12 @@ export async function getUserBalance(userId: string): Promise<{
     const cacheResult = await redisService.get(cacheKey);
 
     if (cacheResult.success && cacheResult.data) {
-      logger.debug('Balance cache hit', { userId });
+      logger.debug("Balance cache hit", { userId });
       return JSON.parse(cacheResult.data);
     } else if (!cacheResult.success) {
-      logger.warn('Balance cache read failed, falling back to API', {
+      logger.warn("Balance cache read failed, falling back to API", {
         userId,
-        error: cacheResult.error
+        error: cacheResult.error,
       });
     }
 
@@ -37,15 +37,19 @@ export async function getUserBalance(userId: string): Promise<{
     const balance = await fetchOrderlyBalance(userId);
 
     // ✅ Cache for 60 seconds
-    const cacheWriteResult = await redisService.setex(cacheKey, 60, JSON.stringify(balance));
+    const cacheWriteResult = await redisService.setex(
+      cacheKey,
+      60,
+      JSON.stringify(balance)
+    );
     if (!cacheWriteResult.success) {
-      logger.warn('Balance cache write failed', {
+      logger.warn("Balance cache write failed", {
         userId,
-        error: cacheWriteResult.error
+        error: cacheWriteResult.error,
       });
     }
 
-    logger.info('Balance fetched and cached', {
+    logger.info("Balance fetched and cached", {
       userId,
       walletBalance: balance.walletBalance,
       accountBalance: balance.accountBalance,
@@ -55,7 +59,7 @@ export async function getUserBalance(userId: string): Promise<{
 
     return balance;
   } catch (error) {
-    logger.error('Get balance error', {
+    logger.error("Get balance error", {
       userId,
       error: (error as Error).message,
     });
@@ -66,9 +70,7 @@ export async function getUserBalance(userId: string): Promise<{
 /**
  * Fetch balance directly from Orderly API
  */
-async function fetchOrderlyBalance(
-  userId: string
-): Promise<{
+async function fetchOrderlyBalance(userId: string): Promise<{
   walletBalance: number;
   accountBalance: number;
   availableBalance: number;
@@ -76,97 +78,107 @@ async function fetchOrderlyBalance(
   totalAssets: number;
   timestamp: string;
 }> {
-  let accountId = 'unknown'; // For error logging
+  let accountId = "unknown"; // For error logging
 
   try {
     // Get Kodiak credentials for authentication and use cached decrypted keys
     const credsResult = await query(
-      'SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1',
+      "SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1",
       [userId]
     );
 
     if (credsResult.rows.length === 0) {
-      logger.error('No Kodiak credentials found for user', { userId });
-      throw new Error('Kodiak credentials not found');
+      logger.error("No Kodiak credentials found for user", { userId });
+      throw new Error("Kodiak credentials not found");
     }
 
     const row = credsResult.rows[0];
     if (!row.verified) {
-      logger.error('Kodiak credentials found but not verified', { row, userId });
-      throw new Error('Kodiak credentials not verified');
+      logger.error("Kodiak credentials found but not verified", {
+        row,
+        userId,
+      });
+      throw new Error("Kodiak credentials not verified");
     }
 
     const accountId = row.account_id;
 
-    logger.info('Fetching balance from Orderly API', {
+    logger.info("Fetching balance from Orderly API", {
       userId,
       accountId,
       endpoint: `https://api.orderly.org/v1/client/info`,
     });
 
     // ✅ Use cached decrypted credentials instead of decrypting every time
-    const { apiKey, secretKey } = await credentialCacheService.getOrCacheCredentials(
-      userId,
-      row.api_key_encrypted,
-      row.secret_key_encrypted,
-      accountId
-    );
+    const { apiKey, secretKey } =
+      await credentialCacheService.getOrCacheCredentials(
+        userId,
+        row.api_key_encrypted,
+        row.secret_key_encrypted,
+        accountId
+      );
 
-    logger.info('Using cached Kodiak credentials for balance fetch', {
+    logger.info("Using cached Kodiak credentials for balance fetch", {
       userId,
       accountId,
-      apiKeyPrefix: apiKey.substring(0, 8) + '...',
-      secretKeyPrefix: secretKey.substring(0, 8) + '...',
-      verified: row.verified
+      apiKeyPrefix: apiKey.substring(0, 8) + "...",
+      secretKeyPrefix: secretKey.substring(0, 8) + "...",
+      verified: row.verified,
     });
 
     const timestamp = Date.now();
-    const path = '/v1/client/info';
-    const signature = await generateKodiakSignature(timestamp, 'GET', path, '', secretKey);
+    const path = "/v1/client/info";
+    const signature = await generateKodiakSignature(
+      timestamp,
+      "GET",
+      path,
+      "",
+      secretKey
+    );
 
-    logger.info('Generated signature for balance request', {
+    logger.info("Generated signature for balance request", {
       accountId,
       timestamp,
       path,
-      body: '',
-      signaturePrefix: signature.substring(0, 16) + '...',
-      signatureLength: signature.length
+      body: "",
+      signaturePrefix: signature.substring(0, 16) + "...",
+      signatureLength: signature.length,
     });
 
     const requestHeaders = {
-      'orderly-account-id': accountId,
-      'orderly-key': apiKey,
-      'orderly-signature': signature,
-      'orderly-timestamp': timestamp.toString(),
-      'Content-Type': 'application/json',
+      "orderly-account-id": accountId,
+      "orderly-key": apiKey,
+      "orderly-signature": signature,
+      "orderly-timestamp": timestamp.toString(),
+      "Content-Type": "application/json",
     };
 
     const fullUrl = `https://api.orderly.org${path}`;
 
-    logger.info('Orderly API request details', {
+    logger.info("Orderly API request details", {
       accountId,
-      method: 'GET',
+      method: "GET",
       url: fullUrl,
       path,
       headers: {
-        'orderly-account-id': accountId,
-        'orderly-key': '[REDACTED]',
-        'orderly-signature': '[REDACTED]',
-        'orderly-timestamp': timestamp.toString(),
-        'Content-Type': 'application/json',
+        "orderly-account-id": accountId,
+        "orderly-key": "[REDACTED]",
+        "orderly-signature": "[REDACTED]",
+        "orderly-timestamp": timestamp.toString(),
+        "Content-Type": "application/json",
       },
       timestamp,
-      signature: '[REDACTED]',
+      signature: "[REDACTED]",
     });
 
     let response;
     try {
       response = await fetch(fullUrl, {
-        method: 'GET',
+        method: "GET",
         headers: requestHeaders,
       });
     } catch (fetchError: any) {
-      logger.error('Orderly API fetch error', {
+      logger.error("Orderly API fetch error", {
         accountId,
         url: fullUrl,
         error: fetchError.message,
@@ -176,7 +188,7 @@ async function fetchOrderlyBalance(
       throw fetchError;
     }
 
-    logger.info('Orderly API response headers', {
+    logger.info("Orderly API response headers", {
       accountId,
       status: response.status,
       statusText: response.statusText,
@@ -188,7 +200,7 @@ async function fetchOrderlyBalance(
     try {
       responseText = await response.text();
     } catch (textError: any) {
-      logger.error('Failed to read response text', {
+      logger.error("Failed to read response text", {
         accountId,
         status: response.status,
         error: textError.message,
@@ -196,7 +208,7 @@ async function fetchOrderlyBalance(
       throw textError;
     }
 
-    logger.info('Orderly API response body', {
+    logger.info("Orderly API response body", {
       accountId,
       status: response.status,
       statusText: response.statusText,
@@ -205,22 +217,28 @@ async function fetchOrderlyBalance(
     });
 
     if (!response.ok) {
-      logger.error('Orderly API error response complete', {
+      logger.error("Orderly API error response complete", {
         accountId,
         status: response.status,
         statusText: response.statusText,
         url: fullUrl,
-        requestHeaders: { ...requestHeaders, 'orderly-key': '[REDACTED]', 'orderly-signature': '[REDACTED]' },
+        requestHeaders: {
+          ...requestHeaders,
+          "orderly-key": "[REDACTED]",
+          "orderly-signature": "[REDACTED]",
+        },
         responseBody: responseText,
       });
-      throw new Error(`Orderly API error: ${response.status} ${response.statusText} - ${responseText}`);
+      throw new Error(
+        `Orderly API error: ${response.status} ${response.statusText} - ${responseText}`
+      );
     }
 
     let data;
     try {
       data = JSON.parse(responseText);
     } catch (parseError: any) {
-      logger.error('Failed to parse JSON response', {
+      logger.error("Failed to parse JSON response", {
         accountId,
         status: response.status,
         responseBody: responseText,
@@ -229,7 +247,7 @@ async function fetchOrderlyBalance(
       throw parseError;
     }
 
-    logger.info('Orderly API parsed response data', {
+    logger.info("Orderly API parsed response data", {
       accountId,
       dataKeys: Object.keys(data),
       data: data,
@@ -245,14 +263,14 @@ async function fetchOrderlyBalance(
       timestamp: new Date().toISOString(),
     };
 
-    logger.info('Balance transformed successfully', {
+    logger.info("Balance transformed successfully", {
       accountId,
       result,
     });
 
     return result;
   } catch (error) {
-    logger.error('Orderly balance fetch failed', {
+    logger.error("Orderly balance fetch failed", {
       accountId,
       error: (error as Error).message,
       stack: (error as Error).stack,
@@ -261,8 +279,6 @@ async function fetchOrderlyBalance(
   }
 }
 
-
-
 /**
  * Invalidate balance cache (call when user deposits/withdraws)
  */
@@ -270,15 +286,15 @@ export async function invalidateBalanceCache(userId: string): Promise<void> {
   const cacheKey = `balance:${userId}`;
   const delResult = await redisService.del(cacheKey);
   if (!delResult.success) {
-    logger.warn('Balance cache invalidation failed', {
+    logger.warn("Balance cache invalidation failed", {
       userId,
-      error: delResult.error
+      error: delResult.error,
     });
   }
   // Also invalidate credential cache when balance cache is invalidated
   credentialCacheService.invalidateCredentials(userId);
-  logger.info('Balance and credential caches invalidated', {
+  logger.info("Balance and credential caches invalidated", {
     userId,
-    redisSuccess: delResult.success
+    redisSuccess: delResult.success,
   });
 }

@@ -1,7 +1,7 @@
 /** @format */
 
-import { AsyncLocalStorage } from 'async_hooks';
-import { randomBytes } from 'crypto';
+import { AsyncLocalStorage } from "async_hooks";
+import { randomBytes } from "crypto";
 
 export interface RequestContext {
   correlationId: string;
@@ -20,14 +20,14 @@ const asyncLocalStorage = new AsyncLocalStorage<RequestContext>();
  * Generate a unique correlation ID for request tracing
  */
 export function generateCorrelationId(): string {
-  return `req_${randomBytes(8).toString('hex')}`;
+  return `req_${randomBytes(8).toString("hex")}`;
 }
 
 /**
  * Generate a unique request ID
  */
 export function generateRequestId(): string {
-  return `rid_${randomBytes(4).toString('hex')}`;
+  return `rid_${randomBytes(4).toString("hex")}`;
 }
 
 /**
@@ -56,14 +56,20 @@ export function getCurrentUserId(): string | undefined {
 /**
  * Set the request context for the current async execution
  */
-export function setRequestContext(context: Partial<RequestContext>): RequestContext {
+export function setRequestContext(
+  context: Partial<RequestContext>
+): RequestContext {
   const currentContext = getCurrentContext();
   const newContext: RequestContext = {
-    correlationId: context.correlationId || currentContext?.correlationId || generateCorrelationId(),
+    correlationId:
+      context.correlationId ||
+      currentContext?.correlationId ||
+      generateCorrelationId(),
     userId: context.userId || currentContext?.userId,
     userLevel: context.userLevel || currentContext?.userLevel,
     startTime: context.startTime || currentContext?.startTime || Date.now(),
-    requestId: context.requestId || currentContext?.requestId || generateRequestId(),
+    requestId:
+      context.requestId || currentContext?.requestId || generateRequestId(),
   };
 
   asyncLocalStorage.enterWith(newContext);
@@ -84,9 +90,7 @@ export function runWithContext<T>(
 /**
  * Execute a function and ensure it runs within the current context
  */
-export function runInContext<T>(
-  fn: () => T | Promise<T>
-): T | Promise<T> {
+export function runInContext<T>(fn: () => T | Promise<T>): T | Promise<T> {
   const currentContext = getCurrentContext();
   if (currentContext) {
     return fn();
