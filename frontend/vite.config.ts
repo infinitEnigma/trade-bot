@@ -83,18 +83,18 @@ export default defineConfig({
     },
     chunkSizeWarningLimit: 600, // Lower warning limit now that chunks are smaller
   },
-  server: {
-    host: true, // Allow access from local network
+  /*server: {
+    host: "0.0.0.0", // Allow access from local network
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://localhost:3000",
+        target: "https://rewireapp.ddns.net",
         changeOrigin: true,
       },
       "/socket.io": {
-        target: "http://localhost:3000",
+        target: "https://rewireapp.ddns.net",
         ws: true,
       },
     },
-  },
+  },*/
 });

@@ -124,6 +124,10 @@ const trackApiActivity = () => {
 };
 
 const app = express();
+
+// Trust proxy headers from nginx (required for rate limiting with X-Forwarded-For)
+app.set('trust proxy', 1);
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
@@ -143,6 +147,7 @@ const io = new Server(httpServer, {
           'http://localhost:5173',
           'http://127.0.0.1:3000',
           'http://127.0.0.1:5173',
+          'https://rewireapp.ddns.net',
         ];
         if (devOrigins.includes(origin)) {
           return callback(null, true);
@@ -163,7 +168,9 @@ const io = new Server(httpServer, {
 });
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+    hsts: false, // Disable HSTS - let nginx handle it
+  }));
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
@@ -190,6 +197,7 @@ app.use(
           'http://localhost:5173',
           'http://127.0.0.1:3000',
           'http://127.0.0.1:5173',
+          'https://rewireapp.ddns.net',
         ];
         if (devOrigins.includes(origin)) {
           return callback(null, true);
@@ -239,7 +247,7 @@ app.use("/api/bot", botRoutes);
 app.use("/api/balance", balanceRoutes);
 
 // Health check routes
-app.use("/", healthRoutes);
+app.use("/api", healthRoutes);
 
 // Error handling middleware
 app.use(

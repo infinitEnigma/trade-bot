@@ -35,7 +35,7 @@ export const useMarketStream = ({
 
     setConnecting(true);
 
-    const socketInstance = io('http://localhost:3000', {
+    const socketInstance = io('https://rewireapp.ddns.net', {
       withCredentials: true,
       transports: ['websocket', 'polling'],
     });
