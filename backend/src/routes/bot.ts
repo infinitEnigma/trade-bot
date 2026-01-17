@@ -2,11 +2,12 @@
 
 import { Router, Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
-import { authService } from "../services/auth";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { getPool, query } from "../database/pool";  // ✅ Import from centralized module
 import { ValidationError, NotFoundError, DatabaseError, createErrorResponse } from "../types/errors";
-import { getCorrelationId } from "../utils/context";
+import { getCorrelationId, getContextForLogging } from "../utils/context";
+import { encryptionService } from "../services/encryption";
+import { engineManager } from "../services/engine-manager";
 import logger from "../services/logger";
 
 const router = Router();
@@ -56,6 +57,9 @@ router.post(
           .status(400)
           .json({ success: false, error: "Strategy ID and notional amount required" });
       }
+
+      // Ensure trading engine is running
+      await engineManager.ensureEngineRunning();
 
       // Verify strategy belongs to user
       const strategyResult = await query(
@@ -114,14 +118,41 @@ router.post(
         [botId, strategyId, req.user!.userId]
       );
 
+      // Get user's Kodiak credentials
+      const credentialsResult = await query(
+        "SELECT account_id, access_key, secret_key FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
+        [req.user!.userId]
+      );
+
+      if (credentialsResult.rows.length === 0) {
+        return res
+          .status(403)
+          .json({ success: false, error: "No verified Kodiak credentials found" });
+      }
+
+      const credentials = credentialsResult.rows[0];
+
+      // Decrypt the credentials
+      const decryptedCredentials = {
+        accountId: encryptionService.decryptApiKey(credentials.account_id),
+        accessKey: encryptionService.decryptApiKey(credentials.access_key),
+        secretKey: encryptionService.decryptSecretKey(credentials.secret_key),
+      };
+
       // Update strategy as active
       await query("UPDATE strategies SET active = true WHERE id = $1", [
         strategyId,
       ]);
 
-      // Emit WebSocket event to notify bot engine
+      // Emit WebSocket event to notify bot engine with credentials
       const io = req.app.get("io");
-      io.emit("bot:start", { botId, strategyId, strategy });
+      io.emit("bot:start", {
+        botId,
+        strategyId,
+        strategy,
+        userId: req.user!.userId,
+        kodiakCredentials: decryptedCredentials
+      });
 
       res.json({
         success: true,
@@ -138,7 +169,11 @@ router.post(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Start bot error", { error: err instanceof Error ? err.message : String(err), userId: req.user!.userId });
+      logger.error("Start bot error", {
+        ...getContextForLogging(),
+        error: err instanceof Error ? err.message : String(err),
+        userId: req.user!.userId
+      });
       res.status(500).json({ success: false, error: "Failed to start bot" });
     }
   }
@@ -190,6 +225,11 @@ router.post(
       // Emit WebSocket event to notify bot engine
       const io = req.app.get("io");
       io.emit("bot:stop", { botId, strategyId: bot.strategy_id });
+
+      // Check if engine should be stopped (no active bots)
+      setTimeout(async () => {
+        await engineManager.stopEngineIfNoActiveBots();
+      }, 1000); // Small delay to ensure bot is stopped
 
       res.json({
         success: true,
@@ -529,6 +569,11 @@ setInterval(async () => {
         "INSERT INTO audit_logs (user_id, action, details) VALUES ((SELECT user_id FROM bot_instances WHERE id = $1), $2, $3)",
         [bot.id, "BOT_DEAD_DETECTED", { botId: bot.id, reason: "heartbeat_timeout" }]
       );
+
+      // Check if engine should be stopped after cleaning up dead bot
+      setTimeout(async () => {
+        await engineManager.stopEngineIfNoActiveBots();
+      }, 2000);
     }
   } catch (error) {
     logger.error('Dead bot detection error', { error: error instanceof Error ? error.message : String(error) });

@@ -71,6 +71,7 @@ import { botRoutes } from "./routes/bot";
 import { balanceRoutes } from "./routes/balance";
 import { healthRoutes } from "./routes/health";
 import { httpLogger, errorLogger } from "./middleware/logger";
+import { contextMiddleware } from "./middleware/context";
 
 // ✅ Import market stream service (refactored)
 import { marketStreamService } from "./services/market-stream/index";
@@ -225,6 +226,9 @@ const limiter = rateLimit({
   message: { error: "Too many requests, please try again later" },
 });
 app.use("/api/", limiter);
+
+// Request context middleware (must be first)
+app.use(contextMiddleware);
 
 // HTTP request logging middleware
 app.use(httpLogger);
