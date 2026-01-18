@@ -1,11 +1,14 @@
 /** @format */
 
-import React from "react";
+import React, { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { UserRole } from "@trade-bot/shared";
 import { AppHeader } from "../components/ui/AppHeader";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
+import { TimeWindowSelector } from "../components/ui/TimeWindowSelector";
+import { AnalyticsLoading } from "../components/ui/AnalyticsLoading";
+import { useAnalyticsData, AnalyticsTimeWindow } from "../hooks/useAnalyticsData";
 import {
   BarChart3,
   TrendingUp,
@@ -13,7 +16,8 @@ import {
   Users,
   DollarSign,
   Lock,
-  Shield
+  Shield,
+  RefreshCw
 } from "lucide-react";
 
 // Access Denied Component
@@ -82,21 +86,82 @@ const mockAnalytics = {
 
 const Analytics: React.FC = () => {
   const { user } = useAuth();
+  const [selectedSymbol] = useState("PERP_BTC_USDC");
+  const [selectedTimeWindow, setSelectedTimeWindow] = useState<AnalyticsTimeWindow>({
+    label: '30 Days',
+    days: 30,
+    value: '30d'
+  });
 
   // Check if user has QUALIFIED_ALPHA role
   if (!user?.roles?.includes(UserRole.QUALIFIED_ALPHA)) {
     return <AccessDenied requiredRole="QUALIFIED_ALPHA" />;
   }
 
+  // Load analytics data
+  const { data, loading, error, progress, timeWindows, refetch } = useAnalyticsData({
+    symbol: selectedSymbol,
+    timeWindow: selectedTimeWindow,
+  });
+
   return (
     <div className="container mx-auto px-4 py-10 space-y-10 bg-background">
-      <AppHeader
-        title="Trading Analytics"
-        subtitle="Advanced performance insights and market analysis"
-      />
+      <div className="flex items-center justify-between">
+        <AppHeader
+          title="Trading Analytics"
+          subtitle="Advanced performance insights and market analysis"
+        />
 
-      <div className="container mx-auto px-4 py-8">
-        {/* Performance Overview */}
+        {/* Time Window Selector */}
+        <div className="flex items-center gap-4">
+          <TimeWindowSelector
+            timeWindows={timeWindows}
+            selectedWindow={selectedTimeWindow}
+            onWindowChange={setSelectedTimeWindow}
+            disabled={loading}
+          />
+          <button
+            onClick={() => refetch()}
+            disabled={loading}
+            className="p-2 rounded-lg hover:bg-surface transition-colors disabled:opacity-50"
+            title="Refresh data"
+          >
+            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* Loading State */}
+      {loading && (
+        <AnalyticsLoading
+          progress={progress}
+          message={`Analyzing ${selectedTimeWindow.days} days of ${selectedSymbol.replace('PERP_', '').replace('_USDC', '')} data...`}
+        />
+      )}
+
+      {/* Error State */}
+      {error && !loading && (
+        <Card className="p-6 border-red-500/20 bg-red-500/5">
+          <div className="text-center">
+            <div className="w-12 h-12 mx-auto mb-4 bg-red-500/10 rounded-full flex items-center justify-center">
+              <Shield className="w-6 h-6 text-red-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-text mb-2">Failed to Load Analytics</h3>
+            <p className="text-textMuted mb-4">{error}</p>
+            <button
+              onClick={() => refetch()}
+              className="btn-primary"
+            >
+              Try Again
+            </button>
+          </div>
+        </Card>
+      )}
+
+      {/* Analytics Content */}
+      {data && !loading && !error && (
+        <div className="container mx-auto px-4 py-8">
+          {/* Performance Overview */}
         <div className="mb-8">
           <SectionHeader
             title="Performance Overview"
@@ -275,7 +340,8 @@ const Analytics: React.FC = () => {
             </div>
           </div>
         </Card>
-      </div>
+        </div>
+      )}
     </div>
   );
 };
