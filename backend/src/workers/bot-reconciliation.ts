@@ -24,7 +24,10 @@ export interface ReconciliationResult {
 export class BotReconciliationWorker {
     private intervalId: NodeJS.Timeout | null = null;
     private readonly RECONCILIATION_INTERVAL_MS = 30000; // 30 seconds
+    private readonly IDLE_INTERVAL_MS = 300000; // 5 minutes when no active bots
     private isRunning = false;
+    private lastActivityCheck = 0;
+    private cachedActiveBotCount = 0;
 
     /**
      * Start the reconciliation worker
@@ -68,10 +71,45 @@ export class BotReconciliationWorker {
     }
 
     /**
+     * Check if there are any active bots that need reconciliation
+     */
+    private async hasActiveBots(): Promise<boolean> {
+        try {
+            const result = await query(
+                "SELECT COUNT(*) as count FROM bot_instances WHERE status IN ('RUNNING', 'STARTING', 'FORCE_STOPPING')"
+            );
+            const count = parseInt(result.rows[0].count);
+            this.cachedActiveBotCount = count;
+            this.lastActivityCheck = Date.now();
+            return count > 0;
+        } catch (error) {
+            logger.warn("Failed to check for active bots", {
+                error: error instanceof Error ? error.message : String(error),
+            });
+            return false; // Assume no active bots on error to be safe
+        }
+    }
+
+    /**
      * Run a single reconciliation cycle
      */
     async runReconciliation(): Promise<ReconciliationResult> {
         const startTime = Date.now();
+
+        // Quick optimization: Skip reconciliation if no active bots
+        const hasActiveBots = await this.hasActiveBots();
+        if (!hasActiveBots) {
+            logger.debug("Skipping reconciliation cycle - no active bots");
+
+            return {
+                totalBotsChecked: 0,
+                statusChanges: 0,
+                recoveries: 0,
+                errors: [],
+                duration: Date.now() - startTime,
+            };
+        }
+
         const errors: string[] = [];
         let totalBotsChecked = 0;
         let statusChanges = 0;
@@ -225,15 +263,18 @@ export class BotReconciliationWorker {
                 }
             }
 
-            // Check if any engines should be stopped
-            try {
-                // Import engine manager dynamically to avoid circular dependencies
-                const { engineManager } = await import("../services/engine-manager.js");
-                await engineManager.stopEngineIfNoActiveBots();
-            } catch (engineError) {
-                logger.error("Engine check failed during reconciliation", {
-                    error: engineError instanceof Error ? engineError.message : String(engineError),
-                });
+            // Check if any engines should be stopped (only if we have active bots)
+            if (totalBotsChecked > 0) {
+                try {
+                    // Import engine manager dynamically to avoid circular dependencies
+                    const { engineManager } = await import("../services/engine-manager.js");
+                    await engineManager.stopEngineIfNoActiveBots();
+                } catch (engineError) {
+                    logger.error("Engine check failed during reconciliation", {
+                        error: engineError instanceof Error ? engineError.message : String(engineError),
+                        activeBots: totalBotsChecked,
+                    });
+                }
             }
 
         } catch (cycleError) {
@@ -358,11 +399,18 @@ export class BotReconciliationWorker {
     getStats(): {
         isRunning: boolean;
         reconciliationInterval: number;
-        lastReconciliationResult?: ReconciliationResult;
+        idleInterval: number;
+        cachedActiveBotCount: number;
+        lastActivityCheck: number;
+        optimizationEnabled: boolean;
     } {
         return {
             isRunning: this.isRunning,
             reconciliationInterval: this.RECONCILIATION_INTERVAL_MS,
+            idleInterval: this.IDLE_INTERVAL_MS,
+            cachedActiveBotCount: this.cachedActiveBotCount,
+            lastActivityCheck: this.lastActivityCheck,
+            optimizationEnabled: true,
         };
     }
 
