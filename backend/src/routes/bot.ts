@@ -2,6 +2,7 @@
 
 import { Router, Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
+import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { requireRole } from "../middleware/role-protection";
 import { getPool, query } from "../database/pool"; // ✅ Import from centralized module
@@ -23,6 +24,154 @@ const router = Router();
 
 // ✅ Use centralized pool via helper functions
 // No direct pool creation
+
+/**
+ * Validate bot status based on heartbeat and engine state
+ */
+async function validateBotStatus(botData: any, currentTime: number): Promise<{
+  updatedStatus: string;
+  errorMessage: string | null;
+  isStale: boolean;
+  lastHeartbeatAge: number;
+}> {
+  const lastHeartbeat = botData.last_heartbeat ? new Date(botData.last_heartbeat).getTime() : 0;
+  const heartbeatAge = currentTime - lastHeartbeat;
+  const isStale = heartbeatAge > 60000; // 60 seconds
+
+  // If bot is running but heartbeat is stale, mark as error
+  if (botData.status === 'RUNNING' && isStale) {
+    return {
+      updatedStatus: 'ERROR',
+      errorMessage: 'Bot heartbeat timeout - status validation',
+      isStale: true,
+      lastHeartbeatAge: heartbeatAge,
+    };
+  }
+
+  // If bot is in error state but heartbeat is recent, check if it recovered
+  if (botData.status === 'ERROR' && !isStale && botData.last_error?.includes('heartbeat timeout')) {
+    return {
+      updatedStatus: 'RUNNING',
+      errorMessage: null,
+      isStale: false,
+      lastHeartbeatAge: heartbeatAge,
+    };
+  }
+
+  return {
+    updatedStatus: botData.status,
+    errorMessage: botData.last_error,
+    isStale,
+    lastHeartbeatAge: heartbeatAge,
+  };
+}
+
+/**
+ * Get engine health status for status validation
+ */
+async function getEngineHealthStatus(): Promise<{
+  running: boolean;
+  lastHealthCheck?: number;
+  status?: string;
+}> {
+  try {
+    const status = await engineManager.getEngineStatus();
+    return {
+      running: status.running,
+      lastHealthCheck: Date.now(),
+      status: status.health?.status || 'unknown',
+    };
+  } catch (error) {
+    return {
+      running: false,
+      lastHealthCheck: Date.now(),
+      status: 'error',
+    };
+  }
+}
+
+/**
+ * Perform comprehensive bot status reconciliation
+ */
+async function reconcileBotStatus(botData: any, currentTime: number): Promise<{
+  statusChanged: boolean;
+  newStatus: string;
+  errorMessage: string | null;
+  reason: string;
+  engineHealth: any;
+}> {
+  const engineHealth = await getEngineHealthStatus();
+  const validation = await validateBotStatus(botData, currentTime);
+
+  // If engine is not running but bot is supposed to be running
+  if (!engineHealth.running && ['RUNNING', 'STARTING'].includes(botData.status)) {
+    return {
+      statusChanged: true,
+      newStatus: 'ERROR',
+      errorMessage: 'Engine not running - status reconciliation',
+      reason: 'engine_down',
+      engineHealth,
+    };
+  }
+
+  // If status validation indicates a change
+  if (validation.updatedStatus !== botData.status) {
+    return {
+      statusChanged: true,
+      newStatus: validation.updatedStatus,
+      errorMessage: validation.errorMessage,
+      reason: validation.isStale ? 'heartbeat_timeout' : 'status_recovery',
+      engineHealth,
+    };
+  }
+
+  // Check for strategy consistency
+  try {
+    const strategyResult = await query(
+      "SELECT active FROM strategies WHERE id = $1",
+      [botData.strategy_id]
+    );
+
+    if (strategyResult.rows.length > 0) {
+      const strategy = strategyResult.rows[0];
+
+      // If strategy is inactive but bot is running, stop the bot
+      if (!strategy.active && botData.status === 'RUNNING') {
+        return {
+          statusChanged: true,
+          newStatus: 'STOPPED',
+          errorMessage: 'Strategy deactivated - status reconciliation',
+          reason: 'strategy_inactive',
+          engineHealth,
+        };
+      }
+
+      // If strategy is active but bot is stopped, this might indicate inconsistency
+      if (strategy.active && botData.status === 'STOPPED') {
+        return {
+          statusChanged: false,
+          newStatus: botData.status,
+          errorMessage: null,
+          reason: 'strategy_active_bot_stopped',
+          engineHealth,
+        };
+      }
+    }
+  } catch (error) {
+    logger.warn("Strategy consistency check failed during reconciliation", {
+      botId: botData.id,
+      error: (error as Error).message,
+    });
+  }
+
+  return {
+    statusChanged: false,
+    newStatus: botData.status,
+    errorMessage: botData.last_error,
+    reason: 'no_changes_needed',
+    engineHealth,
+  };
+}
 
 // GET /api/bot/instances
 router.get(
@@ -128,7 +277,7 @@ router.post(
 
       // Get user's Kodiak credentials
       const credentialsResult = await query(
-        "SELECT account_id, access_key, secret_key FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
+        "SELECT account_id, access_key, secret_key, encryption_version FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
         [req.user!.userId]
       );
 
@@ -141,26 +290,64 @@ router.post(
 
       const credentials = credentialsResult.rows[0];
 
-      // Decrypt the credentials
+      // Decrypt the credentials using version-aware decryption
+      const encryptionVersion = credentials.encryption_version || 1;
       const decryptedCredentials = {
-        accountId: encryptionService.decryptApiKey(credentials.account_id),
-        accessKey: encryptionService.decryptApiKey(credentials.access_key),
-        secretKey: encryptionService.decryptSecretKey(credentials.secret_key),
+        accountId: await encryptionService.decryptWithVersion(credentials.account_id),
+        accessKey: await encryptionService.decryptWithVersion(credentials.access_key),
+        secretKey: await encryptionService.decryptWithVersion(credentials.secret_key),
       };
+
+      // Log credential access for audit trail
+      await query(
+        "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
+        [
+          req.user!.userId,
+          "CREDENTIAL_ACCESS",
+          {
+            action: "bot_start",
+            botId,
+            strategyId,
+            encryptionVersion,
+            timestamp: new Date().toISOString()
+          },
+        ]
+      );
 
       // Update strategy as active
       await query("UPDATE strategies SET active = true WHERE id = $1", [
         strategyId,
       ]);
 
-      // Emit WebSocket event to notify bot engine with credentials
+      // Generate session key for end-to-end encryption
+      const sessionKey = randomBytes(32).toString('hex');
+      const encryptedSessionKey = await encryptionService.encryptWithVersion(sessionKey);
+
+      // Encrypt credentials with session key for transmission
+      const algorithm = 'aes-256-gcm';
+      const iv = randomBytes(16);
+      const cipher = createCipheriv(algorithm, Buffer.from(sessionKey, 'hex'), iv);
+
+      const credentialsJson = JSON.stringify(decryptedCredentials);
+      let encrypted = cipher.update(credentialsJson, 'utf8', 'hex');
+      encrypted += cipher.final('hex');
+      const authTag = cipher.getAuthTag();
+
+      const encryptedCredentialsPayload = {
+        encrypted: encrypted,
+        iv: iv.toString('hex'),
+        authTag: authTag.toString('hex'),
+      };
+
+      // Emit WebSocket event with encrypted credentials
       const io = req.app.get("io");
       io.emit("bot:start", {
         botId,
         strategyId,
         strategy,
         userId: req.user!.userId,
-        kodiakCredentials: decryptedCredentials,
+        encryptedCredentials: encryptedCredentialsPayload,
+        sessionKey: encryptedSessionKey, // Encrypted session key for engine to decrypt
       });
 
       res.json({
@@ -278,13 +465,51 @@ router.get(
       );
 
       if (result.rows.length === 0) {
-        return res.status(404).json({ success: false, error: "Bot not found" });
+        const notFoundError = new NotFoundError("Bot not found");
+        return res.status(notFoundError.statusCode).json(
+          createErrorResponse(notFoundError, getCorrelationId())
+        );
       }
+
+      const botData = result.rows[0];
+      const now = Date.now();
+
+      // Enhanced status validation
+      const statusValidation = await validateBotStatus(botData, now);
+
+      // Update bot status if validation indicates changes
+      if (statusValidation.updatedStatus !== botData.status) {
+        await query(
+          "UPDATE bot_instances SET status = $1, last_error = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3",
+          [statusValidation.updatedStatus, statusValidation.errorMessage, req.params.botId]
+        );
+
+        botData.status = statusValidation.updatedStatus;
+        botData.last_error = statusValidation.errorMessage;
+
+        logger.info("Bot status updated during status check", {
+          botId: req.params.botId,
+          oldStatus: result.rows[0].status,
+          newStatus: statusValidation.updatedStatus,
+          reason: statusValidation.errorMessage,
+        });
+      }
+
+      // Add real-time status information
+      const responseData = {
+        ...botData,
+        statusValidation: {
+          isStale: statusValidation.isStale,
+          lastHeartbeatAge: statusValidation.lastHeartbeatAge,
+          engineHealth: await getEngineHealthStatus(),
+        },
+        timestamp: now,
+      };
 
       res.json({
         success: true,
-        data: result.rows[0],
-        timestamp: Date.now(),
+        data: responseData,
+        timestamp: now,
       });
     } catch (err) {
       logger.error("Get bot status error", {
@@ -292,9 +517,95 @@ router.get(
         userId: req.user!.userId,
         botId: req.params.botId,
       });
-      res
-        .status(500)
-        .json({ success: false, error: "Failed to get bot status" });
+      const dbError = new DatabaseError("Failed to get bot status");
+      res.status(dbError.statusCode).json(
+        createErrorResponse(dbError, getCorrelationId())
+      );
+    }
+  }
+);
+
+// POST /api/bot/status/sync
+router.post(
+  "/status/sync",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { botId } = req.body;
+
+      if (!botId) {
+        const validationError = new ValidationError("Bot ID required");
+        return res.status(validationError.statusCode).json(
+          createErrorResponse(validationError, getCorrelationId())
+        );
+      }
+
+      // Get bot data
+      const result = await query(
+        "SELECT * FROM bot_instances WHERE id = $1 AND user_id = $2",
+        [botId, req.user!.userId]
+      );
+
+      if (result.rows.length === 0) {
+        const notFoundError = new NotFoundError("Bot not found");
+        return res.status(notFoundError.statusCode).json(
+          createErrorResponse(notFoundError, getCorrelationId())
+        );
+      }
+
+      const botData = result.rows[0];
+      const now = Date.now();
+
+      // Perform comprehensive status reconciliation
+      const reconciliation = await reconcileBotStatus(botData, now);
+
+      // Update database if status changed
+      if (reconciliation.statusChanged) {
+        await query(
+          "UPDATE bot_instances SET status = $1, last_error = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3",
+          [reconciliation.newStatus, reconciliation.errorMessage, botId]
+        );
+
+        logger.info("Bot status reconciled", {
+          botId,
+          oldStatus: botData.status,
+          newStatus: reconciliation.newStatus,
+          reconciliationReason: reconciliation.reason,
+        });
+      }
+
+      // Emit status update via WebSocket
+      const io = req.app.get("io");
+      io.to(`user:${req.user!.userId}`).emit("bot:status", {
+        botId,
+        status: reconciliation.newStatus,
+        previousStatus: botData.status,
+        reconciled: reconciliation.statusChanged,
+        reason: reconciliation.reason,
+        timestamp: now,
+      });
+
+      res.json({
+        success: true,
+        data: {
+          botId,
+          status: reconciliation.newStatus,
+          reconciled: reconciliation.statusChanged,
+          reason: reconciliation.reason,
+          engineHealth: reconciliation.engineHealth,
+        },
+        timestamp: now,
+      });
+    } catch (err) {
+      logger.error("Bot status sync error", {
+        error: err instanceof Error ? err.message : String(err),
+        userId: req.user!.userId,
+        botId: req.body?.botId,
+      });
+      const dbError = new DatabaseError("Failed to sync bot status");
+      res.status(dbError.statusCode).json(
+        createErrorResponse(dbError, getCorrelationId())
+      );
     }
   }
 );

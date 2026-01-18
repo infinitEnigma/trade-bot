@@ -5,6 +5,11 @@ import axios, { AxiosRequestConfig } from "axios";
 import path from "path";
 import logger from "./logger";
 
+// Extend global object to include io
+declare global {
+  var io: any;
+}
+
 // Configure global axios defaults for external API calls
 axios.defaults.timeout = 10000; // 10 second global timeout
 axios.defaults.headers.common['User-Agent'] = 'TradeBot/1.0';
@@ -72,6 +77,12 @@ export class EngineManager {
   private engineProcess: ChildProcess | null = null;
   private enginePort = 4000;
   private enginePath = path.join(__dirname, "../../engine/kodiak");
+  private healthCheckInterval: NodeJS.Timeout | null = null;
+  private lastHealthCheck = 0;
+  private consecutiveFailures = 0;
+  private maxConsecutiveFailures = 3;
+  private restartAttempts = 0;
+  private maxRestartAttempts = 5;
 
   /**
    * Ensure the trading engine is running and ready
@@ -258,6 +269,282 @@ export class EngineManager {
    */
   isEngineProcessAlive(): boolean {
     return this.engineProcess !== null && !this.engineProcess.killed;
+  }
+
+  /**
+   * Start monitoring the engine process
+   */
+  startProcessMonitoring(): void {
+    if (this.healthCheckInterval) return;
+
+    logger.info("Starting engine process monitoring");
+
+    // Check engine health every 30 seconds
+    this.healthCheckInterval = setInterval(async () => {
+      await this.checkEngineHealth();
+    }, 30000);
+  }
+
+  /**
+   * Stop monitoring the engine process
+   */
+  stopProcessMonitoring(): void {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+      logger.info("Stopped engine process monitoring");
+    }
+  }
+
+  /**
+   * Check engine health and handle failures
+   */
+  private async checkEngineHealth(): Promise<void> {
+    const now = Date.now();
+
+    // Skip if we just checked recently
+    if (now - this.lastHealthCheck < 25000) return; // 25 seconds to avoid overlap
+    this.lastHealthCheck = now;
+
+    try {
+      const status = await this.getEngineStatus();
+
+      if (status.running && status.health?.status === "healthy") {
+        // Engine is healthy
+        this.consecutiveFailures = 0;
+        this.restartAttempts = 0;
+
+        // Start monitoring if not already started
+        if (!this.healthCheckInterval) {
+          this.startProcessMonitoring();
+        }
+
+        logger.debug("Engine health check passed");
+        return;
+      }
+
+      // Engine is not healthy
+      this.consecutiveFailures++;
+
+      logger.warn("Engine health check failed", {
+        consecutiveFailures: this.consecutiveFailures,
+        maxConsecutiveFailures: this.maxConsecutiveFailures,
+        isProcessAlive: this.isEngineProcessAlive(),
+      });
+
+      // If we've had too many consecutive failures, attempt restart
+      if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
+        await this.handleEngineFailure();
+      }
+
+    } catch (error) {
+      this.consecutiveFailures++;
+
+      logger.error("Engine health check error", {
+        error: (error as Error).message,
+        consecutiveFailures: this.consecutiveFailures,
+      });
+
+      if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
+        await this.handleEngineFailure();
+      }
+    }
+  }
+
+  /**
+   * Handle engine failure and attempt restart
+   */
+  private async handleEngineFailure(): Promise<void> {
+    logger.error("Engine failure detected, attempting recovery", {
+      consecutiveFailures: this.consecutiveFailures,
+      restartAttempts: this.restartAttempts,
+      maxRestartAttempts: this.maxRestartAttempts,
+    });
+
+    // Notify all users about engine failure
+    await this.notifyUsersOfEngineFailure();
+
+    // Mark all running bots as error state
+    await this.markAllBotsAsError("Engine process failure");
+
+    // Attempt restart if we haven't exceeded max attempts
+    if (this.restartAttempts < this.maxRestartAttempts) {
+      this.restartAttempts++;
+      logger.info("Attempting engine restart", {
+        attempt: this.restartAttempts,
+        maxAttempts: this.maxRestartAttempts,
+      });
+
+      try {
+        // Force stop any existing process
+        await this.forceStopEngine();
+
+        // Wait a bit before restarting
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Start new engine
+        await this.startEngine();
+        await this.waitForEngineReady();
+
+        // Reset failure counters
+        this.consecutiveFailures = 0;
+        this.restartAttempts = 0;
+
+        logger.info("Engine successfully restarted");
+
+        // Notify users of recovery
+        await this.notifyUsersOfEngineRecovery();
+
+      } catch (restartError) {
+        logger.error("Engine restart failed", {
+          error: (restartError as Error).message,
+          attempt: this.restartAttempts,
+        });
+
+        // If restart fails, try again after a longer delay
+        if (this.restartAttempts < this.maxRestartAttempts) {
+          setTimeout(() => {
+            this.handleEngineFailure();
+          }, 10000); // Wait 10 seconds before retry
+        } else {
+          logger.error("Max restart attempts exceeded, giving up");
+          await this.notifyUsersOfEngineFailurePermanent();
+        }
+      }
+    } else {
+      logger.error("Max restart attempts reached, engine recovery failed");
+      await this.notifyUsersOfEngineFailurePermanent();
+    }
+  }
+
+  /**
+   * Notify all users about engine failure
+   */
+  private async notifyUsersOfEngineFailure(): Promise<void> {
+    try {
+      // Import required modules (avoid circular imports)
+      const { query } = await import("../database/pool.js");
+
+      // Get all users with running bots
+      const usersWithBots = await query(`
+        SELECT DISTINCT bi.user_id
+        FROM bot_instances bi
+        WHERE bi.status IN ('RUNNING', 'STARTING')
+      `);
+
+      // Emit WebSocket notifications
+      const io = global.io; // Assuming io is available globally
+      if (io) {
+        for (const user of usersWithBots.rows) {
+          io.to(`user:${user.user_id}`).emit("engine:status", {
+            status: "failed",
+            message: "Trading engine has failed. Your bots may not be trading.",
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+
+      logger.info("Notified users of engine failure", {
+        userCount: usersWithBots.rows.length,
+      });
+    } catch (error) {
+      logger.error("Failed to notify users of engine failure", {
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  /**
+   * Notify all users about engine recovery
+   */
+  private async notifyUsersOfEngineRecovery(): Promise<void> {
+    try {
+      const { query } = await import("../database/pool.js");
+
+      const usersWithBots = await query(`
+        SELECT DISTINCT bi.user_id
+        FROM bot_instances bi
+        WHERE bi.status IN ('RUNNING', 'STARTING', 'ERROR')
+      `);
+
+      const io = global.io;
+      if (io) {
+        for (const user of usersWithBots.rows) {
+          io.to(`user:${user.user_id}`).emit("engine:status", {
+            status: "recovered",
+            message: "Trading engine has recovered. Your bots are resuming trading.",
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+
+      logger.info("Notified users of engine recovery", {
+        userCount: usersWithBots.rows.length,
+      });
+    } catch (error) {
+      logger.error("Failed to notify users of engine recovery", {
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  /**
+   * Notify users that engine failure is permanent
+   */
+  private async notifyUsersOfEngineFailurePermanent(): Promise<void> {
+    try {
+      const { query } = await import("../database/pool.js");
+
+      const usersWithBots = await query(`
+        SELECT DISTINCT bi.user_id
+        FROM bot_instances bi
+        WHERE bi.status IN ('RUNNING', 'STARTING', 'ERROR')
+      `);
+
+      const io = global.io;
+      if (io) {
+        for (const user of usersWithBots.rows) {
+          io.to(`user:${user.user_id}`).emit("engine:status", {
+            status: "permanent_failure",
+            message: "Trading engine has failed permanently. Please contact support.",
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+
+      logger.error("Notified users of permanent engine failure", {
+        userCount: usersWithBots.rows.length,
+      });
+    } catch (error) {
+      logger.error("Failed to notify users of permanent engine failure", {
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  /**
+   * Mark all running bots as error state
+   */
+  private async markAllBotsAsError(reason: string): Promise<void> {
+    try {
+      const { query } = await import("../database/pool.js");
+
+      const result = await query(`
+        UPDATE bot_instances
+        SET status = 'ERROR', last_error = $1, updated_at = CURRENT_TIMESTAMP
+        WHERE status IN ('RUNNING', 'STARTING')
+      `, [reason]);
+
+      logger.info("Marked bots as error due to engine failure", {
+        affectedBots: result.rowCount,
+        reason,
+      });
+    } catch (error) {
+      logger.error("Failed to mark bots as error", {
+        error: (error as Error).message,
+        reason,
+      });
+    }
   }
 }
 
