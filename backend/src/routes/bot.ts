@@ -904,52 +904,120 @@ router.post("/report-trade", async (req: Request, res: Response) => {
   }
 });
 
-// Dead bot detection - runs every 10 seconds
+// Enhanced bot state reconciliation and recovery - runs every 30 seconds
 setInterval(async () => {
   try {
-    const deadBots = await query(
-      `SELECT id, strategy_id FROM bot_instances
-       WHERE status IN ('RUNNING', 'FORCE_STOPPING')
-       AND last_heartbeat < NOW() - INTERVAL '60 seconds'`
-    );
+    // Get all bots that need reconciliation
+    const botsToReconcile = await query(`
+      SELECT bi.*, s.active as strategy_active, s.user_id
+      FROM bot_instances bi
+      JOIN strategies s ON bi.strategy_id = s.id
+      WHERE bi.status IN ('RUNNING', 'STARTING', 'FORCE_STOPPING')
+    `);
 
-    for (const bot of deadBots.rows) {
-      logger.warn("Detected dead bot, marking as ERROR", {
-        botId: bot.id,
-        strategyId: bot.strategy_id,
-      });
+    for (const bot of botsToReconcile.rows) {
+      try {
+        const reconciliation = await reconcileBotStatus(bot, Date.now());
 
-      // Mark bot as dead/error
-      await query(
-        "UPDATE bot_instances SET status = 'ERROR', last_error = 'Bot heartbeat timeout - marked as dead' WHERE id = $1",
-        [bot.id]
-      );
+        if (reconciliation.statusChanged) {
+          // Update bot status in database
+          await query(
+            "UPDATE bot_instances SET status = $1, last_error = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3",
+            [reconciliation.newStatus, reconciliation.errorMessage, bot.id]
+          );
 
-      // Update strategy as inactive
-      await query("UPDATE strategies SET active = false WHERE id = $1", [
-        bot.strategy_id,
-      ]);
+          // If bot stopped due to strategy deactivation, update strategy
+          if (reconciliation.newStatus === 'STOPPED' && reconciliation.reason === 'strategy_inactive') {
+            await query("UPDATE strategies SET active = false WHERE id = $1", [bot.strategy_id]);
+          }
 
-      // Log the dead bot detection
-      await query(
-        "INSERT INTO audit_logs (user_id, action, details) VALUES ((SELECT user_id FROM bot_instances WHERE id = $1), $2, $3)",
-        [
-          bot.id,
-          "BOT_DEAD_DETECTED",
-          { botId: bot.id, reason: "heartbeat_timeout" },
-        ]
-      );
+          // Emit status update via WebSocket
+          const io = global.io;
+          if (io) {
+            io.to(`user:${bot.user_id}`).emit("bot:status", {
+              botId: bot.id,
+              status: reconciliation.newStatus,
+              previousStatus: bot.status,
+              reconciled: true,
+              reason: reconciliation.reason,
+              timestamp: Date.now(),
+            });
+          }
 
-      // Check if engine should be stopped after cleaning up dead bot
-      setTimeout(async () => {
-        await engineManager.stopEngineIfNoActiveBots();
-      }, 2000);
+          logger.info("Bot status reconciled", {
+            botId: bot.id,
+            oldStatus: bot.status,
+            newStatus: reconciliation.newStatus,
+            reason: reconciliation.reason,
+          });
+
+          // Log reconciliation action
+          await query(
+            "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
+            [
+              bot.user_id,
+              "BOT_STATUS_RECONCILED",
+              {
+                botId: bot.id,
+                oldStatus: bot.status,
+                newStatus: reconciliation.newStatus,
+                reason: reconciliation.reason,
+                engineHealth: reconciliation.engineHealth,
+              },
+            ]
+          );
+        }
+
+        // Check for recovery opportunities
+        if (bot.status === 'ERROR' && bot.last_error?.includes('heartbeat timeout')) {
+          const lastHeartbeat = bot.last_heartbeat ? new Date(bot.last_heartbeat).getTime() : 0;
+          const timeSinceHeartbeat = Date.now() - lastHeartbeat;
+
+          // If heartbeat is recent (< 30 seconds), bot may have recovered
+          if (timeSinceHeartbeat < 30000) {
+            await query(
+              "UPDATE bot_instances SET status = 'RUNNING', last_error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+              [bot.id]
+            );
+
+            // Emit recovery notification
+            const io = global.io;
+            if (io) {
+              io.to(`user:${bot.user_id}`).emit("bot:status", {
+                botId: bot.id,
+                status: 'RUNNING',
+                previousStatus: 'ERROR',
+                reconciled: true,
+                reason: 'bot_recovered',
+                timestamp: Date.now(),
+              });
+            }
+
+            logger.info("Bot recovered from error state", {
+              botId: bot.id,
+              timeSinceHeartbeat,
+            });
+          }
+        }
+
+      } catch (botError) {
+        logger.error("Bot reconciliation error", {
+          botId: bot.id,
+          error: botError instanceof Error ? botError.message : String(botError),
+        });
+      }
     }
+
+    // Check if engine should be stopped after reconciliation
+    setTimeout(async () => {
+      await engineManager.stopEngineIfNoActiveBots();
+    }, 2000);
+
   } catch (error) {
-    logger.error("Dead bot detection error", {
+    logger.error("Bot state reconciliation error", {
       error: error instanceof Error ? error.message : String(error),
     });
   }
-}, 10000); // Check every 10 seconds
+}, 30000); // Check every 30 seconds
 
 export { router as botRoutes };

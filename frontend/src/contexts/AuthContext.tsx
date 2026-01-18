@@ -64,6 +64,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     checkAuth();
   }, []);
 
+  // Periodic profile refresh every 5 minutes
+  useEffect(() => {
+    if (!user) return; // Only refresh if user is logged in
+
+    const refreshInterval = setInterval(() => {
+      console.log("AuthContext: Periodic profile refresh");
+      refreshUser();
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(refreshInterval);
+  }, [user]);
+
+  // Refresh profile when page becomes visible (user returns to tab)
+  useEffect(() => {
+    if (!user) return;
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log("AuthContext: Page became visible, refreshing profile");
+        refreshUser();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user]);
+
+  // Refresh profile when network reconnects
+  useEffect(() => {
+    if (!user) return;
+
+    const handleOnline = () => {
+      console.log("AuthContext: Network reconnected, refreshing profile");
+      refreshUser();
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [user]);
+
   const login = async (email: string, password: string) => {
     console.log("AuthContext: Starting login for:", email);
 
