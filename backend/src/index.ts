@@ -76,6 +76,7 @@ import { balanceRoutes } from "./routes/balance";
 import { healthRoutes } from "./routes/health";
 import { httpLogger, errorLogger } from "./middleware/logger";
 import { contextMiddleware } from "./middleware/context";
+import { csrfMiddleware, csrfTokenMiddleware, CSRFRequest } from "./middleware/csrf";
 
 // ✅ Import market stream service (refactored)
 import { marketStreamService } from "./services/market-stream/index";
@@ -258,6 +259,16 @@ app.use("/api", (req, res, next) => {
   trackApiActivity();
   next();
 });
+
+// CSRF token generation for auth routes (login/register/refresh)
+app.use("/api/auth", csrfTokenMiddleware);
+
+// CSRF validation for state-changing operations (all routes except auth)
+app.use("/api/user", csrfMiddleware);
+app.use("/api/market", csrfMiddleware);
+app.use("/api/strategies", csrfMiddleware);
+app.use("/api/bot", csrfMiddleware);
+app.use("/api/balance", csrfMiddleware);
 
 // Routes
 app.use("/api/auth", authRoutes);

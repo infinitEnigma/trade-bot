@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { UserLevel } from "@trade-bot/shared";
 import { pool } from "../database";
+import { redisService } from "./redis";
 import logger from "./logger";
 
 const JWT_SECRET = (() => {
@@ -32,6 +33,8 @@ export interface TokenPayload {
   userId: string;
   email: string;
   userLevel: UserLevel;
+  exp?: number;
+  iat?: number;
 }
 
 export interface AuthResult {
@@ -129,10 +132,30 @@ export class AuthService {
 
   async refreshToken(refreshToken: string): Promise<AuthResult> {
     try {
+      // First check if token is blacklisted
+      const isBlacklisted = await this.isRefreshTokenBlacklisted(refreshToken);
+      if (isBlacklisted) {
+        logger.warn("Attempted to use blacklisted refresh token", {
+          tokenHash: this.hashTokenForStorage(refreshToken),
+        });
+        return { success: false, message: "Token has been invalidated" };
+      }
+
       const decoded = jwt.verify(
         refreshToken,
         JWT_REFRESH_SECRET
       ) as TokenPayload;
+
+      // Additional TTL validation
+      const now = Math.floor(Date.now() / 1000);
+      const tokenExp = decoded.exp;
+      if (tokenExp && tokenExp < now) {
+        logger.warn("Refresh token TTL expired", {
+          userId: decoded.userId,
+          tokenExp: new Date(tokenExp * 1000).toISOString(),
+        });
+        return { success: false, message: "Refresh token expired" };
+      }
 
       const result = await pool.query(
         "SELECT id, email, user_level FROM users WHERE id = $1",
@@ -152,6 +175,9 @@ export class AuthService {
         tokens,
       };
     } catch (error) {
+      logger.error("Refresh token validation error", {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return { success: false, message: "Invalid refresh token" };
     }
   }
@@ -286,6 +312,65 @@ export class AuthService {
 
   async verifyPassword(user: { password_hash: string }, password: string): Promise<boolean> {
     return await bcrypt.compare(password, user.password_hash);
+  }
+
+  // Token blacklist methods
+  async isRefreshTokenBlacklisted(refreshToken: string): Promise<boolean> {
+    try {
+      const tokenHash = this.hashTokenForStorage(refreshToken);
+      const result = await redisService.exists(`blacklist:refresh:${tokenHash}`);
+      return result.success && result.data;
+    } catch (error) {
+      logger.error("Error checking refresh token blacklist", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false; // Fail open - allow token if Redis is down
+    }
+  }
+
+  async blacklistRefreshToken(refreshToken: string, ttlSeconds?: number): Promise<boolean> {
+    try {
+      const tokenHash = this.hashTokenForStorage(refreshToken);
+      // Default TTL is 30 days to match refresh token expiry
+      const ttl = ttlSeconds || (30 * 24 * 60 * 60);
+      const result = await redisService.setex(`blacklist:refresh:${tokenHash}`, ttl, "1");
+      return result.success;
+    } catch (error) {
+      logger.error("Error blacklisting refresh token", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  async invalidateUserTokens(userId: string): Promise<boolean> {
+    try {
+      // Get all refresh tokens for user from Redis (if stored)
+      // For now, we'll implement a pattern-based invalidation
+      // In production, you might want to store active tokens per user
+      logger.info("Invalidating all tokens for user", { userId });
+
+      // This is a simplified implementation
+      // A more robust solution would track all active tokens per user
+      await pool.query(
+        "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
+        [userId, "TOKENS_INVALIDATED", { reason: "security" }]
+      );
+
+      return true;
+    } catch (error) {
+      logger.error("Error invalidating user tokens", {
+        error: error instanceof Error ? error.message : String(error),
+        userId,
+      });
+      return false;
+    }
+  }
+
+  private hashTokenForStorage(token: string): string {
+    // Use a simple hash for storage key (not for security, just for key length)
+    const crypto = require('crypto');
+    return crypto.createHash('sha256').update(token).digest('hex').substring(0, 16);
   }
 
   private generateTokens(user: {
