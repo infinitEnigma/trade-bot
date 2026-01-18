@@ -4,6 +4,7 @@ import { Server } from "socket.io";
 import logger from "../../services/logger";
 import { TickData, KlineData } from "./types";
 import { CacheManager } from "./cache-manager";
+import { errorNotificationService } from "../error-notification";
 
 /**
  * Handles WebSocket message processing and broadcasting
@@ -51,11 +52,23 @@ export class MessageHandler {
       // Log unhandled messages for debugging
       logger.debug("Unhandled WebSocket message", { message });
     } catch (error) {
+      const err = error as Error;
       logger.error("Message handler error", {
-        error: (error as Error).message,
+        error: err.message,
         messageType: message?.event || message?.method,
         topic: message?.topic,
       });
+
+      // Notify about critical background task failures
+      await errorNotificationService.notifyBackgroundFailure(
+        "websocket_message_processing",
+        err,
+        {
+          messageType: message?.event || message?.method,
+          topic: message?.topic,
+          hasSocketServer: this.io !== null,
+        }
+      );
     }
   }
 
