@@ -13,6 +13,7 @@ import { encryptionService } from "../services/encryption"; // ✅ Import encryp
 import { RateLimiters } from "../services/rate-limiter";
 import { marketStreamService } from "../services/market-stream";
 import { generateKodiakSignature } from "../utils/orderly-signature"; // ✅ Import backend crypto utility
+import { getCacheConfig } from "../config/cache.config"; // ✅ Import centralized cache config
 
 const router = Router();
 
@@ -298,8 +299,9 @@ router.get(
         cached: false,
       };
 
-      // Cache for 10 minutes (futures data changes infrequently)
-      await redisService.setex(cacheKey, 600, JSON.stringify(result));
+      // Cache using centralized configuration
+      const cacheConfig = getCacheConfig();
+      await redisService.setex(cacheKey, cacheConfig.MARKET_FUTURES, JSON.stringify(result));
 
       res.json(result);
     } catch (err: any) {
@@ -522,7 +524,7 @@ router.get(
 router.get("/tv/config", async (req: Request, res: Response) => {
   try {
     const cacheKey = "tv:config";
-    const CACHE_TTL = 300; // 5 minutes (config doesn't change often)
+    const cacheConfig = getCacheConfig();
 
     // Try Redis cache first
     const cacheResult = await redisService.get(cacheKey);
@@ -551,8 +553,8 @@ router.get("/tv/config", async (req: Request, res: Response) => {
       cached: false,
     };
 
-    // Cache the result
-    await redisService.setex(cacheKey, CACHE_TTL, JSON.stringify(result));
+    // Cache the result using centralized configuration
+    await redisService.setex(cacheKey, cacheConfig.MARKET_TRADINGVIEW_CONFIG, JSON.stringify(result));
 
     res.json(result);
   } catch (err: any) {
@@ -639,15 +641,15 @@ router.get("/tv/history", async (req: Request, res: Response) => {
       cached: false,
     };
 
-    // Cache the result for 5 seconds
-    const CACHE_TTL = 5; // 5 seconds - keeps data fresh but reduces API calls significantly
-    await redisService.setex(cacheKey, CACHE_TTL, JSON.stringify(result));
+    // Cache the result using centralized configuration
+    const cacheConfig = getCacheConfig();
+    await redisService.setex(cacheKey, cacheConfig.MARKET_KLINES_SHORT, JSON.stringify(result));
 
     logger.debug("TV History cached successfully", {
       cacheKey,
       symbol: symbolStr,
       resolution: resolutionStr,
-      ttl: CACHE_TTL,
+      ttl: cacheConfig.MARKET_KLINES_SHORT,
     });
 
     res.json(result);
