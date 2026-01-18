@@ -5,8 +5,41 @@ import logger from "../../services/logger";
 import { CircuitState, WebSocketConfig, DEFAULT_WS_CONFIG } from "./types";
 
 /**
- * Manages WebSocket connections, reconnections, and heartbeats
- * Includes circuit breaker pattern for resilient connections
+ * Message priority levels for queue-based backpressure
+ */
+export enum MessagePriority {
+  CRITICAL = 0,    // Trading executions, emergency signals
+  HIGH = 1,        // Real-time market data, order updates
+  MEDIUM = 2,      // Analytics data, status updates
+  LOW = 3,         // Background tasks, maintenance
+}
+
+/**
+ * Queued message with metadata for backpressure handling
+ */
+interface QueuedMessage {
+  id: string;
+  priority: MessagePriority;
+  topic: string;
+  data: any;
+  timestamp: number;
+  retryCount: number;
+  clientId?: string;
+}
+
+/**
+ * Backpressure state for flow control
+ */
+interface BackpressureState {
+  isActive: boolean;
+  queueDepth: number;
+  lastSignalTime: number;
+  signalCount: number;
+}
+
+/**
+ * Manages WebSocket connections, reconnections, heartbeats, and queue-based backpressure
+ * Includes circuit breaker pattern for resilient connections and flow control
  */
 export class WebSocketManager {
   private websockets: Map<string, WebSocket> = new Map();
@@ -17,10 +50,21 @@ export class WebSocketManager {
   private lastFailureTime: Map<string, number> = new Map();
   private circuitBreakerTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
+  // Backpressure queue management
+  private messageQueue: QueuedMessage[] = [];
+  private backpressureStates: Map<string, BackpressureState> = new Map();
+  private processingInterval: NodeJS.Timeout | null = null;
+  private queueProcessorRunning: boolean = false;
+
   private config: WebSocketConfig;
+  private readonly maxQueueSize: number = 10000; // Configurable max queue size
+  private readonly processingBatchSize: number = 50; // Messages per processing batch
+  private readonly backpressureThreshold: number = 1000; // Queue depth to trigger backpressure
+  private readonly backpressureCooldownMs: number = 5000; // Min time between backpressure signals
 
   constructor(config: WebSocketConfig = DEFAULT_WS_CONFIG) {
     this.config = config;
+    this.startQueueProcessor();
   }
 
   /**
@@ -295,23 +339,399 @@ export class WebSocketManager {
     logger.info("All WebSocket connections and circuit breaker state cleared");
   }
 
+  // ===============================
+  // QUEUE-BASED BACKPRESSURE SYSTEM
+  // ===============================
+
   /**
-   * Get connection statistics
+   * Queue a message for processing with priority-based backpressure
+   */
+  queueMessage(
+    topic: string,
+    data: any,
+    priority: MessagePriority = MessagePriority.MEDIUM,
+    clientId?: string
+  ): boolean {
+    // Check if queue is at capacity
+    if (this.messageQueue.length >= this.maxQueueSize) {
+      logger.warn("Message queue at capacity, dropping low priority message", {
+        queueSize: this.messageQueue.length,
+        maxSize: this.maxQueueSize,
+        priority,
+        topic,
+      });
+
+      // Only drop LOW priority messages when at capacity
+      if (priority === MessagePriority.LOW) {
+        return false;
+      }
+
+      // For higher priority, remove oldest low priority message
+      this.evictOldestLowPriorityMessage();
+    }
+
+    const queuedMessage: QueuedMessage = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      priority,
+      topic,
+      data,
+      timestamp: Date.now(),
+      retryCount: 0,
+      clientId,
+    };
+
+    // Insert message based on priority (lower number = higher priority)
+    const insertIndex = this.messageQueue.findIndex(msg => msg.priority > priority);
+    if (insertIndex === -1) {
+      this.messageQueue.push(queuedMessage);
+    } else {
+      this.messageQueue.splice(insertIndex, 0, queuedMessage);
+    }
+
+    // Check if backpressure should be activated
+    this.checkAndSignalBackpressure();
+
+    logger.debug("Message queued for processing", {
+      messageId: queuedMessage.id,
+      priority,
+      topic,
+      queueDepth: this.messageQueue.length,
+    });
+
+    return true;
+  }
+
+  /**
+   * Send message immediately or queue if backpressure is active
+   */
+  async sendMessage(
+    connectionKey: string,
+    topic: string,
+    data: any,
+    priority: MessagePriority = MessagePriority.MEDIUM,
+    clientId?: string
+  ): Promise<boolean> {
+    // Check if backpressure is active for this connection
+    const backpressureState = this.backpressureStates.get(connectionKey);
+    if (backpressureState?.isActive) {
+      logger.debug("Backpressure active, queuing message", {
+        connectionKey,
+        topic,
+        priority,
+        queueDepth: this.messageQueue.length,
+      });
+      return this.queueMessage(topic, data, priority, clientId);
+    }
+
+    // Try to send immediately
+    const ws = this.getConnection(connectionKey);
+    if (!ws || !this.isConnected(connectionKey)) {
+      logger.debug("Connection not available, queuing message", {
+        connectionKey,
+        topic,
+        priority,
+      });
+      return this.queueMessage(topic, data, priority, clientId);
+    }
+
+    try {
+      const message = JSON.stringify({ topic, data, timestamp: Date.now() });
+      ws.send(message);
+
+      logger.debug("Message sent immediately", {
+        connectionKey,
+        topic,
+        priority,
+        messageSize: message.length,
+      });
+
+      return true;
+    } catch (error) {
+      logger.warn("Failed to send message immediately, queuing", {
+        connectionKey,
+        topic,
+        error: (error as Error).message,
+      });
+      return this.queueMessage(topic, data, priority, clientId);
+    }
+  }
+
+  /**
+   * Start the queue processor that handles backpressure
+   */
+  private startQueueProcessor(): void {
+    if (this.processingInterval) return;
+
+    this.processingInterval = setInterval(() => {
+      if (!this.queueProcessorRunning) {
+        this.processQueueBatch();
+      }
+    }, 100); // Process every 100ms
+
+    logger.info("Queue processor started", {
+      processingInterval: 100,
+      batchSize: this.processingBatchSize,
+    });
+  }
+
+  /**
+   * Process a batch of queued messages
+   */
+  private async processQueueBatch(): Promise<void> {
+    if (this.queueProcessorRunning || this.messageQueue.length === 0) return;
+
+    this.queueProcessorRunning = true;
+
+    try {
+      const batchSize = Math.min(this.processingBatchSize, this.messageQueue.length);
+      const messagesToProcess = this.messageQueue.splice(0, batchSize);
+
+      for (const message of messagesToProcess) {
+        await this.processQueuedMessage(message);
+      }
+
+      // Check if backpressure should be deactivated
+      this.checkAndDeactivateBackpressure();
+
+      if (messagesToProcess.length > 0) {
+        logger.debug("Processed message batch", {
+          batchSize: messagesToProcess.length,
+          remainingQueueDepth: this.messageQueue.length,
+        });
+      }
+
+    } catch (error) {
+      logger.error("Error processing message batch", {
+        error: (error as Error).message,
+        queueDepth: this.messageQueue.length,
+      });
+    } finally {
+      this.queueProcessorRunning = false;
+    }
+  }
+
+  /**
+   * Process a single queued message
+   */
+  private async processQueuedMessage(message: QueuedMessage): Promise<void> {
+    try {
+      // Find an available connection to send the message
+      const availableConnection = Array.from(this.websockets.keys()).find(key =>
+        this.isConnected(key)
+      );
+
+      if (!availableConnection) {
+        logger.debug("No available connections, re-queuing message", {
+          messageId: message.id,
+          topic: message.topic,
+          retryCount: message.retryCount,
+        });
+
+        // Re-queue with incremented retry count
+        message.retryCount++;
+        if (message.retryCount < 3) { // Max 3 retries
+          this.messageQueue.push(message);
+        } else {
+          logger.warn("Dropping message after max retries", {
+            messageId: message.id,
+            topic: message.topic,
+            retryCount: message.retryCount,
+          });
+        }
+        return;
+      }
+
+      const ws = this.getConnection(availableConnection)!;
+      const messageData = JSON.stringify({
+        topic: message.topic,
+        data: message.data,
+        timestamp: message.timestamp,
+        queued: true,
+        priority: message.priority,
+      });
+
+      ws.send(messageData);
+
+      logger.debug("Queued message processed successfully", {
+        messageId: message.id,
+        topic: message.topic,
+        connectionKey: availableConnection,
+        processingDelay: Date.now() - message.timestamp,
+      });
+
+    } catch (error) {
+      logger.error("Failed to process queued message", {
+        messageId: message.id,
+        topic: message.topic,
+        error: (error as Error).message,
+        retryCount: message.retryCount,
+      });
+
+      // Re-queue on failure
+      message.retryCount++;
+      if (message.retryCount < 3) {
+        this.messageQueue.push(message);
+      }
+    }
+  }
+
+  /**
+   * Check and signal backpressure when queue threshold is exceeded
+   */
+  private checkAndSignalBackpressure(): void {
+    const queueDepth = this.messageQueue.length;
+
+    // Check if backpressure should be activated
+    if (queueDepth >= this.backpressureThreshold) {
+      // Signal backpressure to all connected clients
+      this.websockets.forEach((ws, connectionKey) => {
+        const backpressureState = this.backpressureStates.get(connectionKey);
+
+        // Check cooldown period
+        if (backpressureState &&
+          (Date.now() - backpressureState.lastSignalTime) < this.backpressureCooldownMs) {
+          return; // Too soon since last signal
+        }
+
+        // Send backpressure signal
+        try {
+          const signalData = JSON.stringify({
+            type: 'backpressure',
+            action: 'pause',
+            queueDepth,
+            threshold: this.backpressureThreshold,
+            timestamp: Date.now(),
+          });
+
+          ws.send(signalData);
+
+          // Update backpressure state
+          this.backpressureStates.set(connectionKey, {
+            isActive: true,
+            queueDepth,
+            lastSignalTime: Date.now(),
+            signalCount: (backpressureState?.signalCount || 0) + 1,
+          });
+
+          logger.warn("Backpressure signal sent", {
+            connectionKey,
+            queueDepth,
+            threshold: this.backpressureThreshold,
+            signalCount: this.backpressureStates.get(connectionKey)?.signalCount,
+          });
+
+        } catch (error) {
+          logger.error("Failed to send backpressure signal", {
+            connectionKey,
+            error: (error as Error).message,
+          });
+        }
+      });
+    }
+  }
+
+  /**
+   * Check and deactivate backpressure when queue drops below threshold
+   */
+  private checkAndDeactivateBackpressure(): void {
+    const queueDepth = this.messageQueue.length;
+
+    if (queueDepth < this.backpressureThreshold * 0.7) { // 70% of threshold
+      // Send resume signals to clients with active backpressure
+      this.backpressureStates.forEach((state, connectionKey) => {
+        if (!state.isActive) return;
+
+        const ws = this.getConnection(connectionKey);
+        if (!ws || !this.isConnected(connectionKey)) return;
+
+        try {
+          const signalData = JSON.stringify({
+            type: 'backpressure',
+            action: 'resume',
+            queueDepth,
+            threshold: this.backpressureThreshold,
+            timestamp: Date.now(),
+          });
+
+          ws.send(signalData);
+
+          // Update backpressure state
+          state.isActive = false;
+          state.lastSignalTime = Date.now();
+
+          logger.info("Backpressure resume signal sent", {
+            connectionKey,
+            queueDepth,
+            threshold: this.backpressureThreshold,
+          });
+
+        } catch (error) {
+          logger.error("Failed to send backpressure resume signal", {
+            connectionKey,
+            error: (error as Error).message,
+          });
+        }
+      });
+    }
+  }
+
+  /**
+   * Evict the oldest low-priority message when queue is full
+   */
+  private evictOldestLowPriorityMessage(): void {
+    for (let i = this.messageQueue.length - 1; i >= 0; i--) {
+      if (this.messageQueue[i].priority === MessagePriority.LOW) {
+        const evictedMessage = this.messageQueue.splice(i, 1)[0];
+        logger.warn("Evicted low priority message from queue", {
+          messageId: evictedMessage.id,
+          topic: evictedMessage.topic,
+          queueDepth: this.messageQueue.length,
+        });
+        return;
+      }
+    }
+
+    // If no low priority messages found, log warning
+    logger.error("Queue full but no low priority messages to evict", {
+      queueDepth: this.messageQueue.length,
+      maxQueueSize: this.maxQueueSize,
+    });
+  }
+
+  /**
+   * Get comprehensive statistics including backpressure metrics
    */
   getStats(): {
     activeConnections: number;
     connectionKeys: string[];
     circuitBreakerStates: Record<string, CircuitState>;
+    queueDepth: number;
+    maxQueueSize: number;
+    backpressureActive: boolean;
+    backpressureStates: Record<string, BackpressureState>;
+    processingBatchSize: number;
+    backpressureThreshold: number;
   } {
     const circuitBreakerStates: Record<string, CircuitState> = {};
     for (const [key, state] of this.circuitStates.entries()) {
       circuitBreakerStates[key] = state;
     }
 
+    const backpressureStates: Record<string, BackpressureState> = {};
+    for (const [key, state] of this.backpressureStates.entries()) {
+      backpressureStates[key] = state;
+    }
+
     return {
       activeConnections: this.websockets.size,
       connectionKeys: Array.from(this.websockets.keys()),
       circuitBreakerStates,
+      queueDepth: this.messageQueue.length,
+      maxQueueSize: this.maxQueueSize,
+      backpressureActive: Array.from(this.backpressureStates.values()).some(state => state.isActive),
+      backpressureStates,
+      processingBatchSize: this.processingBatchSize,
+      backpressureThreshold: this.backpressureThreshold,
     };
   }
 }

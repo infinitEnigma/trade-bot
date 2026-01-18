@@ -38,7 +38,8 @@ export class MarketStreamService {
   setSocketServer(io: Server): void {
     this.io = io;
     this.messageHandler.setSocketServer(io);
-    logger.info("Market stream service initialized with Socket.io");
+    this.messageHandler.setWebSocketManager(this.wsManager);
+    logger.info("Market stream service initialized with Socket.io and backpressure support");
   }
 
   /**
