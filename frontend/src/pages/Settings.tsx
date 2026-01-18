@@ -118,16 +118,16 @@ const Settings: React.FC = () => {
 
             <div className="flex items-center gap-3 p-4 rounded-lg bg-surface border border-white/5">
               <div
-                className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                   isConnected ? "bg-success/10" : "bg-warning/10"
                 }`}
               >
                 {statusLoading ? (
-                  <Loader2 className="w-5 h-5 animate-spin text-warning" />
+                  <Loader2 className="w-4 h-4 animate-spin text-warning" />
                 ) : isConnected ? (
-                  <CheckCircle className="w-5 h-5 text-success" />
+                  <CheckCircle className="w-4 h-4 text-success" />
                 ) : (
-                  <XCircle className="w-5 h-5 text-warning" />
+                  <XCircle className="w-4 h-4 text-warning" />
                 )}
               </div>
               <div>
@@ -156,7 +156,7 @@ const Settings: React.FC = () => {
               /* Connected State */
               <div className="space-y-4">
                 <div className="flex items-center gap-3 p-4 rounded-lg bg-success/10 border border-success/20">
-                  <CheckCircle className="w-5 h-5 text-success" />
+                  <CheckCircle className="w-4 h-4 text-success" />
                   <div className="flex-1">
                     <p className="font-medium text-success">
                       Kodiak Account Connected
@@ -188,7 +188,7 @@ const Settings: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-3 p-4 rounded-lg bg-success/10 border border-success/20">
-                  <CheckCircle className="w-5 h-5 text-success" />
+                  <CheckCircle className="w-4 h-4 text-success" />
                   <p className="text-success font-medium">
                     Kodiak Credentials Provided
                   </p>
@@ -198,7 +198,7 @@ const Settings: React.FC = () => {
               /* Not Connected State - Show Status and Form */
               <div className="space-y-4">
                 <div className="flex items-center gap-3 p-4 rounded-lg bg-warning/10 border border-warning/20">
-                  <AlertCircle className="w-5 h-5 text-warning" />
+                  <AlertCircle className="w-4 h-4 text-warning" />
                   <p className="text-warning font-medium">
                     No Credentials Provided
                   </p>
@@ -291,7 +291,7 @@ const Settings: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-2 p-4 rounded-lg bg-info/10 border border-info/20">
-                    <AlertCircle className="w-5 h-5 text-info shrink-0" />
+                    <AlertCircle className="w-4 h-4 text-info shrink-0" />
                     <div className="text-sm">
                       <p className="text-info font-medium">Security Notice</p>
                       <p className="text-textMuted mt-1">
@@ -303,7 +303,7 @@ const Settings: React.FC = () => {
 
                   {connectMutation.isError && (
                     <div className="flex items-center gap-2 p-4 rounded-lg bg-danger/10 border border-danger/20">
-                      <XCircle className="w-5 h-5 text-danger" />
+                      <XCircle className="w-4 h-4 text-danger" />
                       <p className="text-danger text-sm">
                         Failed to connect Kodiak credentials. Please check your
                         credentials and try again.

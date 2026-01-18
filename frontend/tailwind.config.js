@@ -13,6 +13,18 @@ export default {
       '3xl': '1920px', // 1080p displays
       '4xl': '2560px', // 1440p displays
     },
+    fontSize: {
+      'xs': ['0.75rem', { lineHeight: '1rem' }],      // 12px - captions, metadata
+      'sm': ['0.875rem', { lineHeight: '1.25rem' }],  // 14px - secondary text, labels
+      'base': ['1rem', { lineHeight: '1.5rem' }],     // 16px - body text, default
+      'lg': ['1.125rem', { lineHeight: '1.75rem' }],  // 18px - emphasized text, buttons
+      'xl': ['1.25rem', { lineHeight: '1.75rem' }],   // 20px - subheadings
+      '2xl': ['1.5rem', { lineHeight: '2rem' }],      // 24px - section headers
+      '3xl': ['1.875rem', { lineHeight: '2.25rem' }], // 30px - page titles
+      '4xl': ['2.25rem', { lineHeight: '2.5rem' }],   // 36px - hero titles
+      '5xl': ['3rem', { lineHeight: '1' }],           // 48px - large headings
+      '6xl': ['3.75rem', { lineHeight: '1' }],        // 60px - hero elements
+    },
     extend: {
       colors: {
         // Using CSS variables for consistency

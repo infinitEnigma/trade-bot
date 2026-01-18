@@ -175,9 +175,9 @@ const Strategies: React.FC = React.memo(() => {
       <PageLayout className="flex items-center justify-center">
         <Container size="sm" className="text-center">
           <div className="glass-card p-8">
-            <div className="w-16 h-16 mx-auto mb-6 bg-red-500/10 rounded-full flex items-center justify-center">
-              <AlertTriangle className="w-8 h-8 text-red-500" />
-            </div>
+        <div className="w-12 h-12 mx-auto mb-6 bg-red-500/10 rounded-full flex items-center justify-center">
+          <AlertTriangle className="w-6 h-6 text-red-500" />
+        </div>
             <h1 className="text-2xl font-bold text-text mb-4">
               Trading Features Unavailable
             </h1>
@@ -421,7 +421,7 @@ const Strategies: React.FC = React.memo(() => {
           </div>
         ) : strategies.length === 0 ? (
           <div className="glass-card p-12 text-center">
-            <BarChart3 className="w-16 h-16 text-textMuted mx-auto mb-4" />
+            <BarChart3 className="w-12 h-12 text-textMuted mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-text mb-2">
               No Strategies Yet
             </h3>

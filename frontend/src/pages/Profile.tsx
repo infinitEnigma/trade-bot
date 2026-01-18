@@ -164,7 +164,7 @@ const Profile: React.FC = () => {
 
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-primary" />
+                    <Shield className="w-5 h-5 text-primary" />
                     <span className="text-sm font-medium text-primary capitalize">
                       {user.userLevel.toLowerCase()}
                     </span>
@@ -172,7 +172,7 @@ const Profile: React.FC = () => {
 
                   {user.roles && user.roles.length > 0 && (
                     <div className="flex items-center gap-2">
-                      <Key className="w-4 h-4 text-amber-400" />
+                      <Key className="w-5 h-5 text-amber-400" />
                       <span className="text-sm font-medium text-amber-400">
                         {user.roles.join(', ')}
                       </span>

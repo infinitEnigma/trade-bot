@@ -189,7 +189,7 @@ export const WalletConnectDialog: React.FC<WalletConnectDialogProps> = ({
           Wallet Status
         </h3>
         <div
-          className={`w-2 h-2 rounded-full ${
+          className={`w-3 h-3 rounded-full ${
             isConnected ? "bg-green-500" : "bg-red-500"
           }`}
         ></div>

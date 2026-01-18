@@ -64,7 +64,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                       {user?.email?.[0]?.toUpperCase() || "U"}
                     </span>
                   </div>
-                  <div className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-bg-surface bg-green-500"></div>
+                  <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-bg-surface bg-green-500"></div>
                 </div>
                 <div className="hidden md:block">
                   <div className="flex items-center gap-2">

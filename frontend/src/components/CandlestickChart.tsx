@@ -237,7 +237,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         </div>
         {error && (
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-danger rounded-full"></div>
+            <div className="w-3 h-3 bg-danger rounded-full"></div>
             <span className="text-sm text-danger">{error}</span>
           </div>
         )}
