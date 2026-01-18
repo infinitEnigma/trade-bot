@@ -10,10 +10,12 @@ import {
 } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Toaster } from "sonner";
+import { io } from "socket.io-client";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ErrorProvider, ErrorNotifications } from "./contexts/ErrorContext";
 import { usePageBackground } from "./hooks/usePageBackground";
+import { websocketSubscriptionManager } from "./utils/websocket-manager";
 import { UserRole } from "@trade-bot/shared";
 
 // Components
@@ -233,12 +235,37 @@ const AppRouter = () => {
 
 
 
+// WebSocket Connection Component
+const WebSocketInitializer = () => {
+  React.useEffect(() => {
+    // Initialize WebSocket connection for market data
+    const socket = io("https://rewireapp.ddns.net", {
+      withCredentials: true,
+      transports: ["websocket", "polling"],
+    });
+
+    // Set up the socket in the subscription manager
+    websocketSubscriptionManager.setSocket(socket, 'main-connection');
+
+    console.log('📡 WebSocket connection initialized');
+
+    return () => {
+      // Cleanup on app unmount
+      websocketSubscriptionManager.cleanup();
+      socket.disconnect();
+    };
+  }, []);
+
+  return null;
+};
+
 // Main App Component
 function App() {
   return (
     <ThemeProvider defaultTheme="dark">
       <ErrorProvider>
         <AuthProvider>
+          <WebSocketInitializer />
           <AppRouter />
           <Toaster
             position="top-right"

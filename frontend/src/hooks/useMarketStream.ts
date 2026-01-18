@@ -1,7 +1,7 @@
 /** @format */
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { io, Socket } from "socket.io-client";
+import { websocketSubscriptionManager } from "../utils/websocket-manager";
 
 export interface TickData {
   symbol: string;
@@ -24,53 +24,12 @@ export const useMarketStream = ({
   onTick,
   autoConnect = true,
 }: UseMarketStreamOptions) => {
-  const [socket, setSocket] = useState<Socket | null>(null);
   const [ticks, setTicks] = useState<Record<string, TickData>>({});
-  const [connected, setConnected] = useState(false);
-  const [connecting, setConnecting] = useState(false);
 
-  // Refs for throttling and batching
+  // Refs for throttling and subscription management
   const pendingTicksRef = useRef<Record<string, TickData>>({});
   const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const batchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Initialize socket connection
-  useEffect(() => {
-    if (!autoConnect) return;
-
-    setConnecting(true);
-
-    const socketInstance = io("https://rewireapp.ddns.net", {
-      withCredentials: true,
-      transports: ["websocket", "polling"],
-    });
-
-    socketInstance.on("connect", () => {
-      console.log("Market stream connected");
-      setConnected(true);
-      setConnecting(false);
-    });
-
-    socketInstance.on("disconnect", () => {
-      console.log("Market stream disconnected");
-      setConnected(false);
-      setConnecting(false);
-    });
-
-    socketInstance.on("connect_error", error => {
-      console.error("Market stream connection error:", error);
-      setConnecting(false);
-    });
-
-    setSocket(socketInstance);
-
-    return () => {
-      socketInstance.disconnect();
-      setSocket(null);
-      setConnected(false);
-      setConnecting(false);
-    };
-  }, [autoConnect]);
+  const subscriptionIdsRef = useRef<Map<string, string>>(new Map());
 
   // Throttled batch update function (max 10 updates per second)
   const batchUpdateTicks = useCallback(() => {
@@ -89,91 +48,85 @@ export const useMarketStream = ({
     }
   }, [onTick]);
 
-  // Listen for tick data with throttling
+  // Handle incoming tick data with throttling
+  const handleTickData = useCallback((tick: TickData) => {
+    // Add to pending updates
+    pendingTicksRef.current[tick.symbol] = tick;
+
+    // Clear existing timeout
+    if (throttleTimeoutRef.current) {
+      clearTimeout(throttleTimeoutRef.current);
+    }
+
+    // Set new throttled update (max 10 updates per second = 100ms intervals)
+    throttleTimeoutRef.current = setTimeout(batchUpdateTicks, 100);
+  }, [batchUpdateTicks]);
+
+  // Subscribe to symbols using shared manager
   useEffect(() => {
-    if (!socket) return;
+    if (!autoConnect || symbols.length === 0) return;
 
-    const handleTick = (tick: TickData) => {
-      // Add to pending updates
-      pendingTicksRef.current[tick.symbol] = tick;
+    const currentSubscriptions = subscriptionIdsRef.current;
 
-      // Clear existing timeout
-      if (throttleTimeoutRef.current) {
-        clearTimeout(throttleTimeoutRef.current);
-      }
-
-      // Set new throttled update (max 10 updates per second = 100ms intervals)
-      throttleTimeoutRef.current = setTimeout(batchUpdateTicks, 100);
-    };
-
+    // Subscribe to new symbols
     symbols.forEach(symbol => {
-      socket.on(`market:${symbol}`, handleTick);
+      if (!currentSubscriptions.has(symbol)) {
+        const callbackId = websocketSubscriptionManager.subscribe(symbol, handleTickData);
+        currentSubscriptions.set(symbol, callbackId);
+      }
     });
 
+    // Unsubscribe from symbols no longer needed
+    for (const [symbol, callbackId] of currentSubscriptions) {
+      if (!symbols.includes(symbol)) {
+        websocketSubscriptionManager.unsubscribe(symbol, callbackId);
+        currentSubscriptions.delete(symbol);
+      }
+    }
+
     return () => {
+      // Cleanup all subscriptions when component unmounts
+      for (const [symbol, callbackId] of currentSubscriptions) {
+        websocketSubscriptionManager.unsubscribe(symbol, callbackId);
+      }
+      currentSubscriptions.clear();
+
       // Clear any pending timeouts
       if (throttleTimeoutRef.current) {
         clearTimeout(throttleTimeoutRef.current);
         throttleTimeoutRef.current = null;
       }
-      if (batchTimeoutRef.current) {
-        clearTimeout(batchTimeoutRef.current);
-        batchTimeoutRef.current = null;
-      }
-
-      symbols.forEach(symbol => {
-        socket.off(`market:${symbol}`, handleTick);
-      });
     };
-  }, [socket, symbols, batchUpdateTicks]);
-
-  // Subscribe to symbols
-  useEffect(() => {
-    if (!socket || !connected) return;
-
-    symbols.forEach(symbol => {
-      socket.emit("subscribe_market", symbol);
-    });
-
-    return () => {
-      symbols.forEach(symbol => {
-        socket.emit("unsubscribe_market", symbol);
-      });
-    };
-  }, [socket, connected, symbols]);
+  }, [symbols, autoConnect, handleTickData]);
 
   // Manual subscribe function
-  const subscribe = useCallback(
-    (symbol: string) => {
-      if (socket && connected) {
-        socket.emit("subscribe_market", symbol);
-      }
-    },
-    [socket, connected]
-  );
+  const subscribe = useCallback((symbol: string) => {
+    if (!subscriptionIdsRef.current.has(symbol)) {
+      const callbackId = websocketSubscriptionManager.subscribe(symbol, handleTickData);
+      subscriptionIdsRef.current.set(symbol, callbackId);
+    }
+  }, [handleTickData]);
 
   // Manual unsubscribe function
-  const unsubscribe = useCallback(
-    (symbol: string) => {
-      if (socket) {
-        socket.emit("unsubscribe_market", symbol);
-      }
-    },
-    [socket]
-  );
+  const unsubscribe = useCallback((symbol: string) => {
+    const callbackId = subscriptionIdsRef.current.get(symbol);
+    if (callbackId) {
+      websocketSubscriptionManager.unsubscribe(symbol, callbackId);
+      subscriptionIdsRef.current.delete(symbol);
+    }
+  }, []);
 
   // Send test message (for debugging)
-  const sendTestMessage = useCallback(
-    (message: any) => {
-      if (socket && connected) {
-        socket.emit("test", message);
-      }
-    },
-    [socket, connected]
-  );
+  const sendTestMessage = useCallback((message: any) => {
+    // This would need to be implemented in the WebSocket manager if needed
+    console.log('Test message:', message);
+  }, []);
+
+  // Get connection status from manager
+  const connected = websocketSubscriptionManager.getTotalRefCount() > 0;
+  const connecting = false; // WebSocket manager handles this internally
 
   return {
-    socket,
     ticks,
     connected,
     connecting,

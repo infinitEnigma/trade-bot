@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { CandleData } from "../components/CandlestickChart";
+import { chartDataCache } from "../utils/chart-cache";
 
 interface UseChartDataOptions {
   symbol: string;
@@ -89,10 +90,22 @@ export const useChartData = ({
   const retryInterval = 2000; // 2 seconds
   const [historicalLoaded, setHistoricalLoaded] = useState(false);
 
-  // ✅ Fetch historical data first, then merge with realtime WebSocket data
+  // ✅ Fetch historical data with LRU cache
   const fetchHistoricalData = async () => {
+    const cacheKey = `${symbol}-${interval}`;
+
+    // Check cache first
+    const cachedData = chartDataCache.get(cacheKey);
+    if (cachedData && cachedData.length > 0) {
+      console.log(`📊 Cache hit: Loaded ${cachedData.length} candles for ${symbol} from cache`);
+      setData(cachedData);
+      setHistoricalLoaded(true);
+      setRetryCount(0);
+      return cachedData;
+    }
+
     try {
-      console.log(`📊 Fetching historical data for ${symbol} ${interval}`);
+      console.log(`📊 Cache miss: Fetching historical data for ${symbol} ${interval}`);
 
       // Fetch last 24 hours of historical data (same as Dashboard)
       const fromTimestamp = Math.floor(Date.now() / 1000) - 24 * 60 * 60; // 24 hours ago
@@ -140,6 +153,10 @@ export const useChartData = ({
           console.log(
             `📊 Loaded ${historicalCandles.length} historical candles for ${symbol}`
           );
+
+          // Cache the data
+          chartDataCache.set(cacheKey, historicalCandles);
+
           setData(historicalCandles);
           setHistoricalLoaded(true);
           setRetryCount(0); // Reset on success

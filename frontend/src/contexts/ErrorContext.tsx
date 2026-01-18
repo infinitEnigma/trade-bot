@@ -16,6 +16,12 @@ interface ErrorState {
   className?: string;
   size?: "sm" | "md" | "lg" | "xl";
   icon?: React.ReactNode;
+  // Recovery UI state
+  status?: 'idle' | 'pending' | 'success' | 'failed';
+  retryCount?: number;
+  lastRetryAt?: Date;
+  maxRetries?: number;
+  retryCooldownMs?: number;
 }
 
 interface ErrorContextValue {
@@ -85,20 +91,72 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
   }, []);
 
   // Retry error (calls retry function if available)
-  const retryError = useCallback((id: string) => {
+  const retryError = useCallback(async (id: string) => {
     const error = errors.find(e => e.id === id);
-    if (error?.actions) {
-      const retryAction = error.actions.find(action =>
-        action.label.toLowerCase().includes('try again') ||
-        action.label.toLowerCase().includes('retry')
-      );
-      if (retryAction) {
-        retryAction.onClick();
-        // Optionally remove the error after retry
-        removeError(id);
+    if (!error?.actions) return;
+
+    // Check cooldown period
+    const now = Date.now();
+    const lastRetry = error.lastRetryAt?.getTime() || 0;
+    const cooldownMs = error.retryCooldownMs || 1000; // Default 1 second cooldown
+
+    if (now - lastRetry < cooldownMs) {
+      console.warn(`Retry cooldown active for error ${id}`);
+      return;
+    }
+
+    // Check max retries
+    const currentRetries = error.retryCount || 0;
+    const maxRetries = error.maxRetries || 3;
+
+    if (currentRetries >= maxRetries) {
+      console.warn(`Max retries exceeded for error ${id}`);
+      // Update error to show max retries reached
+      updateError(id, {
+        status: 'failed',
+        message: error.message + ` (Max retries: ${maxRetries})`
+      });
+      return;
+    }
+
+    const retryAction = error.actions.find(action =>
+      action.label.toLowerCase().includes('try again') ||
+      action.label.toLowerCase().includes('retry')
+    );
+
+    if (retryAction) {
+      try {
+        // Update error status to pending
+        updateError(id, {
+          status: 'pending',
+          retryCount: currentRetries + 1,
+          lastRetryAt: new Date(),
+          message: error.message + ' (Retrying...)'
+        });
+
+        // Execute retry action
+        await retryAction.onClick();
+
+        // On success, update status
+        updateError(id, {
+          status: 'success',
+          message: error.message?.replace(' (Retrying...)', ' (Success!)')
+        });
+
+        // Auto-remove successful retries after 2 seconds
+        setTimeout(() => {
+          removeError(id);
+        }, 2000);
+
+      } catch (retryError) {
+        // On failure, update status
+        updateError(id, {
+          status: 'failed',
+          message: error.message?.replace(' (Retrying...)', ' (Retry failed)')
+        });
       }
     }
-  }, [errors, removeError]);
+  }, [errors, removeError, updateError]);
 
   // Auto-dismiss errors after timeout
   useEffect(() => {
@@ -235,9 +293,19 @@ export const ErrorNotifications: React.FC<ErrorNotificationsProps> = ({
           >
             <div className="flex items-start gap-3">
               <div className="shrink-0 mt-0.5">
-                {error.icon || <div className="w-5 h-5 bg-red-500/20 rounded-full flex items-center justify-center">
-                  <span className="text-red-400 text-xs">!</span>
-                </div>}
+                {error.status === 'pending' ? (
+                  <div className="w-5 h-5 bg-blue-500/20 rounded-full flex items-center justify-center">
+                    <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                ) : error.status === 'success' ? (
+                  <div className="w-5 h-5 bg-green-500/20 rounded-full flex items-center justify-center">
+                    <span className="text-green-400 text-xs">✓</span>
+                  </div>
+                ) : error.icon || (
+                  <div className="w-5 h-5 bg-red-500/20 rounded-full flex items-center justify-center">
+                    <span className="text-red-400 text-xs">!</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex-1 min-w-0">
