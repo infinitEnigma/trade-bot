@@ -111,4 +111,60 @@
       background-position: -200% 0;
     }
   }
+
+  /* ==========================================
+     PERFORMANCE OPTIMIZATIONS
+     ========================================== */
+
+  /* CSS Containment for performance isolation */
+  .contain-layout {
+    contain: layout style;
+  }
+
+  .contain-strict {
+    contain: strict;
+  }
+
+  .contain-content {
+    contain: content;
+  }
+
+  /* GPU acceleration for smooth animations */
+  .gpu-accelerated {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    perspective: 1000px;
+  }
+
+  /* Will-change hints for browsers */
+  .will-change-transform {
+    will-change: transform;
+  }
+
+  .will-change-opacity {
+    will-change: opacity;
+  }
+
+  /* Non-reflow animations (use transform instead of layout properties) */
+  .animate-slide-in-gpu {
+    animation: slideInGPU 0.3s ease-out;
+  }
+
+  @keyframes slideInGPU {
+    from {
+      opacity: 0;
+      transform: translate3d(-20px, 0, 0);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  /* Reduce paint operations */
+  .reduce-paint {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
 }

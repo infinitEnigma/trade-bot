@@ -134,7 +134,9 @@
       Oxygen,
       Ubuntu,
       sans-serif;
-    background: linear-gradient(135deg, var(--bg-primary) 0%, #1e1b4b 100%);
+    background:
+      linear-gradient(135deg, var(--bg-primary) 0%, #1e1b4b 100%),
+      var(--bg-primary);
     background-attachment: fixed;
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;

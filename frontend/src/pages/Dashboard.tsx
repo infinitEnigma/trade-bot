@@ -170,7 +170,7 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* ✅ Market Chart Section - Full Width */}
-        <div className="mb-8">
+        <div className="mb-8 contain-layout">
           <Suspense
             fallback={
               <Card className="h-96 flex items-center justify-center">
@@ -219,6 +219,7 @@ const Dashboard: React.FC = () => {
                     delay: index * 0.1,
                     ease: "easeOut"
                   }}
+                  className="gpu-accelerated will-change-transform"
                 >
                   <Suspense fallback={<DashboardCardSkeleton />}>
                     {index === 0 && (

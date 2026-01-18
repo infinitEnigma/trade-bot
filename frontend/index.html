@@ -20,12 +20,11 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
 
-    <!-- Health check script - loads immediately -->
+    <!-- Health check script - non-blocking -->
     <script>
-    // Health check on page load - only redirect to maintenance if backend is actually down
+    // Non-blocking health check using requestIdleCallback or setTimeout with lower priority
     (function() {
-        // Give React app time to start loading
-        setTimeout(function() {
+        const checkHealth = function() {
             fetch('/api/health-check', {
                 method: 'GET',
                 headers: { 'Cache-Control': 'no-cache' }
@@ -42,7 +41,15 @@
                 console.warn('Backend health check failed:', error);
                 window.location.href = '/maintenance.html';
             });
-        }, 100); // Small delay to allow React to start
+        };
+
+        // Use requestIdleCallback if available (non-blocking), fallback to setTimeout
+        if ('requestIdleCallback' in window) {
+            requestIdleCallback(checkHealth, { timeout: 2000 });
+        } else {
+            // Use setTimeout with longer delay to avoid blocking
+            setTimeout(checkHealth, 500);
+        }
     })();
     </script>
 

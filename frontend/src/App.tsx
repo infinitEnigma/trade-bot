@@ -13,6 +13,7 @@ import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ErrorProvider, ErrorNotifications } from "./contexts/ErrorContext";
+import { usePageBackground } from "./hooks/usePageBackground";
 import { UserRole } from "@trade-bot/shared";
 
 // Components
@@ -62,6 +63,9 @@ const ProtectedRoute = ({
 // Animated Routes Component
 const AnimatedRoutes = () => {
   const location = useLocation();
+
+  // Apply page-specific background patterns
+  usePageBackground();
 
   const pageVariants = {
     initial: {
