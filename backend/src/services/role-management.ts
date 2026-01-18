@@ -45,6 +45,10 @@ export class RoleManagementService {
                 [userId, "ROLE_ASSIGNED", { role, grantedBy, criteria }]
             );
 
+            // Invalidate cached user data (N+1 query optimization)
+            const { authService } = await import('./auth.js');
+            await authService.invalidateUserDataCache(userId);
+
         } catch (error) {
             logger.error("Failed to assign role", {
                 userId,
@@ -73,6 +77,10 @@ export class RoleManagementService {
                     "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
                     [userId, "ROLE_REMOVED", { role }]
                 );
+
+                // Invalidate cached user data (N+1 query optimization)
+                const { authService } = await import('./auth.js');
+                await authService.invalidateUserDataCache(userId);
             } else {
                 logger.debug("Role not found for user", { userId, role });
             }

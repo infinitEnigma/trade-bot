@@ -207,18 +207,21 @@ export async function authMiddleware(
       return;
     }
 
-    // Load user roles (with error handling)
-    let userRoles: string[] = [];
-    try {
-      userRoles = await roleManagementService.getUserRoles(payload.userId);
-    } catch (roleError) {
-      logger.error("Failed to load user roles in auth middleware", {
+    // Load complete user data with roles and credentials in single query (N+1 optimization)
+    const userData = await authService.getAuthenticatedUserData(payload.userId);
+    if (!userData) {
+      logger.error("Failed to load user data in auth middleware - user not found", {
         userId: payload.userId,
-        error: roleError instanceof Error ? roleError.message : String(roleError),
       });
-      // Continue without roles - user can still access basic features
-      userRoles = [];
+      res.status(401).json({
+        success: false,
+        code: -1007,
+        message: "Unauthorized - user data not found",
+      });
+      return;
     }
+
+    const userRoles = userData.roles;
 
     req.user = {
       ...payload,
@@ -300,18 +303,21 @@ export async function authMiddleware(
           return;
         }
 
-        // Load user roles for refreshed token (with error handling)
-        let refreshedUserRoles: string[] = [];
-        try {
-          refreshedUserRoles = await roleManagementService.getUserRoles(newPayload.userId);
-        } catch (roleError) {
-          logger.error("Failed to load user roles for refreshed token", {
+        // Load complete user data for refreshed token (N+1 optimization)
+        const refreshedUserData = await authService.getAuthenticatedUserData(newPayload.userId);
+        if (!refreshedUserData) {
+          logger.error("Failed to load refreshed user data - user not found", {
             userId: newPayload.userId,
-            error: roleError instanceof Error ? roleError.message : String(roleError),
           });
-          // Continue without roles
-          refreshedUserRoles = [];
+          res.status(401).json({
+            success: false,
+            code: -1008,
+            message: "Unauthorized - refreshed user data not found",
+          });
+          return;
         }
+
+        const refreshedUserRoles = refreshedUserData.roles;
 
         req.user = {
           ...newPayload,

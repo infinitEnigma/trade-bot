@@ -224,6 +224,107 @@ export class AuthService {
     }
   }
 
+  /**
+   * Get complete authenticated user data in a single optimized query
+   * Solves N+1 query problem by JOINing user + roles + credentials
+   * Includes Redis caching for high-frequency auth middleware calls
+   */
+  async getAuthenticatedUserData(
+    userId: string
+  ): Promise<{
+    user: { id: string; email: string; userLevel: UserLevel };
+    roles: string[];
+    hasCredentials: boolean;
+  } | null> {
+    const cacheKey = `auth:user:${userId}`;
+
+    try {
+      // Try Redis cache first (5 minute TTL for auth data)
+      const cacheResult = await redisService.get(cacheKey);
+      if (cacheResult.success && cacheResult.data) {
+        const cachedData = JSON.parse(cacheResult.data);
+        logger.debug("Authenticated user data cache hit", { userId });
+        return cachedData;
+      } else if (!cacheResult.success) {
+        logger.warn("Auth user data cache read failed", {
+          userId,
+          error: cacheResult.error,
+        });
+      }
+
+      logger.debug("Auth user data cache miss, querying database", { userId });
+
+      // Single optimized query with JOINs
+      const result = await pool.query(`
+        SELECT
+          u.id,
+          u.email,
+          u.user_level,
+          COALESCE(
+            JSON_AGG(
+              DISTINCT ur.role
+              ORDER BY ur.role
+            ) FILTER (WHERE ur.role IS NOT NULL),
+            '[]'::json
+          ) as roles,
+          CASE WHEN kc.id IS NOT NULL THEN true ELSE false END as has_credentials
+        FROM users u
+        LEFT JOIN user_roles ur ON u.id = ur.user_id
+        LEFT JOIN kodiak_credentials kc ON u.id = kc.user_id AND kc.verified = true
+        WHERE u.id = $1
+        GROUP BY u.id, u.email, u.user_level, kc.id
+      `, [userId]);
+
+      if (result.rows.length === 0) return null;
+
+      const row = result.rows[0];
+      const userData = {
+        user: {
+          id: row.id,
+          email: row.email,
+          userLevel: row.user_level,
+        },
+        roles: row.roles || [],
+        hasCredentials: row.has_credentials || false,
+      };
+
+      // Cache the result for 5 minutes (frequent auth middleware calls)
+      const cacheSuccess = await redisService.setex(cacheKey, 300, JSON.stringify(userData));
+      if (!cacheSuccess.success) {
+        logger.warn("Failed to cache auth user data", {
+          userId,
+          error: cacheSuccess.error,
+        });
+      }
+
+      logger.debug("Cached auth user data", { userId, rolesCount: userData.roles.length });
+      return userData;
+
+    } catch (error) {
+      logger.error("Failed to get authenticated user data", {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Invalidate cached user data (call when user data changes)
+   */
+  async invalidateUserDataCache(userId: string): Promise<void> {
+    const cacheKey = `auth:user:${userId}`;
+    try {
+      await redisService.del(cacheKey);
+      logger.debug("Invalidated auth user data cache", { userId });
+    } catch (error) {
+      logger.warn("Failed to invalidate auth user data cache", {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   async updateUserLevel(userId: string, level: UserLevel): Promise<boolean> {
     try {
       await pool.query(
