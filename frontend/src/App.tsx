@@ -12,6 +12,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { ErrorProvider, ErrorNotifications } from "./contexts/ErrorContext";
 import { UserRole } from "@trade-bot/shared";
 
 // Components
@@ -232,19 +233,22 @@ const AppRouter = () => {
 function App() {
   return (
     <ThemeProvider defaultTheme="dark">
-      <AuthProvider>
-        <AppRouter />
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-light)",
-              color: "var(--text-primary)",
-            },
-          }}
-        />
-      </AuthProvider>
+      <ErrorProvider>
+        <AuthProvider>
+          <AppRouter />
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              style: {
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-light)",
+                color: "var(--text-primary)",
+              },
+            }}
+          />
+          <ErrorNotifications />
+        </AuthProvider>
+      </ErrorProvider>
     </ThemeProvider>
   );
 }

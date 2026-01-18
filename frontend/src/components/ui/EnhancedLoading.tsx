@@ -184,9 +184,30 @@ export const PageLoader: React.FC<PageLoaderProps> = ({
 
 // Realistic Skeleton Screens
 
+// Enhanced skeleton base styles
+const skeletonVariants = {
+  pulse: "animate-pulse",
+  wave: "animate-pulse", // For now, using pulse; can be enhanced with CSS animations
+  shimmer: "relative overflow-hidden before:absolute before:inset-0 before:-translate-x-full before:bg-gradient-to-r before:from-transparent before:via-white/10 before:to-transparent before:animate-[shimmer_1.5s_ease-in-out_infinite]",
+};
+
+const skeletonSpeeds = {
+  slow: "animate-pulse",
+  normal: "animate-pulse",
+  fast: "animate-pulse",
+};
+
 // Dashboard Card Skeleton
-export const DashboardCardSkeleton: React.FC<{ className?: string }> = ({ className = "" }) => (
-  <Card className={`animate-pulse ${className}`}>
+export const DashboardCardSkeleton: React.FC<{
+  className?: string;
+  variant?: "pulse" | "wave" | "shimmer";
+  speed?: "slow" | "normal" | "fast";
+}> = ({
+  className = "",
+  variant = "pulse",
+  speed = "normal"
+}) => (
+  <Card className={`${skeletonVariants[variant]} ${skeletonSpeeds[speed]} ${className}`}>
     <div className="p-6">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
@@ -327,6 +348,130 @@ export const ChartSkeleton: React.FC<{ height?: number; className?: string }> = 
         <div className="w-20 h-8 bg-surface rounded"></div>
       </div>
       <div className={`bg-surface rounded-lg`} style={{ height: `${height}px` }}></div>
+    </div>
+  </Card>
+);
+
+// Form Skeleton
+export const FormSkeleton: React.FC<{ fields?: number; className?: string }> = ({
+  fields = 4,
+  className = ""
+}) => (
+  <Card className={`animate-pulse ${className}`}>
+    <div className="p-6 space-y-6">
+      <div className="w-48 h-6 bg-surface rounded mb-4"></div>
+
+      {Array.from({ length: fields }, (_, i) => (
+        <div key={i} className="space-y-2">
+          <div className="w-24 h-4 bg-surface rounded"></div>
+          <div className={`bg-surface rounded h-10 ${i % 2 === 0 ? 'w-full' : 'w-1/2'}`}></div>
+        </div>
+      ))}
+
+      <div className="flex gap-3 pt-4">
+        <div className="w-24 h-10 bg-surface rounded-lg"></div>
+        <div className="w-20 h-10 bg-surface rounded-lg"></div>
+      </div>
+    </div>
+  </Card>
+);
+
+// List Skeleton
+export const ListSkeleton: React.FC<{
+  items?: number;
+  showAvatar?: boolean;
+  className?: string;
+}> = ({
+  items = 5,
+  showAvatar = false,
+  className = ""
+}) => (
+  <Card className={`animate-pulse ${className}`}>
+    <div className="p-6">
+      <div className="w-48 h-6 bg-surface rounded mb-6"></div>
+
+      <div className="space-y-4">
+        {Array.from({ length: items }, (_, i) => (
+          <div key={i} className="flex items-center gap-4">
+            {showAvatar && (
+              <div className="w-10 h-10 bg-surface rounded-full flex-shrink-0"></div>
+            )}
+            <div className="flex-1 space-y-2">
+              <div className="w-3/4 h-4 bg-surface rounded"></div>
+              <div className="w-1/2 h-3 bg-surface rounded"></div>
+            </div>
+            <div className="w-16 h-6 bg-surface rounded-full"></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </Card>
+);
+
+// Profile Skeleton
+export const ProfileSkeleton: React.FC<{ className?: string }> = ({ className = "" }) => (
+  <Card className={`animate-pulse ${className}`}>
+    <div className="p-8">
+      <div className="flex items-center gap-6 mb-8">
+        <div className="w-20 h-20 bg-surface rounded-full"></div>
+        <div className="flex-1 space-y-3">
+          <div className="w-48 h-6 bg-surface rounded"></div>
+          <div className="w-32 h-4 bg-surface rounded"></div>
+          <div className="flex gap-4">
+            <div className="w-16 h-5 bg-surface rounded"></div>
+            <div className="w-20 h-5 bg-surface rounded"></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="space-y-2">
+            <div className="w-24 h-4 bg-surface rounded"></div>
+            <div className="w-full h-12 bg-surface rounded"></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </Card>
+);
+
+// Content Block Skeleton
+export const ContentSkeleton: React.FC<{
+  lines?: number;
+  showImage?: boolean;
+  className?: string;
+}> = ({
+  lines = 4,
+  showImage = false,
+  className = ""
+}) => (
+  <Card className={`animate-pulse ${className}`}>
+    <div className="p-6">
+      {showImage && (
+        <div className="w-full h-48 bg-surface rounded-lg mb-4"></div>
+      )}
+
+      <div className="w-3/4 h-6 bg-surface rounded mb-4"></div>
+
+      <div className="space-y-2">
+        {Array.from({ length: lines }, (_, i) => (
+          <div
+            key={i}
+            className={`bg-surface rounded h-4 ${
+              i === lines - 1 ? 'w-2/3' : 'w-full'
+            }`}
+          ></div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-4 mt-6">
+        <div className="w-8 h-8 bg-surface rounded-full"></div>
+        <div className="flex-1">
+          <div className="w-24 h-4 bg-surface rounded"></div>
+        </div>
+        <div className="w-16 h-6 bg-surface rounded-full"></div>
+      </div>
     </div>
   </Card>
 );
