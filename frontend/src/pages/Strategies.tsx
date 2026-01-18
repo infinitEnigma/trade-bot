@@ -277,7 +277,16 @@ const Strategies: React.FC = React.memo(() => {
         </div>
       }
     >
-      <Container className="py-4 space-y-8">
+      <Container
+        size={{
+          default: 'lg',
+          xl: 'xl',
+          '2xl': '2xl',
+          '3xl': '3xl',
+          '4xl': '4xl'
+        }}
+        className="py-4 space-y-8"
+      >
         {/* ✅ User Progress Card - Shows qualification status */}
         <div className="mb-8">
           <UserProgressCard />

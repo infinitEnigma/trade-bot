@@ -86,7 +86,16 @@ const Settings: React.FC = () => {
 
   return (
     <PageLayout header={<AppHeader title="Settings" subtitle="Manage your account" />}>
-      <Container className="py-4" size="lg">
+      <Container
+        size={{
+          default: 'lg',
+          xl: 'xl',
+          '2xl': '2xl',
+          '3xl': '3xl',
+          '4xl': '4xl'
+        }}
+        className="py-4"
+      >
         {/* Account Overview */}
         <Card>
           <SectionHeader title="Account Overview" />

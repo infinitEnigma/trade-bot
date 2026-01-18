@@ -140,7 +140,16 @@ const Profile: React.FC = () => {
       title="Profile Settings"
       subtitle="Manage your account information and preferences"
     />}>
-      <Container className="py-4" size="lg">
+      <Container
+        size={{
+          default: 'lg',
+          xl: 'xl',
+          '2xl': '2xl',
+          '3xl': '3xl',
+          '4xl': '4xl'
+        }}
+        className="py-4"
+      >
         {/* Profile Overview */}
         <div className="mb-8">
           <Card className="p-8">

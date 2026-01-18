@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { PageLayout, Container } from "../components/layout";
+import { PageLayout } from "../components/layout";
 import { ValidatedInput } from "../components/ui/ValidatedInput";
 import { validateEmail } from "../lib/validation";
 
@@ -38,9 +38,9 @@ const Login: React.FC = () => {
   const emailValidation = validateEmail(email);
 
   return (
-    <PageLayout className="flex items-center justify-center">
-      <Container size="sm" className="text-center">
-        <div className="glass-card p-8">
+    <PageLayout className="flex items-center justify-center px-4">
+      <div className="w-full max-w-md">
+        <div className="glass-card p-8 text-center">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-text mb-2">Welcome Back</h1>
             <p className="text-textMuted">Sign in to your account</p>
@@ -96,7 +96,7 @@ const Login: React.FC = () => {
             </p>
           </div>
         </div>
-      </Container>
+      </div>
     </PageLayout>
   );
 };

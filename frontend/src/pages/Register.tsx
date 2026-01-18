@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { PageLayout, Container } from "../components/layout";
+import { PageLayout } from "../components/layout";
 import { ValidatedInput } from "../components/ui/ValidatedInput";
 import { validateEmail, validatePasswordRequirements, validatePasswordConfirmation } from "../lib/validation";
 
@@ -39,9 +39,9 @@ const Register: React.FC = () => {
   };
 
   return (
-    <PageLayout className="flex items-center justify-center">
-      <Container size="sm" className="text-center">
-        <div className="glass-card p-8">
+    <PageLayout className="flex items-center justify-center px-4">
+      <div className="w-full max-w-md">
+        <div className="glass-card p-8 text-center">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-text mb-2">
               Create Account
@@ -113,7 +113,7 @@ const Register: React.FC = () => {
             </p>
           </div>
         </div>
-      </Container>
+      </div>
     </PageLayout>
   );
 };

@@ -153,7 +153,16 @@ const Dashboard: React.FC = () => {
 
   return (
     <PageLayout header={<AppHeader />}>
-      <Container className="py-6 space-y-10">
+      <Container
+        size={{
+          default: 'lg',  // Mobile: constrained
+          xl: 'xl',       // Large desktop: reasonable width
+          '2xl': '2xl',   // Ultra-wide: wider
+          '3xl': '3xl',   // 1080p: even wider
+          '4xl': '4xl'    // 1440p: maximum readable
+        }}
+        className="py-6 space-y-10"
+      >
         <Section>
         {/* ✅ User Progress Card - Shows account progression */}
         <div className="mb-8">

@@ -33,10 +33,12 @@ export const PageLayout: React.FC<PageLayoutProps> = ({
       )}
 
       <main className={cn(
-        "flex-1",
+        "flex-1 min-h-0",
         header && "pt-20" // Add top padding when header is present to account for sticky header
       )}>
-        {children}
+        <div className="w-full h-full">
+          {children}
+        </div>
       </main>
 
       {footer && (
