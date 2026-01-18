@@ -171,6 +171,23 @@ router.post(
 // POST /api/auth/logout
 router.post("/logout", async (req: Request, res: Response) => {
   try {
+    // Get refresh token from cookie or body
+    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+
+    // CRITICAL SECURITY: Blacklist the refresh token to prevent reuse
+    if (refreshToken) {
+      const blacklistSuccess = await authService.blacklistRefreshToken(refreshToken, 86400); // 24 hours
+      if (blacklistSuccess) {
+        logger.info("Refresh token blacklisted on logout", {
+          tokenHash: authService['hashTokenForStorage'](refreshToken),
+        });
+      } else {
+        logger.warn("Failed to blacklist refresh token on logout", {
+          tokenHash: authService['hashTokenForStorage'](refreshToken),
+        });
+      }
+    }
+
     // Clear httpOnly cookies
     res.clearCookie("accessToken", {
       httpOnly: true,

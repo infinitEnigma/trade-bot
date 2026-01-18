@@ -180,6 +180,23 @@ export class UserProfileService {
                 newPassword: hasPasswordChange ? newPassword : undefined,
             });
 
+            // CRITICAL SECURITY: Blacklist all refresh tokens when password changes
+            if (hasPasswordChange) {
+                logger.warn("Password changed - revoking all user tokens", { userId });
+                const tokenResult = await authService.invalidateUserTokens(userId);
+                if (!tokenResult.success) {
+                    logger.error("Failed to revoke user tokens on password change", {
+                        userId,
+                        errors: tokenResult.errors
+                    });
+                } else {
+                    logger.info("Successfully revoked user tokens on password change", {
+                        userId,
+                        tokensBlacklisted: tokenResult.tokensBlacklisted
+                    });
+                }
+            }
+
             // Clear cache after successful update
             await this.invalidateUserProfileCache(userId);
 

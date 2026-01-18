@@ -141,19 +141,29 @@ export class AuthService {
         return { success: false, message: "Token has been invalidated" };
       }
 
-      const decoded = jwt.verify(
-        refreshToken,
-        JWT_REFRESH_SECRET
-      ) as TokenPayload;
+      let decoded: TokenPayload;
+      try {
+        decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as TokenPayload;
+      } catch (jwtError) {
+        // JWT verification failed - could be malformed or tampered
+        logger.warn("Refresh token JWT verification failed", {
+          error: jwtError instanceof Error ? jwtError.message : String(jwtError),
+        });
+        // Blacklist malformed tokens to prevent replay attacks
+        await this.blacklistRefreshToken(refreshToken, 3600); // 1 hour blacklist for malformed tokens
+        return { success: false, message: "Invalid refresh token" };
+      }
 
       // Additional TTL validation
       const now = Math.floor(Date.now() / 1000);
       const tokenExp = decoded.exp;
       if (tokenExp && tokenExp < now) {
-        logger.warn("Refresh token TTL expired", {
+        logger.warn("Refresh token TTL expired - blacklisting", {
           userId: decoded.userId,
           tokenExp: new Date(tokenExp * 1000).toISOString(),
         });
+        // CRITICAL: Blacklist expired tokens to prevent replay attacks
+        await this.blacklistRefreshToken(refreshToken, 86400); // 24 hour blacklist for expired tokens
         return { success: false, message: "Refresh token expired" };
       }
 
@@ -163,6 +173,11 @@ export class AuthService {
       );
 
       if (result.rows.length === 0) {
+        logger.warn("Refresh token for non-existent user - blacklisting", {
+          userId: decoded.userId,
+        });
+        // Blacklist tokens for deleted users
+        await this.blacklistRefreshToken(refreshToken, 86400);
         return { success: false, message: "User not found" };
       }
 
@@ -343,27 +358,128 @@ export class AuthService {
     }
   }
 
-  async invalidateUserTokens(userId: string): Promise<boolean> {
+  async invalidateUserTokens(userId: string): Promise<{ success: boolean; tokensBlacklisted: number; errors: string[] }> {
     try {
-      // Get all refresh tokens for user from Redis (if stored)
-      // For now, we'll implement a pattern-based invalidation
-      // In production, you might want to store active tokens per user
-      logger.info("Invalidating all tokens for user", { userId });
+      logger.warn("Invalidating all tokens for user - SECURITY EVENT", { userId });
 
-      // This is a simplified implementation
-      // A more robust solution would track all active tokens per user
-      await pool.query(
-        "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
-        [userId, "TOKENS_INVALIDATED", { reason: "security" }]
+      const errors: string[] = [];
+      let tokensBlacklisted = 0;
+
+      // Get user's email for token identification
+      const userResult = await pool.query(
+        "SELECT email FROM users WHERE id = $1",
+        [userId]
       );
 
-      return true;
+      if (userResult.rows.length === 0) {
+        return {
+          success: false,
+          tokensBlacklisted: 0,
+          errors: ["User not found"]
+        };
+      }
+
+      const userEmail = userResult.rows[0].email;
+
+      // Generate a family blacklist pattern
+      // This creates a special marker that indicates all tokens for this user should be rejected
+      const familyBlacklistKey = `blacklist:family:${userId}`;
+      const blacklistSuccess = await redisService.setex(
+        familyBlacklistKey,
+        30 * 24 * 60 * 60, // 30 days - matches refresh token expiry
+        JSON.stringify({
+          userId,
+          email: userEmail,
+          blacklistedAt: new Date().toISOString(),
+          reason: "security_invalidated"
+        })
+      );
+
+      if (blacklistSuccess.success) {
+        tokensBlacklisted = 1; // Family marker counts as 1
+        logger.info("User token family blacklisted", { userId, familyKey: familyBlacklistKey });
+      } else {
+        errors.push("Failed to create family blacklist marker");
+      }
+
+      // Log the security event
+      await pool.query(
+        "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
+        [userId, "TOKENS_INVALIDATED", {
+          reason: "security",
+          familyBlacklisted: blacklistSuccess.success,
+          timestamp: new Date().toISOString()
+        }]
+      );
+
+      return {
+        success: errors.length === 0,
+        tokensBlacklisted,
+        errors
+      };
     } catch (error) {
       logger.error("Error invalidating user tokens", {
         error: error instanceof Error ? error.message : String(error),
         userId,
       });
-      return false;
+      return {
+        success: false,
+        tokensBlacklisted: 0,
+        errors: [error instanceof Error ? error.message : String(error)]
+      };
+    }
+  }
+
+  /**
+   * Check if user token family is blacklisted
+   */
+  async isUserTokenFamilyBlacklisted(userId: string): Promise<boolean> {
+    try {
+      const familyBlacklistKey = `blacklist:family:${userId}`;
+      const result = await redisService.get(familyBlacklistKey);
+      return result.success && !!result.data;
+    } catch (error) {
+      logger.error("Error checking user token family blacklist", {
+        error: error instanceof Error ? error.message : String(error),
+        userId,
+      });
+      return false; // Fail open - allow token if Redis is down
+    }
+  }
+
+  /**
+   * Get blacklist statistics for monitoring
+   */
+  async getBlacklistStats(): Promise<{
+    individualTokens: number;
+    familyBlacklists: number;
+    totalBlacklisted: number;
+  }> {
+    try {
+      // Count individual token blacklists (approximate)
+      const individualPattern = "blacklist:refresh:*";
+      // Note: Redis SCAN would be needed for accurate counting in production
+
+      // Count family blacklists
+      const familyPattern = "blacklist:family:*";
+      // Note: Redis SCAN would be needed for accurate counting in production
+
+      // For now, return placeholder stats
+      // In production, implement proper Redis key counting
+      return {
+        individualTokens: 0, // Would use Redis SCAN
+        familyBlacklists: 0,  // Would use Redis SCAN
+        totalBlacklisted: 0,
+      };
+    } catch (error) {
+      logger.error("Error getting blacklist stats", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return {
+        individualTokens: 0,
+        familyBlacklists: 0,
+        totalBlacklisted: 0,
+      };
     }
   }
 
