@@ -38,6 +38,42 @@ interface BackpressureState {
 }
 
 /**
+ * Health check configuration for circuit breaker recovery
+ */
+interface HealthCheckConfig {
+  timeout: number;           // How long to wait for health check response (ms)
+  retries: number;          // Number of retries before declaring unhealthy
+  interval: number;         // Time between health checks (ms)
+  successThreshold: number; // Consecutive successes needed to pass
+  failureThreshold: number; // Consecutive failures before circuit opens
+  enablePingPong: boolean;  // Use WebSocket ping/pong for basic health
+  enableAuthCheck: boolean; // Test authentication flow
+  enableSubscriptionCheck: boolean; // Test subscription capability
+}
+
+/**
+ * Health check result
+ */
+interface HealthCheckResult {
+  healthy: boolean;
+  responseTime: number;
+  error?: string;
+  checksPerformed: string[];
+  timestamp: number;
+}
+
+/**
+ * Circuit breaker recovery state
+ */
+interface RecoveryState {
+  healthChecksPerformed: number;
+  consecutiveSuccesses: number;
+  consecutiveFailures: number;
+  lastHealthCheck: HealthCheckResult | null;
+  recoveryStartTime: number;
+}
+
+/**
  * Manages WebSocket connections, reconnections, heartbeats, and queue-based backpressure
  * Includes circuit breaker pattern for resilient connections and flow control
  */
@@ -56,11 +92,27 @@ export class WebSocketManager {
   private processingInterval: NodeJS.Timeout | null = null;
   private queueProcessorRunning: boolean = false;
 
+  // Circuit breaker health check and recovery
+  private recoveryStates: Map<string, RecoveryState> = new Map();
+  private healthCheckIntervals: Map<string, NodeJS.Timeout> = new Map();
+
   private config: WebSocketConfig;
   private readonly maxQueueSize: number = 10000; // Configurable max queue size
   private readonly processingBatchSize: number = 50; // Messages per processing batch
   private readonly backpressureThreshold: number = 1000; // Queue depth to trigger backpressure
   private readonly backpressureCooldownMs: number = 5000; // Min time between backpressure signals
+
+  // Health check configuration - can be made configurable
+  private readonly healthCheckConfig: HealthCheckConfig = {
+    timeout: 5000,           // 5 second timeout
+    retries: 2,             // 2 retries
+    interval: 10000,        // Check every 10 seconds
+    successThreshold: 2,    // 2 consecutive successes
+    failureThreshold: 3,    // 3 consecutive failures
+    enablePingPong: true,   // Basic ping/pong check
+    enableAuthCheck: false, // Skip auth for now (requires credentials)
+    enableSubscriptionCheck: false, // Skip subscription for now
+  };
 
   constructor(config: WebSocketConfig = DEFAULT_WS_CONFIG) {
     this.config = config;
@@ -208,6 +260,9 @@ export class WebSocketManager {
         });
         this.circuitStates.set(connectionKey, CircuitState.HALF_OPEN);
         this.reconnectAttempts.set(connectionKey, 0); // Reset attempts for half-open
+
+        // CRITICAL: Start explicit health check monitoring for HALF_OPEN state
+        this.startHealthCheckMonitoring(connectionKey);
       } else {
         logger.debug("Circuit breaker open, skipping reconnect", {
           connectionKey,
@@ -698,8 +753,248 @@ export class WebSocketManager {
     });
   }
 
+  // ===============================
+  // CIRCUIT BREAKER HEALTH VALIDATION
+  // ===============================
+
   /**
-   * Get comprehensive statistics including backpressure metrics
+   * Perform explicit health check for a connection
+   */
+  async performHealthCheck(connectionKey: string): Promise<HealthCheckResult> {
+    const startTime = Date.now();
+    const checksPerformed: string[] = [];
+
+    try {
+      const ws = this.getConnection(connectionKey);
+
+      // Check 1: Basic connectivity
+      if (!ws || !this.isConnected(connectionKey)) {
+        return {
+          healthy: false,
+          responseTime: Date.now() - startTime,
+          error: "Connection not available",
+          checksPerformed,
+          timestamp: startTime,
+        };
+      }
+      checksPerformed.push("connectivity");
+
+      // Check 2: Ping/Pong (if enabled)
+      if (this.healthCheckConfig.enablePingPong) {
+        try {
+          await this.performPingPongCheck(ws, connectionKey);
+          checksPerformed.push("ping_pong");
+        } catch (error) {
+          return {
+            healthy: false,
+            responseTime: Date.now() - startTime,
+            error: `Ping/pong check failed: ${(error as Error).message}`,
+            checksPerformed,
+            timestamp: startTime,
+          };
+        }
+      }
+
+      // Additional checks can be added here (auth, subscription tests)
+      // For now, basic connectivity and ping/pong are sufficient
+
+      return {
+        healthy: true,
+        responseTime: Date.now() - startTime,
+        checksPerformed,
+        timestamp: startTime,
+      };
+
+    } catch (error) {
+      return {
+        healthy: false,
+        responseTime: Date.now() - startTime,
+        error: (error as Error).message,
+        checksPerformed,
+        timestamp: startTime,
+      };
+    }
+  }
+
+  /**
+   * Perform ping/pong health check
+   */
+  private async performPingPongCheck(ws: WebSocket, connectionKey: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error("Ping timeout"));
+      }, this.healthCheckConfig.timeout);
+
+      const originalPongHandler = ws.listeners('pong')[0];
+
+      // Temporary pong handler for health check
+      ws.once('pong', () => {
+        clearTimeout(timeout);
+        // Restore original handler if it existed
+        if (originalPongHandler) {
+          ws.on('pong', originalPongHandler);
+        }
+        resolve();
+      });
+
+      // Send ping
+      try {
+        ws.ping();
+      } catch (error) {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Start health check monitoring for HALF_OPEN state
+   */
+  private startHealthCheckMonitoring(connectionKey: string): void {
+    // Initialize recovery state
+    const recoveryState: RecoveryState = {
+      healthChecksPerformed: 0,
+      consecutiveSuccesses: 0,
+      consecutiveFailures: 0,
+      lastHealthCheck: null,
+      recoveryStartTime: Date.now(),
+    };
+
+    this.recoveryStates.set(connectionKey, recoveryState);
+
+    logger.info("Started health check monitoring for HALF_OPEN state", {
+      connectionKey,
+      checkInterval: this.healthCheckConfig.interval,
+    });
+
+    const healthCheckInterval = setInterval(async () => {
+      await this.performRecoveryHealthCheck(connectionKey);
+    }, this.healthCheckConfig.interval);
+
+    this.healthCheckIntervals.set(connectionKey, healthCheckInterval);
+
+    // Perform initial health check immediately
+    setImmediate(() => this.performRecoveryHealthCheck(connectionKey));
+  }
+
+  /**
+   * Stop health check monitoring
+   */
+  private stopHealthCheckMonitoring(connectionKey: string): void {
+    const interval = this.healthCheckIntervals.get(connectionKey);
+    if (interval) {
+      clearInterval(interval);
+      this.healthCheckIntervals.delete(connectionKey);
+    }
+
+    this.recoveryStates.delete(connectionKey);
+
+    logger.debug("Stopped health check monitoring", { connectionKey });
+  }
+
+  /**
+   * Perform health check during recovery (HALF_OPEN state)
+   */
+  private async performRecoveryHealthCheck(connectionKey: string): Promise<void> {
+    const recoveryState = this.recoveryStates.get(connectionKey);
+    if (!recoveryState) return;
+
+    const healthResult = await this.performHealthCheck(connectionKey);
+    recoveryState.healthChecksPerformed++;
+    recoveryState.lastHealthCheck = healthResult;
+
+    if (healthResult.healthy) {
+      recoveryState.consecutiveSuccesses++;
+      recoveryState.consecutiveFailures = 0;
+
+      logger.info("Health check passed during recovery", {
+        connectionKey,
+        consecutiveSuccesses: recoveryState.consecutiveSuccesses,
+        requiredSuccesses: this.healthCheckConfig.successThreshold,
+        responseTime: healthResult.responseTime,
+        checksPerformed: healthResult.checksPerformed,
+      });
+
+      // Check if we've reached success threshold
+      if (recoveryState.consecutiveSuccesses >= this.healthCheckConfig.successThreshold) {
+        await this.transitionToClosed(connectionKey, recoveryState);
+      }
+
+    } else {
+      recoveryState.consecutiveFailures++;
+      recoveryState.consecutiveSuccesses = 0;
+
+      logger.warn("Health check failed during recovery", {
+        connectionKey,
+        consecutiveFailures: recoveryState.consecutiveFailures,
+        maxFailures: this.healthCheckConfig.failureThreshold,
+        error: healthResult.error,
+        responseTime: healthResult.responseTime,
+      });
+
+      // Check if we've exceeded failure threshold
+      if (recoveryState.consecutiveFailures >= this.healthCheckConfig.failureThreshold) {
+        this.transitionToOpen(connectionKey, recoveryState, healthResult);
+      }
+    }
+  }
+
+  /**
+   * Transition from HALF_OPEN to CLOSED (service recovered)
+   */
+  private async transitionToClosed(connectionKey: string, recoveryState: RecoveryState): Promise<void> {
+    this.circuitStates.set(connectionKey, CircuitState.CLOSED);
+    this.stopHealthCheckMonitoring(connectionKey);
+
+    const recoveryDuration = Date.now() - recoveryState.recoveryStartTime;
+
+    logger.info("Circuit breaker transitioned to CLOSED - service recovered", {
+      connectionKey,
+      recoveryDurationMs: recoveryDuration,
+      healthChecksPerformed: recoveryState.healthChecksPerformed,
+      finalSuccessCount: recoveryState.consecutiveSuccesses,
+    });
+
+    // Reset reconnection attempts on successful recovery
+    this.reconnectAttempts.set(connectionKey, 0);
+
+    // Attempt immediate reconnection if not already connected
+    if (!this.isConnected(connectionKey)) {
+      logger.info("Attempting immediate reconnection after recovery", {
+        connectionKey,
+      });
+      // Note: Actual reconnection will be handled by the service layer
+    }
+  }
+
+  /**
+   * Transition from HALF_OPEN back to OPEN (recovery failed)
+   */
+  private transitionToOpen(
+    connectionKey: string,
+    recoveryState: RecoveryState,
+    lastHealthResult: HealthCheckResult
+  ): void {
+    this.circuitStates.set(connectionKey, CircuitState.OPEN);
+    this.lastFailureTime.set(connectionKey, Date.now());
+    this.stopHealthCheckMonitoring(connectionKey);
+
+    const recoveryDuration = Date.now() - recoveryState.recoveryStartTime;
+
+    logger.warn("Circuit breaker transitioned back to OPEN - recovery failed", {
+      connectionKey,
+      recoveryDurationMs: recoveryDuration,
+      healthChecksPerformed: recoveryState.healthChecksPerformed,
+      finalFailureCount: recoveryState.consecutiveFailures,
+      lastError: lastHealthResult.error,
+    });
+
+    // Schedule circuit breaker reset
+    this.scheduleCircuitBreakerReset(connectionKey);
+  }
+
+  /**
+   * Get comprehensive statistics including backpressure and health check metrics
    */
   getStats(): {
     activeConnections: number;
@@ -711,6 +1006,8 @@ export class WebSocketManager {
     backpressureStates: Record<string, BackpressureState>;
     processingBatchSize: number;
     backpressureThreshold: number;
+    recoveryStates: Record<string, RecoveryState>;
+    healthCheckConfig: HealthCheckConfig;
   } {
     const circuitBreakerStates: Record<string, CircuitState> = {};
     for (const [key, state] of this.circuitStates.entries()) {
@@ -720,6 +1017,11 @@ export class WebSocketManager {
     const backpressureStates: Record<string, BackpressureState> = {};
     for (const [key, state] of this.backpressureStates.entries()) {
       backpressureStates[key] = state;
+    }
+
+    const recoveryStates: Record<string, RecoveryState> = {};
+    for (const [key, state] of this.recoveryStates.entries()) {
+      recoveryStates[key] = state;
     }
 
     return {
@@ -732,6 +1034,8 @@ export class WebSocketManager {
       backpressureStates,
       processingBatchSize: this.processingBatchSize,
       backpressureThreshold: this.backpressureThreshold,
+      recoveryStates,
+      healthCheckConfig: this.healthCheckConfig,
     };
   }
 }
