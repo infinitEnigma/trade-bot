@@ -280,6 +280,14 @@ export class AuthService {
     }
   }
 
+  async hashPassword(password: string): Promise<string> {
+    return await bcrypt.hash(password, 12);
+  }
+
+  async verifyPassword(user: { password_hash: string }, password: string): Promise<boolean> {
+    return await bcrypt.compare(password, user.password_hash);
+  }
+
   private generateTokens(user: {
     id: string;
     email: string;

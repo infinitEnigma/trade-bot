@@ -94,6 +94,172 @@ async function getProfile(req: AuthenticatedRequest, res: Response) {
 // GET /api/user/profile
 router.get("/profile", authMiddleware, getProfile);
 
+// Profile update validation schema
+const profileUpdateSchema = Joi.object({
+  email: Joi.string().email().optional(),
+  currentPassword: Joi.string().when('newPassword', {
+    is: Joi.exist(),
+    then: Joi.required(),
+    otherwise: Joi.forbidden()
+  }),
+  newPassword: Joi.string().min(8).optional(),
+});
+
+// POST /api/user/profile/update
+async function updateProfile(req: AuthenticatedRequest, res: Response) {
+  try {
+    // Validate request body
+    const { error, value } = profileUpdateSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: error.details[0].message
+      });
+    }
+
+    const { email, currentPassword, newPassword } = value;
+    const userId = req.user!.userId;
+
+    // Check if there are any changes to make
+    const hasEmailChange = email && email.toLowerCase() !== req.user!.email.toLowerCase();
+    const hasPasswordChange = newPassword;
+
+    if (!hasEmailChange && !hasPasswordChange) {
+      return res.status(400).json({
+        success: false,
+        error: "No changes detected"
+      });
+    }
+
+    // Get current user data for validation
+    const currentUser = await authService.getUserById(userId);
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found"
+      });
+    }
+
+    // Validate current password if changing password
+    if (hasPasswordChange) {
+      // Get user with password hash for verification
+      const passwordCheckResult = await query(
+        "SELECT password_hash FROM users WHERE id = $1",
+        [userId]
+      );
+
+      if (passwordCheckResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: "User not found"
+        });
+      }
+
+      const isCurrentPasswordValid = await authService.verifyPassword(
+        { password_hash: passwordCheckResult.rows[0].password_hash },
+        currentPassword
+      );
+
+      if (!isCurrentPasswordValid) {
+        return res.status(400).json({
+          success: false,
+          error: "Current password is incorrect"
+        });
+      }
+    }
+
+    // Check for email conflicts if email is being changed
+    if (hasEmailChange) {
+      const existingUser = await query(
+        "SELECT id FROM users WHERE email = $1 AND id != $2",
+        [email.toLowerCase(), userId]
+      );
+
+      if (existingUser.rows.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: "Email address is already in use"
+        });
+      }
+    }
+
+    // Prepare update data
+    const updateFields: string[] = [];
+    const updateValues: any[] = [];
+    let paramIndex = 1;
+
+    if (hasEmailChange) {
+      updateFields.push(`email = $${paramIndex++}`);
+      updateValues.push(email.toLowerCase());
+    }
+
+    if (hasPasswordChange) {
+      const hashedPassword = await authService.hashPassword(newPassword);
+      updateFields.push(`password_hash = $${paramIndex++}`);
+      updateValues.push(hashedPassword);
+    }
+
+    updateFields.push(`updated_at = $${paramIndex++}`);
+    updateValues.push(new Date());
+
+    updateValues.push(userId); // WHERE clause
+
+    // Execute update
+    const updateQuery = `
+      UPDATE users
+      SET ${updateFields.join(', ')}
+      WHERE id = $${paramIndex}
+      RETURNING id, email
+    `;
+
+    const updateResult = await query(updateQuery, updateValues);
+
+    if (updateResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found"
+      });
+    }
+
+    // Log the profile update
+    const changes = [];
+    if (hasEmailChange) changes.push("email");
+    if (hasPasswordChange) changes.push("password");
+
+    await query(
+      "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
+      [userId, "PROFILE_UPDATED", { changes }]
+    );
+
+    logger.info("Profile updated successfully", {
+      userId,
+      changes
+    });
+
+    res.json({
+      success: true,
+      message: "Profile updated successfully",
+      data: {
+        email: updateResult.rows[0].email,
+        updatedAt: new Date().toISOString()
+      }
+    });
+
+  } catch (err) {
+    logger.error("Profile update error", {
+      error: err instanceof Error ? err.message : String(err),
+      userId: req.user!.userId,
+    });
+    res.status(500).json({
+      success: false,
+      error: "Failed to update profile"
+    });
+  }
+}
+
+// POST /api/user/profile/update
+router.post("/profile/update", authMiddleware, updateProfile);
+
 // Helper function to generate Kodiak signature
 async function generateKodiakSignature(
   timestamp: number,

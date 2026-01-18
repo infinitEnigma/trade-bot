@@ -1,23 +1,34 @@
 /** @format */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { UserRole } from "@trade-bot/shared";
 import { AppHeader } from "../components/ui/AppHeader";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
+import { ValidatedInput } from "../components/ui/ValidatedInput";
+import {
+  validateProfileForm,
+  createInitialValidationState,
+  ProfileValidationState
+} from "../lib/validation";
+import { SmartToast } from "../lib/toast";
 import {
   Mail,
   Shield,
   Key,
   Settings as SettingsIcon,
   Save,
-  AlertTriangle
+  AlertTriangle,
+  Loader2
 } from "lucide-react";
 
 const Profile: React.FC = () => {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [validation, setValidation] = useState<ProfileValidationState>(createInitialValidationState());
+
   const [formData, setFormData] = useState({
     email: user?.email || '',
     currentPassword: '',
@@ -25,10 +36,100 @@ const Profile: React.FC = () => {
     confirmPassword: ''
   });
 
-  const handleSave = async () => {
-    // TODO: Implement profile update logic
-    console.log('Saving profile:', formData);
+  // Update validation when form data or editing state changes
+  useEffect(() => {
+    if (user?.email) {
+      const newValidation = validateProfileForm(formData, user.email, isEditing);
+      setValidation(newValidation);
+    }
+  }, [formData, user?.email, isEditing]);
+
+  // Reset form when canceling edit
+  const handleCancelEdit = () => {
+    setFormData({
+      email: user?.email || '',
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: ''
+    });
     setIsEditing(false);
+  };
+
+  const handleSave = async () => {
+    // Validate form before submission
+    const currentValidation = validateProfileForm(formData, user?.email || '', isEditing);
+
+    // Mark all fields as touched to show validation errors
+    Object.keys(currentValidation).forEach(key => {
+      if (key !== 'form' && currentValidation[key as keyof ProfileValidationState]) {
+        (currentValidation[key as keyof ProfileValidationState] as any).touched = true;
+      }
+    });
+    setValidation(currentValidation);
+
+    // Check if form is valid
+    if (!currentValidation.form.isValid) {
+      SmartToast.error("Please correct the errors below before saving");
+      return;
+    }
+
+    // Check if there are actual changes to save
+    if (!currentValidation.form.hasEmailChanges && !currentValidation.form.hasPasswordChanges) {
+      SmartToast.info("No changes to save");
+      setIsEditing(false);
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      // Prepare update payload
+      const updatePayload: any = {};
+
+      if (currentValidation.form.hasEmailChanges) {
+        updatePayload.email = formData.email;
+      }
+
+      if (currentValidation.form.hasPasswordChanges) {
+        updatePayload.currentPassword = formData.currentPassword;
+        updatePayload.newPassword = formData.newPassword;
+      }
+
+      // Call the profile update API
+      const response = await fetch('/api/user/profile/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(updatePayload),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to update profile');
+      }
+
+      // Refresh user data
+      await refreshUser();
+
+      SmartToast.success("Profile updated successfully!");
+      setIsEditing(false);
+
+      // Reset password fields
+      setFormData(prev => ({
+        ...prev,
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      }));
+
+    } catch (error) {
+      SmartToast.error("Failed to update profile. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!user) return null;
@@ -87,8 +188,9 @@ const Profile: React.FC = () => {
             subtitle="Update your basic account details"
             actions={
               <button
-                onClick={() => setIsEditing(!isEditing)}
+                onClick={() => isEditing ? handleCancelEdit() : setIsEditing(true)}
                 className="btn-secondary flex items-center gap-2"
+                disabled={isSaving}
               >
                 <SettingsIcon className="w-4 h-4" />
                 {isEditing ? 'Cancel' : 'Edit Profile'}
@@ -99,21 +201,26 @@ const Profile: React.FC = () => {
           <Card className="p-6">
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-text mb-2">
-                    Email Address
-                  </label>
-                  <div className="flex items-center gap-3 p-3 bg-surface rounded-lg">
-                    <Mail className="w-5 h-5 text-textMuted" />
-                    <input
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({...formData, email: e.target.value})}
-                      disabled={!isEditing}
-                      className="flex-1 bg-transparent border-none outline-none text-text disabled:text-textMuted"
-                    />
+                {isEditing ? (
+                  <ValidatedInput
+                    label="Email Address"
+                    type="email"
+                    value={formData.email}
+                    onChange={(value) => setFormData({...formData, email: value})}
+                    validation={validation.email}
+                    placeholder="Enter your email address"
+                  />
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-text mb-2">
+                      Email Address
+                    </label>
+                    <div className="flex items-center gap-3 p-3 bg-surface rounded-lg">
+                      <Mail className="w-5 h-5 text-textMuted" />
+                      <span className="text-text">{user.email}</span>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-text mb-2">
@@ -133,44 +240,37 @@ const Profile: React.FC = () => {
                   <h3 className="text-lg font-semibold text-text mb-4">Change Password</h3>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-text mb-2">
-                        Current Password
-                      </label>
-                      <input
-                        type="password"
-                        value={formData.currentPassword}
-                        onChange={(e) => setFormData({...formData, currentPassword: e.target.value})}
-                        className="input w-full"
-                        placeholder="Enter current password"
-                      />
-                    </div>
+                    <ValidatedInput
+                      label="Current Password"
+                      type="password"
+                      value={formData.currentPassword}
+                      onChange={(value) => setFormData({...formData, currentPassword: value})}
+                      validation={validation.currentPassword}
+                      placeholder="Enter current password"
+                      required
+                    />
 
-                    <div>
-                      <label className="block text-sm font-medium text-text mb-2">
-                        New Password
-                      </label>
-                      <input
-                        type="password"
-                        value={formData.newPassword}
-                        onChange={(e) => setFormData({...formData, newPassword: e.target.value})}
-                        className="input w-full"
-                        placeholder="Enter new password"
-                      />
-                    </div>
+                    <ValidatedInput
+                      label="New Password"
+                      type="password"
+                      value={formData.newPassword}
+                      onChange={(value) => setFormData({...formData, newPassword: value})}
+                      validation={validation.newPassword}
+                      placeholder="Enter new password"
+                      showStrengthIndicator
+                      strength={validation.newPassword.strength}
+                      required
+                    />
 
-                    <div>
-                      <label className="block text-sm font-medium text-text mb-2">
-                        Confirm Password
-                      </label>
-                      <input
-                        type="password"
-                        value={formData.confirmPassword}
-                        onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-                        className="input w-full"
-                        placeholder="Confirm new password"
-                      />
-                    </div>
+                    <ValidatedInput
+                      label="Confirm Password"
+                      type="password"
+                      value={formData.confirmPassword}
+                      onChange={(value) => setFormData({...formData, confirmPassword: value})}
+                      validation={validation.confirmPassword}
+                      placeholder="Confirm new password"
+                      required
+                    />
                   </div>
                 </div>
               )}
@@ -179,10 +279,15 @@ const Profile: React.FC = () => {
                 <div className="flex justify-end pt-6 border-t border-white/5">
                   <button
                     onClick={handleSave}
-                    className="btn-primary flex items-center gap-2"
+                    disabled={isSaving || !validation.form.isValid}
+                    className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Save className="w-4 h-4" />
-                    Save Changes
+                    {isSaving ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    {isSaving ? 'Saving...' : 'Save Changes'}
                   </button>
                 </div>
               )}
