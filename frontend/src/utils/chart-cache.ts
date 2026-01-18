@@ -19,6 +19,9 @@ interface CacheOptions {
     maxDataPoints?: number; // Maximum data points per entry
     ttlMs?: number; // Time to live in milliseconds
     cleanupIntervalMs?: number; // Cleanup interval
+    compressionEnabled?: boolean; // Enable data compression
+    memoryPressureThreshold?: number; // Memory pressure threshold (0-1)
+    adaptiveCleanup?: boolean; // Enable adaptive cleanup based on usage
 }
 
 class ChartDataLRUCache {
@@ -32,6 +35,9 @@ class ChartDataLRUCache {
             maxDataPoints: options.maxDataPoints ?? 1000,
             ttlMs: options.ttlMs ?? 30 * 60 * 1000, // 30 minutes
             cleanupIntervalMs: options.cleanupIntervalMs ?? 5 * 60 * 1000, // 5 minutes
+            compressionEnabled: options.compressionEnabled ?? false,
+            memoryPressureThreshold: options.memoryPressureThreshold ?? 0.8, // 80%
+            adaptiveCleanup: options.adaptiveCleanup ?? true,
         };
 
         this.startCleanupTimer();
@@ -148,6 +154,9 @@ class ChartDataLRUCache {
             evictedCount++;
         }
 
+        // Perform adaptive cleanup based on memory pressure
+        this.adaptiveCleanup();
+
         if (expiredCount > 0 || evictedCount > 0) {
             console.log(`🧹 Chart cache: Cleaned up ${expiredCount} expired, ${evictedCount} LRU entries`);
         }
@@ -198,6 +207,87 @@ class ChartDataLRUCache {
         }
     }
 
+    // Memory pressure detection
+    private checkMemoryPressure(): { pressure: number; isHigh: boolean } {
+        try {
+            // Use Performance.memory if available (Chrome/Edge)
+            if ('memory' in performance) {
+                const memInfo = (performance as any).memory;
+                const usedPercent = memInfo.usedJSHeapSize / memInfo.totalJSHeapSize;
+                return {
+                    pressure: usedPercent,
+                    isHigh: usedPercent > this.options.memoryPressureThreshold
+                };
+            }
+
+            // Fallback: estimate based on cache size
+            const estimatedSize = this.cache.size * 50000; // Rough estimate: 50KB per entry
+            const pressure = Math.min(estimatedSize / (50 * 1024 * 1024), 1); // Assume 50MB limit
+            return {
+                pressure,
+                isHigh: pressure > this.options.memoryPressureThreshold
+            };
+        } catch (error) {
+            // If memory detection fails, assume no pressure
+            return { pressure: 0, isHigh: false };
+        }
+    }
+
+    // Adaptive cleanup based on memory pressure
+    private adaptiveCleanup(): void {
+        const { isHigh, pressure } = this.checkMemoryPressure();
+
+        if (isHigh && this.options.adaptiveCleanup) {
+            console.warn(`🚨 High memory pressure detected (${Math.round(pressure * 100)}%), aggressive cleanup`);
+
+            // Aggressive cleanup under memory pressure
+            const targetSize = Math.floor(this.options.maxEntries * 0.5); // Reduce to 50% capacity
+
+            while (this.cache.size > targetSize) {
+                this.evictLRU();
+            }
+
+            // Reduce TTL for remaining entries (temporary)
+            const entries = Array.from(this.cache.entries());
+            for (const [, entry] of entries) {
+                // If entry is older than 5 minutes, reduce TTL
+                if (Date.now() - entry.timestamp > 5 * 60 * 1000) {
+                    entry.timestamp = Date.now() - (this.options.ttlMs * 0.5); // Reduce effective TTL by half
+                }
+            }
+
+            console.log(`🧹 Adaptive cleanup: Reduced cache to ${this.cache.size} entries under memory pressure`);
+        }
+    }
+
+    // Prefetch data for frequently accessed keys
+    prefetch(keys: string[]): void {
+        // This could be extended to implement predictive caching
+        // For now, just ensure these keys are prioritized in LRU
+        keys.forEach(key => {
+            const entry = this.cache.get(key);
+            if (entry) {
+                // Update last accessed to prevent early eviction
+                entry.lastAccessed = Date.now();
+                entry.accessCount += 0.1; // Small boost for prefetching
+            }
+        });
+    }
+
+    // Get memory usage statistics
+    getMemoryStats() {
+        const { pressure, isHigh } = this.checkMemoryPressure();
+        const cacheStats = this.getStats();
+
+        return {
+            ...cacheStats,
+            memoryPressure: Math.round(pressure * 100),
+            isHighMemoryPressure: isHigh,
+            estimatedCacheSize: this.cache.size * 50000, // Rough estimate
+            pressureThreshold: this.options.memoryPressureThreshold,
+        };
+    }
+
     // Cleanup on destroy
     destroy(): void {
         this.stopCleanupTimer();
@@ -205,12 +295,15 @@ class ChartDataLRUCache {
     }
 }
 
-// Global singleton instance
+// Global singleton instance with advanced features enabled
 export const chartDataCache = new ChartDataLRUCache({
     maxEntries: 10, // Max 10 symbols cached
     maxDataPoints: 1000, // Max 1000 data points per symbol
     ttlMs: 30 * 60 * 1000, // 30 minutes TTL
     cleanupIntervalMs: 5 * 60 * 1000, // Cleanup every 5 minutes
+    compressionEnabled: false, // Enable compression for large datasets (future feature)
+    memoryPressureThreshold: 0.8, // Trigger cleanup at 80% memory usage
+    adaptiveCleanup: true, // Enable adaptive cleanup based on memory pressure
 });
 
 export default chartDataCache;
