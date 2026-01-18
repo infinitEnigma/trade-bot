@@ -57,14 +57,14 @@ export const ValidatedInput: React.FC<ValidatedInputProps> = ({
     if (validation.isValid) {
       return (
         <CheckCircle
-          className="w-4 h-4 text-green-400 flex-shrink-0"
+          className="w-4 h-4 text-green-400 shrink-0"
           aria-label="Valid input"
         />
       );
     } else {
       return (
         <AlertCircle
-          className="w-4 h-4 text-red-400 flex-shrink-0"
+          className="w-4 h-4 text-red-400 shrink-0"
           aria-label="Invalid input"
         />
       );
@@ -141,7 +141,7 @@ export const ValidatedInput: React.FC<ValidatedInputProps> = ({
           role="alert"
           aria-live="polite"
         >
-          <AlertCircle className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
+          <AlertCircle className="w-3 h-3 shrink-0" aria-hidden="true" />
           {validation.message}
         </p>
       )}

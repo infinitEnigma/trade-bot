@@ -159,11 +159,11 @@ export const PageLoader: React.FC<PageLoaderProps> = ({
           {steps.map((step, index) => (
             <div key={step} className="flex items-center gap-3">
               {currentStep !== undefined && index < currentStep ? (
-                <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
+                <CheckCircle className="w-5 h-5 text-green-400 shrink-0" />
               ) : currentStep !== undefined && index === currentStep ? (
-                <Loader2 className="w-5 h-5 animate-spin text-primary flex-shrink-0" />
+                <Loader2 className="w-5 h-5 animate-spin text-primary shrink-0" />
               ) : (
-                <Circle className="w-5 h-5 text-textMuted flex-shrink-0" />
+                <Circle className="w-5 h-5 text-textMuted shrink-0" />
               )}
               <span
                 className={`text-sm ${
@@ -310,7 +310,7 @@ export const UserProgressCardSkeleton: React.FC<{ className?: string }> = ({ cla
       <div className="space-y-4">
         {[1, 2, 3, 4].map((i) => (
           <div key={i} className="flex items-start gap-4">
-            <div className="w-8 h-8 bg-surface rounded-full flex-shrink-0"></div>
+            <div className="w-8 h-8 bg-surface rounded-full shrink-0"></div>
             <div className="flex-1 space-y-2">
               <div className="w-24 h-4 bg-surface rounded"></div>
               <div className="w-48 h-3 bg-surface rounded"></div>
@@ -394,7 +394,7 @@ export const ListSkeleton: React.FC<{
         {Array.from({ length: items }, (_, i) => (
           <div key={i} className="flex items-center gap-4">
             {showAvatar && (
-              <div className="w-10 h-10 bg-surface rounded-full flex-shrink-0"></div>
+              <div className="w-10 h-10 bg-surface rounded-full shrink-0"></div>
             )}
             <div className="flex-1 space-y-2">
               <div className="w-3/4 h-4 bg-surface rounded"></div>

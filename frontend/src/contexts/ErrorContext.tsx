@@ -234,7 +234,7 @@ export const ErrorNotifications: React.FC<ErrorNotificationsProps> = ({
             className="bg-surface border border-white/10 rounded-lg p-4 shadow-lg backdrop-blur-sm animate-in slide-in-from-right-2 duration-300"
           >
             <div className="flex items-start gap-3">
-              <div className="flex-shrink-0 mt-0.5">
+              <div className="shrink-0 mt-0.5">
                 {error.icon || <div className="w-5 h-5 bg-red-500/20 rounded-full flex items-center justify-center">
                   <span className="text-red-400 text-xs">!</span>
                 </div>}
@@ -253,7 +253,7 @@ export const ErrorNotifications: React.FC<ErrorNotificationsProps> = ({
 
               <button
                 onClick={() => removeError(error.id)}
-                className="flex-shrink-0 text-textMuted hover:text-text transition-colors"
+                className="shrink-0 text-textMuted hover:text-text transition-colors"
                 aria-label="Dismiss error"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

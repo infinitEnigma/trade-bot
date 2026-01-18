@@ -259,7 +259,7 @@ export const InlineError: React.FC<{
 
   return (
     <div className={`flex items-center gap-3 p-3 rounded-lg ${config.bgColor} border ${config.borderColor} ${className}`}>
-      <div className={`flex-shrink-0 ${config.color}`}>
+      <div className={`shrink-0 ${config.color}`}>
         <div className="w-4 h-4 flex items-center justify-center">
           <AlertCircle className="w-4 h-4" />
         </div>
