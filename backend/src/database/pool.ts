@@ -142,6 +142,43 @@ export async function query(
 }
 
 /**
+ * Execute a query with timeout protection
+ */
+export async function queryWithTimeout(
+  text: string,
+  params?: any[],
+  timeoutMs: number = 5000
+): Promise<{ rows: any[]; rowCount: number }> {
+  const pool = getPool();
+
+  // Create a promise that rejects after timeout
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(`Query timeout after ${timeoutMs}ms: ${text.substring(0, 100)}...`));
+    }, timeoutMs);
+  });
+
+  // Race the query against the timeout
+  try {
+    const queryPromise = pool.query(text, params);
+    const result = await Promise.race([queryPromise, timeoutPromise]);
+    return {
+      rows: result.rows,
+      rowCount: result.rowCount || 0,
+    };
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Query timeout')) {
+      logger.error("Database query timeout", {
+        query: text.substring(0, 200),
+        timeoutMs,
+        paramsCount: params?.length || 0,
+      });
+    }
+    throw error;
+  }
+}
+
+/**
  * Execute a transaction
  */
 export async function transaction<T>(
@@ -278,9 +315,9 @@ export function getPoolMetrics(): {
   const averageWaitTime =
     poolMetrics.connectionWaitTimes.length > 0
       ? Math.round(
-          poolMetrics.connectionWaitTimes.reduce((a, b) => a + b, 0) /
-            poolMetrics.connectionWaitTimes.length
-        )
+        poolMetrics.connectionWaitTimes.reduce((a, b) => a + b, 0) /
+        poolMetrics.connectionWaitTimes.length
+      )
       : 0;
 
   const maxWaitTime =
@@ -291,12 +328,24 @@ export function getPoolMetrics(): {
   const issues: string[] = [];
   let status: "healthy" | "warning" | "critical" = "healthy";
 
-  if (utilizationPercent > 90) {
-    issues.push(`Pool utilization is ${utilizationPercent}% (very high)`);
+  if (utilizationPercent > 95) {
+    issues.push(`Pool utilization is ${utilizationPercent}% (critical - ${activeConnections}/${poolMetrics.totalConnections} connections)`);
     status = "critical";
-  } else if (utilizationPercent > 75) {
-    issues.push(`Pool utilization is ${utilizationPercent}% (high)`);
+    logger.error("CRITICAL: Database connection pool nearly exhausted", {
+      utilizationPercent,
+      activeConnections,
+      totalConnections: poolMetrics.totalConnections,
+      waitingClients: poolMetrics.waitingClients,
+    });
+  } else if (utilizationPercent > 80) {
+    issues.push(`Pool utilization is ${utilizationPercent}% (warning - ${activeConnections}/${poolMetrics.totalConnections} connections)`);
     status = "warning";
+    logger.warn("WARNING: Database connection pool usage high", {
+      utilizationPercent,
+      activeConnections,
+      totalConnections: poolMetrics.totalConnections,
+      waitingClients: poolMetrics.waitingClients,
+    });
   }
 
   if (poolMetrics.waitingClients > 5) {

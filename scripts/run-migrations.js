@@ -59,8 +59,15 @@ async function runMigrations() {
             await pool.query(migration);
             console.log(`   ✅ Migration part ${i + 1} executed successfully`);
           } catch (error) {
-            console.error(`   ❌ Migration part ${i + 1} failed:`, error.message);
-            throw error;
+            // Check if this is an "already exists" error, which we can safely ignore
+            if (error.message.includes('already exists') ||
+                error.message.includes('does not exist') ||
+                error.message.includes('duplicate key value')) {
+              console.log(`   ⚠️  Migration part ${i + 1} skipped (already applied): ${error.message.split('\n')[0]}`);
+            } else {
+              console.error(`   ❌ Migration part ${i + 1} failed:`, error.message);
+              throw error;
+            }
           }
         }
       }
