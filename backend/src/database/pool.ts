@@ -37,6 +37,37 @@ const getRequiredEnv = (key: string): string => {
   return value;
 };
 
+// PostgreSQL statement timeout configuration
+export enum QueryTimeout {
+  FAST = 5000,        // 5 seconds - simple queries, auth, cache operations
+  MEDIUM = 15000,     // 15 seconds - complex joins, aggregations
+  SLOW = 30000,       // 30 seconds - default for most operations
+  COMPLEX = 60000,    // 60 seconds - heavy analytics, reports
+  REPORT = 300000,    // 5 minutes - long-running reports, data exports
+}
+
+export interface QueryTimeoutConfig {
+  default: QueryTimeout;
+  fast: QueryTimeout;
+  medium: QueryTimeout;
+  slow: QueryTimeout;
+  complex: QueryTimeout;
+  report: QueryTimeout;
+}
+
+// Default timeout configuration
+const DEFAULT_TIMEOUT_CONFIG: QueryTimeoutConfig = {
+  default: QueryTimeout.SLOW,    // 30 seconds
+  fast: QueryTimeout.FAST,       // 5 seconds
+  medium: QueryTimeout.MEDIUM,   // 15 seconds
+  slow: QueryTimeout.SLOW,       // 30 seconds
+  complex: QueryTimeout.COMPLEX, // 60 seconds
+  report: QueryTimeout.REPORT,   // 5 minutes
+};
+
+// Current timeout configuration (can be made configurable)
+let currentTimeoutConfig = { ...DEFAULT_TIMEOUT_CONFIG };
+
 /**
  * Initialize the database connection pool
  * Call this once at application startup
@@ -58,6 +89,12 @@ export function initializePool(): Pool {
     idleTimeoutMillis: 30000, // Idle connection timeout (30 seconds)
     connectionTimeoutMillis: 2000, // Connection timeout (2 seconds)
     application_name: "trade-bot", // Identifies connections in PostgreSQL logs
+    // ✅ PostgreSQL statement timeout protection (30 seconds default)
+    statement_timeout: currentTimeoutConfig.default,
+    // Additional timeout settings for robustness
+    query_timeout: currentTimeoutConfig.default,
+    // Lock timeout to prevent deadlock hangs (10 seconds)
+    lock_timeout: 10000,
   });
 
   // ✅ Error event handler
@@ -66,9 +103,25 @@ export function initializePool(): Pool {
     process.exit(-1);
   });
 
-  // ✅ Connect event handler
-  pool.on("connect", client => {
+  // ✅ Connect event handler - set per-connection timeouts
+  pool.on("connect", async (client) => {
     poolMetrics.totalConnections++;
+
+    try {
+      // Set PostgreSQL session timeouts on each new connection
+      await client.query(`SET statement_timeout = ${currentTimeoutConfig.default}`);
+      await client.query(`SET lock_timeout = 10000`); // 10 seconds for locks
+
+      logger.debug("Database connection timeouts configured", {
+        statementTimeout: currentTimeoutConfig.default,
+        lockTimeout: 10000,
+      });
+    } catch (error) {
+      logger.error("Failed to set connection timeouts", {
+        error: (error as Error).message,
+      });
+    }
+
     logger.info("New database connection established", {
       totalConnections: poolMetrics.totalConnections,
     });
@@ -385,6 +438,143 @@ export function getPoolMetrics(): {
       issues,
     },
   };
+}
+
+/**
+ * Execute a query with automatic timeout based on query type
+ */
+export async function queryWithAutoTimeout(
+  text: string,
+  params?: any[],
+  options?: {
+    category?: keyof QueryTimeoutConfig;
+    customTimeout?: number;
+  }
+): Promise<{ rows: any[]; rowCount: number }> {
+  const category = options?.category || 'default';
+  const timeoutMs = options?.customTimeout || currentTimeoutConfig[category];
+
+  logger.debug("Executing query with auto timeout", {
+    category,
+    timeoutMs,
+    queryLength: text.length,
+  });
+
+  return queryWithTimeout(text, params, timeoutMs);
+}
+
+/**
+ * Execute a query with a specific timeout category
+ */
+export async function queryFast(text: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> {
+  return queryWithAutoTimeout(text, params, { category: 'fast' });
+}
+
+export async function queryMedium(text: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> {
+  return queryWithAutoTimeout(text, params, { category: 'medium' });
+}
+
+export async function querySlow(text: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> {
+  return queryWithAutoTimeout(text, params, { category: 'slow' });
+}
+
+export async function queryComplex(text: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> {
+  return queryWithAutoTimeout(text, params, { category: 'complex' });
+}
+
+export async function queryReport(text: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> {
+  return queryWithAutoTimeout(text, params, { category: 'report' });
+}
+
+/**
+ * Get a client with custom timeout settings
+ */
+export async function getClientWithTimeout(timeoutMs: number = currentTimeoutConfig.default): Promise<PoolClient> {
+  const client = await getClient();
+
+  try {
+    // Set custom timeout for this client session
+    await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
+    logger.debug("Client timeout configured", { timeoutMs });
+  } catch (error) {
+    logger.warn("Failed to set client timeout, using pool default", {
+      timeoutMs,
+      error: (error as Error).message,
+    });
+  }
+
+  return client;
+}
+
+/**
+ * Update timeout configuration (runtime configurable)
+ */
+export function updateTimeoutConfig(newConfig: Partial<QueryTimeoutConfig>): void {
+  currentTimeoutConfig = { ...currentTimeoutConfig, ...newConfig };
+
+  logger.info("Database timeout configuration updated", {
+    newConfig: currentTimeoutConfig,
+  });
+
+  // Note: Existing connections will keep their current timeouts
+  // New connections will use the updated configuration
+}
+
+/**
+ * Get current timeout configuration
+ */
+export function getTimeoutConfig(): QueryTimeoutConfig {
+  return { ...currentTimeoutConfig };
+}
+
+/**
+ * Get timeout statistics and recommendations
+ */
+export function getTimeoutStats(): {
+  config: QueryTimeoutConfig;
+  recommendations: string[];
+  health: {
+    status: 'healthy' | 'warning' | 'critical';
+    issues: string[];
+  };
+} {
+  const recommendations: string[] = [];
+  const issues: string[] = [];
+
+  // Check for potentially problematic timeout settings
+  if (currentTimeoutConfig.default > 60000) {
+    issues.push('Default timeout > 60s may allow runaway queries');
+    recommendations.push('Consider reducing default timeout to 30s');
+  }
+
+  if (currentTimeoutConfig.fast > 10000) {
+    issues.push('Fast query timeout > 10s defeats the purpose');
+    recommendations.push('Fast queries should timeout < 10s');
+  }
+
+  if (currentTimeoutConfig.report < 60000) {
+    issues.push('Report timeout < 60s may interrupt long-running reports');
+    recommendations.push('Consider increasing report timeout to 5+ minutes');
+  }
+
+  const status = issues.length > 0 ? 'warning' : 'healthy';
+
+  return {
+    config: getTimeoutConfig(),
+    recommendations,
+    health: {
+      status,
+      issues,
+    },
+  };
+}
+
+/**
+ * Reset timeout configuration to defaults
+ */
+export function resetTimeoutConfig(): void {
+  currentTimeoutConfig = { ...DEFAULT_TIMEOUT_CONFIG };
+  logger.info("Database timeout configuration reset to defaults");
 }
 
 // Update metrics every 30 seconds
