@@ -39,8 +39,15 @@ export interface EngineHealthStatus {
  * Bot Status Service
  */
 export class BotStatusService {
-    private readonly HEARTBEAT_TIMEOUT_MS = 60000; // 60 seconds
+    private readonly HEARTBEAT_TIMEOUT_MS = 30000; // 30 seconds (reduced from 60s)
     private readonly RECOVERY_TIMEOUT_MS = 30000; // 30 seconds for recovery
+    private heartbeatCheckInterval: NodeJS.Timeout | null = null;
+    private readonly STALE_CHECK_INTERVAL_MS = 15000; // Check every 15 seconds
+
+    constructor() {
+        // Start background stale detection on initialization
+        this.startStaleDetection();
+    }
 
     /**
      * Validate bot status based on heartbeat and current state
@@ -343,6 +350,148 @@ export class BotStatusService {
         }
 
         return { canStop: true };
+    }
+
+    // ===============================
+    // HEARTBEAT MECHANISM & STALE DETECTION
+    // ===============================
+
+    /**
+     * Send heartbeat for a bot (called by bot engine every 30 seconds)
+     */
+    async sendBotHeartbeat(botId: string, statusInfo?: any): Promise<{ success: boolean; error?: string }> {
+        try {
+            await query(
+                "UPDATE bot_instances SET last_heartbeat = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+                [botId]
+            );
+
+            // If bot was in error state due to heartbeat timeout, recover it
+            const botResult = await query("SELECT status, last_error FROM bot_instances WHERE id = $1", [botId]);
+            if (botResult.rows.length > 0) {
+                const bot = botResult.rows[0];
+                if (bot.status === 'ERROR' && bot.last_error?.includes('heartbeat timeout')) {
+                    await this.updateBotStatus(botId, 'RUNNING', null, 'heartbeat_recovery');
+                    logger.info("Bot recovered from heartbeat timeout", { botId });
+                }
+            }
+
+            logger.debug("Bot heartbeat recorded", {
+                botId,
+                statusInfo: statusInfo ? Object.keys(statusInfo) : undefined
+            });
+
+            return { success: true };
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            logger.error("Failed to record bot heartbeat", {
+                botId,
+                error: errorMessage,
+            });
+            return { success: false, error: errorMessage };
+        }
+    }
+
+    /**
+     * Start background stale detection process
+     */
+    private startStaleDetection(): void {
+        if (this.heartbeatCheckInterval) return;
+
+        logger.info("Starting bot stale detection process", {
+            checkInterval: this.STALE_CHECK_INTERVAL_MS,
+            timeout: this.HEARTBEAT_TIMEOUT_MS,
+        });
+
+        this.heartbeatCheckInterval = setInterval(async () => {
+            await this.checkForStaleBots();
+        }, this.STALE_CHECK_INTERVAL_MS);
+
+        // Run initial check
+        setImmediate(() => this.checkForStaleBots());
+    }
+
+    /**
+     * Stop background stale detection
+     */
+    private stopStaleDetection(): void {
+        if (this.heartbeatCheckInterval) {
+            clearInterval(this.heartbeatCheckInterval);
+            this.heartbeatCheckInterval = null;
+            logger.info("Stopped bot stale detection process");
+        }
+    }
+
+    /**
+     * Check for stale bots and mark them as error
+     */
+    private async checkForStaleBots(): Promise<void> {
+        try {
+            const now = Date.now();
+
+            // Find running bots with stale heartbeats
+            const staleBots = await query(`
+                SELECT id, user_id, last_heartbeat, status
+                FROM bot_instances
+                WHERE status = 'RUNNING'
+                AND last_heartbeat < NOW() - INTERVAL '${this.HEARTBEAT_TIMEOUT_MS / 1000} seconds'
+            `);
+
+            if (staleBots.rows.length > 0) {
+                logger.warn("Found stale bots, marking as error", {
+                    staleCount: staleBots.rows.length,
+                    timeoutMs: this.HEARTBEAT_TIMEOUT_MS,
+                });
+
+                // Mark each stale bot as error
+                for (const bot of staleBots.rows) {
+                    const lastHeartbeat = bot.last_heartbeat ? new Date(bot.last_heartbeat).getTime() : 0;
+                    const age = now - lastHeartbeat;
+
+                    await this.updateBotStatus(
+                        bot.id,
+                        'ERROR',
+                        `Bot heartbeat timeout (${Math.round(age / 1000)}s since last heartbeat)`,
+                        'stale_detection'
+                    );
+
+                    // Notify user via WebSocket
+                    await this.notifyUserOfStaleBot(bot.user_id, bot.id, age);
+                }
+            }
+
+        } catch (error) {
+            logger.error("Failed to check for stale bots", {
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    /**
+     * Notify user about stale bot via WebSocket
+     */
+    private async notifyUserOfStaleBot(userId: string, botId: string, ageMs: number): Promise<void> {
+        try {
+            // Import io dynamically to avoid circular imports
+            const { io } = await import("../index.js");
+
+            if (io) {
+                io.to(`user:${userId}`).emit("bot:status", {
+                    botId,
+                    status: "stale",
+                    message: `Bot has stopped responding (${Math.round(ageMs / 1000)}s since last heartbeat)`,
+                    timestamp: new Date().toISOString(),
+                });
+
+                logger.debug("Notified user of stale bot", { userId, botId, ageMs });
+            }
+        } catch (error) {
+            logger.warn("Failed to notify user of stale bot", {
+                userId,
+                botId,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
     }
 
     /**
