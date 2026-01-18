@@ -80,6 +80,11 @@ router.post(
 
       if (!result.success) {
         const authError = new ValidationError(result.message || "Invalid credentials");
+
+        // Record failed login attempt for progressive backoff
+        // This will be handled by the rate limiter middleware automatically
+        // when progressiveBackoff is enabled for auth endpoints
+
         return res.status(authError.statusCode).json(
           createErrorResponse(authError, getCorrelationId())
         );

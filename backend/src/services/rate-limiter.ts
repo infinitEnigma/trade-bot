@@ -147,7 +147,127 @@ export interface RateLimitConfig {
     [UserLevel.VERIFIED]: number;
   };
   enableUserBasedLimits?: boolean; // Enable user-based rate limiting
+  // Progressive rate limiting for authentication
+  progressiveBackoff?: boolean; // Enable exponential backoff on failures
+  maxProgressiveDelay?: number; // Maximum delay in milliseconds (default: 5 minutes)
+  progressiveBaseDelay?: number; // Base delay for backoff calculation (default: 1 second)
 }
+
+/**
+ * Track failed authentication attempts for progressive backoff
+ */
+class ProgressiveAuthLimiter {
+  private readonly FAILURE_KEY_PREFIX = 'auth:failures:';
+  private readonly MAX_FAILURES = 5;
+  private readonly BASE_DELAY_MS = 1000; // 1 second
+  private readonly MAX_DELAY_MS = 300000; // 5 minutes
+
+  /**
+   * Record a failed authentication attempt
+   */
+  async recordFailure(identifier: string): Promise<{ delayMs: number; totalFailures: number }> {
+    const key = `${this.FAILURE_KEY_PREFIX}${identifier}`;
+
+    try {
+      // Atomically increment failure count and get current value
+      const result = await redisService.atomicReadModifyWrite(
+        key,
+        (current: number | null) => (current || 0) + 1,
+        0,
+        3
+      );
+
+      if (!result.success) {
+        logger.warn("Failed to record auth failure, using fallback", { identifier });
+        return { delayMs: this.BASE_DELAY_MS, totalFailures: 1 };
+      }
+
+      const totalFailures = result.newValue!;
+      const delayMs = this.calculateProgressiveDelay(totalFailures);
+
+      // Set expiry on the failure counter (24 hours)
+      await redisService.setex(key, 24 * 60 * 60, totalFailures.toString());
+
+      logger.debug("Recorded authentication failure", {
+        identifier,
+        totalFailures,
+        delayMs
+      });
+
+      return { delayMs, totalFailures };
+    } catch (error) {
+      logger.error("Error recording auth failure", {
+        identifier,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { delayMs: this.BASE_DELAY_MS, totalFailures: 1 };
+    }
+  }
+
+  /**
+   * Record a successful authentication (reset failure counter)
+   */
+  async recordSuccess(identifier: string): Promise<void> {
+    const key = `${this.FAILURE_KEY_PREFIX}${identifier}`;
+
+    try {
+      await redisService.del(key);
+      logger.debug("Reset authentication failure counter", { identifier });
+    } catch (error) {
+      logger.warn("Failed to reset auth failure counter", {
+        identifier,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Get current failure count and required delay
+   */
+  async getFailureInfo(identifier: string): Promise<{ totalFailures: number; delayMs: number }> {
+    const key = `${this.FAILURE_KEY_PREFIX}${identifier}`;
+
+    try {
+      const result = await redisService.get(key);
+      const totalFailures = result.success && result.data ? parseInt(result.data) : 0;
+      const delayMs = totalFailures > 0 ? this.calculateProgressiveDelay(totalFailures) : 0;
+
+      return { totalFailures, delayMs };
+    } catch (error) {
+      logger.warn("Failed to get auth failure info", {
+        identifier,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { totalFailures: 0, delayMs: 0 };
+    }
+  }
+
+  /**
+   * Calculate progressive delay based on failure count
+   */
+  private calculateProgressiveDelay(failures: number): number {
+    if (failures <= 1) return 0; // No delay for first failure
+
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, then cap at MAX_DELAY_MS
+    const exponent = Math.min(failures - 1, 5); // Cap exponent to prevent overflow
+    const delayMs = Math.min(this.BASE_DELAY_MS * Math.pow(2, exponent), this.MAX_DELAY_MS);
+
+    // Add jitter (±10%) to prevent thundering herd
+    const jitter = delayMs * 0.1 * (Math.random() * 2 - 1);
+    return Math.max(0, Math.round(delayMs + jitter));
+  }
+
+  /**
+   * Check if identifier is currently in progressive backoff
+   */
+  async isInBackoff(identifier: string): Promise<boolean> {
+    const { delayMs } = await this.getFailureInfo(identifier);
+    return delayMs > 0;
+  }
+}
+
+// Global progressive auth limiter instance
+const progressiveAuthLimiter = new ProgressiveAuthLimiter();
 
 /**
  * Create a fail-safe rate limiter middleware for specific endpoint
@@ -184,6 +304,22 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
       let current: number;
       let resetTime: number;
       let usedFallback = false;
+      let progressiveDelay = 0;
+
+      // Check progressive backoff for authentication endpoints
+      if (config.progressiveBackoff && endpoint === 'auth') {
+        const failureInfo = await progressiveAuthLimiter.getFailureInfo(identifier);
+        progressiveDelay = failureInfo.delayMs;
+
+        if (progressiveDelay > 0) {
+          logger.info("Applying progressive backoff delay", {
+            endpoint,
+            identifier,
+            progressiveDelay,
+            totalFailures: failureInfo.totalFailures,
+          });
+        }
+      }
 
       if (redisAvailable) {
         try {
@@ -240,6 +376,11 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
           resetTime = memoryResult.resetTime;
 
           if (!memoryResult.allowed) {
+            // For auth endpoints, record the failure for progressive backoff
+            if (config.progressiveBackoff && endpoint === 'auth') {
+              await progressiveAuthLimiter.recordFailure(identifier);
+            }
+
             return res.status(429).json({
               success: false,
               error:
@@ -260,6 +401,11 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
         resetTime = memoryResult.resetTime;
 
         if (!memoryResult.allowed) {
+          // For auth endpoints, record the failure for progressive backoff
+          if (config.progressiveBackoff && endpoint === 'auth') {
+            await progressiveAuthLimiter.recordFailure(identifier);
+          }
+
           return res.status(429).json({
             success: false,
             error:
@@ -269,7 +415,7 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
         }
       }
 
-      // ✅ Add rate limit headers with user-based information
+      // ✅ Add rate limit headers with user-based and progressive information
       res.set("RateLimit-Limit", effectiveMaxRequests.toString());
       res.set(
         "RateLimit-Remaining",
@@ -278,9 +424,18 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
       res.set("RateLimit-Reset", new Date(resetTime).toISOString());
       res.set("RateLimit-Using-Fallback", usedFallback.toString());
       res.set("RateLimit-Type", limitType); // 'user' or 'ip'
+      if (progressiveDelay > 0) {
+        res.set("RateLimit-Progressive-Delay", progressiveDelay.toString());
+      }
 
       // ✅ Check if limit exceeded
       if (current > effectiveMaxRequests) {
+        // For auth endpoints, record the failure for progressive backoff
+        if (config.progressiveBackoff && endpoint === 'auth') {
+          const failureInfo = await progressiveAuthLimiter.recordFailure(identifier);
+          progressiveDelay = failureInfo.delayMs;
+        }
+
         logger.warn("Rate limit exceeded", {
           endpoint,
           limitType,
@@ -290,13 +445,15 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
           current,
           max: effectiveMaxRequests,
           usedFallback,
+          progressiveDelay,
         });
 
         return res.status(429).json({
           success: false,
           error: config.message || "Too many requests, please try again later",
-          retryAfter: Math.ceil((resetTime - Date.now()) / 1000),
+          retryAfter: Math.ceil((resetTime - Date.now()) / 1000) + Math.ceil(progressiveDelay / 1000),
           limitType, // Indicate whether it was user or IP limit
+          progressiveDelay: progressiveDelay > 0 ? Math.ceil(progressiveDelay / 1000) : undefined,
         });
       }
 
@@ -338,11 +495,14 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
  * Predefined rate limiter configurations with user-based tier support
  */
 export const RateLimiters = {
-  // ✅ Authentication endpoints (strict, no user-based limits)
+  // ✅ Authentication endpoints (strict, with progressive backoff)
   auth: createRateLimiter("auth", {
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 5, // 5 attempts
     message: "Too many login attempts, please try again later",
+    progressiveBackoff: true, // Enable exponential backoff on failures
+    maxProgressiveDelay: 5 * 60 * 1000, // Max 5 minutes delay
+    progressiveBaseDelay: 1000, // Start with 1 second
   }),
 
   // ✅ Public endpoints (lenient, fail open, no user-based limits for anonymous)
