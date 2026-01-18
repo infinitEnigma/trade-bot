@@ -7,6 +7,7 @@
 
 import { query } from "../database/pool";
 import { authService } from "./auth";
+import { redisService } from "./redis";
 import logger from "./logger";
 
 export interface ProfileUpdateData {
@@ -41,42 +42,83 @@ export interface UserProfile {
  * User Profile Service
  */
 export class UserProfileService {
+    private readonly CACHE_TTL = 300; // 5 minutes for user profiles
+
     /**
-     * Get comprehensive user profile information
+     * Get comprehensive user profile information with optimized single query and caching
      */
     async getUserProfile(userId: string): Promise<UserProfile> {
-        const user = await authService.getUserById(userId);
+        const cacheKey = `user:profile:${userId}`;
 
-        if (!user) {
+        // Check Redis cache first for performance
+        try {
+            const cachedResult = await redisService.get(cacheKey);
+            if (cachedResult.success && cachedResult.data) {
+                logger.debug("User profile retrieved from cache", { userId });
+                return JSON.parse(cachedResult.data);
+            }
+        } catch (cacheError) {
+            logger.warn("Failed to read from cache, falling back to database", {
+                userId,
+                error: (cacheError as Error).message,
+            });
+        }
+
+        // Single optimized query with LEFT JOIN to eliminate N+1 problem
+        const result = await query(`
+      SELECT
+        u.id,
+        u.email,
+        u.user_level,
+        u.created_at as user_created_at,
+        kc.account_id,
+        kc.verified,
+        kc.created_at as kodiak_connected_at
+      FROM users u
+      LEFT JOIN kodiak_credentials kc ON u.id = kc.user_id
+      WHERE u.id = $1
+    `, [userId]);
+
+        if (result.rows.length === 0) {
             throw new Error('User not found');
         }
 
-        const credentialsResult = await query(
-            "SELECT account_id, verified FROM kodiak_credentials WHERE user_id = $1",
-            [user.id]
-        );
-
-        const hasKodiak = credentialsResult.rows.length > 0;
+        const row = result.rows[0];
+        const hasKodiak = !!row.account_id;
         const kodiakStatus = hasKodiak
             ? {
-                accountId: credentialsResult.rows[0].account_id,
-                verified: credentialsResult.rows[0].verified,
+                accountId: row.account_id,
+                verified: row.verified,
             }
             : null;
 
-        logger.info("User profile retrieved", {
-            userId: user.id,
-            hasKodiak,
-        });
-
-        return {
-            id: user.id,
-            email: user.email,
-            userLevel: user.userLevel,
+        const profile: UserProfile = {
+            id: row.id,
+            email: row.email,
+            userLevel: row.user_level,
             roles: [], // TODO: Implement role retrieval from auth middleware
             hasKodiak,
             kodiakStatus,
         };
+
+        // Cache the profile for future requests
+        try {
+            await redisService.setex(cacheKey, this.CACHE_TTL, JSON.stringify(profile));
+            logger.debug("User profile cached", { userId, ttl: this.CACHE_TTL });
+        } catch (cacheError) {
+            logger.warn("Failed to cache user profile", {
+                userId,
+                error: (cacheError as Error).message,
+            });
+        }
+
+        logger.debug("User profile retrieved with optimized query", {
+            userId: row.id,
+            hasKodiak,
+            cached: false,
+        });
+
+        return profile;
     }
 
     /**
@@ -138,6 +180,9 @@ export class UserProfileService {
                 newPassword: hasPasswordChange ? newPassword : undefined,
             });
 
+            // Clear cache after successful update
+            await this.invalidateUserProfileCache(userId);
+
             // Log the profile update
             const changes = [];
             if (hasEmailChange) changes.push("email");
@@ -148,6 +193,7 @@ export class UserProfileService {
             logger.info("Profile updated successfully", {
                 userId,
                 changes,
+                cacheInvalidated: true,
             });
 
             return {
@@ -313,6 +359,22 @@ export class UserProfileService {
             "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
             [userId, "PROFILE_UPDATED", { changes }]
         );
+    }
+
+    /**
+     * Invalidate user profile cache after updates
+     */
+    private async invalidateUserProfileCache(userId: string): Promise<void> {
+        const cacheKey = `user:profile:${userId}`;
+        try {
+            await redisService.del(cacheKey);
+            logger.debug("User profile cache invalidated", { userId });
+        } catch (error) {
+            logger.warn("Failed to invalidate user profile cache", {
+                userId,
+                error: (error as Error).message,
+            });
+        }
     }
 }
 

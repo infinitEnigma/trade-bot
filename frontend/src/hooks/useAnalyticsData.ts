@@ -69,37 +69,34 @@ export const useAnalyticsData = ({
 
 
 
-    // Load data in chunks to prevent memory issues
+    // Load data in chunks with pagination to prevent memory issues
     const loadDataInChunks = useCallback(async (
         symbol: string,
         totalDays: number,
         signal: AbortSignal
     ) => {
         const chunks = [];
-        const chunkSize = 30; // 30 days per chunk
-        const totalChunks = Math.ceil(totalDays / chunkSize);
+        const maxTotalDays = 365; // Cap at 1 year to prevent excessive loading
+        const effectiveTotalDays = Math.min(totalDays, maxTotalDays);
 
-        for (let i = 0; i < totalDays; i += chunkSize) {
-            if (signal.aborted) break;
+        // Implement progressive loading: load recent data first, then older data
+        const recentDays = Math.min(90, effectiveTotalDays); // Load last 90 days first
+        const remainingDays = effectiveTotalDays - recentDays;
 
-            const chunkDays = Math.min(chunkSize, totalDays - i);
-            const chunkStart = new Date();
-            chunkStart.setDate(chunkStart.getDate() - (totalDays - i));
-            const chunkEnd = new Date();
-            chunkEnd.setDate(chunkEnd.getDate() - (totalDays - i - chunkDays));
+        // Load recent data first (higher priority)
+        if (recentDays > 0) {
+            const recentStart = new Date();
+            recentStart.setDate(recentStart.getDate() - recentDays);
+            const recentEnd = new Date();
 
             try {
-                const chunkData = await loadHistoricalChunk(
+                const recentData = await loadHistoricalChunk(
                     symbol,
-                    chunkStart,
-                    chunkEnd
+                    recentStart,
+                    recentEnd
                 );
-                chunks.push(chunkData);
-
-                // Update progress
-                const completedChunks = Math.floor(i / chunkSize) + 1;
-                setProgress(completedChunks / totalChunks);
-
+                chunks.push(recentData);
+                setProgress(0.5); // 50% progress after recent data
             } catch (error) {
                 if (!signal.aborted) {
                     throw error;
@@ -107,6 +104,44 @@ export const useAnalyticsData = ({
             }
         }
 
+        // Load older historical data in background if needed
+        if (remainingDays > 0 && !signal.aborted) {
+            const historicalChunks = [];
+            const historicalChunkSize = 60; // Larger chunks for older data
+
+            for (let i = 0; i < remainingDays; i += historicalChunkSize) {
+                if (signal.aborted) break;
+
+                const chunkDays = Math.min(historicalChunkSize, remainingDays - i);
+                const chunkStart = new Date();
+                chunkStart.setDate(chunkStart.getDate() - (remainingDays - i + recentDays));
+                const chunkEnd = new Date();
+                chunkEnd.setDate(chunkEnd.getDate() - (remainingDays - i - chunkDays + recentDays));
+
+                try {
+                    const chunkData = await loadHistoricalChunk(
+                        symbol,
+                        chunkStart,
+                        chunkEnd
+                    );
+                    historicalChunks.push(chunkData);
+
+                    // Update progress incrementally
+                    const historicalProgress = (i + chunkDays) / remainingDays;
+                    setProgress(0.5 + (historicalProgress * 0.4)); // 50-90% for historical data
+
+                } catch (error) {
+                    if (!signal.aborted) {
+                        // Log error but continue with other chunks
+                        console.warn('Failed to load historical chunk:', error);
+                    }
+                }
+            }
+
+            chunks.push(...historicalChunks);
+        }
+
+        setProgress(0.9); // 90% complete
         return chunks;
     }, []);
 

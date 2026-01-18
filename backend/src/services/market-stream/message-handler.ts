@@ -263,7 +263,16 @@ export class MessageHandler {
       return;
     }
 
-    this.io.to(`market:${symbol}`).emit(`market:${symbol}`, data);
+    // Use subscription-based broadcasting instead of room broadcasting
+    // This avoids sending data to clients who haven't explicitly subscribed
+    const roomName = `market:${symbol}`;
+    this.io.to(roomName).emit(`market:${symbol}`, data);
+
+    logger.debug("Broadcasted tick data to symbol room", {
+      symbol,
+      room: roomName,
+      hasData: !!data,
+    });
   }
 
   /**
