@@ -74,6 +74,7 @@ import { strategyRoutes } from "./routes/strategies";
 import { botRoutes } from "./routes/bot";
 import { balanceRoutes } from "./routes/balance";
 import { healthRoutes } from "./routes/health";
+import { securityRoutes } from "./routes/security";
 import { httpLogger, errorLogger } from "./middleware/logger";
 import { contextMiddleware } from "./middleware/context";
 import { csrfMiddleware, csrfTokenMiddleware, CSRFRequest } from "./middleware/csrf";
@@ -277,6 +278,7 @@ app.use("/api/market", marketRoutes);
 app.use("/api/strategies", strategyRoutes);
 app.use("/api/bot", botRoutes);
 app.use("/api/balance", balanceRoutes);
+app.use("/api/security", securityRoutes);
 
 // Health check routes
 app.use("/api", healthRoutes);
