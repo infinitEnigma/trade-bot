@@ -161,7 +161,7 @@ const Dashboard: React.FC = () => {
           '3xl': '3xl',   // 1080p: even wider
           '4xl': '4xl'    // 1440p: maximum readable
         }}
-        className="py-6 space-y-10"
+        className="py-2 space-y-4"
       >
         <Section>
         {/* ✅ User Progress Card - Shows account progression */}

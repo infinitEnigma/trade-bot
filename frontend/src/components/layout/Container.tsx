@@ -30,12 +30,12 @@ export const Container: React.FC<ContainerProps> = ({
 }) => {
   const sizeClasses = {
     sm: 'max-w-2xl',        // 672px - Mobile
-    md: 'max-w-4xl',        // 896px - Tablet
-    lg: 'max-w-7xl',        // 1280px - Desktop
-    xl: 'max-w-screen-xl',  // 1280px - Large Desktop (keep reasonable)
-    '2xl': 'max-w-screen-2xl', // 1536px - Ultra-wide
-    '3xl': 'max-w-[1600px]',   // 1600px - 1080p displays
-    '4xl': 'max-w-[1800px]',   // 1800px - 1440p displays (readable max)
+    md: 'max-w-5xl',        // 1024px - Tablet (increased)
+    lg: 'max-w-7xl',        // 1280px - Desktop (increased from 6xl)
+    xl: 'max-w-[1440px]',   // 1440px - Large Desktop (increased)
+    '2xl': 'max-w-[1800px]', // 1800px - Ultra-wide (increased)
+    '3xl': 'max-w-[2200px]', // 2200px - 1080p displays (increased)
+    '4xl': 'max-w-[2800px]', // 2800px - 1440p displays (increased)
     full: 'w-full'
   };
 

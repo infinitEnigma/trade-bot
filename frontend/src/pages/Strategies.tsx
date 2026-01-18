@@ -285,7 +285,7 @@ const Strategies: React.FC = React.memo(() => {
           '3xl': '3xl',
           '4xl': '4xl'
         }}
-        className="py-4 space-y-8"
+        className="py-2 space-y-4"
       >
         {/* ✅ User Progress Card - Shows qualification status */}
         <div className="mb-8">

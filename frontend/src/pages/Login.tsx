@@ -39,7 +39,7 @@ const Login: React.FC = () => {
 
   return (
     <PageLayout className="flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-md mx-auto">
         <div className="glass-card p-8 text-center">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-text mb-2">Welcome Back</h1>

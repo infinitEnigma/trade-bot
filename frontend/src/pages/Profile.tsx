@@ -148,7 +148,7 @@ const Profile: React.FC = () => {
           '3xl': '3xl',
           '4xl': '4xl'
         }}
-        className="py-4"
+        className="py-2 space-y-4"
       >
         {/* Profile Overview */}
         <div className="mb-8">
