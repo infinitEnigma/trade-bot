@@ -163,25 +163,34 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
 
       if (redisAvailable) {
         try {
-          // Primary: Use Redis
-          const client = redisService.getClient();
-          const incrResult = await client.incr(key);
+          // Primary: Use atomic increment with expiry to prevent race conditions
+          const atomicResult = await redisService.atomicIncrementWithExpiry(
+            key,
+            1,
+            config.windowMs,
+            3 // maxRetries
+          );
 
-          if (incrResult !== 1) {
-            // Get current count (INCR returns the new value)
-            current = incrResult;
+          if (atomicResult.success) {
+            current = atomicResult.newValue;
+            // For atomic increment, reset time is windowMs from now
+            resetTime = Date.now() + config.windowMs;
           } else {
-            // First request, set expiry
-            await client.pExpire(key, config.windowMs);
-            current = 1;
-          }
+            // Fallback to in-memory if atomic operation fails
+            logger.warn("Atomic increment failed, using in-memory fallback", {
+              endpoint,
+              error: atomicResult.error,
+            });
+            usedFallback = true;
 
-          // Get TTL to calculate reset time
-          const ttlResult = await client.pTTL(key);
-          resetTime =
-            ttlResult > 0
-              ? Date.now() + ttlResult
-              : Date.now() + config.windowMs;
+            const memoryResult = memoryRateLimiter.check(
+              key,
+              config.max,
+              config.windowMs
+            );
+            current = config.max - memoryResult.remaining;
+            resetTime = memoryResult.resetTime;
+          }
         } catch (redisError) {
           logger.warn(
             "Redis rate limiting failed, switching to in-memory fallback",
