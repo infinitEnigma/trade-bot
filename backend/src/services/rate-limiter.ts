@@ -3,6 +3,7 @@
 import { Request, Response, NextFunction } from "express";
 import { redisService } from "./redis";
 import { AuthenticatedRequest } from "../middleware/auth";
+import { UserLevel } from "@trade-bot/shared";
 import logger from "./logger";
 
 // In-memory rate limiting fallback
@@ -139,6 +140,13 @@ export interface RateLimitConfig {
   skipSuccessfulRequests?: boolean; // Don't count successful responses
   skipFailedRequests?: boolean; // Don't count failed responses
   failOpen?: boolean; // If true, allow requests when Redis fails (default: false)
+  // User-based rate limiting options
+  userLimits?: {
+    [UserLevel.BASIC]: number;
+    [UserLevel.REGISTERED]: number;
+    [UserLevel.VERIFIED]: number;
+  };
+  enableUserBasedLimits?: boolean; // Enable user-based rate limiting
 }
 
 /**
@@ -147,9 +155,25 @@ export interface RateLimitConfig {
  */
 export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
   return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    // Use user ID for authenticated requests, fallback to IP
+    // Extract user information for user-based rate limiting
     const authReq = req as AuthenticatedRequest;
     const userId = authReq.user?.userId;
+    const userLevel = authReq.user?.userLevel;
+
+    // Determine rate limit based on authentication status and user level
+    let effectiveMaxRequests = config.max;
+    let limitType = 'ip';
+
+    if (userId && config.enableUserBasedLimits && config.userLimits && userLevel) {
+      // Use user-based limits for authenticated requests
+      const userLimit = config.userLimits[userLevel as UserLevel];
+      if (userLimit) {
+        effectiveMaxRequests = userLimit;
+        limitType = 'user';
+      }
+    }
+
+    // Create rate limit key based on authentication status
     const identifier = userId ? `user:${userId}` : `ip:${req.ip}`;
     const key = `ratelimit:${endpoint}:${identifier}`;
 
@@ -179,16 +203,18 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
             // Fallback to in-memory if atomic operation fails
             logger.warn("Atomic increment failed, using in-memory fallback", {
               endpoint,
+              limitType,
+              identifier: userId || req.ip,
               error: atomicResult.error,
             });
             usedFallback = true;
 
             const memoryResult = memoryRateLimiter.check(
               key,
-              config.max,
+              effectiveMaxRequests,
               config.windowMs
             );
-            current = config.max - memoryResult.remaining;
+            current = effectiveMaxRequests - memoryResult.remaining;
             resetTime = memoryResult.resetTime;
           }
         } catch (redisError) {
@@ -196,7 +222,8 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
             "Redis rate limiting failed, switching to in-memory fallback",
             {
               endpoint,
-              ip: req.ip,
+              limitType,
+              identifier: userId || req.ip,
               error: (redisError as Error).message,
             }
           );
@@ -206,10 +233,10 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
           // Fallback: Use in-memory rate limiting
           const memoryResult = memoryRateLimiter.check(
             key,
-            config.max,
+            effectiveMaxRequests,
             config.windowMs
           );
-          current = config.max - memoryResult.remaining;
+          current = effectiveMaxRequests - memoryResult.remaining;
           resetTime = memoryResult.resetTime;
 
           if (!memoryResult.allowed) {
@@ -226,10 +253,10 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
         usedFallback = true;
         const memoryResult = memoryRateLimiter.check(
           key,
-          config.max,
+          effectiveMaxRequests,
           config.windowMs
         );
-        current = config.max - memoryResult.remaining;
+        current = effectiveMaxRequests - memoryResult.remaining;
         resetTime = memoryResult.resetTime;
 
         if (!memoryResult.allowed) {
@@ -242,22 +269,26 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
         }
       }
 
-      // ✅ Add rate limit headers
-      res.set("RateLimit-Limit", config.max.toString());
+      // ✅ Add rate limit headers with user-based information
+      res.set("RateLimit-Limit", effectiveMaxRequests.toString());
       res.set(
         "RateLimit-Remaining",
-        Math.max(0, config.max - current).toString()
+        Math.max(0, effectiveMaxRequests - current).toString()
       );
       res.set("RateLimit-Reset", new Date(resetTime).toISOString());
       res.set("RateLimit-Using-Fallback", usedFallback.toString());
+      res.set("RateLimit-Type", limitType); // 'user' or 'ip'
 
       // ✅ Check if limit exceeded
-      if (current > config.max) {
+      if (current > effectiveMaxRequests) {
         logger.warn("Rate limit exceeded", {
           endpoint,
-          ip: req.ip,
+          limitType,
+          identifier: userId || req.ip,
+          userId,
+          userLevel,
           current,
-          max: config.max,
+          max: effectiveMaxRequests,
           usedFallback,
         });
 
@@ -265,6 +296,7 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
           success: false,
           error: config.message || "Too many requests, please try again later",
           retryAfter: Math.ceil((resetTime - Date.now()) / 1000),
+          limitType, // Indicate whether it was user or IP limit
         });
       }
 
@@ -273,7 +305,8 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
       // Final fallback - if both Redis and in-memory fail
       logger.error("Rate limiter completely failed", {
         endpoint,
-        ip: req.ip,
+        limitType,
+        identifier: userId || req.ip,
         error: (error as Error).message,
       });
 
@@ -281,13 +314,15 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
       if (config.failOpen) {
         logger.warn("Rate limiter failed open (allowing request)", {
           endpoint,
-          ip: req.ip,
+          limitType,
+          identifier: userId || req.ip,
         });
         next();
       } else {
         logger.error("Rate limiter failed closed (blocking request)", {
           endpoint,
-          ip: req.ip,
+          limitType,
+          identifier: userId || req.ip,
         });
         return res.status(503).json({
           success: false,
@@ -300,17 +335,17 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
 }
 
 /**
- * Predefined rate limiter configurations
+ * Predefined rate limiter configurations with user-based tier support
  */
 export const RateLimiters = {
-  // ✅ Authentication endpoints (strict)
+  // ✅ Authentication endpoints (strict, no user-based limits)
   auth: createRateLimiter("auth", {
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 5, // 5 attempts
     message: "Too many login attempts, please try again later",
   }),
 
-  // ✅ Public endpoints (lenient, fail open)
+  // ✅ Public endpoints (lenient, fail open, no user-based limits for anonymous)
   public: createRateLimiter("public", {
     windowMs: 60 * 1000, // 1 minute
     max: 60, // 60 requests per minute
@@ -318,35 +353,59 @@ export const RateLimiters = {
     failOpen: true, // Allow requests if Redis fails
   }),
 
-  // ✅ Market data endpoints (moderate, fail closed)
+  // ✅ Market data endpoints (moderate, user-based limits)
   market: createRateLimiter("market", {
     windowMs: 60 * 1000, // 1 minute
-    max: 30, // 30 requests per minute
+    max: 30, // 30 requests per minute (IP limit)
     message: "Market data rate limit exceeded",
     failOpen: false, // Block requests if both Redis and memory fail
+    enableUserBasedLimits: true,
+    userLimits: {
+      [UserLevel.BASIC]: 50,        // 50 requests per minute
+      [UserLevel.REGISTERED]: 75,   // 75 requests per minute
+      [UserLevel.VERIFIED]: 100,    // 100 requests per minute
+    },
   }),
 
-  // ✅ Trading endpoints (strict, fail closed)
+  // ✅ Trading endpoints (strict, user-based limits)
   trading: createRateLimiter("trading", {
     windowMs: 60 * 1000, // 1 minute
-    max: 10, // 10 requests per minute
+    max: 10, // 10 requests per minute (IP limit)
     message: "Trading rate limit exceeded",
     failOpen: false, // Critical security - block if rate limiting fails
+    enableUserBasedLimits: true,
+    userLimits: {
+      [UserLevel.BASIC]: 20,        // 20 requests per minute
+      [UserLevel.REGISTERED]: 30,   // 30 requests per minute
+      [UserLevel.VERIFIED]: 50,     // 50 requests per minute
+    },
   }),
 
-  // ✅ Balance endpoints (moderate, fail closed)
+  // ✅ Balance endpoints (moderate, user-based limits)
   balance: createRateLimiter("balance", {
     windowMs: 60 * 1000, // 1 minute
-    max: 20, // 20 requests per minute
+    max: 20, // 20 requests per minute (IP limit)
     message: "Balance refresh rate limit exceeded",
     failOpen: false, // Financial data - block if rate limiting fails
+    enableUserBasedLimits: true,
+    userLimits: {
+      [UserLevel.BASIC]: 30,        // 30 requests per minute
+      [UserLevel.REGISTERED]: 45,   // 45 requests per minute
+      [UserLevel.VERIFIED]: 60,     // 60 requests per minute
+    },
   }),
 
-  // ✅ WebSocket (very lenient, fail open)
+  // ✅ WebSocket (very lenient, user-based limits)
   websocket: createRateLimiter("websocket", {
     windowMs: 60 * 1000, // 1 minute
-    max: 100, // 100 subscriptions per minute
+    max: 100, // 100 subscriptions per minute (IP limit)
     message: "WebSocket subscription rate limit exceeded",
     failOpen: true, // Real-time data - allow if Redis fails
+    enableUserBasedLimits: true,
+    userLimits: {
+      [UserLevel.BASIC]: 150,       // 150 subscriptions per minute
+      [UserLevel.REGISTERED]: 200,  // 200 subscriptions per minute
+      [UserLevel.VERIFIED]: 300,    // 300 subscriptions per minute
+    },
   }),
 };
