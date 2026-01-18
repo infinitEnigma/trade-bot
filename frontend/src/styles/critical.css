@@ -1,0 +1,112 @@
+/** @format */
+
+/* Critical CSS - Above-the-fold styles loaded immediately */
+/* This file contains only essential styles for initial page render */
+
+@layer base {
+  :root {
+    /* Minimal theme variables for critical rendering */
+    --bg-primary: #0a0a0f;
+    --bg-surface: #13131a;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --primary: #6366f1;
+    --border-light: rgba(255, 255, 255, 0.08);
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html, body, #root {
+    height: 100vh;
+    width: 100vw;
+  }
+
+  body {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+    background: linear-gradient(135deg, var(--bg-primary) 0%, #1e1b4b 100%);
+    background-attachment: fixed;
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  /* Essential glassmorphism for initial layout */
+  .glass-card {
+    background: linear-gradient(135deg, rgba(30, 30, 46, 0.8) 0%, rgba(19, 19, 26, 0.9) 100%);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border-light);
+    border-radius: 16px;
+  }
+
+  /* Critical input styles */
+  .input {
+    background: rgba(19, 19, 26, 0.7);
+    border: 1px solid var(--border-light);
+    border-radius: 10px;
+    padding: 12px 16px;
+    color: var(--text-primary);
+    font-size: 14px;
+  }
+
+  /* Critical button styles */
+  .btn-primary {
+    background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 14px;
+    border: none;
+    cursor: pointer;
+  }
+}
+
+@layer utilities {
+  /* Essential layout utilities */
+  .container {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1rem;
+  }
+
+  .flex {
+    display: flex;
+  }
+
+  .items-center {
+    align-items: center;
+  }
+
+  .justify-center {
+    justify-content: center;
+  }
+
+  .justify-between {
+    justify-content: space-between;
+  }
+
+  .text-center {
+    text-align: center;
+  }
+
+  .hidden {
+    display: none;
+  }
+
+  /* Critical animations for loading states */
+  .animate-spin {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+}

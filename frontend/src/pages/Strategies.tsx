@@ -1,6 +1,6 @@
 /** @format */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense, lazy } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -15,9 +15,12 @@ import {
   AlertTriangle,
   Settings,
 } from "lucide-react";
-import { StrategyForm } from "../components/StrategyForm";
-import { BotControls } from "../components/BotControls";
-import CandlestickChart from "../components/CandlestickChart";
+
+
+// Lazy load heavy components for better performance
+const CandlestickChart = lazy(() => import("../components/CandlestickChart"));
+const StrategyForm = lazy(() => import("../components/StrategyForm").then(module => ({ default: module.StrategyForm })));
+const BotControls = lazy(() => import("../components/BotControls").then(module => ({ default: module.BotControls })));
 import { useBalance } from "../hooks/useBalance";
 import { useAuth } from "../contexts/AuthContext";
 import { UserProgressCard } from "../components/ui/UserProgressCard";
@@ -294,11 +297,16 @@ const Strategies: React.FC = React.memo(() => {
 
         {/* Candlestick Chart - Advanced trading data for verified users */}
         <div className="mb-8">
-          <CandlestickChart
-            symbol={_selectedSymbol}
-            interval="1h"
-            height={450}
-          />
+          <Suspense fallback={<div className="glass-card p-6 animate-pulse">
+            <div className="w-32 h-5 bg-surface rounded mb-4"></div>
+            <div className="bg-surface rounded-lg h-[450px]"></div>
+          </div>}>
+            <CandlestickChart
+              symbol={_selectedSymbol}
+              interval="1h"
+              height={450}
+            />
+          </Suspense>
         </div>
 
         {/* Account Balance Overview - WebSocket data for verified users */}
@@ -552,24 +560,28 @@ const Strategies: React.FC = React.memo(() => {
                   {/* Actions */}
                   <div className="flex items-center gap-2">
                     {bot ? (
-                      <BotControls
-                        strategyId={strategy.id}
-                        bot={bot}
-                        onStatusChange={() => {
-                          queryClient.invalidateQueries({
-                            queryKey: ["bot-instances"],
-                          });
-                        }}
-                      />
+                      <Suspense fallback={<div className="w-24 h-8 bg-surface rounded animate-pulse"></div>}>
+                        <BotControls
+                          strategyId={strategy.id}
+                          bot={bot}
+                          onStatusChange={() => {
+                            queryClient.invalidateQueries({
+                              queryKey: ["bot-instances"],
+                            });
+                          }}
+                        />
+                      </Suspense>
                     ) : (
-                      <BotControls
-                        strategyId={strategy.id}
-                        onStatusChange={() => {
-                          queryClient.invalidateQueries({
-                            queryKey: ["bot-instances"],
-                          });
-                        }}
-                      />
+                      <Suspense fallback={<div className="w-24 h-8 bg-surface rounded animate-pulse"></div>}>
+                        <BotControls
+                          strategyId={strategy.id}
+                          onStatusChange={() => {
+                            queryClient.invalidateQueries({
+                              queryKey: ["bot-instances"],
+                            });
+                          }}
+                        />
+                      </Suspense>
                     )}
 
                     <button
@@ -596,26 +608,54 @@ const Strategies: React.FC = React.memo(() => {
 
         {/* Strategy Form Modals */}
         {showCreateForm && (
-          <StrategyForm
-            onClose={() => setShowCreateForm(false)}
-            onSuccess={() => {
-              setShowCreateForm(false);
-              queryClient.invalidateQueries({ queryKey: ["strategies"] });
-              toast.success("Strategy created successfully!");
-            }}
-          />
+          <Suspense fallback={<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="glass-card p-8 animate-pulse">
+              <div className="w-64 h-8 bg-surface rounded mb-4"></div>
+              <div className="space-y-3">
+                <div className="w-full h-10 bg-surface rounded"></div>
+                <div className="w-full h-10 bg-surface rounded"></div>
+                <div className="flex gap-3">
+                  <div className="w-20 h-10 bg-surface rounded"></div>
+                  <div className="w-24 h-10 bg-surface rounded"></div>
+                </div>
+              </div>
+            </div>
+          </div>}>
+            <StrategyForm
+              onClose={() => setShowCreateForm(false)}
+              onSuccess={() => {
+                setShowCreateForm(false);
+                queryClient.invalidateQueries({ queryKey: ["strategies"] });
+                toast.success("Strategy created successfully!");
+              }}
+            />
+          </Suspense>
         )}
 
         {editingStrategy && (
-          <StrategyForm
-            strategy={editingStrategy}
-            onClose={() => setEditingStrategy(null)}
-            onSuccess={() => {
-              setEditingStrategy(null);
-              queryClient.invalidateQueries({ queryKey: ["strategies"] });
-              toast.success("Strategy updated successfully!");
-            }}
-          />
+          <Suspense fallback={<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="glass-card p-8 animate-pulse">
+              <div className="w-64 h-8 bg-surface rounded mb-4"></div>
+              <div className="space-y-3">
+                <div className="w-full h-10 bg-surface rounded"></div>
+                <div className="w-full h-10 bg-surface rounded"></div>
+                <div className="flex gap-3">
+                  <div className="w-20 h-10 bg-surface rounded"></div>
+                  <div className="w-24 h-10 bg-surface rounded"></div>
+                </div>
+              </div>
+            </div>
+          </div>}>
+            <StrategyForm
+              strategy={editingStrategy}
+              onClose={() => setEditingStrategy(null)}
+              onSuccess={() => {
+                setEditingStrategy(null);
+                queryClient.invalidateQueries({ queryKey: ["strategies"] });
+                toast.success("Strategy updated successfully!");
+              }}
+            />
+          </Suspense>
         )}
       </Container>
     </PageLayout>

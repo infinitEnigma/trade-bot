@@ -7,6 +7,14 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trade Bot - Kodiak Integration</title>
+
+    <!-- Critical CSS - Load immediately for above-the-fold content -->
+    <link rel="preload" href="/src/styles/critical.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="/src/styles/critical.css"></noscript>
+
+    <!-- Preload critical resources -->
+    <link rel="modulepreload" href="/src/main.tsx">
+    <link rel="modulepreload" href="/src/App.tsx">
   </head>
   <body>
     <div id="root"></div>
