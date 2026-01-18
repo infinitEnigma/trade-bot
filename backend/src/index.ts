@@ -264,12 +264,17 @@ app.use("/api", (req, res, next) => {
 // CSRF token generation for auth routes (login/register/refresh)
 app.use("/api/auth", csrfTokenMiddleware);
 
-// CSRF validation for state-changing operations (all routes except auth)
+// CSRF validation for ALL state-changing operations
 app.use("/api/user", csrfMiddleware);
+app.use("/api/user-profile", csrfMiddleware);
+app.use("/api/user-kodiak", csrfMiddleware);
 app.use("/api/market", csrfMiddleware);
 app.use("/api/strategies", csrfMiddleware);
 app.use("/api/bot", csrfMiddleware);
+app.use("/api/bot-engine", csrfMiddleware);
+app.use("/api/bot-management", csrfMiddleware);
 app.use("/api/balance", csrfMiddleware);
+app.use("/api/security", csrfMiddleware);
 
 // Routes
 app.use("/api/auth", authRoutes);

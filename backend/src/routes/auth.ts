@@ -297,4 +297,90 @@ router.get(
   }
 );
 
+// GET /api/auth/csrf-token
+router.get("/csrf-token", async (req: Request, res: Response) => {
+  try {
+    // Get CSRF token from cookies or generate new one
+    const existingToken = req.cookies?.csrfToken;
+    const existingSecret = req.cookies?.csrfSecret;
+
+    let token: string;
+
+    if (existingToken && existingSecret) {
+      // Validate existing token
+      const Tokens = await import("csrf");
+      const tokensInstance = new Tokens.default();
+
+      try {
+        const isValid = tokensInstance.verify(existingSecret, existingToken);
+        if (isValid) {
+          token = existingToken;
+          logger.debug("Using existing valid CSRF token");
+        } else {
+          throw new Error("Invalid existing token");
+        }
+      } catch {
+        // Generate new token if existing is invalid
+        const secret = tokensInstance.secretSync();
+        token = tokensInstance.create(secret);
+
+        // Update cookies with new secret/token
+        res.cookie('csrfSecret', secret, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        });
+
+        res.cookie('csrfToken', token, {
+          httpOnly: false, // Client needs to read this
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        });
+
+        logger.debug("Generated new CSRF token");
+      }
+    } else {
+      // Generate new token
+      const Tokens = await import("csrf");
+      const tokensInstance = new Tokens.default();
+      const secret = tokensInstance.secretSync();
+      token = tokensInstance.create(secret);
+
+      // Set cookies
+      res.cookie('csrfSecret', secret, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      });
+
+      res.cookie('csrfToken', token, {
+        httpOnly: false, // Client needs to read this
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      });
+
+      logger.debug("Generated fresh CSRF token");
+    }
+
+    res.json({
+      success: true,
+      csrfToken: token,
+      expiresIn: 24 * 60 * 60, // 24 hours in seconds
+    });
+
+  } catch (error) {
+    logger.error("CSRF token retrieval error", {
+      error: (error as Error).message,
+    });
+    const internalError = new ValidationError("Failed to get CSRF token");
+    res.status(internalError.statusCode).json(
+      createErrorResponse(internalError, getCorrelationId())
+    );
+  }
+});
+
 export { router as authRoutes };
