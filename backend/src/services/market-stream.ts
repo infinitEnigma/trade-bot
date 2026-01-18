@@ -58,7 +58,7 @@ class WebSocketManager {
   private readonly MIN_RECONNECT_DELAY = 1000;
   private readonly MAX_RECONNECT_DELAY = 30000;
   private readonly MAX_RECONNECT_ATTEMPTS = 12; // Stop after 12 attempts (~30 minutes)
-  private readonly CIRCUIT_BREAKER_TIMEOUT = 5 * 60 * 1000; // 5 minutes before trying again
+  private readonly MAX_CIRCUIT_BREAKER_TIMEOUT = 2 * 60 * 1000; // Max 2 minutes for circuit breaker
 
   async createConnection(accountId: string): Promise<WebSocket> {
     if (this.websockets.has("market")) {
@@ -146,6 +146,16 @@ class WebSocketManager {
     return exponentialDelay + jitter;
   }
 
+  private calculateCircuitBreakerTimeout(wsKey: string): number {
+    const attempts = this.reconnectAttempts.get(wsKey) || 0;
+    // Exponential backoff: 1s → 10s → 30s → 60s → 120s (max)
+    const exponentialTimeout = Math.min(
+      1000 * Math.pow(2, Math.min(attempts, 6)), // Max 2^6 = 64s, but we'll cap at 120s
+      this.MAX_CIRCUIT_BREAKER_TIMEOUT
+    );
+    return exponentialTimeout;
+  }
+
   private scheduleReconnect(wsKey: string): void {
     if (this.reconnectIntervals.has(wsKey)) return;
 
@@ -156,12 +166,14 @@ class WebSocketManager {
     if (circuitState === CircuitState.OPEN) {
       const lastFailure = this.lastFailureTime.get(wsKey) || 0;
       const timeSinceFailure = Date.now() - lastFailure;
+      const circuitBreakerTimeout = this.calculateCircuitBreakerTimeout(wsKey);
 
-      // If enough time has passed, try half-open state
-      if (timeSinceFailure >= this.CIRCUIT_BREAKER_TIMEOUT) {
-        logger.info("Circuit breaker transitioning to half-open", {
+      // If enough time has passed, try half-open state with health check
+      if (timeSinceFailure >= circuitBreakerTimeout) {
+        logger.info("Circuit breaker transitioning to half-open with health check", {
           wsKey,
           timeSinceFailureMs: timeSinceFailure,
+          circuitBreakerTimeout,
         });
         this.circuitStates.set(wsKey, CircuitState.HALF_OPEN);
         this.reconnectAttempts.set(wsKey, 0); // Reset attempts for half-open
@@ -170,7 +182,7 @@ class WebSocketManager {
           wsKey,
           attempts,
           timeSinceFailureMs: timeSinceFailure,
-          remainingMs: this.CIRCUIT_BREAKER_TIMEOUT - timeSinceFailure,
+          remainingMs: circuitBreakerTimeout - timeSinceFailure,
         });
         return;
       }
@@ -213,19 +225,77 @@ class WebSocketManager {
     this.reconnectIntervals.set(wsKey, timer);
   }
 
+  /**
+   * Perform health check in HALF_OPEN state
+   */
+  private async performHalfOpenHealthCheck(wsKey: string): Promise<boolean> {
+    try {
+      logger.info("Performing health check in HALF_OPEN state", { wsKey });
+
+      // Send a simple ping/pong test or subscription test
+      const ws = this.websockets.get(wsKey);
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        logger.debug("WebSocket not available for health check", { wsKey });
+        return false;
+      }
+
+      // Send a test ping (WebSocket built-in ping)
+      ws.ping();
+
+      // Wait for pong response (with timeout)
+      return new Promise<boolean>((resolve) => {
+        const timeout = setTimeout(() => {
+          logger.debug("Health check timeout - no pong received", { wsKey });
+          resolve(false);
+        }, 5000); // 5 second timeout for health check
+
+        const pongHandler = () => {
+          clearTimeout(timeout);
+          ws.removeListener('pong', pongHandler);
+          logger.info("Health check passed - pong received", { wsKey });
+          resolve(true);
+        };
+
+        ws.once('pong', pongHandler);
+      });
+    } catch (error) {
+      logger.error("Health check failed", {
+        wsKey,
+        error: (error as Error).message,
+      });
+      return false;
+    }
+  }
+
   private scheduleCircuitBreakerReset(wsKey: string): void {
     if (this.circuitBreakerTimeouts.has(wsKey)) return;
 
+    const resetDelayMs = this.calculateCircuitBreakerTimeout(wsKey);
     logger.info("Scheduling circuit breaker reset", {
       wsKey,
-      resetDelayMs: this.CIRCUIT_BREAKER_TIMEOUT,
+      resetDelayMs,
     });
 
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       logger.info("Circuit breaker reset timeout reached", { wsKey });
       this.circuitBreakerTimeouts.delete(wsKey);
-      // Note: circuit breaker will transition to half-open on next reconnect attempt
-    }, this.CIRCUIT_BREAKER_TIMEOUT);
+
+      // Transition to HALF_OPEN state
+      this.circuitStates.set(wsKey, CircuitState.HALF_OPEN);
+
+      // Perform health check before allowing reconnection
+      const isHealthy = await this.performHalfOpenHealthCheck(wsKey);
+
+      if (isHealthy) {
+        logger.info("Health check passed, transitioning to CLOSED", { wsKey });
+        this.circuitStates.set(wsKey, CircuitState.CLOSED);
+        this.reconnectAttempts.set(wsKey, 0); // Reset attempts
+      } else {
+        logger.warn("Health check failed, staying in HALF_OPEN", { wsKey });
+        // Stay in HALF_OPEN and schedule another check
+        this.scheduleCircuitBreakerReset(wsKey);
+      }
+    }, resetDelayMs);
 
     this.circuitBreakerTimeouts.set(wsKey, timer);
   }
@@ -352,11 +422,9 @@ class CacheManager {
     klines: any[]
   ): Promise<void> {
     const cacheKey = `kline:${symbol}:${interval}`;
-    const result = await redisService.setex(
-      cacheKey,
-      3600,
-      JSON.stringify(klines)
-    );
+
+    // Use atomic operation to prevent race conditions
+    const result = await this.atomicCacheUpdate(cacheKey, klines, 3600);
     if (!result.success) {
       logger.warn("Klines cache write failed", {
         symbol,
@@ -364,6 +432,82 @@ class CacheManager {
         error: result.error,
       });
     }
+  }
+
+  /**
+   * Atomically update cache using WATCH/MULTI/EXEC to prevent race conditions
+   */
+  private async atomicCacheUpdate(
+    key: string,
+    data: any,
+    ttlSeconds: number,
+    maxRetries: number = 3
+  ): Promise<{ success: boolean; error?: string }> {
+    const client = redisService.getClient();
+    const serializedData = JSON.stringify(data);
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // Watch the key for changes
+        await client.watch(key);
+
+        // Start transaction
+        const multi = client.multi();
+
+        // Set the data
+        multi.set(key, serializedData);
+        // Set expiration
+        multi.expire(key, ttlSeconds);
+
+        // Execute transaction
+        const results = await multi.exec();
+
+        // If results is null, the transaction was aborted (key changed)
+        if (results === null) {
+          logger.debug("Cache update transaction aborted, retrying", {
+            key,
+            attempt: attempt + 1,
+          });
+
+          // Small delay before retry
+          await new Promise(resolve => setTimeout(resolve, 10 * (attempt + 1)));
+          continue;
+        }
+
+        // Transaction succeeded
+        logger.debug("Atomic cache update successful", {
+          key,
+          ttlSeconds,
+          attempt: attempt + 1,
+        });
+        return { success: true };
+
+      } catch (error) {
+        logger.warn("Atomic cache update failed", {
+          key,
+          attempt: attempt + 1,
+          error: (error as Error).message,
+        });
+
+        // Small delay before retry
+        await new Promise(resolve => setTimeout(resolve, 10 * (attempt + 1)));
+      } finally {
+        // Always unwatch the key
+        try {
+          await client.unwatch();
+        } catch (unwatchError) {
+          // Ignore unwatch errors
+        }
+      }
+    }
+
+    // All retries failed, fallback to simple setex
+    logger.warn("Atomic cache update failed after retries, using fallback", {
+      key,
+      maxRetries,
+    });
+
+    return redisService.setex(key, ttlSeconds, serializedData);
   }
 
   async getKlines(
@@ -413,18 +557,130 @@ class CacheManager {
 }
 
 /**
+ * Manages processing queue with backpressure handling
+ */
+class ProcessingQueue {
+  private queue: any[] = [];
+  private isProcessing = false;
+  private maxQueueSize = 1000;
+  private processingPromises: Map<string, Promise<void>> = new Map();
+
+  constructor(private messageHandler: MessageHandler) { }
+
+  /**
+   * Add message to processing queue
+   */
+  enqueue(message: any): boolean {
+    if (this.queue.length >= this.maxQueueSize) {
+      logger.warn("Processing queue full, dropping message", {
+        queueSize: this.queue.length,
+        maxSize: this.maxQueueSize,
+        messageTopic: message.topic,
+      });
+      return false;
+    }
+
+    this.queue.push(message);
+
+    // Start processing if not already running
+    if (!this.isProcessing) {
+      this.processQueue();
+    }
+
+    return true;
+  }
+
+  /**
+   * Process messages in queue with backpressure
+   */
+  private async processQueue(): Promise<void> {
+    if (this.isProcessing || this.queue.length === 0) return;
+
+    this.isProcessing = true;
+
+    try {
+      while (this.queue.length > 0) {
+        const message = this.queue.shift()!;
+
+        // Check if we have too many concurrent processing operations
+        if (this.processingPromises.size >= 10) {
+          logger.debug("Processing queue backpressure triggered", {
+            queueSize: this.queue.length,
+            concurrentOperations: this.processingPromises.size,
+          });
+
+          // Wait a bit before processing more
+          await new Promise(resolve => setTimeout(resolve, 100));
+          continue;
+        }
+
+        // Process message asynchronously
+        const processingKey = `${message.topic}_${Date.now()}`;
+        const processingPromise = this.messageHandler.handleMessage(message)
+          .catch(error => {
+            logger.error("Message processing failed", {
+              error: error instanceof Error ? error.message : String(error),
+              topic: message.topic,
+            });
+          })
+          .finally(() => {
+            this.processingPromises.delete(processingKey);
+          });
+
+        this.processingPromises.set(processingKey, processingPromise);
+
+        // Small delay between messages to prevent overwhelming Redis
+        if (this.queue.length > 0) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+      }
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  /**
+   * Get queue statistics
+   */
+  getStats(): { queueSize: number; isProcessing: boolean; concurrentOperations: number } {
+    return {
+      queueSize: this.queue.length,
+      isProcessing: this.isProcessing,
+      concurrentOperations: this.processingPromises.size,
+    };
+  }
+
+  /**
+   * Clear queue (for shutdown)
+   */
+  clear(): void {
+    this.queue.length = 0;
+    this.processingPromises.clear();
+  }
+}
+
+/**
  * Handles WebSocket message processing and routing
  */
 class MessageHandler {
   private io: Server | null = null;
   private cacheManager: CacheManager;
+  private processingQueue: ProcessingQueue;
 
   constructor(cacheManager: CacheManager) {
     this.cacheManager = cacheManager;
+    this.processingQueue = new ProcessingQueue(this);
   }
 
   setSocketServer(io: Server): void {
     this.io = io;
+  }
+
+  /**
+   * Enqueue message for processing with backpressure handling
+   */
+  enqueueMessage(message: any): boolean {
+    return this.processingQueue.enqueue(message);
   }
 
   async handleMessage(message: any): Promise<void> {
@@ -752,11 +1008,16 @@ export class MarketStreamService {
       // Authenticate the connection
       await this.authManager.authenticate(ws, accountId);
 
-      // Set up message handling
+      // Set up message handling with backpressure queue
       ws.on("message", (data: WebSocket.Data) => {
         try {
           const message = JSON.parse(data.toString());
-          this.messageHandler.handleMessage(message);
+          const queued = this.messageHandler.enqueueMessage(message);
+          if (!queued) {
+            logger.warn("Message dropped due to queue overflow", {
+              topic: message.topic,
+            });
+          }
         } catch (error) {
           logger.error("Failed to parse WebSocket message", {
             error: (error as Error).message,

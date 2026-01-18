@@ -1,9 +1,63 @@
 /** @format */
 
 import { spawn, ChildProcess } from "child_process";
-import axios from "axios";
+import axios, { AxiosRequestConfig } from "axios";
 import path from "path";
 import logger from "./logger";
+
+// Configure global axios defaults for external API calls
+axios.defaults.timeout = 10000; // 10 second global timeout
+axios.defaults.headers.common['User-Agent'] = 'TradeBot/1.0';
+
+// Add response interceptor for fallback handling
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // If timeout or network error, log and potentially return cached data
+    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      logger.warn('External API timeout', {
+        url: error.config?.url,
+        timeout: error.config?.timeout,
+        error: error.message,
+      });
+
+      // Could implement fallback to cached data here
+      // For now, just re-throw with additional context
+      const enhancedError = new Error(`External API timeout: ${error.message}`);
+      enhancedError.name = 'APITimeoutError';
+      throw enhancedError;
+    }
+
+    // If service unavailable, log and re-throw
+    if (error.response?.status >= 500) {
+      logger.warn('External API server error', {
+        url: error.config?.url,
+        status: error.response.status,
+        statusText: error.response.statusText,
+      });
+    }
+
+    throw error;
+  }
+);
+
+// Add request interceptor for logging
+axios.interceptors.request.use(
+  (config) => {
+    logger.debug('External API request', {
+      method: config.method?.toUpperCase(),
+      url: config.url,
+      timeout: config.timeout,
+    });
+    return config;
+  },
+  (error) => {
+    logger.error('External API request failed', {
+      error: error.message,
+    });
+    return Promise.reject(error);
+  }
+);
 
 interface EngineStatus {
   running: boolean;

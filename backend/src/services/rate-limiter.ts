@@ -2,6 +2,7 @@
 
 import { Request, Response, NextFunction } from "express";
 import { redisService } from "./redis";
+import { AuthenticatedRequest } from "../middleware/auth";
 import logger from "./logger";
 
 // In-memory rate limiting fallback
@@ -145,8 +146,12 @@ export interface RateLimitConfig {
  * Uses Redis primary with in-memory fallback
  */
 export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    const key = `ratelimit:${endpoint}:${req.ip}`;
+  return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    // Use user ID for authenticated requests, fallback to IP
+    const authReq = req as AuthenticatedRequest;
+    const userId = authReq.user?.userId;
+    const identifier = userId ? `user:${userId}` : `ip:${req.ip}`;
+    const key = `ratelimit:${endpoint}:${identifier}`;
 
     try {
       // Check Redis health

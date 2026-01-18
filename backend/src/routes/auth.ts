@@ -8,41 +8,27 @@ import { roleManagementService } from "../services/role-management";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { UserRole, UserLevel } from "@trade-bot/shared";
 import { RateLimiters } from "../services/rate-limiter";
+import { createErrorResponse, ValidationError } from "../types/errors";
+import { getCorrelationId } from "../utils/context";
+import { validators } from "../middleware/validation";
 import logger from "../services/logger";
 
 const router = Router();
-
-const registerSchema = Joi.object({
-  email: Joi.string().email().required(),
-  password: Joi.string().min(8).max(128).required(),
-});
-
-const loginSchema = Joi.object({
-  email: Joi.string().email().required(),
-  password: Joi.string().min(8).max(128).required(),
-});
-
-const refreshSchema = Joi.object({
-  refreshToken: Joi.string().required(),
-});
 
 // POST /api/auth/register
 router.post(
   "/register",
   RateLimiters.auth,
+  validators.register,
   async (req: Request, res: Response) => {
     try {
-      const { error, value } = registerSchema.validate(req.body);
-      if (error) {
-        return res
-          .status(400)
-          .json({ success: false, error: error.details[0].message });
-      }
-
-      const result = await authService.register(value.email, value.password);
+      const result = await authService.register(req.body.email, req.body.password);
 
       if (!result.success) {
-        return res.status(400).json({ success: false, error: result.message });
+        const authError = new ValidationError(result.message || "Registration failed");
+        return res.status(authError.statusCode).json(
+          createErrorResponse(authError, getCorrelationId())
+        );
       }
 
       // Set httpOnly cookies for security
@@ -69,7 +55,10 @@ router.post(
         error: (err as Error).message,
         email: req.body?.email,
       });
-      res.status(500).json({ success: false, error: "Registration failed" });
+      const internalError = new ValidationError("Registration failed");
+      res.status(internalError.statusCode).json(
+        createErrorResponse(internalError, getCorrelationId())
+      );
     }
   }
 );
@@ -78,29 +67,22 @@ router.post(
 router.post(
   "/login",
   RateLimiters.auth,
+  validators.login,
   async (req: Request, res: Response) => {
     logger.info("Login attempt", { email: req.body?.email });
     try {
-      const { error, value } = loginSchema.validate(req.body);
-      if (error) {
-        logger.warn("Login validation error", {
-          email: req.body?.email,
-          error: error.details[0].message,
-        });
-        return res
-          .status(400)
-          .json({ success: false, error: error.details[0].message });
-      }
-
-      const result = await authService.login(value.email, value.password);
+      const result = await authService.login(req.body.email, req.body.password);
       logger.info("Login result", {
-        email: value.email,
+        email: req.body.email,
         success: result.success,
         message: result.success ? "success" : result.message,
       });
 
       if (!result.success) {
-        return res.status(401).json({ success: false, error: result.message });
+        const authError = new ValidationError(result.message || "Invalid credentials");
+        return res.status(authError.statusCode).json(
+          createErrorResponse(authError, getCorrelationId())
+        );
       }
 
       logger.info("Login successful", {
@@ -132,53 +114,59 @@ router.post(
         email: req.body?.email,
         error: (err as Error).message,
       });
-      res.status(500).json({ success: false, error: "Login failed" });
+      const internalError = new ValidationError("Login failed");
+      res.status(internalError.statusCode).json(
+        createErrorResponse(internalError, getCorrelationId())
+      );
     }
   }
 );
 
 // POST /api/auth/refresh
-router.post("/refresh", async (req: Request, res: Response) => {
-  try {
-    const { error, value } = refreshSchema.validate(req.body);
-    if (error) {
-      return res
-        .status(400)
-        .json({ success: false, error: error.details[0].message });
+router.post(
+  "/refresh",
+  validators.refreshToken,
+  async (req: Request, res: Response) => {
+    try {
+      const result = await authService.refreshToken(req.body.refreshToken);
+
+      if (!result.success) {
+        const authError = new ValidationError(result.message || "Invalid refresh token");
+        return res.status(authError.statusCode).json(
+          createErrorResponse(authError, getCorrelationId())
+        );
+      }
+
+      // Set httpOnly cookies for security
+      res.cookie("accessToken", result.tokens!.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 4 * 60 * 60 * 1000, // 4 hours
+      });
+
+      res.cookie("refreshToken", result.tokens!.refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      });
+
+      res.json({
+        success: true,
+        user: result.user,
+      });
+    } catch (err) {
+      logger.error("Token refresh error", {
+        error: (err as Error).message,
+      });
+      const internalError = new ValidationError("Token refresh failed");
+      res.status(internalError.statusCode).json(
+        createErrorResponse(internalError, getCorrelationId())
+      );
     }
-
-    const result = await authService.refreshToken(value.refreshToken);
-
-    if (!result.success) {
-      return res.status(401).json({ success: false, error: result.message });
-    }
-
-    // Set httpOnly cookies for security
-    res.cookie("accessToken", result.tokens!.accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 4 * 60 * 60 * 1000, // 4 hours
-    });
-
-    res.cookie("refreshToken", result.tokens!.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-    });
-
-    res.json({
-      success: true,
-      user: result.user,
-    });
-  } catch (err) {
-    logger.error("Token refresh error", {
-      error: (err as Error).message,
-    });
-    res.status(500).json({ success: false, error: "Token refresh failed" });
   }
-});
+);
 
 // POST /api/auth/logout
 router.post("/logout", async (req: Request, res: Response) => {
@@ -204,7 +192,10 @@ router.post("/logout", async (req: Request, res: Response) => {
     logger.error("Logout error", {
       error: (err as Error).message,
     });
-    res.status(500).json({ success: false, error: "Logout failed" });
+    const internalError = new ValidationError("Logout failed");
+    res.status(internalError.statusCode).json(
+      createErrorResponse(internalError, getCorrelationId())
+    );
   }
 });
 
@@ -219,12 +210,10 @@ router.post(
 
       // Only VERIFIED users can check qualifications
       if (userLevel !== UserLevel.VERIFIED) {
-        return res.status(403).json({
-          success: false,
-          error: "Must be VERIFIED to check qualifications",
-          requiredLevel: UserLevel.VERIFIED,
-          currentLevel: userLevel
-        });
+        const authError = new ValidationError("Must be VERIFIED to check qualifications");
+        return res.status(authError.statusCode).json(
+          createErrorResponse(authError, getCorrelationId())
+        );
       }
 
       // Check qualification for QUALIFIED_ALPHA role
@@ -260,10 +249,10 @@ router.post(
         userId: req.user!.userId,
         error: (error as Error).message
       });
-      res.status(500).json({
-        success: false,
-        error: "Qualification check failed"
-      });
+      const internalError = new ValidationError("Qualification check failed");
+      res.status(internalError.statusCode).json(
+        createErrorResponse(internalError, getCorrelationId())
+      );
     }
   }
 );
@@ -283,10 +272,10 @@ router.get(
       logger.error("Qualification config error", {
         error: (error as Error).message
       });
-      res.status(500).json({
-        success: false,
-        error: "Failed to get qualification config"
-      });
+      const internalError = new ValidationError("Failed to get qualification config");
+      res.status(internalError.statusCode).json(
+        createErrorResponse(internalError, getCorrelationId())
+      );
     }
   }
 );

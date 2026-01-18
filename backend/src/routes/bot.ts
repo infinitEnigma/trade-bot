@@ -9,9 +9,11 @@ import {
   ValidationError,
   NotFoundError,
   DatabaseError,
+  ConflictError,
   createErrorResponse,
 } from "../types/errors";
 import { getCorrelationId, getContextForLogging } from "../utils/context";
+import { validators } from "../middleware/validation";
 import { encryptionService } from "../services/encryption";
 import { engineManager } from "../services/engine-manager";
 import { UserRole } from "@trade-bot/shared";
@@ -47,9 +49,10 @@ router.get(
         error: err instanceof Error ? err.message : String(err),
         userId: req.user!.userId,
       });
-      res
-        .status(500)
-        .json({ success: false, error: "Failed to get bot instances" });
+      const dbError = new DatabaseError("Failed to get bot instances");
+      res.status(dbError.statusCode).json(
+        createErrorResponse(dbError, getCorrelationId())
+      );
     }
   }
 );
@@ -59,18 +62,10 @@ router.post(
   "/start",
   authMiddleware,
   requireRole(UserRole.QUALIFIED_ALPHA),
+  validators.startBot,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { strategyId, notionalAmount } = req.body;
-
-      if (!strategyId || !notionalAmount) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            error: "Strategy ID and notional amount required",
-          });
-      }
 
       // Ensure trading engine is running
       await engineManager.ensureEngineRunning();
@@ -82,9 +77,10 @@ router.post(
       );
 
       if (strategyResult.rows.length === 0) {
-        return res
-          .status(404)
-          .json({ success: false, error: "Strategy not found" });
+        const notFoundError = new NotFoundError("Strategy not found");
+        return res.status(notFoundError.statusCode).json(
+          createErrorResponse(notFoundError, getCorrelationId())
+        );
       }
 
       const strategy = strategyResult.rows[0];
@@ -96,10 +92,10 @@ router.post(
       );
 
       if (existingBot.rows.length > 0) {
-        return res.status(400).json({
-          success: false,
-          error: "Bot already running for this strategy",
-        });
+        const conflictError = new ConflictError("Bot already running for this strategy");
+        return res.status(conflictError.statusCode).json(
+          createErrorResponse(conflictError, getCorrelationId())
+        );
       }
 
       // ✅ POSITION VALIDATION: Validate position size before starting bot
@@ -112,15 +108,14 @@ router.post(
       );
 
       if (!validation.isValid) {
-        return res.status(402).json({
-          success: false,
-          error: validation.reason,
-          data: {
-            requested: notionalAmount,
-            max_allowed: validation.maxAllowed,
-            recommended: validation.recommended,
-          },
-        });
+        const positionError = new ValidationError(validation.reason || "Position size validation failed");
+        const errorResponse = createErrorResponse(positionError, getCorrelationId()) as any;
+        errorResponse.data = {
+          requested: notionalAmount,
+          max_allowed: validation.maxAllowed,
+          recommended: validation.recommended,
+        };
+        return res.status(positionError.statusCode).json(errorResponse);
       }
 
       // Create bot instance
@@ -138,12 +133,10 @@ router.post(
       );
 
       if (credentialsResult.rows.length === 0) {
-        return res
-          .status(403)
-          .json({
-            success: false,
-            error: "No verified Kodiak credentials found",
-          });
+        const authError = new ValidationError("No verified Kodiak credentials found");
+        return res.status(authError.statusCode).json(
+          createErrorResponse(authError, getCorrelationId())
+        );
       }
 
       const credentials = credentialsResult.rows[0];
@@ -190,7 +183,10 @@ router.post(
         error: err instanceof Error ? err.message : String(err),
         userId: req.user!.userId,
       });
-      res.status(500).json({ success: false, error: "Failed to start bot" });
+      const internalError = new DatabaseError("Failed to start bot");
+      res.status(internalError.statusCode).json(
+        createErrorResponse(internalError, getCorrelationId())
+      );
     }
   }
 );
@@ -200,15 +196,10 @@ router.post(
   "/stop",
   authMiddleware,
   requireRole(UserRole.QUALIFIED_ALPHA),
+  validators.stopBot,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { botId } = req.body;
-
-      if (!botId) {
-        return res
-          .status(400)
-          .json({ success: false, error: "Bot ID required" });
-      }
 
       // Verify bot belongs to user
       const botResult = await query(
@@ -217,15 +208,19 @@ router.post(
       );
 
       if (botResult.rows.length === 0) {
-        return res.status(404).json({ success: false, error: "Bot not found" });
+        const notFoundError = new NotFoundError("Bot not found");
+        return res.status(notFoundError.statusCode).json(
+          createErrorResponse(notFoundError, getCorrelationId())
+        );
       }
 
       const bot = botResult.rows[0];
 
       if (bot.status !== "RUNNING") {
-        return res
-          .status(400)
-          .json({ success: false, error: "Bot is not running" });
+        const conflictError = new ConflictError("Bot is not running");
+        return res.status(conflictError.statusCode).json(
+          createErrorResponse(conflictError, getCorrelationId())
+        );
       }
 
       // Update bot status
@@ -260,7 +255,10 @@ router.post(
         error: err instanceof Error ? err.message : String(err),
         userId: req.user!.userId,
       });
-      res.status(500).json({ success: false, error: "Failed to stop bot" });
+      const dbError = new DatabaseError("Failed to stop bot");
+      res.status(dbError.statusCode).json(
+        createErrorResponse(dbError, getCorrelationId())
+      );
     }
   }
 );

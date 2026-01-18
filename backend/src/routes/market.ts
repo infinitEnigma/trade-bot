@@ -6,6 +6,8 @@ import { authService, TokenPayload } from "../services/auth";
 import { redisService } from "../services/redis";
 import { query } from "../database/pool"; // ✅ Import from centralized module
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth"; // ✅ Import centralized auth
+import { createErrorResponse, ValidationError, NotFoundError, ExternalServiceError, DatabaseError } from "../types/errors";
+import { getCorrelationId } from "../utils/context";
 import logger from "../services/logger"; // ✅ Import structured logger
 import { encryptionService } from "../services/encryption"; // ✅ Import encryption service
 import { RateLimiters } from "../services/rate-limiter";
@@ -154,7 +156,10 @@ router.get("/tickers", async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     logger.error("Tickers endpoint error", { error: err.message });
-    res.status(500).json({ success: false, error: "Failed to fetch tickers" });
+    const externalError = new ExternalServiceError("Kodiak API", { service: "Kodiak", operation: "fetch_tickers" });
+    res.status(externalError.statusCode).json(
+      createErrorResponse(externalError, getCorrelationId())
+    );
   }
 });
 
@@ -227,10 +232,10 @@ router.get(
         limit: req.query.limit,
         error: err.message,
       });
-      res.status(500).json({
-        success: false,
-        error: "Failed to fetch kline data",
-      });
+      const externalError = new ExternalServiceError("Market Stream Service", { service: "WebSocket", operation: "get_klines" });
+      res.status(externalError.statusCode).json(
+        createErrorResponse(externalError, getCorrelationId())
+      );
     }
   }
 );
