@@ -18,6 +18,7 @@ import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { MetricIcon } from "../components/ui/MetricIcon";
 import { AppHeader } from "../components/ui/AppHeader";
+import { PageLayout, Container, Grid } from "../components/layout";
 
 const Settings: React.FC = () => {
   const { user, refreshUser } = useAuth();
@@ -84,63 +85,60 @@ const Settings: React.FC = () => {
   const isConnected = kodiakStatus?.data?.connected;
 
   return (
-    <div className="container mx-auto px-4 py-10 space-y-10 bg-background">
-      <AppHeader title="Settings" subtitle="Manage your account" />
-
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto space-y-6">
-          {/* Account Overview */}
-          <Card>
-            <SectionHeader title="Account Overview" />
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="flex items-center gap-3 p-4 rounded-lg bg-surface border border-white/5">
-                <MetricIcon icon={Shield} color="primary" />
-                <div>
-                  <p className="text-sm text-textMuted">User Level</p>
-                  <p className="font-medium text-text">
-                    {user?.userLevel || "BASIC"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 p-4 rounded-lg bg-surface border border-white/5">
-                <MetricIcon icon={CheckCircle} color="success" />
-                <div>
-                  <p className="text-sm text-textMuted">Account Status</p>
-                  <p className="font-medium text-text">Active</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 p-4 rounded-lg bg-surface border border-white/5">
-                <div
-                  className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                    isConnected ? "bg-success/10" : "bg-warning/10"
-                  }`}
-                >
-                  {statusLoading ? (
-                    <Loader2 className="w-5 h-5 animate-spin text-warning" />
-                  ) : isConnected ? (
-                    <CheckCircle className="w-5 h-5 text-success" />
-                  ) : (
-                    <XCircle className="w-5 h-5 text-warning" />
-                  )}
-                </div>
-                <div>
-                  <p className="text-sm text-textMuted">Kodiak Status</p>
-                  <p className="font-medium text-text">
-                    {statusLoading
-                      ? "Loading..."
-                      : isConnected
-                        ? "Connected"
-                        : "Not Connected"}
-                  </p>
-                </div>
+    <PageLayout header={<AppHeader title="Settings" subtitle="Manage your account" />}>
+      <Container className="py-4" size="lg">
+        {/* Account Overview */}
+        <Card>
+          <SectionHeader title="Account Overview" />
+          <Grid cols={{ default: 1, md: 3 }} gap={4}>
+            <div className="flex items-center gap-3 p-4 rounded-lg bg-surface border border-white/5">
+              <MetricIcon icon={Shield} color="primary" />
+              <div>
+                <p className="text-sm text-textMuted">User Level</p>
+                <p className="font-medium text-text">
+                  {user?.userLevel || "BASIC"}
+                </p>
               </div>
             </div>
+
+            <div className="flex items-center gap-3 p-4 rounded-lg bg-surface border border-white/5">
+              <MetricIcon icon={CheckCircle} color="success" />
+              <div>
+                <p className="text-sm text-textMuted">Account Status</p>
+                <p className="font-medium text-text">Active</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 p-4 rounded-lg bg-surface border border-white/5">
+              <div
+                className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                  isConnected ? "bg-success/10" : "bg-warning/10"
+                }`}
+              >
+                {statusLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-warning" />
+                ) : isConnected ? (
+                  <CheckCircle className="w-5 h-5 text-success" />
+                ) : (
+                  <XCircle className="w-5 h-5 text-warning" />
+                )}
+              </div>
+              <div>
+                <p className="text-sm text-textMuted">Kodiak Status</p>
+                <p className="font-medium text-text">
+                  {statusLoading
+                    ? "Loading..."
+                    : isConnected
+                      ? "Connected"
+                      : "Not Connected"}
+                </p>
+              </div>
+            </div>
+          </Grid>
           </Card>
 
-          {/* Kodiak Credentials Section */}
-          <Card>
+        {/* Kodiak Credentials Section */}
+        <Card>
             <SectionHeader
               title="Kodiak Trading Credentials"
               subtitle="Connect your Kodiak account to enable automated trading strategies"
@@ -351,9 +349,8 @@ const Settings: React.FC = () => {
               <p>• You can disconnect your credentials at any time</p>
             </div>
           </Card>
-        </div>
-      </div>
-    </div>
+      </Container>
+    </PageLayout>
   );
 };
 

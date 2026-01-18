@@ -280,7 +280,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
           )}
 
           {!isLoading && !error && chartData.length > 0 && (
-            <div className="h-[400px]">
+            <div className="aspect-video min-h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData}>
                   <CartesianGrid
@@ -323,7 +323,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
           )}
 
           {!isLoading && !error && chartData.length === 0 && (
-            <div className="h-[400px] flex items-center justify-center">
+            <div className="aspect-video min-h-[300px] flex items-center justify-center">
               <div className="text-textMuted">No chart data available</div>
             </div>
           )}

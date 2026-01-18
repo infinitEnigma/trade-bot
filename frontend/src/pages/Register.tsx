@@ -3,6 +3,9 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { PageLayout, Container } from "../components/layout";
+import { ValidatedInput } from "../components/ui/ValidatedInput";
+import { validateEmail, validatePasswordRequirements, validatePasswordConfirmation } from "../lib/validation";
 
 const Register: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -12,11 +15,15 @@ const Register: React.FC = () => {
   const { register } = useAuth();
   const navigate = useNavigate();
 
+  const emailValidation = validateEmail(email);
+  const passwordValidation = validatePasswordRequirements(password);
+  const confirmValidation = validatePasswordConfirmation(password, confirmPassword);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (password !== confirmPassword) {
-      return; // Error handled by form validation
+    if (!emailValidation.isValid || !passwordValidation.isValid || !confirmValidation.isValid) {
+      return; // Validation errors will be shown
     }
 
     setLoading(true);
@@ -32,10 +39,10 @@ const Register: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="max-w-md w-full">
+    <PageLayout className="flex items-center justify-center">
+      <Container size="sm" className="text-center">
         <div className="glass-card p-8">
-          <div className="text-center mb-8">
+          <div className="mb-8">
             <h1 className="text-3xl font-bold text-text mb-2">
               Create Account
             </h1>
@@ -43,69 +50,51 @@ const Register: React.FC = () => {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-text mb-2"
-              >
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="input w-full"
-                placeholder="your@email.com"
-                required
-              />
-            </div>
+            <ValidatedInput
+              label="Email"
+              type="email"
+              value={email}
+              onChange={setEmail}
+              validation={{
+                isValid: emailValidation.isValid,
+                message: emailValidation.message,
+                touched: email.length > 0
+              }}
+              placeholder="your@email.com"
+              required
+            />
 
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-text mb-2"
-              >
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="input w-full"
-                placeholder="••••••••"
-                minLength={8}
-                required
-              />
-            </div>
+            <ValidatedInput
+              label="Password"
+              type="password"
+              value={password}
+              onChange={setPassword}
+              validation={{
+                isValid: passwordValidation.isValid,
+                message: passwordValidation.message,
+                touched: password.length > 0
+              }}
+              placeholder="••••••••"
+              required
+            />
 
-            <div>
-              <label
-                htmlFor="confirmPassword"
-                className="block text-sm font-medium text-text mb-2"
-              >
-                Confirm Password
-              </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                className="input w-full"
-                placeholder="••••••••"
-                required
-              />
-              {password && confirmPassword && password !== confirmPassword && (
-                <p className="text-danger text-sm mt-1">
-                  Passwords do not match
-                </p>
-              )}
-            </div>
+            <ValidatedInput
+              label="Confirm Password"
+              type="password"
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              validation={{
+                isValid: confirmValidation.isValid,
+                message: confirmValidation.message,
+                touched: confirmPassword.length > 0
+              }}
+              placeholder="••••••••"
+              required
+            />
 
             <button
               type="submit"
-              disabled={loading || password !== confirmPassword}
+              disabled={loading || !emailValidation.isValid || !passwordValidation.isValid || !confirmValidation.isValid}
               className="btn-primary w-full"
             >
               {loading ? "Creating account..." : "Create Account"}
@@ -124,8 +113,8 @@ const Register: React.FC = () => {
             </p>
           </div>
         </div>
-      </div>
-    </div>
+      </Container>
+    </PageLayout>
   );
 };
 

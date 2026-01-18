@@ -34,8 +34,11 @@ export const ValidatedInput: React.FC<ValidatedInputProps> = ({
   strength,
   className = ""
 }) => {
+  const inputId = React.useId();
+  const errorId = React.useId();
+
   const getInputClasses = () => {
-    const baseClasses = "input w-full transition-all duration-200";
+    const baseClasses = "input w-full transition-all duration-200 focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background";
 
     if (!validation.touched) {
       return baseClasses;
@@ -52,9 +55,19 @@ export const ValidatedInput: React.FC<ValidatedInputProps> = ({
     if (!validation.touched) return null;
 
     if (validation.isValid) {
-      return <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />;
+      return (
+        <CheckCircle
+          className="w-4 h-4 text-green-400 flex-shrink-0"
+          aria-label="Valid input"
+        />
+      );
     } else {
-      return <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />;
+      return (
+        <AlertCircle
+          className="w-4 h-4 text-red-400 flex-shrink-0"
+          aria-label="Invalid input"
+        />
+      );
     }
   };
 
@@ -70,23 +83,30 @@ export const ValidatedInput: React.FC<ValidatedInputProps> = ({
 
   return (
     <div className={`space-y-2 ${className}`}>
-      <label className="block text-sm font-medium text-text">
+      <label
+        htmlFor={inputId}
+        className="block text-sm font-medium text-text"
+      >
         {label}
-        {required && <span className="text-red-400 ml-1">*</span>}
+        {required && <span className="text-red-400 ml-1" aria-label="required">*</span>}
       </label>
 
       <div className="relative">
         <input
+          id={inputId}
           type={type}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onBlur={onBlur}
           placeholder={placeholder}
           className={`${getInputClasses()} pr-10`}
+          aria-invalid={!validation.isValid && validation.touched}
+          aria-describedby={!validation.isValid && validation.touched ? errorId : undefined}
+          required={required}
         />
 
         {/* Validation Icon */}
-        <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
           {getValidationIcon()}
         </div>
       </div>
@@ -115,8 +135,13 @@ export const ValidatedInput: React.FC<ValidatedInputProps> = ({
 
       {/* Validation Message */}
       {validation.touched && !validation.isValid && validation.message && (
-        <p className="text-red-400 text-xs flex items-center gap-1">
-          <AlertCircle className="w-3 h-3 flex-shrink-0" />
+        <p
+          id={errorId}
+          className="text-red-400 text-xs flex items-center gap-1"
+          role="alert"
+          aria-live="polite"
+        >
+          <AlertCircle className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
           {validation.message}
         </p>
       )}

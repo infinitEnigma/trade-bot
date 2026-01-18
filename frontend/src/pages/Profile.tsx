@@ -7,6 +7,7 @@ import { AppHeader } from "../components/ui/AppHeader";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { ValidatedInput } from "../components/ui/ValidatedInput";
+import { PageLayout, Container } from "../components/layout";
 import {
   validateProfileForm,
   createInitialValidationState,
@@ -135,13 +136,11 @@ const Profile: React.FC = () => {
   if (!user) return null;
 
   return (
-    <div className="container mx-auto px-4 py-10 space-y-10 bg-background">
-      <AppHeader
-        title="Profile Settings"
-        subtitle="Manage your account information and preferences"
-      />
-
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
+    <PageLayout header={<AppHeader
+      title="Profile Settings"
+      subtitle="Manage your account information and preferences"
+    />}>
+      <Container className="py-4" size="lg">
         {/* Profile Overview */}
         <div className="mb-8">
           <Card className="p-8">
@@ -382,8 +381,8 @@ const Profile: React.FC = () => {
             </div>
           </div>
         </Card>
-      </div>
-    </div>
+      </Container>
+    </PageLayout>
   );
 };
 

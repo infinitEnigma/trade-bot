@@ -25,6 +25,7 @@ import { AppHeader } from "../components/ui/AppHeader";
 import { UserProgressCard } from "../components/ui/UserProgressCard";
 import { DashboardCardSkeleton } from "../components/ui/EnhancedLoading";
 import { useBalance } from "../hooks/useBalance";
+import { PageLayout, Container, Grid, Section } from "../components/layout";
 
 // Lazy load heavy components
 const PriceChart = React.lazy(() => import("../components/PriceChart"));
@@ -151,10 +152,9 @@ const Dashboard: React.FC = () => {
       : [{ time: "No data", value: totalBalance || 10000 }];
 
   return (
-    <div className="container mx-auto px-4 py-10 space-y-10 bg-background">
-      <AppHeader />
-
-      <div className="container mx-auto px-4 py-8">
+    <PageLayout header={<AppHeader />}>
+      <Container className="py-6 space-y-10">
+        <Section>
         {/* ✅ User Progress Card - Shows account progression */}
         <div className="mb-8">
           <UserProgressCard />
@@ -199,7 +199,7 @@ const Dashboard: React.FC = () => {
               }
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <Grid cols={{ default: 1, md: 2, lg: 4 }} gap={6}>
               <Suspense fallback={<DashboardCardSkeleton />}>
                 <StatsCard
                   title="Wallet Balance"
@@ -241,7 +241,7 @@ const Dashboard: React.FC = () => {
                   format="currency"
                 />
               </Suspense>
-            </div>
+            </Grid>
           </div>
         ) : user?.userLevel === "BASIC" ? (
           <Card className="text-center mb-8">
@@ -377,8 +377,8 @@ const Dashboard: React.FC = () => {
               }
             />
 
-            <div className="overflow-hidden rounded-xl border border-white/5">
-              <table className="table-enhanced w-full">
+            <div className="overflow-x-auto rounded-xl border border-white/5">
+              <table className="table-enhanced w-full min-w-[600px]">
                 <thead>
                   <tr>
                     <th className="text-left">Symbol</th>
@@ -640,8 +640,9 @@ const Dashboard: React.FC = () => {
             </div>
           </Card>
         </div>
-      </div>
-    </div>
+        </Section>
+      </Container>
+    </PageLayout>
   );
 };
 

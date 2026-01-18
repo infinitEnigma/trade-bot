@@ -21,6 +21,7 @@ import CandlestickChart from "../components/CandlestickChart";
 import { useBalance } from "../hooks/useBalance";
 import { useAuth } from "../contexts/AuthContext";
 import { UserProgressCard } from "../components/ui/UserProgressCard";
+import { PageLayout, Container } from "../components/layout";
 
 const Strategies: React.FC = React.memo(() => {
   const { user } = useAuth();
@@ -171,109 +172,112 @@ const Strategies: React.FC = React.memo(() => {
   // Show Kodiak connectivity error if check failed
   if (kodiakError) {
     return (
-      <div className="container mx-auto px-4 py-10 space-y-10 bg-background min-h-screen flex items-center justify-center">
-        <div className="glass-card p-8 text-center max-w-md">
-          <div className="w-16 h-16 mx-auto mb-6 bg-red-500/10 rounded-full flex items-center justify-center">
-            <AlertTriangle className="w-8 h-8 text-red-500" />
+      <PageLayout className="flex items-center justify-center">
+        <Container size="sm" className="text-center">
+          <div className="glass-card p-8">
+            <div className="w-16 h-16 mx-auto mb-6 bg-red-500/10 rounded-full flex items-center justify-center">
+              <AlertTriangle className="w-8 h-8 text-red-500" />
+            </div>
+            <h1 className="text-2xl font-bold text-text mb-4">
+              Trading Features Unavailable
+            </h1>
+            <p className="text-textMuted mb-6">{kodiakError}</p>
+            <div className="space-y-3">
+              <Link
+                to="/settings"
+                className="btn-primary w-full inline-flex items-center justify-center gap-2"
+              >
+                <Settings className="w-4 h-4" />
+                Connect Kodiak Account
+              </Link>
+              <Link
+                to="/dashboard"
+                className="btn-secondary w-full inline-flex items-center justify-center gap-2"
+              >
+                Return to Dashboard
+              </Link>
+            </div>
           </div>
-          <h1 className="text-2xl font-bold text-text mb-4">
-            Trading Features Unavailable
-          </h1>
-          <p className="text-textMuted mb-6">{kodiakError}</p>
-          <div className="space-y-3">
-            <Link
-              to="/settings"
-              className="btn-primary w-full inline-flex items-center justify-center gap-2"
-            >
-              <Settings className="w-4 h-4" />
-              Connect Kodiak Account
-            </Link>
-            <Link
-              to="/dashboard"
-              className="btn-secondary w-full inline-flex items-center justify-center gap-2"
-            >
-              Return to Dashboard
-            </Link>
-          </div>
-        </div>
-      </div>
+        </Container>
+      </PageLayout>
     );
   }
 
   return (
-    <div className="container mx-auto px-4 py-10 space-y-10 bg-background">
-      {/* Header */}
-      <header className="glass-card border-b border-white/5 sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-linear-to-br from-primary to-primaryHover flex items-center justify-center">
-                <BarChart3 className="w-5 h-5 text-white" />
+    <PageLayout
+      header={
+        <div className="glass-card border-b border-white/5">
+          <Container className="py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-linear-to-br from-primary to-primaryHover flex items-center justify-center">
+                  <BarChart3 className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-text">
+                    Trading Strategies
+                  </h1>
+                  <p className="text-sm text-textMuted">
+                    Manage your automated trading strategies
+                  </p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-text">
-                  Trading Strategies
-                </h1>
-                <p className="text-sm text-textMuted">
-                  Manage your automated trading strategies
-                </p>
+
+              <div className="flex items-center gap-4">
+                {/* Navigation Links */}
+                <nav className="hidden md:flex items-center gap-1">
+                  <Link
+                    to="/dashboard"
+                    className="px-3 py-2 text-sm text-textMuted hover:text-text hover:bg-white/5 rounded-lg transition-colors"
+                  >
+                    Dashboard
+                  </Link>
+                  <span className="px-3 py-2 text-sm text-primary font-medium bg-primary/10 rounded-lg">
+                    Strategies
+                  </span>
+                  <Link
+                    to="/settings"
+                    className="px-3 py-2 text-sm text-textMuted hover:text-text hover:bg-white/5 rounded-lg transition-colors"
+                  >
+                    Settings
+                  </Link>
+                </nav>
+
+                <button
+                  onClick={() => setShowCreateForm(true)}
+                  className="btn-primary flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create Strategy
+                </button>
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
-              {/* Navigation Links */}
-              <nav className="hidden md:flex items-center gap-1">
+            {/* Mobile Navigation */}
+            <div className="md:hidden mt-4 pt-4 border-t border-white/5">
+              <nav className="flex items-center justify-center gap-1">
                 <Link
                   to="/dashboard"
-                  className="px-3 py-2 text-sm text-textMuted hover:text-text hover:bg-white/5 rounded-lg transition-colors"
+                  className="px-4 py-2 text-sm text-textMuted hover:text-text hover:bg-white/5 rounded-lg transition-colors"
                 >
                   Dashboard
                 </Link>
-                <span className="px-3 py-2 text-sm text-primary font-medium bg-primary/10 rounded-lg">
+                <span className="px-4 py-2 text-sm text-primary font-medium bg-primary/10 rounded-lg">
                   Strategies
                 </span>
                 <Link
                   to="/settings"
-                  className="px-3 py-2 text-sm text-textMuted hover:text-text hover:bg-white/5 rounded-lg transition-colors"
+                  className="px-4 py-2 text-sm text-textMuted hover:text-text hover:bg-white/5 rounded-lg transition-colors"
                 >
                   Settings
                 </Link>
               </nav>
-
-              <button
-                onClick={() => setShowCreateForm(true)}
-                className="btn-primary flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Create Strategy
-              </button>
             </div>
-          </div>
-
-          {/* Mobile Navigation */}
-          <div className="md:hidden mt-4 pt-4 border-t border-white/5">
-            <nav className="flex items-center justify-center gap-1">
-              <Link
-                to="/dashboard"
-                className="px-4 py-2 text-sm text-textMuted hover:text-text hover:bg-white/5 rounded-lg transition-colors"
-              >
-                Dashboard
-              </Link>
-              <span className="px-4 py-2 text-sm text-primary font-medium bg-primary/10 rounded-lg">
-                Strategies
-              </span>
-              <Link
-                to="/settings"
-                className="px-4 py-2 text-sm text-textMuted hover:text-text hover:bg-white/5 rounded-lg transition-colors"
-              >
-                Settings
-              </Link>
-            </nav>
-          </div>
+          </Container>
         </div>
-      </header>
-
-      <div className="container mx-auto px-4 py-8">
+      }
+    >
+      <Container className="py-4 space-y-8">
         {/* ✅ User Progress Card - Shows qualification status */}
         <div className="mb-8">
           <UserProgressCard />
@@ -604,8 +608,8 @@ const Strategies: React.FC = React.memo(() => {
             }}
           />
         )}
-      </div>
-    </div>
+      </Container>
+    </PageLayout>
   );
 });
 

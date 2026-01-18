@@ -3,6 +3,9 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { PageLayout, Container } from "../components/layout";
+import { ValidatedInput } from "../components/ui/ValidatedInput";
+import { validateEmail } from "../lib/validation";
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -32,51 +35,45 @@ const Login: React.FC = () => {
     }
   };
 
+  const emailValidation = validateEmail(email);
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="max-w-md w-full">
+    <PageLayout className="flex items-center justify-center">
+      <Container size="sm" className="text-center">
         <div className="glass-card p-8">
-          <div className="text-center mb-8">
+          <div className="mb-8">
             <h1 className="text-3xl font-bold text-text mb-2">Welcome Back</h1>
             <p className="text-textMuted">Sign in to your account</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-text mb-2"
-              >
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="input w-full"
-                placeholder="your@email.com"
-                required
-              />
-            </div>
+            <ValidatedInput
+              label="Email"
+              type="email"
+              value={email}
+              onChange={setEmail}
+              validation={{
+                isValid: emailValidation.isValid,
+                message: emailValidation.message,
+                touched: email.length > 0
+              }}
+              placeholder="your@email.com"
+              required
+            />
 
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-text mb-2"
-              >
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="input w-full"
-                placeholder="••••••••"
-                required
-              />
-            </div>
+            <ValidatedInput
+              label="Password"
+              type="password"
+              value={password}
+              onChange={setPassword}
+              validation={{
+                isValid: true,
+                message: "",
+                touched: password.length > 0
+              }}
+              placeholder="••••••••"
+              required
+            />
 
             <button
               type="submit"
@@ -99,8 +96,8 @@ const Login: React.FC = () => {
             </p>
           </div>
         </div>
-      </div>
-    </div>
+      </Container>
+    </PageLayout>
   );
 };
 
