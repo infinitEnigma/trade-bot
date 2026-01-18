@@ -1,6 +1,8 @@
 /** @format */
 
 import { redisService } from "../../services/redis";
+import { getCacheConfig, CACHE_KEYS } from "../../config/cache.config";
+import { cacheInvalidationService } from "../cache-invalidation";
 import logger from "../../services/logger";
 import { TickData, KlineData } from "./types";
 
@@ -10,15 +12,17 @@ import { TickData, KlineData } from "./types";
  */
 export class CacheManager {
   /**
-   * Cache tick data with 60-second TTL
+   * Cache tick data with configured TTL
    */
   async cacheTick(symbol: string, data: TickData): Promise<void> {
     try {
-      const cacheKey = `tick:${symbol}`;
-      const result = await redisService.setex(
+      const cacheKey = CACHE_KEYS.tick(symbol);
+      const config = getCacheConfig();
+      const result = await redisService.atomicCacheUpdate(
         cacheKey,
-        60,
-        JSON.stringify(data)
+        data,
+        undefined, // No versioning needed for market data
+        3 // maxRetries
       );
 
       if (!result.success) {
@@ -27,7 +31,7 @@ export class CacheManager {
           error: result.error,
         });
       } else {
-        logger.debug("Tick cached", { symbol, price: data.price });
+        logger.debug("Tick cached", { symbol, price: data.price, version: result.version });
       }
     } catch (error) {
       logger.error("Error caching tick data", {
@@ -42,7 +46,7 @@ export class CacheManager {
    */
   async getTick(symbol: string): Promise<TickData | null> {
     try {
-      const cacheKey = `tick:${symbol}`;
+      const cacheKey = CACHE_KEYS.tick(symbol);
       const result = await redisService.get(cacheKey);
 
       if (result.success && result.data) {
@@ -69,7 +73,7 @@ export class CacheManager {
   }
 
   /**
-   * Cache kline data with 1-hour TTL
+   * Cache kline data with configured TTL
    */
   async cacheKlines(
     symbol: string,
@@ -77,11 +81,24 @@ export class CacheManager {
     klines: KlineData[]
   ): Promise<void> {
     try {
-      const cacheKey = `kline:${symbol}:${interval}`;
-      const result = await redisService.setex(
+      const cacheKey = CACHE_KEYS.kline(symbol, interval);
+      const config = getCacheConfig();
+
+      // Determine TTL based on interval
+      let ttl: number;
+      if (interval.includes('1m') || interval.includes('5m')) {
+        ttl = config.MARKET_KLINES_SHORT;
+      } else if (interval.includes('15m') || interval.includes('30m')) {
+        ttl = config.MARKET_KLINES_MEDIUM;
+      } else {
+        ttl = config.MARKET_KLINES_LONG;
+      }
+
+      const result = await redisService.atomicCacheUpdate(
         cacheKey,
-        3600,
-        JSON.stringify(klines)
+        klines,
+        undefined, // No versioning needed for market data
+        3 // maxRetries
       );
 
       if (!result.success) {
@@ -95,6 +112,8 @@ export class CacheManager {
           symbol,
           interval,
           count: klines.length,
+          ttl,
+          version: result.version,
         });
       }
     } catch (error) {
@@ -115,7 +134,7 @@ export class CacheManager {
     limit: number = 300
   ): Promise<KlineData[]> {
     try {
-      const cacheKey = `kline:${symbol}:${interval}`;
+      const cacheKey = CACHE_KEYS.kline(symbol, interval);
       const result = await redisService.get(cacheKey);
 
       if (result.success && result.data) {
@@ -150,15 +169,17 @@ export class CacheManager {
   }
 
   /**
-   * Cache mark price data with 30-second TTL
+   * Cache mark price data with configured TTL
    */
   async cacheMarkPrice(symbol: string, data: any): Promise<void> {
     try {
-      const cacheKey = `markprice:${symbol}`;
-      const result = await redisService.setex(
+      const cacheKey = CACHE_KEYS.markPrice(symbol);
+      const config = getCacheConfig();
+      const result = await redisService.atomicCacheUpdate(
         cacheKey,
-        30,
-        JSON.stringify(data)
+        data,
+        undefined, // No versioning needed for market data
+        3 // maxRetries
       );
 
       if (!result.success) {
@@ -167,7 +188,7 @@ export class CacheManager {
           error: result.error,
         });
       } else {
-        logger.debug("Mark price cached", { symbol, price: data.price });
+        logger.debug("Mark price cached", { symbol, price: data.price, version: result.version });
       }
     } catch (error) {
       logger.error("Error caching mark price data", {
@@ -182,7 +203,7 @@ export class CacheManager {
    */
   async getMarkPrice(symbol: string): Promise<any | null> {
     try {
-      const cacheKey = `markprice:${symbol}`;
+      const cacheKey = CACHE_KEYS.markPrice(symbol);
       const result = await redisService.get(cacheKey);
 
       if (result.success && result.data) {
@@ -212,24 +233,24 @@ export class CacheManager {
   }
 
   /**
-   * Delete cached data for a symbol
+   * Delete cached data for a symbol with broadcasting
    */
-  async invalidateSymbolData(symbol: string): Promise<void> {
+  async invalidateSymbolData(symbol: string, reason: string = 'manual_invalidation'): Promise<void> {
     try {
       const keys = await this.getSymbolKeys(symbol);
-      let deletedCount = 0;
 
-      for (const key of keys) {
-        const result = await redisService.del(key);
-        if (result.success) {
-          deletedCount++;
-        }
-      }
+      // Invalidate with broadcasting
+      const result = await cacheInvalidationService.invalidateWithBroadcast(
+        keys,
+        reason,
+        undefined // No specific user
+      );
 
-      if (deletedCount > 0) {
-        logger.info("Symbol data invalidated", {
+      if (result.success && result.keysInvalidated > 0) {
+        logger.info("Symbol data invalidated with broadcasting", {
           symbol,
-          keysDeleted: deletedCount,
+          keysInvalidated: result.keysInvalidated,
+          reason,
         });
       }
     } catch (error) {
