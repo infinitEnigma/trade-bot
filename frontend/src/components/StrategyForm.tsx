@@ -173,14 +173,14 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-bold text-white">
+      <div className="glass-card rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b border-white/5">
+          <h2 className="text-xl font-bold text-text-primary">
             {strategy ? "Edit Strategy" : "Create New Strategy"}
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white p-1"
+            className="text-text-tertiary hover:text-text-primary p-1"
           >
             <X className="w-5 h-5" />
           </button>
@@ -190,24 +190,24 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
           {/* Basic Information */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text-secondary mb-2">
                 Strategy Name
               </label>
               <input
                 {...register("name")}
                 type="text"
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                className="input w-full"
                 placeholder="My Grid Strategy"
               />
               {errors.name && (
-                <p className="text-red-400 text-sm mt-1">
+                <p className="text-danger text-sm mt-1">
                   {errors.name.message}
                 </p>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text-secondary mb-2">
                 Strategy Type
               </label>
               <select
@@ -217,7 +217,7 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
                   setSelectedType(newType);
                   setValue("type", newType);
                 }}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                className="input w-full"
               >
                 <option value={StrategyType.GRID}>Grid Trading</option>
                 <option value={StrategyType.TREND_FOLLOWING}>
@@ -230,12 +230,12 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
 
           {/* Trading Symbol */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-text-secondary mb-2">
               Trading Symbol
             </label>
             <select
               {...register("symbol")}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+              className="input w-full"
             >
               {AVAILABLE_SYMBOLS.map(symbol => (
                 <option key={symbol} value={symbol}>
@@ -244,7 +244,7 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
               ))}
             </select>
             {errors.symbol && (
-              <p className="text-red-400 text-sm mt-1">
+              <p className="text-danger text-sm mt-1">
                 {errors.symbol.message}
               </p>
             )}
@@ -252,7 +252,7 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
 
           {/* Leverage */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-text-secondary mb-2">
               Leverage (1x - 20x)
             </label>
             <input
@@ -260,10 +260,10 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
               type="number"
               min="1"
               max="20"
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+              className="input w-full"
             />
             {errors.leverage && (
-              <p className="text-red-400 text-sm mt-1">
+              <p className="text-danger text-sm mt-1">
                 {errors.leverage.message}
               </p>
             )}
@@ -272,13 +272,13 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
           {/* Grid Trading Configuration */}
           {selectedType === StrategyType.GRID && (
             <div className="space-y-4">
-              <h3 className="text-lg font-medium text-white">
+              <h3 className="text-lg font-medium text-text-primary">
                 Grid Configuration
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Grid Size (2-100 levels)
                   </label>
                   <input
@@ -286,17 +286,17 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
                     type="number"
                     min="2"
                     max="100"
-                    className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                    className="input w-full"
                   />
                   {errors.gridSize && (
-                    <p className="text-red-400 text-sm mt-1">
+                    <p className="text-danger text-sm mt-1">
                       {errors.gridSize.message}
                     </p>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Grid Range (1-50%)
                   </label>
                   <input
@@ -305,17 +305,17 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
                     min="1"
                     max="50"
                     step="0.1"
-                    className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                    className="input w-full"
                   />
                   {errors.gridRange && (
-                    <p className="text-red-400 text-sm mt-1">
+                    <p className="text-danger text-sm mt-1">
                       {errors.gridRange.message}
                     </p>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Order Quantity
                   </label>
                   <input
@@ -323,10 +323,10 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
                     type="number"
                     min="0.01"
                     step="0.01"
-                    className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                    className="input w-full"
                   />
                   {errors.orderQuantity && (
-                    <p className="text-red-400 text-sm mt-1">
+                    <p className="text-danger text-sm mt-1">
                       {errors.orderQuantity.message}
                     </p>
                   )}
@@ -337,13 +337,13 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
 
           {/* Risk Management */}
           <div className="space-y-4">
-            <h3 className="text-lg font-medium text-white">
+            <h3 className="text-lg font-medium text-text-primary">
               Risk Management (Optional)
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Take Profit (%)
                 </label>
                 <input
@@ -351,13 +351,13 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
                   type="number"
                   min="0"
                   step="0.1"
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  className="input w-full"
                   placeholder="Leave empty to disable"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Stop Loss (%)
                 </label>
                 <input
@@ -365,7 +365,7 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
                   type="number"
                   min="0"
                   step="0.1"
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  className="input w-full"
                   placeholder="Leave empty to disable"
                 />
               </div>
@@ -373,18 +373,18 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
           </div>
 
           {/* Form Actions */}
-          <div className="flex justify-end gap-3 pt-6 border-t border-gray-700">
+          <div className="flex justify-end gap-3 pt-6 border-t border-border-light">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-gray-300 hover:text-white transition-colors"
+              className="btn-secondary"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isLoading}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+              className="btn-primary flex items-center gap-2"
             >
               {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
               {strategy ? "Update Strategy" : "Create Strategy"}

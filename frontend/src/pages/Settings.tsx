@@ -17,8 +17,7 @@ import {
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { MetricIcon } from "../components/ui/MetricIcon";
-import { AppHeader } from "../components/ui/AppHeader";
-import { PageLayout, Container, Grid } from "../components/layout";
+import { Container, Grid } from "../components/layout";
 
 const Settings: React.FC = () => {
   const { user, refreshUser } = useAuth();
@@ -85,8 +84,7 @@ const Settings: React.FC = () => {
   const isConnected = kodiakStatus?.data?.connected;
 
   return (
-    <PageLayout header={<AppHeader title="Settings" subtitle="Manage your account" />}>
-      <Container
+    <Container
         size={{
           default: 'lg',
           xl: 'xl',
@@ -359,7 +357,6 @@ const Settings: React.FC = () => {
             </div>
           </Card>
       </Container>
-    </PageLayout>
   );
 };
 

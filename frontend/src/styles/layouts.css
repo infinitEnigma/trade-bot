@@ -17,6 +17,6 @@
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(to bottom, var(--primary-hover), #a855f7);
+    background: linear-gradient(to bottom, var(--primary-hover), var(--accent));
   }
 }

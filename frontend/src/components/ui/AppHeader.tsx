@@ -11,6 +11,7 @@ import {
   Zap,
   ChevronDown,
 } from "lucide-react";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface AppHeaderProps {
   title?: string;
@@ -44,12 +45,15 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4">
             {showNavigation && (
               <div className="hidden md:flex">
                 <SmartNavigation />
               </div>
             )}
+
+            {/* Theme Toggle */}
+            <ThemeToggle />
 
             {/* User Profile with dropdown */}
             <div className="relative group">

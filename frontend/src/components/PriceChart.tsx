@@ -285,25 +285,25 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                 <LineChart data={chartData}>
                   <CartesianGrid
                     strokeDasharray="3 3"
-                    stroke="rgba(255,255,255,0.1)"
+                    stroke="var(--border-light)"
                   />
                   <XAxis
                     dataKey="time"
-                    stroke="#94a3b8"
+                    stroke="var(--text-secondary)"
                     fontSize={12}
-                    tick={{ fill: "#94a3b8" }}
+                    tick={{ fill: "var(--text-secondary)" }}
                   />
                   <YAxis
-                    stroke="#94a3b8"
+                    stroke="var(--text-secondary)"
                     fontSize={12}
-                    tick={{ fill: "#94a3b8" }}
+                    tick={{ fill: "var(--text-secondary)" }}
                     domain={["dataMin - 0.1", "dataMax + 0.1"]}
                   />
                   <Tooltip content={<CustomTooltip />} />
                   <Line
                     type="monotone"
                     dataKey="price"
-                    stroke="#10b981"
+                    stroke="var(--secondary)"
                     strokeWidth={2}
                     dot={false}
                     name="Price"
@@ -311,7 +311,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                   <Line
                     type="monotone"
                     dataKey="ma20"
-                    stroke="#f59e0b"
+                    stroke="var(--warning)"
                     strokeWidth={1}
                     strokeDasharray="5 5"
                     dot={false}

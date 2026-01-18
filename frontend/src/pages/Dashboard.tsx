@@ -1,6 +1,7 @@
 /** @format */
 
 import React, { useState, Suspense } from "react";
+import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../lib/api";
@@ -21,11 +22,11 @@ import {
 import { Link } from "react-router-dom";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
-import { AppHeader } from "../components/ui/AppHeader";
+
 import { UserProgressCard } from "../components/ui/UserProgressCard";
 import { DashboardCardSkeleton } from "../components/ui/EnhancedLoading";
 import { useBalance } from "../hooks/useBalance";
-import { PageLayout, Container, Grid, Section } from "../components/layout";
+import { Container, Grid, Section } from "../components/layout";
 
 // Lazy load heavy components
 const PriceChart = React.lazy(() => import("../components/PriceChart"));
@@ -152,8 +153,7 @@ const Dashboard: React.FC = () => {
       : [{ time: "No data", value: totalBalance || 10000 }];
 
   return (
-    <PageLayout header={<AppHeader />}>
-      <Container
+    <Container
         size={{
           default: 'lg',  // Mobile: constrained
           xl: 'xl',       // Large desktop: reasonable width
@@ -209,47 +209,62 @@ const Dashboard: React.FC = () => {
             />
 
             <Grid cols={{ default: 1, md: 2, lg: 4 }} gap={6}>
-              <Suspense fallback={<DashboardCardSkeleton />}>
-                <StatsCard
-                  title="Wallet Balance"
-                  value={realBalance?.walletBalance || 0}
-                  change={0}
-                  icon={Wallet}
-                  color="primary"
-                  format="currency"
-                  loading={realBalanceLoading}
-                />
-              </Suspense>
-              <Suspense fallback={<DashboardCardSkeleton />}>
-                <StatsCard
-                  title="Account Balance"
-                  value={realBalance?.accountBalance || 0}
-                  change={0}
-                  icon={DollarSign}
-                  color="success"
-                  format="currency"
-                />
-              </Suspense>
-              <Suspense fallback={<DashboardCardSkeleton />}>
-                <StatsCard
-                  title="Available Balance"
-                  value={realBalance?.availableBalance || 0}
-                  change={0}
-                  icon={Activity}
-                  color="warning"
-                  format="currency"
-                />
-              </Suspense>
-              <Suspense fallback={<DashboardCardSkeleton />}>
-                <StatsCard
-                  title="Total Assets"
-                  value={realBalance?.totalAssets || 0}
-                  change={0}
-                  icon={TrendingUp}
-                  color="info"
-                  format="currency"
-                />
-              </Suspense>
+              {[0, 1, 2, 3].map((index) => (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    duration: 0.4,
+                    delay: index * 0.1,
+                    ease: "easeOut"
+                  }}
+                >
+                  <Suspense fallback={<DashboardCardSkeleton />}>
+                    {index === 0 && (
+                      <StatsCard
+                        title="Wallet Balance"
+                        value={realBalance?.walletBalance || 0}
+                        change={0}
+                        icon={Wallet}
+                        color="primary"
+                        format="currency"
+                        loading={realBalanceLoading}
+                      />
+                    )}
+                    {index === 1 && (
+                      <StatsCard
+                        title="Account Balance"
+                        value={realBalance?.accountBalance || 0}
+                        change={0}
+                        icon={DollarSign}
+                        color="success"
+                        format="currency"
+                      />
+                    )}
+                    {index === 2 && (
+                      <StatsCard
+                        title="Available Balance"
+                        value={realBalance?.availableBalance || 0}
+                        change={0}
+                        icon={Activity}
+                        color="warning"
+                        format="currency"
+                      />
+                    )}
+                    {index === 3 && (
+                      <StatsCard
+                        title="Total Assets"
+                        value={realBalance?.totalAssets || 0}
+                        change={0}
+                        icon={TrendingUp}
+                        color="info"
+                        format="currency"
+                      />
+                    )}
+                  </Suspense>
+                </motion.div>
+              ))}
             </Grid>
           </div>
         ) : user?.userLevel === "BASIC" ? (
@@ -651,7 +666,6 @@ const Dashboard: React.FC = () => {
         </div>
         </Section>
       </Container>
-    </PageLayout>
   );
 };
 

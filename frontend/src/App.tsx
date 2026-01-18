@@ -6,13 +6,17 @@ import {
   Routes,
   Route,
   Navigate,
+  useLocation,
 } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { ThemeProvider } from "./contexts/ThemeContext";
 import { UserRole } from "@trade-bot/shared";
 
 // Components
 import LoadingSpinner from "./components/ui/LoadingSpinner";
+import { AppHeader } from "./components/ui/AppHeader";
 
 // Lazy load pages
 const Login = React.lazy(() => import("./pages/Login"));
@@ -54,20 +58,86 @@ const ProtectedRoute = ({
   return <>{children}</>;
 };
 
-// App Router Component
-const AppRouter = () => {
+// Animated Routes Component
+const AnimatedRoutes = () => {
+  const location = useLocation();
+
+  const pageVariants = {
+    initial: {
+      opacity: 0,
+      y: 20,
+      scale: 0.98,
+    },
+    in: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+    },
+    out: {
+      opacity: 0,
+      y: -20,
+      scale: 1.02,
+    },
+  };
+
+  const pageTransition = {
+    type: "tween" as const,
+    ease: "anticipate" as const,
+    duration: 0.4,
+  };
+
+  const isAuthRoute = location.pathname === '/login' || location.pathname === '/register';
+
   return (
-    <Router>
-      <div className="min-h-screen bg-background text-text">
-        <Suspense fallback={<LoadingSpinner />}>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
+    <div className="min-h-screen bg-background text-text">
+      {/* Header - only show for protected routes */}
+      {!isAuthRoute && <AppHeader />}
+
+      {/* Content area with padding for header */}
+      <div className={isAuthRoute ? "" : "pt-16"}>
+        <AnimatePresence mode="wait" initial={false}>
+          <Routes location={location} key={location.pathname}>
+            <Route
+              path="/login"
+              element={
+                <motion.div
+                  initial="initial"
+                  animate="in"
+                  exit="out"
+                  variants={pageVariants}
+                  transition={pageTransition}
+                >
+                  <Login />
+                </motion.div>
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <motion.div
+                  initial="initial"
+                  animate="in"
+                  exit="out"
+                  variants={pageVariants}
+                  transition={pageTransition}
+                >
+                  <Register />
+                </motion.div>
+              }
+            />
             <Route
               path="/dashboard"
               element={
                 <ProtectedRoute>
-                  <Dashboard />
+                  <motion.div
+                    initial="initial"
+                    animate="in"
+                    exit="out"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                  >
+                    <Dashboard />
+                  </motion.div>
                 </ProtectedRoute>
               }
             />
@@ -75,7 +145,15 @@ const AppRouter = () => {
               path="/strategies"
               element={
                 <ProtectedRoute requireVerified={true}>
-                  <Strategies />
+                  <motion.div
+                    initial="initial"
+                    animate="in"
+                    exit="out"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                  >
+                    <Strategies />
+                  </motion.div>
                 </ProtectedRoute>
               }
             />
@@ -83,7 +161,15 @@ const AppRouter = () => {
               path="/analytics"
               element={
                 <ProtectedRoute requireRole={UserRole.QUALIFIED_ALPHA}>
-                  <Analytics />
+                  <motion.div
+                    initial="initial"
+                    animate="in"
+                    exit="out"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                  >
+                    <Analytics />
+                  </motion.div>
                 </ProtectedRoute>
               }
             />
@@ -91,7 +177,15 @@ const AppRouter = () => {
               path="/profile"
               element={
                 <ProtectedRoute>
-                  <Profile />
+                  <motion.div
+                    initial="initial"
+                    animate="in"
+                    exit="out"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                  >
+                    <Profile />
+                  </motion.div>
                 </ProtectedRoute>
               }
             />
@@ -99,34 +193,59 @@ const AppRouter = () => {
               path="/settings"
               element={
                 <ProtectedRoute>
-                  <Settings />
+                  <motion.div
+                    initial="initial"
+                    animate="in"
+                    exit="out"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                  >
+                    <Settings />
+                  </motion.div>
                 </ProtectedRoute>
               }
             />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
           </Routes>
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+};
+
+// App Router Component
+const AppRouter = () => {
+  return (
+    <Router>
+      <div className="min-h-screen bg-background text-text">
+        <Suspense fallback={<LoadingSpinner />}>
+          <AnimatedRoutes />
         </Suspense>
       </div>
     </Router>
   );
 };
 
+
+
 // Main App Component
 function App() {
   return (
-    <AuthProvider>
-      <AppRouter />
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          style: {
-            background: "#13131a",
-            border: "1px solid rgba(255, 255, 255, 0.08)",
-            color: "#e2e8f0",
-          },
-        }}
-      />
-    </AuthProvider>
+    <ThemeProvider defaultTheme="dark">
+      <AuthProvider>
+        <AppRouter />
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            style: {
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-light)",
+              color: "var(--text-primary)",
+            },
+          }}
+        />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

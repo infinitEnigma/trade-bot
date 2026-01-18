@@ -3,11 +3,10 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { UserRole } from "@trade-bot/shared";
-import { AppHeader } from "../components/ui/AppHeader";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { ValidatedInput } from "../components/ui/ValidatedInput";
-import { PageLayout, Container } from "../components/layout";
+import { Container } from "../components/layout";
 import {
   validateProfileForm,
   createInitialValidationState,
@@ -136,11 +135,7 @@ const Profile: React.FC = () => {
   if (!user) return null;
 
   return (
-    <PageLayout header={<AppHeader
-      title="Profile Settings"
-      subtitle="Manage your account information and preferences"
-    />}>
-      <Container
+    <Container
         size={{
           default: 'lg',
           xl: 'xl',
@@ -391,7 +386,6 @@ const Profile: React.FC = () => {
           </div>
         </Card>
       </Container>
-    </PageLayout>
   );
 };
 

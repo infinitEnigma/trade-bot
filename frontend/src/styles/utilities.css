@@ -62,13 +62,13 @@
   }
 
   .status-warning {
-    background: linear-gradient(135deg, var(--warning), #fbbf24);
-    box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+    background: linear-gradient(135deg, var(--warning), var(--warning-hover, #fbbf24));
+    box-shadow: 0 0 10px var(--warning-glow, rgba(245, 158, 11, 0.5));
   }
 
   .status-danger {
-    background: linear-gradient(135deg, var(--danger), #f87171);
-    box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+    background: linear-gradient(135deg, var(--danger), var(--danger-hover, #f87171));
+    box-shadow: 0 0 10px var(--danger-glow, rgba(239, 68, 68, 0.5));
   }
 
   /* Card Hover Effects */
