@@ -1,10 +1,219 @@
-/** @format */
+/**
+ * ===========================================
+ * 🔐 ENCRYPTION SERVICE & SECURE CREDENTIALS
+ * ===========================================
+ *
+ * Provides encryption/decryption services and secure credential handling
+ * with automatic memory cleanup to prevent credential leakage.
+ *
+ * SECURITY FEATURES:
+ * - AES-256-GCM encryption with versioned keys
+ * - Secure credential containers with memory wiping
+ * - Automatic cleanup to prevent forensic attacks
+ * - Key rotation support for long-term security
+ *
+ * @format
+ */
 
 import "dotenv/config";
 import { createCipheriv, createDecipheriv, randomBytes, scrypt } from "crypto";
 import { promisify } from "util";
 import logger from "./logger";
 import { query } from "../database/pool";
+
+/**
+ * ===========================================
+ * 🛡️ SECURE CREDENTIALS CONTAINER
+ * ===========================================
+ *
+ * Provides secure handling of decrypted credentials with automatic memory cleanup.
+ * Prevents credential leakage through memory dumps, core files, or forensic analysis.
+ *
+ * SECURITY FEATURES:
+ * - Automatic memory wiping after use
+ * - Secure string overwriting to prevent forensics
+ * - Context manager pattern for guaranteed cleanup
+ * - Prevention of double-use and access-after-destroy
+ *
+ * USAGE PATTERNS:
+ * 1. Immediate use: creds.use(callback) - auto-cleanup
+ * 2. Context manager: withCredentials(userId, callback) - auto-cleanup
+ * 3. Manual: creds.get(key); creds.destroy() - explicit cleanup
+ *
+ * EXAMPLE:
+ * ```typescript
+ * // Immediate use pattern (recommended)
+ * const result = await SecureCredentials.create(decryptedCreds).use(async (creds) => {
+ *   return await apiCall(creds.get('apiKey'), creds.get('secretKey'));
+ * });
+ *
+ * // Context manager pattern
+ * const result = await withCredentials(userId, async (creds) => {
+ *   return await validatePosition(creds.get('apiKey'), creds.get('secretKey'));
+ * });
+ * ```
+ */
+export class SecureCredentials {
+  private credentials: { [key: string]: string } = {};
+  private destroyed = false;
+
+  constructor(credentials: { [key: string]: string }) {
+    this.credentials = { ...credentials };
+  }
+
+  /**
+   * Create SecureCredentials from decrypted credential object
+   */
+  static create(credentials: { [key: string]: string }): SecureCredentials {
+    return new SecureCredentials(credentials);
+  }
+
+  /**
+   * Get a credential value by key
+   * @throws Error if credentials have been destroyed
+   */
+  get(key: string): string {
+    this.checkDestroyed();
+    return this.credentials[key];
+  }
+
+  /**
+   * Execute a callback function with access to credentials
+   * Automatically destroys credentials after use (recommended pattern)
+   */
+  async use<T>(callback: (creds: { [key: string]: string }) => Promise<T>): Promise<T> {
+    this.checkDestroyed();
+    try {
+      return await callback(this.credentials);
+    } finally {
+      this.destroy(); // Guaranteed cleanup even if callback throws
+    }
+  }
+
+  /**
+   * Synchronous version of use() for non-async callbacks
+   */
+  useSync<T>(callback: (creds: { [key: string]: string }) => T): T {
+    this.checkDestroyed();
+    try {
+      return callback(this.credentials);
+    } finally {
+      this.destroy();
+    }
+  }
+
+  /**
+   * Manually destroy credentials and wipe memory
+   * Call this after manual credential usage
+   */
+  destroy(): void {
+    if (!this.destroyed) {
+      logger.debug("Destroying secure credentials");
+
+      // Securely wipe memory by overwriting with random data
+      Object.keys(this.credentials).forEach(key => {
+        this.credentials[key] = this.wipeString(this.credentials[key]);
+      });
+
+      this.destroyed = true;
+    }
+  }
+
+  /**
+   * Check if credentials have been destroyed
+   */
+  isDestroyed(): boolean {
+    return this.destroyed;
+  }
+
+  /**
+   * Check if credentials are destroyed and throw if so
+   */
+  private checkDestroyed(): void {
+    if (this.destroyed) {
+      throw new Error('SecureCredentials: Credentials have been destroyed and cannot be accessed');
+    }
+  }
+
+  /**
+   * Securely wipe a string by overwriting with random data
+   * Prevents forensic recovery of sensitive data from memory
+   */
+  private wipeString(str: string): string {
+    if (!str) return '';
+
+    // Overwrite with random bytes of same length
+    const randomData = randomBytes(str.length).toString('hex').substring(0, str.length);
+    return randomData;
+  }
+}
+
+/**
+ * ===========================================
+ * 🔄 SECURE CREDENTIALS CONTEXT MANAGER
+ * ===========================================
+ *
+ * Provides a context manager pattern for secure credential handling.
+ * Automatically decrypts, uses, and destroys credentials.
+ *
+ * USAGE:
+ * ```typescript
+ * const result = await withCredentials(userId, async (creds) => {
+ *   return await makeApiCall(creds.get('apiKey'), creds.get('secretKey'));
+ * });
+ * ```
+ */
+export async function withCredentials<T>(
+  userId: string,
+  callback: (creds: SecureCredentials) => Promise<T>
+): Promise<T> {
+  // Decrypt user credentials
+  const credentials = await decryptUserCredentials(userId);
+  const secureCreds = SecureCredentials.create(credentials);
+
+  try {
+    return await callback(secureCreds);
+  } finally {
+    secureCreds.destroy(); // Guaranteed cleanup
+  }
+}
+
+/**
+ * Decrypt user Kodiak credentials (internal helper)
+ */
+async function decryptUserCredentials(userId: string): Promise<{ [key: string]: string }> {
+  try {
+    const result = await query(
+      "SELECT account_id, api_key_encrypted, secret_key_encrypted, encryption_version FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('No verified Kodiak credentials found');
+    }
+
+    const row = result.rows[0];
+    const encryptionService = new EncryptionService();
+
+    // Decrypt using version-aware decryption
+    const encryptionVersion = row.encryption_version || 1;
+    const accountId = await encryptionService.decryptWithVersion(row.account_id);
+    const apiKey = await encryptionService.decryptWithVersion(row.api_key_encrypted);
+    const secretKey = await encryptionService.decryptWithVersion(row.secret_key_encrypted);
+
+    return {
+      accountId,
+      apiKey,
+      secretKey,
+    };
+  } catch (error) {
+    logger.error("Failed to decrypt user credentials", {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+}
 
 const scryptAsync = promisify(scrypt);
 

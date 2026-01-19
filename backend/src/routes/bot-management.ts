@@ -20,7 +20,7 @@ import {
 } from "../types/errors";
 import { getCorrelationId, getContextForLogging } from "../utils/context";
 import { validators } from "../middleware/validation";
-import { encryptionService } from "../services/encryption";
+import { withCredentials, SecureCredentials } from "../services/encryption"; // ✅ Secure credential handling
 import { engineManager } from "../services/engine-manager";
 import { botStatusService } from "../services/bot-status";
 import { botPerformanceService } from "../services/bot-performance";
@@ -28,6 +28,25 @@ import { UserRole } from "@trade-bot/shared";
 import logger from "../services/logger";
 
 const router = Router();
+
+/**
+ * Check if user has verified Kodiak credentials (without decrypting)
+ */
+async function hasUserKodiakCredentials(userId: string): Promise<boolean> {
+    try {
+        const result = await query(
+            "SELECT id FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
+            [userId]
+        );
+        return result.rows.length > 0;
+    } catch (error) {
+        logger.error("Failed to check user Kodiak credentials", {
+            error: error instanceof Error ? error.message : String(error),
+            userId,
+        });
+        return false;
+    }
+}
 
 // GET /api/bot/instances
 router.get(
@@ -128,28 +147,14 @@ router.post(
                 [botId, strategyId, req.user!.userId]
             );
 
-            // Get user's Kodiak credentials
-            const credentialsResult = await query(
-                "SELECT account_id, access_key, secret_key, encryption_version FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
-                [req.user!.userId]
-            );
-
-            if (credentialsResult.rows.length === 0) {
+            // Check if user has verified credentials first
+            const hasCredentials = await hasUserKodiakCredentials(req.user!.userId);
+            if (!hasCredentials) {
                 const authError = new ValidationError("No verified Kodiak credentials found");
                 return res.status(authError.statusCode).json(
                     createErrorResponse(authError, getCorrelationId())
                 );
             }
-
-            const credentials = credentialsResult.rows[0];
-
-            // Decrypt the credentials using version-aware decryption
-            const encryptionVersion = credentials.encryption_version || 1;
-            const decryptedCredentials = {
-                accountId: await encryptionService.decryptWithVersion(credentials.account_id),
-                accessKey: await encryptionService.decryptWithVersion(credentials.access_key),
-                secretKey: await encryptionService.decryptWithVersion(credentials.secret_key),
-            };
 
             // Log credential access for audit trail
             await query(
@@ -161,7 +166,6 @@ router.post(
                         action: "bot_start",
                         botId,
                         strategyId,
-                        encryptionVersion,
                         timestamp: new Date().toISOString()
                     },
                 ]
@@ -172,35 +176,48 @@ router.post(
                 strategyId,
             ]);
 
-            // Generate session key for end-to-end encryption
-            const sessionKey = randomBytes(32).toString('hex');
-            const encryptedSessionKey = await encryptionService.encryptWithVersion(sessionKey);
+            // Use secure credential handling - decrypt, use, and auto-cleanup
+            await withCredentials(req.user!.userId, async (credentials: SecureCredentials) => {
+                // Generate session key for end-to-end encryption
+                const sessionKey = randomBytes(32).toString('hex');
 
-            // Encrypt credentials with session key for transmission
-            const algorithm = 'aes-256-gcm';
-            const iv = randomBytes(16);
-            const cipher = createCipheriv(algorithm, Buffer.from(sessionKey, 'hex'), iv);
+                // Get encryption service instance
+                const { encryptionService } = await import("../services/encryption.js");
+                const encryptedSessionKey = await encryptionService.encryptWithVersion(sessionKey);
 
-            const credentialsJson = JSON.stringify(decryptedCredentials);
-            let encrypted = cipher.update(credentialsJson, 'utf8', 'hex');
-            encrypted += cipher.final('hex');
-            const authTag = cipher.getAuthTag();
+                // Create decrypted credentials object (temporary, will be encrypted immediately)
+                const decryptedCredentials = {
+                    accountId: credentials.get('accountId'),
+                    accessKey: credentials.get('apiKey'),
+                    secretKey: credentials.get('secretKey'),
+                };
 
-            const encryptedCredentialsPayload = {
-                encrypted: encrypted,
-                iv: iv.toString('hex'),
-                authTag: authTag.toString('hex'),
-            };
+                // Encrypt credentials with session key for transmission
+                const algorithm = 'aes-256-gcm';
+                const iv = randomBytes(16);
+                const cipher = createCipheriv(algorithm, Buffer.from(sessionKey, 'hex'), iv);
 
-            // Emit WebSocket event with encrypted credentials
-            const io = req.app.get("io");
-            io.emit("bot:start", {
-                botId,
-                strategyId,
-                strategy,
-                userId: req.user!.userId,
-                encryptedCredentials: encryptedCredentialsPayload,
-                sessionKey: encryptedSessionKey, // Encrypted session key for engine to decrypt
+                const credentialsJson = JSON.stringify(decryptedCredentials);
+                let encrypted = cipher.update(credentialsJson, 'utf8', 'hex');
+                encrypted += cipher.final('hex');
+                const authTag = cipher.getAuthTag();
+
+                const encryptedCredentialsPayload = {
+                    encrypted: encrypted,
+                    iv: iv.toString('hex'),
+                    authTag: authTag.toString('hex'),
+                };
+
+                // Emit WebSocket event with encrypted credentials
+                const io = req.app.get("io");
+                io.emit("bot:start", {
+                    botId,
+                    strategyId,
+                    strategy,
+                    userId: req.user!.userId,
+                    encryptedCredentials: encryptedCredentialsPayload,
+                    sessionKey: encryptedSessionKey, // Encrypted session key for engine to decrypt
+                });
             });
 
             res.json({

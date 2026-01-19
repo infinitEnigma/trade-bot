@@ -3,7 +3,8 @@
 import axios from "axios";
 import { query } from "../database/pool";
 import logger from "./logger";
-import { generateOrderlySignature } from "../utils/orderly-signature"; // ✅ Import backend crypto utility
+import { generateOrderlySignature } from "../utils/orderly-signature";
+import { withCredentials, SecureCredentials } from "./encryption"; // ✅ Secure credential handling
 
 export interface AccountLimits {
   balance: number;
@@ -88,7 +89,7 @@ export async function getAccountLimits(
     for (const position of positions) {
       const notionalValue = Math.abs(
         parseFloat(position.position_qty || 0) *
-          parseFloat(position.mark_price || 0)
+        parseFloat(position.mark_price || 0)
       );
       totalExposure += notionalValue;
     }
@@ -220,42 +221,28 @@ export async function validatePositionSize(
 }
 
 /**
- * Get user's Kodiak credentials from database
+ * Check if user has verified Kodiak credentials (without decrypting)
+ * Use this when you only need to check credential existence
  */
-export async function getUserKodiakCredentials(userId: string): Promise<{
-  accountId: string;
-  apiKey: string;
-  secretKey: string;
-} | null> {
+export async function hasUserKodiakCredentials(userId: string): Promise<boolean> {
   try {
     const result = await query(
-      "SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1",
+      "SELECT id FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
       [userId]
     );
-
-    if (result.rows.length === 0 || !result.rows[0].verified) {
-      return null;
-    }
-
-    const { encryptionService } = await import("./encryption.js");
-    const row = result.rows[0];
-
-    return {
-      accountId: row.account_id,
-      apiKey: encryptionService.decryptApiKey(row.api_key_encrypted),
-      secretKey: encryptionService.decryptSecretKey(row.secret_key_encrypted),
-    };
+    return result.rows.length > 0;
   } catch (error) {
-    logger.error("Failed to get user Kodiak credentials", {
+    logger.error("Failed to check user Kodiak credentials", {
       error: error instanceof Error ? error.message : String(error),
       userId,
     });
-    return null;
+    return false;
   }
 }
 
 /**
- * Validate position for a user (combines credential retrieval and validation)
+ * Validate position for a user using secure credential handling
+ * Credentials are automatically decrypted, used, and wiped from memory
  */
 export async function validateUserPosition(
   userId: string,
@@ -264,29 +251,33 @@ export async function validateUserPosition(
   maxExposurePercent: number = 0.8
 ): Promise<PositionValidationResult> {
   try {
-    // Get user's credentials
-    const credentials = await getUserKodiakCredentials(userId);
-    if (!credentials) {
+    // Check if user has credentials first (without decrypting)
+    const hasCredentials = await hasUserKodiakCredentials(userId);
+    if (!hasCredentials) {
       return {
         isValid: false,
         reason: "Kodiak credentials not configured or verified",
       };
     }
 
-    // Get account limits
-    const accountLimits = await getAccountLimits(
-      credentials.accountId,
-      credentials.apiKey,
-      credentials.secretKey
-    );
+    // Use secure credential context manager - credentials are auto-cleaned
+    return await withCredentials(userId, async (credentials: SecureCredentials) => {
+      // Get account limits using decrypted credentials (securely handled)
+      const accountLimits = await getAccountLimits(
+        credentials.get('accountId'),
+        credentials.get('apiKey'),
+        credentials.get('secretKey')
+      );
 
-    // Validate position
-    return await validatePositionSize(
-      notionalAmount,
-      symbol,
-      accountLimits,
-      maxExposurePercent
-    );
+      // Validate position size
+      return await validatePositionSize(
+        notionalAmount,
+        symbol,
+        accountLimits,
+        maxExposurePercent
+      );
+    });
+
   } catch (error: any) {
     logger.error("Position validation failed", {
       error: error.message,
