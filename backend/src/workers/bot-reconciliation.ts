@@ -6,8 +6,8 @@
  */
 
 import { query } from "../database/pool";
-import { botStatusService } from "../services/bot-status";
-import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../services/error-notification";
+import { botStatusService } from "../core/trading/bot-status.service";
+import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../core/notifications/error-notification.service";
 import logger from "../services/logger";
 
 export interface ReconciliationResult {

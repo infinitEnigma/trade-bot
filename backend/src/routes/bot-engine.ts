@@ -7,10 +7,10 @@
 
 import { Router, Request, Response } from "express";
 import { query } from "../database/pool";
-import { botStatusService } from "../services/bot-status";
-import { botPerformanceService } from "../services/bot-performance";
-import { engineManager } from "../services/engine-manager";
-import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../services/error-notification";
+import { botStatusService } from "../core/trading/bot-status.service";
+import { botPerformanceService } from "../core/trading/bot-performance.service";
+import { engineManager } from "../core/trading/engine-manager.service";
+import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../core/notifications/error-notification.service";
 import logger from "../services/logger";
 
 const router = Router();

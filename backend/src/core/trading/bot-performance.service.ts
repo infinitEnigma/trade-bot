@@ -5,11 +5,11 @@
  * Provides comprehensive trading performance metrics for bots.
  */
 
-import { query } from "../database/pool";
-import { redisService } from "./redis";
-import { getCacheConfig, CACHE_KEYS } from "../config/cache.config";
-import { cacheInvalidationService } from "./cache-invalidation";
-import logger from "./logger";
+import { query } from "../../database/pool";
+import { redisService } from "../../infrastructure/cache/redis.service";
+import { CACHE_EVENTS, CacheEvent, CacheInvalidationEvent, CacheRefreshEvent, CacheClearEvent, CACHE_KEYS } from "../../config/cache.config";
+import { cacheInvalidationService } from "../../infrastructure/cache/cache-invalidation.service";
+import logger from "../../services/logger";
 
 export interface BotPerformance {
     bot: {

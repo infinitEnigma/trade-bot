@@ -7,7 +7,7 @@
 
 import axios, { AxiosResponse } from "axios";
 import logger from "./logger";
-import { getCurrentContext, getContextForLogging } from "../utils/context";
+import { getCurrentContext, getContextForLogging } from "../shared/utils/context";
 
 export enum ErrorSeverity {
     LOW = "low",           // Minor issues, logged only

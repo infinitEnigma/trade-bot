@@ -2,8 +2,8 @@
 
 import { Request, Response, NextFunction } from "express";
 import Joi from "joi";
-import { createErrorResponse, ValidationError } from "../types/errors";
-import { getCorrelationId } from "../utils/context";
+import { createErrorResponse, ValidationError } from "../shared/types/errors";
+import { getCorrelationId } from "../shared/utils/context";
 import logger from "../services/logger";
 
 export interface ValidationOptions {

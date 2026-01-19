@@ -78,13 +78,13 @@ import {
     DatabaseError,
     ConflictError,
     createErrorResponse,
-} from "../types/errors";
-import { getCorrelationId, getContextForLogging } from "../utils/context";
+} from "../shared/types/errors";
+import { getCorrelationId, getContextForLogging } from "../shared/utils/context";
 import { validators } from "../middleware/validation";
 import { withCredentials, SecureCredentials } from "../infrastructure/security/encryption.service"; // ✅ Secure credential handling
-import { engineManager } from "../services/engine-manager";
-import { botStatusService } from "../services/bot-status";
-import { botPerformanceService } from "../services/bot-performance";
+import { engineManager } from "../core/trading/engine-manager.service";
+import { botStatusService } from "../core/trading/bot-status.service";
+import { botPerformanceService } from "../core/trading/bot-performance.service";
 import { UserRole } from "@trade-bot/shared";
 import logger from "../services/logger";
 

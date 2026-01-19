@@ -6,7 +6,7 @@ import {
   generateCorrelationId,
   runWithContext,
   getContextForLogging,
-} from "../utils/context";
+} from "../shared/utils/context";
 
 /**
  * HTTP request logging middleware

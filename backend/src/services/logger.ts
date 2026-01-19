@@ -3,7 +3,7 @@
 import winston from "winston";
 import DailyRotateFile from "winston-daily-rotate-file";
 import path from "path";
-import { getContextForLogging } from "../utils/context";
+import { getContextForLogging } from "../shared/utils/context";
 
 // ✅ Define log levels
 const LOG_LEVELS = {

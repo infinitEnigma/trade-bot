@@ -26,7 +26,4 @@ export { positionValidatorService } from './position-validator.service';
 // Export engine sub-services
 export * from './engine/index';
 
-// Export types
-export type { BotStatus, BotConfig } from './bot-status.service';
-export type { PerformanceMetrics, TradingStats } from './bot-performance.service';
-export type { EngineStatus, ProcessConfig } from './engine-manager.service';
+// Note: Type exports are not available yet - services need to be updated to export interfaces

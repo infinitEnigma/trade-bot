@@ -23,7 +23,7 @@ import {
     createChildContext,
     runWithContext,
     RequestContext,
-} from "../utils/context";
+} from "../shared/utils/context";
 import { contextLogger, ContextAwareLogger } from "./context-aware-logger";
 
 export interface AsyncOperationOptions {

@@ -8,9 +8,9 @@
 import { Router, Request, Response } from "express";
 import Joi from "joi";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
-import { userProfileService } from "../services/user-profile";
-import { createErrorResponse } from "../types/errors";
-import { getCorrelationId } from "../utils/context";
+import { userProfileService } from "../core/user/user-profile.service";
+import { createErrorResponse } from "../shared/types/errors";
+import { getCorrelationId } from "../shared/utils/context";
 import logger from "../services/logger";
 
 const router = Router();

@@ -6,7 +6,7 @@
  */
 
 import logger from "./logger";
-import { getContextForLogging } from "../utils/context";
+import { getContextForLogging } from "../shared/utils/context";
 import { errorNotificationService, ErrorSeverity, ErrorCategory } from "./error-notification";
 
 export interface RetryConfig {

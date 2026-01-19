@@ -2,10 +2,10 @@
 
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { authService } from "../services/auth";
+import { authService } from "../core/auth/auth.service";
 import { redisService } from "../infrastructure/cache/redis.service";
-import { setUserContext } from "../utils/context";
-import { roleManagementService } from "../services/role-management";
+import { setUserContext } from "../shared/utils/context";
+import { roleManagementService } from "../core/auth/role-management.service";
 import logger from "../services/logger";
 
 export interface AuthenticatedRequest extends Request {

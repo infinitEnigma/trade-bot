@@ -3,7 +3,7 @@
 import axios from "axios";
 import { query } from "../database/pool";
 import logger from "./logger";
-import { generateOrderlySignature } from "../utils/orderly-signature";
+import { generateOrderlySignature } from "../shared/utils/orderly-signature";
 import { withCredentials, SecureCredentials } from "./encryption";
 import { positionSyncService } from "./position-sync"; // ✅ Single source of truth
 import { redisService } from "./redis";

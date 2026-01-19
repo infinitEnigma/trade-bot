@@ -10,7 +10,7 @@ import { query } from "../database/pool";
 import { redisService } from "./redis";
 import { getCacheConfig, CACHE_KEYS } from "../config/cache.config";
 import { cacheInvalidationService } from "./cache-invalidation";
-import { generateOrderlySignature } from "../utils/orderly-signature";
+import { generateOrderlySignature } from "../shared/utils/orderly-signature";
 import { positionSyncLogger } from "./context-aware-logger";
 
 export interface PositionData {

@@ -2,14 +2,14 @@
 
 import { Router, Request, Response } from "express";
 import Joi from "joi";
-import { authService } from "../services/auth";
-import { walletQualificationService } from "../services/wallet-qualification";
-import { roleManagementService } from "../services/role-management";
+import { authService } from "../core/auth/auth.service";
+import { walletQualificationService } from "../core/wallet/wallet-qualification.service";
+import { roleManagementService } from "../core/auth/role-management.service";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { UserRole, UserLevel } from "@trade-bot/shared";
 import { RateLimiters } from "../services/rate-limiter";
-import { createErrorResponse, ValidationError } from "../types/errors";
-import { getCorrelationId } from "../utils/context";
+import { createErrorResponse, ValidationError } from "../shared/types/errors";
+import { getCorrelationId } from "../shared/utils/context";
 import { validators } from "../middleware/validation";
 import logger from "../services/logger";
 

@@ -20,6 +20,4 @@
 export { authService } from './auth.service';
 export { roleManagementService } from './role-management.service';
 
-// Export types
-export type { User, AuthTokens, LoginCredentials } from './auth.service';
-export type { UserRole, Permission } from './role-management.service';
+// Note: Type exports are not available yet - services need to be updated to export interfaces

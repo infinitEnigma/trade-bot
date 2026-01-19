@@ -49,10 +49,10 @@ import "dotenv/config";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { UserLevel } from "@trade-bot/shared";
-import { query } from "../database/pool";
-import { redisService } from "./redis";
-import { hashPassword, comparePassword } from "./password-worker";
-import logger from "./logger";
+import { query } from "../../database/pool";
+import { redisService } from "../../infrastructure/cache/redis.service";
+import { hashPassword, comparePassword } from "../../services/password-worker";
+import logger from "../../services/logger";
 
 const JWT_SECRET = (() => {
   const secret = process.env.JWT_SECRET;

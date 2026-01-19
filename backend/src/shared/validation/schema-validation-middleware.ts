@@ -18,8 +18,8 @@
 
 import { Request, Response, NextFunction } from "express";
 import Joi from "joi";
-import { createErrorResponse, ValidationError } from "../types/errors";
-import { getCorrelationId } from "../utils/context";
+import { createErrorResponse, ValidationError } from "../shared/types/errors";
+import { getCorrelationId } from "../shared/utils/context";
 import { DatabaseSchemaParser, DatabaseSchema } from "./database-schema-parser";
 import { SchemaGenerator } from "./schema-generator";
 import logger from "../services/logger";

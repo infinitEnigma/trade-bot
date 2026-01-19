@@ -22,7 +22,7 @@ import {
     getCurrentUserId,
     getCurrentContext,
     createChildContext,
-} from "../utils/context";
+} from "../shared/utils/context";
 
 export interface LogContext {
     correlationId?: string;

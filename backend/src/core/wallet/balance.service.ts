@@ -3,7 +3,7 @@
 import { query } from "../database/pool";
 import { redisService } from "./redis";
 import logger from "./logger";
-import { generateKodiakSignature } from "../utils/orderly-signature"; // ✅ Import backend crypto utility
+import { generateKodiakSignature } from "../shared/utils/orderly-signature"; // ✅ Import backend crypto utility
 import { credentialCacheService } from "./credential-cache";
 
 /**
