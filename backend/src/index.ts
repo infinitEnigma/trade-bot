@@ -433,13 +433,20 @@ app.use(
 // ===========================================
 // 🌐 8. WEBSOCKET SERVER CONFIGURATION
 // ===========================================
-// Configures Socket.IO with JWT authentication and real-time features
+// Configures Socket.IO with JWT authentication and context propagation
 // Handles market data subscriptions, bot status updates, and user notifications
+// Ensures correlation ID tracking across HTTP/WebSocket boundaries
 // ===========================================
 
-// ✅ WebSocket JWT Authentication Middleware
+// Import context utilities for WebSocket context propagation
+import { setRequestContext, generateCorrelationId, generateRequestId, runInContext } from "./utils/context";
+
+// ✅ WebSocket Context & Authentication Middleware
 io.use(async (socket, next) => {
   try {
+    // Extract correlation ID from handshake headers (passed from HTTP request)
+    const correlationId = (socket.handshake.headers['x-correlation-id'] as string) || generateCorrelationId();
+
     const token =
       socket.handshake.auth?.token ||
       socket.handshake.headers?.authorization?.replace("Bearer ", "");
@@ -448,6 +455,7 @@ io.use(async (socket, next) => {
       logger.warn("WebSocket connection rejected: No JWT token", {
         socketId: socket.id,
         ip: socket.handshake.address,
+        correlationId,
       });
       return next(new Error("Authentication required"));
     }
@@ -458,6 +466,7 @@ io.use(async (socket, next) => {
       logger.warn("WebSocket connection rejected: Invalid JWT token", {
         socketId: socket.id,
         ip: socket.handshake.address,
+        correlationId,
       });
       return next(new Error("Invalid token"));
     }
@@ -469,21 +478,35 @@ io.use(async (socket, next) => {
         socketId: socket.id,
         userId: decoded.userId,
         ip: socket.handshake.address,
+        correlationId,
       });
       return next(new Error("User not found"));
     }
 
-    // Attach user context to socket
+    // 🔄 CRITICAL: Set up AsyncLocalStorage context for WebSocket connection
+    // This ensures all WebSocket operations are properly traced
+    const wsContext = setRequestContext({
+      correlationId,
+      userId: decoded.userId,
+      userLevel: user.userLevel,
+      startTime: Date.now(),
+      requestId: generateRequestId(),
+    });
+
+    // Attach both user and context to socket for use in event handlers
     (socket as any).user = {
       userId: decoded.userId,
       userLevel: user.userLevel,
       email: user.email,
     };
 
-    logger.info("WebSocket connection authenticated", {
+    (socket as any).context = wsContext;
+
+    logger.info("WebSocket connection authenticated with context", {
       socketId: socket.id,
       userId: decoded.userId,
       userLevel: user.userLevel,
+      correlationId,
       ip: socket.handshake.address,
     });
 
@@ -498,62 +521,94 @@ io.use(async (socket, next) => {
   }
 });
 
-// WebSocket connection handling
+// WebSocket connection handling with context propagation
 io.on("connection", socket => {
   const user = (socket as any).user;
-  logger.info("Authenticated client connected", {
+  const wsContext = (socket as any).context;
+
+  logger.info("Authenticated client connected with context", {
     socketId: socket.id,
     userId: user.userId,
     userLevel: user.userLevel,
+    correlationId: wsContext?.correlationId,
     ip: socket.handshake.address,
   });
   updateClientCount(1);
 
+  // 🔄 ALL WebSocket event handlers run within the established context
+  // This ensures correlation IDs and user context are maintained
+
   socket.on("subscribe", (room: string) => {
-    socket.join(room);
-    logger.info("Client subscribed to room", { socketId: socket.id, room });
+    runInContext(() => {
+      socket.join(room);
+      logger.info("Client subscribed to room", {
+        socketId: socket.id,
+        room,
+        correlationId: wsContext?.correlationId
+      });
+    });
   });
 
   socket.on("unsubscribe", (room: string) => {
-    socket.leave(room);
-    logger.info("Client unsubscribed from room", { socketId: socket.id, room });
+    runInContext(() => {
+      socket.leave(room);
+      logger.info("Client unsubscribed from room", {
+        socketId: socket.id,
+        room,
+        correlationId: wsContext?.correlationId
+      });
+    });
   });
 
-  // ✅ Handle market subscription (Task 4.3)
+  // ✅ Handle market subscription with context propagation
   socket.on("subscribe_market", (symbol: string) => {
-    logger.info("Client subscribed to market", { socketId: socket.id, symbol });
-    socket.join(`market:${symbol}`);
+    runInContext(async () => {
+      logger.info("Client subscribed to market", {
+        socketId: socket.id,
+        symbol,
+        correlationId: wsContext?.correlationId
+      });
+      socket.join(`market:${symbol}`);
 
-    // Send latest tick immediately if available
-    marketStreamService
-      .getLatestTick(symbol)
-      .then(tick => {
+      try {
+        // Send latest tick immediately if available
+        const tick = await marketStreamService.getLatestTick(symbol);
         if (tick) {
           socket.emit(`market:${symbol}`, tick);
         }
-      })
-      .catch(err => {
+      } catch (err) {
         logger.error("Failed to send initial tick", {
+          socketId: socket.id,
           symbol,
+          correlationId: wsContext?.correlationId,
           error: err instanceof Error ? err.message : String(err),
         });
-      });
+      }
 
-    // Connect to Orderly if not already connected
-    marketStreamService.connectToOrderly([symbol]);
+      // Connect to Orderly if not already connected
+      marketStreamService.connectToOrderly([symbol]);
+    });
   });
 
   socket.on("unsubscribe_market", (symbol: string) => {
-    logger.info("Client unsubscribed from market", {
-      socketId: socket.id,
-      symbol,
+    runInContext(() => {
+      logger.info("Client unsubscribed from market", {
+        socketId: socket.id,
+        symbol,
+        correlationId: wsContext?.correlationId
+      });
+      socket.leave(`market:${symbol}`);
     });
-    socket.leave(`market:${symbol}`);
   });
 
   socket.on("disconnect", () => {
-    logger.info("Client disconnected", { socketId: socket.id });
-    updateClientCount(-1);
+    runInContext(() => {
+      logger.info("Client disconnected", {
+        socketId: socket.id,
+        correlationId: wsContext?.correlationId
+      });
+      updateClientCount(-1);
+    });
   });
 });
 
