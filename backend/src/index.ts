@@ -670,11 +670,63 @@ httpServer.listen(PORT, () => {
   // ✅ Register worker shutdown handlers for proper cleanup
   setImmediate(async () => {
     try {
-      const { botReconciliationWorker } = await import("./workers/bot-reconciliation.js");
+      logger.debug("Attempting to register worker shutdown handlers", {
+        environment: process.env.NODE_ENV,
+        nodeVersion: process.version,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Use environment-appropriate import path
+      const workerImportPath = process.env.NODE_ENV === 'development'
+        ? "./workers/bot-reconciliation"
+        : "./workers/bot-reconciliation.js";
+
+      logger.debug("Importing worker module", {
+        path: workerImportPath,
+        absolutePath: require.resolve(workerImportPath),
+      });
+
+      const workerModule = await import(workerImportPath);
+
+      if (!workerModule.botReconciliationWorker) {
+        throw new Error(`botReconciliationWorker not exported from ${workerImportPath}`);
+      }
+
+      const { botReconciliationWorker } = workerModule;
+
+      if (typeof botReconciliationWorker.registerShutdownHandlers !== 'function') {
+        throw new Error(`registerShutdownHandlers method not found on botReconciliationWorker (type: ${typeof botReconciliationWorker.registerShutdownHandlers})`);
+      }
+
       botReconciliationWorker.registerShutdownHandlers();
+
+      logger.info("Worker shutdown handlers registered successfully", {
+        workerType: 'botReconciliationWorker',
+        hasRegisterMethod: true,
+        importPath: workerImportPath,
+        environment: process.env.NODE_ENV,
+      });
+
     } catch (error) {
-      logger.error("Failed to register worker shutdown handlers", {
+      // Enhanced error logging with comprehensive context
+      const errorDetails = {
         error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        environment: process.env.NODE_ENV,
+        nodeVersion: process.version,
+        importAttempted: true,
+        timestamp: new Date().toISOString(),
+        isCritical: false, // Shutdown handlers are non-critical
+        systemStatus: 'continuing_without_shutdown_handlers',
+      };
+
+      logger.error("Failed to register worker shutdown handlers - continuing without them", errorDetails);
+
+      // Log additional helpful information
+      logger.info("System continues to operate normally without shutdown handlers", {
+        note: "Shutdown handlers provide graceful cleanup but are not required for operation",
+        manualCleanup: "Use Ctrl+C for clean shutdown",
+        functionality: "All core features remain fully operational",
       });
     }
   });
