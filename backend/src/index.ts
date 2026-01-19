@@ -1,4 +1,25 @@
-/** @format */
+/**
+ * ===========================================
+ * 🚀 TRADE BOT BACKEND APPLICATION
+ * ===========================================
+ *
+ * Main application entry point for the Trade Bot platform.
+ * Handles HTTP API routes, WebSocket connections, and system orchestration.
+ *
+ * Architecture:
+ * - Express.js REST API server
+ * - Socket.IO WebSocket server for real-time updates
+ * - PostgreSQL database with Redis caching
+ * - JWT authentication with CSRF protection
+ * - Bot engine management and monitoring
+ *
+ * Security Model:
+ * - Browser routes: JWT + CSRF protection
+ * - Engine routes: API key authentication
+ * - WebSocket: JWT authentication required
+ *
+ * @format
+ */
 
 import "dotenv/config";
 import express from "express";
@@ -9,41 +30,60 @@ import cookieParser from "cookie-parser";
 import { createServer } from "http";
 import { Server } from "socket.io";
 
+// ===========================================
+// 📋 TABLE OF CONTENTS
+// ===========================================
+// 1. Environment Setup & Validation
+// 2. Module Imports & Dependencies
+// 3. Database & Redis Initialization
+// 4. Client Connection Tracking
+// 5. Express Application Setup
+// 6. Security & Authentication Middleware
+// 7. Route Registration
+// 8. WebSocket Server Configuration
+// 9. Server Lifecycle Management
+// 10. Graceful Shutdown Handling
+// ===========================================
+
+// ===========================================
+// 🔧 1. ENVIRONMENT SETUP & VALIDATION
+// ===========================================
+// Validates required environment variables and secrets
+// Ensures production security requirements are met
+// ===========================================
+
 // Import logger first before any other code
 import logger from "./services/logger";
 
 // Application start time for uptime tracking
 const START_TIME = Date.now();
 
-// Add at the very top of index.ts, before any other code
+// Required environment variables for application startup
 const REQUIRED_ENV_VARS = [
-  "DB_HOST",
-  "DB_PORT",
-  "DB_NAME",
-  "DB_USER",
-  "DB_PASSWORD",
-  "REDIS_URL",
-  "JWT_SECRET",
-  "JWT_REFRESH_SECRET",
-  "ENCRYPTION_MASTER_KEY",
-  "NODE_ENV",
-  "KODIAK_API_URL",
-  "KODIAK_WS_URL",
-  "FRONTEND_URL",
+  "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", // PostgreSQL
+  "REDIS_URL", // Redis cache
+  "JWT_SECRET", "JWT_REFRESH_SECRET", // Authentication
+  "ENCRYPTION_MASTER_KEY", // Data encryption
+  "NODE_ENV", // Runtime environment
+  "KODIAK_API_URL", "KODIAK_WS_URL", // External APIs
+  "FRONTEND_URL", // CORS configuration
 ];
 
+/**
+ * Validates all required environment variables are present
+ * Performs security checks for production deployments
+ */
 function validateEnvironment(): void {
   const missing = REQUIRED_ENV_VARS.filter(key => !process.env[key]);
 
   if (missing.length > 0) {
-    logger.error("Missing required environment variables");
+    logger.error("❌ Missing required environment variables");
     missing.forEach(key => logger.error(`   - ${key}`));
-    logger.error("Create .env file or set environment variables.");
-    logger.error("See .env.example for template.");
+    logger.error("💡 Create .env file from .env.example template");
     process.exit(1);
   }
 
-  // Validate secret strength in production
+  // 🔐 Validate secret strength in production
   if (process.env.NODE_ENV === "production") {
     const secrets = [
       "JWT_SECRET",
@@ -54,45 +94,68 @@ function validateEnvironment(): void {
       const value = process.env[key]!;
       if (value.length < 32) {
         logger.error(
-          `${key} must be at least 32 characters in production. Current length: ${value.length}`
+          `🔴 SECURITY: ${key} must be at least 32 characters in production. Current length: ${value.length}`
         );
         process.exit(1);
       }
     });
   }
 
-  logger.info("Environment validation passed");
+  logger.info("✅ Environment validation passed");
 }
 
 validateEnvironment();
 
-// Import routes
+// ===========================================
+// 📦 2. MODULE IMPORTS & DEPENDENCIES
+// ===========================================
+// Route handlers, middleware, and service dependencies
+// Organized by functional area for better maintainability
+// ===========================================
+
+// 🔐 Authentication & Authorization
 import { authRoutes } from "./routes/auth";
+
+// 👤 User Management
 import { userRoutes } from "./routes/user";
+
+// 📊 Market Data & Trading
 import { marketRoutes } from "./routes/market";
 import { strategyRoutes } from "./routes/strategies";
+
+// 🤖 Bot Management & Engine
 import { botRoutes } from "./routes/bot";
 import { balanceRoutes } from "./routes/balance";
+
+// 🛡️ Security & Monitoring
 import { healthRoutes } from "./routes/health";
 import { securityRoutes } from "./routes/security";
+
+// 🔧 Middleware Stack
 import { httpLogger, errorLogger } from "./middleware/logger";
 import { contextMiddleware } from "./middleware/context";
 import { csrfMiddleware, csrfTokenMiddleware, CSRFRequest } from "./middleware/csrf";
 
-// ✅ Import market stream service (refactored)
+// 📡 Real-time Services
 import { marketStreamService } from "./services/market-stream/index";
-
-// ✅ Import authentication service for WebSocket JWT validation
 import { authService } from "./services/auth";
+
+// ===========================================
+// 🗄️ 3. DATABASE & REDIS INITIALIZATION
+// ===========================================
+// Critical infrastructure setup - must succeed before routes
+// Handles connection pooling and caching layer initialization
+// ===========================================
 
 // ✅ Initialize database pool first (before routes)
 import { initializePool, closePool } from "./database/pool";
 
-// Initialize database connection pool
+// Initialize PostgreSQL connection pool
 try {
   initializePool();
+  logger.info("✅ PostgreSQL connection pool initialized");
 } catch (error) {
-  logger.error("Failed to initialize database pool", {
+  logger.error("❌ Failed to initialize database pool", {
     error: error instanceof Error ? error.message : String(error),
   });
   process.exit(1);
@@ -103,15 +166,25 @@ import { redisService } from "./services/redis";
 
 // Connect to Redis on startup
 redisService.connect().catch(error => {
-  logger.error("Failed to connect to Redis", {
+  logger.error("❌ Failed to connect to Redis", {
     error: error instanceof Error ? error.message : String(error),
   });
+  // Note: Application continues without Redis (degraded mode)
 });
 
-// Client connection tracking
+// ===========================================
+// 📊 4. CLIENT CONNECTION TRACKING
+// ===========================================
+// Tracks active WebSocket connections and API activity
+// Provides monitoring data for load balancing and scaling
+// ===========================================
+
 let activeClients = 0;
 let lastActivityTime = Date.now();
 
+/**
+ * Updates active client count and stores in Redis for monitoring
+ */
 const updateClientCount = async (change: number) => {
   activeClients = Math.max(0, activeClients + change);
   lastActivityTime = Date.now();
@@ -133,18 +206,30 @@ const updateClientCount = async (change: number) => {
   }
 };
 
-// Track HTTP API activity (simplified - just update timestamp)
+/**
+ * Tracks HTTP API activity timestamps
+ */
 const trackApiActivity = () => {
   lastActivityTime = Date.now();
   // Removed artificial client count manipulation that was causing issues
 };
+
+// ===========================================
+// 🚀 5. EXPRESS APPLICATION SETUP
+// ===========================================
+// Configures Express.js application with CORS, security, and body parsing
+// Sets up HTTP server and Socket.IO for real-time communication
+// ===========================================
 
 const app = express();
 
 // Trust proxy headers from nginx (required for rate limiting with X-Forwarded-For)
 app.set("trust proxy", 1);
 
+// Create HTTP server for both Express and WebSocket support
 const httpServer = createServer(app);
+
+// Initialize Socket.IO with CORS configuration
 const io = new Server(httpServer, {
   cors: {
     origin: (origin, callback) => {
@@ -184,13 +269,7 @@ const io = new Server(httpServer, {
   },
 });
 
-// Middleware
-app.use(
-  helmet({
-    hsts: false, // Disable HSTS - let nginx handle it
-  })
-);
-
+// Configure CORS allowed origins
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   process.env.CORS_ORIGIN,
@@ -198,6 +277,7 @@ const allowedOrigins = [
   "http://localhost:5173",
 ].filter(Boolean); // Remove any undefined values
 
+// Apply CORS middleware
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -235,6 +315,15 @@ app.use(
     credentials: true,
   })
 );
+
+// Apply security middleware
+app.use(
+  helmet({
+    hsts: false, // Disable HSTS - let nginx handle it
+  })
+);
+
+// Parse incoming requests
 app.use(cookieParser());
 app.use(express.json());
 
@@ -261,34 +350,70 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
+// ===========================================
+// 🛡️ 6. SECURITY & AUTHENTICATION MIDDLEWARE
+// ===========================================
+// Configures CSRF protection, rate limiting, and authentication
+// Different security models for browser vs server communication
+// ===========================================
+
 // CSRF token generation for auth routes (login/register/refresh)
 app.use("/api/auth", csrfTokenMiddleware);
 
-// CSRF validation for ALL state-changing operations
+// CSRF validation for ALL state-changing operations (browser routes)
 app.use("/api/user", csrfMiddleware);
 app.use("/api/user-profile", csrfMiddleware);
 app.use("/api/user-kodiak", csrfMiddleware);
 app.use("/api/market", csrfMiddleware);
 app.use("/api/strategies", csrfMiddleware);
 app.use("/api/bot", csrfMiddleware);
-app.use("/api/bot-engine", csrfMiddleware);
 app.use("/api/bot-management", csrfMiddleware);
 app.use("/api/balance", csrfMiddleware);
 app.use("/api/security", csrfMiddleware);
 
-// Routes
+// 🔐 SECURITY ARCHITECTURE NOTE:
+// - Browser routes: JWT + CSRF protection (state-changing operations)
+// - Engine routes: API key authentication (server-to-server communication)
+// - CSRF is NOT applied to /api/bot-engine routes because:
+//   1. Bot engine is internal system making direct HTTP calls
+//   2. Engine doesn't have browser cookies or CSRF tokens
+//   3. CSRF is meant for browser-based attacks, not server communication
+//   4. Bot engine routes are protected by API key authentication instead
+
+// ===========================================
+// 🛤️ 7. ROUTE REGISTRATION
+// ===========================================
+// Mounts all API route handlers with proper middleware order
+// Routes are organized by functional domain for clarity
+// ===========================================
+
+// 🔐 Authentication & Authorization
 app.use("/api/auth", authRoutes);
+
+// 👤 User Management
 app.use("/api/user", userRoutes);
+
+// 📊 Market Data & Trading
 app.use("/api/market", marketRoutes);
 app.use("/api/strategies", strategyRoutes);
+
+// 🤖 Bot Management & Engine
 app.use("/api/bot", botRoutes);
 app.use("/api/balance", balanceRoutes);
+
+// 🛡️ Security & Monitoring
 app.use("/api/security", securityRoutes);
 
-// Health check routes
+// 🏥 Health Check (must be last to catch all routes)
 app.use("/api", healthRoutes);
 
-// Error handling middleware
+// ===========================================
+// 🚨 7.5 ERROR HANDLING MIDDLEWARE
+// ===========================================
+// Global error handling - must be last middleware in stack
+// Catches and formats all unhandled errors consistently
+// ===========================================
+
 app.use(
   (
     err: Error,
@@ -304,6 +429,13 @@ app.use(
     });
   }
 );
+
+// ===========================================
+// 🌐 8. WEBSOCKET SERVER CONFIGURATION
+// ===========================================
+// Configures Socket.IO with JWT authentication and real-time features
+// Handles market data subscriptions, bot status updates, and user notifications
+// ===========================================
 
 // ✅ WebSocket JWT Authentication Middleware
 io.use(async (socket, next) => {
@@ -425,19 +557,33 @@ io.on("connection", socket => {
   });
 });
 
+// ===========================================
+// ⚙️ 9. SERVER LIFECYCLE MANAGEMENT
+// ===========================================
+// Starts the HTTP/WebSocket server and initializes services
+// Configures service dependencies and startup logging
+// ===========================================
+
 const PORT = process.env.PORT || 3000;
 
 httpServer.listen(PORT, () => {
-  logger.info(`Server running on port ${PORT}`);
-  logger.info("WebSocket server ready");
-  logger.info(`Environment: ${process.env.NODE_ENV || "development"}`);
+  logger.info(`🚀 Server running on port ${PORT}`);
+  logger.info("🌐 WebSocket server ready");
+  logger.info(`🏭 Environment: ${process.env.NODE_ENV || "development"}`);
 
   // ✅ Initialize market stream service (lazy-loaded - connects on-demand)
   marketStreamService.setSocketServer(io);
   logger.info(
-    "Market stream service initialized (lazy-loaded - connects when needed)"
+    "📡 Market stream service initialized (lazy-loaded - connects when needed)"
   );
 });
+
+// ===========================================
+// 🛑 10. GRACEFUL SHUTDOWN HANDLING
+// ===========================================
+// Implements clean shutdown sequence to prevent data loss
+// Closes connections gracefully and logs shutdown progress
+// ===========================================
 
 /**
  * Graceful shutdown handler
