@@ -3,15 +3,15 @@
 import { Router, Request, Response } from "express";
 import axios from "axios";
 import { authService, TokenPayload } from "../services/auth";
-import { redisService } from "../services/redis";
+import { redisService } from "../infrastructure/cache/redis.service";
 import { query } from "../database/pool"; // ✅ Import from centralized module
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth"; // ✅ Import centralized auth
 import { createErrorResponse, ValidationError, NotFoundError, ExternalServiceError, DatabaseError } from "../types/errors";
 import { getCorrelationId } from "../utils/context";
 import logger from "../services/logger"; // ✅ Import structured logger
-import { encryptionService } from "../services/encryption"; // ✅ Import encryption service
+import { encryptionService } from "../infrastructure/security/encryption.service"; // ✅ Import encryption service
 import { RateLimiters } from "../services/rate-limiter";
-import { marketStreamService } from "../services/market-stream";
+import { marketStreamService } from "../infrastructure/messaging/market-stream.service";
 import { generateKodiakSignature } from "../utils/orderly-signature"; // ✅ Import backend crypto utility
 import { getCacheConfig } from "../config/cache.config"; // ✅ Import centralized cache config
 

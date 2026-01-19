@@ -6,9 +6,9 @@
  */
 
 import { Server } from "socket.io";
-import { redisService } from "./redis";
-import { CACHE_EVENTS, CacheEvent, CacheInvalidationEvent, CacheRefreshEvent, CacheClearEvent, CACHE_KEYS } from "../config/cache.config";
-import logger from "./logger";
+import { redisService } from "./redis.service";
+import { CACHE_EVENTS, CacheEvent, CacheInvalidationEvent, CacheRefreshEvent, CacheClearEvent, CACHE_KEYS } from "../../config/cache.config";
+import logger from "../../services/logger";
 
 export class CacheInvalidationService {
     private io: Server | null = null;

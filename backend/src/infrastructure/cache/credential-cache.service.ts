@@ -1,7 +1,7 @@
 /** @format */
 
-import { encryptionService } from "./encryption";
-import logger from "./logger";
+import { encryptionService } from "../security/encryption.service";
+import logger from "../../services/logger";
 
 interface CachedCredentials {
   apiKey: string;

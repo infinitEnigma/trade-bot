@@ -16,7 +16,7 @@
  */
 
 import { RedisConnectionManager } from "./connection-manager";
-import logger from "../logger";
+import logger from "../../../services/logger";
 
 export interface TransactionOptions {
     context?: string;        // Context for logging and analytics
@@ -541,4 +541,4 @@ class TransactionRecoveryManager {
 }
 
 // Import for internal use (avoid circular dependency)
-import { redisService } from "../redis";
+import { redisService } from "../redis.service";

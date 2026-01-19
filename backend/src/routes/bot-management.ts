@@ -81,7 +81,7 @@ import {
 } from "../types/errors";
 import { getCorrelationId, getContextForLogging } from "../utils/context";
 import { validators } from "../middleware/validation";
-import { withCredentials, SecureCredentials } from "../services/encryption"; // ✅ Secure credential handling
+import { withCredentials, SecureCredentials } from "../infrastructure/security/encryption.service"; // ✅ Secure credential handling
 import { engineManager } from "../services/engine-manager";
 import { botStatusService } from "../services/bot-status";
 import { botPerformanceService } from "../services/bot-performance";

@@ -144,6 +144,9 @@ import { botStatusService } from "./services/bot-status";
 // 🛡️ Rate Limiting
 import { RateLimiters } from "./services/rate-limiter";
 
+// 🔄 Infrastructure Services (moved to infrastructure/)
+import { redisService } from "./infrastructure/cache/redis.service";
+
 // ===========================================
 // 🗄️ 3. DATABASE & REDIS INITIALIZATION
 // ===========================================
@@ -165,11 +168,8 @@ try {
   process.exit(1);
 }
 
-// Initialize Redis connection
-import { redisService } from "./services/redis";
-
-// Connect to Redis on startup
-redisService.connect().catch(error => {
+// Connect to Redis on startup (now imported from infrastructure)
+redisService.connect().catch((error: any) => {
   logger.error("❌ Failed to connect to Redis", {
     error: error instanceof Error ? error.message : String(error),
   });

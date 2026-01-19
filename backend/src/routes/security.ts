@@ -7,7 +7,7 @@
 
 import { Router, Request, Response } from "express";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
-import { databaseSecurityService } from "../services/database-security";
+import { databaseSecurityService } from "../infrastructure/security/database-security.service";
 import logger from "../services/logger";
 
 const router = Router();

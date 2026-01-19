@@ -3,7 +3,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { authService } from "../services/auth";
-import { redisService } from "../services/redis";
+import { redisService } from "../infrastructure/cache/redis.service";
 import { setUserContext } from "../utils/context";
 import { roleManagementService } from "../services/role-management";
 import logger from "../services/logger";

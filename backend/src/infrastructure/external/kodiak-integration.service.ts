@@ -6,8 +6,8 @@
  */
 
 import { query } from "../database/pool";
-import { redisService } from "../services/redis";
-import { encryptionService } from "../services/encryption";
+import { redisService } from "../infrastructure/cache/redis.service";
+import { encryptionService } from "../infrastructure/security/encryption.service";
 import logger from "../services/logger";
 
 export interface KodiakCredentials {
