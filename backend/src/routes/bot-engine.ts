@@ -15,8 +15,56 @@ import logger from "../services/logger";
 
 const router = Router();
 
+/**
+ * Bot Engine API Key Authentication Middleware
+ * Protects bot engine routes from unauthorized access
+ */
+const botEngineAuth = (req: Request, res: Response, next: Function) => {
+    const apiKey = req.headers['x-bot-engine-key'] as string;
+
+    if (!apiKey) {
+        logger.warn("Bot engine route accessed without API key", {
+            path: req.path,
+            ip: req.ip,
+            userAgent: req.headers['user-agent'],
+        });
+        return res.status(401).json({
+            success: false,
+            error: "API key required for bot engine access"
+        });
+    }
+
+    const expectedKey = process.env.BOT_ENGINE_API_KEY;
+    if (!expectedKey) {
+        logger.error("BOT_ENGINE_API_KEY not configured");
+        return res.status(500).json({
+            success: false,
+            error: "Server configuration error"
+        });
+    }
+
+    if (apiKey !== expectedKey) {
+        logger.warn("Invalid bot engine API key provided", {
+            path: req.path,
+            ip: req.ip,
+            keyLength: apiKey.length,
+        });
+        return res.status(401).json({
+            success: false,
+            error: "Invalid API key"
+        });
+    }
+
+    // API key is valid
+    logger.debug("Bot engine API key validated", {
+        path: req.path,
+    });
+
+    next();
+};
+
 // POST /api/bot/heartbeat (called by bot engine)
-router.post("/heartbeat", async (req: Request, res: Response) => {
+router.post("/heartbeat", botEngineAuth, async (req: Request, res: Response) => {
     try {
         const { bot_id, status, position, exposure, timestamp } = req.body;
 
@@ -80,7 +128,7 @@ router.post("/heartbeat", async (req: Request, res: Response) => {
 });
 
 // POST /api/bot/report-trade (called by bot engine)
-router.post("/report-trade", async (req: Request, res: Response) => {
+router.post("/report-trade", botEngineAuth, async (req: Request, res: Response) => {
     try {
         const {
             userId,
@@ -210,7 +258,7 @@ router.post("/report-trade", async (req: Request, res: Response) => {
 });
 
 // POST /api/bot/engine-status (called by bot engine)
-router.post("/engine-status", async (req: Request, res: Response) => {
+router.post("/engine-status", botEngineAuth, async (req: Request, res: Response) => {
     try {
         const { status, activeBots, totalBots, uptime, memoryUsage, cpuUsage } = req.body;
 
@@ -287,7 +335,7 @@ router.post("/engine-status", async (req: Request, res: Response) => {
 });
 
 // POST /api/bot/bot-error (called by bot engine when bot encounters error)
-router.post("/bot-error", async (req: Request, res: Response) => {
+router.post("/bot-error", botEngineAuth, async (req: Request, res: Response) => {
     try {
         const { botId, error, stackTrace, context, severity = 'medium' } = req.body;
 
@@ -360,7 +408,7 @@ router.post("/bot-error", async (req: Request, res: Response) => {
 });
 
 // POST /api/bot/bot-recovery (called by bot engine when bot recovers)
-router.post("/bot-recovery", async (req: Request, res: Response) => {
+router.post("/bot-recovery", botEngineAuth, async (req: Request, res: Response) => {
     try {
         const { botId, recoveryReason, context } = req.body;
 
