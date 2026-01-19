@@ -1,8 +1,69 @@
 /**
- * Bot Management Routes
+ * ===========================================
+ * 🤖 BOT MANAGEMENT API ROUTES
+ * ===========================================
  *
- * Handles user-facing bot operations including CRUD operations,
- * status management, and performance monitoring.
+ * User-facing bot lifecycle management endpoints for the Trade Bot platform.
+ * Handles bot creation, execution, monitoring, and emergency operations with
+ * enterprise-grade security and comprehensive audit trails.
+ *
+ * ARCHITECTURE OVERVIEW:
+ * - RESTful API design with WebSocket real-time updates
+ * - Secure credential handling with memory-safe operations
+ * - End-to-end encryption for bot engine communication
+ * - Comprehensive audit logging and compliance tracking
+ * - Position validation and risk management integration
+ *
+ * SECURITY MODEL:
+ * - JWT authentication required for all operations
+ * - Role-based access control (QUALIFIED_ALPHA minimum)
+ * - Secure credential handling with automatic memory cleanup
+ * - End-to-end encryption using session keys
+ * - Comprehensive audit logging for all bot operations
+ *
+ * API ENDPOINTS:
+ * - GET /instances - List user's bot instances
+ * - POST /start - Start bot with secure credential transmission
+ * - POST /stop - Graceful bot shutdown
+ * - GET /status/:botId - Real-time bot status with reconciliation
+ * - POST /status/sync - Manual status synchronization
+ * - GET /performance/:botId - Performance metrics and analytics
+ * - POST /emergency-stop - Critical safety operations
+ *
+ * WEBSOCKET INTEGRATION:
+ * - Real-time bot status updates via Socket.IO
+ * - Encrypted credential transmission to bot engine
+ * - Live performance metrics broadcasting
+ * - Emergency stop event propagation
+ *
+ * CREDENTIAL SECURITY:
+ * - SecureCredentials container with automatic memory wiping
+ * - Context manager pattern for guaranteed cleanup
+ * - End-to-end encryption using AES-256-GCM
+ * - Session key generation and secure transmission
+ *
+ * INTEGRATION POINTS:
+ * - Bot Engine: WebSocket communication for bot lifecycle
+ * - Position Validator: Pre-start risk assessment
+ * - Database: Bot instances, strategies, audit logs
+ * - Redis: Status caching and coordination
+ * - Market Stream: Real-time data for active bots
+ *
+ * OPERATIONAL FEATURES:
+ * - Automatic engine management (start/stop based on active bots)
+ * - Comprehensive error handling and recovery
+ * - Performance monitoring and analytics
+ * - Emergency stop with order cancellation
+ * - Status reconciliation and health monitoring
+ *
+ * MONITORING & ALERTS:
+ * - Bot lifecycle event logging
+ * - Performance metric collection
+ * - Error rate tracking and alerting
+ * - Security event auditing
+ * - Resource usage monitoring
+ *
+ * @format
  */
 
 import { Router, Request, Response } from "express";
@@ -48,7 +109,62 @@ async function hasUserKodiakCredentials(userId: string): Promise<boolean> {
     }
 }
 
-// GET /api/bot/instances
+/**
+ * ===========================================
+ * 📋 GET BOT INSTANCES
+ * ===========================================
+ *
+ * Retrieves all bot instances belonging to the authenticated user.
+ * Returns comprehensive bot information including strategy details and status.
+ *
+ * ENDPOINT: GET /api/bot/instances
+ * AUTH: JWT required
+ * ROLE: Any authenticated user
+ *
+ * QUERY PARAMETERS: None
+ *
+ * RESPONSE:
+ * ```json
+ * {
+ *   "success": true,
+ *   "data": [
+ *     {
+ *       "id": "uuid",
+ *       "strategy_id": "uuid",
+ *       "user_id": "uuid",
+ *       "status": "RUNNING|STOPPED|ERROR",
+ *       "running_time": 3600,
+ *       "total_trades": 150,
+ *       "total_pnl": 1250.50,
+ *       "created_at": "2024-01-01T00:00:00Z",
+ *       "strategy_name": "Grid Trading BTC",
+ *       "strategy_type": "GRID",
+ *       "strategy_config": { "symbol": "PERP_BTC_USDC", ... }
+ *     }
+ *   ],
+ *   "timestamp": 1640995200000
+ * }
+ * ```
+ *
+ * SECURITY:
+ * - Validates user ownership of all returned bot instances
+ * - No sensitive data exposure (credentials, internal IDs)
+ * - Rate limited via global limiter
+ *
+ * PERFORMANCE:
+ * - Single optimized JOIN query
+ * - Ordered by creation date (most recent first)
+ * - Minimal data transfer (strategy config included)
+ *
+ * ERROR HANDLING:
+ * - Database errors: Generic "Failed to get bot instances"
+ * - Logs detailed error information for debugging
+ * - Returns structured error response with correlation ID
+ *
+ * @param req - Express request with authenticated user
+ * @param res - Express response
+ * @returns Promise<void> - JSON response with bot instances or error
+ */
 router.get(
     "/instances",
     authMiddleware,
@@ -82,7 +198,120 @@ router.get(
     }
 );
 
-// POST /api/bot/start
+/**
+ * ===========================================
+ * 🚀 START BOT INSTANCE
+ * ===========================================
+ *
+ * Creates and starts a new bot instance with comprehensive security validations,
+ * position risk assessment, and secure credential transmission to the bot engine.
+ *
+ * ENDPOINT: POST /api/bot/start
+ * AUTH: JWT required + QUALIFIED_ALPHA role minimum
+ * VALIDATION: strategyId (UUID), notionalAmount (positive number)
+ *
+ * REQUEST BODY:
+ * ```json
+ * {
+ *   "strategyId": "uuid-of-user-strategy",
+ *   "notionalAmount": 1000.50
+ * }
+ * ```
+ *
+ * WORKFLOW:
+ * 1. **Engine Preparation**: Ensure trading engine is running
+ * 2. **Ownership Validation**: Verify strategy belongs to user
+ * 3. **Bot State Check**: Ensure bot can be started (no conflicts)
+ * 4. **Risk Assessment**: Validate position size against account limits
+ * 5. **Bot Creation**: Generate bot instance in database
+ * 6. **Credential Verification**: Check user has verified Kodiak credentials
+ * 7. **Audit Logging**: Record credential access for compliance
+ * 8. **Strategy Activation**: Mark strategy as active
+ * 9. **Secure Transmission**: Encrypt credentials with session key
+ * 10. **Engine Notification**: Send encrypted payload via WebSocket
+ *
+ * SECURITY FEATURES:
+ * - **Role-based Access**: QUALIFIED_ALPHA minimum required
+ * - **Ownership Validation**: User can only start their own strategies
+ * - **Position Validation**: Risk assessment before bot execution
+ * - **Secure Credentials**: Memory-safe decryption and immediate cleanup
+ * - **End-to-End Encryption**: AES-256-GCM with session keys
+ * - **Audit Trail**: All credential access logged with timestamps
+ *
+ * POSITION VALIDATION:
+ * - Account balance and leverage limits
+ * - Maximum single position size (25% of account)
+ * - Orderly exchange-specific limits
+ * - Total exposure limits (80% of account balance)
+ * - Margin requirements verification
+ *
+ * CREDENTIAL SECURITY:
+ * ```typescript
+ * // Secure credential lifecycle
+ * await withCredentials(userId, async (credentials) => {
+ *   // Credentials decrypted and used securely
+ *   // Automatically wiped from memory after callback
+ * });
+ * ```
+ *
+ * WEBSOCKET PAYLOAD:
+ * ```json
+ * {
+ *   "botId": "uuid",
+ *   "strategyId": "uuid",
+ *   "strategy": { "name": "...", "config": {...} },
+ *   "userId": "uuid",
+ *   "encryptedCredentials": {
+ *     "encrypted": "base64-ciphertext",
+ *     "iv": "hex-iv",
+ *     "authTag": "hex-tag"
+ *   },
+ *   "sessionKey": "encrypted-session-key"
+ * }
+ * ```
+ *
+ * RESPONSE:
+ * ```json
+ * {
+ *   "success": true,
+ *   "data": {
+ *     "botId": "uuid",
+ *     "strategyId": "uuid",
+ *     "status": "RUNNING",
+ *     "strategy": {
+ *       "name": "Grid Trading BTC",
+ *       "type": "GRID",
+ *       "config": { "symbol": "PERP_BTC_USDC", ... }
+ *     }
+ *   },
+ *   "timestamp": 1640995200000
+ * }
+ * ```
+ *
+ * ERROR HANDLING:
+ * - **Engine Not Running**: Auto-start engine, retry operation
+ * - **Strategy Not Found**: 404 with ownership validation
+ * - **Bot Start Conflict**: 409 with reason (already running, etc.)
+ * - **Position Validation**: 400 with risk assessment details
+ * - **Credential Missing**: 400 with clear user guidance
+ * - **Engine Communication**: Comprehensive error logging
+ *
+ * PERFORMANCE:
+ * - **Pre-validation**: Risk assessment before resource allocation
+ * - **Atomic Operations**: Database consistency across all steps
+ * - **Resource Management**: Automatic engine lifecycle management
+ * - **Cleanup Guarantee**: Credentials wiped even on failures
+ *
+ * MONITORING:
+ * - Bot creation events logged with full context
+ * - Credential access audited for compliance
+ * - Performance metrics collected for optimization
+ * - Error rates tracked for reliability monitoring
+ *
+ * @param req - Express request with validated bot start parameters
+ * @param res - Express response
+ * @returns Promise<void> - JSON response with bot details or error
+ */
 router.post(
     "/start",
     authMiddleware,
