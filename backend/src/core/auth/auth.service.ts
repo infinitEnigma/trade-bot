@@ -51,7 +51,7 @@ import bcrypt from "bcryptjs";
 import { UserLevel } from "@trade-bot/shared";
 import { query } from "../../database/pool";
 import { redisService } from "../../infrastructure/cache/redis.service";
-import { hashPassword, comparePassword } from "../../services/password-worker";
+import { hashPassword, comparePassword } from "../../workers/password-worker";
 import logger from "../../services/logger";
 
 const JWT_SECRET = (() => {

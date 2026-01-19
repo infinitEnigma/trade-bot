@@ -114,27 +114,27 @@ validateEnvironment();
 // ===========================================
 
 // 🔐 Authentication & Authorization
-import { authRoutes } from "./routes/auth";
+import { authRoutes } from "./interfaces/http/auth";
 
 // 👤 User Management
-import { userRoutes } from "./routes/user";
+import { userRoutes } from "./interfaces/http/user";
 
 // 📊 Market Data & Trading
-import { marketRoutes } from "./routes/market";
-import { strategyRoutes } from "./routes/strategies";
+import { marketRoutes } from "./interfaces/http/market";
+import { strategyRoutes } from "./interfaces/http/strategies";
 
 // 🤖 Bot Management & Engine
-import { botRoutes } from "./routes/bot";
-import { balanceRoutes } from "./routes/balance";
+import { botRoutes } from "./interfaces/http/bot";
+import { balanceRoutes } from "./interfaces/http/balance";
 
 // 🛡️ Security & Monitoring
-import { healthRoutes } from "./routes/health";
-import { securityRoutes } from "./routes/security";
+import { healthRoutes } from "./interfaces/http/health";
+import { securityRoutes } from "./interfaces/http/security";
 
 // 🔧 Middleware Stack
-import { httpLogger, errorLogger } from "./middleware/logger";
-import { contextMiddleware } from "./middleware/context";
-import { csrfMiddleware, csrfTokenMiddleware, CSRFRequest } from "./middleware/csrf";
+import { httpLogger, errorLogger } from "./interfaces/middleware/logger";
+import { contextMiddleware } from "./interfaces/middleware/context";
+import { csrfMiddleware, csrfTokenMiddleware, CSRFRequest } from "./interfaces/middleware/csrf";
 
 // 📡 Real-time Services
 import { marketStreamService } from "./services/market-stream/index";
