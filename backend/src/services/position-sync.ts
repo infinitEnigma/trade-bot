@@ -11,7 +11,7 @@ import { redisService } from "./redis";
 import { getCacheConfig, CACHE_KEYS } from "../config/cache.config";
 import { cacheInvalidationService } from "./cache-invalidation";
 import { generateOrderlySignature } from "../utils/orderly-signature";
-import logger from "./logger";
+import { positionSyncLogger } from "./context-aware-logger";
 
 export interface PositionData {
     symbol: string;
@@ -75,7 +75,7 @@ export class PositionSyncService {
 
             return response.data.data;
         } catch (error) {
-            logger.error("Failed to sync account info from API", {
+            positionSyncLogger.error("Failed to sync account info from API", error as Error, {
                 error: error instanceof Error ? error.message : String(error),
             });
             throw error;
@@ -165,14 +165,13 @@ export class PositionSyncService {
             try {
                 const accountData = await this.syncAccountInfoFromAPI(accountId, apiKey, secretKey);
                 await this.storeAccountInfoInDatabase(userId, accountId, accountData);
-                logger.debug("Account info synced", { userId, accountId });
+                positionSyncLogger.debug("Account info synced", { userId, accountId });
             } catch (error) {
                 const errorMsg = `Failed to sync account info: ${error}`;
                 errors.push(errorMsg);
-                logger.error("Account info sync error", {
+                positionSyncLogger.error("Account info sync error", error as Error, {
                     userId,
                     accountId,
-                    error: error instanceof Error ? error.message : String(error),
                 });
             }
 
@@ -187,11 +186,10 @@ export class PositionSyncService {
                 } catch (error) {
                     const errorMsg = `Failed to store position for ${position.symbol}: ${error}`;
                     errors.push(errorMsg);
-                    logger.error("Position storage error", {
+                    positionSyncLogger.error("Position storage error", error as Error, {
                         userId,
                         accountId,
                         symbol: position.symbol,
-                        error: error instanceof Error ? error.message : String(error),
                     });
                 }
             }
@@ -199,7 +197,7 @@ export class PositionSyncService {
             // Invalidate position caches
             await this.invalidatePositionCaches(userId);
 
-            logger.info("Position sync completed", {
+            positionSyncLogger.info("Position sync completed", {
                 userId,
                 accountId,
                 positionsSynced,
@@ -218,9 +216,8 @@ export class PositionSyncService {
             const errorMsg = `Position sync failed: ${error}`;
             errors.push(errorMsg);
 
-            logger.error("Position sync error", {
+            positionSyncLogger.error("Position sync error", error as Error, {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -335,7 +332,7 @@ export class PositionSyncService {
 
             if (cacheResult.success && cacheResult.data) {
                 const cachedPositions = JSON.parse(cacheResult.data);
-                logger.debug("Position cache hit", { userId, count: cachedPositions.length });
+                positionSyncLogger.debug("Position cache hit", { userId, count: cachedPositions.length });
                 return cachedPositions;
             }
 
@@ -367,7 +364,7 @@ export class PositionSyncService {
             // Cache positions
             await redisService.setex(cacheKey, this.POSITION_CACHE_TTL, JSON.stringify(positions));
 
-            logger.debug("Positions fetched from database", {
+            positionSyncLogger.debug("Positions fetched from database", {
                 userId,
                 count: positions.length,
                 cached: true,
@@ -376,9 +373,8 @@ export class PositionSyncService {
             return positions;
 
         } catch (error) {
-            logger.error("Failed to get positions from database", {
+            positionSyncLogger.error("Failed to get positions from database", error as Error, {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
@@ -413,7 +409,7 @@ export class PositionSyncService {
 
             const totalUsers = usersResult.rows.length;
 
-            logger.info("Starting batch position sync", { totalUsers });
+            positionSyncLogger.info("Starting batch position sync", { totalUsers });
 
             // Sync positions for each user
             for (const userRow of usersResult.rows) {
@@ -427,14 +423,13 @@ export class PositionSyncService {
                 } catch (error) {
                     const errorMsg = `User ${userRow.user_id}: ${error}`;
                     errors.push(errorMsg);
-                    logger.error("Batch position sync error for user", {
+                    positionSyncLogger.error("Batch position sync error for user", error as Error, {
                         userId: userRow.user_id,
-                        error: error instanceof Error ? error.message : String(error),
                     });
                 }
             }
 
-            logger.info("Batch position sync completed", {
+            positionSyncLogger.info("Batch position sync completed", {
                 totalUsers,
                 successfulSyncs,
                 errors: errors.length,
@@ -446,9 +441,7 @@ export class PositionSyncService {
             const errorMsg = `Batch position sync failed: ${error}`;
             errors.push(errorMsg);
 
-            logger.error("Batch position sync error", {
-                error: error instanceof Error ? error.message : String(error),
-            });
+            positionSyncLogger.error("Batch position sync error", error as Error, {});
 
             return { totalUsers: 0, successfulSyncs, errors };
         }
@@ -511,9 +504,8 @@ export class PositionSyncService {
 
         } catch (error) {
             issues.push(`Consistency check failed: ${error}`);
-            logger.error("Position consistency check error", {
+            positionSyncLogger.error("Position consistency check error", error as Error, {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
