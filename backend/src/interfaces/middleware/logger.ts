@@ -1,12 +1,12 @@
 /** @format */
 
 import { Request, Response, NextFunction } from "express";
-import logger from "../services/logger";
+import logger from "../../services/logger";
 import {
   generateCorrelationId,
   runWithContext,
   getContextForLogging,
-} from "../shared/utils/context";
+} from "../../shared/utils/context";
 
 /**
  * HTTP request logging middleware

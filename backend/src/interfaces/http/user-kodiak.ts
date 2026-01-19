@@ -8,9 +8,9 @@
 import { Router, Request, Response } from "express";
 import Joi from "joi";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
-import { kodiakConnectionService } from "../infrastructure/external/kodiak-connection.service";
-import { kodiakIntegrationService } from "../infrastructure/external/kodiak-integration.service";
-import logger from "../services/logger";
+import { kodiakConnectionService } from "../../infrastructure/external/kodiak-connection.service";
+import { kodiakIntegrationService } from "../../infrastructure/external/kodiak-integration.service";
+import logger from "../../services/logger";
 
 const router = Router();
 

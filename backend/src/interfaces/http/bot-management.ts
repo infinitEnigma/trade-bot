@@ -71,22 +71,22 @@ import { v4 as uuidv4 } from "uuid";
 import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { requireRole } from "../middleware/role-protection";
-import { query } from "../database/pool";
+import { query } from "../../database/pool";
 import {
     ValidationError,
     NotFoundError,
     DatabaseError,
     ConflictError,
     createErrorResponse,
-} from "../shared/types/errors";
-import { getCorrelationId, getContextForLogging } from "../shared/utils/context";
+} from "../../shared/types/errors";
+import { getCorrelationId, getContextForLogging } from "../../shared/utils/context";
 import { validators } from "../middleware/validation";
-import { withCredentials, SecureCredentials } from "../infrastructure/security/encryption.service"; // ✅ Secure credential handling
-import { engineManager } from "../core/trading/engine-manager.service";
-import { botStatusService } from "../core/trading/bot-status.service";
-import { botPerformanceService } from "../core/trading/bot-performance.service";
+import { withCredentials, SecureCredentials } from "../../infrastructure/security/encryption.service"; // ✅ Secure credential handling
+import { engineManager } from "../../core/trading/engine-manager.service";
+import { botStatusService } from "../../core/trading/bot-status.service";
+import { botPerformanceService } from "../../core/trading/bot-performance.service";
 import { UserRole } from "@trade-bot/shared";
-import logger from "../services/logger";
+import logger from "../../services/logger";
 
 const router = Router();
 

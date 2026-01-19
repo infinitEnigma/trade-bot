@@ -7,7 +7,7 @@
 
 import logger from "./logger";
 import { getContextForLogging } from "../shared/utils/context";
-import { errorNotificationService, ErrorSeverity, ErrorCategory } from "./error-notification";
+import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../core/notifications/error-notification.service";
 
 export interface RetryConfig {
     maxAttempts: number;

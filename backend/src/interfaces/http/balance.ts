@@ -2,9 +2,9 @@
 
 import { Router, Request, Response } from "express";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
-import { getUserBalance, invalidateBalanceCache } from "../core/wallet/balance.service";
-import logger from "../services/logger";
-import { RateLimiters } from "../services/rate-limiter";
+import { getUserBalance, invalidateBalanceCache } from "../../core/wallet/balance.service";
+import logger from "../../services/logger";
+import { RateLimiters } from "../../services/rate-limiter";
 import { UserLevel } from "@trade-bot/shared";
 
 const router = Router();

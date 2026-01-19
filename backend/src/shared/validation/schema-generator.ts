@@ -23,7 +23,7 @@ import {
     CheckConstraint,
     ForeignKeyDefinition,
 } from "./database-schema-parser";
-import logger from "../services/logger";
+import logger from "../../services/logger";
 
 export class SchemaGenerator {
     /**

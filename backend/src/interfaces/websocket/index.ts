@@ -17,9 +17,9 @@
  */
 
 // Export WebSocket event handlers (to be implemented)
-// export { marketDataHandler } from './market-data';
-// export { tradingHandler } from './trading';
-// export { notificationHandler } from './notifications';
+export { marketDataHandler } from './market-data';
+export { tradingHandler } from './trading';
+export { notificationHandler } from './notifications';
 
 // For now, WebSocket handling is done in index.ts
 // Future: Extract to dedicated WebSocket interface handlers

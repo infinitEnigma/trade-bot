@@ -3,8 +3,8 @@
 import { Router } from "express";
 import { botManagementRoutes } from "./bot-management";
 import { botEngineRoutes } from "./bot-engine";
-import { botReconciliationWorker } from "../workers/bot-reconciliation";
-import logger from "../services/logger";
+import { botReconciliationWorker } from "../../workers/bot-reconciliation";
+import logger from "../../services/logger";
 
 const router = Router();
 

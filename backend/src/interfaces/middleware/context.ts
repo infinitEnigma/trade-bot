@@ -5,7 +5,7 @@ import {
   setRequestContext,
   generateCorrelationId,
   generateRequestId,
-} from "../shared/utils/context";
+} from "../../shared/utils/context";
 
 export function contextMiddleware(
   req: Request,

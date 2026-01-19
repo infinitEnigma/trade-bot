@@ -18,11 +18,11 @@
 
 import { Request, Response, NextFunction } from "express";
 import Joi from "joi";
-import { createErrorResponse, ValidationError } from "../shared/types/errors";
-import { getCorrelationId } from "../shared/utils/context";
+import { createErrorResponse, ValidationError } from "../../shared/types/errors";
+import { getCorrelationId } from "../../shared/utils/context";
 import { DatabaseSchemaParser, DatabaseSchema } from "./database-schema-parser";
 import { SchemaGenerator } from "./schema-generator";
-import logger from "../services/logger";
+import logger from "../../services/logger";
 
 export interface SchemaValidationOptions {
     // Table to validate against
@@ -289,7 +289,7 @@ export class SchemaValidationMiddleware {
     private async checkForeignKeyExists(table: string, column: string, value: any): Promise<boolean> {
         try {
             // Import database connection dynamically to avoid circular dependencies
-            const { query } = await import("../database/pool.js");
+            const { query } = await import("../../database/pool.js");
             const result = await query(`SELECT 1 FROM ${table} WHERE ${column} = $1 LIMIT 1`, [value]);
             return result.rows.length > 0;
         } catch (error) {
@@ -556,4 +556,4 @@ export const validators = {
 };
 
 // Export legacy functions for backward compatibility
-export { validateRequest } from '../middleware/validation';
+export { validateRequest } from '../../interfaces/middleware/validation';

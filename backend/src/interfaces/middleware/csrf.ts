@@ -2,7 +2,7 @@
 
 import { Request, Response, NextFunction } from "express";
 import Tokens from "csrf";
-import logger from "../services/logger";
+import logger from "../../services/logger";
 
 // Initialize CSRF tokens
 const tokens = new Tokens();

@@ -33,11 +33,11 @@
  * @format
  */
 
-import { query } from "../database/pool";
-import { engineManager } from "./engine-manager";
-import { cacheInvalidationService } from "./cache-invalidation";
-import { redisService } from "./redis";
-import logger from "./logger";
+import { query } from "../../database/pool";
+import { engineManager } from "./engine-manager.service";
+import { cacheInvalidationService } from "../../infrastructure/cache/cache-invalidation.service";
+import { redisService } from "../../infrastructure/cache/redis.service";
+import logger from "../../services/logger";
 
 /**
  * ===========================================
@@ -682,7 +682,7 @@ export class BotStatusService {
         reason: string
     ): Promise<void> {
         try {
-            const { io } = await import("../index.js");
+            const { io } = await import("../../index.js");
 
             if (io) {
                 io.to(`user:${userId}`).emit("bot:status", {
@@ -819,7 +819,7 @@ export class BotStatusService {
     private async notifyUserOfStaleBot(userId: string, botId: string, ageMs: number): Promise<void> {
         try {
             // Import io dynamically to avoid circular imports
-            const { io } = await import("../index.js");
+            const { io } = await import("../../index.js");
 
             if (io) {
                 io.to(`user:${userId}`).emit("bot:status", {

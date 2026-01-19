@@ -1,8 +1,8 @@
 /** @format */
 
 import { Request, Response, NextFunction } from "express";
-import { redisService } from "./redis";
-import { AuthenticatedRequest } from "../middleware/auth";
+import { redisService } from "../infrastructure/cache/redis";
+import { AuthenticatedRequest } from "../interfaces/middleware";
 import { UserLevel } from "@trade-bot/shared";
 import logger from "./logger";
 
