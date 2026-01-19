@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { UserLevel } from "@trade-bot/shared";
 import { pool } from "../database";
 import { redisService } from "./redis";
+import { hashPassword, comparePassword } from "./password-worker";
 import logger from "./logger";
 
 const JWT_SECRET = (() => {
@@ -63,7 +64,8 @@ export class AuthService {
         return { success: false, message: "Email already registered" };
       }
 
-      const passwordHash = await bcrypt.hash(password, 12);
+      // ✅ NON-BLOCKING: Uses worker threads instead of blocking event loop
+      const passwordHash = await this.hashPassword(password);
       const result = await pool.query(
         "INSERT INTO users (email, password_hash, user_level) VALUES ($1, $2, $3) RETURNING id, email, user_level",
         [email, passwordHash, UserLevel.BASIC]
@@ -103,7 +105,8 @@ export class AuthService {
       }
 
       const user = result.rows[0];
-      const validPassword = await bcrypt.compare(password, user.password_hash);
+      // ✅ NON-BLOCKING: Uses worker threads instead of blocking event loop
+      const validPassword = await this.verifyPassword(user, password);
 
       if (!validPassword) {
         return { success: false, message: "Invalid credentials" };
@@ -423,11 +426,13 @@ export class AuthService {
   }
 
   async hashPassword(password: string): Promise<string> {
-    return await bcrypt.hash(password, 12);
+    // ✅ NON-BLOCKING: Uses worker threads instead of blocking event loop
+    return await hashPassword(password, 12);
   }
 
   async verifyPassword(user: { password_hash: string }, password: string): Promise<boolean> {
-    return await bcrypt.compare(password, user.password_hash);
+    // ✅ NON-BLOCKING: Uses worker threads instead of blocking event loop
+    return await comparePassword(password, user.password_hash);
   }
 
   // Token blacklist methods
