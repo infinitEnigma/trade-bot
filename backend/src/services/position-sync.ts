@@ -42,7 +42,97 @@ export class PositionSyncService {
     private readonly POSITION_CACHE_TTL = 30; // 30 seconds for position data
 
     /**
-     * Sync positions from Kodiak API to database (canonical source)
+     * Sync account information from Kodiak API to database
+     * Includes balance, leverage, and account settings
+     */
+    private async syncAccountInfoFromAPI(
+        accountId: string,
+        apiKey: string,
+        secretKey: string
+    ): Promise<any> {
+        try {
+            const timestamp = Date.now();
+            const path = "/v1/client/info";
+            const signature = await generateOrderlySignature(
+                timestamp,
+                "GET",
+                path,
+                "",
+                secretKey
+            );
+
+            const response = await axios.get(
+                `${process.env.KODIAK_API_URL || "https://api.orderly.org"}${path}`,
+                {
+                    headers: {
+                        "orderly-account-id": accountId,
+                        "orderly-key": apiKey,
+                        "orderly-signature": signature,
+                        "orderly-timestamp": timestamp.toString(),
+                    },
+                }
+            );
+
+            return response.data.data;
+        } catch (error) {
+            logger.error("Failed to sync account info from API", {
+                error: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Store account information in database
+     */
+    private async storeAccountInfoInDatabase(
+        userId: string,
+        accountId: string,
+        accountData: any
+    ): Promise<void> {
+        await query(`
+    INSERT INTO kodiak_accounts (
+      user_id, account_id, balance, max_leverage, max_notional,
+      taker_fee_rate, maker_fee_rate, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    ON CONFLICT (user_id)
+    DO UPDATE SET
+      account_id = EXCLUDED.account_id,
+      balance = EXCLUDED.balance,
+      max_leverage = EXCLUDED.max_leverage,
+      max_notional = EXCLUDED.max_notional,
+      taker_fee_rate = EXCLUDED.taker_fee_rate,
+      maker_fee_rate = EXCLUDED.maker_fee_rate,
+      updated_at = EXCLUDED.updated_at
+  `, [
+            userId,
+            accountId,
+            accountData.total_balance || "0",
+            accountData.max_leverage || "1",
+            JSON.stringify(accountData.max_notional || {}),
+            accountData.taker_fee_rate || "0.001",
+            accountData.maker_fee_rate || "0.001",
+            new Date(),
+        ]);
+    }
+
+    /**
+     * ===========================================
+     * 🔄 SYNC POSITIONS FROM KODIAK API TO DATABASE
+     * ===========================================
+     *
+     * Establishes database as canonical position source with sync from Kodiak API.
+     * This is the SINGLE SOURCE OF TRUTH for position data across the entire system.
+     *
+     * DATA FLOW:
+     * 1. Fetch from Kodiak API (authoritative source)
+     * 2. Store in database (canonical source)
+     * 3. Position validator reads from database
+     * 4. Bot management reads from database
+     *
+     * ELIMINATES COMPETING SOURCES:
+     * ❌ Before: API, Database, Bot State (3 sources)
+     * ✅ After: Database (1 canonical source)
      */
     async syncPositionsFromKodiak(userId: string): Promise<PositionSyncResult> {
         const errors: string[] = [];
@@ -70,6 +160,21 @@ export class PositionSyncService {
             const accountId = row.account_id;
             const apiKey = encryptionService.decryptApiKey(row.api_key_encrypted);
             const secretKey = encryptionService.decryptSecretKey(row.secret_key_encrypted);
+
+            // ✅ SYNC ACCOUNT INFO FIRST (for position validator)
+            try {
+                const accountData = await this.syncAccountInfoFromAPI(accountId, apiKey, secretKey);
+                await this.storeAccountInfoInDatabase(userId, accountId, accountData);
+                logger.debug("Account info synced", { userId, accountId });
+            } catch (error) {
+                const errorMsg = `Failed to sync account info: ${error}`;
+                errors.push(errorMsg);
+                logger.error("Account info sync error", {
+                    userId,
+                    accountId,
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            }
 
             // Fetch positions from Kodiak API
             const positions = await this.fetchPositionsFromAPI(accountId, apiKey, secretKey);

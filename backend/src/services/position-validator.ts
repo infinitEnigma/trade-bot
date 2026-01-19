@@ -4,7 +4,9 @@ import axios from "axios";
 import { query } from "../database/pool";
 import logger from "./logger";
 import { generateOrderlySignature } from "../utils/orderly-signature";
-import { withCredentials, SecureCredentials } from "./encryption"; // ✅ Secure credential handling
+import { withCredentials, SecureCredentials } from "./encryption";
+import { positionSyncService } from "./position-sync"; // ✅ Single source of truth
+import { redisService } from "./redis";
 
 export interface AccountLimits {
   balance: number;
@@ -241,8 +243,27 @@ export async function hasUserKodiakCredentials(userId: string): Promise<boolean>
 }
 
 /**
- * Validate position for a user using secure credential handling
- * Credentials are automatically decrypted, used, and wiped from memory
+ * ===========================================
+ * 🔍 VALIDATE USER POSITION - SINGLE SOURCE OF TRUTH
+ * ===========================================
+ *
+ * Validates position size against account limits using canonical database source.
+ * Eliminates competing data sources by using synced position data as single truth.
+ *
+ * DATA FLOW (CORRECTED):
+ * 1. Position Sync: Kodiak API → Database (canonical source)
+ * 2. Position Validator: Database → Account Limits Calculation
+ * 3. Risk Assessment: Account Limits → Position Validation
+ *
+ * ELIMINATES COMPETING SOURCES:
+ * ❌ Before: Kodiak API, Database, Bot State (3 sources)
+ * ✅ After: Database (1 canonical source synced from API)
+ *
+ * @param userId - User ID for position validation
+ * @param notionalAmount - Position size to validate
+ * @param symbol - Trading symbol for position
+ * @param maxExposurePercent - Maximum account exposure percentage
+ * @returns Promise<PositionValidationResult> - Validation result with limits
  */
 export async function validateUserPosition(
   userId: string,
@@ -260,23 +281,20 @@ export async function validateUserPosition(
       };
     }
 
-    // Use secure credential context manager - credentials are auto-cleaned
-    return await withCredentials(userId, async (credentials: SecureCredentials) => {
-      // Get account limits using decrypted credentials (securely handled)
-      const accountLimits = await getAccountLimits(
-        credentials.get('accountId'),
-        credentials.get('apiKey'),
-        credentials.get('secretKey')
-      );
+    // ✅ SINGLE SOURCE OF TRUTH: Get positions from canonical database
+    // (synced from Kodiak API by position-sync service)
+    const positions = await positionSyncService.getPositionsFromDatabase(userId);
 
-      // Validate position size
-      return await validatePositionSize(
-        notionalAmount,
-        symbol,
-        accountLimits,
-        maxExposurePercent
-      );
-    });
+    // Calculate account limits from canonical position data
+    const accountLimits = await calculateAccountLimitsFromDatabase(userId, positions);
+
+    // Validate position size against calculated limits
+    return await validatePositionSize(
+      notionalAmount,
+      symbol,
+      accountLimits,
+      maxExposurePercent
+    );
 
   } catch (error: any) {
     logger.error("Position validation failed", {
@@ -289,5 +307,113 @@ export async function validateUserPosition(
       isValid: false,
       reason: `Validation error: ${error.message}`,
     };
+  }
+}
+
+/**
+ * Calculate account limits from canonical database position data
+ * Uses synced position data as single source of truth
+ */
+async function calculateAccountLimitsFromDatabase(
+  userId: string,
+  positions: any[]
+): Promise<AccountLimits> {
+  try {
+    // Get account information (balance, leverage, etc.)
+    const accountInfo = await getAccountInfoFromDatabase(userId);
+
+    // Calculate total exposure from canonical position data
+    let totalExposure = 0;
+    for (const position of positions) {
+      const notionalValue = Math.abs(
+        position.positionQty * position.markPrice
+      );
+      totalExposure += notionalValue;
+    }
+
+    logger.debug("Account limits calculated from database", {
+      userId,
+      positionsCount: positions.length,
+      totalExposure,
+      balance: accountInfo.balance,
+    });
+
+    return {
+      balance: accountInfo.balance,
+      maxLeverage: accountInfo.maxLeverage,
+      totalExposure,
+      maxNotional: accountInfo.maxNotional || {},
+      takerFeeRate: accountInfo.takerFeeRate,
+      makerFeeRate: accountInfo.makerFeeRate,
+    };
+
+  } catch (error) {
+    logger.error("Failed to calculate account limits from database", {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+}
+
+/**
+ * Get account information from database (synced from Kodiak API)
+ */
+async function getAccountInfoFromDatabase(userId: string): Promise<{
+  balance: number;
+  maxLeverage: number;
+  maxNotional: Record<string, number>;
+  takerFeeRate: number;
+  makerFeeRate: number;
+}> {
+  try {
+    // Get cached account info or fetch from database
+    const cacheKey = `account:info:${userId}`;
+    const cacheResult = await redisService.get(cacheKey);
+
+    if (cacheResult.success && cacheResult.data) {
+      const cachedInfo = JSON.parse(cacheResult.data);
+      logger.debug("Account info cache hit", { userId });
+      return cachedInfo;
+    }
+
+    // Fetch account info from database (synced from API)
+    const result = await query(
+      "SELECT balance, max_leverage, max_notional, taker_fee_rate, maker_fee_rate, updated_at FROM kodiak_accounts WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 1",
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      // Fallback to default values if no account info
+      logger.warn("No account info found in database, using defaults", { userId });
+      return {
+        balance: 0,
+        maxLeverage: 1,
+        maxNotional: {},
+        takerFeeRate: 0.001,
+        makerFeeRate: 0.001,
+      };
+    }
+
+    const accountInfo = {
+      balance: parseFloat(result.rows[0].balance || "0"),
+      maxLeverage: parseInt(result.rows[0].max_leverage || "1"),
+      maxNotional: result.rows[0].max_notional || {},
+      takerFeeRate: parseFloat(result.rows[0].taker_fee_rate || "0.001"),
+      makerFeeRate: parseFloat(result.rows[0].maker_fee_rate || "0.001"),
+    };
+
+    // Cache account info for 5 minutes
+    await redisService.setex(cacheKey, 300, JSON.stringify(accountInfo));
+
+    logger.debug("Account info retrieved from database", { userId });
+    return accountInfo;
+
+  } catch (error) {
+    logger.error("Failed to get account info from database", {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
   }
 }
