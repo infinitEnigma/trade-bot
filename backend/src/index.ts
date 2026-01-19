@@ -140,6 +140,9 @@ import { csrfMiddleware, csrfTokenMiddleware, CSRFRequest } from "./middleware/c
 import { marketStreamService } from "./services/market-stream/index";
 import { authService } from "./services/auth";
 
+// 🛡️ Rate Limiting
+import { RateLimiters } from "./services/rate-limiter";
+
 // ===========================================
 // 🗄️ 3. DATABASE & REDIS INITIALIZATION
 // ===========================================
@@ -327,13 +330,8 @@ app.use(
 app.use(cookieParser());
 app.use(express.json());
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: { error: "Too many requests, please try again later" },
-});
-app.use("/api/", limiter);
+// ✅ REMOVED GLOBAL RATE LIMITER - Now using per-endpoint limits
+// Rate limiting is now handled per-endpoint with user-based limits
 
 // Request context middleware (must be first)
 app.use(contextMiddleware);
@@ -379,6 +377,35 @@ app.use("/api/security", csrfMiddleware);
 //   2. Engine doesn't have browser cookies or CSRF tokens
 //   3. CSRF is meant for browser-based attacks, not server communication
 //   4. Bot engine routes are protected by API key authentication instead
+
+// ===========================================
+// 🛡️ 6.5 PER-ENDPOINT RATE LIMITING
+// ===========================================
+// Applies sophisticated rate limiting per endpoint with user-based limits
+// Prevents single users from exhausting global limits
+// ===========================================
+
+// 🔐 Authentication endpoints (strict with progressive backoff)
+app.use("/api/auth", RateLimiters.auth);
+
+// 👤 User management endpoints (moderate limits)
+app.use("/api/user", RateLimiters.public);
+app.use("/api/user-profile", RateLimiters.public);
+app.use("/api/user-kodiak", RateLimiters.public);
+
+// 📊 Market data endpoints (user-based scaling)
+app.use("/api/market", RateLimiters.market);
+app.use("/api/strategies", RateLimiters.market);
+
+// 🤖 Trading & bot management (strict user-based limits)
+app.use("/api/bot", RateLimiters.trading);
+app.use("/api/bot-management", RateLimiters.trading);
+
+// 💰 Balance & financial data (moderate user-based limits)
+app.use("/api/balance", RateLimiters.balance);
+
+// 🛡️ Security & monitoring (moderate limits)
+app.use("/api/security", RateLimiters.public);
 
 // ===========================================
 // 🛤️ 7. ROUTE REGISTRATION
