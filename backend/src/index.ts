@@ -139,6 +139,7 @@ import { csrfMiddleware, csrfTokenMiddleware, CSRFRequest } from "./middleware/c
 // 📡 Real-time Services
 import { marketStreamService } from "./services/market-stream/index";
 import { authService } from "./services/auth";
+import { botStatusService } from "./services/bot-status";
 
 // 🛡️ Rate Limiting
 import { RateLimiters } from "./services/rate-limiter";
@@ -658,6 +659,25 @@ httpServer.listen(PORT, () => {
   logger.info(
     "📡 Market stream service initialized (lazy-loaded - connects when needed)"
   );
+
+  // ✅ Initialize bot status service background processes (after database ready)
+  botStatusService.initializeBackgroundProcesses().catch(error => {
+    logger.error("Failed to initialize bot status background processes", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+
+  // ✅ Register worker shutdown handlers for proper cleanup
+  setImmediate(async () => {
+    try {
+      const { botReconciliationWorker } = await import("./workers/bot-reconciliation.js");
+      botReconciliationWorker.registerShutdownHandlers();
+    } catch (error) {
+      logger.error("Failed to register worker shutdown handlers", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
 });
 
 // ===========================================

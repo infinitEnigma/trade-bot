@@ -71,6 +71,40 @@ export class BotReconciliationWorker {
     }
 
     /**
+     * Register shutdown handlers for proper cleanup
+     */
+    registerShutdownHandlers(): void {
+        // Handle process termination signals
+        process.on('SIGTERM', () => {
+            logger.info('SIGTERM received in bot reconciliation worker, stopping...');
+            this.stop();
+        });
+
+        process.on('SIGINT', () => {
+            logger.info('SIGINT received in bot reconciliation worker, stopping...');
+            this.stop();
+        });
+
+        // Handle uncaught exceptions and unhandled rejections
+        process.on('uncaughtException', (error) => {
+            logger.error('Uncaught exception in bot reconciliation worker', {
+                error: error.message,
+                stack: error.stack,
+            });
+            this.stop();
+        });
+
+        process.on('unhandledRejection', (reason, promise) => {
+            logger.error('Unhandled rejection in bot reconciliation worker', {
+                reason: reason instanceof Error ? reason.message : String(reason),
+            });
+            this.stop();
+        });
+
+        logger.debug("Bot reconciliation worker shutdown handlers registered");
+    }
+
+    /**
      * Check if there are any active bots that need reconciliation
      */
     private async hasActiveBots(): Promise<boolean> {

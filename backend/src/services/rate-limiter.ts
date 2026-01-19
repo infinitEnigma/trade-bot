@@ -498,10 +498,10 @@ export const RateLimiters = {
   // ✅ Authentication endpoints (strict, with progressive backoff)
   auth: createRateLimiter("auth", {
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5, // 5 attempts
+    max: process.env.NODE_ENV === 'development' ? 30 : 5, // 30 for dev, 5 for prod
     message: "Too many login attempts, please try again later",
-    progressiveBackoff: true, // Enable exponential backoff on failures
-    maxProgressiveDelay: 5 * 60 * 1000, // Max 5 minutes delay
+    progressiveBackoff: process.env.NODE_ENV !== 'development', // Only prod gets backoff
+    maxProgressiveDelay: process.env.NODE_ENV === 'development' ? 5000 : 5 * 60 * 1000, // 5s dev, 5min prod
     progressiveBaseDelay: 1000, // Start with 1 second
   }),
 

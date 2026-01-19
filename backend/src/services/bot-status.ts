@@ -109,9 +109,28 @@ export class BotStatusService {
     private positionSyncInterval: NodeJS.Timeout | null = null;
 
     constructor() {
-        // Start background processes
-        this.startReconciliationProcess();
-        this.startPositionSyncProcess();
+        // Defer background process startup until database is ready
+        // Will be called explicitly after database initialization
+    }
+
+    /**
+     * Initialize background processes after database is ready
+     */
+    async initializeBackgroundProcesses(): Promise<void> {
+        try {
+            // Start background processes now that database is available
+            this.startReconciliationProcess();
+            this.startPositionSyncProcess();
+
+            logger.info("Bot status service background processes initialized", {
+                reconciliationInterval: this.RECONCILIATION_INTERVAL_MS,
+                positionSyncInterval: 30000,
+            });
+        } catch (error) {
+            logger.error("Failed to initialize bot status background processes", {
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
     }
 
     /**
