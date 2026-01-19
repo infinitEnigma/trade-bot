@@ -2,7 +2,7 @@
 
 **Automated Perpetual Futures Trading Platform for Berachain**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: Apache](https://img.shields.io/badge/License-Apache-yellow.svg)](LICENSE)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D25.0.0-brightgreen)](package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](tsconfig.json)
 
@@ -241,7 +241,7 @@ npm run test            # Run full test suite
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) for details
+Apache License 2.0 - See [LICENSE](LICENSE) for details
 
 ---
 

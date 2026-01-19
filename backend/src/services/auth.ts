@@ -4,7 +4,7 @@ import "dotenv/config";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { UserLevel } from "@trade-bot/shared";
-import { pool } from "../database";
+import { query } from "../database/pool";
 import { redisService } from "./redis";
 import { hashPassword, comparePassword } from "./password-worker";
 import logger from "./logger";
@@ -56,7 +56,7 @@ export interface AuthResult {
 export class AuthService {
   async register(email: string, password: string): Promise<AuthResult> {
     try {
-      const existingUser = await pool.query(
+      const existingUser = await query(
         "SELECT id FROM users WHERE email = $1",
         [email]
       );
@@ -66,7 +66,7 @@ export class AuthService {
 
       // ✅ NON-BLOCKING: Uses worker threads instead of blocking event loop
       const passwordHash = await this.hashPassword(password);
-      const result = await pool.query(
+      const result = await query(
         "INSERT INTO users (email, password_hash, user_level) VALUES ($1, $2, $3) RETURNING id, email, user_level",
         [email, passwordHash, UserLevel.BASIC]
       );
@@ -74,7 +74,7 @@ export class AuthService {
       const user = result.rows[0];
       const tokens = this.generateTokens(user);
 
-      await pool.query(
+      await query(
         "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
         [user.id, "USER_REGISTERED", { email: user.email }]
       );
@@ -95,7 +95,7 @@ export class AuthService {
 
   async login(email: string, password: string): Promise<AuthResult> {
     try {
-      const result = await pool.query(
+      const result = await query(
         "SELECT id, email, password_hash, user_level FROM users WHERE email = $1",
         [email]
       );
@@ -114,7 +114,7 @@ export class AuthService {
 
       const tokens = this.generateTokens(user);
 
-      await pool.query(
+      await query(
         "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
         [user.id, "USER_LOGIN", { email: user.email }]
       );
@@ -170,7 +170,7 @@ export class AuthService {
         return { success: false, message: "Refresh token expired" };
       }
 
-      const result = await pool.query(
+      const result = await query(
         "SELECT id, email, user_level FROM users WHERE id = $1",
         [decoded.userId]
       );
@@ -213,7 +213,7 @@ export class AuthService {
     userId: string
   ): Promise<{ id: string; email: string; userLevel: UserLevel } | null> {
     try {
-      const result = await pool.query(
+      const result = await query(
         "SELECT id, email, user_level FROM users WHERE id = $1",
         [userId]
       );
@@ -258,7 +258,7 @@ export class AuthService {
       logger.debug("Auth user data cache miss, querying database", { userId });
 
       // Single optimized query with JOINs
-      const result = await pool.query(`
+      const result = await query(`
         SELECT
           u.id,
           u.email,
@@ -330,7 +330,7 @@ export class AuthService {
 
   async updateUserLevel(userId: string, level: UserLevel): Promise<boolean> {
     try {
-      await pool.query(
+      await query(
         "UPDATE users SET user_level = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
         [level, userId]
       );
@@ -362,7 +362,7 @@ export class AuthService {
       }
 
       // Check if user has Kodiak credentials with matching wallet address
-      const credentialsResult = await pool.query(
+      const credentialsResult = await query(
         "SELECT wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
         [userId]
       );
@@ -399,7 +399,7 @@ export class AuthService {
       }
 
       // Log the verification
-      await pool.query(
+      await query(
         "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
         [
           userId,
@@ -472,7 +472,7 @@ export class AuthService {
       let tokensBlacklisted = 0;
 
       // Get user's email for token identification
-      const userResult = await pool.query(
+      const userResult = await query(
         "SELECT email FROM users WHERE id = $1",
         [userId]
       );
@@ -509,7 +509,7 @@ export class AuthService {
       }
 
       // Log the security event
-      await pool.query(
+      await query(
         "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
         [userId, "TOKENS_INVALIDATED", {
           reason: "security",
