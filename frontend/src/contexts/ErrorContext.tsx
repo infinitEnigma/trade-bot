@@ -1,7 +1,7 @@
 /** @format */
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
-import type { ErrorType, ErrorAction } from "../components/ui/ErrorState";
+import type { ErrorType, ErrorAction } from "../shared/components/ui/ErrorState";
 
 interface ErrorState {
   id: string;

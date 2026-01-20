@@ -1,7 +1,7 @@
 /** @format */
 
 import React from "react";
-import { useAuth } from "../../contexts/AuthContext";
+import { useAuth } from "../../features/auth";
 import { UserLevel, UserRole } from "@trade-bot/shared";
 import {
   CheckCircle,

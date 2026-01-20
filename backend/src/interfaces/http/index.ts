@@ -28,3 +28,4 @@ export { healthRoutes } from './health';
 export { securityRoutes } from './security';
 export { userKodiakRoutes } from './user-kodiak';
 export { userProfileRoutes } from './user-profile';
+export { walletRoutes } from './wallet';

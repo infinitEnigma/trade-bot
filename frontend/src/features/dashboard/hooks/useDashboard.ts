@@ -2,9 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../auth";
-import { useBalance } from "../../../hooks/useBalance";
+import { useBalance } from "../../trading/balance/hooks";
 import { dashboardService } from "../services/dashboardService";
-import { BalanceData, Position, Trade, PortfolioPerformancePoint } from "../types/dashboard.types";
+import { BalanceData, Position, Trade } from "../types/dashboard.types";
 
 /**
  * Dashboard hook - manages all dashboard data fetching and state

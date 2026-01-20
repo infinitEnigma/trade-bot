@@ -3,12 +3,31 @@
 /**
  * Analytics Feature
  *
- * Provides advanced trading analytics, performance metrics, and reporting.
- * Includes charts, performance analysis, and market insights.
- *
- * TODO: Migrate from pages/Analytics.tsx during Phase 2
+ * Advanced trading analytics and performance insights.
+ * Provides comprehensive analysis of trading performance, risk metrics, and market data.
  */
 
-// Placeholder exports - will be populated during Phase 2 migration
-// export { default as AnalyticsPage } from "./components/AnalyticsPage";
-// export { useAnalyticsData } from "./hooks/useAnalyticsData";
+// Types
+export type {
+    AnalyticsTimeWindow,
+    AnalyticsMetrics,
+    SectorPerformance,
+    PriceDataPoint,
+    AnalyticsData,
+    AnalyticsOptions,
+    AnalyticsState,
+} from "./types/analytics.types";
+
+// Components
+export {
+    AnalyticsDashboard,
+    PerformanceMetrics,
+    RiskMetrics,
+    SectorPerformance as SectorPerformanceChart,
+} from "./components";
+
+// Hooks
+export { useAnalytics } from "./hooks";
+
+// Services
+export { analyticsService } from "./services";

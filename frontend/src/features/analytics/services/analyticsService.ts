@@ -1,81 +1,54 @@
 /** @format */
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { api } from "../lib/api";
-import { chartDataCache } from "../utils/chart-cache";
+import { marketApi } from "../../../infrastructure/api";
+import { chartDataCache } from "../../../infrastructure/cache";
+import {
+    AnalyticsTimeWindow,
+    AnalyticsMetrics,
+    SectorPerformance,
+    PriceDataPoint,
+    AnalyticsData
+} from "../types/analytics.types";
 
-export interface AnalyticsTimeWindow {
-    label: string;
-    days: number;
-    value: string;
-}
+/**
+ * Analytics Service
+ * Handles all analytics-related data fetching and calculations
+ */
+export class AnalyticsService {
+    private static instance: AnalyticsService;
 
-export interface AnalyticsMetrics {
-    totalReturn: number;
-    winRate: number;
-    totalTrades: number;
-    avgTradeDuration: string;
-    bestDay: string;
-    worstDay: string;
-    sharpeRatio: number;
-    maxDrawdown: number;
-    volatility: number;
-    beta: number;
-    alpha: number;
-    marketCorrelation: number;
-}
+    private constructor() { }
 
-export interface SectorPerformance {
-    sector: string;
-    performance: number;
-    contribution: number;
-}
+    public static getInstance(): AnalyticsService {
+        if (!AnalyticsService.instance) {
+            AnalyticsService.instance = new AnalyticsService();
+        }
+        return AnalyticsService.instance;
+    }
 
-interface AnalyticsData {
-    metrics: AnalyticsMetrics;
-    sectorPerformance: SectorPerformance[];
-    priceData: any[];
-    volumeData: any[];
-}
+    /**
+     * Predefined time windows
+     */
+    getTimeWindows(): AnalyticsTimeWindow[] {
+        return [
+            { label: '7 Days', days: 7, value: '7d' },
+            { label: '30 Days', days: 30, value: '30d' },
+            { label: '90 Days', days: 90, value: '90d' },
+            { label: '6 Months', days: 180, value: '180d' },
+            { label: '1 Year', days: 365, value: '365d' },
+        ];
+    }
 
-interface UseAnalyticsDataOptions {
-    symbol: string;
-    timeWindow: AnalyticsTimeWindow;
-    enabled?: boolean;
-}
-
-export const useAnalyticsData = ({
-    symbol,
-    timeWindow,
-    enabled = true,
-}: UseAnalyticsDataOptions) => {
-    const [data, setData] = useState<AnalyticsData | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [progress, setProgress] = useState(0);
-
-    // Refs for managing loading state
-    const abortControllerRef = useRef<AbortController | null>(null);
-    const isLoadingRef = useRef(false);
-
-    // Predefined time windows
-    const TIME_WINDOWS: AnalyticsTimeWindow[] = [
-        { label: '7 Days', days: 7, value: '7d' },
-        { label: '30 Days', days: 30, value: '30d' },
-        { label: '90 Days', days: 90, value: '90d' },
-        { label: '6 Months', days: 180, value: '180d' },
-        { label: '1 Year', days: 365, value: '365d' },
-    ];
-
-
-
-    // Load data in chunks with pagination to prevent memory issues
-    const loadDataInChunks = useCallback(async (
+    /**
+     * Load data in chunks with pagination to prevent memory issues
+     */
+    async loadDataInChunks(
         symbol: string,
         totalDays: number,
-        signal: AbortSignal
-    ) => {
-        const chunks = [];
+        onProgress?: (progress: number) => void,
+        signal?: AbortSignal
+    ): Promise<PriceDataPoint[]> {
+        const chunks: PriceDataPoint[] = [];
         const maxTotalDays = 365; // Cap at 1 year to prevent excessive loading
         const effectiveTotalDays = Math.min(totalDays, maxTotalDays);
 
@@ -90,27 +63,26 @@ export const useAnalyticsData = ({
             const recentEnd = new Date();
 
             try {
-                const recentData = await loadHistoricalChunk(
+                const recentData = await this.loadHistoricalChunk(
                     symbol,
                     recentStart,
                     recentEnd
                 );
-                chunks.push(recentData);
-                setProgress(0.5); // 50% progress after recent data
+                chunks.push(...recentData);
+                onProgress?.(0.5); // 50% progress after recent data
             } catch (error) {
-                if (!signal.aborted) {
+                if (!signal?.aborted) {
                     throw error;
                 }
             }
         }
 
         // Load older historical data in background if needed
-        if (remainingDays > 0 && !signal.aborted) {
-            const historicalChunks = [];
+        if (remainingDays > 0 && !signal?.aborted) {
             const historicalChunkSize = 60; // Larger chunks for older data
 
             for (let i = 0; i < remainingDays; i += historicalChunkSize) {
-                if (signal.aborted) break;
+                if (signal?.aborted) break;
 
                 const chunkDays = Math.min(historicalChunkSize, remainingDays - i);
                 const chunkStart = new Date();
@@ -119,38 +91,38 @@ export const useAnalyticsData = ({
                 chunkEnd.setDate(chunkEnd.getDate() - (remainingDays - i - chunkDays + recentDays));
 
                 try {
-                    const chunkData = await loadHistoricalChunk(
+                    const chunkData = await this.loadHistoricalChunk(
                         symbol,
                         chunkStart,
                         chunkEnd
                     );
-                    historicalChunks.push(chunkData);
+                    chunks.push(...chunkData);
 
                     // Update progress incrementally
                     const historicalProgress = (i + chunkDays) / remainingDays;
-                    setProgress(0.5 + (historicalProgress * 0.4)); // 50-90% for historical data
+                    onProgress?.(0.5 + (historicalProgress * 0.4)); // 50-90% for historical data
 
                 } catch (error) {
-                    if (!signal.aborted) {
+                    if (!signal?.aborted) {
                         // Log error but continue with other chunks
                         console.warn('Failed to load historical chunk:', error);
                     }
                 }
             }
-
-            chunks.push(...historicalChunks);
         }
 
-        setProgress(0.9); // 90% complete
+        onProgress?.(0.9); // 90% complete
         return chunks;
-    }, []);
+    }
 
-    // Load a single 30-day chunk of historical data
-    const loadHistoricalChunk = useCallback(async (
+    /**
+     * Load a single chunk of historical data
+     */
+    private async loadHistoricalChunk(
         symbol: string,
         startDate: Date,
         endDate: Date
-    ) => {
+    ): Promise<PriceDataPoint[]> {
         const cacheKey = `analytics-${symbol}-${startDate.toISOString().split('T')[0]}-${endDate.toISOString().split('T')[0]}`;
 
         // Check cache first
@@ -160,7 +132,7 @@ export const useAnalyticsData = ({
         }
 
         // Load from API
-        const response = await api.getTvHistory({
+        const response = await marketApi.getTvHistory({
             symbol: symbol,
             resolution: '1D', // Daily data for analytics
             from: Math.floor(startDate.getTime() / 1000),
@@ -172,14 +144,16 @@ export const useAnalyticsData = ({
         }
 
         // Transform and cache the data
-        const transformedData = transformTradingViewData(response.data);
+        const transformedData = this.transformTradingViewData(response.data);
         chartDataCache.set(cacheKey, transformedData);
 
         return transformedData;
-    }, []);
+    }
 
-    // Transform TradingView data to analytics format
-    const transformTradingViewData = useCallback((tvData: any) => {
+    /**
+     * Transform TradingView data to analytics format
+     */
+    private transformTradingViewData(tvData: any): PriceDataPoint[] {
         if (!tvData || typeof tvData !== 'object') return [];
 
         const { t: timestamps, o: opens, h: highs, l: lows, c: closes, v: volumes } = tvData;
@@ -194,10 +168,12 @@ export const useAnalyticsData = ({
             close: closes?.[index] || 0,
             volume: volumes?.[index] || 0,
         }));
-    }, []);
+    }
 
-    // Calculate analytics metrics from historical data
-    const calculateAnalyticsMetrics = useCallback((priceData: any[]): AnalyticsMetrics => {
+    /**
+     * Calculate analytics metrics from historical data
+     */
+    calculateAnalyticsMetrics(priceData: PriceDataPoint[]): AnalyticsMetrics {
         if (!priceData || priceData.length === 0) {
             return {
                 totalReturn: 0,
@@ -255,89 +231,43 @@ export const useAnalyticsData = ({
             alpha: 3.2, // Mock
             marketCorrelation: 0.72, // Mock
         };
-    }, []);
+    }
 
-    // Calculate sector performance (mock data for now)
-    const calculateSectorPerformance = useCallback((): SectorPerformance[] => {
+    /**
+     * Calculate sector performance (mock data for now)
+     */
+    calculateSectorPerformance(): SectorPerformance[] {
         return [
             { sector: 'DeFi', performance: 15.2, contribution: 35 },
             { sector: 'NFT', performance: -3.1, contribution: 15 },
             { sector: 'Gaming', performance: 8.7, contribution: 25 },
             { sector: 'Infrastructure', performance: 22.1, contribution: 25 },
         ];
-    }, []);
+    }
 
-    // Main data loading function
-    const loadAnalyticsData = useCallback(async () => {
-        if (!enabled || isLoadingRef.current) return;
+    /**
+     * Load complete analytics data
+     */
+    async loadAnalyticsData(
+        symbol: string,
+        timeWindow: AnalyticsTimeWindow,
+        onProgress?: (progress: number) => void,
+        signal?: AbortSignal
+    ): Promise<AnalyticsData> {
+        // Load data in chunks
+        const priceData = await this.loadDataInChunks(symbol, timeWindow.days, onProgress, signal);
 
-        // Cancel any existing request
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-        }
+        // Calculate metrics
+        const metrics = this.calculateAnalyticsMetrics(priceData);
+        const sectorPerformance = this.calculateSectorPerformance();
 
-        const abortController = new AbortController();
-        abortControllerRef.current = abortController;
-
-        try {
-            isLoadingRef.current = true;
-            setLoading(true);
-            setError(null);
-            setProgress(0);
-
-            // Load data in chunks
-            const chunks = await loadDataInChunks(symbol, timeWindow.days, abortController.signal);
-
-            if (abortController.signal.aborted) return;
-
-            // Merge all chunks
-            const allPriceData = chunks.flat();
-
-            // Calculate metrics
-            const metrics = calculateAnalyticsMetrics(allPriceData);
-            const sectorPerformance = calculateSectorPerformance();
-
-            const analyticsData: AnalyticsData = {
-                metrics,
-                sectorPerformance,
-                priceData: allPriceData,
-                volumeData: allPriceData.map(d => ({ timestamp: d.timestamp, volume: d.volume })),
-            };
-
-            setData(analyticsData);
-            setProgress(1);
-
-        } catch (err: any) {
-            if (!abortController.signal.aborted) {
-                setError(err.message || 'Failed to load analytics data');
-            }
-        } finally {
-            isLoadingRef.current = false;
-            setLoading(false);
-            abortControllerRef.current = null;
-        }
-    }, [enabled, symbol, timeWindow, loadDataInChunks, calculateAnalyticsMetrics, calculateSectorPerformance]);
-
-    // Load data when dependencies change
-    useEffect(() => {
-        loadAnalyticsData();
-    }, [loadAnalyticsData]);
-
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
-            }
+        return {
+            metrics,
+            sectorPerformance,
+            priceData,
+            volumeData: priceData.map(d => ({ timestamp: d.timestamp, volume: d.volume })),
         };
-    }, []);
+    }
+}
 
-    return {
-        data,
-        loading,
-        error,
-        progress,
-        timeWindows: TIME_WINDOWS,
-        refetch: loadAnalyticsData,
-    };
-};
+export const analyticsService = AnalyticsService.getInstance();

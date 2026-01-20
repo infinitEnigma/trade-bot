@@ -2,7 +2,7 @@
 
 import React, { Suspense } from "react";
 import { Link } from "react-router-dom";
-import { Activity, Key } from "lucide-react";
+import { Activity } from "lucide-react";
 import { Card } from "../../../shared/components/ui";
 import { WalletConnectDialog } from "../../../components/WalletConnectDialog";
 import { Loader2 } from "lucide-react";

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { UserLevel } from "@trade-bot/shared";
 
 // Import from infrastructure
-import { tradingApi } from "../../../../infrastructure/api";
+import { balanceApi } from "../../../../infrastructure/api";
 
 // Import from features
 import { useAuth } from "../../../auth";
@@ -41,7 +41,7 @@ export const useBalance = (autoRefresh: boolean = true) => {
             setLoading(true);
             setError(null);
 
-            const response = await tradingApi.getCurrentBalance();
+            const response = await balanceApi.getCurrentBalance();
 
             if (response.success) {
                 setBalance(response.data);
@@ -66,7 +66,7 @@ export const useBalance = (autoRefresh: boolean = true) => {
     const refresh = async () => {
         try {
             setLoading(true);
-            const response = await tradingApi.refreshBalance();
+            const response = await balanceApi.refreshBalance();
 
             if (response.success) {
                 setBalance(response.data);

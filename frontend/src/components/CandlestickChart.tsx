@@ -11,7 +11,7 @@ import {
   HistogramSeries,
 } from "lightweight-charts";
 import { useChartData } from "../hooks/useChartData";
-import { useVisibility } from "../hooks/useVisibility";
+import { useVisibility } from "../shared/hooks/useVisibility";
 
 export interface CandleData {
   time: number;

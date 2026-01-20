@@ -131,6 +131,9 @@ import { balanceRoutes } from "./interfaces/http/balance";
 import { healthRoutes } from "./interfaces/http/health";
 import { securityRoutes } from "./interfaces/http/security";
 
+// 💰 Wallet & Qualification
+import { walletRoutes } from "./interfaces/http/wallet";
+
 // 🔧 Middleware Stack
 import { httpLogger, errorLogger } from "./interfaces/middleware/logger";
 import { contextMiddleware } from "./interfaces/middleware/context";
@@ -368,6 +371,7 @@ app.use("/api/strategies", csrfMiddleware);
 app.use("/api/bot", csrfMiddleware);
 app.use("/api/bot-management", csrfMiddleware);
 app.use("/api/balance", csrfMiddleware);
+app.use("/api/wallet", csrfMiddleware);
 app.use("/api/security", csrfMiddleware);
 
 // 🔐 SECURITY ARCHITECTURE NOTE:
@@ -429,7 +433,10 @@ app.use("/api/strategies", strategyRoutes);
 app.use("/api/bot", botRoutes);
 app.use("/api/balance", balanceRoutes);
 
-// 🛡️ Security & Monitoring
+// � Wallet & Qualification
+app.use("/api/wallet", walletRoutes);
+
+// �🛡️ Security & Monitoring
 app.use("/api/security", securityRoutes);
 
 // 🏥 Health Check (must be last to catch all routes)

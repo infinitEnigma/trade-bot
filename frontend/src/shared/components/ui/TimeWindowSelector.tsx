@@ -1,7 +1,7 @@
 /** @format */
 
 import React from "react";
-import { AnalyticsTimeWindow } from "../../hooks/useAnalyticsData";
+import { AnalyticsTimeWindow } from "../../../features/analytics";
 
 interface TimeWindowSelectorProps {
   timeWindows: AnalyticsTimeWindow[];

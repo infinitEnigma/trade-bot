@@ -5,7 +5,7 @@ import { useAccount, useConnect, useDisconnect, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth } from "../features/auth";
 
 interface WalletConnectDialogProps {
   isOpen?: boolean;

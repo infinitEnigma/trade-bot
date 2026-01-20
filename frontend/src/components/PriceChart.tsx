@@ -12,9 +12,9 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { api } from "../lib/api";
-import { Card } from "./ui/Card";
-import { SectionHeader } from "./ui/SectionHeader";
-import { useVisibility } from "../hooks/useVisibility";
+import { Card } from "../shared/components/ui/Card";
+import { SectionHeader } from "../shared/components/ui/SectionHeader";
+import { useVisibility } from "../shared/hooks/useVisibility";
 
 interface PriceChartProps {
   symbol?: string;

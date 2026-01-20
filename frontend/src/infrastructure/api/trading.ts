@@ -64,4 +64,21 @@ export const tradingApi = {
         });
         return response.data;
     },
+
+    // Kodiak exchange integration endpoints
+    async getKodiakPositions() {
+        const response = await httpClient.getClient().get("/api/user/kodiak/positions");
+        return response.data;
+    },
+
+    async getKodiakTrades(limit = 50) {
+        const response = await httpClient.getClient().get(`/api/user/kodiak/trades?limit=${limit}`);
+        return response.data;
+    },
+
+    // Wallet qualification endpoint
+    async checkQualification() {
+        const response = await httpClient.getClient().get("/api/wallet/qualification");
+        return response.data;
+    },
 };

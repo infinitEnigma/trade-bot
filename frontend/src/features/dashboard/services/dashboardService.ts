@@ -1,7 +1,7 @@
 /** @format */
 
-import { tradingApi, marketApi } from "../../../infrastructure/api";
-import { BalanceData, Position, Trade, PortfolioPerformancePoint } from "../types/dashboard.types";
+import { tradingApi } from "../../../infrastructure/api";
+import { Position, Trade, PortfolioPerformancePoint } from "../types/dashboard.types";
 
 /**
  * Dashboard Service
