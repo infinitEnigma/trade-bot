@@ -3,13 +3,28 @@
 /**
  * Trading Feature
  *
- * Handles trading strategies, bot management, and trade execution.
- * Includes strategies, positions, and bot controls.
- *
- * TODO: Migrate from pages/Strategies.tsx and related components during Phase 2
+ * Comprehensive trading functionality including strategies, bots, and balance management.
+ * Organized into subdomains for clear separation of concerns.
  */
 
-// Placeholder exports - will be populated during Phase 2 migration
-// export { default as StrategiesPage } from "./components/StrategiesPage";
-// export { useStrategies } from "./hooks/useStrategies";
-// export { useBotControls } from "./hooks/useBotControls";
+// Shared types
+export type {
+    BotInstance,
+    TradingBalance,
+    StrategyFormData,
+    BotStatus,
+    MarketDataPoint,
+    TradingState,
+    TradingActions,
+} from "./types/trading.types";
+
+// Strategies subdomain
+export { StrategyList, StrategyCard } from "./strategies/components";
+export { useStrategies } from "./strategies/hooks";
+export { strategyService } from "./strategies/services";
+
+// Bots subdomain
+export { BotControls } from "./bots/components";
+
+// Balance subdomain
+export { useBalance } from "./balance/hooks";

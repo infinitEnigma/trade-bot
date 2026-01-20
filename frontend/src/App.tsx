@@ -11,15 +11,15 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import { Toaster } from "sonner";
 import { io } from "socket.io-client";
-import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { useAuth } from "./features/auth";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ErrorProvider, ErrorNotifications } from "./contexts/ErrorContext";
-import { usePageBackground } from "./hooks/usePageBackground";
-import { websocketSubscriptionManager } from "./utils/websocket-manager";
+import { usePageBackground } from "./shared/hooks";
+import { websocketSubscriptionManager } from "./infrastructure/websocket/websocket-manager";
 import { UserRole } from "@trade-bot/shared";
 
 // Components
-import LoadingSpinner from "./components/ui/LoadingSpinner";
+import { LoadingSpinner } from "./shared/components/ui";
 import { AppHeader } from "./components/ui/AppHeader";
 
 // Lazy load pages
@@ -41,9 +41,9 @@ const ProtectedRoute = ({
   requireVerified?: boolean;
   requireRole?: UserRole;
 }) => {
-  const { user, isAuthenticated, loading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
 
-  if (loading) {
+  if (isLoading) {
     return <LoadingSpinner />;
   }
 
@@ -264,21 +264,19 @@ function App() {
   return (
     <ThemeProvider defaultTheme="dark">
       <ErrorProvider>
-        <AuthProvider>
-          <WebSocketInitializer />
-          <AppRouter />
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              style: {
-                background: "var(--bg-surface)",
-                border: "1px solid var(--border-light)",
-                color: "var(--text-primary)",
-              },
-            }}
-          />
-          <ErrorNotifications />
-        </AuthProvider>
+        <WebSocketInitializer />
+        <AppRouter />
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            style: {
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-light)",
+              color: "var(--text-primary)",
+            },
+          }}
+        />
+        <ErrorNotifications />
       </ErrorProvider>
     </ThemeProvider>
   );

@@ -5,11 +5,23 @@
  *
  * Handles user authentication, authorization, and profile management.
  * This feature manages login/logout flows, user sessions, and permissions.
- *
- * TODO: Migrate from contexts/AuthContext.tsx and stores/authStore.ts during Phase 2
  */
 
-// Placeholder exports - will be populated during Phase 2 migration
-// export { default as LoginForm } from "./components/LoginForm";
-// export { useAuth } from "./hooks/useAuth";
-// export { useAuthStore } from "./stores/authStore";
+// Core functionality
+export { useAuth } from "./hooks";
+export { authService } from "./services";
+
+// Types
+export type {
+    AuthUser,
+    LoginCredentials,
+    RegisterData,
+    AuthState,
+    AuthActions,
+    AuthContextType,
+    QualificationStatus
+} from "./types";
+
+// Components (to be added)
+// export { LoginForm } from "./components";
+// export { RegisterForm } from "./components";
