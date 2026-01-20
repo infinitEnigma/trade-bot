@@ -9,6 +9,7 @@ export interface RequestContext {
   userLevel?: string;
   startTime: number;
   requestId: string;
+  duration?: number;
 }
 
 /**

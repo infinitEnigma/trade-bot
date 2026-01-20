@@ -64,6 +64,10 @@ npm start              # Start production server
 
 ## Architecture
 
+### 🏗️ Enterprise Domain-Driven Architecture
+
+Trade Bot implements a **production-grade domain-driven design** with clean architecture principles, featuring **6 architectural layers** and **5 core business domains**.
+
 ```
 ┌────────────────────────────────────────────────────┐
 │              Bare Metal Server                     │
@@ -74,9 +78,46 @@ npm start              # Start production server
 │  │  React 19    │  │  Express.js  │  │ Trading  │  │
 │  │  + Vite      │  │  Node.js 25  │  │  Bot     │  │
 │  └──────────────┘  └──────────────┘  └──────────┘  │
-│       │                   │                 │      │
-│       └───────────────────┼─────────────────┘      │
-│                           ▼                        │
+│                                                    │
+├────────────────────────────────────────────────────┤
+│         🏗️ DOMAIN-DRIVEN BACKEND ARCHITECTURE       │
+├────────────────────────────────────────────────────┤
+│                                                    │
+│  ┌─────────────────────────────────────────────┐   │
+│  │          🔄 INTERFACES LAYER                │   │
+│  │  HTTP Routes • WebSocket • Middleware       │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                    │
+│  ┌─────────────────────────────────────────────┐   │
+│  │          ⚙️ CORE BUSINESS DOMAINS           │   │
+│  │                                             │   │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐        │   │
+│  │  │  Auth   │ │ Trading │ │ Wallet  │        │   │
+│  │  │ Domain  │ │ Domain  │ │ Domain  │        │   │
+│  │  └─────────┘ └─────────┘ └─────────┘        │   │
+│  │                                             │   │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐        │   │
+│  │  │  User   │ │Logging  │ │Notifications│    │   │
+│  │  │ Domain  │ │ Domain  │ │  Domain   │      │   │
+│  │  └─────────┘ └─────────┘ └─────────┘        │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                    │
+│  ┌─────────────────────────────────────────────┐   │
+│  │        🏗️ INFRASTRUCTURE LAYER              │   │
+│  │  Cache • Security • External • Messaging     │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                    │
+│  ┌─────────────────────────────────────────────┐   │
+│  │         📚 SHARED UTILITIES LAYER            │   │
+│  │  Types • Utils • Constants • Validation      │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                    │
+│  ┌─────────────────────────────────────────────┐   │
+│  │          ⚡ WORKERS LAYER                     │   │
+│  │  Background Jobs • CPU-Intensive Tasks       │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                    │
+├────────────────────────────────────────────────────┤
 │                ┌──────────────────────┐            │
 │                │  PostgreSQL + Redis  │            │
 │                └──────────────────────┘            │
@@ -89,6 +130,27 @@ npm start              # Start production server
             │ (Berachain Mainnet)  │
             └──────────────────────┘
 ```
+
+### 🏛️ Clean Architecture Layers
+
+| Layer | Responsibility | Technologies | Status |
+|-------|----------------|--------------|--------|
+| **🔄 Interfaces** | HTTP/WebSocket APIs, middleware | Express.js, Socket.IO | ✅ Production |
+| **⚙️ Core** | Business logic, domain models | TypeScript classes | ✅ Enterprise |
+| **🏗️ Infrastructure** | Technical capabilities, external APIs | Redis, PostgreSQL, Kodiak | ✅ Production |
+| **📚 Shared** | Common utilities, types, constants | Pure functions | ✅ Complete |
+| **⚡ Workers** | Background processing, CPU tasks | Worker threads | ✅ Operational |
+
+### 🎯 Core Business Domains
+
+| Domain | Purpose | Key Services | Status |
+|--------|---------|--------------|--------|
+| **🔐 Authentication** | User identity, JWT tokens, security | Auth service, Role management | ✅ Production |
+| **📊 Trading** | Bot management, position tracking | Engine manager, Bot status, Performance | ✅ Operational |
+| **💰 Wallet** | Balance management, qualifications | Balance service, Wallet validation | ✅ Production |
+| **👤 User** | Profile management, Kodiak integration | User profiles, Kodiak credentials | ✅ Production |
+| **📝 Logging** | Structured logging, context tracking | Context-aware logger, Winston | ✅ Enterprise |
+| **🚨 Notifications** | Error alerts, system notifications | Discord webhooks, Email (future) | ✅ Operational |
 
 ### Monorepo Packages
 
@@ -145,30 +207,59 @@ npm start              # Start production server
 
 ## Development
 
-### Project Structure
+### Enterprise Domain-Driven Project Structure
 
 ```
 trade-bot/
-├── frontend/              # React 19 UI application
-│   ├── README.md         # Frontend documentation
-│   ├── src/pages/        # Route components
-│   ├── src/components/   # Reusable UI components
-│   └── src/lib/api.ts    # API client
+├── frontend/                    # React 19 UI application
+│   ├── README.md               # Frontend documentation
+│   ├── src/pages/              # Route components
+│   ├── src/components/         # Reusable UI components
+│   └── src/lib/api.ts          # API client
 │
-├── backend/              # Express.js API server
-│   ├── README.md        # Backend documentation
-│   ├── src/routes/      # API endpoint handlers
-│   ├── src/services/    # Business logic
-│   └── src/database/    # Database pool & migrations
+├── backend/                     # Express.js API server (Domain-Driven)
+│   ├── README.md               # Backend architecture documentation
+│   └── src/
+│       ├── index.ts            # Application entry point
+│       ├── config/             # Configuration files
+│       ├── interfaces/         # 🔄 HTTP/WebSocket APIs & middleware
+│       │   ├── http/          # REST API routes (12+ files)
+│       │   ├── middleware/    # Request processing middleware
+│       │   └── websocket/     # Real-time WebSocket handlers
+│       ├── core/              # ⚙️ Business domain logic
+│       │   ├── auth/          # 🔐 Authentication & authorization
+│       │   ├── user/          # 👤 User management & profiles
+│       │   ├── trading/       # 📊 Bot trading & position tracking
+│       │   ├── wallet/        # 💰 Balance & wallet operations
+│       │   ├── logging/       # 📝 Structured logging & context
+│       │   └── notifications/ # 🚨 Error notifications & alerts
+│       ├── infrastructure/    # 🏗️ Technical capabilities
+│       │   ├── cache/         # Redis caching & invalidation
+│       │   ├── security/      # Encryption, rate limiting, keys
+│       │   ├── external/      # Kodiak API integration
+│       │   ├── messaging/     # WebSocket & market streaming
+│       │   ├── async/         # Background job management
+│       │   └── retry.service.ts # Cross-cutting retry logic
+│       ├── shared/            # 📚 Common utilities & types
+│       │   ├── types/         # TypeScript interfaces
+│       │   ├── utils/         # Pure utility functions
+│       │   ├── constants/     # Application constants
+│       │   └── validation/    # Schema validation
+│       ├── workers/           # ⚡ Background processing
+│       │   ├── password-worker.ts    # CPU-intensive hashing
+│       │   ├── bot-reconciliation.ts # Background reconciliation
+│       │   └── index.ts              # Worker exports
+│       └── database/          # PostgreSQL connection & migrations
 │
-├── engine/kodiak/       # Trading bot engine
-│   ├── README.md       # Engine documentation
-│   ├── src/strategies/ # Strategy implementations
-│   └── src/services/   # Orderly API client
+├── engine/kodiak/             # Independent trading bot engine
+│   ├── README.md             # Engine documentation
+│   ├── src/strategies/       # Strategy implementations
+│   └── src/services/         # Orderly API client
 │
-├── shared/              # Shared TypeScript types
-├── database/            # PostgreSQL migrations
-└── docs/               # Additional documentation
+├── shared/                    # Cross-package TypeScript types
+├── database/                  # PostgreSQL migrations & schema
+├── docs/                     # Architecture & deployment docs
+└── scripts/                  # Build & maintenance scripts
 ```
 
 ### Scripts

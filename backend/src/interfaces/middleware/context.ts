@@ -5,6 +5,7 @@ import {
   setRequestContext,
   generateCorrelationId,
   generateRequestId,
+  getCurrentContext,
 } from "../../shared/utils/context";
 
 export function contextMiddleware(
@@ -31,7 +32,7 @@ export function contextMiddleware(
   res.on("finish", () => {
     const duration = Date.now() - startTime;
     // Duration is tracked in context and can be logged by other middleware
-    const context = require("../utils/context").getCurrentContext();
+    const context = getCurrentContext();
     if (context) {
       context.duration = duration;
     }
