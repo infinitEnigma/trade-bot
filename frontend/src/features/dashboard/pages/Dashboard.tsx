@@ -3,8 +3,8 @@
 import React, { useState, Suspense } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "../contexts/AuthContext";
-import { api } from "../lib/api";
+import { useAuth } from "../../auth";
+import { tradingApi } from "../../../infrastructure/api";
 import {
   TrendingUp,
   TrendingDown,
@@ -20,27 +20,46 @@ import {
 } from "lucide-react";
 
 import { Link } from "react-router-dom";
-import { Card } from "../components/ui/Card";
-import { SectionHeader } from "../components/ui/SectionHeader";
+import { Card } from "../../../shared/components/ui/Card";
+import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
 
-import { UserProgressCard } from "../components/ui/UserProgressCard";
-import { DashboardCardSkeleton } from "../components/ui/EnhancedLoading";
-import { useBalance } from "../hooks/useBalance";
-import { Container, Grid, Section } from "../components/layout";
+import { UserProgressCard } from "../../../components/ui/UserProgressCard";
+import { LoadingSpinner } from "../../../shared/components/ui";
+import { useBalance } from "../../trading/balance/hooks";
+import { Container, Grid, Section } from "../../../shared/components/layout";
 
 // Lazy load heavy components
-const PriceChart = React.lazy(() => import("../components/PriceChart"));
+const PriceChart = React.lazy(() => import("../../../components/PriceChart"));
 const WalletConnectDialog = React.lazy(() =>
-  import("../components/WalletConnectDialog").then(module => ({
+  import("../../../components/WalletConnectDialog").then(module => ({
     default: module.WalletConnectDialog,
   }))
 );
-const EmptyState = React.lazy(
-  () => import("../components/dashboard/EmptyState")
+// Components removed during cleanup - using simple alternatives
+const StatsCard = ({ title, value, icon: Icon, format }: any) => (
+  <div className="glass-card p-6">
+    <div className="flex items-center justify-between mb-4">
+      <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+        <Icon className="w-5 h-5 text-primary" />
+      </div>
+    </div>
+    <h3 className="text-lg font-bold text-text mb-1">
+      {format === 'currency' ? `$${value.toLocaleString()}` : value}
+    </h3>
+    <p className="text-xs text-textMuted">{title}</p>
+  </div>
 );
-const StatsCard = React.lazy(() => import("../components/dashboard/StatsCard"));
-const PortfolioChart = React.lazy(
-  () => import("../components/dashboard/PortfolioChart")
+
+const PortfolioChart = ({ data }: any) => (
+  <div className="h-80 flex items-center justify-center">
+    <div className="text-center">
+      <Activity className="w-12 h-12 text-textMuted mx-auto mb-4" />
+      <p className="text-textMuted">Portfolio Chart</p>
+      <p className="text-xs text-textMuted mt-2">
+        {data?.length || 0} data points
+      </p>
+    </div>
+  </div>
 );
 
 // Calculate real portfolio performance from trades data
@@ -95,7 +114,7 @@ const Dashboard: React.FC = () => {
 
   const { data: positionsData, isLoading: positionsLoading } = useQuery({
     queryKey: ["kodiak-positions"],
-    queryFn: () => api.getKodiakPositions(),
+    queryFn: () => tradingApi.getKodiakPositions(),
     enabled: hasKodiakAccess,
     staleTime: 30000, // 30 seconds
     gcTime: 300000, // 5 minutes
@@ -107,7 +126,7 @@ const Dashboard: React.FC = () => {
 
   const { data: tradesData, isLoading: tradesLoading } = useQuery({
     queryKey: ["kodiak-trades"],
-    queryFn: () => api.getKodiakTrades(),
+    queryFn: () => tradingApi.getKodiakTrades(),
     enabled: hasKodiakAccess,
     staleTime: 30000,
     gcTime: 300000,
@@ -184,10 +203,11 @@ const Dashboard: React.FC = () => {
         {/* Portfolio Overview */}
         {realBalanceLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <DashboardCardSkeleton />
-            <DashboardCardSkeleton />
-            <DashboardCardSkeleton />
-            <DashboardCardSkeleton />
+            {[1, 2, 3, 4].map(i => (
+              <Card key={i} className="p-6 flex items-center justify-center">
+                <LoadingSpinner />
+              </Card>
+            ))}
           </div>
         ) : portfolio ? (
           <div className="mb-8">
@@ -221,7 +241,7 @@ const Dashboard: React.FC = () => {
                   }}
                   className="gpu-accelerated will-change-transform"
                 >
-                  <Suspense fallback={<DashboardCardSkeleton />}>
+                  <Suspense fallback={<div className="glass-card p-6 flex items-center justify-center"><LoadingSpinner /></div>}>
                     {index === 0 && (
                       <StatsCard
                         title="Wallet Balance"
@@ -430,23 +450,15 @@ const Dashboard: React.FC = () => {
                   ) : positions.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-8">
-                        <Suspense
-                          fallback={
-                            <div className="flex flex-col items-center justify-center py-4">
-                              <Loader2 className="w-6 h-6 animate-spin text-primary mb-2" />
-                              <p className="text-sm text-textMuted">
-                                Loading...
-                              </p>
-                            </div>
-                          }
-                        >
-                          <EmptyState
-                            icon={<Target className="w-6 h-6" />}
-                            title="No Open Positions"
-                            description="Start trading by creating a new strategy or opening a position manually."
-                            variant="info"
-                          />
-                        </Suspense>
+                        <div className="flex flex-col items-center justify-center py-8">
+                          <Target className="w-12 h-12 text-textMuted mb-4" />
+                          <h3 className="text-lg font-semibold text-text mb-2">
+                            No Open Positions
+                          </h3>
+                          <p className="text-textMuted text-center mb-4">
+                            Start trading by creating a new strategy or opening a position manually.
+                          </p>
+                        </div>
                         <div className="space-y-3">
                           <Link
                             to="/strategies"

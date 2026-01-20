@@ -1,9 +1,9 @@
 /** @format */
 
 import { useEffect, useState } from "react";
-import { api } from "../lib/api";
-import { CandleData } from "../components/CandlestickChart";
-import { chartDataCache } from "../utils/chart-cache";
+import { api } from "../../lib/api";
+import { CandleData } from "../../components/CandlestickChart";
+import { chartDataCache } from "../../infrastructure/cache/chart-cache";
 
 interface UseChartDataOptions {
   symbol: string;

@@ -1,14 +1,15 @@
 /** @format */
 
 import React, { useState } from "react";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth } from "../../auth";
 import { UserRole } from "@trade-bot/shared";
-import { AppHeader } from "../components/ui/AppHeader";
-import { Card } from "../components/ui/Card";
-import { SectionHeader } from "../components/ui/SectionHeader";
-import { TimeWindowSelector } from "../components/ui/TimeWindowSelector";
-import { AnalyticsLoading } from "../components/ui/AnalyticsLoading";
-import { useAnalyticsData, AnalyticsTimeWindow } from "../hooks/useAnalyticsData";
+import { AppHeader } from "../../../components/ui/AppHeader";
+import { Card } from "../../../shared/components/ui/Card";
+import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
+import { TimeWindowSelector } from "../../../shared/components/ui/TimeWindowSelector";
+import { AnalyticsLoading } from "../../../shared/components/feedback/AnalyticsLoading";
+import { useAnalytics } from "../hooks/useAnalytics";
+import { AnalyticsTimeWindow } from "../types/analytics.types";
 import {
   BarChart3,
   TrendingUp,
@@ -99,7 +100,7 @@ const Analytics: React.FC = () => {
   }
 
   // Load analytics data
-  const { data, loading, error, progress, timeWindows, refetch } = useAnalyticsData({
+  const { data, loading, error, progress, timeWindows, refetch } = useAnalytics({
     symbol: selectedSymbol,
     timeWindow: selectedTimeWindow,
   });

@@ -2,10 +2,10 @@
 
 import React, { Suspense } from "react";
 import { Strategy, StrategyType } from "@trade-bot/shared";
-import { Zap, Edit, Trash2, Activity } from "lucide-react";
+import { Zap, Edit, Trash2} from "lucide-react";
 import { Card } from "../../../../shared/components/ui";
 import { BotControls } from "../../bots/components/BotControls";
-import { BotInstance } from "../../types/trading.types";
+//import { BotInstance } from "../../types/trading.types";
 
 interface StrategyCardProps {
   strategy: Strategy;

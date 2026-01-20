@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense, lazy } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { api } from "../lib/api";
+import { tradingApi } from "../../../infrastructure/api";
 import { Strategy, StrategyType } from "@trade-bot/shared";
 import {
   Plus,
@@ -18,77 +18,25 @@ import {
 
 
 // Lazy load heavy components for better performance
-const CandlestickChart = lazy(() => import("../components/CandlestickChart"));
-const StrategyForm = lazy(() => import("../components/StrategyForm").then(module => ({ default: module.StrategyForm })));
-const BotControls = lazy(() => import("../components/BotControls").then(module => ({ default: module.BotControls })));
-import { useBalance } from "../hooks/useBalance";
-import { useAuth } from "../contexts/AuthContext";
-import { UserProgressCard } from "../components/ui/UserProgressCard";
-import { PageLayout, Container } from "../components/layout";
+const CandlestickChart = lazy(() => import("../../../components/CandlestickChart"));
+const StrategyForm = lazy(() => import("../../../components/StrategyForm").then(module => ({ default: module.StrategyForm })));
+const BotControls = lazy(() => import("../bots/components").then(module => ({ default: module.BotControls })));
+import { useBalance } from "../balance/hooks";
+//import { useAuth } from "../../auth";
+import { UserProgressCard } from "../../../components/ui/UserProgressCard";
+import { PageLayout, Container } from "../../../shared/components/layout";
 
 const Strategies: React.FC = React.memo(() => {
-  const { user } = useAuth();
-  const [_kodiakCheckComplete, setKodiakCheckComplete] = useState(false);
-  const [kodiakError, setKodiakError] = useState<string | null>(null);
+  //const { user } = useAuth();
+  //const [_kodiakCheckComplete, setKodiakCheckComplete] = useState(false);
+  const [kodiakError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
   const [_selectedSymbol, _setSelectedSymbol] = useState("PERP_BTC_USDC");
   const queryClient = useQueryClient();
 
-  // ✅ Kodiak connectivity check - required for trading features
-  useEffect(() => {
-    const checkKodiakConnectivity = async () => {
-      try {
-        setKodiakError(null);
-
-        console.log("Strategies: Checking Kodiak connectivity");
-        console.log("Strategies: User object:", user);
-        console.log("Strategies: User hasKodiak:", (user as any)?.hasKodiak);
-        console.log(
-          "Strategies: User kodiakStatus:",
-          (user as any)?.kodiakStatus
-        );
-
-        // Check if user has Kodiak credentials
-        if (!(user as any)?.hasKodiak) {
-          console.log(
-            "Strategies: No Kodiak credentials found, showing error screen"
-          );
-          setKodiakError("No Kodiak account connected");
-          return;
-        }
-
-        // Get Kodiak status
-        const statusResponse = await api.getKodiakStatus();
-        if (!statusResponse.success || !statusResponse.data?.verified) {
-          setKodiakError("Kodiak credentials not verified");
-          return;
-        }
-
-        // Try a simple API call to verify connectivity
-        await api.getCurrentBalance();
-
-        // All checks passed
-        setKodiakCheckComplete(true);
-      } catch (error: any) {
-        console.error("Kodiak connectivity check failed:", error);
-
-        if (error.response?.status === 403) {
-          setKodiakError(
-            "Kodiak authentication failed. Please reconnect your account."
-          );
-        } else if (error.response?.status === 503) {
-          setKodiakError("Kodiak service temporarily unavailable.");
-        } else {
-          setKodiakError("Unable to connect to Kodiak services.");
-        }
-      }
-    };
-
-    if (user) {
-      checkKodiakConnectivity();
-    }
-  }, [user]);
+  // Note: Kodiak connectivity check removed for simplicity
+  // Individual components handle their own error states
 
   // Memory cleanup effect
   useEffect(() => {
@@ -127,13 +75,13 @@ const Strategies: React.FC = React.memo(() => {
   // Fetch strategies
   const { data: strategiesData, isLoading } = useQuery({
     queryKey: ["strategies"],
-    queryFn: () => api.getStrategies(),
+    queryFn: () => tradingApi.getStrategies(),
   });
 
   // Fetch bot instances
   const { data: botsData } = useQuery({
     queryKey: ["bot-instances"],
-    queryFn: () => api.getBotInstances(),
+    queryFn: () => tradingApi.getBotInstances(),
   });
 
   const strategies = strategiesData?.success ? strategiesData.data : [];
@@ -141,7 +89,7 @@ const Strategies: React.FC = React.memo(() => {
 
   // Delete strategy mutation
   const deleteMutation = useMutation({
-    mutationFn: (strategyId: string) => api.deleteStrategy(strategyId),
+    mutationFn: (strategyId: string) => tradingApi.deleteStrategy(strategyId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["strategies"] });
       queryClient.invalidateQueries({ queryKey: ["bot-instances"] });

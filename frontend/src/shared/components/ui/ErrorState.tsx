@@ -14,7 +14,6 @@ import {
   Lock,
 } from "lucide-react";
 import { Card } from "./Card";
-import EmptyState from "../dashboard/EmptyState";
 
 export type ErrorType =
   | "network"
@@ -192,21 +191,57 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
 
   const finalActions = actions || getDefaultActions();
 
+  // Simple inline EmptyState replacement
+  const sizeClasses = {
+    sm: "p-4",
+    md: "p-6",
+    lg: "p-8",
+    xl: "p-12"
+  };
+
   return (
     <div className={`max-w-2xl mx-auto ${className}`}>
-      <EmptyState
-        size={size}
-        variant={type === "network" || type === "maintenance" ? "info" :
-                type === "auth" || type === "permission" || type === "rate-limit" ? "warning" :
-                type === "server" || type === "timeout" || type === "validation" || type === "unknown" ? "error" : "neutral"}
-        layout="card"
-        icon={config.icon}
-        title={finalConfig.title}
-        subtitle={finalConfig.message}
-        description={finalConfig.description}
-        actions={finalActions}
-        className={`${config.bgColor} ${config.borderColor} border-2`}
-      />
+      <Card className={`${config.bgColor} ${config.borderColor} border-2 ${sizeClasses[size]}`}>
+        <div className="text-center">
+          <div className="flex justify-center mb-4">
+            <div className={`w-16 h-16 rounded-full ${config.bgColor} flex items-center justify-center`}>
+              {config.icon}
+            </div>
+          </div>
+
+          <h2 className="text-xl font-semibold text-text mb-2">
+            {finalConfig.title}
+          </h2>
+
+          <p className="text-textMuted mb-4">
+            {finalConfig.message}
+          </p>
+
+          {finalConfig.description && (
+            <p className="text-sm text-textMuted mb-6">
+              {finalConfig.description}
+            </p>
+          )}
+
+          {finalActions.length > 0 && (
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              {finalActions.map((action, index) => (
+                <button
+                  key={index}
+                  onClick={action.onClick}
+                  disabled={action.disabled}
+                  className={`btn-${action.variant || 'primary'} flex items-center gap-2 ${
+                    action.disabled ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                >
+                  {action.icon}
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
 
       {/* Additional error reporting section */}
       {showReport && (

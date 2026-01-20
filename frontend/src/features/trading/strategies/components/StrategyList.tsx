@@ -3,10 +3,10 @@
 import React from "react";
 import { Strategy } from "@trade-bot/shared";
 import { BarChart3 } from "lucide-react";
-import { Link } from "react-router-dom";
+//import { Link } from "react-router-dom";
 import { Card } from "../../../../shared/components/ui";
 import { StrategyCard } from "./StrategyCard";
-import { BotInstance, StrategyFormData } from "../../types/trading.types";
+//import { BotInstance, StrategyFormData } from "../../types/trading.types";
 
 interface StrategyListProps {
   strategies: Strategy[];
@@ -34,7 +34,7 @@ export const StrategyList: React.FC<StrategyListProps> = ({
   onBotStatusChange,
   isLoading,
   formatCurrency,
-  validateStrategyConfig,
+  //validateStrategyConfig,
   formatStrategyType,
   getStrategyTypeColor,
 }) => {

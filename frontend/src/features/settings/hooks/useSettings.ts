@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth";
 import { settingsService } from "../services/settingsService";
-import { KodiakCredentials, KodiakStatus } from "../types/settings.types";
+import { KodiakCredentials } from "../types/settings.types";
 
 /**
  * useSettings hook - manages Kodiak account settings and connection

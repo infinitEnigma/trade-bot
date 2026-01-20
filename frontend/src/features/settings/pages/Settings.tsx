@@ -1,9 +1,9 @@
 /** @format */
 
 import React, { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "../lib/api";
-import { useAuth } from "../contexts/AuthContext";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useAuth } from "../../auth";
+import { settingsService } from "../services/settingsService";
 import {
   Key,
   Shield,
@@ -14,14 +14,15 @@ import {
   EyeOff,
   Loader2,
 } from "lucide-react";
-import { Card } from "../components/ui/Card";
-import { SectionHeader } from "../components/ui/SectionHeader";
-import { MetricIcon } from "../components/ui/MetricIcon";
-import { Container, Grid } from "../components/layout";
+import { Card } from "../../../shared/components/ui";
+import { SectionHeader } from "../../../shared/components/ui";
+import { MetricIcon } from "../../../shared/components/ui";
+import { Container, Grid } from "../../../shared/components/layout";
+import { SmartToast } from "../../../lib/toast";
 
 const Settings: React.FC = () => {
   const { user, refreshUser } = useAuth();
-  const queryClient = useQueryClient();
+  //const queryClient = useQueryClient();
   const [showSecrets, setShowSecrets] = useState(false);
   const [formData, setFormData] = useState({
     accountId: "",
@@ -30,58 +31,69 @@ const Settings: React.FC = () => {
   });
 
   // Fetch Kodiak status
-  const { data: kodiakStatus, isLoading: statusLoading } = useQuery({
+  const { data: kodiakStatus, isLoading: statusLoading, refetch: refetchStatus } = useQuery({
     queryKey: ["kodiak-status"],
-    queryFn: () => api.getKodiakStatus(),
+    queryFn: () => settingsService.getKodiakStatus(),
+    staleTime: 30000, // 30 seconds
   });
 
   // Connect Kodiak mutation
   const connectMutation = useMutation({
-    mutationFn: (data: typeof formData) => api.connectKodiak(data),
-    onSuccess: async response => {
-      queryClient.invalidateQueries({ queryKey: ["kodiak-status"] });
-      queryClient.invalidateQueries({ queryKey: ["profile"] });
-      // Refresh user data to update user level
-      await refreshUser();
-      // Only clear form if verification was successful
-      if (response.data?.verified) {
+    mutationFn: (credentials: typeof formData) => settingsService.connectKodiak(credentials),
+    onSuccess: async (response) => {
+      if (response.data?.success) {
+        // Refresh status and user data
+        await refetchStatus();
+        await refreshUser();
+
+        // Clear form on success
         setFormData({ accountId: "", apiKey: "", secretKey: "" });
+
+        SmartToast.success("Kodiak account connected successfully! Your user level has been upgraded.");
       }
     },
     onError: (error: any) => {
-      // If Kodiak API returns 401, the credentials are invalid
-      if (error?.response?.status === 401) {
-        console.log("Kodiak credentials invalid - user needs to reconnect");
-      }
+      SmartToast.error(error?.response?.data?.error || "Failed to connect Kodiak credentials");
     },
   });
 
   // Disconnect Kodiak mutation
   const disconnectMutation = useMutation({
-    mutationFn: () => api.disconnectKodiak(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["kodiak-status"] });
-      queryClient.invalidateQueries({ queryKey: ["profile"] });
+    mutationFn: () => settingsService.disconnectKodiak(),
+    onSuccess: async (response) => {
+      if (response.data?.success) {
+        // Refresh status and user data
+        await refetchStatus();
+        await refreshUser();
+
+        SmartToast.success("Kodiak account disconnected successfully.");
+      }
+    },
+    onError: (error: any) => {
+      SmartToast.error(error?.response?.data?.error || "Failed to disconnect Kodiak account");
     },
   });
 
+  const isConnected = kodiakStatus?.connected || false;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.accountId || !formData.apiKey || !formData.secretKey) {
+
+    // Validate credentials format
+    const validation = settingsService.validateCredentials(formData);
+    if (!validation.isValid) {
+      SmartToast.error(validation.errors[0]);
       return;
     }
+
     connectMutation.mutate(formData);
   };
 
   const handleDisconnect = () => {
-    if (
-      confirm("Are you sure you want to disconnect your Kodiak credentials?")
-    ) {
+    if (confirm("Are you sure you want to disconnect your Kodiak credentials? This will downgrade your user level.")) {
       disconnectMutation.mutate();
     }
   };
-
-  const isConnected = kodiakStatus?.data?.connected;
 
   return (
     <Container
@@ -162,14 +174,16 @@ const Settings: React.FC = () => {
                       Kodiak Account Connected
                     </p>
                     <p className="text-sm text-textMuted">
-                      Account ID: {kodiakStatus?.data?.accountId}
+                      Account ID: {kodiakStatus?.accountId}
                     </p>
-                    {kodiakStatus?.data?.connectedAt && (
+                    {kodiakStatus?.connectedAt && (
                       <p className="text-sm text-textMuted">
-                        Connected:{" "}
-                        {new Date(
-                          kodiakStatus.data.connectedAt
-                        ).toLocaleDateString()}
+                        Connected: {new Date(kodiakStatus.connectedAt).toLocaleDateString()}
+                      </p>
+                    )}
+                    {kodiakStatus?.verified && (
+                      <p className="text-sm text-green-400">
+                        ✓ Credentials verified and active
                       </p>
                     )}
                   </div>
@@ -190,12 +204,12 @@ const Settings: React.FC = () => {
                 <div className="flex items-center gap-3 p-4 rounded-lg bg-success/10 border border-success/20">
                   <CheckCircle className="w-4 h-4 text-success" />
                   <p className="text-success font-medium">
-                    Kodiak Credentials Provided
+                    Kodiak Credentials Verified
                   </p>
                 </div>
               </div>
             ) : (
-              /* Not Connected State - Show Status and Form */
+              /* Not Connected State - Show Form */
               <div className="space-y-4">
                 <div className="flex items-center gap-3 p-4 rounded-lg bg-warning/10 border border-warning/20">
                   <AlertCircle className="w-4 h-4 text-warning" />
@@ -295,8 +309,8 @@ const Settings: React.FC = () => {
                     <div className="text-sm">
                       <p className="text-info font-medium">Security Notice</p>
                       <p className="text-textMuted mt-1">
-                        Your API credentials are encrypted and stored securely.
-                        We never display your secret key after connection.
+                        Your API credentials are encrypted using AES-256 encryption before storage.
+                        Credentials are only decrypted in memory when needed for API calls.
                       </p>
                     </div>
                   </div>
@@ -305,8 +319,7 @@ const Settings: React.FC = () => {
                     <div className="flex items-center gap-2 p-4 rounded-lg bg-danger/10 border border-danger/20">
                       <XCircle className="w-4 h-4 text-danger" />
                       <p className="text-danger text-sm">
-                        Failed to connect Kodiak credentials. Please check your
-                        credentials and try again.
+                        Failed to connect Kodiak credentials. Please check your credentials and try again.
                       </p>
                     </div>
                   )}

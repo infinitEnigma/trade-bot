@@ -14,9 +14,9 @@ interface PortfolioChartProps {
  * TODO: Implement full portfolio chart functionality
  */
 const PortfolioChart: React.FC<PortfolioChartProps> = ({
-  data,
+  //data,
   selectedSymbol = "PERP_BTC_USDC",
-  onSymbolChange
+  //onSymbolChange
 }) => {
   return (
     <Card className="h-80 p-6">

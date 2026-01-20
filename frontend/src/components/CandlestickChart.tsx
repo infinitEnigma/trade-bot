@@ -10,7 +10,7 @@ import {
   CandlestickSeries,
   HistogramSeries,
 } from "lightweight-charts";
-import { useChartData } from "../hooks/useChartData";
+import { useChartData } from "../shared/hooks/useChartData";
 import { useVisibility } from "../shared/hooks/useVisibility";
 
 export interface CandleData {

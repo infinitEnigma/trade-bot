@@ -1,7 +1,7 @@
 /** @format */
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Strategy } from "@trade-bot/shared";
+//import { Strategy } from "@trade-bot/shared";
 import { strategyService } from "../services/strategyService";
 import { BotInstance, StrategyFormData } from "../../types/trading.types";
 import { toast } from "sonner";

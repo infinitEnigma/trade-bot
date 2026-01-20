@@ -23,13 +23,13 @@ import { LoadingSpinner } from "./shared/components/ui";
 import { AppHeader } from "./components/ui/AppHeader";
 
 // Lazy load pages
-const Login = React.lazy(() => import("./pages/Login"));
-const Register = React.lazy(() => import("./pages/Register"));
-const Dashboard = React.lazy(() => import("./pages/Dashboard"));
-const Strategies = React.lazy(() => import("./pages/Strategies"));
-const Settings = React.lazy(() => import("./pages/Settings"));
-const Analytics = React.lazy(() => import("./pages/Analytics"));
-const Profile = React.lazy(() => import("./pages/Profile"));
+const Login = React.lazy(() => import("./features/auth/pages/Login"));
+const Register = React.lazy(() => import("./features/auth/pages/Register"));
+const Dashboard = React.lazy(() => import("./features/dashboard/pages/Dashboard"));
+const Strategies = React.lazy(() => import("./features/trading/pages/Strategies"));
+const Settings = React.lazy(() => import("./features/settings/pages/Settings"));
+const Analytics = React.lazy(() => import("./features/analytics/pages/Analytics"));
+const Profile = React.lazy(() => import("./features/auth/pages/Profile"));
 
 // Protected Route Component
 const ProtectedRoute = ({

@@ -1,6 +1,6 @@
 /** @format */
 
-import { User } from "@trade-bot/shared";
+//import { User } from "@trade-bot/shared";
 
 export interface BalanceData {
     walletBalance: number;

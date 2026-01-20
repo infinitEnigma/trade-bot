@@ -17,7 +17,7 @@ interface QuickActionsProps {
  */
 export const QuickActions: React.FC<QuickActionsProps> = ({
   hasKodiakAccess,
-  userLevel
+  //userLevel
 }) => {
   return (
     <Card>

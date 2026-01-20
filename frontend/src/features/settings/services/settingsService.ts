@@ -1,6 +1,6 @@
 /** @format */
 
-import { api } from "../../../lib/api";
+import { kodiakApi } from "../../../infrastructure/api";
 import { KodiakCredentials, KodiakStatus } from "../types/settings.types";
 
 /**
@@ -21,10 +21,11 @@ export class SettingsService {
 
     /**
      * Connect Kodiak credentials
+     * Sends encrypted credentials to backend for validation and storage
      */
     async connectKodiak(credentials: KodiakCredentials): Promise<any> {
         try {
-            const response = await api.connectKodiak(credentials);
+            const response = await kodiakApi.connectKodiak(credentials);
             return response;
         } catch (error) {
             console.error("Settings service connectKodiak error:", error);
@@ -34,10 +35,11 @@ export class SettingsService {
 
     /**
      * Disconnect Kodiak credentials
+     * Backend handles secure credential removal and user level updates
      */
     async disconnectKodiak(): Promise<any> {
         try {
-            const response = await api.disconnectKodiak();
+            const response = await kodiakApi.disconnectKodiak();
             return response;
         } catch (error) {
             console.error("Settings service disconnectKodiak error:", error);
@@ -47,11 +49,12 @@ export class SettingsService {
 
     /**
      * Get Kodiak status
+     * Backend returns encrypted status information
      */
     async getKodiakStatus(): Promise<KodiakStatus> {
         try {
-            const response = await api.getKodiakStatus();
-            if (response.success) {
+            const response = await kodiakApi.getKodiakStatus();
+            if (response.data?.success) {
                 return {
                     connected: response.data?.connected || false,
                     accountId: response.data?.accountId,

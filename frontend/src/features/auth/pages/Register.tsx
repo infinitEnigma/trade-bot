@@ -1,33 +1,36 @@
 /** @format */
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
-import { PageLayout } from "../components/layout";
-import { ValidatedInput } from "../components/ui/ValidatedInput";
-import { validateEmail } from "../lib/validation";
+import { useAuth } from "../../auth";
+import { PageLayout } from "../../../shared/components/layout";
+import { ValidatedInput } from "../../../shared/components/forms";
+import { validateEmail, validatePasswordRequirements, validatePasswordConfirmation } from "../../../shared/validation";
 
-const Login: React.FC = () => {
+const Register: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login, isAuthenticated } = useAuth();
+  const { register } = useAuth();
   const navigate = useNavigate();
 
-  // Redirect when authentication succeeds
-  useEffect(() => {
-    if (isAuthenticated) {
-      navigate("/dashboard");
-    }
-  }, [isAuthenticated, navigate]);
+  const emailValidation = validateEmail(email);
+  const passwordValidation = validatePasswordRequirements(password);
+  const confirmValidation = validatePasswordConfirmation(password, confirmPassword);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!emailValidation.isValid || !passwordValidation.isValid || !confirmValidation.isValid) {
+      return; // Validation errors will be shown
+    }
+
     setLoading(true);
 
     try {
-      await login(email, password);
-      // AuthContext will handle redirect when isAuthenticated becomes true
+      await register({ email, password });
+      navigate("/dashboard");
     } catch (error) {
       // Error is already handled in the context
     } finally {
@@ -35,15 +38,15 @@ const Login: React.FC = () => {
     }
   };
 
-  const emailValidation = validateEmail(email);
-
   return (
     <PageLayout className="flex items-center justify-center px-4">
       <div className="w-full max-w-md mx-auto">
         <div className="glass-card p-8 text-center">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-text mb-2">Welcome Back</h1>
-            <p className="text-textMuted">Sign in to your account</p>
+            <h1 className="text-3xl font-bold text-text mb-2">
+              Create Account
+            </h1>
+            <p className="text-textMuted">Join the Trade Bot platform</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -67,9 +70,23 @@ const Login: React.FC = () => {
               value={password}
               onChange={setPassword}
               validation={{
-                isValid: true,
-                message: "",
+                isValid: passwordValidation.isValid,
+                message: passwordValidation.message,
                 touched: password.length > 0
+              }}
+              placeholder="••••••••"
+              required
+            />
+
+            <ValidatedInput
+              label="Confirm Password"
+              type="password"
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              validation={{
+                isValid: confirmValidation.isValid,
+                message: confirmValidation.message,
+                touched: confirmPassword.length > 0
               }}
               placeholder="••••••••"
               required
@@ -77,21 +94,21 @@ const Login: React.FC = () => {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !emailValidation.isValid || !passwordValidation.isValid || !confirmValidation.isValid}
               className="btn-primary w-full"
             >
-              {loading ? "Signing in..." : "Sign In"}
+              {loading ? "Creating account..." : "Create Account"}
             </button>
           </form>
 
           <div className="mt-6 text-center">
             <p className="text-textMuted">
-              Don't have an account?{" "}
+              Already have an account?{" "}
               <Link
-                to="/register"
+                to="/login"
                 className="text-primary hover:text-primaryHover"
               >
-                Create one
+                Sign in
               </Link>
             </p>
           </div>
@@ -101,4 +118,4 @@ const Login: React.FC = () => {
   );
 };
 
-export default Login;
+export default Register;
