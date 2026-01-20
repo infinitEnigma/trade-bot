@@ -5,10 +5,10 @@
  * Provides centralized profile management with proper validation and auditing.
  */
 
-import { query } from "../database/pool";
-import { authService } from "./auth";
-import { redisService } from "./redis";
-import logger from "./logger";
+import { query } from "../../database/pool";
+import { authService } from "../auth";
+import { redisService } from "../../infrastructure";
+import { logger } from "../../core/logging";
 
 export interface ProfileUpdateData {
     email?: string;
@@ -36,6 +36,14 @@ export interface UserProfile {
         accountId: string;
         verified: boolean;
     } | null;
+}
+
+export interface UserSettings {
+    theme: 'light' | 'dark';
+    language: string;
+    timezone: string;
+    notifications: boolean;
+    twoFactorEnabled: boolean;
 }
 
 /**

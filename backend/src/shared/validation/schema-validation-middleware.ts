@@ -22,7 +22,7 @@ import { createErrorResponse, ValidationError } from "../../shared/types/errors"
 import { getCorrelationId } from "../../shared/utils/context";
 import { DatabaseSchemaParser, DatabaseSchema } from "./database-schema-parser";
 import { SchemaGenerator } from "./schema-generator";
-import logger from "../../services/logger";
+import logger from "../../core/logging/logger.service";
 
 export interface SchemaValidationOptions {
     // Table to validate against

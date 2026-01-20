@@ -6,10 +6,10 @@
  * to the Kodiak exchange platform.
  */
 
-import { query } from "../database/pool";
-import { authService } from "./auth";
-import { kodiakIntegrationService } from "./kodiak-integration";
-import logger from "./logger";
+import { query } from "../../database/pool";
+import { authService } from "../../core/auth";
+import { kodiakIntegrationService } from "./kodiak-integration.service";
+import { logger } from "../../core/logging";
 
 export interface KodiakConnectionData {
     accountId: string;
@@ -224,7 +224,7 @@ export class KodiakConnectionService {
      * Store encrypted credentials in database
      */
     private async storeCredentials(userId: string, data: KodiakConnectionData): Promise<void> {
-        const { encryptionService } = await import("./encryption.js");
+        const { encryptionService } = await import("../security/encryption.service.js");
 
         const encryptedApiKey = encryptionService.encryptApiKey(data.apiKey);
         const encryptedSecretKey = encryptionService.encryptSecretKey(data.secretKey);

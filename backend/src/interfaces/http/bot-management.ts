@@ -86,7 +86,7 @@ import { engineManager } from "../../core/trading/engine-manager.service";
 import { botStatusService } from "../../core/trading/bot-status.service";
 import { botPerformanceService } from "../../core/trading/bot-performance.service";
 import { UserRole } from "@trade-bot/shared";
-import logger from "../../services/logger";
+import logger from "../../core/logging/logger.service";
 
 const router = Router();
 
@@ -350,7 +350,7 @@ router.post(
 
             // ✅ POSITION VALIDATION: Validate position size before starting bot
             const { validateUserPosition } =
-                await import("../services/position-validator.js");
+                await import("../../core/trading/position-validator.service.js");
             const validation = await validateUserPosition(
                 req.user!.userId,
                 parseFloat(notionalAmount),
@@ -411,7 +411,7 @@ router.post(
                 const sessionKey = randomBytes(32).toString('hex');
 
                 // Get encryption service instance
-                const { encryptionService } = await import("../services/encryption.js");
+                const { encryptionService } = await import("../../infrastructure/security/encryption.service.js");
                 const encryptedSessionKey = await encryptionService.encryptWithVersion(sessionKey);
 
                 // Create decrypted credentials object (temporary, will be encrypted immediately)

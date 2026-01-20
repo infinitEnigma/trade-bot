@@ -1,8 +1,8 @@
 /** @format */
 
 import { UserRole } from "@trade-bot/shared";
-import { query } from "../database/pool";
-import logger from "./logger";
+import { query } from "../../database/pool";
+import { logger } from "../../core/logging";
 
 // Qualification criteria configuration
 const ALPHA_QUALIFICATION_CONFIG = {
@@ -35,6 +35,19 @@ export interface QualificationResult {
         tokens: boolean[];
     };
     reasons: string[];
+}
+
+export type QualificationStatus = 'pending' | 'qualified' | 'disqualified' | 'expired';
+
+export interface WalletRequirements {
+    chainId: number;
+    requirements: Array<{
+        type: 'nft' | 'token';
+        contractAddress: string;
+        name: string;
+        minAmount?: bigint;
+    }>;
+    logic: 'AND' | 'OR';
 }
 
 export class WalletQualificationService {

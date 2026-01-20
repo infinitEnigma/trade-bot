@@ -1,10 +1,10 @@
 /** @format */
 
 import { Request, Response, NextFunction } from "express";
-import { redisService } from "../infrastructure/cache/redis";
-import { AuthenticatedRequest } from "../interfaces/middleware";
+import { redisService } from "../../infrastructure";
+import { AuthenticatedRequest } from "../../interfaces/middleware";
 import { UserLevel } from "@trade-bot/shared";
-import logger from "./logger";
+import { logger } from "../../core/logging";
 
 // In-memory rate limiting fallback
 interface InMemoryRateLimit {

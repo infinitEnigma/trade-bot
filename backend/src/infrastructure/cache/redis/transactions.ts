@@ -16,7 +16,7 @@
  */
 
 import { RedisConnectionManager } from "./connection-manager";
-import logger from "../../../services/logger";
+import { logger } from "../../../core/logging";
 
 export interface TransactionOptions {
     context?: string;        // Context for logging and analytics

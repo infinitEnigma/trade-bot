@@ -44,4 +44,4 @@ export { RedisMetrics } from './metrics';
 export type { CacheStats, TransactionStats, ConflictStats } from './metrics';
 
 // Legacy export for backward compatibility
-export { redisService } from '../redis';
+export { redisService } from '../redis.service';

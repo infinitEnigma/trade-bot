@@ -1,6 +1,6 @@
 /** @format */
 
-import logger from "../../services/logger";
+import logger from "../../../core/logging/logger.service";
 import {
   SubscriptionStats,
   SubscriptionConfig,

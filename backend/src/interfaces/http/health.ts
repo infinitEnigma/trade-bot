@@ -4,7 +4,7 @@ import { Router, Request, Response } from "express";
 import { getPool, getPoolMetrics } from "../../database/pool";
 import { redisService } from "../../infrastructure/cache/redis.service";
 import { keyManagementService } from "../../infrastructure/security/key-management.service";
-import logger from "../../services/logger";
+import logger from "../../core/logging/logger.service";
 
 const router = Router();
 

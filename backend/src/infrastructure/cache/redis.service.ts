@@ -23,7 +23,22 @@
  */
 
 import { createClient, RedisClientType } from "redis";
-import logger from "./logger";
+import logger from "../../core/logging/logger.service";
+
+// Export cache types
+export interface CacheConfig {
+  ttl: number;
+  maxSize?: number;
+  strategy?: 'lru' | 'lfu' | 'ttl';
+  compression?: boolean;
+}
+
+export interface CacheEntry<T = any> {
+  key: string;
+  value: T;
+  expiresAt?: number;
+  metadata?: Record<string, any>;
+}
 
 // Import components directly to avoid circular dependencies
 import { RedisConnectionManager } from "./redis/connection-manager";

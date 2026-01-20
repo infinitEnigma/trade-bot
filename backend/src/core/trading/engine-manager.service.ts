@@ -23,7 +23,7 @@
  */
 
 import axios from "axios";
-import logger from "./logger";
+import { logger } from "../../core/logging";
 import {
   ProcessSpawner,
   HealthMonitor,
@@ -117,7 +117,7 @@ export class EngineManager {
    */
   async stopEngineIfNoActiveBots(): Promise<void> {
     try {
-      const { query } = await import("../database/pool.js");
+      const { query } = await import("../../database/pool.js");
       const result = await query(
         "SELECT COUNT(*) FROM bot_instances WHERE status = 'RUNNING'",
         []

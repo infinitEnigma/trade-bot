@@ -18,7 +18,7 @@
 
 import { RedisConnectionManager } from "./connection-manager";
 import { RedisTransactions, TransactionOptions } from "./transactions";
-import logger from "../logger";
+import { logger } from "../../../core/logging";
 
 export interface AtomicResult<T = any> {
     success: boolean;

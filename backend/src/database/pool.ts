@@ -1,7 +1,7 @@
 /** @format */
 
 import { Pool, PoolClient } from "pg";
-import logger from "../services/logger";
+import { logger } from "../core/logging";
 
 // ✅ Singleton pattern - only one pool instance ever created
 let pool: Pool | null = null;

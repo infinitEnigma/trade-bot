@@ -53,7 +53,7 @@ import { Server } from "socket.io";
 // ===========================================
 
 // Import logger first before any other code
-import logger from "./services/logger";
+import { logger } from "./core/logging";
 
 // Application start time for uptime tracking
 const START_TIME = Date.now();
@@ -137,15 +137,15 @@ import { contextMiddleware } from "./interfaces/middleware/context";
 import { csrfMiddleware, csrfTokenMiddleware, CSRFRequest } from "./interfaces/middleware/csrf";
 
 // 📡 Real-time Services
-import { marketStreamService } from "./services/market-stream/index";
-import { authService } from "./services/auth";
-import { botStatusService } from "./services/bot-status";
+import { marketStreamService } from "./infrastructure";
+import { authService } from "./core/auth";
+import { botStatusService } from "./core/trading";
 
 // 🛡️ Rate Limiting
-import { RateLimiters } from "./services/rate-limiter";
+import { RateLimiters } from "./infrastructure";
 
 // 🔄 Infrastructure Services (moved to infrastructure/)
-import { redisService } from "./infrastructure/cache/redis.service";
+import { redisService } from "./infrastructure";
 
 // ===========================================
 // 🗄️ 3. DATABASE & REDIS INITIALIZATION
@@ -467,7 +467,7 @@ app.use(
 // ===========================================
 
 // Import context utilities for WebSocket context propagation
-import { setRequestContext, generateCorrelationId, generateRequestId, runInContext } from "./utils/context";
+import { setRequestContext, generateCorrelationId, generateRequestId, runInContext } from "./shared/utils/context";
 
 // ✅ WebSocket Context & Authentication Middleware
 io.use(async (socket, next) => {

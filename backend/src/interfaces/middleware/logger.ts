@@ -1,7 +1,7 @@
 /** @format */
 
 import { Request, Response, NextFunction } from "express";
-import logger from "../../services/logger";
+import { logger } from "../../core/logging";
 import {
   generateCorrelationId,
   runWithContext,

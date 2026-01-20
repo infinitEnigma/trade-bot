@@ -21,7 +21,7 @@
  * @format
  */
 
-import logger from "../logger";
+import { logger } from "../../logging";
 
 export enum RestartPolicy {
     IMMEDIATE = 'immediate',         // Restart immediately on failure

@@ -18,7 +18,7 @@
 import { RedisConnectionManager } from "./connection-manager";
 import { RedisTransactions, TransactionOptions } from "./transactions";
 import { RedisResult } from "./operations";
-import logger from "../logger";
+import { logger } from "../../../core/logging";
 
 export interface CacheResult<T = any> {
     success: boolean;

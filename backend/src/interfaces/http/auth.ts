@@ -7,11 +7,11 @@ import { walletQualificationService } from "../../core/wallet/wallet-qualificati
 import { roleManagementService } from "../../core/auth/role-management.service";
 import { authMiddleware, AuthenticatedRequest } from "../../interfaces/middleware/auth";
 import { UserRole, UserLevel } from "@trade-bot/shared";
-import { RateLimiters } from "../../services/rate-limiter";
+import { RateLimiters } from "../../infrastructure";
 import { createErrorResponse, ValidationError } from "../../shared/types/errors";
 import { getCorrelationId } from "../../shared/utils/context";
 import { validators } from "../../interfaces/middleware/validation";
-import logger from "../../services/logger";
+import logger from "../../core/logging/logger.service";
 
 const router = Router();
 

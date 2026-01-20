@@ -24,7 +24,7 @@
  * @format
  */
 
-import logger from "../logger";
+import logger from "../../logging/logger.service";
 
 export enum CircuitState {
     CLOSED = 'closed',     // Normal operation

@@ -5,10 +5,10 @@
  * Provides data-at-rest encryption, audit logging, and security monitoring.
  */
 
-import { query } from "../database/pool";
-import { encryptionService } from "./encryption";
-import { redisService } from "./redis";
-import logger from "./logger";
+import { query } from "../../database/pool";
+import { encryptionService } from "../security";
+import { redisService } from "../cache";
+import { logger } from "../../core/logging";
 
 export interface SecurityAssessment {
     databaseEncryption: {

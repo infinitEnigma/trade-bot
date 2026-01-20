@@ -18,7 +18,7 @@
 import { spawn, ChildProcess } from "child_process";
 import path from "path";
 import axios from "axios";
-import logger from "../logger";
+import { logger } from "../../logging";
 
 export interface ProcessConfig {
     command: string;

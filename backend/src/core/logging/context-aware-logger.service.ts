@@ -16,13 +16,14 @@
  * @format
  */
 
-import logger from "./logger";
+import { logger } from "../logging";
 import {
     getCorrelationId,
     getCurrentUserId,
     getCurrentContext,
     createChildContext,
-} from "../shared/utils/context";
+    runInContext,
+} from "../../shared/utils/context";
 
 export interface LogContext {
     correlationId?: string;

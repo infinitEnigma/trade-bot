@@ -1,8 +1,8 @@
 /** @format */
 
 import WebSocket from "ws";
-import logger from "../../services/logger";
-import { query } from "../../database/pool";
+import logger from "../../../core/logging/logger.service";
+import { query } from "../../../database/pool";
 
 /**
  * Handles WebSocket authentication with external services
@@ -26,7 +26,7 @@ export class AuthManager {
       }
 
       const { encryptionService } =
-        await import("../../services/encryption.js");
+        await import("../../security/encryption.service.js");
       const apiKey = encryptionService.decryptApiKey(
         credsResult.rows[0].api_key_encrypted
       );

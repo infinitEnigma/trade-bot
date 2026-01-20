@@ -2,8 +2,8 @@
 
 import WebSocket from "ws";
 import { Server } from "socket.io";
-import logger from "../../services/logger";
-import { query } from "../../database/pool";
+import logger from "../../../core/logging/logger.service";
+import { query } from "../../../database/pool";
 
 import { TickData, KlineData, MarketStreamStatus } from "./types";
 import { WebSocketManager } from "./websocket-manager";

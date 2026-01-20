@@ -52,7 +52,7 @@ import { UserLevel } from "@trade-bot/shared";
 import { query } from "../../database/pool";
 import { redisService } from "../../infrastructure/cache/redis.service";
 import { hashPassword, comparePassword } from "../../workers/password-worker";
-import logger from "../../services/logger";
+import { logger } from "../logging";
 
 const JWT_SECRET = (() => {
   const secret = process.env.JWT_SECRET;

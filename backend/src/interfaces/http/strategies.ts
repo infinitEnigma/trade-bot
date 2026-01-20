@@ -7,17 +7,9 @@ import { authService, TokenPayload } from "../../core/auth/auth.service";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { Pool } from "pg";
 import { query } from "../../database/pool"; // ✅ Import from centralized module
-import logger from "../../services/logger";
+import logger from "../../core/logging/logger.service";
 
 const router = Router();
-
-/*const pool = new Pool({
-  host: process.env.DB_HOST || "localhost",
-  port: parseInt(process.env.DB_PORT || "5432"),
-  database: process.env.DB_NAME || "trade_bot",
-  user: process.env.DB_USER || "postgres",
-  password: process.env.DB_PASSWORD || "postgres",
-});*/
 
 const strategySchema = Joi.object({
   name: Joi.string().min(1).max(100).required(),

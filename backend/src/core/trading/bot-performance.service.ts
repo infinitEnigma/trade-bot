@@ -9,7 +9,7 @@ import { query } from "../../database/pool";
 import { redisService } from "../../infrastructure/cache/redis.service";
 import { CACHE_EVENTS, CacheEvent, CacheInvalidationEvent, CacheRefreshEvent, CacheClearEvent, CACHE_KEYS } from "../../config/cache.config";
 import { cacheInvalidationService } from "../../infrastructure/cache/cache-invalidation.service";
-import logger from "../../services/logger";
+import { logger } from "../../core/logging";
 
 export interface BotPerformance {
     bot: {

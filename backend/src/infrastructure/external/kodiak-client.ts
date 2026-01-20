@@ -5,7 +5,7 @@
  * request/response processing, and authentication. No business logic here.
  */
 
-import logger from "../services/logger";
+import logger from "../../core/logging/logger.service";
 
 export interface KodiakCredentials {
     accountId: string;

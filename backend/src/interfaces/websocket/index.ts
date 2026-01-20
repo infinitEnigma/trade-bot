@@ -16,10 +16,37 @@
  * @format
  */
 
-// Export WebSocket event handlers (to be implemented)
-export { marketDataHandler } from './market-data';
-export { tradingHandler } from './trading';
-export { notificationHandler } from './notifications';
+// Placeholder WebSocket handlers (to be implemented)
+// These are exported to satisfy TypeScript compilation
+export const marketDataHandler = {
+    handleConnection: (socket: any) => {
+        // Placeholder implementation
+        console.log('Market data WebSocket connection handled');
+    },
+    handleSubscription: (socket: any, data: any) => {
+        // Placeholder implementation
+        console.log('Market data subscription handled', data);
+    }
+};
 
-// For now, WebSocket handling is done in index.ts
-// Future: Extract to dedicated WebSocket interface handlers
+export const tradingHandler = {
+    handleConnection: (socket: any) => {
+        // Placeholder implementation
+        console.log('Trading WebSocket connection handled');
+    },
+    handleOrderUpdate: (socket: any, data: any) => {
+        // Placeholder implementation
+        console.log('Trading order update handled', data);
+    }
+};
+
+export const notificationHandler = {
+    handleConnection: (socket: any) => {
+        // Placeholder implementation
+        console.log('Notification WebSocket connection handled');
+    },
+    handleNotification: (socket: any, data: any) => {
+        // Placeholder implementation
+        console.log('Notification handled', data);
+    }
+};

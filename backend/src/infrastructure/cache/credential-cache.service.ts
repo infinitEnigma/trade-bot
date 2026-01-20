@@ -1,7 +1,7 @@
 /** @format */
 
 import { encryptionService } from "../security/encryption.service";
-import logger from "../../services/logger";
+import logger from "../../core/logging/logger.service";
 
 interface CachedCredentials {
   apiKey: string;

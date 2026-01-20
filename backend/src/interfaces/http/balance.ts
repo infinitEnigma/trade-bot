@@ -3,8 +3,8 @@
 import { Router, Request, Response } from "express";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { getUserBalance, invalidateBalanceCache } from "../../core/wallet/balance.service";
-import logger from "../../services/logger";
-import { RateLimiters } from "../../services/rate-limiter";
+import logger from "../../core/logging/logger.service";
+import { RateLimiters } from "../../infrastructure";
 import { UserLevel } from "@trade-bot/shared";
 
 const router = Router();

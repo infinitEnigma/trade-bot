@@ -8,7 +8,7 @@
 import { Router, Request, Response } from "express";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { databaseSecurityService } from "../../infrastructure/security/database-security.service";
-import logger from "../../services/logger";
+import logger from "../../core/logging/logger.service";
 
 const router = Router();
 
@@ -233,7 +233,7 @@ router.post("/rotate-keys", adminMiddleware, async (req: AuthenticatedRequest, r
             userLevel: req.user!.userLevel,
         });
 
-        const { encryptionService } = await import("../services/encryption.js");
+        const { encryptionService } = await import("../../infrastructure/security/encryption.service.js");
 
         const needsRotation = await encryptionService.isKeyRotationNeeded();
 

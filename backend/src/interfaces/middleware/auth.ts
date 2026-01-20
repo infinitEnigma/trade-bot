@@ -6,7 +6,7 @@ import { authService } from "../../core/auth/auth.service";
 import { redisService } from "../../infrastructure/cache/redis.service";
 import { setUserContext } from "../../shared/utils/context";
 import { roleManagementService } from "../../core/auth/role-management.service";
-import logger from "../../services/logger";
+import { logger } from "../../core/logging";
 
 export interface AuthenticatedRequest extends Request {
   user?: {

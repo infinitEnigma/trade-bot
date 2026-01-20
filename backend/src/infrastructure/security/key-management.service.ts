@@ -8,7 +8,7 @@ import {
   hkdf,
 } from "crypto";
 import { promisify } from "util";
-import logger from "./logger";
+import { logger } from "../../core/logging";
 
 const scryptAsync = promisify(scrypt);
 const hkdfAsync = promisify(hkdf);

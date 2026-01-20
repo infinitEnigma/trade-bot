@@ -1,7 +1,7 @@
 /** @format */
 
 import { Pool } from "pg";
-import logger from "../services/logger";
+import { logger } from "../core/logging";
 
 // PostgreSQL connection pool
 const pool = new Pool({

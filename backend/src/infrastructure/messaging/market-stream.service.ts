@@ -2,9 +2,9 @@
 
 import WebSocket from "ws";
 import { Server } from "socket.io";
-import { marketStreamLogger } from "./context-aware-logger";
-import { redisService } from "./redis";
-import { query } from "../database/pool";
+import { marketStreamLogger } from "../../core/logging/context-aware-logger.service";
+import { redisService } from "../cache";
+import { query } from "../../database/pool";
 
 interface TickData {
   symbol: string;
@@ -605,7 +605,7 @@ class AuthManager {
         throw new Error("No credentials found for WebSocket authentication");
       }
 
-      const { encryptionService } = await import("./encryption.js");
+      const { encryptionService } = await import("../../infrastructure/security/encryption.service.js");
       const apiKey = encryptionService.decryptApiKey(
         credsResult.rows[0].api_key_encrypted
       );

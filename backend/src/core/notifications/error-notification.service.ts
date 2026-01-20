@@ -6,8 +6,8 @@
  */
 
 import axios, { AxiosResponse } from "axios";
-import logger from "./logger";
-import { getCurrentContext, getContextForLogging } from "../shared/utils/context";
+import { logger } from "../../core/logging";
+import { getCurrentContext, getContextForLogging } from "../../shared/utils/context";
 
 export enum ErrorSeverity {
     LOW = "low",           // Minor issues, logged only
@@ -26,6 +26,25 @@ export enum ErrorCategory {
     VALIDATION = "validation",
     BUSINESS_LOGIC = "business_logic",
     SYSTEM = "system",
+}
+
+export type NotificationSeverity = ErrorSeverity;
+export type NotificationChannelType = 'email' | 'websocket' | 'database' | 'slack';
+
+export interface NotificationConfig {
+    channels: NotificationChannel[];
+    enabled: boolean;
+    retryAttempts: number;
+    timeout: number;
+}
+
+export interface ErrorAlert {
+    id: string;
+    severity: NotificationSeverity;
+    category: ErrorCategory;
+    message: string;
+    timestamp: Date;
+    resolved: boolean;
 }
 
 export interface ErrorContext {

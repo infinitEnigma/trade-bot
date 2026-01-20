@@ -5,7 +5,7 @@
  * jitter, and circuit breaker patterns to improve system resilience.
  */
 
-import logger from "./logger";
+import { logger } from "../core/logging";
 import { getContextForLogging } from "../shared/utils/context";
 import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../core/notifications/error-notification.service";
 

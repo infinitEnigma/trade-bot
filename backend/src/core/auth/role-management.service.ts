@@ -2,7 +2,7 @@
 
 import { UserRole } from "@trade-bot/shared";
 import { query } from "../../database/pool";
-import logger from "../../services/logger";
+import { logger } from "../logging";
 
 export class RoleManagementService {
     /**

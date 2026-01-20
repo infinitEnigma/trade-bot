@@ -1,7 +1,7 @@
 /** @format */
 
 import WebSocket from "ws";
-import logger from "../../services/logger";
+import logger from "../../../core/logging/logger.service";
 import { CircuitState, WebSocketConfig, DEFAULT_WS_CONFIG } from "./types";
 
 /**

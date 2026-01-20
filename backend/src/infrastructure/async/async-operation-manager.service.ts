@@ -23,8 +23,8 @@ import {
     createChildContext,
     runWithContext,
     RequestContext,
-} from "../shared/utils/context";
-import { contextLogger, ContextAwareLogger } from "./context-aware-logger";
+} from "../../shared/utils/context";
+import { contextLogger, ContextAwareLogger } from "../../core/logging";
 
 export interface AsyncOperationOptions {
     userId?: string;

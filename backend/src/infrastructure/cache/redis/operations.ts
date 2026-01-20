@@ -16,7 +16,7 @@
  */
 
 import { RedisConnectionManager } from "./connection-manager";
-import logger from "../logger";
+import { logger } from "../../../core/logging";
 
 export interface RedisResult<T = string | null> {
     success: boolean;

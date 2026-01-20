@@ -30,12 +30,12 @@
  * @format
  */
 
-import logger from "../logger";
+import logger from "../../logging/logger.service";
 import { ProcessSpawner } from "./process-spawner";
 import { HealthMonitor, EngineHealth } from "./health-monitor";
 import { RestartManager } from "./restart-manager";
 import { CircuitBreaker } from "./circuit-breaker";
-import { ErrorCategory, ErrorSeverity } from "../error-notification";
+import { ErrorCategory, ErrorSeverity } from "../../../core/notifications/error-notification.service";
 
 export enum ProcessState {
     STOPPED = 'stopped',       // Process not running (terminal)
@@ -369,7 +369,7 @@ export class ProcessSupervisor {
     private async notifyProcessFailure(reason: string, health: EngineHealth): Promise<void> {
         try {
             // Import notification service dynamically to avoid circular imports
-            const { errorNotificationService } = await import("../error-notification.js");
+            const { errorNotificationService } = await import("../../notifications/error-notification.service.js");
 
             await errorNotificationService.notifyError(
                 new Error(`Engine process failure: ${reason}`),
@@ -399,7 +399,7 @@ export class ProcessSupervisor {
      */
     private async notifyProcessRecovery(): Promise<void> {
         try {
-            const { errorNotificationService } = await import("../error-notification.js");
+            const { errorNotificationService } = await import("../../notifications/error-notification.service.js");
 
             await errorNotificationService.notifyError(
                 new Error("Engine process recovered successfully"),
@@ -428,7 +428,7 @@ export class ProcessSupervisor {
      */
     private async notifyPermanentFailure(reason: string): Promise<void> {
         try {
-            const { errorNotificationService } = await import("../error-notification.js");
+            const { errorNotificationService } = await import("../../notifications/error-notification.service.js");
 
             await errorNotificationService.notifyError(
                 new Error(`Engine permanent failure: ${reason}`),
@@ -458,7 +458,7 @@ export class ProcessSupervisor {
      */
     private async notifySupervisionFailure(error: unknown): Promise<void> {
         try {
-            const { errorNotificationService } = await import("../error-notification.js");
+            const { errorNotificationService } = await import("../../notifications/error-notification.service.js");
 
             await errorNotificationService.notifyError(
                 new Error(`Supervision system failure: ${error}`),

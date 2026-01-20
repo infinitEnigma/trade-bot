@@ -16,7 +16,7 @@
  */
 
 import { createClient, RedisClientType } from "redis";
-import logger from "../logger";
+import { logger } from "../../../core/logging";
 
 export interface ConnectionConfig {
     url?: string;

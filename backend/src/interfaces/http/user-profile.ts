@@ -11,7 +11,7 @@ import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { userProfileService } from "../../core/user/user-profile.service";
 import { createErrorResponse } from "../../shared/types/errors";
 import { getCorrelationId } from "../../shared/utils/context";
-import logger from "../../services/logger";
+import logger from "../../core/logging/logger.service";
 
 const router = Router();
 

@@ -18,8 +18,8 @@
 import "dotenv/config";
 import { createCipheriv, createDecipheriv, randomBytes, scrypt } from "crypto";
 import { promisify } from "util";
-import logger from "./logger";
-import { query } from "../database/pool";
+import { logger } from "../../core/logging";
+import { query } from "../../database/pool";
 
 /**
  * ===========================================

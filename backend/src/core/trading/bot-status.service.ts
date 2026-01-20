@@ -37,7 +37,7 @@ import { query } from "../../database/pool";
 import { engineManager } from "./engine-manager.service";
 import { cacheInvalidationService } from "../../infrastructure/cache/cache-invalidation.service";
 import { redisService } from "../../infrastructure/cache/redis.service";
-import logger from "../../services/logger";
+import { logger } from "../../core/logging";
 
 /**
  * ===========================================

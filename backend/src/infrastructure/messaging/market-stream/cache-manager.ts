@@ -1,9 +1,9 @@
 /** @format */
 
-import { redisService } from "../../services/redis";
-import { getCacheConfig, CACHE_KEYS } from "../../config/cache.config";
-import { cacheInvalidationService } from "../cache-invalidation";
-import logger from "../../services/logger";
+import { redisService } from "../../cache/redis.service";
+import { getCacheConfig, CACHE_KEYS } from "../../../config/cache.config";
+import { cacheInvalidationService } from "../../cache/cache-invalidation.service";
+import logger from "../../../core/logging/logger.service";
 import { TickData, KlineData } from "./types";
 
 /**

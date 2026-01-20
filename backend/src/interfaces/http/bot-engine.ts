@@ -11,7 +11,7 @@ import { botStatusService } from "../../core/trading/bot-status.service";
 import { botPerformanceService } from "../../core/trading/bot-performance.service";
 import { engineManager } from "../../core/trading/engine-manager.service";
 import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../../core/notifications/error-notification.service";
-import logger from "../../services/logger";
+import logger from "../../core/logging/logger.service";
 
 const router = Router();
 

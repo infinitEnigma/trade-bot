@@ -8,7 +8,7 @@
 import { query } from "../database/pool";
 import { botStatusService } from "../core/trading/bot-status.service";
 import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../core/notifications/error-notification.service";
-import logger from "../services/logger";
+import logger from "../core/logging/logger.service";
 
 export interface ReconciliationResult {
     totalBotsChecked: number;
@@ -301,7 +301,7 @@ export class BotReconciliationWorker {
             if (totalBotsChecked > 0) {
                 try {
                     // Import engine manager dynamically to avoid circular dependencies
-                    const { engineManager } = await import("../services/engine-manager.js");
+                    const { engineManager } = await import("../core/trading/engine-manager.service.js");
                     await engineManager.stopEngineIfNoActiveBots();
                 } catch (engineError) {
                     logger.error("Engine check failed during reconciliation", {

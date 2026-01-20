@@ -20,7 +20,7 @@ import { kodiakConnectionService } from "../../infrastructure/external/kodiak-co
 // Note: validateCredentials method may not exist - using basic validation for now
 const isValid = true; // Simplified validation
 import { credentialCacheService } from "../../infrastructure/cache/credential-cache.service";
-import logger from "../../services/logger";
+import { logger } from "../../core/logging";
 
 export interface KodiakUserConfig {
     userId: string;

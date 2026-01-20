@@ -9,7 +9,7 @@ import { Worker, isMainThread, parentPort, workerData } from 'worker_threads';
 import { EventEmitter } from 'events';
 import * as path from 'path';
 import * as os from 'os';
-import logger from '../core/logging/logger';
+import logger from '../core/logging/logger.service';
 
 // Worker thread script for password hashing
 const WORKER_SCRIPT = `

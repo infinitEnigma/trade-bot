@@ -3,7 +3,7 @@
 import winston from "winston";
 import DailyRotateFile from "winston-daily-rotate-file";
 import path from "path";
-import { getContextForLogging } from "../shared/utils/context";
+import { getContextForLogging } from "../../shared/utils/context";
 
 // ✅ Define log levels
 const LOG_LEVELS = {
@@ -33,8 +33,8 @@ const customFormat = winston.format.combine(
     const contextStr =
       Object.keys(context).length > 0
         ? ` [${Object.entries(context)
-            .map(([k, v]) => `${k}=${v}`)
-            .join(" ")}]`
+          .map(([k, v]) => `${k}=${v}`)
+          .join(" ")}]`
         : "";
 
     return `${info.timestamp} ${info.level}: ${info.message}${contextStr}`;

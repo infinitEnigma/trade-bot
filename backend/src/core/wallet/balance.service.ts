@@ -1,10 +1,32 @@
 /** @format */
 
-import { query } from "../database/pool";
-import { redisService } from "./redis";
-import logger from "./logger";
-import { generateKodiakSignature } from "../shared/utils/orderly-signature"; // ✅ Import backend crypto utility
-import { credentialCacheService } from "./credential-cache";
+import { query } from "../../database/pool";
+import { redisService } from "../../infrastructure";
+import { logger } from "../../core/logging";
+import { generateKodiakSignature } from "../../shared/utils/orderly-signature"; // ✅ Import backend crypto utility
+import { credentialCacheService } from "../../infrastructure";
+
+// Export interfaces and service for wallet index
+export interface WalletBalance {
+  total: number;
+  available: number;
+  locked: number;
+  currency: string;
+}
+
+export interface Transaction {
+  id: string;
+  type: 'deposit' | 'withdrawal' | 'trade';
+  amount: number;
+  currency: string;
+  status: 'pending' | 'completed' | 'failed';
+  timestamp: Date;
+}
+
+export const balanceService = {
+  getUserBalance,
+  invalidateBalanceCache,
+};
 
 /**
  * Fetch user's account balance from Orderly

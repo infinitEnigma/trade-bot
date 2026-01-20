@@ -1,12 +1,12 @@
 /** @format */
 
 import axios from "axios";
-import { query } from "../database/pool";
-import logger from "./logger";
-import { generateOrderlySignature } from "../shared/utils/orderly-signature";
-import { withCredentials, SecureCredentials } from "./encryption";
-import { positionSyncService } from "./position-sync"; // ✅ Single source of truth
-import { redisService } from "./redis";
+import { query } from "../../database/pool";
+import { logger } from "../../core/logging";
+import { generateOrderlySignature } from "../../shared/utils/orderly-signature";
+import { withCredentials, SecureCredentials } from "../../infrastructure/security/encryption.service";
+import { positionSyncService } from "../trading/position-sync.service"; // ✅ Single source of truth
+import { redisService } from "../../infrastructure";
 
 export interface AccountLimits {
   balance: number;
@@ -355,6 +355,13 @@ async function calculateAccountLimitsFromDatabase(
     throw error;
   }
 }
+
+// Export singleton instance for the trading index
+export const positionValidatorService = {
+  validateUserPosition,
+  getAccountLimits,
+  hasUserKodiakCredentials,
+};
 
 /**
  * Get account information from database (synced from Kodiak API)

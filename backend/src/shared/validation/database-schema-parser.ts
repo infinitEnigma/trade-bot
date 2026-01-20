@@ -18,7 +18,7 @@
 
 import fs from "fs/promises";
 import path from "path";
-import logger from "../../services/logger";
+import logger from "../../core/logging/logger.service";
 
 export interface ColumnDefinition {
     name: string;

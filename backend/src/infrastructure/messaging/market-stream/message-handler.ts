@@ -1,10 +1,10 @@
 /** @format */
 
 import { Server } from "socket.io";
-import logger from "../../services/logger";
+import logger from "../../../core/logging/logger.service";
 import { TickData, KlineData } from "./types";
 import { CacheManager } from "./cache-manager";
-import { errorNotificationService } from "../error-notification";
+import { errorNotificationService } from "../../../core/notifications";
 import { WebSocketManager, MessagePriority } from "./websocket-manager";
 
 /**

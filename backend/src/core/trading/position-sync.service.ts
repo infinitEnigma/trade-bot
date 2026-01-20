@@ -6,12 +6,12 @@
  */
 
 import axios from "axios";
-import { query } from "../database/pool";
-import { redisService } from "./redis";
-import { getCacheConfig, CACHE_KEYS } from "../config/cache.config";
-import { cacheInvalidationService } from "./cache-invalidation";
-import { generateOrderlySignature } from "../shared/utils/orderly-signature";
-import { positionSyncLogger } from "./context-aware-logger";
+import { query } from "../../database/pool";
+import { redisService } from "../../infrastructure";
+import { getCacheConfig, CACHE_KEYS } from "../../config/cache.config";
+import { cacheInvalidationService } from "../../infrastructure";
+import { generateOrderlySignature } from "../../shared/utils/orderly-signature";
+import { positionSyncLogger } from "../logging/context-aware-logger.service";
 
 export interface PositionData {
     symbol: string;
@@ -155,7 +155,7 @@ export class PositionSyncService {
                 };
             }
 
-            const { encryptionService } = await import("./encryption.js");
+            const { encryptionService } = await import("../../infrastructure/security/encryption.service.js");
             const row = credsResult.rows[0];
             const accountId = row.account_id;
             const apiKey = encryptionService.decryptApiKey(row.api_key_encrypted);
@@ -471,7 +471,7 @@ export class PositionSyncService {
 
             let apiPositions = 0;
             if (credsResult.rows.length > 0) {
-                const { encryptionService } = await import("./encryption.js");
+                const { encryptionService } = await import("../../infrastructure/security/encryption.service.js");
                 const row = credsResult.rows[0];
                 const accountId = row.account_id;
                 const apiKey = encryptionService.decryptApiKey(row.api_key_encrypted);
