@@ -23,7 +23,7 @@ export const authApi = {
             password,
         });
         console.log("API: Login response received:", response.data);
-        return response.data;
+        return response.data; // Now includes { success: true, user: {...} }
     },
 
     async getMe() {

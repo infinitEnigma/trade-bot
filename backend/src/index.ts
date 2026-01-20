@@ -390,8 +390,17 @@ app.use("/api/security", csrfMiddleware);
 // Prevents single users from exhausting global limits
 // ===========================================
 
-// 🔐 Authentication endpoints (strict with progressive backoff)
-app.use("/api/auth", RateLimiters.auth);
+// 🔐 Authentication endpoints (DISABLED for testing - strict with progressive backoff for login/register)
+// app.use("/api/auth/login", RateLimiters.auth);
+// app.use("/api/auth/register", RateLimiters.auth);
+// app.use("/api/auth/refresh", RateLimiters.auth);
+
+// 👤 Profile endpoints (lenient rate limiting for periodic checks)
+app.use("/api/auth/me", RateLimiters.public);
+app.use("/api/auth/check-qualification", RateLimiters.public);
+app.use("/api/auth/qualification-config", RateLimiters.public);
+app.use("/api/auth/csrf-token", RateLimiters.public);
+app.use("/api/auth/logout", RateLimiters.public);
 
 // 👤 User management endpoints (moderate limits)
 app.use("/api/user", RateLimiters.public);

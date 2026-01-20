@@ -21,9 +21,13 @@ const useAuthStore = create<AuthStore>()(
                     set({ isLoading: true });
                     const response = await authService.login(email, password);
 
-                    if (response.success) {
-                        // Refresh user profile after login
-                        await get().checkAuth();
+                    if (response.success && response.user) {
+                        // Use user data returned from login response - no extra API call needed!
+                        set({
+                            user: response.user as AuthUser,
+                            isAuthenticated: true,
+                            isLoading: false,
+                        });
                         toast.success("Login successful!");
                     } else {
                         throw new Error(response.error || "Login failed");
@@ -92,11 +96,12 @@ const useAuthStore = create<AuthStore>()(
                 try {
                     set({ isLoading: true });
 
-                    // Skip check on auth pages unless forced
+                    // Skip check on auth pages to avoid rate limiting during login
                     const currentPath = window.location.pathname;
                     const isAuthPage = currentPath === "/login" || currentPath === "/register";
 
-                    if (isAuthPage && !get().user) {
+                    if (isAuthPage) {
+                        // Completely skip API call on login/register pages
                         set({ isLoading: false });
                         return;
                     }
