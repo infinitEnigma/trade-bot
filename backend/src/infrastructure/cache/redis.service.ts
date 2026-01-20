@@ -450,7 +450,7 @@ class RedisService {
         }
 
         const results = await multi.exec();
-        const newValue = Array.isArray(results) ? results[results.length - 1] as any : results as any;
+        const newValue = Array.isArray(results) ? results[results.length - 1] as unknown as number : 0;
 
         return { success: true, newValue };
 
