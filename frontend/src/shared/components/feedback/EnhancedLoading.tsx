@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Loader2, CheckCircle, Circle, AlertTriangle } from "lucide-react";
-import { Card } from "./Card";
+import { Card } from "../ui";
 
 // Enhanced Loading Spinner with Context
 interface ContextualSpinnerProps {

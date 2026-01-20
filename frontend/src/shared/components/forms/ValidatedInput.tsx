@@ -1,7 +1,7 @@
 /** @format */
 
 import React from "react";
-import { FieldValidation } from "../../lib/validation";
+import { FieldValidation } from "../../validation";
 import { AlertCircle, CheckCircle } from "lucide-react";
 
 interface ValidatedInputProps {
