@@ -20,36 +20,64 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
 
-    <!-- Health check script - non-blocking -->
+    <!-- Enhanced Health check script - handles maintenance recovery -->
     <script>
-    // Non-blocking health check using requestIdleCallback or setTimeout with lower priority
     (function() {
+        const HEALTH_CHECK_INTERVAL = 30000; // Check every 30 seconds
+        const isMaintenancePage = window.location.pathname === '/maintenance.html';
+
         const checkHealth = function() {
             fetch('/api/health-check', {
                 method: 'GET',
                 headers: { 'Cache-Control': 'no-cache' }
             })
             .then(response => {
-                if (!response.ok) {
-                    // Backend is down, redirect to maintenance
-                    window.location.href = '/maintenance.html';
+                if (response.ok) {
+                    // Backend is healthy
+                    if (isMaintenancePage) {
+                        // Clear ALL client state and logout before redirecting
+                        console.log('Backend recovered, clearing state and redirecting to login');
+                        localStorage.clear();
+                        sessionStorage.clear();
+
+                        // Clear auth cookies by calling logout endpoint
+                        fetch('/api/auth/logout', {
+                            method: 'POST',
+                            credentials: 'include'
+                        }).finally(() => {
+                            // Redirect to login page to force fresh authentication
+                            window.location.href = '/login';
+                        });
+
+                        return;
+                    }
+                    // If on main app, continue normally
+                } else {
+                    // Backend is down
+                    if (!isMaintenancePage) {
+                        console.log('Backend down, redirecting to maintenance');
+                        window.location.href = '/maintenance.html';
+                    }
                 }
-                // If response is OK, continue loading React app normally
             })
             .catch(error => {
-                // Network error, assume backend is down
                 console.warn('Backend health check failed:', error);
-                window.location.href = '/maintenance.html';
+                if (!isMaintenancePage) {
+                    window.location.href = '/maintenance.html';
+                }
             });
         };
 
-        // Use requestIdleCallback if available (non-blocking), fallback to setTimeout
+        // Initial check
         if ('requestIdleCallback' in window) {
             requestIdleCallback(checkHealth, { timeout: 2000 });
         } else {
-            // Use setTimeout with longer delay to avoid blocking
             setTimeout(checkHealth, 500);
         }
+
+        // Periodic checks (more frequent on maintenance page)
+        const interval = isMaintenancePage ? 10000 : 60000; // 10s on maintenance, 60s normally
+        setInterval(checkHealth, interval);
     })();
     </script>
 

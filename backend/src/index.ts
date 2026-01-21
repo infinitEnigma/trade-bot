@@ -150,6 +150,9 @@ import { RateLimiters } from "./infrastructure";
 // 🔄 Infrastructure Services (moved to infrastructure/)
 import { redisService } from "./infrastructure";
 
+// 🤖 Bot Reconciliation Worker (initialized after database)
+import { botReconciliationWorker } from "./workers/bot-reconciliation";
+
 // ===========================================
 // 🗄️ 3. DATABASE & REDIS INITIALIZATION
 // ===========================================
@@ -390,10 +393,8 @@ app.use("/api/security", csrfMiddleware);
 // Prevents single users from exhausting global limits
 // ===========================================
 
-// 🔐 Authentication endpoints (DISABLED for testing - strict with progressive backoff for login/register)
-// app.use("/api/auth/login", RateLimiters.auth);
-// app.use("/api/auth/register", RateLimiters.auth);
-// app.use("/api/auth/refresh", RateLimiters.auth);
+// 🔐 Authentication endpoints - Login exempt from rate limiting for smooth UX
+// Other auth operations (profile checks, etc.) still rate limited
 
 // 👤 Profile endpoints (lenient rate limiting for periodic checks)
 app.use("/api/auth/me", RateLimiters.public);
@@ -405,7 +406,7 @@ app.use("/api/auth/logout", RateLimiters.public);
 // 👤 User management endpoints (moderate limits)
 app.use("/api/user", RateLimiters.public);
 app.use("/api/user-profile", RateLimiters.public);
-app.use("/api/user-kodiak", RateLimiters.public);
+app.use("/api/user-kodiak", RateLimiters.kodiakStatus);
 
 // 📊 Market data endpoints (user-based scaling)
 app.use("/api/market", RateLimiters.market);
@@ -525,6 +526,20 @@ io.use(async (socket, next) => {
         correlationId,
       });
       return next(new Error("User not found"));
+    }
+
+    // ✅ REQUIRE VERIFIED user level for WebSocket access
+    // Only VERIFIED users can access real-time market data
+    if (user.userLevel !== 'VERIFIED') {
+      logger.warn("WebSocket connection rejected: User not VERIFIED", {
+        socketId: socket.id,
+        userId: decoded.userId,
+        userLevel: user.userLevel,
+        email: user.email,
+        ip: socket.handshake.address,
+        correlationId,
+      });
+      return next(new Error("Real-time data requires VERIFIED account"));
     }
 
     // 🔄 CRITICAL: Set up AsyncLocalStorage context for WebSocket connection
@@ -670,81 +685,31 @@ httpServer.listen(PORT, () => {
   logger.info("🌐 WebSocket server ready");
   logger.info(`🏭 Environment: ${process.env.NODE_ENV || "development"}`);
 
-  // ✅ Initialize market stream service (lazy-loaded - connects on-demand)
-  marketStreamService.setSocketServer(io);
-  logger.info(
-    "📡 Market stream service initialized (lazy-loaded - connects when needed)"
-  );
-
-  // ✅ Initialize bot status service background processes (after database ready)
-  botStatusService.initializeBackgroundProcesses().catch(error => {
-    logger.error("Failed to initialize bot status background processes", {
+  // ✅ START BOT RECONCILIATION WORKER (after database is ready)
+  botReconciliationWorker.start().catch((error) => {
+    logger.error("Failed to start bot reconciliation worker", {
       error: error instanceof Error ? error.message : String(error),
     });
   });
 
-  // ✅ Register worker shutdown handlers for proper cleanup
-  setImmediate(async () => {
-    try {
-      logger.debug("Attempting to register worker shutdown handlers", {
-        environment: process.env.NODE_ENV,
-        nodeVersion: process.version,
-        timestamp: new Date().toISOString(),
-      });
+  // 🚫 DEFERRED: Market stream service - only initialize when VERIFIED users connect
+  // marketStreamService.setSocketServer(io);
+  logger.info(
+    "📡 Market stream service deferred - initializes only for VERIFIED users"
+  );
 
-      // Use environment-appropriate import path
-      const workerImportPath = process.env.NODE_ENV === 'development'
-        ? "./workers/bot-reconciliation"
-        : "./workers/bot-reconciliation.js";
+  // 🚫 DEFERRED: Bot status service - only initialize when VERIFIED users with bots connect
+  // botStatusService.initializeBackgroundProcesses()
+  logger.info(
+    "🤖 Bot status service deferred - initializes only for VERIFIED users with active bots"
+  );
 
-      logger.debug("Importing worker module", {
-        path: workerImportPath,
-        absolutePath: require.resolve(workerImportPath),
-      });
-
-      const workerModule = await import(workerImportPath);
-
-      if (!workerModule.botReconciliationWorker) {
-        throw new Error(`botReconciliationWorker not exported from ${workerImportPath}`);
-      }
-
-      const { botReconciliationWorker } = workerModule;
-
-      if (typeof botReconciliationWorker.registerShutdownHandlers !== 'function') {
-        throw new Error(`registerShutdownHandlers method not found on botReconciliationWorker (type: ${typeof botReconciliationWorker.registerShutdownHandlers})`);
-      }
-
-      botReconciliationWorker.registerShutdownHandlers();
-
-      logger.info("Worker shutdown handlers registered successfully", {
-        workerType: 'botReconciliationWorker',
-        hasRegisterMethod: true,
-        importPath: workerImportPath,
-        environment: process.env.NODE_ENV,
-      });
-
-    } catch (error) {
-      // Enhanced error logging with comprehensive context
-      const errorDetails = {
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        environment: process.env.NODE_ENV,
-        nodeVersion: process.version,
-        importAttempted: true,
-        timestamp: new Date().toISOString(),
-        isCritical: false, // Shutdown handlers are non-critical
-        systemStatus: 'continuing_without_shutdown_handlers',
-      };
-
-      logger.error("Failed to register worker shutdown handlers - continuing without them", errorDetails);
-
-      // Log additional helpful information
-      logger.info("System continues to operate normally without shutdown handlers", {
-        note: "Shutdown handlers provide graceful cleanup but are not required for operation",
-        manualCleanup: "Use Ctrl+C for clean shutdown",
-        functionality: "All core features remain fully operational",
-      });
-    }
+  // 🚫 TEMPORARILY DISABLED: Worker shutdown handlers
+  // Dynamic import causing issues with ts-node-dev ES modules
+  // Will re-enable once core functionality is stable
+  logger.info("Worker shutdown handlers temporarily disabled for stability", {
+    reason: "Dynamic ES module import issues with ts-node-dev",
+    status: "Core functionality remains fully operational",
   });
 });
 

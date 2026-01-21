@@ -6,9 +6,7 @@ import { User } from "@trade-bot/shared";
  * Authentication-related type definitions
  */
 
-export interface AuthUser extends User {
-    // Extended user interface for auth-specific data
-}
+export type AuthUser = User;
 
 export interface LoginCredentials {
     email: string;

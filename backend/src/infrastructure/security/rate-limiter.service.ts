@@ -17,10 +17,10 @@ class MemoryRateLimiter {
   private cleanupInterval: NodeJS.Timeout;
 
   constructor() {
-    // Clean up expired entries every minute
+    // Clean up expired entries every 10 seconds (more aggressive for memory efficiency)
     this.cleanupInterval = setInterval(() => {
       this.cleanup();
-    }, 60000);
+    }, 10000);
   }
 
   check(
@@ -269,12 +269,20 @@ class ProgressiveAuthLimiter {
 // Global progressive auth limiter instance
 const progressiveAuthLimiter = new ProgressiveAuthLimiter();
 
+// Export for use in auth handlers to reset failure counter on success
+export { progressiveAuthLimiter };
+
 /**
  * Create a fail-safe rate limiter middleware for specific endpoint
  * Uses Redis primary with in-memory fallback
  */
 export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
   return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    // Skip OPTIONS requests (CORS preflight) - they shouldn't be rate limited
+    if (req.method === 'OPTIONS') {
+      return next();
+    }
+
     // Extract user information for user-based rate limiting
     const authReq = req as AuthenticatedRequest;
     const userId = authReq.user?.userId;
@@ -317,6 +325,15 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
             identifier,
             progressiveDelay,
             totalFailures: failureInfo.totalFailures,
+          });
+
+          // CRITICAL: Block the request if in progressive backoff
+          return res.status(429).json({
+            success: false,
+            error: "Too many failed login attempts. Please try again later.",
+            retryAfter: Math.ceil(progressiveDelay / 1000),
+            limitType: 'progressive',
+            progressiveDelay: Math.ceil(progressiveDelay / 1000),
           });
         }
       }
@@ -446,6 +463,9 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
           max: effectiveMaxRequests,
           usedFallback,
           progressiveDelay,
+          url: req.originalUrl,
+          method: req.method,
+          userAgent: req.get('User-Agent'),
         });
 
         return res.status(429).json({
@@ -498,9 +518,9 @@ export const RateLimiters = {
   // ✅ Authentication endpoints (strict, with progressive backoff)
   auth: createRateLimiter("auth", {
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: process.env.NODE_ENV === 'development' ? 30 : 5, // 30 for dev, 5 for prod
+    max: process.env.NODE_ENV === 'development' ? 100 : 5, // 100 for dev, 5 for prod
     message: "Too many login attempts, please try again later",
-    progressiveBackoff: process.env.NODE_ENV !== 'development', // Only prod gets backoff
+    progressiveBackoff: false, // Disabled - prevents false lockouts from persistent Redis counters
     maxProgressiveDelay: process.env.NODE_ENV === 'development' ? 5000 : 5 * 60 * 1000, // 5s dev, 5min prod
     progressiveBaseDelay: 1000, // Start with 1 second
   }),
@@ -508,7 +528,7 @@ export const RateLimiters = {
   // ✅ Public endpoints (lenient, fail open, no user-based limits for anonymous)
   public: createRateLimiter("public", {
     windowMs: 60 * 1000, // 1 minute
-    max: 60, // 60 requests per minute
+    max: process.env.NODE_ENV === 'development' ? 10000 : 1000, // Very high for dev, 1000 for prod
     message: "Too many requests to this endpoint",
     failOpen: true, // Allow requests if Redis fails
   }),
@@ -516,14 +536,14 @@ export const RateLimiters = {
   // ✅ Market data endpoints (moderate, user-based limits)
   market: createRateLimiter("market", {
     windowMs: 60 * 1000, // 1 minute
-    max: 30, // 30 requests per minute (IP limit)
+    max: process.env.NODE_ENV === 'development' ? 1000 : 10000, // 1000 for dev, 10000 for prod
     message: "Market data rate limit exceeded",
     failOpen: false, // Block requests if both Redis and memory fail
     enableUserBasedLimits: true,
     userLimits: {
-      [UserLevel.BASIC]: 50,        // 50 requests per minute
-      [UserLevel.REGISTERED]: 75,   // 75 requests per minute
-      [UserLevel.VERIFIED]: 100,    // 100 requests per minute
+      [UserLevel.BASIC]: process.env.NODE_ENV === 'development' ? 2000 : 20000,       // 2000 for dev, 20000 for prod
+      [UserLevel.REGISTERED]: process.env.NODE_ENV === 'development' ? 3000 : 30000, // 3000 for dev, 30000 for prod
+      [UserLevel.VERIFIED]: process.env.NODE_ENV === 'development' ? 5000 : 50000,  // 5000 for dev, 50000 for prod
     },
   }),
 
@@ -566,6 +586,20 @@ export const RateLimiters = {
       [UserLevel.BASIC]: 150,       // 150 subscriptions per minute
       [UserLevel.REGISTERED]: 200,  // 200 subscriptions per minute
       [UserLevel.VERIFIED]: 300,    // 300 subscriptions per minute
+    },
+  }),
+
+  // ✅ Kodiak status endpoints (very lenient - just database queries)
+  kodiakStatus: createRateLimiter("kodiak-status", {
+    windowMs: 60 * 1000, // 1 minute
+    max: process.env.NODE_ENV === 'development' ? 10000 : 10000, // Very high limits
+    message: "Kodiak status rate limit exceeded",
+    failOpen: true, // Allow if Redis fails - just DB queries
+    enableUserBasedLimits: true,
+    userLimits: {
+      [UserLevel.BASIC]: process.env.NODE_ENV === 'development' ? 20000 : 20000,
+      [UserLevel.REGISTERED]: process.env.NODE_ENV === 'development' ? 30000 : 30000,
+      [UserLevel.VERIFIED]: process.env.NODE_ENV === 'development' ? 50000 : 50000,
     },
   }),
 };

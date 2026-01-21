@@ -31,8 +31,33 @@ server {
     root /home/dusan/trade-bot/frontend/dist;
     index index.html;
 
+    # TypeScript React files (for chunks that aren't transpiled)
+    location ~* \.tsx$ {
+        add_header Content-Type application/javascript;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+    
+    # JavaScript files - must come first (more specific)
+    location ~* \.js$ {
+        add_header Content-Type application/javascript;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # CSS files
+    location ~* \.css$ {
+        add_header Content-Type text/css;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+
     # Handle static assets with caching
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    location ~* \.(png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
         try_files $uri =404;

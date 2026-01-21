@@ -47,11 +47,16 @@
 
 import "dotenv/config";
 import jwt from "jsonwebtoken";
-import bcrypt from "bcryptjs";
+//import bcrypt from "bcryptjs";
+import { ethers } from "ethers";
+import { createHash } from "crypto";
+import bs58 from "bs58";
+import * as ed25519 from "@noble/ed25519";
 import { UserLevel } from "@trade-bot/shared";
 import { query } from "../../database/pool";
-import { redisService } from "../../infrastructure/cache/redis.service";
+import { redisService } from "../../infrastructure";
 import { hashPassword, comparePassword } from "../../workers/password-worker";
+import { encryptionService } from "../../infrastructure/security";
 import { logger } from "../logging";
 
 const JWT_SECRET = (() => {
@@ -283,6 +288,7 @@ export class AuthService {
         "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
         [user.id, "USER_LOGIN", { email: user.email }]
       );
+
 
       return {
         success: true,
@@ -571,12 +577,40 @@ export class AuthService {
 
   async updateUserLevel(userId: string, level: UserLevel): Promise<boolean> {
     try {
-      await query(
+      logger.info("Updating user level", { userId, newLevel: level });
+
+      const result = await query(
         "UPDATE users SET user_level = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
         [level, userId]
       );
-      return true;
-    } catch {
+
+      logger.info("User level update result", {
+        userId,
+        newLevel: level,
+        rowsAffected: result.rowCount
+      });
+
+      // Verify the update
+      const verifyResult = await query(
+        "SELECT user_level FROM users WHERE id = $1",
+        [userId]
+      );
+
+      if (verifyResult.rows.length > 0) {
+        logger.info("User level verification", {
+          userId,
+          actualLevel: verifyResult.rows[0].user_level,
+          expectedLevel: level
+        });
+      }
+
+      return result.rowCount > 0;
+    } catch (error) {
+      logger.error("User level update failed", {
+        userId,
+        newLevel: level,
+        error: error instanceof Error ? error.message : String(error)
+      });
       return false;
     }
   }
@@ -588,9 +622,6 @@ export class AuthService {
     message: string
   ): Promise<{ success: boolean; message?: string }> {
     try {
-      // Verify the signature matches the wallet address
-      const { ethers } = await import("ethers");
-
       // Recover the address from the signature
       const recoveredAddress = ethers.verifyMessage(message, signature);
 
@@ -602,24 +633,152 @@ export class AuthService {
         };
       }
 
-      // Check if user has Kodiak credentials with matching wallet address
+      // Check if user has Kodiak credentials
       const credentialsResult = await query(
-        "SELECT wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
+        "SELECT account_id, wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
         [userId]
       );
 
       if (credentialsResult.rows.length === 0) {
+        logger.warn("Wallet verification failed - no verified Kodiak credentials", {
+          userId,
+          walletAddress,
+        });
         return {
           success: false,
           message: "No verified Kodiak credentials found",
         };
       }
 
-      const kodiakWalletAddress = credentialsResult.rows[0].wallet_address;
+      const row = credentialsResult.rows[0];
+      let kodiakWalletAddress = row.wallet_address;
+
+      // If wallet address is not stored, try to fetch it from Kodiak API
+      if (!kodiakWalletAddress) {
+        logger.info("Wallet address not stored, fetching from Kodiak API", {
+          userId,
+          accountId: row.account_id,
+        });
+
+        try {
+          // Get encrypted credentials
+          const credsResult = await query(
+            "SELECT api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
+            [userId]
+          );
+
+          if (credsResult.rows.length > 0) {
+            const encryptedRow = credsResult.rows[0];
+
+            // Try to decrypt credentials
+            let apiKey: string;
+            let secretKey: string;
+
+            try {
+              apiKey = encryptionService.decryptApiKey(encryptedRow.api_key_encrypted);
+              secretKey = encryptionService.decryptSecretKey(encryptedRow.secret_key_encrypted);
+            } catch (decryptError) {
+              logger.warn("Failed to decrypt Kodiak credentials during wallet verification", {
+                userId,
+                error: decryptError instanceof Error ? decryptError.message : String(decryptError),
+              });
+              apiKey = encryptedRow.api_key_encrypted; // fallback to plain text
+              secretKey = encryptedRow.secret_key_encrypted;
+            }
+
+            // Make direct API call to get account info
+            const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org";
+            const requestUrl = `${baseUrl}/v1/public/account?account_id=${encodeURIComponent(row.account_id)}`;
+
+            // Generate signature for authenticated request
+            const timestamp = Date.now();
+            const signaturePath = `/v1/public/account?account_id=${encodeURIComponent(row.account_id)}`;
+            const message = `${timestamp}GET${signaturePath}`;
+
+
+            const sha512Hash = (message: Uint8Array) => {
+              const hash = createHash("sha512");
+              hash.update(message);
+              return new Uint8Array(hash.digest());
+            };
+
+            // Configure ed25519
+            if ((ed25519 as any).hashes) {
+              (ed25519 as any).hashes.sha512 = sha512Hash;
+            } else if ((ed25519 as any).etc && typeof (ed25519 as any).etc.sha512Sync !== "undefined") {
+              (ed25519 as any).etc.sha512Sync = sha512Hash;
+            } else if ((ed25519 as any).utils) {
+              (ed25519 as any).utils.sha512Sync = sha512Hash;
+            }
+
+            const privateKey = bs58.decode(secretKey);
+            const messageBytes = new TextEncoder().encode(message);
+            const signature = await ed25519.sign(messageBytes, privateKey);
+            const signatureB64 = Buffer.from(signature).toString("base64url");
+
+            // Make the API request
+            const response = await fetch(requestUrl, {
+              method: "GET",
+              headers: {
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
+                "orderly-account-id": row.account_id,
+                "orderly-key": apiKey,
+                "orderly-signature": signatureB64,
+                "orderly-timestamp": timestamp.toString(),
+              },
+            });
+
+            if (response.ok) {
+              const responseData = await response.json() as { success: boolean; data: any };
+              if (responseData.success && responseData.data?.address) {
+                kodiakWalletAddress = responseData.data.address;
+
+                // Store the fetched wallet address
+                await query(
+                  "UPDATE kodiak_credentials SET wallet_address = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2",
+                  [kodiakWalletAddress, userId]
+                );
+
+                logger.info("Wallet address fetched and stored during verification", {
+                  userId,
+                  accountId: row.account_id,
+                  walletAddress: kodiakWalletAddress,
+                });
+              }
+            } else {
+              logger.warn("Failed to fetch wallet address - API error", {
+                userId,
+                accountId: row.account_id,
+                status: response.status,
+              });
+            }
+          }
+        } catch (fetchError) {
+          logger.warn("Failed to fetch wallet address during verification", {
+            userId,
+            accountId: row.account_id,
+            error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+          });
+        }
+      }
+
+      logger.info("Wallet verification address comparison", {
+        userId,
+        providedWalletAddress: walletAddress,
+        storedKodiakWalletAddress: kodiakWalletAddress,
+        addressesMatch: kodiakWalletAddress && kodiakWalletAddress.toLowerCase() === walletAddress.toLowerCase(),
+      });
+
       if (
         !kodiakWalletAddress ||
         kodiakWalletAddress.toLowerCase() !== walletAddress.toLowerCase()
       ) {
+        logger.warn("Wallet verification failed - address mismatch", {
+          userId,
+          walletAddress,
+          kodiakWalletAddress,
+        });
         return {
           success: false,
           message: "Wallet address does not match Kodiak account",

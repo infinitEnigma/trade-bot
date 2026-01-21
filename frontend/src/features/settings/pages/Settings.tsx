@@ -1,9 +1,8 @@
 /** @format */
 
 import React, { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { useAuth } from "../../auth";
-import { settingsService } from "../services/settingsService";
+import { useAuth, useKodiakStatus, useConnectKodiak, useDisconnectKodiak } from "../../auth/hooks";
+import { kodiakApi } from "../../../infrastructure/api/kodiak";
 import {
   Key,
   Shield,
@@ -21,8 +20,8 @@ import { Container, Grid } from "../../../shared/components/layout";
 import { SmartToast } from "../../../lib/toast";
 
 const Settings: React.FC = () => {
-  const { user, refreshUser } = useAuth();
-  //const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const { data: kodiakStatus, isLoading: statusLoading } = useKodiakStatus();
   const [showSecrets, setShowSecrets] = useState(false);
   const [formData, setFormData] = useState({
     accountId: "",
@@ -30,68 +29,47 @@ const Settings: React.FC = () => {
     secretKey: "",
   });
 
-  // Fetch Kodiak status
-  const { data: kodiakStatus, isLoading: statusLoading, refetch: refetchStatus } = useQuery({
-    queryKey: ["kodiak-status"],
-    queryFn: () => settingsService.getKodiakStatus(),
-    staleTime: 30000, // 30 seconds
-  });
+  // Connect Kodiak mutation with React Query
+  const connectMutation = useConnectKodiak();
 
-  // Connect Kodiak mutation
-  const connectMutation = useMutation({
-    mutationFn: (credentials: typeof formData) => settingsService.connectKodiak(credentials),
-    onSuccess: async (response) => {
-      if (response.data?.success) {
-        // Refresh status and user data
-        await refetchStatus();
-        await refreshUser();
+  // Disconnect Kodiak mutation with React Query
+  const disconnectMutation = useDisconnectKodiak();
 
-        // Clear form on success
-        setFormData({ accountId: "", apiKey: "", secretKey: "" });
-
-        SmartToast.success("Kodiak account connected successfully! Your user level has been upgraded.");
-      }
-    },
-    onError: (error: any) => {
-      SmartToast.error(error?.response?.data?.error || "Failed to connect Kodiak credentials");
-    },
-  });
-
-  // Disconnect Kodiak mutation
-  const disconnectMutation = useMutation({
-    mutationFn: () => settingsService.disconnectKodiak(),
-    onSuccess: async (response) => {
-      if (response.data?.success) {
-        // Refresh status and user data
-        await refetchStatus();
-        await refreshUser();
-
-        SmartToast.success("Kodiak account disconnected successfully.");
-      }
-    },
-    onError: (error: any) => {
-      SmartToast.error(error?.response?.data?.error || "Failed to disconnect Kodiak account");
-    },
-  });
-
-  const isConnected = kodiakStatus?.connected || false;
+  const isConnected = kodiakStatus?.data?.connected || false;
+  const kodiakData = kodiakStatus?.data;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     // Validate credentials format
-    const validation = settingsService.validateCredentials(formData);
+    const validation = kodiakApi.validateCredentialsFormat(formData);
     if (!validation.isValid) {
       SmartToast.error(validation.errors[0]);
       return;
     }
 
-    connectMutation.mutate(formData);
+    connectMutation.mutate(formData, {
+      onSuccess: () => {
+        // Clear form on success
+        setFormData({ accountId: "", apiKey: "", secretKey: "" });
+        SmartToast.success("Kodiak account connected successfully! Your user level has been upgraded.");
+      },
+      onError: (error: any) => {
+        SmartToast.error(error?.response?.data?.error || "Failed to connect Kodiak credentials");
+      },
+    });
   };
 
   const handleDisconnect = () => {
     if (confirm("Are you sure you want to disconnect your Kodiak credentials? This will downgrade your user level.")) {
-      disconnectMutation.mutate();
+      disconnectMutation.mutate(undefined, {
+        onSuccess: () => {
+          SmartToast.success("Kodiak account disconnected successfully.");
+        },
+        onError: (error: any) => {
+          SmartToast.error(error?.response?.data?.error || "Failed to disconnect Kodiak account");
+        },
+      });
     }
   };
 
@@ -174,14 +152,14 @@ const Settings: React.FC = () => {
                       Kodiak Account Connected
                     </p>
                     <p className="text-sm text-textMuted">
-                      Account ID: {kodiakStatus?.accountId}
+                      Account ID: {kodiakData?.accountId}
                     </p>
-                    {kodiakStatus?.connectedAt && (
+                    {kodiakData?.connectedAt && (
                       <p className="text-sm text-textMuted">
-                        Connected: {new Date(kodiakStatus.connectedAt).toLocaleDateString()}
+                        Connected: {new Date(kodiakData.connectedAt).toLocaleDateString()}
                       </p>
                     )}
-                    {kodiakStatus?.verified && (
+                    {kodiakData?.verified && (
                       <p className="text-sm text-green-400">
                         ✓ Credentials verified and active
                       </p>

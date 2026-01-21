@@ -27,7 +27,9 @@ export const authApi = {
     },
 
     async getMe() {
+        console.log("🔍 API: getMe() called from:", new Error().stack?.split('\n')[2]?.trim());
         const response = await httpClient.getClient().get("/api/auth/me");
+        console.log("🔍 API: getMe() response:", response.data);
         return response.data;
     },
 

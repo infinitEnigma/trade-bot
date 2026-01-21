@@ -7,6 +7,7 @@ import { redisService } from "../../infrastructure/cache/redis.service";
 import { setUserContext } from "../../shared/utils/context";
 import { roleManagementService } from "../../core/auth/role-management.service";
 import { logger } from "../../core/logging";
+import { progressiveAuthLimiter } from "../../infrastructure/security/rate-limiter.service";
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -207,29 +208,63 @@ export async function authMiddleware(
       return;
     }
 
-    // Load complete user data with roles and credentials in single query (N+1 optimization)
-    const userData = await authService.getAuthenticatedUserData(payload.userId);
-    if (!userData) {
-      logger.error("Failed to load user data in auth middleware - user not found", {
-        userId: payload.userId,
-      });
-      res.status(401).json({
-        success: false,
-        code: -1007,
-        message: "Unauthorized - user data not found",
-      });
-      return;
+    // Check if this is a lightweight endpoint that doesn't need full user data
+    const isLightweightEndpoint = req.path.startsWith('/api/user/kodiak/status') ||
+      req.path.startsWith('/api/user/kodiak/trades') ||
+      req.path.startsWith('/api/user/kodiak/positions') ||
+      req.path.startsWith('/api/user/kodiak/balance');
+
+    if (isLightweightEndpoint) {
+      // For lightweight endpoints, just verify user exists without loading full data
+      const userExists = await authService.getUserById(payload.userId);
+      if (!userExists) {
+        logger.error("User not found for lightweight endpoint", {
+          userId: payload.userId,
+          endpoint: req.path,
+        });
+        res.status(401).json({
+          success: false,
+          code: -1007,
+          message: "Unauthorized - user not found",
+        });
+        return;
+      }
+
+      req.user = {
+        ...payload,
+        userLevel: userExists.userLevel,
+        roles: [] // Lightweight endpoints don't need roles
+      };
+    } else {
+      // Load complete user data with roles and credentials for complex endpoints
+      const userData = await authService.getAuthenticatedUserData(payload.userId);
+      if (!userData) {
+        logger.error("Failed to load user data in auth middleware - user not found", {
+          userId: payload.userId,
+        });
+        res.status(401).json({
+          success: false,
+          code: -1007,
+          message: "Unauthorized - user data not found",
+        });
+        return;
+      }
+
+      const userRoles = userData.roles;
+
+      req.user = {
+        ...payload,
+        userLevel: userData.user.userLevel, // Always use current userLevel from database
+        roles: userRoles
+      };
     }
-
-    const userRoles = userData.roles;
-
-    req.user = {
-      ...payload,
-      roles: userRoles
-    };
 
     // Set user context for logging and tracing
     setUserContext(payload.userId, payload.userLevel);
+
+    // Clear failure counter on successful auth
+    const identifier = `ip:${req.ip}`;
+    await progressiveAuthLimiter.recordSuccess(identifier);
 
     next();
   } catch (error) {
@@ -303,26 +338,56 @@ export async function authMiddleware(
           return;
         }
 
-        // Load complete user data for refreshed token (N+1 optimization)
-        const refreshedUserData = await authService.getAuthenticatedUserData(newPayload.userId);
-        if (!refreshedUserData) {
-          logger.error("Failed to load refreshed user data - user not found", {
-            userId: newPayload.userId,
-          });
-          res.status(401).json({
-            success: false,
-            code: -1008,
-            message: "Unauthorized - refreshed user data not found",
-          });
-          return;
+        // Check if this is a lightweight endpoint for refreshed token too
+        const isLightweightEndpointRefresh = req.path.startsWith('/api/user/kodiak/status') ||
+          req.path.startsWith('/api/user/kodiak/trades') ||
+          req.path.startsWith('/api/user/kodiak/positions') ||
+          req.path.startsWith('/api/user/kodiak/balance');
+
+        if (isLightweightEndpointRefresh) {
+          // For lightweight endpoints, just verify user exists without loading full data
+          const userExists = await authService.getUserById(newPayload.userId);
+          if (!userExists) {
+            logger.error("Refreshed user not found for lightweight endpoint", {
+              userId: newPayload.userId,
+              endpoint: req.path,
+            });
+            res.status(401).json({
+              success: false,
+              code: -1008,
+              message: "Unauthorized - refreshed user not found",
+            });
+            return;
+          }
+
+          req.user = {
+            ...newPayload,
+            userLevel: userExists.userLevel,
+            roles: [] // Lightweight endpoints don't need roles
+          };
+        } else {
+          // Load complete user data for refreshed token (N+1 optimization)
+          const refreshedUserData = await authService.getAuthenticatedUserData(newPayload.userId);
+          if (!refreshedUserData) {
+            logger.error("Failed to load refreshed user data - user not found", {
+              userId: newPayload.userId,
+            });
+            res.status(401).json({
+              success: false,
+              code: -1008,
+              message: "Unauthorized - refreshed user data not found",
+            });
+            return;
+          }
+
+          const refreshedUserRoles = refreshedUserData.roles;
+
+          req.user = {
+            ...newPayload,
+            userLevel: refreshedUserData.user.userLevel, // Always use current userLevel from database
+            roles: refreshedUserRoles
+          };
         }
-
-        const refreshedUserRoles = refreshedUserData.roles;
-
-        req.user = {
-          ...newPayload,
-          roles: refreshedUserRoles
-        };
         next();
       } catch (refreshError) {
         logger.error("Token refresh process failed", {

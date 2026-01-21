@@ -1,6 +1,6 @@
 /** @format */
 
-import React from "react";
+import React, { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Card } from "../../../shared/components/ui";
 import { Trade } from "../types/dashboard.types";
@@ -17,6 +17,7 @@ export const RecentTrades: React.FC<RecentTradesProps> = ({
   trades,
   isLoading,
 }) => {
+  const [currentTime] = useState(() => Date.now());
   return (
     <Card>
       <h2 className="text-lg font-semibold text-text mb-4">Recent Trades</h2>
@@ -48,7 +49,7 @@ export const RecentTrades: React.FC<RecentTradesProps> = ({
             ) : (
               trades.map((trade, index) => {
                 const timestamp = new Date(
-                  trade.close_timestamp || trade.open_timestamp || Date.now()
+                  trade.close_timestamp || trade.open_timestamp || currentTime
                 );
                 const dateString = timestamp.toLocaleDateString([], {
                   month: "short",

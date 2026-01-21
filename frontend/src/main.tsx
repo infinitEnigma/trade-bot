@@ -11,13 +11,14 @@ import App from "./App";
 import "./index.css";
 //import "./App.css";
 
+// Create Wagmi config WITHOUT auto-connect
 const config = createConfig({
   chains: [mainnet],
   connectors: [injected()],
   transports: {
     [mainnet.id]: http(),
   },
-  ssr: true, // Enable SSR support which helps with auto-connect
+  // Removed ssr: true to disable auto-connect that triggers rate limits
 });
 
 const queryClient = new QueryClient({
@@ -31,12 +32,19 @@ const queryClient = new QueryClient({
   },
 });
 
+// Simplified Wallet Provider - Always available but with lazy loading
+const WalletProvider = ({ children }: { children: React.ReactNode }) => (
+  <WagmiProvider config={config}>
+    <QueryClientProvider client={queryClient}>
+      {children}
+    </QueryClientProvider>
+  </WagmiProvider>
+);
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <WagmiProvider config={config}>
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
-    </WagmiProvider>
+    <WalletProvider>
+      <App />
+    </WalletProvider>
   </React.StrictMode>
 );

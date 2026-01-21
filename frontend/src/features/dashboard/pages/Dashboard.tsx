@@ -65,7 +65,8 @@ const PortfolioChart = ({ data }: any) => (
 // Calculate real portfolio performance from trades data
 const calculatePortfolioPerformance = (
   trades: any[],
-  initialBalance = 10000 // TODO: find first balance, replace arbitrary 10000
+  initialBalance = 10000, // TODO: find first balance, replace arbitrary 10000
+  currentTime = Date.now()
 ) => {
   if (!trades || trades.length === 0) {
     return [{ time: "No data", value: initialBalance }];
@@ -84,7 +85,7 @@ const calculatePortfolioPerformance = (
     currentBalance += pnl;
 
     const timestamp = new Date(
-      trade.close_timestamp || trade.open_timestamp || Date.now()
+      trade.close_timestamp || trade.open_timestamp || currentTime
     );
     const timeString = timestamp.toLocaleTimeString([], {
       hour: "2-digit",
@@ -104,6 +105,7 @@ const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const [selectedSymbol, setSelectedSymbol] = useState("PERP_BTC_USDC");
   //const [showWalletDialog, setShowWalletDialog] = useState(false);
+  const [currentTime] = useState(() => Date.now());
 
   // ✅ Fetch real balance data - moved to top
   const { balance: realBalance, loading: realBalanceLoading } = useBalance();
@@ -168,7 +170,7 @@ const Dashboard: React.FC = () => {
   // Calculate real portfolio performance chart data
   const portfolioData =
     tradesData?.success && tradesData.data?.rows
-      ? calculatePortfolioPerformance(tradesData.data.rows, totalBalance)
+      ? calculatePortfolioPerformance(tradesData.data.rows, totalBalance, currentTime)
       : [{ time: "No data", value: totalBalance || 10000 }];
 
   return (
@@ -620,7 +622,7 @@ const Dashboard: React.FC = () => {
                       const timestamp = new Date(
                         trade.close_timestamp ||
                           trade.open_timestamp ||
-                          Date.now()
+                          currentTime
                       );
                       const dateString = timestamp.toLocaleDateString([], {
                         month: "short",

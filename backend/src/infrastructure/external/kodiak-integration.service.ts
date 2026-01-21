@@ -92,10 +92,39 @@ export class KodiakIntegrationService {
 
             const row = result.rows[0];
 
+            // Try to decrypt with regular method first (for newly encrypted data)
+            let apiKey: string;
+            let secretKey: string;
+
+            try {
+                apiKey = encryptionService.decryptApiKey(row.api_key_encrypted);
+                secretKey = encryptionService.decryptSecretKey(row.secret_key_encrypted);
+            } catch (error) {
+                logger.warn("Failed to decrypt Kodiak credentials with regular method, trying versioned", {
+                    userId,
+                    error: error instanceof Error ? error.message : String(error),
+                });
+
+                // Try versioned decryption (for older data)
+                try {
+                    apiKey = await encryptionService.decryptWithVersion(row.api_key_encrypted);
+                    secretKey = await encryptionService.decryptWithVersion(row.secret_key_encrypted);
+                } catch (versionError) {
+                    logger.warn("Failed to decrypt with versioned method, assuming plain text", {
+                        userId,
+                        error: versionError instanceof Error ? versionError.message : String(versionError),
+                    });
+
+                    // Assume plain text (for backward compatibility)
+                    apiKey = row.api_key_encrypted;
+                    secretKey = row.secret_key_encrypted;
+                }
+            }
+
             return {
                 accountId: row.account_id,
-                apiKey: await encryptionService.decryptApiKey(row.api_key_encrypted),
-                secretKey: await encryptionService.decryptSecretKey(row.secret_key_encrypted),
+                apiKey,
+                secretKey,
             };
         } catch (error) {
             logger.error("Failed to get Kodiak credentials", {
@@ -130,38 +159,26 @@ export class KodiakIntegrationService {
             }
 
             // Make API request
-            const response = await this.makeKodiakRequest(
+            const positionsData = await this.makeKodiakRequest(
                 "GET",
                 "/positions",
                 credentials
             );
 
-            if (response.success && response.data) {
-                const result: KodiakApiResponse<KodiakPosition[]> = {
-                    success: true,
-                    data: response.data,
-                };
+            const result: KodiakApiResponse<KodiakPosition[]> = {
+                success: true,
+                data: positionsData,
+            };
 
-                // Cache the result
-                await redisService.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+            // Cache the result
+            await redisService.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
 
-                logger.debug("Kodiak positions retrieved and cached", {
-                    userId,
-                    positionsCount: response.data?.rows?.length || 0,
-                });
+            logger.debug("Kodiak positions retrieved and cached", {
+                userId,
+                positionsCount: positionsData?.rows?.length || 0,
+            });
 
-                return result;
-            } else {
-                logger.error("Kodiak positions API failed", {
-                    userId,
-                    response: response,
-                });
-
-                return {
-                    success: false,
-                    error: "Failed to fetch positions from Kodiak API",
-                };
-            }
+            return result;
         } catch (error) {
             logger.error("Get Kodiak positions error", {
                 userId,
@@ -199,39 +216,27 @@ export class KodiakIntegrationService {
             }
 
             // Make API request
-            const response = await this.makeKodiakRequest(
+            const tradesData = await this.makeKodiakRequest(
                 "GET",
                 `/position_history?limit=${limit}`,
                 credentials
             );
 
-            if (response.success && response.data) {
-                const result: KodiakApiResponse<KodiakTrade[]> = {
-                    success: true,
-                    data: response.data,
-                };
+            const result: KodiakApiResponse<KodiakTrade[]> = {
+                success: true,
+                data: tradesData,
+            };
 
-                // Cache the result
-                await redisService.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+            // Cache the result
+            await redisService.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
 
-                logger.debug("Kodiak trades retrieved and cached", {
-                    userId,
-                    limit,
-                    tradesCount: response.data?.rows?.length || 0,
-                });
+            logger.debug("Kodiak trades retrieved and cached", {
+                userId,
+                limit,
+                tradesCount: tradesData?.rows?.length || 0,
+            });
 
-                return result;
-            } else {
-                logger.error("Kodiak trades API failed", {
-                    userId,
-                    response: response,
-                });
-
-                return {
-                    success: false,
-                    error: "Failed to fetch trades from Kodiak API",
-                };
-            }
+            return result;
         } catch (error) {
             logger.error("Get Kodiak trades error", {
                 userId,
@@ -269,29 +274,22 @@ export class KodiakIntegrationService {
             }
 
             // Get account holdings
-            const holdingsResponse = await this.makeKodiakRequest(
+            const holdingsData = await this.makeKodiakRequest(
                 "GET",
                 "/client/holding?all=true",
                 credentials
             );
 
-            if (!holdingsResponse.success) {
-                return {
-                    success: false,
-                    error: "Failed to fetch account holdings",
-                };
-            }
-
             // Get account info
-            const accountInfoResponse = await this.makeKodiakRequest(
+            const accountInfoData = await this.makeKodiakRequest(
                 "GET",
                 "/client/info",
                 credentials
             );
 
-            const holdings = Array.isArray(holdingsResponse.data)
-                ? holdingsResponse.data
-                : holdingsResponse.data?.holding || [];
+            const holdings = Array.isArray(holdingsData)
+                ? holdingsData
+                : holdingsData?.holding || [];
 
             // Calculate total balance
             const totalBalance = holdings.reduce((sum: number, holding: any) => {
@@ -302,11 +300,11 @@ export class KodiakIntegrationService {
 
             const accountInfo: KodiakAccountInfo = {
                 totalBalance: totalBalance.toString(),
-                totalPnl24H: accountInfoResponse.data?.total_pnl_24_h || "0",
-                totalPnl30D: accountInfoResponse.data?.total_pnl_30_d || "0",
-                totalPnlAll: accountInfoResponse.data?.total_pnl_all || "0",
-                tradingVolume24H: accountInfoResponse.data?.trading_volume_last_24_hours || "0",
-                accountType: accountInfoResponse.data?.account_type || "UNKNOWN",
+                totalPnl24H: accountInfoData?.total_pnl_24_h || "0",
+                totalPnl30D: accountInfoData?.total_pnl_30_d || "0",
+                totalPnlAll: accountInfoData?.total_pnl_all || "0",
+                tradingVolume24H: accountInfoData?.trading_volume_last_24_hours || "0",
+                accountType: accountInfoData?.account_type || "UNKNOWN",
                 balances: holdings,
             };
 
@@ -339,7 +337,7 @@ export class KodiakIntegrationService {
     }
 
     /**
-     * Get Kodiak account information
+     * Get Kodiak account information (authenticated)
      */
     async getAccountInfo(userId: string): Promise<KodiakApiResponse<any>> {
         try {
@@ -362,41 +360,141 @@ export class KodiakIntegrationService {
             }
 
             // Make API request
-            const response = await this.makeKodiakRequest(
+            const accountInfoData = await this.makeKodiakRequest(
                 "GET",
                 "/client/info",
                 credentials
             );
 
-            if (response.success && response.data) {
-                const result: KodiakApiResponse = {
-                    success: true,
-                    data: response.data,
-                };
+            const result: KodiakApiResponse = {
+                success: true,
+                data: accountInfoData,
+            };
 
-                // Cache the result
-                await redisService.setex(cacheKey, this.CACHE_TTL_MEDIUM, JSON.stringify(result));
+            // Cache the result
+            await redisService.setex(cacheKey, this.CACHE_TTL_MEDIUM, JSON.stringify(result));
 
-                logger.debug("Kodiak account info retrieved and cached", {
-                    userId,
-                    accountType: response.data?.account_type,
-                });
+            logger.debug("Kodiak account info retrieved and cached", {
+                userId,
+                accountType: accountInfoData?.account_type,
+            });
 
-                return result;
-            } else {
-                logger.error("Kodiak account info API failed", {
-                    userId,
-                    response: response,
-                });
-
-                return {
-                    success: false,
-                    error: "Failed to fetch account info from Kodiak API",
-                };
-            }
+            return result;
         } catch (error) {
             logger.error("Get Kodiak account info error", {
                 userId,
+                error: error instanceof Error ? error.message : String(error),
+            });
+
+            return {
+                success: false,
+                error: "Failed to get Kodiak account info",
+            };
+        }
+    }
+
+    /**
+     * Get Kodiak account information (authenticated - for wallet address)
+     * Note: This endpoint may require authentication now
+     */
+    async getPublicAccountInfo(accountId: string, credentials?: KodiakCredentials): Promise<KodiakApiResponse<any>> {
+        try {
+            const cacheKey = `kodiak:public_account:${accountId}`;
+
+            // Check cache first
+            const cacheResult = await redisService.get(cacheKey);
+            if (cacheResult.success && cacheResult.data) {
+                logger.debug("Returning cached Kodiak account info", { accountId });
+                return JSON.parse(cacheResult.data);
+            }
+
+            // Make API request (may require authentication now)
+            const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org";
+
+            if (credentials) {
+                // Try authenticated request first
+                try {
+                    const accountInfoData = await this.makeKodiakRequest(
+                        "GET",
+                        `/v1/public/account?account_id=${encodeURIComponent(accountId)}`,
+                        credentials
+                    );
+
+                    const result: KodiakApiResponse = {
+                        success: true,
+                        data: accountInfoData.data || accountInfoData, // Handle different response formats
+                    };
+
+                    // Cache the result
+                    await redisService.setex(cacheKey, this.CACHE_TTL_MEDIUM, JSON.stringify(result));
+
+                    logger.debug("Kodiak account info retrieved and cached (authenticated)", {
+                        accountId,
+                        address: result.data?.address,
+                    });
+
+                    return result;
+                } catch (authError) {
+                    logger.warn("Authenticated request failed, trying public request", {
+                        accountId,
+                        error: authError instanceof Error ? authError.message : String(authError),
+                    });
+                }
+            }
+
+            // Fallback to public request
+            const requestUrl = `${baseUrl}/v1/public/account?account_id=${encodeURIComponent(accountId)}`;
+
+            logger.debug("Making Kodiak public account API request", {
+                url: requestUrl,
+                accountId,
+                baseUrl,
+            });
+
+            const response = await fetch(requestUrl, {
+                method: "GET",
+                headers: {
+                    "Accept": "application/json",
+                    "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
+                },
+            });
+
+            logger.debug("Kodiak public account API response received", {
+                status: response.status,
+                statusText: response.statusText,
+                url: requestUrl,
+                accountId,
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                logger.error("Kodiak public account API error response", {
+                    status: response.status,
+                    statusText: response.statusText,
+                    error: errorText,
+                });
+                throw new Error(`Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`);
+            }
+
+            const responseData = await response.json() as { success: boolean; data: any; timestamp: number };
+
+            const result: KodiakApiResponse = {
+                success: true,
+                data: responseData.data, // The actual data is in responseData.data
+            };
+
+            // Cache the result
+            await redisService.setex(cacheKey, this.CACHE_TTL_MEDIUM, JSON.stringify(result));
+
+            logger.debug("Kodiak account info retrieved and cached (public)", {
+                accountId,
+                address: responseData.data?.address,
+            });
+
+            return result;
+        } catch (error) {
+            logger.error("Get Kodiak account info error", {
+                accountId,
                 error: error instanceof Error ? error.message : String(error),
             });
 
@@ -482,7 +580,7 @@ export class KodiakIntegrationService {
                 requestOptions.body = bodyStr;
             }
 
-            const response = await fetch(`${baseUrl}${path}`, requestOptions);
+            const response = await fetch(`${baseUrl}${signaturePath}`, requestOptions);
 
             logger.debug("Kodiak API response received", {
                 status: response.status,
@@ -555,20 +653,14 @@ export class KodiakIntegrationService {
      */
     async testConnectivity(credentials: KodiakCredentials): Promise<{ success: boolean; error?: string }> {
         try {
-            const response = await this.makeKodiakRequest("GET", "/client/info", credentials);
+            // If this call succeeds without throwing, credentials are valid
+            await this.makeKodiakRequest("GET", "/client/info", credentials);
 
-            if (response.success) {
-                logger.info("Kodiak API connectivity test successful", {
-                    accountId: credentials.accountId,
-                });
-                return { success: true };
-            } else {
-                logger.warn("Kodiak API connectivity test failed", {
-                    accountId: credentials.accountId,
-                    response,
-                });
-                return { success: false, error: "API request failed" };
-            }
+            logger.info("Kodiak API connectivity test successful", {
+                accountId: credentials.accountId,
+            });
+            return { success: true };
+
         } catch (error) {
             logger.warn("Kodiak API connectivity test error", {
                 accountId: credentials.accountId,

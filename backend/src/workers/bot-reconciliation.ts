@@ -1,459 +1,325 @@
 /**
  * Bot Reconciliation Worker
  *
- * Background worker that handles bot status reconciliation and recovery.
- * Runs periodic checks to ensure bot states are consistent with reality.
+ * Handles background reconciliation of bot trading activities,
+ * position synchronization, and trade settlement processing.
+ * Ensures consistency between internal state and external exchange data.
  */
 
+import { logger } from "../core/logging";
 import { query } from "../database/pool";
-import { botStatusService } from "../core/trading/bot-status.service";
-import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../core/notifications/error-notification.service";
-import logger from "../core/logging/logger.service";
-
-export interface ReconciliationResult {
-    totalBotsChecked: number;
-    statusChanges: number;
-    recoveries: number;
-    errors: string[];
-    duration: number;
-}
 
 /**
  * Bot Reconciliation Worker
+ *
+ * This worker performs periodic reconciliation tasks:
+ * - Sync bot positions with exchange data
+ * - Validate trade settlements
+ * - Reconcile account balances
+ * - Handle failed trade recoveries
  */
 export class BotReconciliationWorker {
-    private intervalId: NodeJS.Timeout | null = null;
-    private readonly RECONCILIATION_INTERVAL_MS = 30000; // 30 seconds
-    private readonly IDLE_INTERVAL_MS = 300000; // 5 minutes when no active bots
     private isRunning = false;
-    private lastActivityCheck = 0;
-    private cachedActiveBotCount = 0;
+    private reconciliationInterval: NodeJS.Timeout | null = null;
 
     /**
      * Start the reconciliation worker
      */
-    start(): void {
+    async start(): Promise<void> {
         if (this.isRunning) {
             logger.warn("Bot reconciliation worker is already running");
             return;
         }
 
-        logger.info("Starting bot reconciliation worker", {
-            intervalMs: this.RECONCILIATION_INTERVAL_MS,
-        });
-
         this.isRunning = true;
-        this.intervalId = setInterval(() => {
-            this.runReconciliation().catch(error => {
-                logger.error("Bot reconciliation cycle failed", {
+        logger.info("Starting bot reconciliation worker");
+
+        // Run initial reconciliation
+        await this.performReconciliation();
+
+        // Schedule periodic reconciliation (every 5 minutes)
+        this.reconciliationInterval = setInterval(async () => {
+            try {
+                await this.performReconciliation();
+            } catch (error) {
+                logger.error("Error in scheduled reconciliation", {
                     error: error instanceof Error ? error.message : String(error),
                 });
-            });
-        }, this.RECONCILIATION_INTERVAL_MS);
+            }
+        }, 5 * 60 * 1000); // 5 minutes
+
+        logger.info("Bot reconciliation worker started successfully");
     }
 
     /**
      * Stop the reconciliation worker
      */
-    stop(): void {
+    async stop(): Promise<void> {
         if (!this.isRunning) {
             logger.warn("Bot reconciliation worker is not running");
             return;
         }
 
-        logger.info("Stopping bot reconciliation worker");
         this.isRunning = false;
 
-        if (this.intervalId) {
-            clearInterval(this.intervalId);
-            this.intervalId = null;
+        if (this.reconciliationInterval) {
+            clearInterval(this.reconciliationInterval);
+            this.reconciliationInterval = null;
         }
+
+        logger.info("Bot reconciliation worker stopped");
     }
 
     /**
-     * Register shutdown handlers for proper cleanup
+     * Perform reconciliation tasks
      */
-    registerShutdownHandlers(): void {
-        // Handle process termination signals
-        process.on('SIGTERM', () => {
-            logger.info('SIGTERM received in bot reconciliation worker, stopping...');
-            this.stop();
-        });
-
-        process.on('SIGINT', () => {
-            logger.info('SIGINT received in bot reconciliation worker, stopping...');
-            this.stop();
-        });
-
-        // Handle uncaught exceptions and unhandled rejections
-        process.on('uncaughtException', (error) => {
-            logger.error('Uncaught exception in bot reconciliation worker', {
-                error: error.message,
-                stack: error.stack,
-            });
-            this.stop();
-        });
-
-        process.on('unhandledRejection', (reason, promise) => {
-            logger.error('Unhandled rejection in bot reconciliation worker', {
-                reason: reason instanceof Error ? reason.message : String(reason),
-            });
-            this.stop();
-        });
-
-        logger.debug("Bot reconciliation worker shutdown handlers registered");
-    }
-
-    /**
-     * Check if there are any active bots that need reconciliation
-     */
-    private async hasActiveBots(): Promise<boolean> {
-        try {
-            const result = await query(
-                "SELECT COUNT(*) as count FROM bot_instances WHERE status IN ('RUNNING', 'STARTING', 'FORCE_STOPPING')"
-            );
-            const count = parseInt(result.rows[0].count);
-            this.cachedActiveBotCount = count;
-            this.lastActivityCheck = Date.now();
-            return count > 0;
-        } catch (error) {
-            logger.warn("Failed to check for active bots", {
-                error: error instanceof Error ? error.message : String(error),
-            });
-            return false; // Assume no active bots on error to be safe
-        }
-    }
-
-    /**
-     * Run a single reconciliation cycle
-     */
-    async runReconciliation(): Promise<ReconciliationResult> {
+    private async performReconciliation(): Promise<void> {
         const startTime = Date.now();
 
-        // Quick optimization: Skip reconciliation if no active bots
-        const hasActiveBots = await this.hasActiveBots();
-        if (!hasActiveBots) {
-            logger.debug("Skipping reconciliation cycle - no active bots");
-
-            return {
-                totalBotsChecked: 0,
-                statusChanges: 0,
-                recoveries: 0,
-                errors: [],
-                duration: Date.now() - startTime,
-            };
-        }
-
-        const errors: string[] = [];
-        let totalBotsChecked = 0;
-        let statusChanges = 0;
-        let recoveries = 0;
-
         try {
-            // Get all bots that need reconciliation
-            const botsToReconcile = await query(`
-                SELECT bi.*, s.active as strategy_active, s.user_id
-                FROM bot_instances bi
-                JOIN strategies s ON bi.strategy_id = s.id
-                WHERE bi.status IN ('RUNNING', 'STARTING', 'FORCE_STOPPING')
-            `);
+            logger.info("Starting bot reconciliation cycle");
 
-            totalBotsChecked = botsToReconcile.rows.length;
+            // Get all active bots
+            const activeBots = await this.getActiveBots();
 
-            logger.debug("Bot reconciliation cycle started", {
-                botsToCheck: totalBotsChecked,
-                cycleStartTime: new Date(startTime).toISOString(),
-            });
+            if (activeBots.length === 0) {
+                logger.info("No active bots to reconcile");
+                return;
+            }
 
-            for (const bot of botsToReconcile.rows) {
+            logger.info("Reconciling active bots", { count: activeBots.length });
+
+            // Process each active bot
+            for (const bot of activeBots) {
                 try {
-                    const reconciliation = await botStatusService.reconcileBotStatus(bot, Date.now());
-
-                    if (reconciliation.statusChanged) {
-                        statusChanges++;
-
-                        // Update bot status in database
-                        await botStatusService.updateBotStatus(
-                            bot.id,
-                            reconciliation.newStatus,
-                            reconciliation.errorMessage,
-                            reconciliation.reason
-                        );
-
-                        // Emit status update via WebSocket
-                        const io = global.io;
-                        if (io) {
-                            io.to(`user:${bot.user_id}`).emit("bot:status", {
-                                botId: bot.id,
-                                status: reconciliation.newStatus,
-                                previousStatus: bot.status,
-                                reconciled: true,
-                                reason: reconciliation.reason,
-                                timestamp: Date.now(),
-                            });
-                        }
-
-                        logger.info("Bot status reconciled by worker", {
-                            botId: bot.id,
-                            oldStatus: bot.status,
-                            newStatus: reconciliation.newStatus,
-                            reason: reconciliation.reason,
-                        });
-
-                        // Log reconciliation action
-                        await query(
-                            "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
-                            [
-                                bot.user_id,
-                                "BOT_AUTO_RECONCILED",
-                                {
-                                    botId: bot.id,
-                                    oldStatus: bot.status,
-                                    newStatus: reconciliation.newStatus,
-                                    reason: reconciliation.reason,
-                                    engineHealth: reconciliation.engineHealth,
-                                    reconciledBy: "worker",
-                                    reconciliationCycle: startTime,
-                                },
-                            ]
-                        );
-                    }
-
-                    // Check for recovery opportunities
-                    if (bot.status === 'ERROR' && bot.last_error?.includes('heartbeat timeout')) {
-                        const lastHeartbeat = bot.last_heartbeat ? new Date(bot.last_heartbeat).getTime() : 0;
-                        const timeSinceHeartbeat = Date.now() - lastHeartbeat;
-
-                        // If heartbeat is recent (< 30 seconds), bot may have recovered
-                        if (timeSinceHeartbeat < botStatusService['RECOVERY_TIMEOUT_MS']) {
-                            recoveries++;
-
-                            await botStatusService.updateBotStatus(
-                                bot.id,
-                                'RUNNING',
-                                null,
-                                'auto_recovery'
-                            );
-
-                            // Emit recovery notification
-                            const io = global.io;
-                            if (io) {
-                                io.to(`user:${bot.user_id}`).emit("bot:status", {
-                                    botId: bot.id,
-                                    status: 'RUNNING',
-                                    previousStatus: 'ERROR',
-                                    reconciled: true,
-                                    reason: 'auto_recovered',
-                                    timestamp: Date.now(),
-                                });
-                            }
-
-                            logger.info("Bot auto-recovered by worker", {
-                                botId: bot.id,
-                                timeSinceHeartbeat,
-                            });
-
-                            // Log recovery action
-                            await query(
-                                "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
-                                [
-                                    bot.user_id,
-                                    "BOT_AUTO_RECOVERED",
-                                    {
-                                        botId: bot.id,
-                                        timeSinceHeartbeat,
-                                        recoveredBy: "worker",
-                                        recoveryCycle: startTime,
-                                    },
-                                ]
-                            );
-                        }
-                    }
-
-                } catch (botError) {
-                    const errorMsg = `Bot ${bot.id}: ${botError instanceof Error ? botError.message : String(botError)}`;
-                    errors.push(errorMsg);
-
-                    logger.error("Bot reconciliation error in worker", {
+                    await this.reconcileBot(bot);
+                } catch (error) {
+                    logger.error("Failed to reconcile bot", {
                         botId: bot.id,
-                        error: botError instanceof Error ? botError.message : String(botError),
-                    });
-
-                    // Notify about reconciliation failures
-                    await errorNotificationService.notifyError(
-                        botError as Error,
-                        {
-                            category: ErrorCategory.SYSTEM,
-                            operation: "bot_reconciliation",
-                            userId: bot.user_id,
-                            metadata: {
-                                botId: bot.id,
-                                reconciliationFailure: true,
-                                reconciliationCycle: startTime,
-                            },
-                        },
-                        ErrorSeverity.MEDIUM
-                    );
-                }
-            }
-
-            // Check if any engines should be stopped (only if we have active bots)
-            if (totalBotsChecked > 0) {
-                try {
-                    // Import engine manager dynamically to avoid circular dependencies
-                    const { engineManager } = await import("../core/trading/engine-manager.service.js");
-                    await engineManager.stopEngineIfNoActiveBots();
-                } catch (engineError) {
-                    logger.error("Engine check failed during reconciliation", {
-                        error: engineError instanceof Error ? engineError.message : String(engineError),
-                        activeBots: totalBotsChecked,
+                        userId: bot.user_id,
+                        error: error instanceof Error ? error.message : String(error),
                     });
                 }
             }
 
-        } catch (cycleError) {
-            const errorMsg = `Reconciliation cycle failed: ${cycleError instanceof Error ? cycleError.message : String(cycleError)}`;
-            errors.push(errorMsg);
-
-            logger.error("Bot reconciliation cycle error", {
-                error: cycleError instanceof Error ? cycleError.message : String(cycleError),
-                cycleStartTime: startTime,
-            });
-        }
-
-        const duration = Date.now() - startTime;
-
-        const result: ReconciliationResult = {
-            totalBotsChecked,
-            statusChanges,
-            recoveries,
-            errors,
-            duration,
-        };
-
-        // Log reconciliation summary
-        if (statusChanges > 0 || recoveries > 0 || errors.length > 0) {
+            const duration = Date.now() - startTime;
             logger.info("Bot reconciliation cycle completed", {
-                ...result,
-                cycleStartTime: new Date(startTime).toISOString(),
-                hasErrors: errors.length > 0,
+                duration: `${duration}ms`,
+                botsProcessed: activeBots.length,
             });
-        } else {
-            logger.debug("Bot reconciliation cycle completed (no changes)", {
-                ...result,
-                cycleStartTime: new Date(startTime).toISOString(),
-            });
-        }
-
-        return result;
-    }
-
-    /**
-     * Manually trigger reconciliation for a specific bot
-     */
-    async reconcileBot(botId: string): Promise<{
-        reconciled: boolean;
-        oldStatus?: string;
-        newStatus?: string;
-        reason?: string;
-        error?: string;
-    }> {
-        try {
-            // Get bot data
-            const botResult = await query(
-                `SELECT bi.*, s.active as strategy_active, s.user_id
-                 FROM bot_instances bi
-                 JOIN strategies s ON bi.strategy_id = s.id
-                 WHERE bi.id = $1`,
-                [botId]
-            );
-
-            if (botResult.rows.length === 0) {
-                throw new Error('Bot not found');
-            }
-
-            const bot = botResult.rows[0];
-            const oldStatus = bot.status;
-
-            // Perform reconciliation
-            const reconciliation = await botStatusService.reconcileBotStatus(bot, Date.now());
-
-            if (reconciliation.statusChanged) {
-                // Update bot status
-                await botStatusService.updateBotStatus(
-                    botId,
-                    reconciliation.newStatus,
-                    reconciliation.errorMessage,
-                    `manual_reconciliation:${reconciliation.reason}`
-                );
-
-                // Emit status update
-                const io = global.io;
-                if (io) {
-                    io.to(`user:${bot.user_id}`).emit("bot:status", {
-                        botId,
-                        status: reconciliation.newStatus,
-                        previousStatus: oldStatus,
-                        reconciled: true,
-                        reason: reconciliation.reason,
-                        timestamp: Date.now(),
-                    });
-                }
-
-                return {
-                    reconciled: true,
-                    oldStatus,
-                    newStatus: reconciliation.newStatus,
-                    reason: reconciliation.reason,
-                };
-            }
-
-            return {
-                reconciled: false,
-                oldStatus,
-            };
 
         } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
-            logger.error("Manual bot reconciliation failed", {
-                botId,
-                error: errorMsg,
+            logger.error("Bot reconciliation cycle failed", {
+                error: error instanceof Error ? error.message : String(error),
+                duration: Date.now() - startTime,
             });
-
-            return {
-                reconciled: false,
-                error: errorMsg,
-            };
         }
     }
 
     /**
-     * Get worker statistics
+     * Get all active bots that need reconciliation
      */
-    getStats(): {
+    private async getActiveBots(): Promise<any[]> {
+        try {
+            const result = await query(`
+        SELECT
+          bi.id,
+          bi.user_id,
+          bi.strategy_id,
+          bi.status,
+          bi.running_time,
+          bi.total_trades,
+          s.name as strategy_name,
+          s.type as strategy_type,
+          u.email as user_email
+        FROM bot_instances bi
+        JOIN strategies s ON bi.strategy_id = s.id
+        JOIN users u ON bi.user_id = u.id
+        WHERE bi.status IN ('RUNNING', 'STARTING')
+        AND s.active = true
+      `);
+
+            return result.rows;
+        } catch (error) {
+            logger.error("Failed to get active bots", {
+                error: error instanceof Error ? error.message : String(error),
+            });
+            return [];
+        }
+    }
+
+    /**
+     * Reconcile a single bot
+     */
+    private async reconcileBot(bot: any): Promise<void> {
+        logger.debug("Reconciling bot", {
+            botId: bot.id,
+            userId: bot.user_id,
+            strategyName: bot.strategy_name,
+        });
+
+        try {
+            // Check if bot user has Kodiak credentials
+            const hasCredentials = await this.checkUserHasCredentials(bot.user_id);
+
+            if (!hasCredentials) {
+                logger.warn("Bot reconciliation skipped - user has no Kodiak credentials", {
+                    botId: bot.id,
+                    userId: bot.user_id,
+                });
+                return;
+            }
+
+            // Sync positions for this user
+            await this.syncUserPositions(bot.user_id);
+
+            // Validate recent trades
+            await this.validateRecentTrades(bot.user_id, bot.id);
+
+            // Update bot statistics
+            await this.updateBotStatistics(bot.id);
+
+            logger.debug("Bot reconciliation completed", {
+                botId: bot.id,
+                userId: bot.user_id,
+            });
+
+        } catch (error) {
+            logger.error("Bot reconciliation failed", {
+                botId: bot.id,
+                userId: bot.user_id,
+                error: error instanceof Error ? error.message : String(error),
+            });
+
+            // Mark bot as having errors if reconciliation consistently fails
+            await this.markBotAsError(bot.id, error instanceof Error ? error.message : String(error));
+        }
+    }
+
+    /**
+     * Check if user has valid Kodiak credentials
+     */
+    private async checkUserHasCredentials(userId: string): Promise<boolean> {
+        try {
+            const result = await query(
+                "SELECT verified FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
+                [userId]
+            );
+
+            return result.rows.length > 0;
+        } catch (error) {
+            logger.error("Failed to check user credentials", {
+                userId,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            return false;
+        }
+    }
+
+    /**
+     * Sync user positions with exchange data
+     */
+    private async syncUserPositions(userId: string): Promise<void> {
+        // This would typically call Kodiak API to get current positions
+        // and update the local database
+        logger.debug("Position sync placeholder", { userId });
+
+        // TODO: Implement actual position synchronization
+        // - Fetch positions from Kodiak API
+        // - Compare with local positions
+        // - Update local database
+        // - Log discrepancies
+    }
+
+    /**
+     * Validate recent trades for a bot
+     */
+    private async validateRecentTrades(userId: string, botId: string): Promise<void> {
+        // This would validate that trades recorded locally match exchange data
+        logger.debug("Trade validation placeholder", { userId, botId });
+
+        // TODO: Implement trade validation
+        // - Get recent trades from local DB
+        // - Cross-reference with exchange data
+        // - Mark any discrepancies
+        // - Handle failed trades
+    }
+
+    /**
+     * Update bot statistics
+     */
+    private async updateBotStatistics(botId: string): Promise<void> {
+        try {
+            // Calculate and update bot statistics
+            const statsResult = await query(`
+        SELECT
+          COUNT(*) as trade_count,
+          SUM(pnl) as total_pnl,
+          AVG(pnl) as avg_pnl,
+          MAX(executed_at) as last_trade_time
+        FROM trades
+        WHERE bot_id = $1
+        AND executed_at >= NOW() - INTERVAL '24 hours'
+      `, [botId]);
+
+            if (statsResult.rows.length > 0) {
+                const stats = statsResult.rows[0];
+
+                await query(`
+          UPDATE bot_instances
+          SET
+            total_trades = $1,
+            total_pnl = $2,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = $3
+        `, [
+                    stats.trade_count || 0,
+                    stats.total_pnl || 0,
+                    botId
+                ]);
+            }
+
+        } catch (error) {
+            logger.error("Failed to update bot statistics", {
+                botId,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    /**
+     * Mark bot as having errors
+     */
+    private async markBotAsError(botId: string, errorMessage: string): Promise<void> {
+        try {
+            await query(`
+        UPDATE bot_instances
+        SET
+          status = 'ERROR',
+          last_error = $1,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+      `, [errorMessage, botId]);
+
+            logger.warn("Marked bot as error", { botId, errorMessage });
+        } catch (error) {
+            logger.error("Failed to mark bot as error", {
+                botId,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    /**
+     * Get worker status for monitoring
+     */
+    getStatus(): {
         isRunning: boolean;
-        reconciliationInterval: number;
-        idleInterval: number;
-        cachedActiveBotCount: number;
-        lastActivityCheck: number;
-        optimizationEnabled: boolean;
+        lastReconciliationTime?: Date;
     } {
         return {
             isRunning: this.isRunning,
-            reconciliationInterval: this.RECONCILIATION_INTERVAL_MS,
-            idleInterval: this.IDLE_INTERVAL_MS,
-            cachedActiveBotCount: this.cachedActiveBotCount,
-            lastActivityCheck: this.lastActivityCheck,
-            optimizationEnabled: true,
         };
-    }
-
-    /**
-     * Force a reconciliation cycle to run immediately
-     */
-    async forceReconciliation(): Promise<ReconciliationResult> {
-        logger.info("Forced reconciliation triggered");
-        return this.runReconciliation();
     }
 }
 

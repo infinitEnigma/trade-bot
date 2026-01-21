@@ -9,6 +9,7 @@
 import { query } from "../../database/pool";
 import { authService } from "../../core/auth";
 import { kodiakIntegrationService } from "./kodiak-integration.service";
+import { encryptionService } from "../../infrastructure/security";
 import { logger } from "../../core/logging";
 
 export interface KodiakConnectionData {
@@ -81,8 +82,14 @@ export class KodiakConnectionService {
                 };
             }
 
-            // Update user level to REGISTERED
+            // Fetch and store wallet address from Kodiak account info
+            await this.fetchAndStoreWalletAddress(userId, connectionData);
+
+            // Update user level to REGISTERED (after Kodiak connection)
             await this.updateUserLevel(userId, "REGISTERED");
+
+            // Invalidate cached user data so frontend gets updated level immediately
+            await authService.invalidateUserDataCache(userId);
 
             // Log successful connection
             await this.logConnectionEvent(userId, connectionData.accountId, true);
@@ -99,7 +106,7 @@ export class KodiakConnectionService {
                 data: {
                     accountId: connectionData.accountId,
                     verified: true,
-                    userLevel: "REGISTERED",
+                    userLevel: "REGISTERED", // Return the actual level that was set
                 },
             };
 
@@ -125,6 +132,12 @@ export class KodiakConnectionService {
         try {
             // Remove credentials
             await query("DELETE FROM kodiak_credentials WHERE user_id = $1", [userId]);
+
+            // Downgrade user level back to BASIC
+            await this.updateUserLevel(userId, "BASIC");
+
+            // Invalidate cached user data so frontend gets updated level immediately
+            await authService.invalidateUserDataCache(userId);
 
             // Log disconnection
             await this.logConnectionEvent(userId, null, false);
@@ -224,8 +237,6 @@ export class KodiakConnectionService {
      * Store encrypted credentials in database
      */
     private async storeCredentials(userId: string, data: KodiakConnectionData): Promise<void> {
-        const { encryptionService } = await import("../security/encryption.service.js");
-
         const encryptedApiKey = encryptionService.encryptApiKey(data.apiKey);
         const encryptedSecretKey = encryptionService.encryptSecretKey(data.secretKey);
 
@@ -296,8 +307,25 @@ export class KodiakConnectionService {
      */
     private async updateUserLevel(userId: string, newLevel: string): Promise<void> {
         try {
+            // Get current user level first
+            const user = await authService.getUserById(userId);
+            if (!user) {
+                throw new Error("User not found");
+            }
+
+            // Only update if the level is actually changing
+            if (user.userLevel === newLevel) {
+                logger.info(`User level already ${newLevel}, no update needed`, { userId });
+                return;
+            }
+
+            // Validate the transition is allowed
+            if (!this.isValidLevelTransition(user.userLevel, newLevel)) {
+                throw new Error(`Invalid user level transition from ${user.userLevel} to ${newLevel}`);
+            }
+
             await authService.updateUserLevel(userId, newLevel as any);
-            logger.info(`User level updated to ${newLevel}`, { userId });
+            logger.info(`User level updated from ${user.userLevel} to ${newLevel}`, { userId });
         } catch (error) {
             logger.error("Failed to update user level", {
                 userId,
@@ -306,6 +334,87 @@ export class KodiakConnectionService {
             });
             throw error;
         }
+    }
+
+    /**
+     * Fetch wallet address from Kodiak account info and store it
+     */
+    private async fetchAndStoreWalletAddress(userId: string, connectionData: KodiakConnectionData): Promise<void> {
+        try {
+            // Get account info from Kodiak API (wallet address) - try authenticated first
+            const credentials = {
+                accountId: connectionData.accountId,
+                apiKey: connectionData.apiKey,
+                secretKey: connectionData.secretKey,
+            };
+            const accountInfoResult = await kodiakIntegrationService.getPublicAccountInfo(connectionData.accountId, credentials);
+
+            if (!accountInfoResult.success || !accountInfoResult.data) {
+                logger.warn("Failed to fetch Kodiak public account info for wallet address", {
+                    userId,
+                    accountId: connectionData.accountId,
+                });
+                return;
+            }
+
+            // Extract wallet address from public account info
+            const accountInfo = accountInfoResult.data;
+            const walletAddress = accountInfo.address;
+
+            if (!walletAddress) {
+                logger.warn("No wallet address found in Kodiak public account info", {
+                    userId,
+                    accountId: connectionData.accountId,
+                    accountInfoKeys: Object.keys(accountInfo),
+                });
+                return;
+            }
+
+            // Validate wallet address format (should be Ethereum address)
+            if (!walletAddress.startsWith('0x') || walletAddress.length !== 42) {
+                logger.warn("Invalid wallet address format from Kodiak API", {
+                    userId,
+                    accountId: connectionData.accountId,
+                    walletAddress,
+                });
+                return;
+            }
+
+            // Store wallet address in database
+            await query(
+                "UPDATE kodiak_credentials SET wallet_address = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2",
+                [walletAddress, userId]
+            );
+
+            logger.info("Wallet address fetched and stored from Kodiak public API", {
+                userId,
+                accountId: connectionData.accountId,
+                walletAddress,
+            });
+
+        } catch (error) {
+            logger.error("Failed to fetch and store wallet address", {
+                userId,
+                accountId: connectionData.accountId,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            // Don't throw - wallet address is optional for basic functionality
+        }
+    }
+
+    /**
+     * Validate if a user level transition is allowed
+     */
+    private isValidLevelTransition(fromLevel: string, toLevel: string): boolean {
+        const validTransitions: Record<string, string[]> = {
+            'BASIC': ['REGISTERED'],
+            'REGISTERED': ['VERIFIED'],
+            'VERIFIED': ['PREMIUM'],
+            'PREMIUM': ['ADMIN'],
+            'ADMIN': [] // No transitions from admin
+        };
+
+        return validTransitions[fromLevel]?.includes(toLevel) ?? false;
     }
 
     /**

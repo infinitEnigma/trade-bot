@@ -1,7 +1,7 @@
 /** @format */
 
 import { Router, Request, Response } from "express";
-import Joi from "joi";
+//import Joi from "joi";
 import { authService } from "../../core/auth/auth.service";
 import { walletQualificationService } from "../../core/wallet/wallet-qualification.service";
 import { roleManagementService } from "../../core/auth/role-management.service";
@@ -12,13 +12,14 @@ import { createErrorResponse, ValidationError } from "../../shared/types/errors"
 import { getCorrelationId } from "../../shared/utils/context";
 import { validators } from "../../interfaces/middleware/validation";
 import logger from "../../core/logging/logger.service";
+import { progressiveAuthLimiter } from "../../infrastructure/security/rate-limiter.service";
+import { query } from "../../database/pool";
 
 const router = Router();
 
 // POST /api/auth/register
 router.post(
   "/register",
-  RateLimiters.auth,
   validators.register,
   async (req: Request, res: Response) => {
     try {
@@ -66,7 +67,6 @@ router.post(
 // POST /api/auth/login
 router.post(
   "/login",
-  RateLimiters.auth,
   validators.login,
   async (req: Request, res: Response) => {
     logger.info("Login attempt", { email: req.body?.email });
@@ -94,6 +94,10 @@ router.post(
         email: result.user?.email,
         userId: result.user?.id,
       });
+
+      // Clear failure counter on successful auth
+      const identifier = `ip:${req.ip}`;
+      await progressiveAuthLimiter.recordSuccess(identifier);
 
       // Set httpOnly cookies for security
       res.cookie("accessToken", result.tokens!.accessToken, {
@@ -295,6 +299,73 @@ router.get(
         error: (error as Error).message
       });
       const internalError = new ValidationError("Failed to get qualification config");
+      res.status(internalError.statusCode).json(
+        createErrorResponse(internalError, getCorrelationId())
+      );
+    }
+  }
+);
+
+// GET /api/auth/me
+router.get(
+  "/me",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      // Get complete user data including timestamps
+      const result = await query(
+        "SELECT id, email, user_level, created_at, updated_at FROM users WHERE id = $1",
+        [req.user!.userId]
+      );
+
+      if (result.rows.length === 0) {
+        const error = new ValidationError("User not found");
+        return res.status(error.statusCode).json(
+          createErrorResponse(error, getCorrelationId())
+        );
+      }
+
+      const userRow = result.rows[0];
+
+      // Get user roles
+      const rolesResult = await query(
+        "SELECT role FROM user_roles WHERE user_id = $1",
+        [req.user!.userId]
+      );
+
+      const roles = rolesResult.rows.map(row => row.role);
+
+      const user = {
+        id: userRow.id,
+        email: userRow.email,
+        userLevel: userRow.user_level,
+        roles: roles,
+        createdAt: new Date(userRow.created_at),
+        updatedAt: new Date(userRow.updated_at),
+      };
+
+      logger.info("Returning user data from /me endpoint", {
+        userId: user.id,
+        userLevel: user.userLevel,
+        email: user.email,
+        rolesCount: roles.length,
+      });
+
+      // Prevent caching of user-specific data
+      res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
+
+      res.json({
+        success: true,
+        data: user
+      });
+    } catch (error) {
+      logger.error("Get me error", {
+        userId: req.user!.userId,
+        error: (error as Error).message
+      });
+      const internalError = new ValidationError("Failed to get user data");
       res.status(internalError.statusCode).json(
         createErrorResponse(internalError, getCorrelationId())
       );

@@ -62,6 +62,24 @@ const ProtectedRoute = ({
   return <>{children}</>;
 };
 
+// Minimal Providers for Auth Pages (Login/Register)
+const MinimalProviders = ({ children }: { children: React.ReactNode }) => (
+  <ThemeProvider defaultTheme="dark">
+    {children}
+  </ThemeProvider>
+);
+
+// Full Providers for Authenticated App
+const FullProviders = ({ children }: { children: React.ReactNode }) => (
+  <ThemeProvider defaultTheme="dark">
+    <ErrorProvider>
+      <ConditionalWebSocketInitializer />
+      {children}
+      <ErrorNotifications />
+    </ErrorProvider>
+  </ThemeProvider>
+);
+
 // Animated Routes Component
 const AnimatedRoutes = () => {
   const location = useLocation();
@@ -173,7 +191,6 @@ const AnimatedRoutes = () => {
                     animate="in"
                     exit="out"
                     variants={pageVariants}
-                    transition={pageTransition}
                   >
                     <Analytics />
                   </motion.div>
@@ -220,64 +237,95 @@ const AnimatedRoutes = () => {
   );
 };
 
-// App Router Component
-const AppRouter = () => {
-  return (
-    <Router>
-      <div className="min-h-screen bg-background text-text">
-        <Suspense fallback={<LoadingSpinner />}>
-          <AnimatedRoutes />
-        </Suspense>
-      </div>
-    </Router>
-  );
-};
+// Old AppRouter removed - replaced with conditional version below
 
 
 
-// WebSocket Connection Component
-const WebSocketInitializer = () => {
+// Conditional WebSocket Connection Component - Only for VERIFIED users
+const ConditionalWebSocketInitializer = () => {
+  const { user, isAuthenticated } = useAuth();
+
   React.useEffect(() => {
-    // Initialize WebSocket connection for market data
-    const socket = io("https://rewireapp.ddns.net", {
-      withCredentials: true,
-      transports: ["websocket", "polling"],
-    });
+    // Only initialize WebSocket for authenticated VERIFIED users
+    if (isAuthenticated && user?.userLevel === 'VERIFIED') {
+      console.log('📡 Initializing WebSocket for VERIFIED user:', user.email);
 
-    // Set up the socket in the subscription manager
-    websocketSubscriptionManager.setSocket(socket, 'main-connection');
+      // Initialize WebSocket connection for market data
+      const socket = io("https://rewireapp.ddns.net", {
+        withCredentials: true,
+        transports: ["websocket", "polling"],
+      });
 
-    console.log('📡 WebSocket connection initialized');
+      // Set up the socket in the subscription manager
+      websocketSubscriptionManager.setSocket(socket, 'verified-user-connection');
 
-    return () => {
-      // Cleanup on app unmount
+      console.log('📡 WebSocket connection initialized for VERIFIED user');
+
+      return () => {
+        // Cleanup when user logs out or level changes
+        console.log('📡 Cleaning up WebSocket connection');
+        websocketSubscriptionManager.cleanup();
+        socket.disconnect();
+      };
+    } else if (!isAuthenticated || user?.userLevel !== 'VERIFIED') {
+      // Clean up any existing connections for non-verified users
       websocketSubscriptionManager.cleanup();
-      socket.disconnect();
-    };
-  }, []);
+    }
+  }, [isAuthenticated, user?.userLevel, user?.email]);
 
   return null;
 };
 
-// Main App Component
+
+
+// App Router Component with Conditional Providers
+const AppRouter = () => {
+  const { isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    // Minimal providers for unauthenticated users (login/register)
+    return (
+      <Router>
+        <MinimalProviders>
+          <div className="min-h-screen bg-background text-text">
+            <Suspense fallback={<LoadingSpinner />}>
+              <AnimatedRoutes />
+            </Suspense>
+          </div>
+        </MinimalProviders>
+      </Router>
+    );
+  }
+
+  // Full providers for authenticated users
+  return (
+    <Router>
+      <FullProviders>
+        <div className="min-h-screen bg-background text-text">
+          <Suspense fallback={<LoadingSpinner />}>
+            <AnimatedRoutes />
+          </Suspense>
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              style: {
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-light)",
+                color: "var(--text-primary)",
+              },
+            }}
+          />
+        </div>
+      </FullProviders>
+    </Router>
+  );
+};
+
+// Main App Component - Only provides authentication context
 function App() {
   return (
     <ThemeProvider defaultTheme="dark">
-      <ErrorProvider>
-        <WebSocketInitializer />
-        <AppRouter />
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-light)",
-              color: "var(--text-primary)",
-            },
-          }}
-        />
-        <ErrorNotifications />
-      </ErrorProvider>
+      <AppRouter />
     </ThemeProvider>
   );
 }

@@ -10,6 +10,7 @@ import Joi from "joi";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { kodiakConnectionService } from "../../infrastructure/external/kodiak-connection.service";
 import { kodiakIntegrationService } from "../../infrastructure/external/kodiak-integration.service";
+import { RateLimiters } from "../../infrastructure/security/rate-limiter.service";
 import logger from "../../core/logging/logger.service";
 
 const router = Router();
@@ -99,8 +100,13 @@ router.delete("/kodiak/disconnect", authMiddleware, async (req: AuthenticatedReq
 // GET /api/user/kodiak/status
 router.get("/kodiak/status", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const userId = req.user!.userId as string;
+        const userId = req.user!.userId;
         const status = await kodiakConnectionService.getConnectionStatus(userId);
+
+        // Prevent caching of user-specific data
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
 
         res.json({
             success: true,
@@ -241,6 +247,38 @@ router.get("/kodiak/account-info", authMiddleware, async (req: AuthenticatedRequ
         res.status(500).json({
             success: false,
             error: "Failed to get Kodiak account info"
+        });
+    }
+});
+
+// GET /api/public/kodiak/availability
+router.get("/public/kodiak/availability", async (req: Request, res: Response) => {
+    try {
+        // Check if Kodiak API is generally available (no auth required)
+        // This is a public endpoint that just indicates service status
+        // For now, return a basic availability status
+        const isAvailable = true; // Kodiak service is available
+
+        res.set('Cache-Control', 'public, max-age=300'); // Cache for 5 minutes
+
+        res.json({
+            success: true,
+            data: {
+                available: isAvailable,
+                timestamp: new Date().toISOString(),
+            },
+        });
+    } catch (error) {
+        logger.error("Kodiak availability check error", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+
+        res.json({
+            success: true,
+            data: {
+                available: false,
+                timestamp: new Date().toISOString(),
+            },
         });
     }
 });
