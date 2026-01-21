@@ -126,7 +126,7 @@ const Dashboard: React.FC = () => {
     },
   });
 
-  const { data: tradesData, isLoading: tradesLoading } = useQuery({
+  const { data: tradesData, isLoading: tradesLoading, error: tradesError } = useQuery({
     queryKey: ["kodiak-trades", user?.id],
     queryFn: () => tradingApi.getKodiakTrades(),
     enabled: hasKodiakAccess && !!user?.id,
@@ -154,18 +154,20 @@ const Dashboard: React.FC = () => {
   const pnlPercent = 0; // TODO: Calculate percentage
   const dailyVolume = 0; // TODO: Add volume tracking
 
-  // Use only real data - no mock fallbacks
-  const portfolio = realBalance
-    ? {
-        totalBalance: realBalance.accountBalance,
-        pnl,
-        pnlPercent,
-        dailyVolume,
-        totalTrades: tradesData?.success
-          ? tradesData.data?.rows?.length || 0
-          : 0,
-      }
-    : null;
+  // For VERIFIED users, always show portfolio (even with zero balances)
+  // For REGISTERED users, show if balance data exists
+  const shouldShowPortfolio = user?.userLevel === "VERIFIED" ||
+    (user?.userLevel === "REGISTERED" && realBalance);
+
+  const portfolio = shouldShowPortfolio ? {
+    totalBalance: realBalance?.accountBalance || 0,
+    pnl,
+    pnlPercent,
+    dailyVolume,
+    totalTrades: tradesData?.success
+      ? tradesData.data?.rows?.length || 0
+      : 0,
+  } : null;
 
   // Calculate real portfolio performance chart data
   const portfolioData =
@@ -607,9 +609,19 @@ const Dashboard: React.FC = () => {
                         </p>
                       </td>
                     </tr>
+                  ) : tradesError && user?.userLevel !== "VERIFIED" ? (
+                    // Show error for REGISTERED users if API fails
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center">
+                        <p className="text-sm text-danger">
+                          Unable to load trades data
+                        </p>
+                      </td>
+                    </tr>
                   ) : !tradesData?.success ||
                     !tradesData.data?.rows ||
                     tradesData.data.rows.length === 0 ? (
+                    // Show "No recent trades" for all cases (success with empty data, or API error for VERIFIED users)
                     <tr>
                       <td colSpan={5} className="py-8 text-center">
                         <p className="text-sm text-textMuted">

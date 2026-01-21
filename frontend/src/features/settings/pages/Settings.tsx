@@ -29,14 +29,68 @@ const Settings: React.FC = () => {
     secretKey: "",
   });
 
+  const [formErrors, setFormErrors] = useState({
+    accountId: "",
+    apiKey: "",
+    secretKey: "",
+  });
+
   // Connect Kodiak mutation with React Query
   const connectMutation = useConnectKodiak();
 
   // Disconnect Kodiak mutation with React Query
   const disconnectMutation = useDisconnectKodiak();
 
-  const isConnected = kodiakStatus?.data?.connected || false;
+  // For VERIFIED users, they're always connected (verified credentials)
+  // For REGISTERED/BASIC users, check the actual connection status
+  const isConnected = user?.userLevel === "VERIFIED" ||
+    (kodiakStatus?.data?.connected || false);
   const kodiakData = kodiakStatus?.data;
+
+  // Real-time form validation
+  const validateField = (name: keyof typeof formErrors, value: string) => {
+    const errors = { ...formErrors };
+
+    switch (name) {
+      case "accountId":
+        if (!value.trim()) {
+          errors.accountId = "Account ID is required";
+        } else if (!/^[a-zA-Z0-9_-]+$/.test(value)) {
+          errors.accountId = "Account ID contains invalid characters";
+        } else {
+          errors.accountId = "";
+        }
+        break;
+
+      case "apiKey":
+        if (!value.trim()) {
+          errors.apiKey = "API Key is required";
+        } else if (value.length < 10) {
+          errors.apiKey = "API Key appears to be too short";
+        } else {
+          errors.apiKey = "";
+        }
+        break;
+
+      case "secretKey":
+        if (!value.trim()) {
+          errors.secretKey = "Secret Key is required";
+        } else if (value.length < 10) {
+          errors.secretKey = "Secret Key appears to be too short";
+        } else {
+          errors.secretKey = "";
+        }
+        break;
+    }
+
+    setFormErrors(errors);
+    return !errors[name]; // Return true if field is valid
+  };
+
+  const handleInputChange = (name: keyof typeof formData, value: string) => {
+    setFormData(prev => ({ ...prev, [name]: value }));
+    validateField(name, value);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,14 +102,27 @@ const Settings: React.FC = () => {
       return;
     }
 
+    // Show loading state
+    SmartToast.loading("Connecting to Kodiak...");
+
     connectMutation.mutate(formData, {
-      onSuccess: () => {
+      onSuccess: (response) => {
         // Clear form on success
         setFormData({ accountId: "", apiKey: "", secretKey: "" });
-        SmartToast.success("Kodiak account connected successfully! Your user level has been upgraded.");
+        SmartToast.success("Kodiak account connected successfully! Your user level has been upgraded to REGISTERED.");
+
+        // Show additional info about verification
+        if (response.data?.verified) {
+          setTimeout(() => {
+            SmartToast.info("Your credentials have been verified and your wallet address has been stored.");
+          }, 2000);
+        }
       },
       onError: (error: any) => {
-        SmartToast.error(error?.response?.data?.error || "Failed to connect Kodiak credentials");
+        const errorMessage = error?.response?.data?.error ||
+                           error?.response?.data?.message ||
+                           "Failed to connect Kodiak credentials. Please check your credentials and try again.";
+        SmartToast.error(errorMessage);
       },
     });
   };
@@ -205,16 +272,14 @@ const Settings: React.FC = () => {
                       <input
                         type="text"
                         value={formData.accountId}
-                        onChange={e =>
-                          setFormData(prev => ({
-                            ...prev,
-                            accountId: e.target.value,
-                          }))
-                        }
-                        className="input w-full"
+                        onChange={e => handleInputChange("accountId", e.target.value)}
+                        className={`input w-full ${formErrors.accountId ? "border-danger" : ""}`}
                         placeholder="Your Kodiak Account ID"
                         required
                       />
+                      {formErrors.accountId && (
+                        <p className="text-danger text-xs mt-1">{formErrors.accountId}</p>
+                      )}
                     </div>
 
                     <div>
@@ -225,16 +290,14 @@ const Settings: React.FC = () => {
                         <input
                           type={showSecrets ? "text" : "password"}
                           value={formData.apiKey}
-                          onChange={e =>
-                            setFormData(prev => ({
-                              ...prev,
-                              apiKey: e.target.value,
-                            }))
-                          }
-                          className="input w-full pr-10"
+                          onChange={e => handleInputChange("apiKey", e.target.value)}
+                          className={`input w-full pr-10 ${formErrors.apiKey ? "border-danger" : ""}`}
                           placeholder="Your Kodiak API Key"
                           required
                         />
+                        {formErrors.apiKey && (
+                          <p className="text-danger text-xs mt-1">{formErrors.apiKey}</p>
+                        )}
                         <button
                           type="button"
                           onClick={() => setShowSecrets(!showSecrets)}
@@ -257,16 +320,14 @@ const Settings: React.FC = () => {
                         <input
                           type={showSecrets ? "text" : "password"}
                           value={formData.secretKey}
-                          onChange={e =>
-                            setFormData(prev => ({
-                              ...prev,
-                              secretKey: e.target.value,
-                            }))
-                          }
-                          className="input w-full pr-10"
+                          onChange={e => handleInputChange("secretKey", e.target.value)}
+                          className={`input w-full pr-10 ${formErrors.secretKey ? "border-danger" : ""}`}
                           placeholder="Your Kodiak Secret Key"
                           required
                         />
+                        {formErrors.secretKey && (
+                          <p className="text-danger text-xs mt-1">{formErrors.secretKey}</p>
+                        )}
                         <button
                           type="button"
                           onClick={() => setShowSecrets(!showSecrets)}
