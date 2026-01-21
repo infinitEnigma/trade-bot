@@ -41,9 +41,10 @@ const Settings: React.FC = () => {
   // Disconnect Kodiak mutation with React Query
   const disconnectMutation = useDisconnectKodiak();
 
-  // For VERIFIED users, they're always connected (verified credentials)
-  // For REGISTERED/BASIC users, check the actual connection status
+  // VERIFIED and REGISTERED users have authenticated Kodiak credentials
+  // Only BASIC users need to connect
   const isConnected = user?.userLevel === "VERIFIED" ||
+    user?.userLevel === "REGISTERED" ||
     (kodiakStatus?.data?.connected || false);
   const kodiakData = kodiakStatus?.data;
 
