@@ -80,15 +80,21 @@ export const useBalance = (autoRefresh: boolean = true) => {
         }
     };
 
-    // ✅ Initial fetch and auto-refresh (only for VERIFIED users)
+    // ✅ Initial fetch and smart auto-refresh (only for VERIFIED users)
     useEffect(() => {
         fetchBalance();
 
-        // Only auto-refresh for VERIFIED users
+        // Smart auto-refresh: only when tab is visible, user is active, and VERIFIED
         const shouldAutoRefresh = autoRefresh && user?.userLevel === UserLevel.VERIFIED;
 
         if (shouldAutoRefresh) {
-            const interval = setInterval(fetchBalance, 60000);
+            const interval = setInterval(() => {
+                // Only refresh if tab is visible (user is actively using the app)
+                if (document.visibilityState === 'visible') {
+                    fetchBalance();
+                }
+            }, 120000); // Increased from 60s to 120s (2 minutes) for better rate limit management
+
             return () => clearInterval(interval);
         }
     }, [user?.userLevel, autoRefresh]);

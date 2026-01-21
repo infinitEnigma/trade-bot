@@ -115,9 +115,9 @@ const Dashboard: React.FC = () => {
     user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
 
   const { data: positionsData, isLoading: positionsLoading } = useQuery({
-    queryKey: ["kodiak-positions"],
+    queryKey: ["kodiak-positions", user?.id],
     queryFn: () => tradingApi.getKodiakPositions(),
-    enabled: hasKodiakAccess,
+    enabled: hasKodiakAccess && !!user?.id,
     staleTime: 30000, // 30 seconds
     gcTime: 300000, // 5 minutes
     retry: (failureCount, error: any) => {
@@ -127,9 +127,9 @@ const Dashboard: React.FC = () => {
   });
 
   const { data: tradesData, isLoading: tradesLoading } = useQuery({
-    queryKey: ["kodiak-trades"],
+    queryKey: ["kodiak-trades", user?.id],
     queryFn: () => tradingApi.getKodiakTrades(),
-    enabled: hasKodiakAccess,
+    enabled: hasKodiakAccess && !!user?.id,
     staleTime: 30000,
     gcTime: 300000,
     retry: (failureCount, error: any) => {

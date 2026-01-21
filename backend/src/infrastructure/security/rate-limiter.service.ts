@@ -564,14 +564,14 @@ export const RateLimiters = {
   // ✅ Balance endpoints (moderate, user-based limits)
   balance: createRateLimiter("balance", {
     windowMs: 60 * 1000, // 1 minute
-    max: 20, // 20 requests per minute (IP limit)
+    max: 60, // 60 requests per minute (IP limit) - increased from 20
     message: "Balance refresh rate limit exceeded",
     failOpen: false, // Financial data - block if rate limiting fails
     enableUserBasedLimits: true,
     userLimits: {
-      [UserLevel.BASIC]: 30,        // 30 requests per minute
-      [UserLevel.REGISTERED]: 45,   // 45 requests per minute
-      [UserLevel.VERIFIED]: 60,     // 60 requests per minute
+      [UserLevel.BASIC]: 45,        // 45 requests per minute
+      [UserLevel.REGISTERED]: 60,   // 60 requests per minute
+      [UserLevel.VERIFIED]: 75,     // 75 requests per minute
     },
   }),
 
