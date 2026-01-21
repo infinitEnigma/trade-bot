@@ -66,7 +66,7 @@
  * @format
  */
 
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
@@ -85,6 +85,7 @@ import { withCredentials, SecureCredentials } from "../../infrastructure/securit
 import { engineManager } from "../../core/trading/engine-manager.service";
 import { botStatusService } from "../../core/trading/bot-status.service";
 import { botPerformanceService } from "../../core/trading/bot-performance.service";
+import { RateLimiters } from "../../infrastructure/security/rate-limiter.service"; // ✅ Rate limiting
 import { UserRole } from "@trade-bot/shared";
 import logger from "../../core/logging/logger.service";
 
@@ -168,6 +169,7 @@ async function hasUserKodiakCredentials(userId: string): Promise<boolean> {
 router.get(
     "/instances",
     authMiddleware,
+    RateLimiters.botInstances, // ✅ Apply rate limiting
     async (req: AuthenticatedRequest, res: Response) => {
         const userId = req.user!.userId as string;
         try {
@@ -315,7 +317,16 @@ router.get(
 router.post(
     "/start",
     authMiddleware,
-    requireRole(UserRole.QUALIFIED_ALPHA),
+    async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+        // Only VERIFIED users can start bots
+        if (req.user!.userLevel !== "VERIFIED") {
+            return res.status(403).json({
+                success: false,
+                error: "Bot functions require VERIFIED user level. Please complete wallet verification."
+            });
+        }
+        next();
+    },
     validators.startBot,
     async (req: AuthenticatedRequest, res: Response) => {
         try {
@@ -481,7 +492,16 @@ router.post(
 router.post(
     "/stop",
     authMiddleware,
-    requireRole(UserRole.QUALIFIED_ALPHA),
+    async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+        // Only VERIFIED users can stop bots
+        if (req.user!.userLevel !== "VERIFIED") {
+            return res.status(403).json({
+                success: false,
+                error: "Bot functions require VERIFIED user level. Please complete wallet verification."
+            });
+        }
+        next();
+    },
     validators.stopBot,
     async (req: AuthenticatedRequest, res: Response) => {
         try {
@@ -664,6 +684,32 @@ router.get(
                 botId: req.params.botId,
             });
             const dbError = new DatabaseError("Failed to get bot performance");
+            res.status(dbError.statusCode).json(
+                createErrorResponse(dbError, getCorrelationId())
+            );
+        }
+    }
+);
+
+// GET /api/bot/engine/status
+router.get(
+    "/engine/status",
+    authMiddleware,
+    async (req: AuthenticatedRequest, res: Response) => {
+        try {
+            const status = await engineManager.getEngineStatus();
+
+            res.json({
+                success: true,
+                data: status,
+                timestamp: Date.now(),
+            });
+        } catch (err) {
+            logger.error("Get engine status error", {
+                error: err instanceof Error ? err.message : String(err),
+                userId: req.user!.userId,
+            });
+            const dbError = new DatabaseError("Failed to get engine status");
             res.status(dbError.statusCode).json(
                 createErrorResponse(dbError, getCorrelationId())
             );

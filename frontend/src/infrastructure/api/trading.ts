@@ -48,6 +48,11 @@ export const tradingApi = {
         return response.data;
     },
 
+    async getEngineStatus() {
+        const response = await httpClient.getClient().get("/api/bot/engine/status");
+        return response.data;
+    },
+
     async startBot(strategyId: string) {
         const response = await httpClient.getClient().post("/api/bot/start", { strategyId });
         return response.data;

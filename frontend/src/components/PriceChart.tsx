@@ -1,7 +1,6 @@
 /** @format */
 
 import React, { useState, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   LineChart,
   Line,
@@ -11,10 +10,9 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { api } from "../lib/api";
+import { useChartHistorical } from "../shared/hooks/useChartData";
 import { Card } from "../shared/components/ui/Card";
 import { SectionHeader } from "../shared/components/ui/SectionHeader";
-import { useVisibility } from "../shared/hooks/useVisibility";
 
 interface PriceChartProps {
   symbol?: string;
@@ -25,7 +23,6 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
   ({ symbol = "PERP_BTC_USDC", resolution = "1" }) => {
     const [selectedSymbol, setSelectedSymbol] = useState(symbol);
     const [selectedResolution, setSelectedResolution] = useState(resolution);
-    const isVisible = useVisibility();
 
     // Cleanup on unmount to prevent memory leaks
     useEffect(() => {
@@ -56,105 +53,60 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
       "PERP_NEAR_USDC",
     ];
 
-    // Fetch chart data with real-time updates
+    // Fetch historical chart data using optimized hook (1x/minute)
     const {
       data: historyData,
       isLoading,
       error,
-    } = useQuery({
-      queryKey: ["tv-history", selectedSymbol, selectedResolution],
-      queryFn: () =>
-        api.getTvHistory({
-          symbol: selectedSymbol,
-          resolution: selectedResolution,
-          from: Math.floor(Date.now() / 1000) - 86400, // 24 hours ago
-          to: Math.floor(Date.now() / 1000),
-        }),
-      refetchInterval: isVisible ? 30000 : false, // Refresh every 30 seconds when visible
-      enabled: isVisible, // Don't fetch when hidden
-      staleTime: 60000, // Consider data fresh for 60 seconds
-      gcTime: 600000, // Keep in cache for 10 minutes
+    } = useChartHistorical({
+      symbol: selectedSymbol,
+      interval: selectedResolution,
     });
 
     // Transform TradingView data to Recharts format - memoized for performance
     const chartData = useMemo(() => {
-      if (!historyData?.success || !historyData.data) {
+      if (!historyData || historyData.length === 0) {
         return [];
       }
 
-      const {
-        t: timestamps,
-        o: opens,
-        h: highs,
-        l: lows,
-        c: closes,
-        v: volumes,
-      } = historyData.data;
-
-      // Validate required arrays exist and are not empty
-      if (
-        !timestamps ||
-        !opens ||
-        !highs ||
-        !lows ||
-        !closes ||
-        !Array.isArray(timestamps) ||
-        timestamps.length === 0
-      ) {
-        return [];
-      }
-
-      const data = [];
+      // historyData is already transformed candle data from useChartHistorical
+      const chartPoints: any[] = [];
       const prices: number[] = [];
 
-      // Process data points
-      for (let i = 0; i < timestamps.length; i++) {
-        const time = new Date(timestamps[i] * 1000);
-        const open = opens[i];
-        const high = highs[i];
-        const low = lows[i];
-        const close = closes[i];
-        const volume = volumes?.[i] || 0;
+      // Process the candle data directly
+      historyData.forEach(candle => {
+        const time = new Date(candle.time * 1000);
+        const price = candle.close;
 
-        // Validate data types
-        if (
-          typeof open !== "number" ||
-          typeof high !== "number" ||
-          typeof low !== "number" ||
-          typeof close !== "number"
-        ) {
-          continue;
-        }
-
-        data.push({
+        chartPoints.push({
           time: time.toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
           }),
-          timestamp: timestamps[i],
-          open,
-          high,
-          low,
-          close,
-          volume,
-          price: close, // For line chart
+          timestamp: candle.time,
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close,
+          volume: candle.volume || 0,
+          price: price, // For line chart
         });
 
-        prices.push(close);
-      }
+        prices.push(price);
+      });
 
       // Calculate MA(20) - only if we have enough data
       if (prices.length >= 20) {
-        for (let i = 19; i < data.length; i++) {
+        for (let i = 19; i < chartPoints.length; i++) {
           const sum = prices.slice(i - 19, i + 1).reduce((a, b) => a + b, 0);
           const avg = sum / 20;
-          (data[i] as any).ma20 = avg;
+          (chartPoints[i] as any).ma20 = avg;
         }
       }
 
       // Limit data points to prevent memory accumulation
       const maxDataPoints = 200; // Keep last 200 data points
-      return data.slice(-maxDataPoints);
+      return chartPoints.slice(-maxDataPoints);
     }, [historyData]);
 
     // Get current price (latest close price)

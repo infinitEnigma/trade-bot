@@ -22,12 +22,12 @@ const CandlestickChart = lazy(() => import("../../../components/CandlestickChart
 const StrategyForm = lazy(() => import("../../../components/StrategyForm").then(module => ({ default: module.StrategyForm })));
 const BotControls = lazy(() => import("../bots/components").then(module => ({ default: module.BotControls })));
 import { useBalance } from "../balance/hooks";
-//import { useAuth } from "../../auth";
+import { useAuth } from "../../auth";
 import { UserProgressCard } from "../../../components/ui/UserProgressCard";
 import { PageLayout, Container } from "../../../shared/components/layout";
 
 const Strategies: React.FC = React.memo(() => {
-  //const { user } = useAuth();
+  const { user } = useAuth();
   //const [_kodiakCheckComplete, setKodiakCheckComplete] = useState(false);
   const [kodiakError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -76,12 +76,26 @@ const Strategies: React.FC = React.memo(() => {
   const { data: strategiesData, isLoading } = useQuery({
     queryKey: ["strategies"],
     queryFn: () => tradingApi.getStrategies(),
+    staleTime: 2 * 60 * 1000, // 2 minutes - strategies don't change often
+    gcTime: 5 * 60 * 1000, // 5 minutes cache
+    refetchOnWindowFocus: false, // Don't refetch on focus for this data
   });
 
-  // Fetch bot instances
+  // Fetch engine status first - only query bots if engine is running
+  const { data: engineStatus } = useQuery({
+    queryKey: ["engine-status"],
+    queryFn: () => tradingApi.getEngineStatus(),
+    staleTime: 30000, // 30 seconds - engine status doesn't change often
+    gcTime: 60000, // 1 minute cache
+  });
+
+  // Fetch bot instances only if engine is running
   const { data: botsData } = useQuery({
     queryKey: ["bot-instances"],
     queryFn: () => tradingApi.getBotInstances(),
+    enabled: engineStatus?.data?.running === true, // Only fetch if engine is active
+    staleTime: 10000, // 10 seconds - bot status can change quickly
+    gcTime: 30000, // 30 seconds cache
   });
 
   const strategies = strategiesData?.success ? strategiesData.data : [];
@@ -175,25 +189,6 @@ const Strategies: React.FC = React.memo(() => {
               </div>
 
               <div className="flex items-center gap-4">
-                {/* Navigation Links */}
-                <nav className="hidden md:flex items-center gap-1">
-                  <Link
-                    to="/dashboard"
-                    className="px-3 py-2 text-sm text-textMuted hover:text-text hover:bg-white/5 rounded-lg transition-colors"
-                  >
-                    Dashboard
-                  </Link>
-                  <span className="px-3 py-2 text-sm text-primary font-medium bg-primary/10 rounded-lg">
-                    Strategies
-                  </span>
-                  <Link
-                    to="/settings"
-                    className="px-3 py-2 text-sm text-textMuted hover:text-text hover:bg-white/5 rounded-lg transition-colors"
-                  >
-                    Settings
-                  </Link>
-                </nav>
-
                 <button
                   onClick={() => setShowCreateForm(true)}
                   className="btn-primary flex items-center gap-2"
@@ -204,26 +199,7 @@ const Strategies: React.FC = React.memo(() => {
               </div>
             </div>
 
-            {/* Mobile Navigation */}
-            <div className="md:hidden mt-4 pt-4 border-t border-white/5">
-              <nav className="flex items-center justify-center gap-1">
-                <Link
-                  to="/dashboard"
-                  className="px-4 py-2 text-sm text-textMuted hover:text-text hover:bg-white/5 rounded-lg transition-colors"
-                >
-                  Dashboard
-                </Link>
-                <span className="px-4 py-2 text-sm text-primary font-medium bg-primary/10 rounded-lg">
-                  Strategies
-                </span>
-                <Link
-                  to="/settings"
-                  className="px-4 py-2 text-sm text-textMuted hover:text-text hover:bg-white/5 rounded-lg transition-colors"
-                >
-                  Settings
-                </Link>
-              </nav>
-            </div>
+            {/* Mobile Navigation - removed duplicate */}
           </Container>
         </div>
       }
@@ -257,7 +233,7 @@ const Strategies: React.FC = React.memo(() => {
           </Suspense>
         </div>
 
-        {/* Account Balance Overview - WebSocket data for verified users */}
+        {/* Account Balance Overview - Show for users with Kodiak access */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-lg font-semibold text-text">Account Balance</h2>
@@ -280,7 +256,7 @@ const Strategies: React.FC = React.memo(() => {
                 </div>
               ))}
             </div>
-          ) : realBalance ? (
+          ) : realBalance || user?.userLevel === "VERIFIED" || user?.userLevel === "REGISTERED" ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="glass-card p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -290,7 +266,7 @@ const Strategies: React.FC = React.memo(() => {
                   <span className="text-sm text-textMuted">Wallet</span>
                 </div>
                 <div className="text-2xl font-bold text-text mb-1">
-                  ${realBalance.walletBalance.toLocaleString()}
+                  ${(realBalance?.walletBalance || 0).toLocaleString()}
                 </div>
                 <p className="text-xs text-textMuted">Available funds</p>
               </div>
@@ -303,7 +279,7 @@ const Strategies: React.FC = React.memo(() => {
                   <span className="text-sm text-textMuted">Account</span>
                 </div>
                 <div className="text-2xl font-bold text-text mb-1">
-                  ${realBalance.accountBalance.toLocaleString()}
+                  ${(realBalance?.accountBalance || 0).toLocaleString()}
                 </div>
                 <p className="text-xs text-textMuted">Trading account</p>
               </div>
@@ -316,7 +292,7 @@ const Strategies: React.FC = React.memo(() => {
                   <span className="text-sm text-textMuted">Available</span>
                 </div>
                 <div className="text-2xl font-bold text-text mb-1">
-                  ${realBalance.availableBalance.toLocaleString()}
+                  ${(realBalance?.availableBalance || 0).toLocaleString()}
                 </div>
                 <p className="text-xs text-textMuted">For trading</p>
               </div>
@@ -329,7 +305,7 @@ const Strategies: React.FC = React.memo(() => {
                   <span className="text-sm text-textMuted">Total Assets</span>
                 </div>
                 <div className="text-2xl font-bold text-text mb-1">
-                  ${realBalance.totalAssets.toLocaleString()}
+                  ${(realBalance?.totalAssets || 0).toLocaleString()}
                 </div>
                 <p className="text-xs text-textMuted">Portfolio value</p>
               </div>
