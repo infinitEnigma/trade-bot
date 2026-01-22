@@ -7,6 +7,8 @@
  * @format
  */
 
+import { Balance, Position } from './domain';
+
 // ===========================================
 // CACHE INFRASTRUCTURE
 // ===========================================
@@ -276,30 +278,8 @@ export interface DatabaseResult<T = any> {
     rowCount: number;
 }
 
-// ===========================================
-// DOMAIN TYPES (Referenced by infrastructure interfaces)
-// ===========================================
-
-export interface Balance {
-    total: number;
-    available: number;
-    locked: number;
-    currency: string;
-    lastUpdated: Date;
-}
-
-export interface Position {
-    symbol: string;
-    side: 'LONG' | 'SHORT';
-    quantity: number;
-    entryPrice: number;
-    markPrice: number;
-    pnl: number;
-    pnlPercent: number;
-    leverage: number;
-    marginRatio: number;
-    liquidationPrice?: number;
-}
+// Domain types are imported at the top
+// Position class is now in domain.ts
 
 export interface Trade {
     id: string;

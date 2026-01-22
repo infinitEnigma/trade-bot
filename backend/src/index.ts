@@ -119,11 +119,12 @@ import { MiddlewareConfig } from "./server/middleware-config";
 
 // 📡 Real-time Services
 import { marketStreamService } from "./infrastructure";
-import { authService } from "./core/auth";
-import { botStatusService } from "./core/trading";
 
 // 🔄 Infrastructure Services
 import { redisService } from "./infrastructure";
+
+// 🏭 Dependency Injection Container
+import { diContainer } from "./infrastructure/dependency-injection.container";
 
 // 🤖 Bot Reconciliation Worker (initialized after database)
 import { botReconciliationWorker } from "./workers/bot-reconciliation";
@@ -155,6 +156,14 @@ redisService.connect().catch((error: any) => {
         error: error instanceof Error ? error.message : String(error),
     });
     // Note: Application continues without Redis (degraded mode)
+});
+
+// Initialize dependency injection container
+diContainer.initialize().catch((error) => {
+    logger.error("❌ Failed to initialize dependency injection container", {
+        error: error instanceof Error ? error.message : String(error),
+    });
+    process.exit(1);
 });
 
 // ===========================================
@@ -325,7 +334,7 @@ import { WebSocketService } from "./infrastructure/messaging";
 // Initialize WebSocket service with Socket.IO server
 const webSocketService = new WebSocketService(
     marketStreamService,
-    authService,
+    diContainer.authService,
     logger
 );
 

@@ -101,18 +101,7 @@ export interface OrderBook {
 // Trading Types
 // ============================================
 
-export interface Position {
-  symbol: string;
-  side: "LONG" | "SHORT";
-  quantity: number;
-  entryPrice: number;
-  markPrice: number;
-  pnl: number;
-  pnlPercent: number;
-  leverage: number;
-  marginRatio: number;
-  liquidationPrice?: number;
-}
+// Position interface removed - now using domain class from domain.ts
 
 export interface Order {
   orderId: string;
@@ -256,11 +245,29 @@ export interface DashboardData {
     totalBalance: number;
     totalPnl: number;
     availableBalance: number;
-    positions: Position[];
+    positions: import('./types/domain').Position[];
   };
   recentTrades: Trade[];
   activeStrategies: Strategy[];
 }
+
+// ============================================
+// Infrastructure Interfaces - Contract Layer
+// ============================================
+
+export * from './types/infrastructure';
+
+// ============================================
+// Repository Interfaces - Data Access Contracts
+// ============================================
+
+export * from './types/repositories';
+
+// ============================================
+// Domain Models - Rich Business Objects
+// ============================================
+
+export * from './types/domain';
 
 // ============================================
 // Error Handling Types & Classes
