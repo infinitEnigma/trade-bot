@@ -117,22 +117,19 @@ validateEnvironment();
 import { authRoutes } from "./interfaces/http/auth";
 
 // 👤 User Management
-import { userRoutes } from "./interfaces/http/user";
+import { userRoutes, userProfileRoutes, userKodiakRoutes } from "./interfaces/http/users";
 
 // 📊 Market Data & Trading
-import { marketRoutes } from "./interfaces/http/market";
-import { strategyRoutes } from "./interfaces/http/strategies";
+import { marketRoutes, strategyRoutes } from "./interfaces/http/trading";
 
 // 🤖 Bot Management & Engine
-import { botRoutes } from "./interfaces/http/bot";
-import { balanceRoutes } from "./interfaces/http/balance";
+import { botRoutes, botEngineRoutes, botManagementRoutes } from "./interfaces/http/bots";
 
-// 🛡️ Security & Monitoring
-import { healthRoutes } from "./interfaces/http/health";
-import { securityRoutes } from "./interfaces/http/security";
+// � Wallet & Qualification
+import { walletRoutes, balanceRoutes } from "./interfaces/http/wallet";
 
-// 💰 Wallet & Qualification
-import { walletRoutes } from "./interfaces/http/wallet";
+// �️ Security & Monitoring
+import { healthRoutes, securityRoutes } from "./interfaces/http/system";
 
 // 🔧 Middleware Stack
 import { httpLogger, errorLogger } from "./interfaces/middleware/logger";

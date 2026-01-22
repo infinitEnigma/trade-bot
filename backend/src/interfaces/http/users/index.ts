@@ -6,9 +6,9 @@
  */
 
 import { Router } from "express";
-import { userProfileRoutes } from "./user-profile";
-import { userKodiakRoutes } from "./user-kodiak";
-import logger from "../../core/logging/logger.service";
+import { userProfileRoutes } from "./profile";
+import { userKodiakRoutes } from "./kodiak";
+import logger from "../../../core/logging/logger.service";
 
 const router = Router();
 
@@ -19,3 +19,7 @@ router.use("/", userKodiakRoutes);
 logger.info("User routes initialized with modular architecture");
 
 export { router as userRoutes };
+
+// Re-export individual route modules for domain access
+export { userProfileRoutes } from "./profile";
+export { userKodiakRoutes } from "./kodiak";

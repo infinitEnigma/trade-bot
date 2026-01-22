@@ -1,31 +1,26 @@
 /**
  * ===========================================
- * 🌐 HTTP INTERFACES - REST API Routes
+ * 🌐 HTTP INTERFACES - API Routes
  * ===========================================
  *
- * HTTP API routes and controllers for the Trade Bot platform.
- * Organized by functional domain for clean API boundaries.
+ * Main HTTP API routes index - centralizes all domain-based route exports.
+ * Provides clean API boundaries and modular architecture.
  *
- * RESPONSIBILITIES:
- * - REST API endpoint definitions
- * - Request routing and handling
- * - Response formatting and serialization
- * - API documentation and validation
+ * ORGANIZATION:
+ * - Domain-based routing (auth, users, trading, bots, wallet, system)
+ * - Centralized exports for easy consumption
+ * - Clean separation of concerns
  *
  * @format
  */
 
-// Export all HTTP route handlers
-export { authRoutes } from './auth';
-export { userRoutes } from './user';
-export { balanceRoutes } from './balance';
-export { marketRoutes } from './market';
-export { strategyRoutes } from './strategies';
-export { botRoutes } from './bot';
-export { botEngineRoutes } from './bot-engine';
-export { botManagementRoutes } from './bot-management';
-export { healthRoutes } from './health';
-export { securityRoutes } from './security';
-export { userKodiakRoutes } from './user-kodiak';
-export { userProfileRoutes } from './user-profile';
-export { walletRoutes } from './wallet';
+// Export domain-based route handlers
+export * from './auth';
+export * from './users';
+export * from './trading';
+export * from './bots';
+export * from './wallet';
+export * from './system';
+
+// Export middleware (shared across domains)
+export * from '../middleware/index';

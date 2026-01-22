@@ -1,9 +1,9 @@
 /** @format */
 
 import { Router, Request, Response } from "express";
-import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
-import { walletQualificationService } from "../../core/wallet/wallet-qualification.service";
-import logger from "../../core/logging/logger.service";
+import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
+import { walletQualificationService } from "../../../core/wallet/wallet-qualification.service";
+import logger from "../../../core/logging/logger.service";
 
 const router = Router();
 
@@ -34,5 +34,8 @@ router.get("/qualification", authMiddleware, async (req: AuthenticatedRequest, r
         });
     }
 });
+
+// Re-export individual route modules for domain access
+export { balanceRoutes } from "./balance";
 
 export { router as walletRoutes };

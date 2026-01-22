@@ -1,10 +1,10 @@
 /** @format */
 
 import { Router } from "express";
-import { botManagementRoutes } from "./bot-management";
-import { botEngineRoutes } from "./bot-engine";
-import { botReconciliationWorker } from "../../workers/bot-reconciliation";
-import logger from "../../core/logging/logger.service";
+import { botManagementRoutes } from "./management";
+import { botEngineRoutes } from "./engine";
+import { botReconciliationWorker } from "../../../workers/bot-reconciliation";
+import logger from "../../../core/logging/logger.service";
 
 const router = Router();
 
@@ -28,5 +28,9 @@ process.on('SIGINT', () => {
   botReconciliationWorker.stop();
 });
 
+
+// Re-export individual route modules for domain access
+export { botManagementRoutes } from "./management";
+export { botEngineRoutes } from "./engine";
 
 export { router as botRoutes };

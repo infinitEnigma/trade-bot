@@ -69,25 +69,25 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
-import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
-import { requireRole } from "../middleware/role-protection";
-import { query } from "../../database/pool";
+import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
+import { requireRole } from "../../middleware/role-protection";
+import { query } from "../../../database/pool";
 import {
     ValidationError,
     NotFoundError,
     DatabaseError,
     ConflictError,
     createErrorResponse,
-} from "../../shared/types/errors";
-import { getCorrelationId, getContextForLogging } from "../../shared/utils/context";
-import { validators } from "../middleware/validation";
-import { withCredentials, SecureCredentials } from "../../infrastructure/security/encryption.service"; // ✅ Secure credential handling
-import { engineManager } from "../../core/trading/engine-manager.service";
-import { botStatusService } from "../../core/trading/bot-status.service";
-import { botPerformanceService } from "../../core/trading/bot-performance.service";
-import { RateLimiters } from "../../infrastructure/security/rate-limiter.service"; // ✅ Rate limiting
+} from "../../../shared/types/errors";
+import { getCorrelationId, getContextForLogging } from "../../../shared/utils/context";
+import { validators } from "../../middleware/validation";
+import { withCredentials, SecureCredentials } from "../../../infrastructure/security/encryption.service"; // ✅ Secure credential handling
+import { engineManager } from "../../../core/trading/engine-manager.service";
+import { botStatusService } from "../../../core/trading/bot-status.service";
+import { botPerformanceService } from "../../../core/trading/bot-performance.service";
+import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service"; // ✅ Rate limiting
 import { UserRole } from "@trade-bot/shared";
-import logger from "../../core/logging/logger.service";
+import logger from "../../../core/logging/logger.service";
 
 const router = Router();
 
@@ -361,7 +361,7 @@ router.post(
 
             // ✅ POSITION VALIDATION: Validate position size before starting bot
             const { validateUserPosition } =
-                await import("../../core/trading/position-validator.service.js");
+                await import("../../../core/trading/position-validator.service.js");
             const validation = await validateUserPosition(
                 req.user!.userId,
                 parseFloat(notionalAmount),
@@ -422,7 +422,7 @@ router.post(
                 const sessionKey = randomBytes(32).toString('hex');
 
                 // Get encryption service instance
-                const { encryptionService } = await import("../../infrastructure/security/encryption.service.js");
+                const { encryptionService } = await import("../../../infrastructure/security/encryption.service.js");
                 const encryptedSessionKey = await encryptionService.encryptWithVersion(sessionKey);
 
                 // Create decrypted credentials object (temporary, will be encrypted immediately)
