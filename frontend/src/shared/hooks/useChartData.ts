@@ -5,6 +5,35 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { CandleData } from "../../components/CandlestickChart";
 
+/**
+ * Data freshness metadata from backend responses
+ */
+interface DataFreshnessMetadata {
+  lastUpdated: number;
+  updateFrequency: number;
+  recommendedPollInterval: number;
+  nextExpectedUpdate: number;
+  isStale: boolean;
+  stalenessThreshold: number;
+  dataSource: 'websocket' | 'api' | 'cache' | 'static';
+  cacheTTLRemaining?: number;
+}
+
+/**
+ * Enhanced response with freshness metadata
+ */
+interface FreshnessAwareResponse<T = any> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  freshness?: DataFreshnessMetadata;
+  timestamp?: number;
+  cached?: boolean;
+  mock?: boolean;
+  stale?: boolean;
+  message?: string;
+}
+
 interface UseChartDataOptions {
   symbol: string;
   interval: string;
@@ -98,16 +127,19 @@ const mergeCandleData = (
 };
 
 /**
- * Hook for historical chart data (fetched once per minute)
- * Separated from live price updates for better performance
+ * Hook for historical chart data with smart polling based on data freshness
+ * Adjusts polling interval based on backend's recommended intervals
  */
 export const useChartHistorical = ({
   symbol,
   interval,
 }: UseChartDataOptions) => {
+  const [freshnessData, setFreshnessData] = useState<DataFreshnessMetadata | null>(null);
+  const [smartInterval, setSmartInterval] = useState<number>(60000); // Start with 1 minute
+
   return useQuery({
     queryKey: ["chart-historical", symbol, interval],
-    queryFn: async () => {
+    queryFn: async (): Promise<{ candles: CandleData[]; freshness?: DataFreshnessMetadata }> => {
       console.log(`📊 Fetching historical chart data: ${symbol} ${interval}`);
 
       // Fetch last 24 hours of historical data
@@ -131,26 +163,47 @@ export const useChartHistorical = ({
         }
       };
 
-      const response = await api.getTvHistory({
+      const response: FreshnessAwareResponse = await api.getTvHistory({
         symbol,
         resolution: getResolution(interval),
         from: fromTimestamp,
         to: toTimestamp,
       });
 
+      // Extract freshness metadata from response
+      if (response.freshness) {
+        setFreshnessData(response.freshness);
+        // Adjust polling interval based on backend recommendation
+        const recommendedInterval = response.freshness.recommendedPollInterval;
+        // More aggressive minimum for price data - allow 5 second minimum for real-time data
+        const minInterval = response.freshness.dataSource === 'websocket' ? 5000 : 10000;
+        setSmartInterval(Math.max(recommendedInterval, minInterval));
+        console.log(`📊 Adjusted polling interval to ${recommendedInterval}ms (min: ${minInterval}ms) based on backend freshness data for ${response.freshness.dataSource} data`);
+      }
+
       if (response.success && response.data) {
         const historicalCandles = transformTradingViewData(response.data);
         console.log(`📊 Loaded ${historicalCandles.length} historical candles for ${symbol}`);
-        return historicalCandles;
+        return { candles: historicalCandles, freshness: response.freshness };
       }
 
       console.warn(`📊 No historical data available for ${symbol}`);
-      return [];
+      return { candles: [] };
     },
-    staleTime: 60000, // 1 minute (user's requirement)
+    staleTime: smartInterval, // Dynamic stale time based on backend recommendations
     gcTime: 10 * 60 * 1000, // 10 minutes cache
     refetchOnWindowFocus: false,
     retry: 2,
+    // Use smart polling interval
+    refetchInterval: () => {
+      // If we have freshness data and data isn't stale, use recommended interval
+      if (freshnessData && !freshnessData.isStale) {
+        return freshnessData.recommendedPollInterval;
+      }
+      // Fallback to current smart interval
+      return smartInterval;
+    },
+    refetchIntervalInBackground: false, // Don't poll when tab is not active
   });
 };
 
@@ -207,6 +260,110 @@ export const useLivePrices = ({
 };
 
 /**
+ * Current price hook with user-level awareness
+ * Uses appropriate data sources based on user subscription level
+ */
+export const useCurrentPrice = (symbol: string) => {
+  // TODO: Implement user level detection
+  // For now, assume basic user level - will be enhanced with auth integration
+  const userLevel = 'BASIC'; // 'BASIC' | 'REGISTERED' | 'VERIFIED'
+
+  return useQuery({
+    queryKey: ["current-price", symbol, userLevel],
+    queryFn: async () => {
+      console.log(`💰 Fetching current price for ${symbol} (user level: ${userLevel})`);
+
+      try {
+        // For BASIC users: Use public ticker (may be unavailable)
+        if (userLevel === 'BASIC') {
+          const response: FreshnessAwareResponse = await api.getTicker(symbol);
+
+          if (response.success && response.data) {
+            console.log(`💰 Got public ticker price: $${response.data.price}`);
+            return {
+              price: parseFloat(response.data.price),
+              change24h: parseFloat(response.data.change24h || '0'),
+              volume24h: parseFloat(response.data.volume24h || '0'),
+              symbol,
+              timestamp: Date.now(),
+              source: 'public',
+              freshness: response.freshness,
+            };
+          } else {
+            // Public data unavailable
+            console.warn(`💰 Public ticker unavailable for ${symbol}`);
+            throw new Error(response.error || 'Market data temporarily unavailable');
+          }
+        }
+
+        // For REGISTERED/VERIFIED users: Use authenticated mark price
+        const response: FreshnessAwareResponse = await api.getMarkPrice(symbol);
+
+        if (response.success && response.data) {
+          console.log(`💰 Got authenticated mark price: $${response.data.price}`);
+          return {
+            price: parseFloat(response.data.price),
+            symbol,
+            timestamp: Date.now(),
+            source: 'authenticated',
+            freshness: response.freshness,
+          };
+        } else {
+          // Authenticated data unavailable - fallback to public if possible
+          console.warn(`💰 Authenticated mark price unavailable for ${symbol}, trying public fallback`);
+          const publicResponse: FreshnessAwareResponse = await api.getTicker(symbol);
+
+          if (publicResponse.success && publicResponse.data) {
+            console.log(`💰 Fallback to public ticker: $${publicResponse.data.price}`);
+            return {
+              price: parseFloat(publicResponse.data.price),
+              change24h: parseFloat(publicResponse.data.change24h || '0'),
+              volume24h: parseFloat(publicResponse.data.volume24h || '0'),
+              symbol,
+              timestamp: Date.now(),
+              source: 'public_fallback',
+              freshness: publicResponse.freshness,
+            };
+          }
+
+          throw new Error('Market data temporarily unavailable');
+        }
+      } catch (error) {
+        console.error(`💰 Price fetch failed for ${symbol}:`, error);
+        throw error;
+      }
+    },
+    enabled: !!symbol,
+    staleTime: userLevel === 'BASIC' ? 60000 : 15000, // Basic: 1min, Premium: 15sec
+    gcTime: 5 * 60 * 1000, // 5 minutes cache
+    retry: (failureCount, error) => {
+      // Don't retry on 403/503 (auth/data unavailable errors)
+      if (error instanceof Error) {
+        if (error.message.includes('403') || error.message.includes('503')) {
+          return false;
+        }
+      }
+      return failureCount < 2;
+    },
+    refetchInterval: (query) => {
+      // Dynamic polling based on user level and data availability
+      if (userLevel === 'BASIC') {
+        return 60000; // 1 minute for basic users
+      }
+
+      // For premium users, check freshness metadata
+      const data = query.state.data;
+      if (data?.freshness?.recommendedPollInterval) {
+        return Math.max(data.freshness.recommendedPollInterval, 5000); // Min 5 seconds
+      }
+
+      return 10000; // Default 10 seconds for premium users
+    },
+    refetchIntervalInBackground: false,
+  });
+};
+
+/**
  * Combined hook that merges historical and live data
  * Maintains backward compatibility with existing CandlestickChart
  */
@@ -226,7 +383,8 @@ export const useChartData = ({
 
   // Merge data when either query updates
   useEffect(() => {
-    const historicalData = historicalQuery.data || [];
+    const historicalResult = historicalQuery.data;
+    const historicalData = historicalResult?.candles || [];
     const liveData = liveQuery.data || [];
 
     if (historicalData.length > 0 || liveData.length > 0) {

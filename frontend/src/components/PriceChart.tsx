@@ -10,7 +10,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { useChartHistorical } from "../shared/hooks/useChartData";
+import { useChartHistorical, useCurrentPrice } from "../shared/hooks/useChartData";
 import { Card } from "../shared/components/ui/Card";
 import { SectionHeader } from "../shared/components/ui/SectionHeader";
 
@@ -53,15 +53,25 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
       "PERP_NEAR_USDC",
     ];
 
-    // Fetch historical chart data using optimized hook (1x/minute)
+    // Fetch historical chart data using optimized hook with smart polling
     const {
-      data: historyData,
+      data: historyResult,
       isLoading,
       error,
     } = useChartHistorical({
       symbol: selectedSymbol,
       interval: selectedResolution,
     });
+
+    // Fetch real-time current price with user-level awareness
+    const {
+      data: currentPriceData,
+      isLoading: priceLoading,
+      error: priceError,
+    } = useCurrentPrice(selectedSymbol);
+
+    // Extract candles from the response object
+    const historyData = historyResult?.candles || [];
 
     // Transform TradingView data to Recharts format - memoized for performance
     const chartData = useMemo(() => {
@@ -95,11 +105,30 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         prices.push(price);
       });
 
-      // Calculate MA(20) - only if we have enough data
+      // Calculate MA(20) - ensure we have enough data and calculate for ALL points
       if (prices.length >= 20) {
-        for (let i = 19; i < chartPoints.length; i++) {
-          const sum = prices.slice(i - 19, i + 1).reduce((a, b) => a + b, 0);
-          const avg = sum / 20;
+        for (let i = 0; i < chartPoints.length; i++) {
+          if (i >= 19) {
+            // Calculate MA(20) for points that have enough historical data
+            const sum = prices.slice(i - 19, i + 1).reduce((a, b) => a + b, 0);
+            const avg = sum / 20;
+            (chartPoints[i] as any).ma20 = avg;
+          } else {
+            // For early points, show MA if we have at least some data
+            const availableData = Math.min(i + 1, 20);
+            const startIndex = Math.max(0, i - 19);
+            const sum = prices.slice(startIndex, i + 1).reduce((a, b) => a + b, 0);
+            const avg = sum / availableData;
+            (chartPoints[i] as any).ma20 = avg;
+          }
+        }
+      } else if (prices.length >= 5) {
+        // Calculate MA with available data if we have at least 5 points
+        for (let i = 0; i < chartPoints.length; i++) {
+          const availableData = Math.min(i + 1, prices.length);
+          const startIndex = Math.max(0, i - 4); // Simple MA(5) for fewer data points
+          const sum = prices.slice(startIndex, i + 1).reduce((a, b) => a + b, 0);
+          const avg = sum / availableData;
           (chartPoints[i] as any).ma20 = avg;
         }
       }
@@ -109,18 +138,22 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
       return chartPoints.slice(-maxDataPoints);
     }, [historyData]);
 
-    // Get current price (latest close price)
-    const currentPrice =
-      chartData.length > 0 ? chartData[chartData.length - 1].price : null;
-    const priceChange =
-      chartData.length > 1
-        ? chartData[chartData.length - 1].price -
-          chartData[chartData.length - 2].price
-        : 0;
-    const priceChangePercent =
-      chartData.length > 1
+    // Use real-time price data for display, fallback to chart data
+    const currentPrice = currentPriceData?.price ||
+      (chartData.length > 0 ? chartData[chartData.length - 1].price : null);
+
+    // Calculate price change based on real-time data or chart data
+    const priceChange = currentPriceData?.change24h ?
+      parseFloat(currentPriceData.change24h.toString()) :
+      (chartData.length > 1
+        ? chartData[chartData.length - 1].price - chartData[chartData.length - 2].price
+        : 0);
+
+    const priceChangePercent = currentPriceData?.change24h ?
+      ((priceChange / (currentPrice - priceChange)) * 100) :
+      (chartData.length > 1
         ? (priceChange / chartData[chartData.length - 2].price) * 100
-        : 0;
+        : 0);
 
     // Custom tooltip for price data
     const CustomTooltip = ({ active, payload, label }: any) => {
@@ -161,7 +194,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
               <span>{`Price Chart - ${selectedSymbol
                 .replace("PERP_", "")
                 .replace("_USDC", "")}`}</span>
-              {currentPrice && (
+              {currentPrice ? (
                 <div className="flex items-center gap-2">
                   <span className="text-2xl font-bold text-text-primary">
                     ${currentPrice.toFixed(2)}
@@ -178,6 +211,22 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                       {priceChangePercent.toFixed(2)}%)
                     </span>
                   )}
+                  {/* Data source indicator */}
+                  {currentPriceData?.source && (
+                    <span className="text-xs px-2 py-1 rounded bg-surface text-textMuted">
+                      {currentPriceData.source === 'public' ? 'Public' :
+                       currentPriceData.source === 'authenticated' ? 'Live' :
+                       currentPriceData.source === 'public_fallback' ? 'Fallback' : 'Cached'}
+                    </span>
+                  )}
+                </div>
+              ) : priceError ? (
+                <div className="text-sm text-danger">
+                  Price data unavailable
+                </div>
+              ) : (
+                <div className="text-sm text-textMuted">
+                  Loading price...
                 </div>
               )}
             </div>
@@ -255,19 +304,21 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                   <Line
                     type="monotone"
                     dataKey="price"
-                    stroke="var(--secondary)"
-                    strokeWidth={2}
+                    stroke="var(--primary)"
+                    strokeWidth={2.5}
                     dot={false}
                     name="Price"
+                    connectNulls={false}
                   />
                   <Line
                     type="monotone"
                     dataKey="ma20"
                     stroke="var(--warning)"
-                    strokeWidth={1}
-                    strokeDasharray="5 5"
+                    strokeWidth={2}
+                    strokeDasharray="8 4"
                     dot={false}
                     name="MA(20)"
+                    connectNulls={false}
                   />
                 </LineChart>
               </ResponsiveContainer>

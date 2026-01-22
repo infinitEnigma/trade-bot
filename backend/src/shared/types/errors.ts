@@ -358,3 +358,127 @@ export function createErrorResponse(error: Error, correlationId?: string) {
     correlationId,
   };
 }
+
+/**
+ * Data freshness metadata for smart frontend polling
+ * Provides guidance on when data was last updated and when it should be polled again
+ */
+export interface DataFreshnessMetadata {
+  /** When this data was last updated (Unix timestamp in milliseconds) */
+  lastUpdated: number;
+
+  /** Expected update frequency in milliseconds */
+  updateFrequency: number;
+
+  /** Recommended polling interval for frontend in milliseconds */
+  recommendedPollInterval: number;
+
+  /** When the next update is expected (Unix timestamp in milliseconds) */
+  nextExpectedUpdate: number;
+
+  /** Whether the data should be considered stale */
+  isStale: boolean;
+
+  /** Staleness threshold in milliseconds */
+  stalenessThreshold: number;
+
+  /** Data source type for frontend optimization */
+  dataSource: 'websocket' | 'api' | 'cache' | 'static';
+
+  /** Cache TTL remaining in seconds (if applicable) */
+  cacheTTLRemaining?: number;
+}
+
+/**
+ * Enhanced API response with freshness metadata
+ */
+export interface FreshnessAwareResponse<T = any> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  freshness?: DataFreshnessMetadata;
+  correlationId?: string;
+  timestamp?: number;
+  cached?: boolean;
+  mock?: boolean;
+  stale?: boolean;
+  message?: string;
+}
+
+/**
+ * Utility functions for data freshness
+ */
+export const DataFreshnessUtils = {
+  /**
+   * Create freshness metadata for real-time WebSocket data
+   */
+  createRealtimeMetadata(lastUpdated?: number): DataFreshnessMetadata {
+    const now = Date.now();
+    const actualLastUpdated = lastUpdated || now;
+
+    return {
+      lastUpdated: actualLastUpdated,
+      updateFrequency: 5000, // 5 seconds
+      recommendedPollInterval: 10000, // 10 seconds
+      nextExpectedUpdate: actualLastUpdated + 5000,
+      isStale: now - actualLastUpdated > 30000, // 30 seconds
+      stalenessThreshold: 30000,
+      dataSource: 'websocket',
+    };
+  },
+
+  /**
+   * Create freshness metadata for API-based data
+   */
+  createApiMetadata(updateFrequency: number, lastUpdated?: number): DataFreshnessMetadata {
+    const now = Date.now();
+    const actualLastUpdated = lastUpdated || now;
+
+    return {
+      lastUpdated: actualLastUpdated,
+      updateFrequency,
+      recommendedPollInterval: Math.max(updateFrequency * 2, 30000), // At least 30 seconds
+      nextExpectedUpdate: actualLastUpdated + updateFrequency,
+      isStale: now - actualLastUpdated > updateFrequency * 3,
+      stalenessThreshold: updateFrequency * 3,
+      dataSource: 'api',
+    };
+  },
+
+  /**
+   * Create freshness metadata for cached data
+   */
+  createCacheMetadata(cacheTTL: number, lastUpdated?: number): DataFreshnessMetadata {
+    const now = Date.now();
+    const actualLastUpdated = lastUpdated || now;
+
+    return {
+      lastUpdated: actualLastUpdated,
+      updateFrequency: cacheTTL * 1000, // Convert to milliseconds
+      recommendedPollInterval: Math.max(cacheTTL * 1000, 30000),
+      nextExpectedUpdate: actualLastUpdated + (cacheTTL * 1000),
+      isStale: now - actualLastUpdated > cacheTTL * 1000,
+      stalenessThreshold: cacheTTL * 1000,
+      dataSource: 'cache',
+      cacheTTLRemaining: Math.max(0, cacheTTL - Math.floor((now - actualLastUpdated) / 1000)),
+    };
+  },
+
+  /**
+   * Create freshness metadata for static data
+   */
+  createStaticMetadata(lastUpdated?: number): DataFreshnessMetadata {
+    const now = Date.now();
+    const actualLastUpdated = lastUpdated || now;
+
+    return {
+      lastUpdated: actualLastUpdated,
+      updateFrequency: 1800000, // 30 minutes
+      recommendedPollInterval: 1800000, // 30 minutes
+      nextExpectedUpdate: actualLastUpdated + 1800000,
+      isStale: now - actualLastUpdated > 3600000, // 1 hour
+      stalenessThreshold: 3600000,
+      dataSource: 'static',
+    };
+  },
+};

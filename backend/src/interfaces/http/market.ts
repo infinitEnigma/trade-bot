@@ -6,14 +6,14 @@ import { authService, TokenPayload } from "../../core/auth/auth.service";
 import { redisService } from "../../infrastructure/cache/redis.service";
 import { query } from "../../database/pool"; // ✅ Import from centralized module
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth"; // ✅ Import centralized auth
-import { createErrorResponse, ValidationError, NotFoundError, ExternalServiceError, DatabaseError } from "../../shared/types/errors";
+import { createErrorResponse, ValidationError, NotFoundError, ExternalServiceError, DatabaseError, DataFreshnessUtils, FreshnessAwareResponse } from "../../shared/types/errors";
 import { getCorrelationId } from "../../shared/utils/context";
 import logger from "../../core/logging/logger.service"; // ✅ Import structured logger
 import { encryptionService } from "../../infrastructure/security/encryption.service"; // ✅ Import encryption service
 import { RateLimiters } from "../../infrastructure";
 import { marketStreamService } from "../../infrastructure/messaging/market-stream.service";
 import { generateKodiakSignature } from "../../shared/utils/orderly-signature"; // ✅ Import backend crypto utility
-import { getCacheConfig } from "../../config/cache.config"; // ✅ Import centralized cache config
+import { getCacheConfig, getFullCacheConfig } from "../../config/cache.config"; // ✅ Import centralized cache config
 
 const router = Router();
 
@@ -84,7 +84,7 @@ router.get(
     try {
       const symbol = (req.query.symbol as string) || "PERP_BTC_USDC";
 
-      // Try to get real ticker data
+      // Try to get real ticker data - NO MOCK DATA ALLOWED
       let response;
       try {
         response = await axios.get(`${KODIAK_API_BASE}/public/ticker`, {
@@ -92,26 +92,20 @@ router.get(
           timeout: 5000,
         });
       } catch (apiError: any) {
-        logger.warn("Ticker API failed, using mock data", {
+        logger.warn("Ticker API failed - NO MOCK DATA USED", {
           symbol,
           error: apiError.message,
           status: apiError.response?.status,
         });
 
-        // Return mock ticker data so dashboard can load
-        const mockPrice = 50000 + (Math.random() - 0.5) * 1000;
-        return res.json({
-          success: true,
-          data: {
-            symbol: symbol,
-            price: mockPrice.toFixed(2),
-            change24h: ((Math.random() - 0.5) * 10).toFixed(2),
-            volume24h: (Math.random() * 1000000).toFixed(0),
-            high24h: (mockPrice * 1.05).toFixed(2),
-            low24h: (mockPrice * 0.95).toFixed(2),
-          },
+        // CRITICAL: On a real money trading platform, NEVER show fake prices
+        // Return clear error so user knows data is unavailable
+        return res.status(503).json({
+          success: false,
+          error: "Market data temporarily unavailable. Please try again later.",
+          symbol,
           timestamp: Date.now(),
-          mock: true, // Indicate this is mock data
+          retryAfter: 30, // Suggest retry after 30 seconds
         });
       }
 
@@ -126,20 +120,14 @@ router.get(
         error: err.message,
       });
 
-      // Fallback to mock data even on other errors
-      const mockPrice = 50000 + (Math.random() - 0.5) * 1000;
-      res.json({
-        success: true,
-        data: {
-          symbol: (req.query.symbol as string) || "PERP_BTC_USDC",
-          price: mockPrice.toFixed(2),
-          change24h: ((Math.random() - 0.5) * 10).toFixed(2),
-          volume24h: (Math.random() * 1000000).toFixed(0),
-          high24h: (mockPrice * 1.05).toFixed(2),
-          low24h: (mockPrice * 0.95).toFixed(2),
-        },
+      // CRITICAL: On a real money trading platform, NEVER show fake prices
+      // Return clear error so user knows data is unavailable
+      res.status(503).json({
+        success: false,
+        error: "Market data temporarily unavailable. Please try again later.",
+        symbol: (req.query.symbol as string) || "PERP_BTC_USDC",
         timestamp: Date.now(),
-        mock: true,
+        retryAfter: 30, // Suggest retry after 30 seconds
       });
     }
   }
@@ -610,12 +598,23 @@ router.get("/tv/history", async (req: Request, res: Response) => {
     // Create cache key: tv:history:BTCUSDC:1:1640995200:1641081600 (rounded to 5-min intervals)
     const cacheKey = `tv:history:${symbolStr}:${resolutionStr}:${fromRounded}:${toRounded}`;
 
+    const fullCacheConfig = getFullCacheConfig();
+    const cacheConfig = fullCacheConfig;
+
     // Always allow TV History calls - charts should work regardless of WebSocket connections
     // Check for cached data first (always preferable)
     const cacheResult = await redisService.get(cacheKey);
     if (cacheResult.success && cacheResult.data) {
       const cachedData = JSON.parse(cacheResult.data);
       cachedData.cached = true;
+
+      // Add freshness metadata for cached data
+      const freshness = DataFreshnessUtils.createCacheMetadata(
+        cacheConfig.MARKET_KLINES_SHORT,
+        cachedData.timestamp
+      );
+      cachedData.freshness = freshness;
+
       return res.json(cachedData);
     } else if (!cacheResult.success) {
       logger.warn("TV History cache read failed, falling back to API", {
@@ -634,15 +633,24 @@ router.get("/tv/history", async (req: Request, res: Response) => {
       },
     });
 
-    const result = {
+    const result: FreshnessAwareResponse = {
       success: true,
       data: response.data,
       timestamp: Date.now(),
       cached: false,
     };
 
+    // Add freshness metadata indicating this is fresh API data
+    // TradingView data updates vary by resolution:
+    // 1m charts: every minute, 5m charts: every 5 minutes, etc.
+    const updateFrequency = resolutionStr === "1" ? 60000 : // 1 minute for 1m resolution
+      resolutionStr === "5" ? 300000 : // 5 minutes for 5m resolution
+        900000; // 15 minutes for longer resolutions
+
+    const freshness = DataFreshnessUtils.createApiMetadata(updateFrequency, Date.now());
+    result.freshness = freshness;
+
     // Cache the result using centralized configuration
-    const cacheConfig = getCacheConfig();
     await redisService.setex(cacheKey, cacheConfig.MARKET_KLINES_SHORT, JSON.stringify(result));
 
     logger.debug("TV History cached successfully", {
@@ -650,6 +658,7 @@ router.get("/tv/history", async (req: Request, res: Response) => {
       symbol: symbolStr,
       resolution: resolutionStr,
       ttl: cacheConfig.MARKET_KLINES_SHORT,
+      updateFrequency,
     });
 
     res.json(result);

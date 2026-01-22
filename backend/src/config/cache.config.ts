@@ -29,10 +29,36 @@ export interface CacheTTLConfig {
     // Application data
     CREDENTIAL_CACHE: number; // 5 minutes - encrypted credentials
     POSITION_CACHE: number; // 30 seconds - trading positions
-    BALANCE_CACHE: number; // 30 seconds - account balances
+    BALANCE_CACHE: number; // 30 seconds - account balance data
 
     // Temporary data
     TEMP_DATA_DEFAULT: number; // 5 minutes - general temporary data
+}
+
+/**
+ * Data freshness configuration for smart polling
+ * Defines expected update frequencies for different data types
+ */
+export interface DataFreshnessConfig {
+    // Market data update frequencies (in milliseconds)
+    MARKET_REALTIME: number; // WebSocket data (seconds)
+    MARKET_HIGH_FREQ: number; // High frequency (30 seconds)
+    MARKET_MEDIUM_FREQ: number; // Medium frequency (5 minutes)
+    MARKET_LOW_FREQ: number; // Low frequency (15 minutes)
+    MARKET_STATIC: number; // Static data (30 minutes)
+
+    // Frontend polling guidance (recommended intervals in milliseconds)
+    POLL_REALTIME: number; // 10 seconds for real-time data
+    POLL_HIGH_FREQ: number; // 30 seconds for high frequency
+    POLL_MEDIUM_FREQ: number; // 5 minutes for medium frequency
+    POLL_LOW_FREQ: number; // 15 minutes for low frequency
+    POLL_STATIC: number; // 30 minutes for static data
+
+    // Staleness thresholds (when to consider data stale)
+    STALE_THRESHOLD_REALTIME: number; // 30 seconds
+    STALE_THRESHOLD_HIGH_FREQ: number; // 2 minutes
+    STALE_THRESHOLD_MEDIUM_FREQ: number; // 10 minutes
+    STALE_THRESHOLD_LOW_FREQ: number; // 30 minutes
 }
 
 /**
@@ -104,11 +130,56 @@ export const CACHE_TTL_DEV: CacheTTLConfig = {
 };
 
 /**
+ * Data freshness configuration values
+ * Defines expected update frequencies and polling guidance for smart frontend polling
+ * Adjusted for more frequent price updates since price data is more available than initially assumed
+ */
+export const DATA_FRESHNESS: DataFreshnessConfig = {
+    // Market data update frequencies (in milliseconds) - MORE FREQUENT FOR PRICE DATA
+    MARKET_REALTIME: 2000, // WebSocket data updates every 2 seconds (price is very available)
+    MARKET_HIGH_FREQ: 10000, // High frequency data (10 seconds) - increased from 30s
+    MARKET_MEDIUM_FREQ: 60000, // Medium frequency (1 minute) - increased from 5min for charts
+    MARKET_LOW_FREQ: 300000, // Low frequency (5 minutes) - reduced from 15min
+    MARKET_STATIC: 900000, // Static data (15 minutes) - reduced from 30min
+
+    // Frontend polling guidance (recommended intervals in milliseconds) - MORE AGGRESSIVE POLLING
+    POLL_REALTIME: 5000, // Poll every 5 seconds for real-time data (price charts need frequent updates)
+    POLL_HIGH_FREQ: 15000, // Poll every 15 seconds for high frequency (good balance)
+    POLL_MEDIUM_FREQ: 30000, // Poll every 30 seconds for medium frequency (charts need updates)
+    POLL_LOW_FREQ: 120000, // Poll every 2 minutes for low frequency
+    POLL_STATIC: 300000, // Poll every 5 minutes for static data
+
+    // Staleness thresholds (when to consider data stale) - MORE LENIENT
+    STALE_THRESHOLD_REALTIME: 15000, // 15 seconds for real-time (was 30s)
+    STALE_THRESHOLD_HIGH_FREQ: 60000, // 1 minute for high frequency (was 2min)
+    STALE_THRESHOLD_MEDIUM_FREQ: 120000, // 2 minutes for medium frequency (was 10min)
+    STALE_THRESHOLD_LOW_FREQ: 600000, // 10 minutes for low frequency (was 30min)
+};
+
+/**
+ * Combined configuration interface
+ */
+export interface FullCacheConfig extends CacheTTLConfig {
+    freshness: DataFreshnessConfig;
+}
+
+/**
  * Get appropriate cache TTL configuration based on environment
  */
 export function getCacheConfig(): CacheTTLConfig {
     const isProduction = process.env.NODE_ENV === 'production';
     return isProduction ? CACHE_TTL : CACHE_TTL_DEV;
+}
+
+/**
+ * Get full cache configuration including data freshness
+ */
+export function getFullCacheConfig(): FullCacheConfig {
+    const ttlConfig = getCacheConfig();
+    return {
+        ...ttlConfig,
+        freshness: DATA_FRESHNESS,
+    };
 }
 
 /**
