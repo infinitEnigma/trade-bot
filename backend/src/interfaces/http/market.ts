@@ -84,15 +84,14 @@ router.get(
     try {
       const symbol = (req.query.symbol as string) || "PERP_BTC_USDC";
 
-      // Try to get real ticker data - NO MOCK DATA ALLOWED
+      // Use /public/futures/{symbol} endpoint which provides current market data
       let response;
       try {
-        response = await axios.get(`${KODIAK_API_BASE}/public/ticker`, {
-          params: { symbol },
+        response = await axios.get(`${KODIAK_API_BASE}/public/futures/${symbol}`, {
           timeout: 5000,
         });
       } catch (apiError: any) {
-        logger.warn("Ticker API failed - NO MOCK DATA USED", {
+        logger.warn("Futures API failed - NO MOCK DATA USED", {
           symbol,
           error: apiError.message,
           status: apiError.response?.status,
@@ -109,9 +108,32 @@ router.get(
         });
       }
 
+      // Transform futures data to ticker format
+      const futuresData = response.data.data || response.data;
+
+      // Calculate 24h change: current mark price vs 24h close
+      const currentPrice = parseFloat(futuresData.mark_price);
+      const prevClose = parseFloat(futuresData['24h_close']);
+      const change24h = currentPrice - prevClose;
+
+      // Format ticker response
+      const tickerData = {
+        symbol: futuresData.symbol,
+        price: currentPrice.toFixed(2),
+        change24h: change24h.toFixed(2),
+        volume24h: futuresData['24h_volume'] || '0',
+        high24h: futuresData['24h_high'] || '0',
+        low24h: futuresData['24h_low'] || '0',
+        // Additional data available from futures endpoint
+        mark_price: futuresData.mark_price,
+        index_price: futuresData.index_price,
+        open_interest: futuresData.open_interest,
+        est_funding_rate: futuresData.est_funding_rate,
+      };
+
       res.json({
         success: true,
-        data: response.data.data || response.data,
+        data: tickerData,
         timestamp: Date.now(),
       });
     } catch (err: any) {
@@ -254,7 +276,8 @@ router.get("/orderbook", async (req: Request, res: Response) => {
 // GET /api/market/futures/:symbol - Futures market data (more detailed than ticker)
 router.get(
   "/futures/:symbol",
-  RateLimiters.market,
+  RateLimiters.kodiakApi, // STRICT: 10 req/sec to match API limits
+  RateLimiters.market,    // PERMISSIVE: 10,000 req/min for users
   async (req: Request, res: Response) => {
     try {
       const { symbol } = req.params;
@@ -287,9 +310,8 @@ router.get(
         cached: false,
       };
 
-      // Cache using centralized configuration
-      const cacheConfig = getCacheConfig();
-      await redisService.setex(cacheKey, cacheConfig.MARKET_FUTURES, JSON.stringify(result));
+      // Cache for 10 minutes to reduce API calls (was using MARKET_FUTURES config)
+      await redisService.setex(cacheKey, 600, JSON.stringify(result)); // 10 minutes
 
       res.json(result);
     } catch (err: any) {

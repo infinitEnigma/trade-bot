@@ -95,6 +95,12 @@ const BASE_RATE_LIMITS = {
         windowMs: 60 * 1000, // 1 minute
         max: 10000, // Very high limits, just database queries
     },
+
+    // Kodiak API calls - strict limits to match API restrictions
+    kodiakApi: {
+        windowMs: 1000, // 1 second (matches API limit window)
+        max: 10, // 10 requests per second (matches API limit)
+    },
 } as const;
 
 /**
@@ -237,6 +243,15 @@ export const RATE_LIMIT_CONFIGS = {
         enableUserBasedLimits: true,
         failOpen: true, // Allow if Redis fails - just DB queries
         customMessage: "Kodiak status rate limit exceeded",
+    }),
+
+    /**
+     * Kodiak API calls - strict limits matching API restrictions
+     * Prevents 400 errors by respecting 10 req/sec API limit
+     */
+    kodiakApi: createRateLimitConfig(BASE_RATE_LIMITS.kodiakApi, {
+        failOpen: false, // Block if rate limiting fails - API protection
+        customMessage: "Kodiak API rate limit exceeded",
     }),
 } as const;
 

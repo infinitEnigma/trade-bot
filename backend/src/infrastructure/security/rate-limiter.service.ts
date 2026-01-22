@@ -343,4 +343,5 @@ export const RateLimiters = {
   websocket: createRateLimiter("websocket", RATE_LIMIT_CONFIGS.websocket),
   botInstances: createRateLimiter("bot-instances", RATE_LIMIT_CONFIGS.botInstances),
   kodiakStatus: createRateLimiter("kodiak-status", RATE_LIMIT_CONFIGS.kodiakStatus),
+  kodiakApi: createRateLimiter("kodiak-api", RATE_LIMIT_CONFIGS.kodiakApi),
 };

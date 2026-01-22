@@ -66,7 +66,6 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
     // Fetch real-time current price with user-level awareness
     const {
       data: currentPriceData,
-      isLoading: priceLoading,
       error: priceError,
     } = useCurrentPrice(selectedSymbol);
 
