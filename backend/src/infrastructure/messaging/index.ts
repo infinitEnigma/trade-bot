@@ -1,22 +1,36 @@
+/** @format */
+
 /**
  * ===========================================
- * 📡 MESSAGING INFRASTRUCTURE - Real-time Services
+ * 📡 MESSAGING INFRASTRUCTURE
  * ===========================================
  *
- * Infrastructure layer for real-time messaging,
- * WebSocket connections, and market data streaming.
+ * Real-time communication and messaging infrastructure providing
+ * WebSocket connectivity, market data streaming, and event-driven communication.
+ *
+ * COMPONENTS:
+ * - WebSocket Service: Real-time client connections with authentication
+ * - Market Stream Service: Orderly WebSocket integration for market data
+ * - Event-driven messaging for real-time updates
  *
  * RESPONSIBILITIES:
- * - WebSocket connection management
- * - Market data streaming and subscriptions
- * - Real-time event broadcasting
- * - Message routing and filtering
+ * - Real-time WebSocket connections with JWT authentication
+ * - Market data streaming from external APIs (Orderly)
+ * - Connection management and health monitoring
+ * - Event routing and subscription management
+ * - Rate limiting and security for real-time operations
  *
  * @format
  */
 
-// Export messaging infrastructure services
+// Export WebSocket infrastructure
+export * from './websocket.service';
+export * from './websocket/auth';
+export * from './websocket/handlers';
+export * from './websocket/types';
+
+// Export market streaming infrastructure
 export { marketStreamService } from './market-stream.service';
 
-// Export market-stream sub-services
-export * from './market-stream/index';
+// Export messaging types and interfaces
+export * from '../../interfaces/websocket';

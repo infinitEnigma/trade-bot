@@ -8,6 +8,7 @@
 import { query } from "../../database/pool";
 import { redisService } from "../cache/redis.service";
 import { encryptionService } from "../security/encryption.service";
+import { kodiakCache } from "./kodiak-cache";
 import logger from "../../core/logging/logger.service";
 
 export interface KodiakCredentials {
@@ -73,8 +74,8 @@ export interface KodiakAccountInfo {
  * Kodiak Integration Service
  */
 export class KodiakIntegrationService {
-    private readonly CACHE_TTL = 5; // 5 seconds for volatile data
-    private readonly CACHE_TTL_MEDIUM = 30; // 30 seconds for semi-volatile data
+    private readonly CACHE_TTL = 300; // ⬆️ 5 minutes for volatile data (was 5 seconds)
+    private readonly CACHE_TTL_MEDIUM = 600; // ⬆️ 10 minutes for semi-volatile data (was 30 seconds)
 
     /**
      * Get decrypted Kodiak credentials for a user
@@ -140,13 +141,13 @@ export class KodiakIntegrationService {
      */
     async getPositions(userId: string): Promise<KodiakApiResponse<KodiakPosition[]>> {
         try {
-            const cacheKey = `kodiak:positions:${userId}`;
+            const cacheKey = `positions:${userId}`;
 
             // Check cache first
-            const cacheResult = await redisService.get(cacheKey);
-            if (cacheResult.success && cacheResult.data) {
+            const cached = kodiakCache.get(cacheKey);
+            if (cached) {
                 logger.debug("Returning cached Kodiak positions", { userId });
-                return JSON.parse(cacheResult.data);
+                return cached;
             }
 
             // Get credentials
@@ -170,8 +171,8 @@ export class KodiakIntegrationService {
                 data: positionsData,
             };
 
-            // Cache the result
-            await redisService.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+            // Cache the result (30 seconds for positions)
+            kodiakCache.set(cacheKey, result);
 
             logger.debug("Kodiak positions retrieved and cached", {
                 userId,
@@ -197,13 +198,13 @@ export class KodiakIntegrationService {
      */
     async getTrades(userId: string, limit: number = 50): Promise<KodiakApiResponse<KodiakTrade[]>> {
         try {
-            const cacheKey = `kodiak:trades:${userId}:${limit}`;
+            const cacheKey = `trades:${userId}:${limit}`;
 
             // Check cache first
-            const cacheResult = await redisService.get(cacheKey);
-            if (cacheResult.success && cacheResult.data) {
+            const cached = kodiakCache.get(cacheKey);
+            if (cached) {
                 logger.debug("Returning cached Kodiak trades", { userId, limit });
-                return JSON.parse(cacheResult.data);
+                return cached;
             }
 
             // Get credentials
@@ -227,8 +228,8 @@ export class KodiakIntegrationService {
                 data: tradesData,
             };
 
-            // Cache the result
-            await redisService.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+            // Cache the result (30 seconds for trades)
+            kodiakCache.set(cacheKey, result);
 
             logger.debug("Kodiak trades retrieved and cached", {
                 userId,
@@ -510,24 +511,12 @@ export class KodiakIntegrationService {
      */
     async invalidateUserCache(userId: string): Promise<void> {
         try {
-            const cacheKeys = [
-                `kodiak:positions:${userId}`,
-                `kodiak:trades:${userId}:*`,
-                `kodiak:balance:${userId}`,
-                `kodiak:account:${userId}`,
-            ];
+            // Clear all cache entries for this user
+            const clearedEntries = kodiakCache.clearUserCache(userId);
 
-            // Note: In a real Redis implementation, we'd use SCAN or KEYS to delete patterns
-            // For now, we'll clear specific known keys
-            for (const key of cacheKeys) {
-                if (!key.includes('*')) {
-                    await redisService.del(key);
-                }
-            }
-
-            logger.debug("Kodiak cache invalidated for user", {
+            logger.info("Kodiak cache invalidated for user", {
                 userId,
-                keysCleared: cacheKeys.length,
+                entriesCleared: clearedEntries,
             });
         } catch (error) {
             logger.warn("Failed to invalidate Kodiak cache", {

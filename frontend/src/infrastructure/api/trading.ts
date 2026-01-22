@@ -70,15 +70,46 @@ export const tradingApi = {
         return response.data;
     },
 
-    // Kodiak exchange integration endpoints
+    // Kodiak exchange integration endpoints with request deduplication
+    _pendingPositions: null as Promise<any> | null,
+    _pendingTrades: null as Promise<any> | null,
+
     async getKodiakPositions() {
-        const response = await httpClient.getClient().get("/api/user/kodiak/positions");
-        return response.data;
+        // Return existing request if one is pending (deduplication)
+        if (this._pendingPositions) {
+            return this._pendingPositions;
+        }
+
+        // Create new request
+        this._pendingPositions = httpClient.getClient().get("/api/user/kodiak/positions");
+
+        try {
+            const result = await this._pendingPositions;
+            return result.data;
+        } finally {
+            // Clear pending request after completion
+            this._pendingPositions = null;
+        }
     },
 
     async getKodiakTrades(limit = 50) {
-        const response = await httpClient.getClient().get(`/api/user/kodiak/trades?limit=${limit}`);
-        return response.data;
+        //const key = `trades_${limit}`;
+
+        // Return existing request if one is pending (deduplication)
+        if (this._pendingTrades) {
+            return this._pendingTrades;
+        }
+
+        // Create new request
+        this._pendingTrades = httpClient.getClient().get(`/api/user/kodiak/trades?limit=${limit}`);
+
+        try {
+            const result = await this._pendingTrades;
+            return result.data;
+        } finally {
+            // Clear pending request after completion
+            this._pendingTrades = null;
+        }
     },
 
     // Wallet qualification endpoint

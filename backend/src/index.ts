@@ -109,43 +109,20 @@ validateEnvironment();
 // ===========================================
 // 📦 2. MODULE IMPORTS & DEPENDENCIES
 // ===========================================
-// Route handlers, middleware, and service dependencies
-// Organized by functional area for better maintainability
+// Core services and configuration modules
 // ===========================================
 
-// 🔐 Authentication & Authorization
-import { authRoutes } from "./interfaces/http/auth";
-
-// 👤 User Management
-import { userRoutes, userProfileRoutes, userKodiakRoutes } from "./interfaces/http/users";
-
-// 📊 Market Data & Trading
-import { marketRoutes, strategyRoutes } from "./interfaces/http/trading";
-
-// 🤖 Bot Management & Engine
-import { botRoutes, botEngineRoutes, botManagementRoutes } from "./interfaces/http/bots";
-
-//  Wallet & Qualification
-import { walletRoutes } from "./interfaces/http/wallet";
-import { balanceRoutes } from "./interfaces/http/wallet/balance";
-
-// ️ Security & Monitoring
-import { healthRoutes, securityRoutes } from "./interfaces/http/system";
-
-// 🔧 Middleware Stack
-import { httpLogger, errorLogger } from "./interfaces/middleware/logger";
-import { contextMiddleware } from "./interfaces/middleware/context";
-import { csrfMiddleware, csrfTokenMiddleware, CSRFRequest } from "./interfaces/middleware/csrf";
+// � Server Configuration Services
+import { ExpressConfig } from "./server/express-config";
+import { RouteConfig } from "./server/route-config";
+import { MiddlewareConfig } from "./server/middleware-config";
 
 // 📡 Real-time Services
 import { marketStreamService } from "./infrastructure";
 import { authService } from "./core/auth";
 import { botStatusService } from "./core/trading";
 
-// 🛡️ Rate Limiting
-import { RateLimiters } from "./infrastructure";
-
-// 🔄 Infrastructure Services (moved to infrastructure/)
+// 🔄 Infrastructure Services
 import { redisService } from "./infrastructure";
 
 // 🤖 Bot Reconciliation Worker (initialized after database)
@@ -223,16 +200,27 @@ const trackApiActivity = () => {
 };
 
 // ===========================================
-// 🚀 5. EXPRESS APPLICATION SETUP
+// 🚀 5. EXPRESS APPLICATION & SERVER SETUP
 // ===========================================
-// Configures Express.js application with CORS, security, and body parsing
-// Sets up HTTP server and Socket.IO for real-time communication
+// Configures Express.js application and Socket.IO server
+// Uses centralized configuration services for clean setup
 // ===========================================
 
-const app = express();
-
-// Trust proxy headers from nginx (required for rate limiting with X-Forwarded-For)
-app.set("trust proxy", 1);
+// Create Express application with full configuration
+const app = ExpressConfig.createApp({
+    enableCors: true,
+    corsOptions: {
+        allowedOrigins: [
+            process.env.FRONTEND_URL,
+            process.env.CORS_ORIGIN,
+            "http://localhost:3000",
+            "http://localhost:5173",
+        ].filter((origin): origin is string => Boolean(origin)),
+        credentials: true,
+    },
+    enableSecurity: true,
+    trustProxy: true,
+});
 
 // Create HTTP server for both Express and WebSocket support
 const httpServer = createServer(app);
@@ -245,6 +233,13 @@ const io = new Server(httpServer, {
             if (!origin) return callback(null, true);
 
             // Allow explicitly configured origins
+            const allowedOrigins = [
+                process.env.FRONTEND_URL,
+                process.env.CORS_ORIGIN,
+                "http://localhost:3000",
+                "http://localhost:5173",
+            ].filter(Boolean);
+
             if (allowedOrigins.includes(origin)) {
                 return callback(null, true);
             }
@@ -277,397 +272,64 @@ const io = new Server(httpServer, {
     },
 });
 
-// Configure CORS allowed origins
-const allowedOrigins = [
-    process.env.FRONTEND_URL,
-    process.env.CORS_ORIGIN,
-    "http://localhost:3000",
-    "http://localhost:5173",
-].filter(Boolean); // Remove any undefined values
-
-// Apply CORS middleware
-app.use(
-    cors({
-        origin: (origin, callback) => {
-            // Allow requests with no origin (like mobile apps or curl requests)
-            if (!origin) return callback(null, true);
-
-            // Allow explicitly configured origins
-            if (allowedOrigins.includes(origin)) {
-                return callback(null, true);
-            }
-
-            // For development, allow localhost and local network access
-            if (process.env.NODE_ENV === "development") {
-                const devOrigins = [
-                    "http://localhost:3000",
-                    "http://localhost:5173",
-                    "http://127.0.0.1:3000",
-                    "http://127.0.0.1:5173",
-                    "https://rewireapp.ddns.net",
-                ];
-                if (devOrigins.includes(origin)) {
-                    return callback(null, true);
-                }
-
-                // Allow local network access (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
-                const networkRegex =
-                    /^(https?:\/\/)(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)[\d]+\.[\d]+(:[\d]+)?$/;
-                if (networkRegex.test(origin)) {
-                    return callback(null, true);
-                }
-            }
-
-            return callback(new Error("CORS policy violation"));
-        },
-        credentials: true,
-    })
-);
-
-// Apply security middleware
-app.use(
-    helmet({
-        hsts: false, // Disable HSTS - let nginx handle it
-    })
-);
-
-// Parse incoming requests
-app.use(cookieParser());
-app.use(express.json());
-
-// ✅ REMOVED GLOBAL RATE LIMITER - Now using per-endpoint limits
-// Rate limiting is now handled per-endpoint with user-based limits
-
-// Request context middleware (must be first)
-app.use(contextMiddleware);
-
-// HTTP request logging middleware
-app.use(httpLogger);
-
 // Make io available to routes
 app.set("io", io);
 
-// API activity tracking middleware
-app.use("/api", (req, res, next) => {
-    trackApiActivity();
-    next();
+// ===========================================
+// 🛡️ 6. MIDDLEWARE CONFIGURATION
+// ===========================================
+// Configures security middleware, CSRF protection, and rate limiting
+// Uses centralized middleware configuration service
+// ===========================================
+
+MiddlewareConfig.configure(app, {
+    enableCsrf: true,
+    enableRateLimiting: true,
+    enableActivityTracking: true,
 });
-
-// ===========================================
-// 🛡️ 6. SECURITY & AUTHENTICATION MIDDLEWARE
-// ===========================================
-// Configures CSRF protection, rate limiting, and authentication
-// Different security models for browser vs server communication
-// ===========================================
-
-// CSRF token generation for auth routes (login/register/refresh)
-app.use("/api/auth", csrfTokenMiddleware);
-
-// CSRF validation for ALL state-changing operations (browser routes)
-app.use("/api/user", csrfMiddleware);
-app.use("/api/user-profile", csrfMiddleware);
-app.use("/api/user-kodiak", csrfMiddleware);
-app.use("/api/market", csrfMiddleware);
-app.use("/api/strategies", csrfMiddleware);
-app.use("/api/bot", csrfMiddleware);
-app.use("/api/bot-management", csrfMiddleware);
-app.use("/api/balance", csrfMiddleware);
-app.use("/api/wallet", csrfMiddleware);
-app.use("/api/security", csrfMiddleware);
-
-// 🔐 SECURITY ARCHITECTURE NOTE:
-// - Browser routes: JWT + CSRF protection (state-changing operations)
-// - Engine routes: API key authentication (server-to-server communication)
-// - CSRF is NOT applied to /api/bot-engine routes because:
-//   1. Bot engine is internal system making direct HTTP calls
-//   2. Engine doesn't have browser cookies or CSRF tokens
-//   3. CSRF is meant for browser-based attacks, not server communication
-//   4. Bot engine routes are protected by API key authentication instead
-
-// ===========================================
-// 🛡️ 6.5 PER-ENDPOINT RATE LIMITING
-// ===========================================
-// Applies sophisticated rate limiting per endpoint with user-based limits
-// Prevents single users from exhausting global limits
-// ===========================================
-
-// 🔐 Authentication endpoints - Login exempt from rate limiting for smooth UX
-// Other auth operations (profile checks, etc.) still rate limited
-
-// 👤 Profile endpoints (lenient rate limiting for periodic checks)
-app.use("/api/auth/me", RateLimiters.public);
-app.use("/api/auth/check-qualification", RateLimiters.public);
-app.use("/api/auth/qualification-config", RateLimiters.public);
-app.use("/api/auth/csrf-token", RateLimiters.public);
-app.use("/api/auth/logout", RateLimiters.public);
-
-// 👤 User management endpoints (moderate limits)
-app.use("/api/user", RateLimiters.public);
-app.use("/api/user-profile", RateLimiters.public);
-app.use("/api/user-kodiak", RateLimiters.kodiakStatus);
-
-// 📊 Market data endpoints (user-based scaling)
-app.use("/api/market", RateLimiters.market);
-app.use("/api/strategies", RateLimiters.market);
-
-// 🤖 Trading & bot management (strict user-based limits)
-app.use("/api/bot", RateLimiters.trading);
-app.use("/api/bot-management", RateLimiters.trading);
-
-// 💰 Balance & financial data (moderate user-based limits)
-app.use("/api/balance", RateLimiters.balance);
-
-// 🛡️ Security & monitoring (moderate limits)
-app.use("/api/security", RateLimiters.public);
 
 // ===========================================
 // 🛤️ 7. ROUTE REGISTRATION
 // ===========================================
-// Mounts all API route handlers with proper middleware order
+// Mounts all API route handlers using centralized route configuration
 // Routes are organized by functional domain for clarity
 // ===========================================
 
-// 🔐 Authentication & Authorization
-app.use("/api/auth", authRoutes);
-
-// 👤 User Management
-app.use("/api/user", userRoutes);
-
-// 📊 Market Data & Trading
-app.use("/api/market", marketRoutes);
-app.use("/api/strategies", strategyRoutes);
-
-// 🤖 Bot Management & Engine
-app.use("/api/bot", botRoutes);
-app.use("/api/balance", balanceRoutes);
-
-//  Wallet & Qualification
-app.use("/api/wallet", walletRoutes);
-
-// 🛡️ Security & Monitoring
-app.use("/api/security", securityRoutes);
-
-// 🏥 Health Check (must be last to catch all routes)
-app.use("/api", healthRoutes);
+RouteConfig.register(app, {
+    enableApiRoutes: true,
+    enableHealthRoutes: true,
+    io, // Pass Socket.IO server for routes that need it
+});
 
 // ===========================================
-// 🚨 7.5 ERROR HANDLING MIDDLEWARE
+// 🚨 7.5 UNIFIED ERROR HANDLING MIDDLEWARE
 // ===========================================
-// Global error handling - must be last middleware in stack
-// Catches and formats all unhandled errors consistently
+// Enterprise-grade error handling with structured responses
+// Provides consistent error formatting across all endpoints
 // ===========================================
 
-app.use(
-    (
-        err: Error,
-        req: express.Request,
-        res: express.Response,
-        next: express.NextFunction
-    ) => {
-        logger.error("Unhandled error", { error: err.message, stack: err.stack });
-        res.status(500).json({
-            success: false,
-            error: "Internal server error",
-            timestamp: Date.now(),
-        });
-    }
+import { handleErrors } from "./interfaces/middleware/error-handler";
+
+app.use(handleErrors);
+
+// ===========================================
+// 🌐 8. WEBSOCKET SERVICE INITIALIZATION
+// ===========================================
+// Initialize the extracted WebSocket service for real-time communication
+// Handles authentication, subscriptions, and market data streaming
+// ===========================================
+
+// Import the WebSocket service
+import { WebSocketService } from "./infrastructure/messaging";
+
+// Initialize WebSocket service with Socket.IO server
+const webSocketService = new WebSocketService(
+    marketStreamService,
+    authService,
+    logger
 );
 
-// ===========================================
-// 🌐 8. WEBSOCKET SERVER CONFIGURATION
-// ===========================================
-// Configures Socket.IO with JWT authentication and context propagation
-// Handles market data subscriptions, bot status updates, and user notifications
-// Ensures correlation ID tracking across HTTP/WebSocket boundaries
-// ===========================================
-
-// Import context utilities for WebSocket context propagation
-import { setRequestContext, generateCorrelationId, generateRequestId, runInContext } from "./shared/utils/context";
-
-// ✅ WebSocket Context & Authentication Middleware
-io.use(async (socket, next) => {
-    try {
-        // Extract correlation ID from handshake headers (passed from HTTP request)
-        const correlationId = (socket.handshake.headers['x-correlation-id'] as string) || generateCorrelationId();
-
-        const token =
-            socket.handshake.auth?.token ||
-            socket.handshake.headers?.authorization?.replace("Bearer ", "");
-
-        if (!token) {
-            logger.warn("WebSocket connection rejected: No JWT token", {
-                socketId: socket.id,
-                ip: socket.handshake.address,
-                correlationId,
-            });
-            return next(new Error("Authentication required"));
-        }
-
-        // Verify JWT token
-        const decoded = await authService.validateToken(token);
-        if (!decoded) {
-            logger.warn("WebSocket connection rejected: Invalid JWT token", {
-                socketId: socket.id,
-                ip: socket.handshake.address,
-                correlationId,
-            });
-            return next(new Error("Invalid token"));
-        }
-
-        // Verify user still exists and is active
-        const user = await authService.getUserById(decoded.userId);
-        if (!user) {
-            logger.warn("WebSocket connection rejected: User not found", {
-                socketId: socket.id,
-                userId: decoded.userId,
-                ip: socket.handshake.address,
-                correlationId,
-            });
-            return next(new Error("User not found"));
-        }
-
-        // ✅ REQUIRE VERIFIED user level for WebSocket access
-        // Only VERIFIED users can access real-time market data
-        if (user.userLevel !== 'VERIFIED') {
-            logger.warn("WebSocket connection rejected: User not VERIFIED", {
-                socketId: socket.id,
-                userId: decoded.userId,
-                userLevel: user.userLevel,
-                email: user.email,
-                ip: socket.handshake.address,
-                correlationId,
-            });
-            return next(new Error("Real-time data requires VERIFIED account"));
-        }
-
-        // 🔄 CRITICAL: Set up AsyncLocalStorage context for WebSocket connection
-        // This ensures all WebSocket operations are properly traced
-        const wsContext = setRequestContext({
-            correlationId,
-            userId: decoded.userId,
-            userLevel: user.userLevel,
-            startTime: Date.now(),
-            requestId: generateRequestId(),
-        });
-
-        // Attach both user and context to socket for use in event handlers
-        (socket as any).user = {
-            userId: decoded.userId,
-            userLevel: user.userLevel,
-            email: user.email,
-        };
-
-        (socket as any).context = wsContext;
-
-        logger.info("WebSocket connection authenticated with context", {
-            socketId: socket.id,
-            userId: decoded.userId,
-            userLevel: user.userLevel,
-            correlationId,
-            ip: socket.handshake.address,
-        });
-
-        next();
-    } catch (error) {
-        logger.error("WebSocket authentication error", {
-            socketId: socket.id,
-            error: error instanceof Error ? error.message : String(error),
-            ip: socket.handshake.address,
-        });
-        next(new Error("Authentication failed"));
-    }
-});
-
-// WebSocket connection handling with context propagation
-io.on("connection", socket => {
-    const user = (socket as any).user;
-    const wsContext = (socket as any).context;
-
-    logger.info("Authenticated client connected with context", {
-        socketId: socket.id,
-        userId: user.userId,
-        userLevel: user.userLevel,
-        correlationId: wsContext?.correlationId,
-        ip: socket.handshake.address,
-    });
-    updateClientCount(1);
-
-    // 🔄 ALL WebSocket event handlers run within the established context
-    // This ensures correlation IDs and user context are maintained
-
-    socket.on("subscribe", (room: string) => {
-        runInContext(() => {
-            socket.join(room);
-            logger.info("Client subscribed to room", {
-                socketId: socket.id,
-                room,
-                correlationId: wsContext?.correlationId
-            });
-        });
-    });
-
-    socket.on("unsubscribe", (room: string) => {
-        runInContext(() => {
-            socket.leave(room);
-            logger.info("Client unsubscribed from room", {
-                socketId: socket.id,
-                room,
-                correlationId: wsContext?.correlationId
-            });
-        });
-    });
-
-    // ✅ Handle market subscription with context propagation
-    socket.on("subscribe_market", (symbol: string) => {
-        runInContext(async () => {
-            logger.info("Client subscribed to market", {
-                socketId: socket.id,
-                symbol,
-                correlationId: wsContext?.correlationId
-            });
-            socket.join(`market:${symbol}`);
-
-            try {
-                // Send latest tick immediately if available
-                const tick = await marketStreamService.getLatestTick(symbol);
-                if (tick) {
-                    socket.emit(`market:${symbol}`, tick);
-                }
-            } catch (err) {
-                logger.error("Failed to send initial tick", {
-                    socketId: socket.id,
-                    symbol,
-                    correlationId: wsContext?.correlationId,
-                    error: err instanceof Error ? err.message : String(err),
-                });
-            }
-
-            // Connect to Orderly if not already connected
-            marketStreamService.connectToOrderly([symbol]);
-        });
-    });
-
-    socket.on("unsubscribe_market", (symbol: string) => {
-        runInContext(() => {
-            logger.info("Client unsubscribed from market", {
-                socketId: socket.id,
-                symbol,
-                correlationId: wsContext?.correlationId
-            });
-            socket.leave(`market:${symbol}`);
-        });
-    });
-
-    socket.on("disconnect", () => {
-        runInContext(() => {
-            logger.info("Client disconnected", {
-                socketId: socket.id,
-                correlationId: wsContext?.correlationId
-            });
-            updateClientCount(-1);
-        });
-    });
-});
+webSocketService.initialize(io);
 
 // ===========================================
 // ⚙️ 9. SERVER LIFECYCLE MANAGEMENT

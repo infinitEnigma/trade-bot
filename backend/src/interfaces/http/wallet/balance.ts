@@ -5,7 +5,7 @@ import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
 import { getUserBalance, invalidateBalanceCache } from "../../../core/wallet/balance.service";
 import logger from "../../../core/logging/logger.service";
 import { RateLimiters } from "../../../infrastructure";
-import { UserLevel } from "@trade-bot/shared";
+import { UserLevel, ValidationError, NotFoundError, ExternalServiceError } from "@trade-bot/shared";
 
 const router = Router();
 
@@ -53,6 +53,30 @@ router.get(
           userLevel,
           error: errorMessage,
         });
+
+        // Throw structured errors for VERIFIED users
+        if (errorMessage.includes("no Kodiak account connected") ||
+          errorMessage.includes("Kodiak credentials not found")) {
+          throw new ValidationError("Kodiak account not connected. Please connect your trading account in Settings.", {
+            userId,
+            operation: "balance_fetch"
+          });
+        }
+
+        // External service errors (Kodiak API failures)
+        if (errorMessage.includes("Orderly API") || errorMessage.includes("Kodiak")) {
+          throw new ExternalServiceError("Kodiak", {
+            userId,
+            operation: "balance_fetch",
+            service: "kodiak_api"
+          });
+        }
+
+        // Generic internal error for unexpected failures
+        throw new NotFoundError("Balance data temporarily unavailable", {
+          userId,
+          operation: "balance_fetch"
+        });
       } else {
         // Log as debug for non-VERIFIED users (expected behavior)
         logger.debug("Balance fetch skipped/failed for non-VERIFIED user", {
@@ -60,22 +84,14 @@ router.get(
           userLevel,
           error: errorMessage,
         });
-      }
 
-      // Return user-friendly error for missing Kodiak credentials
-      if (errorMessage.includes("no Kodiak account connected") ||
-        errorMessage.includes("Kodiak credentials not found")) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Kodiak account not connected. Please connect your trading account in Settings.",
+        // For non-VERIFIED users, still return user-friendly error
+        throw new ValidationError("Balance data requires VERIFIED account status", {
+          userId,
+          userLevel,
+          operation: "balance_fetch"
         });
       }
-
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
     }
   }
 );

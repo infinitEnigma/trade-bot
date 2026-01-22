@@ -1,52 +1,189 @@
+/** @format */
+
+import { UserLevel } from "@trade-bot/shared";
+
 /**
- * ===========================================
- * 🌐 WEBSOCKET INTERFACES - Real-time Communication
- * ===========================================
- *
- * WebSocket event handlers and real-time communication
- * interfaces for the Trade Bot platform.
- *
- * RESPONSIBILITIES:
- * - WebSocket connection management
- * - Real-time event broadcasting
- * - Market data subscriptions
- * - Live trading updates
- * - User notification delivery
- *
- * @format
+ * WebSocket Service Interface
+ * Defines the contract for WebSocket server management
  */
+export interface IWebSocketService {
+    /** Initialize the WebSocket service with a Socket.IO server instance */
+    initialize(io: Server): void;
 
-// Placeholder WebSocket handlers (to be implemented)
-// These are exported to satisfy TypeScript compilation
-export const marketDataHandler = {
-    handleConnection: (socket: any) => {
-        // Placeholder implementation
-        console.log('Market data WebSocket connection handled');
-    },
-    handleSubscription: (socket: any, data: any) => {
-        // Placeholder implementation
-        console.log('Market data subscription handled', data);
-    }
-};
+    /** Get comprehensive WebSocket metrics for monitoring */
+    getMetrics(): WebSocketMetrics;
 
-export const tradingHandler = {
-    handleConnection: (socket: any) => {
-        // Placeholder implementation
-        console.log('Trading WebSocket connection handled');
-    },
-    handleOrderUpdate: (socket: any, data: any) => {
-        // Placeholder implementation
-        console.log('Trading order update handled', data);
-    }
-};
+    /** Forcefully disconnect a specific client */
+    disconnectClient(socketId: string): void;
 
-export const notificationHandler = {
-    handleConnection: (socket: any) => {
-        // Placeholder implementation
-        console.log('Notification WebSocket connection handled');
-    },
-    handleNotification: (socket: any, data: any) => {
-        // Placeholder implementation
-        console.log('Notification handled', data);
-    }
-};
+    /** Get detailed connection information */
+    getConnections(): WebSocketConnection[];
+}
+
+/**
+ * WebSocket Client Representation
+ * Contains authenticated client information and connection state
+ */
+export interface WebSocketClient {
+    /** Unique user identifier */
+    userId: string;
+
+    /** User's verification level */
+    userLevel: UserLevel;
+
+    /** Socket.IO socket ID */
+    socketId: string;
+
+    /** Active subscriptions (rooms/symbols) */
+    subscriptions: Set<string>;
+
+    /** Connection establishment timestamp */
+    connectedAt: Date;
+
+    /** Last activity timestamp */
+    lastActivity: Date;
+
+    /** Client IP address */
+    ipAddress: string;
+}
+
+/**
+ * WebSocket Metrics for Monitoring
+ * Comprehensive health and performance metrics
+ */
+export interface WebSocketMetrics {
+    /** Number of currently active connections */
+    activeConnections: number;
+
+    /** Messages processed per second */
+    messagesPerSecond: number;
+
+    /** Error rate (errors per minute) */
+    errorRate: number;
+
+    /** Most popular subscriptions with counts */
+    topSubscriptions: Array<{ topic: string; count: number }>;
+
+    /** Connection health score (0-100) */
+    healthScore: number;
+
+    /** Memory usage for WebSocket connections */
+    memoryUsage: number;
+
+    /** Average response time for operations */
+    averageResponseTime: number;
+}
+
+/**
+ * WebSocket Connection Information
+ * Detailed information about individual connections
+ */
+export interface WebSocketConnection {
+    socketId: string;
+    userId: string;
+    userLevel: UserLevel;
+    connectedAt: Date;
+    lastActivity: Date;
+    subscriptionCount: number;
+    ipAddress: string;
+}
+
+/**
+ * WebSocket Event Types
+ * Defines all possible WebSocket event types
+ */
+export enum WebSocketEvent {
+    CONNECT = "connect",
+    DISCONNECT = "disconnect",
+    SUBSCRIBE = "subscribe",
+    UNSUBSCRIBE = "unsubscribe",
+    SUBSCRIBE_MARKET = "subscribe_market",
+    UNSUBSCRIBE_MARKET = "unsubscribe_market",
+    ERROR = "error",
+    AUTH_ERROR = "auth_error",
+}
+
+/**
+ * WebSocket Message Payloads
+ * Type-safe message structures for different event types
+ */
+export interface WebSocketAuthPayload {
+    token: string;
+}
+
+export interface WebSocketSubscriptionPayload {
+    room: string;
+}
+
+export interface WebSocketMarketSubscriptionPayload {
+    symbol: string;
+}
+
+export interface WebSocketErrorPayload {
+    code: string;
+    message: string;
+    correlationId?: string;
+    details?: any;
+}
+
+/**
+ * WebSocket Configuration
+ * Configuration options for WebSocket service
+ */
+export interface WebSocketConfig {
+    /** Maximum connections per user */
+    maxConnectionsPerUser: number;
+
+    /** Maximum total connections */
+    maxTotalConnections: number;
+
+    /** Rate limiting window (milliseconds) */
+    rateLimitWindowMs: number;
+
+    /** Maximum requests per window */
+    rateLimitMaxRequests: number;
+
+    /** Connection timeout (milliseconds) */
+    connectionTimeoutMs: number;
+
+    /** Heartbeat interval (milliseconds) */
+    heartbeatIntervalMs: number;
+
+    /** Maximum subscription limit per user */
+    maxSubscriptionsPerUser: number;
+}
+
+/**
+ * WebSocket Service Dependencies
+ * Interfaces for service dependencies (dependency injection)
+ */
+export interface IMarketStreamService {
+    subscribe(clientId: string, topic: string): void;
+    unsubscribe(clientId: string, topic: string): void;
+    getLatestTick(symbol: string): Promise<any>;
+    connectToOrderly(symbols: string[]): Promise<void>;
+}
+
+export interface IAuthService {
+    validateToken(token: string): Promise<any>;
+    getUserById(userId: string): Promise<any>;
+}
+
+export interface ILogger {
+    info(message: string, meta?: any): void;
+    error(message: string, error?: any, meta?: any): void;
+    warn(message: string, meta?: any): void;
+    debug(message: string, meta?: any): void;
+}
+
+export interface IRateLimiter {
+    canSubscribe(userId: string): boolean;
+    recordSubscription(userId: string): void;
+}
+
+// Type imports for external dependencies
+import { Server as SocketIOServer, Socket } from "socket.io";
+
+// Re-export Socket.IO types for convenience
+export type Server = SocketIOServer;
+export type { Socket };

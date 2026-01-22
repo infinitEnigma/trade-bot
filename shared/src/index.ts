@@ -261,3 +261,38 @@ export interface DashboardData {
   recentTrades: Trade[];
   activeStrategies: Strategy[];
 }
+
+// ============================================
+// Error Handling Types & Classes
+// ============================================
+
+export * from './types/errors';
+
+// Explicitly export error classes for better discoverability
+export {
+  AppError,
+  ValidationError,
+  MissingRequiredFieldError,
+  InvalidFormatError,
+  AuthenticationError,
+  AuthorizationError,
+  InvalidCredentialsError,
+  NotFoundError,
+  ConflictError,
+  DatabaseError,
+  ConnectionError,
+  ExternalServiceError,
+  ServiceUnavailableError,
+  InsufficientBalanceError,
+  PositionSizeExceededError,
+  InternalError,
+  ConfigurationError,
+  ErrorCode,
+  ErrorContext,
+  isOperationalError,
+  getErrorStatusCode,
+  createErrorResponse,
+  DataFreshnessMetadata,
+  FreshnessAwareResponse,
+  DataFreshnessUtils
+} from './types/errors';

@@ -13,39 +13,50 @@ export const useDashboard = () => {
     const { user } = useAuth();
     const { balance: balanceData, loading: balanceLoading } = useBalance();
 
-    // Check if user has Kodiak access
+    // Check if user has Kodiak access (only VERIFIED users for automatic loading)
     const hasKodiakAccess =
         user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
+    const hasAutomaticKodiakAccess = user?.userLevel === "VERIFIED"; // Only VERIFIED get automatic loading
 
-    // Fetch positions
+    // Fetch positions with optimized settings
     const {
         data: positionsData,
         isLoading: positionsLoading,
         error: positionsError,
+        refetch: refetchPositions,
+        dataUpdatedAt: positionsUpdatedAt,
     } = useQuery({
         queryKey: ["kodiak-positions"],
         queryFn: () => dashboardService.getPositions(),
-        enabled: hasKodiakAccess,
-        staleTime: 30000, // 30 seconds
-        gcTime: 300000, // 5 minutes
+        enabled: hasAutomaticKodiakAccess, // Only automatic for VERIFIED users
+        staleTime: 60000,         // ⬆️ Increased to 60 seconds (from 30s)
+        gcTime: 300000,           // 5 minutes
+        refetchOnWindowFocus: false, // 🚫 Disable focus refetch to reduce requests
+        refetchInterval: 120000,     // 🔄 Auto-refresh every 2 minutes (from 30s)
         retry: (failureCount, error: any) => {
+            if (error?.response?.status === 429) return false; // Don't retry rate limits
             if (error?.response?.status === 400) return false;
             return failureCount < 2;
         },
     });
 
-    // Fetch trades
+    // Fetch trades with optimized settings
     const {
         data: tradesData,
         isLoading: tradesLoading,
         error: tradesError,
+        refetch: refetchTrades,
+        dataUpdatedAt: tradesUpdatedAt,
     } = useQuery({
         queryKey: ["kodiak-trades"],
         queryFn: () => dashboardService.getTrades(),
-        enabled: hasKodiakAccess,
-        staleTime: 30000,
-        gcTime: 300000,
+        enabled: hasAutomaticKodiakAccess, // Only automatic for VERIFIED users
+        staleTime: 60000,          // ⬆️ Increased to 60 seconds (from 30s)
+        gcTime: 300000,            // 5 minutes
+        refetchOnWindowFocus: false, // 🚫 Disable focus refetch to reduce requests
+        refetchInterval: 120000,      // 🔄 Auto-refresh every 2 minutes (from 30s)
         retry: (failureCount, error: any) => {
+            if (error?.response?.status === 429) return false; // Don't retry rate limits
             if (error?.response?.status === 400) return false;
             return failureCount < 2;
         },
@@ -79,6 +90,19 @@ export const useDashboard = () => {
         balance?.accountBalance || 10000
     );
 
+    // Manual refresh function
+    const refreshKodiakData = async () => {
+        await Promise.all([
+            refetchPositions(),
+            refetchTrades(),
+        ]);
+    };
+
+    // Data freshness indicators
+    const lastKodiakUpdate = Math.max(positionsUpdatedAt || 0, tradesUpdatedAt || 0);
+    const kodiakDataFresh = Date.now() - lastKodiakUpdate < 60000; // Fresh if updated within 1 minute
+    const kodiakDataStale = Date.now() - lastKodiakUpdate > 300000; // Stale if older than 5 minutes
+
     return {
         // Data
         balance,
@@ -102,5 +126,14 @@ export const useDashboard = () => {
 
         // Access flags
         hasKodiakAccess,
+        hasAutomaticKodiakAccess,
+
+        // Manual controls
+        refreshKodiakData,
+
+        // Data freshness
+        kodiakDataFresh,
+        kodiakDataStale,
+        lastKodiakUpdate,
     };
 };

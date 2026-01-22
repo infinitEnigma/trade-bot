@@ -48,10 +48,10 @@ const USER_TIER_RATIOS = {
  * These are the foundation values that get multiplied by environment and user factors.
  */
 const BASE_RATE_LIMITS = {
-    // Authentication - strict limits, progressive backoff
+    // Authentication - balanced limits for legitimate users
     auth: {
-        windowMs: 15 * 60 * 1000, // 15 minutes
-        max: 5, // 5 attempts per 15 minutes
+        windowMs: 5 * 60 * 1000, // ⬆️ 5 minutes (shorter window)
+        max: 50, // ⬆️ 50 attempts per 5 minutes (more attempts for development/testing)
     },
 
     // Public endpoints - lenient, fail-open
@@ -60,10 +60,10 @@ const BASE_RATE_LIMITS = {
         max: 1000, // 1000 requests per minute
     },
 
-    // Market data - moderate limits, user-based
+    // Market data - permissive for real-time charts
     market: {
         windowMs: 60 * 1000, // 1 minute
-        max: 10000, // 10000 requests per minute (IP limit)
+        max: 100000, // ⬆️ 100,000 requests per minute (very permissive for charts)
     },
 
     // Trading endpoints - strict, user-based, fail-closed
@@ -96,10 +96,10 @@ const BASE_RATE_LIMITS = {
         max: 10000, // Very high limits, just database queries
     },
 
-    // Kodiak API calls - strict limits to match API restrictions
+    // Kodiak API calls - relaxed limits for frontend compatibility
     kodiakApi: {
-        windowMs: 1000, // 1 second (matches API limit window)
-        max: 10, // 10 requests per second (matches API limit)
+        windowMs: 60000, // ⬆️ 1 minute (instead of 1 second)
+        max: 50, // ⬆️ 50 requests per minute (instead of 10 per second)
     },
 } as const;
 
@@ -246,11 +246,11 @@ export const RATE_LIMIT_CONFIGS = {
     }),
 
     /**
-     * Kodiak API calls - strict limits matching API restrictions
-     * Prevents 400 errors by respecting 10 req/sec API limit
+     * Kodiak API calls - relaxed limits for frontend compatibility
+     * Prevents 400 errors while allowing reasonable request frequency
      */
     kodiakApi: createRateLimitConfig(BASE_RATE_LIMITS.kodiakApi, {
-        failOpen: false, // Block if rate limiting fails - API protection
+        failOpen: true, // ⬆️ Allow requests if rate limiting fails - prioritize UX
         customMessage: "Kodiak API rate limit exceeded",
     }),
 } as const;

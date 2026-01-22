@@ -1,0 +1,293 @@
+/** @format */
+
+import { Express } from "express";
+import { logger } from "../core/logging";
+
+/**
+ * ===========================================
+ * 🛡️ MIDDLEWARE CONFIGURATION SERVICE
+ * ===========================================
+ *
+ * Centralized middleware setup and configuration.
+ * Handles authentication, authorization, rate limiting, and security middleware.
+ *
+ * RESPONSIBILITIES:
+ * - CSRF protection and token generation
+ * - Authentication middleware setup
+ * - Per-endpoint rate limiting configuration
+ * - Security middleware organization
+ * - Middleware ordering and dependencies
+ *
+ * ORGANIZATION:
+ * - 🔐 CSRF Protection (state-changing operations)
+ * - 🛡️ Per-Endpoint Rate Limiting (user-based scaling)
+ * - 🔒 Security Middleware Setup
+ * - 📊 Activity Tracking
+ *
+ * @format
+ */
+
+export interface MiddlewareConfigOptions {
+    /** Whether to enable CSRF protection */
+    enableCsrf?: boolean;
+
+    /** Whether to enable rate limiting */
+    enableRateLimiting?: boolean;
+
+    /** Whether to enable activity tracking */
+    enableActivityTracking?: boolean;
+}
+
+/**
+ * Middleware Configuration Service
+ * Handles all middleware setup and ordering
+ */
+export class MiddlewareConfig {
+    private static readonly DEFAULT_OPTIONS: Required<MiddlewareConfigOptions> = {
+        enableCsrf: true,
+        enableRateLimiting: true,
+        enableActivityTracking: true,
+    };
+
+    /**
+     * Configure all middleware for the Express application
+     */
+    static configure(app: Express, options: MiddlewareConfigOptions = {}): void {
+        const config = { ...this.DEFAULT_OPTIONS, ...options };
+
+        // CSRF token generation for auth routes (login/register/refresh)
+        if (config.enableCsrf) {
+            this.configureCsrfProtection(app);
+        }
+
+        // CSRF validation for ALL state-changing operations (browser routes)
+        if (config.enableCsrf) {
+            this.configureCsrfValidation(app);
+        }
+
+        // 🎯 SPECIALIZED KODIAK PROTECTION FIRST: Request queuing + account-based rate limiting
+        // MUST come before general rate limiting to override the defaults
+        if (config.enableRateLimiting) {
+            this.configureKodiakProtection(app);
+        }
+
+        // Per-endpoint rate limiting with user-based limits (after Kodiak protection)
+        if (config.enableRateLimiting) {
+            this.configureRateLimiting(app);
+        }
+
+        // API activity tracking middleware
+        if (config.enableActivityTracking) {
+            this.configureActivityTracking(app);
+        }
+
+        logger.info("Middleware configuration completed", {
+            csrfEnabled: config.enableCsrf,
+            rateLimitingEnabled: config.enableRateLimiting,
+            kodiakProtectionEnabled: config.enableRateLimiting,
+            activityTrackingEnabled: config.enableActivityTracking,
+        });
+    }
+
+    /**
+     * Configure CSRF token generation for authentication routes
+     */
+    private static configureCsrfProtection(app: Express): void {
+        const { csrfTokenMiddleware } = require("../interfaces/middleware/csrf");
+
+        // CSRF token generation for auth routes (login/register/refresh)
+        app.use("/api/auth", csrfTokenMiddleware);
+
+        logger.debug("CSRF token generation configured for auth routes");
+    }
+
+    /**
+     * Configure CSRF validation for state-changing operations
+     */
+    private static configureCsrfValidation(app: Express): void {
+        const { csrfMiddleware } = require("../interfaces/middleware/csrf");
+
+        // CSRF validation for ALL state-changing operations (browser routes)
+        // Note: Bot engine routes are excluded because they use API key auth
+        app.use("/api/user", csrfMiddleware);
+        app.use("/api/user-profile", csrfMiddleware);
+        app.use("/api/user-kodiak", csrfMiddleware);
+        app.use("/api/market", csrfMiddleware);
+        app.use("/api/strategies", csrfMiddleware);
+        app.use("/api/bot", csrfMiddleware);
+        app.use("/api/bot-management", csrfMiddleware);
+        app.use("/api/balance", csrfMiddleware);
+        app.use("/api/wallet", csrfMiddleware);
+        app.use("/api/security", csrfMiddleware);
+
+        logger.debug("CSRF validation configured for state-changing routes");
+    }
+
+    /**
+     * Configure per-endpoint rate limiting with user-based scaling
+     */
+    private static configureRateLimiting(app: Express): void {
+        const { RateLimiters } = require("../infrastructure");
+
+        // 🔐 CRITICAL: Authentication endpoints MUST be excluded from general rate limiting
+        // They use specialized auth-aware rate limiting instead
+
+        // 👤 Profile endpoints - TEMPORARILY DISABLED for testing
+        // app.use("/api/auth/me", RateLimiters.public);
+        // app.use("/api/auth/check-qualification", RateLimiters.public);
+        // app.use("/api/auth/qualification-config", RateLimiters.public);
+        // app.use("/api/auth/csrf-token", RateLimiters.public);
+        // app.use("/api/auth/logout", RateLimiters.public);
+
+        // 👤 User management endpoints (moderate limits)
+        // EXCLUDE /api/user/kodiak/* routes - they use specialized protection
+        app.use("/api/user", (req, res, next) => {
+            if (req.path.startsWith('/api/user/kodiak/')) {
+                return next(); // Skip general rate limiting for Kodiak routes
+            }
+            RateLimiters.public(req, res, next);
+        });
+        app.use("/api/user-profile", RateLimiters.public);
+
+        // 📊 Market data endpoints (user-based scaling)
+        app.use("/api/market", RateLimiters.market);
+        app.use("/api/strategies", RateLimiters.market);
+
+        // 🤖 Trading & bot management (strict user-based limits)
+        app.use("/api/bot", RateLimiters.trading);
+        app.use("/api/bot-management", RateLimiters.trading);
+
+        // 💰 Balance & financial data (moderate user-based limits)
+        app.use("/api/balance", RateLimiters.balance);
+
+        // 🛡️ Security & monitoring (moderate limits)
+        app.use("/api/security", RateLimiters.public);
+
+        logger.debug("Per-endpoint rate limiting configured (auth routes excluded from general limits)");
+    }
+
+    /**
+     * Configure specialized Kodiak API protection
+     */
+    private static configureKodiakProtection(app: Express): void {
+        const { kodiakRequestQueue } = require("../infrastructure/external/kodiak-queue");
+
+        // 🎯 KODIAK-SPECIFIC PROTECTION: Request queuing + rate limiting for trading routes ONLY
+        // EXCLUDE chart/market data routes - they need fast updates for real-time charts
+        const kodiakRoutes = [
+            "/api/user/kodiak/positions",    // ✅ Trading data - needs protection
+            "/api/user/kodiak/trades",       // ✅ Trading data - needs protection
+            "/api/user/kodiak/balance",      // ✅ Trading data - needs protection
+            "/api/user/kodiak/account-info", // ✅ Trading data - needs protection
+            "/api/user/kodiak/status",       // ✅ Trading data - needs protection
+            "/api/balance/current"           // ✅ Trading data - needs protection
+            // ❌ EXCLUDED: /api/market/* routes (charts need real-time updates)
+        ];
+
+        // Apply queuing and rate limiting to each Kodiak route
+        kodiakRoutes.forEach(route => {
+            app.use(route, (req, res, next) => {
+                // Queue requests to comply with Orderly rate limits
+                const queued = kodiakRequestQueue.enqueue(req, res, next);
+                if (!queued) {
+                    // Queue is full, response already sent by queue
+                    return;
+                }
+            });
+
+            // Additional rate limiting per Kodiak account
+            app.use(route, this.createKodiakRateLimiter());
+        });
+
+        logger.debug("Kodiak API protection configured for specific routes", {
+            routesProtected: kodiakRoutes.length
+        });
+    }
+
+    /**
+     * Create specialized rate limiter for Kodiak routes
+     */
+    private static createKodiakRateLimiter() {
+        const { createRateLimiter } = require("../infrastructure/security/rate-limiter.service");
+
+        return createRateLimiter("kodiak-synced", {
+            max: 8,                   // 8 requests per minute per user (safe for 10/min Orderly limit)
+            windowMs: 60000,          // 1 minute window (matches Orderly limit)
+            message: "Kodiak data synchronized with Orderly rate limits",
+            progressiveDelay: true,   // Add delays for frequent requests
+            failOpen: false,          // Protect Orderly API - fail closed
+            userBasedLimits: {
+                BASIC: 1,             // Basic users: 1 req/min
+                REGISTERED: 3,        // Registered users: 3 req/min
+                VERIFIED: 8,          // Verified users: 8 req/min (full access)
+            },
+        });
+    }
+
+    /**
+     * Configure API activity tracking
+     */
+    private static configureActivityTracking(app: Express): void {
+        // API activity tracking middleware
+        app.use("/api", (req, res, next) => {
+            // Import and use the tracking function from index.ts
+            // This will be moved to a proper service later
+            const trackApiActivity = () => {
+                // Activity tracking logic will be implemented in a separate service
+                logger.debug("API activity tracked", {
+                    method: req.method,
+                    url: req.url,
+                    userId: (req as any).user?.userId,
+                });
+            };
+
+            trackApiActivity();
+            next();
+        });
+
+        logger.debug("API activity tracking configured");
+    }
+
+    /**
+     * Validate middleware configuration
+     */
+    static validateConfiguration(app: Express): { isValid: boolean; issues: string[] } {
+        const issues: string[] = [];
+        const stack = (app as any)._router?.stack || [];
+
+        // Check for required middleware
+        const hasCsrf = stack.some((layer: any) =>
+            layer.name === "csrfMiddleware" || layer.regexp?.toString().includes("csrf")
+        );
+
+        const hasRateLimiting = stack.some((layer: any) =>
+            layer.name?.includes("rateLimit") || layer.regexp?.toString().includes("rate")
+        );
+
+        if (!hasCsrf) {
+            issues.push("CSRF protection middleware not found");
+        }
+
+        if (!hasRateLimiting) {
+            issues.push("Rate limiting middleware not found");
+        }
+
+        // Check middleware order (CSRF should come before rate limiting)
+        const csrfIndex = stack.findIndex((layer: any) =>
+            layer.name === "csrfMiddleware" || layer.regexp?.toString().includes("csrf")
+        );
+
+        const rateLimitIndex = stack.findIndex((layer: any) =>
+            layer.name?.includes("rateLimit") || layer.regexp?.toString().includes("rate")
+        );
+
+        if (csrfIndex > rateLimitIndex && rateLimitIndex !== -1) {
+            issues.push("CSRF middleware should be applied before rate limiting");
+        }
+
+        return {
+            isValid: issues.length === 0,
+            issues,
+        };
+    }
+}

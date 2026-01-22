@@ -175,8 +175,8 @@ export const useChartHistorical = ({
         setFreshnessData(response.freshness);
         // Adjust polling interval based on backend recommendation
         const recommendedInterval = response.freshness.recommendedPollInterval;
-        // More aggressive minimum for price data - allow 5 second minimum for real-time data
-        const minInterval = response.freshness.dataSource === 'websocket' ? 5000 : 10000;
+        // Conservative intervals for rate limit compliance - 30 second minimum for real-time data
+        const minInterval = response.freshness.dataSource === 'websocket' ? 30000 : 60000;
         setSmartInterval(Math.max(recommendedInterval, minInterval));
         console.log(`📊 Adjusted polling interval to ${recommendedInterval}ms (min: ${minInterval}ms) based on backend freshness data for ${response.freshness.dataSource} data`);
       }
@@ -334,7 +334,7 @@ export const useCurrentPrice = (symbol: string) => {
       }
     },
     enabled: !!symbol,
-    staleTime: userLevel === 'BASIC' ? 60000 : 15000, // Basic: 1min, Premium: 15sec
+    staleTime: userLevel === 'BASIC' ? 120000 : 60000, // Basic: 2min, Premium: 1min (was 15sec)
     gcTime: 5 * 60 * 1000, // 5 minutes cache
     retry: (failureCount, error) => {
       // Don't retry on 403/503 (auth/data unavailable errors)
@@ -354,10 +354,10 @@ export const useCurrentPrice = (symbol: string) => {
       // For premium users, check freshness metadata
       const data = query.state.data;
       if (data?.freshness?.recommendedPollInterval) {
-        return Math.max(data.freshness.recommendedPollInterval, 5000); // Min 5 seconds
+        return Math.max(data.freshness.recommendedPollInterval, 30000); // Min 30 seconds
       }
 
-      return 10000; // Default 10 seconds for premium users
+      return 60000; // Default 60 seconds for premium users (was 10 seconds)
     },
     refetchIntervalInBackground: false,
   });

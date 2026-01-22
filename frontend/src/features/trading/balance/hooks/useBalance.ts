@@ -93,7 +93,7 @@ export const useBalance = (autoRefresh: boolean = true) => {
                 if (document.visibilityState === 'visible') {
                     fetchBalance();
                 }
-            }, 120000); // Increased from 60s to 120s (2 minutes) for better rate limit management
+            }, 300000); // ⬆️ Increased from 2min to 5min for better rate limit management
 
             return () => clearInterval(interval);
         }
