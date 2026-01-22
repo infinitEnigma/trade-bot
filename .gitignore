@@ -39,4 +39,5 @@ AI_*
 docs/
 
 # Log files
+logs/
 backend/logs/

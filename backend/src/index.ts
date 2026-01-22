@@ -60,13 +60,13 @@ const START_TIME = Date.now();
 
 // Required environment variables for application startup
 const REQUIRED_ENV_VARS = [
-  "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", // PostgreSQL
-  "REDIS_URL", // Redis cache
-  "JWT_SECRET", "JWT_REFRESH_SECRET", // Authentication
-  "ENCRYPTION_MASTER_KEY", // Data encryption
-  "NODE_ENV", // Runtime environment
-  "KODIAK_API_URL", "KODIAK_WS_URL", // External APIs
-  "FRONTEND_URL", // CORS configuration
+    "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", // PostgreSQL
+    "REDIS_URL", // Redis cache
+    "JWT_SECRET", "JWT_REFRESH_SECRET", // Authentication
+    "ENCRYPTION_MASTER_KEY", // Data encryption
+    "NODE_ENV", // Runtime environment
+    "KODIAK_API_URL", "KODIAK_WS_URL", // External APIs
+    "FRONTEND_URL", // CORS configuration
 ];
 
 /**
@@ -74,34 +74,34 @@ const REQUIRED_ENV_VARS = [
  * Performs security checks for production deployments
  */
 function validateEnvironment(): void {
-  const missing = REQUIRED_ENV_VARS.filter(key => !process.env[key]);
+    const missing = REQUIRED_ENV_VARS.filter(key => !process.env[key]);
 
-  if (missing.length > 0) {
-    logger.error("❌ Missing required environment variables");
-    missing.forEach(key => logger.error(`   - ${key}`));
-    logger.error("💡 Create .env file from .env.example template");
-    process.exit(1);
-  }
-
-  // 🔐 Validate secret strength in production
-  if (process.env.NODE_ENV === "production") {
-    const secrets = [
-      "JWT_SECRET",
-      "JWT_REFRESH_SECRET",
-      "ENCRYPTION_MASTER_KEY",
-    ];
-    secrets.forEach(key => {
-      const value = process.env[key]!;
-      if (value.length < 32) {
-        logger.error(
-          `🔴 SECURITY: ${key} must be at least 32 characters in production. Current length: ${value.length}`
-        );
+    if (missing.length > 0) {
+        logger.error("❌ Missing required environment variables");
+        missing.forEach(key => logger.error(`   - ${key}`));
+        logger.error("💡 Create .env file from .env.example template");
         process.exit(1);
-      }
-    });
-  }
+    }
 
-  logger.info("✅ Environment validation passed");
+    // 🔐 Validate secret strength in production
+    if (process.env.NODE_ENV === "production") {
+        const secrets = [
+            "JWT_SECRET",
+            "JWT_REFRESH_SECRET",
+            "ENCRYPTION_MASTER_KEY",
+        ];
+        secrets.forEach(key => {
+            const value = process.env[key]!;
+            if (value.length < 32) {
+                logger.error(
+                    `🔴 SECURITY: ${key} must be at least 32 characters in production. Current length: ${value.length}`
+                );
+                process.exit(1);
+            }
+        });
+    }
+
+    logger.info("✅ Environment validation passed");
 }
 
 validateEnvironment();
@@ -125,10 +125,11 @@ import { marketRoutes, strategyRoutes } from "./interfaces/http/trading";
 // 🤖 Bot Management & Engine
 import { botRoutes, botEngineRoutes, botManagementRoutes } from "./interfaces/http/bots";
 
-// � Wallet & Qualification
-import { walletRoutes, balanceRoutes } from "./interfaces/http/wallet";
+//  Wallet & Qualification
+import { walletRoutes } from "./interfaces/http/wallet";
+import { balanceRoutes } from "./interfaces/http/wallet/balance";
 
-// �️ Security & Monitoring
+// ️ Security & Monitoring
 import { healthRoutes, securityRoutes } from "./interfaces/http/system";
 
 // 🔧 Middleware Stack
@@ -162,21 +163,21 @@ import { initializePool, closePool } from "./database/pool";
 
 // Initialize PostgreSQL connection pool
 try {
-  initializePool();
-  logger.info("✅ PostgreSQL connection pool initialized");
+    initializePool();
+    logger.info("✅ PostgreSQL connection pool initialized");
 } catch (error) {
-  logger.error("❌ Failed to initialize database pool", {
-    error: error instanceof Error ? error.message : String(error),
-  });
-  process.exit(1);
+    logger.error("❌ Failed to initialize database pool", {
+        error: error instanceof Error ? error.message : String(error),
+    });
+    process.exit(1);
 }
 
 // Connect to Redis on startup (now imported from infrastructure)
 redisService.connect().catch((error: any) => {
-  logger.error("❌ Failed to connect to Redis", {
-    error: error instanceof Error ? error.message : String(error),
-  });
-  // Note: Application continues without Redis (degraded mode)
+    logger.error("❌ Failed to connect to Redis", {
+        error: error instanceof Error ? error.message : String(error),
+    });
+    // Note: Application continues without Redis (degraded mode)
 });
 
 // ===========================================
@@ -193,32 +194,32 @@ let lastActivityTime = Date.now();
  * Updates active client count and stores in Redis for monitoring
  */
 const updateClientCount = async (change: number) => {
-  activeClients = Math.max(0, activeClients + change);
-  lastActivityTime = Date.now();
-  logger.info(`Active clients: ${activeClients}`, {
-    lastActivity: new Date(lastActivityTime).toLocaleTimeString(),
-  });
-
-  // Store client count in Redis for monitoring
-  const clientCountResult = await redisService.setex(
-    "active_clients",
-    60,
-    activeClients.toString()
-  );
-  if (!clientCountResult.success) {
-    logger.warn("Failed to store active client count in Redis", {
-      activeClients,
-      error: clientCountResult.error,
+    activeClients = Math.max(0, activeClients + change);
+    lastActivityTime = Date.now();
+    logger.info(`Active clients: ${activeClients}`, {
+        lastActivity: new Date(lastActivityTime).toLocaleTimeString(),
     });
-  }
+
+    // Store client count in Redis for monitoring
+    const clientCountResult = await redisService.setex(
+        "active_clients",
+        60,
+        activeClients.toString()
+    );
+    if (!clientCountResult.success) {
+        logger.warn("Failed to store active client count in Redis", {
+            activeClients,
+            error: clientCountResult.error,
+        });
+    }
 };
 
 /**
  * Tracks HTTP API activity timestamps
  */
 const trackApiActivity = () => {
-  lastActivityTime = Date.now();
-  // Removed artificial client count manipulation that was causing issues
+    lastActivityTime = Date.now();
+    // Removed artificial client count manipulation that was causing issues
 };
 
 // ===========================================
@@ -238,96 +239,96 @@ const httpServer = createServer(app);
 
 // Initialize Socket.IO with CORS configuration
 const io = new Server(httpServer, {
-  cors: {
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
+    cors: {
+        origin: (origin, callback) => {
+            // Allow requests with no origin (like mobile apps or curl requests)
+            if (!origin) return callback(null, true);
 
-      // Allow explicitly configured origins
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+            // Allow explicitly configured origins
+            if (allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
 
-      // For development, allow localhost and local network access
-      if (process.env.NODE_ENV === "development") {
-        const devOrigins = [
-          "http://localhost:3000",
-          "http://localhost:5173",
-          "http://127.0.0.1:3000",
-          "http://127.0.0.1:5173",
-          "https://rewireapp.ddns.net",
-        ];
-        if (devOrigins.includes(origin)) {
-          return callback(null, true);
-        }
+            // For development, allow localhost and local network access
+            if (process.env.NODE_ENV === "development") {
+                const devOrigins = [
+                    "http://localhost:3000",
+                    "http://localhost:5173",
+                    "http://127.0.0.1:3000",
+                    "http://127.0.0.1:5173",
+                    "https://rewireapp.ddns.net",
+                ];
+                if (devOrigins.includes(origin)) {
+                    return callback(null, true);
+                }
 
-        // Allow local network access (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
-        const networkRegex =
-          /^(https?:\/\/)(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)[\d]+\.[\d]+(:[\d]+)?$/;
-        if (networkRegex.test(origin)) {
-          return callback(null, true);
-        }
-      }
+                // Allow local network access (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+                const networkRegex =
+                    /^(https?:\/\/)(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)[\d]+\.[\d]+(:[\d]+)?$/;
+                if (networkRegex.test(origin)) {
+                    return callback(null, true);
+                }
+            }
 
-      return callback(new Error("CORS policy violation"));
+            return callback(new Error("CORS policy violation"));
+        },
+        methods: ["GET", "POST"],
+        credentials: true,
     },
-    methods: ["GET", "POST"],
-    credentials: true,
-  },
 });
 
 // Configure CORS allowed origins
 const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  process.env.CORS_ORIGIN,
-  "http://localhost:3000",
-  "http://localhost:5173",
+    process.env.FRONTEND_URL,
+    process.env.CORS_ORIGIN,
+    "http://localhost:3000",
+    "http://localhost:5173",
 ].filter(Boolean); // Remove any undefined values
 
 // Apply CORS middleware
 app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
+    cors({
+        origin: (origin, callback) => {
+            // Allow requests with no origin (like mobile apps or curl requests)
+            if (!origin) return callback(null, true);
 
-      // Allow explicitly configured origins
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+            // Allow explicitly configured origins
+            if (allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
 
-      // For development, allow localhost and local network access
-      if (process.env.NODE_ENV === "development") {
-        const devOrigins = [
-          "http://localhost:3000",
-          "http://localhost:5173",
-          "http://127.0.0.1:3000",
-          "http://127.0.0.1:5173",
-          "https://rewireapp.ddns.net",
-        ];
-        if (devOrigins.includes(origin)) {
-          return callback(null, true);
-        }
+            // For development, allow localhost and local network access
+            if (process.env.NODE_ENV === "development") {
+                const devOrigins = [
+                    "http://localhost:3000",
+                    "http://localhost:5173",
+                    "http://127.0.0.1:3000",
+                    "http://127.0.0.1:5173",
+                    "https://rewireapp.ddns.net",
+                ];
+                if (devOrigins.includes(origin)) {
+                    return callback(null, true);
+                }
 
-        // Allow local network access (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
-        const networkRegex =
-          /^(https?:\/\/)(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)[\d]+\.[\d]+(:[\d]+)?$/;
-        if (networkRegex.test(origin)) {
-          return callback(null, true);
-        }
-      }
+                // Allow local network access (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+                const networkRegex =
+                    /^(https?:\/\/)(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)[\d]+\.[\d]+(:[\d]+)?$/;
+                if (networkRegex.test(origin)) {
+                    return callback(null, true);
+                }
+            }
 
-      return callback(new Error("CORS policy violation"));
-    },
-    credentials: true,
-  })
+            return callback(new Error("CORS policy violation"));
+        },
+        credentials: true,
+    })
 );
 
 // Apply security middleware
 app.use(
-  helmet({
-    hsts: false, // Disable HSTS - let nginx handle it
-  })
+    helmet({
+        hsts: false, // Disable HSTS - let nginx handle it
+    })
 );
 
 // Parse incoming requests
@@ -348,8 +349,8 @@ app.set("io", io);
 
 // API activity tracking middleware
 app.use("/api", (req, res, next) => {
-  trackApiActivity();
-  next();
+    trackApiActivity();
+    next();
 });
 
 // ===========================================
@@ -440,10 +441,10 @@ app.use("/api/strategies", strategyRoutes);
 app.use("/api/bot", botRoutes);
 app.use("/api/balance", balanceRoutes);
 
-// � Wallet & Qualification
+//  Wallet & Qualification
 app.use("/api/wallet", walletRoutes);
 
-// �🛡️ Security & Monitoring
+// 🛡️ Security & Monitoring
 app.use("/api/security", securityRoutes);
 
 // 🏥 Health Check (must be last to catch all routes)
@@ -457,19 +458,19 @@ app.use("/api", healthRoutes);
 // ===========================================
 
 app.use(
-  (
-    err: Error,
-    req: express.Request,
-    res: express.Response,
-    next: express.NextFunction
-  ) => {
-    logger.error("Unhandled error", { error: err.message, stack: err.stack });
-    res.status(500).json({
-      success: false,
-      error: "Internal server error",
-      timestamp: Date.now(),
-    });
-  }
+    (
+        err: Error,
+        req: express.Request,
+        res: express.Response,
+        next: express.NextFunction
+    ) => {
+        logger.error("Unhandled error", { error: err.message, stack: err.stack });
+        res.status(500).json({
+            success: false,
+            error: "Internal server error",
+            timestamp: Date.now(),
+        });
+    }
 );
 
 // ===========================================
@@ -485,187 +486,187 @@ import { setRequestContext, generateCorrelationId, generateRequestId, runInConte
 
 // ✅ WebSocket Context & Authentication Middleware
 io.use(async (socket, next) => {
-  try {
-    // Extract correlation ID from handshake headers (passed from HTTP request)
-    const correlationId = (socket.handshake.headers['x-correlation-id'] as string) || generateCorrelationId();
+    try {
+        // Extract correlation ID from handshake headers (passed from HTTP request)
+        const correlationId = (socket.handshake.headers['x-correlation-id'] as string) || generateCorrelationId();
 
-    const token =
-      socket.handshake.auth?.token ||
-      socket.handshake.headers?.authorization?.replace("Bearer ", "");
+        const token =
+            socket.handshake.auth?.token ||
+            socket.handshake.headers?.authorization?.replace("Bearer ", "");
 
-    if (!token) {
-      logger.warn("WebSocket connection rejected: No JWT token", {
-        socketId: socket.id,
-        ip: socket.handshake.address,
-        correlationId,
-      });
-      return next(new Error("Authentication required"));
+        if (!token) {
+            logger.warn("WebSocket connection rejected: No JWT token", {
+                socketId: socket.id,
+                ip: socket.handshake.address,
+                correlationId,
+            });
+            return next(new Error("Authentication required"));
+        }
+
+        // Verify JWT token
+        const decoded = await authService.validateToken(token);
+        if (!decoded) {
+            logger.warn("WebSocket connection rejected: Invalid JWT token", {
+                socketId: socket.id,
+                ip: socket.handshake.address,
+                correlationId,
+            });
+            return next(new Error("Invalid token"));
+        }
+
+        // Verify user still exists and is active
+        const user = await authService.getUserById(decoded.userId);
+        if (!user) {
+            logger.warn("WebSocket connection rejected: User not found", {
+                socketId: socket.id,
+                userId: decoded.userId,
+                ip: socket.handshake.address,
+                correlationId,
+            });
+            return next(new Error("User not found"));
+        }
+
+        // ✅ REQUIRE VERIFIED user level for WebSocket access
+        // Only VERIFIED users can access real-time market data
+        if (user.userLevel !== 'VERIFIED') {
+            logger.warn("WebSocket connection rejected: User not VERIFIED", {
+                socketId: socket.id,
+                userId: decoded.userId,
+                userLevel: user.userLevel,
+                email: user.email,
+                ip: socket.handshake.address,
+                correlationId,
+            });
+            return next(new Error("Real-time data requires VERIFIED account"));
+        }
+
+        // 🔄 CRITICAL: Set up AsyncLocalStorage context for WebSocket connection
+        // This ensures all WebSocket operations are properly traced
+        const wsContext = setRequestContext({
+            correlationId,
+            userId: decoded.userId,
+            userLevel: user.userLevel,
+            startTime: Date.now(),
+            requestId: generateRequestId(),
+        });
+
+        // Attach both user and context to socket for use in event handlers
+        (socket as any).user = {
+            userId: decoded.userId,
+            userLevel: user.userLevel,
+            email: user.email,
+        };
+
+        (socket as any).context = wsContext;
+
+        logger.info("WebSocket connection authenticated with context", {
+            socketId: socket.id,
+            userId: decoded.userId,
+            userLevel: user.userLevel,
+            correlationId,
+            ip: socket.handshake.address,
+        });
+
+        next();
+    } catch (error) {
+        logger.error("WebSocket authentication error", {
+            socketId: socket.id,
+            error: error instanceof Error ? error.message : String(error),
+            ip: socket.handshake.address,
+        });
+        next(new Error("Authentication failed"));
     }
-
-    // Verify JWT token
-    const decoded = await authService.validateToken(token);
-    if (!decoded) {
-      logger.warn("WebSocket connection rejected: Invalid JWT token", {
-        socketId: socket.id,
-        ip: socket.handshake.address,
-        correlationId,
-      });
-      return next(new Error("Invalid token"));
-    }
-
-    // Verify user still exists and is active
-    const user = await authService.getUserById(decoded.userId);
-    if (!user) {
-      logger.warn("WebSocket connection rejected: User not found", {
-        socketId: socket.id,
-        userId: decoded.userId,
-        ip: socket.handshake.address,
-        correlationId,
-      });
-      return next(new Error("User not found"));
-    }
-
-    // ✅ REQUIRE VERIFIED user level for WebSocket access
-    // Only VERIFIED users can access real-time market data
-    if (user.userLevel !== 'VERIFIED') {
-      logger.warn("WebSocket connection rejected: User not VERIFIED", {
-        socketId: socket.id,
-        userId: decoded.userId,
-        userLevel: user.userLevel,
-        email: user.email,
-        ip: socket.handshake.address,
-        correlationId,
-      });
-      return next(new Error("Real-time data requires VERIFIED account"));
-    }
-
-    // 🔄 CRITICAL: Set up AsyncLocalStorage context for WebSocket connection
-    // This ensures all WebSocket operations are properly traced
-    const wsContext = setRequestContext({
-      correlationId,
-      userId: decoded.userId,
-      userLevel: user.userLevel,
-      startTime: Date.now(),
-      requestId: generateRequestId(),
-    });
-
-    // Attach both user and context to socket for use in event handlers
-    (socket as any).user = {
-      userId: decoded.userId,
-      userLevel: user.userLevel,
-      email: user.email,
-    };
-
-    (socket as any).context = wsContext;
-
-    logger.info("WebSocket connection authenticated with context", {
-      socketId: socket.id,
-      userId: decoded.userId,
-      userLevel: user.userLevel,
-      correlationId,
-      ip: socket.handshake.address,
-    });
-
-    next();
-  } catch (error) {
-    logger.error("WebSocket authentication error", {
-      socketId: socket.id,
-      error: error instanceof Error ? error.message : String(error),
-      ip: socket.handshake.address,
-    });
-    next(new Error("Authentication failed"));
-  }
 });
 
 // WebSocket connection handling with context propagation
 io.on("connection", socket => {
-  const user = (socket as any).user;
-  const wsContext = (socket as any).context;
+    const user = (socket as any).user;
+    const wsContext = (socket as any).context;
 
-  logger.info("Authenticated client connected with context", {
-    socketId: socket.id,
-    userId: user.userId,
-    userLevel: user.userLevel,
-    correlationId: wsContext?.correlationId,
-    ip: socket.handshake.address,
-  });
-  updateClientCount(1);
-
-  // 🔄 ALL WebSocket event handlers run within the established context
-  // This ensures correlation IDs and user context are maintained
-
-  socket.on("subscribe", (room: string) => {
-    runInContext(() => {
-      socket.join(room);
-      logger.info("Client subscribed to room", {
+    logger.info("Authenticated client connected with context", {
         socketId: socket.id,
-        room,
-        correlationId: wsContext?.correlationId
-      });
+        userId: user.userId,
+        userLevel: user.userLevel,
+        correlationId: wsContext?.correlationId,
+        ip: socket.handshake.address,
     });
-  });
+    updateClientCount(1);
 
-  socket.on("unsubscribe", (room: string) => {
-    runInContext(() => {
-      socket.leave(room);
-      logger.info("Client unsubscribed from room", {
-        socketId: socket.id,
-        room,
-        correlationId: wsContext?.correlationId
-      });
-    });
-  });
+    // 🔄 ALL WebSocket event handlers run within the established context
+    // This ensures correlation IDs and user context are maintained
 
-  // ✅ Handle market subscription with context propagation
-  socket.on("subscribe_market", (symbol: string) => {
-    runInContext(async () => {
-      logger.info("Client subscribed to market", {
-        socketId: socket.id,
-        symbol,
-        correlationId: wsContext?.correlationId
-      });
-      socket.join(`market:${symbol}`);
-
-      try {
-        // Send latest tick immediately if available
-        const tick = await marketStreamService.getLatestTick(symbol);
-        if (tick) {
-          socket.emit(`market:${symbol}`, tick);
-        }
-      } catch (err) {
-        logger.error("Failed to send initial tick", {
-          socketId: socket.id,
-          symbol,
-          correlationId: wsContext?.correlationId,
-          error: err instanceof Error ? err.message : String(err),
+    socket.on("subscribe", (room: string) => {
+        runInContext(() => {
+            socket.join(room);
+            logger.info("Client subscribed to room", {
+                socketId: socket.id,
+                room,
+                correlationId: wsContext?.correlationId
+            });
         });
-      }
-
-      // Connect to Orderly if not already connected
-      marketStreamService.connectToOrderly([symbol]);
     });
-  });
 
-  socket.on("unsubscribe_market", (symbol: string) => {
-    runInContext(() => {
-      logger.info("Client unsubscribed from market", {
-        socketId: socket.id,
-        symbol,
-        correlationId: wsContext?.correlationId
-      });
-      socket.leave(`market:${symbol}`);
+    socket.on("unsubscribe", (room: string) => {
+        runInContext(() => {
+            socket.leave(room);
+            logger.info("Client unsubscribed from room", {
+                socketId: socket.id,
+                room,
+                correlationId: wsContext?.correlationId
+            });
+        });
     });
-  });
 
-  socket.on("disconnect", () => {
-    runInContext(() => {
-      logger.info("Client disconnected", {
-        socketId: socket.id,
-        correlationId: wsContext?.correlationId
-      });
-      updateClientCount(-1);
+    // ✅ Handle market subscription with context propagation
+    socket.on("subscribe_market", (symbol: string) => {
+        runInContext(async () => {
+            logger.info("Client subscribed to market", {
+                socketId: socket.id,
+                symbol,
+                correlationId: wsContext?.correlationId
+            });
+            socket.join(`market:${symbol}`);
+
+            try {
+                // Send latest tick immediately if available
+                const tick = await marketStreamService.getLatestTick(symbol);
+                if (tick) {
+                    socket.emit(`market:${symbol}`, tick);
+                }
+            } catch (err) {
+                logger.error("Failed to send initial tick", {
+                    socketId: socket.id,
+                    symbol,
+                    correlationId: wsContext?.correlationId,
+                    error: err instanceof Error ? err.message : String(err),
+                });
+            }
+
+            // Connect to Orderly if not already connected
+            marketStreamService.connectToOrderly([symbol]);
+        });
     });
-  });
+
+    socket.on("unsubscribe_market", (symbol: string) => {
+        runInContext(() => {
+            logger.info("Client unsubscribed from market", {
+                socketId: socket.id,
+                symbol,
+                correlationId: wsContext?.correlationId
+            });
+            socket.leave(`market:${symbol}`);
+        });
+    });
+
+    socket.on("disconnect", () => {
+        runInContext(() => {
+            logger.info("Client disconnected", {
+                socketId: socket.id,
+                correlationId: wsContext?.correlationId
+            });
+            updateClientCount(-1);
+        });
+    });
 });
 
 // ===========================================
@@ -678,36 +679,40 @@ io.on("connection", socket => {
 const PORT = process.env.PORT || 3000;
 
 httpServer.listen(PORT, () => {
-  logger.info(`🚀 Server running on port ${PORT}`);
-  logger.info("🌐 WebSocket server ready");
-  logger.info(`🏭 Environment: ${process.env.NODE_ENV || "development"}`);
+    logger.info(`🚀 Server running on port ${PORT}`);
+    logger.info("🌐 WebSocket server ready");
+    logger.info(`🏭 Environment: ${process.env.NODE_ENV || "development"}`);
 
-  // ✅ START BOT RECONCILIATION WORKER (after database is ready)
-  botReconciliationWorker.start().catch((error) => {
-    logger.error("Failed to start bot reconciliation worker", {
-      error: error instanceof Error ? error.message : String(error),
+    // ✅ START BOT RECONCILIATION WORKER (after database is ready)
+    // TEMPORARILY DISABLED - POSSIBLE KODIAK RATE LIMITING ISSUE
+    logger.info("Bot reconciliation worker temporarily disabled for production stability");
+    /*
+    botReconciliationWorker.start().catch((error) => {
+        logger.error("Failed to start bot reconciliation worker", {
+            error: error instanceof Error ? error.message : String(error),
+        });
     });
-  });
+    */
 
-  // 🚫 DEFERRED: Market stream service - only initialize when VERIFIED users connect
-  // marketStreamService.setSocketServer(io);
-  logger.info(
-    "📡 Market stream service deferred - initializes only for VERIFIED users"
-  );
+    // 🚫 DEFERRED: Market stream service - only initialize when VERIFIED users connect
+    // marketStreamService.setSocketServer(io);
+    logger.info(
+        "📡 Market stream service deferred - initializes only for VERIFIED users"
+    );
 
-  // 🚫 DEFERRED: Bot status service - only initialize when VERIFIED users with bots connect
-  // botStatusService.initializeBackgroundProcesses()
-  logger.info(
-    "🤖 Bot status service deferred - initializes only for VERIFIED users with active bots"
-  );
+    // 🚫 DEFERRED: Bot status service - only initialize when VERIFIED users with bots connect
+    // botStatusService.initializeBackgroundProcesses()
+    logger.info(
+        "🤖 Bot status service deferred - initializes only for VERIFIED users with active bots"
+    );
 
-  // 🚫 TEMPORARILY DISABLED: Worker shutdown handlers
-  // Dynamic import causing issues with ts-node-dev ES modules
-  // Will re-enable once core functionality is stable
-  logger.info("Worker shutdown handlers temporarily disabled for stability", {
-    reason: "Dynamic ES module import issues with ts-node-dev",
-    status: "Core functionality remains fully operational",
-  });
+    // 🚫 TEMPORARILY DISABLED: Worker shutdown handlers
+    // Dynamic import causing issues with ts-node-dev ES modules
+    // Will re-enable once core functionality is stable
+    logger.info("Worker shutdown handlers temporarily disabled for stability", {
+        reason: "Dynamic ES module import issues with ts-node-dev",
+        status: "Core functionality remains fully operational",
+    });
 });
 
 // ===========================================
@@ -722,93 +727,93 @@ httpServer.listen(PORT, () => {
  * Ensures all connections are properly closed before exiting
  */
 const gracefulShutdown = async (signal: string): Promise<void> => {
-  logger.info(`${signal} received, starting graceful shutdown sequence`, {
-    uptime: Math.floor((Date.now() - START_TIME) / 1000),
-    activeClients,
-  });
+    logger.info(`${signal} received, starting graceful shutdown sequence`, {
+        uptime: Math.floor((Date.now() - START_TIME) / 1000),
+        activeClients,
+    });
 
-  const shutdownStart = Date.now();
-  let shutdownCompleted = false;
+    const shutdownStart = Date.now();
+    let shutdownCompleted = false;
 
-  // Set a maximum shutdown timeout (30 seconds)
-  const shutdownTimeout = setTimeout(() => {
-    if (!shutdownCompleted) {
-      logger.error(
-        "Forced shutdown after timeout - some connections may not be cleanly closed",
-        {
-          shutdownDuration: Date.now() - shutdownStart,
+    // Set a maximum shutdown timeout (30 seconds)
+    const shutdownTimeout = setTimeout(() => {
+        if (!shutdownCompleted) {
+            logger.error(
+                "Forced shutdown after timeout - some connections may not be cleanly closed",
+                {
+                    shutdownDuration: Date.now() - shutdownStart,
+                }
+            );
+            process.exit(1);
         }
-      );
-      process.exit(1);
-    }
-  }, 30000);
+    }, 30000);
 
-  try {
-    // Phase 1: Stop accepting new connections
-    logger.info("Phase 1: Stopping new connections");
-    httpServer.close(err => {
-      if (err) {
-        logger.error("Error closing HTTP server", { error: err.message });
-      } else {
-        logger.info("HTTP server closed - no longer accepting connections");
-      }
-    });
-
-    // Phase 2: Close external service connections
-    logger.info("Phase 2: Closing external connections");
-
-    // Disconnect market stream WebSockets
     try {
-      marketStreamService.disconnectAll();
-      logger.info("Market stream connections closed");
+        // Phase 1: Stop accepting new connections
+        logger.info("Phase 1: Stopping new connections");
+        httpServer.close(err => {
+            if (err) {
+                logger.error("Error closing HTTP server", { error: err.message });
+            } else {
+                logger.info("HTTP server closed - no longer accepting connections");
+            }
+        });
+
+        // Phase 2: Close external service connections
+        logger.info("Phase 2: Closing external connections");
+
+        // Disconnect market stream WebSockets
+        try {
+            marketStreamService.disconnectAll();
+            logger.info("Market stream connections closed");
+        } catch (error) {
+            logger.error("Error closing market stream connections", {
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+
+        // Disconnect Redis
+        try {
+            await redisService.disconnect();
+            logger.info("Redis connection closed");
+        } catch (error) {
+            logger.error("Error closing Redis connection", {
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+
+        // Phase 3: Close database connections
+        logger.info("Phase 3: Closing database connections");
+        try {
+            await closePool();
+            logger.info("Database pool closed");
+        } catch (error) {
+            logger.error("Error closing database pool", {
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+
+        // Phase 4: Final cleanup
+        logger.info("Phase 4: Final cleanup completed");
+
+        const shutdownDuration = Date.now() - shutdownStart;
+        logger.info("Graceful shutdown completed successfully", {
+            shutdownDurationMs: shutdownDuration,
+            shutdownDurationSec: Math.floor(shutdownDuration / 1000),
+        });
+
+        shutdownCompleted = true;
+        clearTimeout(shutdownTimeout);
+        process.exit(0);
     } catch (error) {
-      logger.error("Error closing market stream connections", {
-        error: error instanceof Error ? error.message : String(error),
-      });
+        logger.error("Critical error during graceful shutdown", {
+            error: error instanceof Error ? error.message : String(error),
+            shutdownDuration: Date.now() - shutdownStart,
+        });
+        shutdownCompleted = true;
+        clearTimeout(shutdownTimeout);
+        process.exit(1);
     }
-
-    // Disconnect Redis
-    try {
-      await redisService.disconnect();
-      logger.info("Redis connection closed");
-    } catch (error) {
-      logger.error("Error closing Redis connection", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-
-    // Phase 3: Close database connections
-    logger.info("Phase 3: Closing database connections");
-    try {
-      await closePool();
-      logger.info("Database pool closed");
-    } catch (error) {
-      logger.error("Error closing database pool", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-
-    // Phase 4: Final cleanup
-    logger.info("Phase 4: Final cleanup completed");
-
-    const shutdownDuration = Date.now() - shutdownStart;
-    logger.info("Graceful shutdown completed successfully", {
-      shutdownDurationMs: shutdownDuration,
-      shutdownDurationSec: Math.floor(shutdownDuration / 1000),
-    });
-
-    shutdownCompleted = true;
-    clearTimeout(shutdownTimeout);
-    process.exit(0);
-  } catch (error) {
-    logger.error("Critical error during graceful shutdown", {
-      error: error instanceof Error ? error.message : String(error),
-      shutdownDuration: Date.now() - shutdownStart,
-    });
-    shutdownCompleted = true;
-    clearTimeout(shutdownTimeout);
-    process.exit(1);
-  }
 };
 
 // ✅ Register graceful shutdown handlers
@@ -817,19 +822,19 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 // Handle uncaught exceptions (development safety net)
 process.on("uncaughtException", error => {
-  logger.error("Uncaught exception - initiating emergency shutdown", {
-    error: error.message,
-    stack: error.stack,
-  });
-  gracefulShutdown("uncaughtException");
+    logger.error("Uncaught exception - initiating emergency shutdown", {
+        error: error.message,
+        stack: error.stack,
+    });
+    gracefulShutdown("uncaughtException");
 });
 
 // Handle unhandled promise rejections
 process.on("unhandledRejection", (reason, promise) => {
-  logger.error("Unhandled promise rejection - initiating emergency shutdown", {
-    reason: reason instanceof Error ? reason.message : String(reason),
-  });
-  gracefulShutdown("unhandledRejection");
+    logger.error("Unhandled promise rejection - initiating emergency shutdown", {
+        reason: reason instanceof Error ? reason.message : String(reason),
+    });
+    gracefulShutdown("unhandledRejection");
 });
 
 export { app, io };
