@@ -18,8 +18,8 @@ import {
 
 
 // Lazy load heavy components for better performance
-const CandlestickChart = lazy(() => import("../../../components/CandlestickChart"));
-const StrategyForm = lazy(() => import("../../../components/StrategyForm").then(module => ({ default: module.StrategyForm })));
+const CandlestickChart = lazy(() => import("../components/CandlestickChart"));
+const StrategyForm = lazy(() => import("../components/StrategyForm").then(module => ({ default: module.StrategyForm })));
 const BotControls = lazy(() => import("../bots/components").then(module => ({ default: module.BotControls })));
 import { useBalance } from "../balance/hooks";
 import { useAuth } from "../../auth";

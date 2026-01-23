@@ -25,7 +25,7 @@ import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
 
 import { UserProgressCard } from "../../../components/ui/UserProgressCard";
 import { LoadingSpinner } from "../../../shared/components/ui";
-import { useBalance } from "../../trading/balance/hooks";
+import { useBalance } from "../../strategies/balance/hooks";
 import { Container, Grid, Section } from "../../../shared/components/layout";
 
 // Lazy load heavy components

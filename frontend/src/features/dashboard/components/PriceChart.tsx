@@ -10,9 +10,9 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { useChartHistorical, useCurrentPrice } from "../shared/hooks/useChartData";
-import { Card } from "../shared/components/ui/Card";
-import { SectionHeader } from "../shared/components/ui/SectionHeader";
+import { useChartHistorical, useCurrentPrice } from "../../../features/strategies/hooks/useChartData";
+import { Card } from "../../../shared/components/ui/Card";
+import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
 
 interface PriceChartProps {
   symbol?: string;

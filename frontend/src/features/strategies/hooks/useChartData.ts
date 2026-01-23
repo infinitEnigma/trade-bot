@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { marketApi } from "../../infrastructure/api";
-import { CandleData } from "../../components/CandlestickChart";
-import { useAuth } from "../../features/auth";
+import { marketApi } from "../../../infrastructure/api";
+import { CandleData } from "../components/CandlestickChart";
+import { useAuth } from "../../auth";
 
 /**
  * Data freshness metadata from backend responses

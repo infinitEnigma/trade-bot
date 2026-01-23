@@ -2,6 +2,7 @@
 
 import { marketApi } from "../../../infrastructure/api";
 import { chartDataCache } from "../../../infrastructure/cache";
+import { UserLevel } from "@trade-bot/shared";
 import {
     AnalyticsTimeWindow,
     AnalyticsMetrics,
@@ -267,6 +268,133 @@ export class AnalyticsService {
             priceData,
             volumeData: priceData.map(d => ({ timestamp: d.timestamp, volume: d.volume })),
         };
+    }
+
+    /**
+     * Load analytics data with user-level limits and custom chunk size
+     */
+    async loadAnalyticsDataWithLimits(
+        symbol: string,
+        timeWindow: AnalyticsTimeWindow,
+        userLevel: UserLevel,
+        chunkSize: number,
+        onProgress?: (progress: number) => void,
+        signal?: AbortSignal
+    ): Promise<AnalyticsData> {
+        // Load data in chunks with user-level limits
+        const priceData = await this.loadDataInChunksWithLimits(
+            symbol,
+            timeWindow.days,
+            userLevel,
+            chunkSize,
+            onProgress,
+            signal
+        );
+
+        // Calculate metrics
+        const metrics = this.calculateAnalyticsMetrics(priceData);
+        const sectorPerformance = this.calculateSectorPerformance();
+
+        return {
+            metrics,
+            sectorPerformance,
+            priceData,
+            volumeData: priceData.map(d => ({ timestamp: d.timestamp, volume: d.volume })),
+        };
+    }
+
+    /**
+     * Load data in chunks with user-level limits and custom chunk size
+     */
+    private async loadDataInChunksWithLimits(
+        symbol: string,
+        totalDays: number,
+        userLevel: UserLevel,
+        chunkSize: number,
+        onProgress?: (progress: number) => void,
+        signal?: AbortSignal
+    ): Promise<PriceDataPoint[]> {
+        const chunks: PriceDataPoint[] = [];
+
+        // Apply user level limits
+        const userLimits = this.getUserLevelLimits(userLevel);
+        const effectiveTotalDays = Math.min(totalDays, userLimits.maxDays);
+
+        // Implement progressive loading: load recent data first, then older data
+        const recentDays = Math.min(90, effectiveTotalDays); // Load last 90 days first
+        const remainingDays = effectiveTotalDays - recentDays;
+
+        // Load recent data first (higher priority)
+        if (recentDays > 0) {
+            const recentStart = new Date();
+            recentStart.setDate(recentStart.getDate() - recentDays);
+            const recentEnd = new Date();
+
+            try {
+                const recentData = await this.loadHistoricalChunk(
+                    symbol,
+                    recentStart,
+                    recentEnd
+                );
+                chunks.push(...recentData);
+                onProgress?.(0.5); // 50% progress after recent data
+            } catch (error) {
+                if (!signal?.aborted) {
+                    throw error;
+                }
+            }
+        }
+
+        // Load older historical data in background if needed
+        if (remainingDays > 0 && !signal?.aborted) {
+            for (let i = 0; i < remainingDays; i += chunkSize) {
+                if (signal?.aborted) break;
+
+                const chunkDays = Math.min(chunkSize, remainingDays - i);
+                const chunkStart = new Date();
+                chunkStart.setDate(chunkStart.getDate() - (remainingDays - i + recentDays));
+                const chunkEnd = new Date();
+                chunkEnd.setDate(chunkEnd.getDate() - (remainingDays - i - chunkDays + recentDays));
+
+                try {
+                    const chunkData = await this.loadHistoricalChunk(
+                        symbol,
+                        chunkStart,
+                        chunkEnd
+                    );
+                    chunks.push(...chunkData);
+
+                    // Update progress incrementally
+                    const historicalProgress = (i + chunkDays) / remainingDays;
+                    onProgress?.(0.5 + (historicalProgress * 0.4)); // 50-90% for historical data
+
+                } catch (error) {
+                    if (!signal?.aborted) {
+                        // Log error but continue with other chunks
+                        console.warn('Failed to load historical chunk:', error);
+                    }
+                }
+            }
+        }
+
+        onProgress?.(0.9); // 90% complete
+        return chunks;
+    }
+
+    /**
+     * Get user level limits for analytics
+     */
+    private getUserLevelLimits(userLevel: UserLevel) {
+        switch (userLevel) {
+            case UserLevel.BASIC:
+                return { maxDays: 90, chunkSize: 30 };
+            case UserLevel.REGISTERED:
+                return { maxDays: 180, chunkSize: 60 };
+            case UserLevel.VERIFIED:
+                return { maxDays: 365, chunkSize: 90 };
+            default:
+                return { maxDays: 90, chunkSize: 30 }; // Default to basic limits
+        }
     }
 }
 

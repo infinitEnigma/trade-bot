@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { tradingApi } from "../infrastructure/api";
+import { tradingApi } from "../../../infrastructure/api";
 import { Strategy, StrategyType } from "@trade-bot/shared";
 import { X, Loader2 } from "lucide-react";
 

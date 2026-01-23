@@ -1,68 +1,103 @@
 /** @format */
 
-import { useState, useRef, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { UserLevel } from "@trade-bot/shared";
+import { globalAnalyticsManager } from "../../../shared/services/analytics-manager";
 import { analyticsService } from "../services/analyticsService";
-import { AnalyticsOptions } from "../types/analytics.types";
+import { AnalyticsOptions, AnalyticsData } from "../types/analytics.types";
 
 /**
- * Analytics hook - manages analytics data fetching and state
+ * Analytics hook - manages analytics data fetching and state with global coordination
  */
 export const useAnalytics = ({
     symbol,
     timeWindow,
     enabled = true,
-}: AnalyticsOptions) => {
+    userLevel = UserLevel.BASIC, // Default to basic for safety
+}: AnalyticsOptions & { userLevel?: UserLevel }) => {
     const [progress, setProgress] = useState(0);
+    const [data, setData] = useState<AnalyticsData | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
     const abortControllerRef = useRef<AbortController | null>(null);
+    const subscriptionIdRef = useRef<string | null>(null);
 
-    // Fetch analytics data
-    const {
-        data,
-        isLoading,
-        error,
-        refetch,
-    } = useQuery({
-        queryKey: ["analytics", symbol, timeWindow.value],
-        queryFn: async () => {
-            // Cancel any existing request
-            if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
-            }
+    // Generate unique subscription ID for this hook instance
+    const subscriptionId = `analytics-${symbol}-${timeWindow.value}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-            const abortController = new AbortController();
-            abortControllerRef.current = abortController;
+    // Callback for analytics data updates
+    const handleAnalyticsUpdate = useCallback((newData: AnalyticsData | null, errorMessage?: string) => {
+        if (errorMessage) {
+            setError(errorMessage);
+            setLoading(false);
+            setProgress(0);
+        } else if (newData) {
+            setData(newData);
+            setError(null);
+            setLoading(false);
+            setProgress(1);
+        } else {
+            // No data available
+            setData(null);
+            setLoading(false);
+            setProgress(0);
+        }
+    }, []);
 
-            try {
-                setProgress(0);
-                const result = await analyticsService.loadAnalyticsData(
-                    symbol,
-                    timeWindow,
-                    (progress) => setProgress(progress),
-                    abortController.signal
-                );
-                setProgress(1);
-                return result;
-            } catch (err) {
-                if (!abortController.signal.aborted) {
-                    throw err;
-                }
-                return null;
-            } finally {
-                abortControllerRef.current = null;
-            }
-        },
-        enabled,
-        staleTime: 5 * 60 * 1000, // 5 minutes
-        gcTime: 30 * 60 * 1000, // 30 minutes
-        retry: (failureCount, error: any) => {
-            if (error?.name === 'AbortError') return false;
-            return failureCount < 2;
-        },
-    });
+    // Subscribe to global analytics manager
+    useEffect(() => {
+        if (!enabled) return;
+
+        console.log(`📊 useAnalytics: Subscribing ${subscriptionId} for ${symbol}`);
+
+        // Cancel any existing subscription
+        if (subscriptionIdRef.current) {
+            // Note: In a real implementation, we'd need an unsubscribe method
+            // For now, we'll rely on the manager's cleanup
+        }
+
+        setLoading(true);
+        setProgress(0);
+        setError(null);
+
+        // Subscribe to analytics updates
+        const unsubscribe = globalAnalyticsManager.subscribe(
+            subscriptionId,
+            symbol,
+            timeWindow,
+            userLevel,
+            handleAnalyticsUpdate
+        );
+
+        subscriptionIdRef.current = subscriptionId;
+
+        // Cleanup function
+        return () => {
+            console.log(`📊 useAnalytics: Unsubscribing ${subscriptionId}`);
+            unsubscribe();
+            subscriptionIdRef.current = null;
+        };
+    }, [symbol, timeWindow.value, timeWindow.days, enabled, userLevel, subscriptionId, handleAnalyticsUpdate]);
 
     // Get time windows
     const timeWindows = analyticsService.getTimeWindows();
+
+    // Manual refetch function
+    const refetch = useCallback(async () => {
+        if (!enabled) return;
+
+        setLoading(true);
+        setProgress(0);
+        setError(null);
+
+        try {
+            await globalAnalyticsManager.forceRefresh(symbol, timeWindow, userLevel);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to refresh analytics');
+            setLoading(false);
+        }
+    }, [symbol, timeWindow, userLevel, enabled]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -75,8 +110,8 @@ export const useAnalytics = ({
 
     return {
         data,
-        loading: isLoading,
-        error: error?.message || null,
+        loading,
+        error,
         progress,
         timeWindows,
         refetch,

@@ -16,12 +16,12 @@ export type {
     MarketDataPoint,
     TradingState,
     TradingActions,
-} from "./types/trading.types";
+} from "./types/strategies.types";
 
 // Strategies subdomain
-export { StrategyList, StrategyCard } from "./strategies/components";
+export { StrategyList, StrategyCard } from "./components";
 export { useStrategies } from "./strategies/hooks";
-export { strategyService } from "./strategies/services";
+export { strategyService } from "./services";
 
 // Bots subdomain
 export { BotControls } from "./bots/components";

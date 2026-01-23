@@ -1,8 +1,8 @@
 /** @format */
 
 import { Strategy, StrategyType } from "@trade-bot/shared";
-import { tradingApi } from "../../../../infrastructure/api";
-import { StrategyFormData } from "../../types/trading.types";
+import { tradingApi } from "../../../infrastructure/api";
+import { StrategyFormData } from "../types/strategies.types";
 
 /**
  * Strategy Service

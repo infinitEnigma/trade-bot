@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../auth";
-import { useBalance } from "../../trading/balance/hooks";
+import { useBalance } from "../../strategies/balance/hooks";
 import { dashboardService } from "../services/dashboardService";
 import { BalanceData, Position, Trade } from "../types/dashboard.types";
 

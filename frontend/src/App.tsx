@@ -26,7 +26,7 @@ import { AppHeader } from "./components/ui/AppHeader";
 const Login = React.lazy(() => import("./features/auth/pages/Login"));
 const Register = React.lazy(() => import("./features/auth/pages/Register"));
 const Dashboard = React.lazy(() => import("./features/dashboard/pages/Dashboard"));
-const Strategies = React.lazy(() => import("./features/trading/pages/Strategies"));
+const Strategies = React.lazy(() => import("./features/strategies/pages/Strategies"));
 const Settings = React.lazy(() => import("./features/settings/pages/Settings"));
 const Analytics = React.lazy(() => import("./features/analytics/pages/Analytics"));
 const Profile = React.lazy(() => import("./features/auth/pages/Profile"));
