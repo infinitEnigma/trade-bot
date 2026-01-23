@@ -15,10 +15,10 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "baseUrl": ".",
-    "paths": {
-      "@trade-bot/shared": ["../shared/src/index.ts"]
-    }
+  "baseUrl": ".",
+  "paths": {
+    "@trade-bot/shared": ["../shared/dist/index.d.ts"]
+  }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"],

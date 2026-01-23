@@ -7,7 +7,12 @@
  * @format
  */
 
+// ===========================================
+// DOMAIN TYPE IMPORTS (from main index)
+// ===========================================
+
 import { Balance, Position } from './domain';
+import { Trade } from '../index';
 
 // ===========================================
 // CACHE INFRASTRUCTURE
@@ -252,6 +257,154 @@ export interface ITokenService {
     hashTokenForStorage(token: string): string;
 }
 
+// ===========================================
+// TRADING ENGINE INFRASTRUCTURE
+// ===========================================
+
+export interface ITradingEngineService {
+    /**
+     * Ensure trading engine is running
+     */
+    ensureEngineRunning(): Promise<void>;
+
+    /**
+     * Get engine status and health information
+     */
+    getEngineStatus(): Promise<{
+        running: boolean;
+        health?: {
+            status: string;
+            bots: number;
+            uptime: number;
+        };
+    }>;
+
+    /**
+     * Stop engine if no active bots
+     */
+    stopEngineIfNoActiveBots(): Promise<void>;
+
+    /**
+     * Force stop trading engine
+     */
+    forceStopEngine(): Promise<void>;
+
+    /**
+     * Check if engine process is alive
+     */
+    isEngineProcessAlive(): boolean;
+}
+
+// ===========================================
+// BOT STATUS MANAGEMENT INFRASTRUCTURE
+// ===========================================
+
+export enum BotStatus {
+    STOPPED = 'STOPPED',
+    STARTING = 'STARTING',
+    RUNNING = 'RUNNING',
+    PAUSED = 'PAUSED',
+    RECOVERING = 'RECOVERING',
+    ERROR = 'ERROR',
+    FORCE_STOPPING = 'FORCE_STOPPING'
+}
+
+export interface IBotStatusService {
+    /**
+     * Start a bot instance
+     */
+    startBot(botId: string, userId: string): Promise<{ success: boolean; error?: string }>;
+
+    /**
+     * Stop a bot instance
+     */
+    stopBot(botId: string, userId: string): Promise<{ success: boolean; error?: string }>;
+
+    /**
+     * Get comprehensive bot status information
+     */
+    getBotStatusInfo(botId: string, userId: string): Promise<any>;
+
+    /**
+     * Send heartbeat for bot health monitoring
+     */
+    sendBotHeartbeat(botId: string, statusInfo?: any): Promise<{ success: boolean; error?: string }>;
+
+    /**
+     * Validate bot status and perform reconciliation
+     */
+    validateBotStatus(botData: any, currentTime: number): Promise<{
+        updatedStatus: string;
+        errorMessage: string | null;
+        isStale: boolean;
+        lastHeartbeatAge: number;
+    }>;
+
+    /**
+     * Get bot statistics for monitoring
+     */
+    getBotStats(): Promise<{
+        totalBots: number;
+        runningBots: number;
+        errorBots: number;
+        staleBots: number;
+    }>;
+}
+
+// ===========================================
+// BOT PERFORMANCE TRACKING INFRASTRUCTURE
+// ===========================================
+
+export interface IBotPerformanceService {
+    /**
+     * Record trade execution for performance tracking
+     */
+    recordTrade(botId: string, tradeData: {
+        symbol: string;
+        side: 'BUY' | 'SELL';
+        quantity: number;
+        price: number;
+        pnl: number;
+        fee: number;
+        timestamp: number;
+    }): Promise<void>;
+
+    /**
+     * Get bot performance metrics
+     */
+    getBotPerformance(botId: string, timeframe: '1h' | '24h' | '7d' | '30d'): Promise<{
+        totalTrades: number;
+        totalVolume: number;
+        totalPnl: number;
+        winRate: number;
+        averageTrade: number;
+        sharpeRatio?: number;
+        maxDrawdown: number;
+    }>;
+
+    /**
+     * Get performance summary for multiple bots
+     */
+    getPerformanceSummary(userId: string): Promise<{
+        totalBots: number;
+        activeBots: number;
+        totalPnl: number;
+        totalVolume: number;
+        bestPerformingBot: string;
+        worstPerformingBot: string;
+    }>;
+
+    /**
+     * Calculate risk metrics for bot
+     */
+    calculateRiskMetrics(botId: string): Promise<{
+        volatility: number;
+        maxDrawdown: number;
+        valueAtRisk: number;
+        expectedShortfall: number;
+    }>;
+}
+
 import { UserLevel } from '../index';
 
 export interface TokenPayload {
@@ -279,21 +432,7 @@ export interface DatabaseResult<T = any> {
 }
 
 // Domain types are imported at the top
-// Position class is now in domain.ts
-
-export interface Trade {
-    id: string;
-    userId: string;
-    orderId: string;
-    symbol: string;
-    side: 'BUY' | 'SELL';
-    quantity: number;
-    price: number;
-    pnl?: number;
-    fee: number;
-    status: 'PENDING' | 'COMPLETED' | 'FAILED';
-    executedAt: Date;
-}
+// All domain classes (Balance, Position, Trade) are now imported from domain.ts
 
 export interface AccountInfo {
     totalBalance: string;

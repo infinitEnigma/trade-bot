@@ -4,6 +4,7 @@ import { Router, Request, Response } from "express";
 import { getPool, getPoolMetrics } from "../../../database/pool";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { keyManagementService } from "../../../infrastructure/security/key-management.service";
+import { getServiceStatus } from "../../../core/service-selector";
 import logger from "../../../core/logging/logger.service";
 
 const router = Router();
@@ -401,6 +402,44 @@ router.get("/live", (req: Request, res: Response) => {
   });
 
   logger.debug("Liveness probe passed");
+});
+
+// Service implementation status endpoint (Phase 5: Gradual Replacement)
+router.get("/health/services", (req: Request, res: Response) => {
+  try {
+    const serviceStatus = getServiceStatus();
+
+    // Determine overall service health
+    const allServicesHealthy = Object.values(serviceStatus).every(service =>
+      service.implementation !== 'legacy' || service.enabled
+    );
+
+    res.json({
+      status: allServicesHealthy ? "healthy" : "transitioning",
+      timestamp: new Date().toISOString(),
+      services: serviceStatus,
+      summary: {
+        pureServicesEnabled: Object.values(serviceStatus).filter(s => s.enabled).length,
+        totalServices: Object.keys(serviceStatus).length,
+        migrationProgress: `${Object.values(serviceStatus).filter(s => s.enabled).length}/${Object.keys(serviceStatus).length} services migrated`,
+      },
+      environment: {
+        LEGACY_BALANCE_API: process.env.LEGACY_BALANCE_API === 'true',
+        LEGACY_AUTH_API: process.env.LEGACY_AUTH_API === 'true',
+        LEGACY_POSITION_API: process.env.LEGACY_POSITION_API === 'true',
+      }
+    });
+
+    logger.debug("Service status endpoint accessed", { serviceStatus });
+  } catch (error) {
+    logger.error("Service status endpoint error", { error: (error as Error).message });
+    res.status(500).json({
+      status: "error",
+      timestamp: new Date().toISOString(),
+      error: "Failed to get service status",
+      message: (error as Error).message,
+    });
+  }
 });
 
 // Rate limit stats endpoint (Phase 4.4)

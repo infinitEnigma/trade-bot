@@ -13,7 +13,7 @@ import {
     User,
     UserLevel,
     UserRegistration
-} from '../../../../../shared';
+} from '@trade-bot/shared';
 import { query } from '../../../database/pool';
 
 /**

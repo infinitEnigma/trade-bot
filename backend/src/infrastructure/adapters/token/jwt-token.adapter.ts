@@ -10,7 +10,7 @@
 
 import jwt from 'jsonwebtoken';
 import { createHash } from 'crypto';
-import { ITokenService, TokenPayload } from '../../../../../shared';
+import { ITokenService, TokenPayload } from '@trade-bot/shared';
 
 /**
  * JWT Token Adapter

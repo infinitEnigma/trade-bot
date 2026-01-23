@@ -8,7 +8,7 @@
  * @format
  */
 
-import { IEncryptionService } from '../../../../../shared';
+import { IEncryptionService } from '@trade-bot/shared';
 import { encryptionService } from '../../../infrastructure/security/encryption.service';
 
 /**

@@ -20,13 +20,28 @@ import {
     ILogger,
     Balance,
     ApiResult
-} from '../../../../shared';
+} from '@trade-bot/shared';
 
 export interface BalanceServiceDependencies {
     balanceRepository: IBalanceRepository;
     cache: ICacheService;
     externalApi: IExternalApiService;
     logger: ILogger;
+}
+
+/**
+ * Legacy Balance Format - For API compatibility during migration
+ *
+ * Matches the format returned by the legacy impure balance service.
+ * Used when LEGACY_BALANCE_API=true to maintain backward compatibility.
+ */
+export interface LegacyBalanceFormat {
+    walletBalance: number;
+    accountBalance: number;
+    availableBalance: number;
+    reservedBalance: number;
+    totalAssets: number;
+    timestamp: string;
 }
 
 /**
@@ -48,9 +63,9 @@ export class BalanceService {
      * 1. Check cache first for performance
      * 2. Fetch from external API if cache miss
      * 3. Cache result for future requests
-     * 4. Return domain Balance object
+     * 4. Return domain Balance object or legacy format based on feature flag
      */
-    async getUserBalance(userId: string): Promise<Balance> {
+    async getUserBalance(userId: string): Promise<Balance | LegacyBalanceFormat> {
         this.deps.logger.debug('Getting user balance', { userId });
 
         const cacheKey = this.buildCacheKey(userId);
@@ -59,7 +74,13 @@ export class BalanceService {
         const cachedResult = await this.deps.cache.get<Balance>(cacheKey);
         if (cachedResult.success && cachedResult.data) {
             this.deps.logger.debug('Balance cache hit', { userId });
-            return cachedResult.data;
+            const balance = cachedResult.data;
+
+            // Return legacy format if feature flag is enabled
+            if (this.shouldReturnLegacyFormat()) {
+                return this.convertToLegacyFormat(balance);
+            }
+            return balance;
         }
 
         // 2. Cache miss - fetch from external API
@@ -93,6 +114,11 @@ export class BalanceService {
             available: balance.available,
             currency: balance.currency
         });
+
+        // Return legacy format if feature flag is enabled
+        if (this.shouldReturnLegacyFormat()) {
+            return this.convertToLegacyFormat(balance);
+        }
 
         return balance;
     }
@@ -149,7 +175,8 @@ export class BalanceService {
      */
     async canWithdraw(userId: string, amount: number): Promise<boolean> {
         try {
-            const balance = await this.getUserBalance(userId);
+            // Always get domain balance for business logic operations
+            const balance = await this.getDomainBalance(userId);
             return balance.canWithdraw(amount);
         } catch (error) {
             this.deps.logger.error('Error checking withdrawal capability', {
@@ -169,8 +196,40 @@ export class BalanceService {
      * - Useful for risk management and UI display
      */
     async getBalanceUtilization(userId: string): Promise<number> {
-        const balance = await this.getUserBalance(userId);
+        // Always get domain balance for business logic operations
+        const balance = await this.getDomainBalance(userId);
         return balance.getUtilizationPercentage();
+    }
+
+    /**
+     * Get domain Balance object (internal business logic method)
+     *
+     * Always returns the rich domain object for internal operations,
+     * regardless of API compatibility settings.
+     */
+    private async getDomainBalance(userId: string): Promise<Balance> {
+        const cacheKey = this.buildCacheKey(userId);
+
+        // Try cache first
+        const cachedResult = await this.deps.cache.get<Balance>(cacheKey);
+        if (cachedResult.success && cachedResult.data) {
+            return cachedResult.data;
+        }
+
+        // Cache miss - fetch from external API
+        const apiResult: ApiResult<Balance> = await this.deps.externalApi.getBalance(userId);
+
+        if (!apiResult.success) {
+            throw new Error(`Balance fetch failed: ${apiResult.error}`);
+        }
+
+        const balance = apiResult.data!;
+        this.validateBalance(balance);
+
+        // Cache the result
+        await this.deps.cache.setex(cacheKey, this.CACHE_TTL, balance);
+
+        return balance;
     }
 
     /**
@@ -190,6 +249,33 @@ export class BalanceService {
             });
             throw new Error('Invalid balance data from external source');
         }
+    }
+
+    /**
+     * Check if legacy API format should be returned
+     *
+     * Based on LEGACY_BALANCE_API environment flag for backward compatibility
+     * during gradual migration to pure services.
+     */
+    private shouldReturnLegacyFormat(): boolean {
+        return process.env.LEGACY_BALANCE_API === 'true';
+    }
+
+    /**
+     * Convert domain Balance object to legacy format
+     *
+     * Maintains API compatibility during migration by converting
+     * the rich domain object back to the flat legacy format.
+     */
+    private convertToLegacyFormat(balance: Balance): LegacyBalanceFormat {
+        return {
+            walletBalance: balance.total,
+            accountBalance: balance.total,
+            availableBalance: balance.available,
+            reservedBalance: balance.locked,
+            totalAssets: balance.total,
+            timestamp: balance.lastUpdated.toISOString()
+        };
     }
 
     /**

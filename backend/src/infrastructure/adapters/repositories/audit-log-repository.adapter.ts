@@ -11,7 +11,7 @@
 import {
     IAuditLogRepository,
     AuditLogEntry
-} from '../../../../../shared';
+} from '@trade-bot/shared';
 import { query } from '../../../database/pool';
 
 /**

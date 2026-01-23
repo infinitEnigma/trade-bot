@@ -2,10 +2,13 @@
 
 import { Router, Request, Response } from "express";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
-import { getUserBalance, invalidateBalanceCache } from "../../../core/wallet/balance.service";
+import { selectBalanceService } from "../../../core/service-selector";
 import logger from "../../../core/logging/logger.service";
 import { RateLimiters } from "../../../infrastructure";
 import { UserLevel, ValidationError, NotFoundError, ExternalServiceError } from "@trade-bot/shared";
+
+// Select service implementation based on feature flags
+const balanceService = selectBalanceService();
 
 const router = Router();
 
@@ -36,7 +39,7 @@ router.get(
       }
 
       // VERIFIED users get real balance data
-      const balance = await getUserBalance(userId);
+      const balance = await balanceService.getUserBalance(userId);
 
       res.json({
         success: true,
@@ -108,9 +111,9 @@ router.post(
       const userId = req.user!.userId;
 
       // ✅ Invalidate cache to force fresh fetch
-      await invalidateBalanceCache(userId);
+      await balanceService.invalidateBalanceCache(userId);
 
-      const balance = await getUserBalance(userId);
+      const balance = await balanceService.getUserBalance(userId);
 
       logger.info("Balance manually refreshed", { userId });
 

@@ -11,7 +11,7 @@
 import {
     IStrategyRepository,
     Strategy
-} from '../../../../../shared';
+} from '@trade-bot/shared';
 import { query } from '../../../database/pool';
 
 /**

@@ -13,10 +13,12 @@ import {
     ApiResult,
     Balance,
     Position,
+    Trade,
     AccountInfo,
-    ExternalCredentials
-} from '../../../../../shared';
-import { Trade } from '../../../../../shared/src/types/infrastructure';
+    ExternalCredentials,
+    OrderStatus,
+    OrderSide
+} from '@trade-bot/shared';
 import { kodiakIntegrationService } from '../../../infrastructure/external/kodiak-integration.service';
 
 /**
@@ -288,12 +290,12 @@ export class ExternalApiAdapter implements IExternalApiService {
                 userId,
                 orderId,
                 symbol,
-                side,
+                side: side as OrderSide, // Cast to enum type
                 quantity,
                 price,
                 fee,
                 pnl: undefined, // PnL not available in basic trade data
-                status: 'COMPLETED', // External trades are completed
+                status: OrderStatus.FILLED, // Use enum value
                 executedAt
             };
         } catch (error) {

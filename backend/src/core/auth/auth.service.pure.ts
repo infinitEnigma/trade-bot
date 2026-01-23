@@ -29,7 +29,7 @@ import {
     AuthTokens,
     TokenPayload,
     CacheResult
-} from '../../../../shared';
+} from '@trade-bot/shared';
 
 export interface AuthServiceDependencies {
     userRepository: IUserRepository;
@@ -55,6 +55,27 @@ export interface AuthResult {
 }
 
 /**
+ * Legacy Auth Result - For API compatibility during migration
+ *
+ * Matches the format returned by the legacy impure auth service.
+ * Used when LEGACY_AUTH_API=true to maintain backward compatibility.
+ */
+export interface LegacyAuthResult {
+    success: boolean;
+    message?: string;
+    user?: {
+        id: string;
+        email: string;
+        userLevel: UserLevel;
+    };
+    tokens?: {
+        accessToken: string;
+        refreshToken: string;
+        expiresIn: number;
+    };
+}
+
+/**
  * Pure Auth Service
  *
  * Implements authentication business logic using dependency injection.
@@ -75,9 +96,9 @@ export class AuthService {
      * 3. Create user with BASIC level
      * 4. Generate JWT tokens
      * 5. Log security event
-     * 6. Return user data and tokens
+     * 6. Return user data and tokens (or legacy format)
      */
-    async register(email: string, password: string): Promise<AuthResult> {
+    async register(email: string, password: string): Promise<AuthResult | LegacyAuthResult> {
         try {
             this.deps.logger.debug('User registration attempt', { email });
 
@@ -142,9 +163,9 @@ export class AuthService {
      * 2. Verify password using abstracted service
      * 3. Generate JWT tokens
      * 4. Log successful authentication
-     * 5. Return user data and tokens
+     * 5. Return user data and tokens (or legacy format)
      */
-    async login(credentials: UserLogin): Promise<AuthResult> {
+    async login(credentials: UserLogin): Promise<AuthResult | LegacyAuthResult> {
         try {
             this.deps.logger.debug('User login attempt', { email: credentials.email });
 
@@ -221,7 +242,7 @@ export class AuthService {
      * 4. Generate new token pair
      * 5. Handle concurrency protection
      */
-    async refreshToken(refreshToken: string): Promise<AuthResult> {
+    async refreshToken(refreshToken: string): Promise<AuthResult | LegacyAuthResult> {
         try {
             this.deps.logger.debug('Token refresh attempt');
 
@@ -439,6 +460,35 @@ export class AuthService {
             accessToken,
             refreshToken,
             expiresIn: 4 * 60 * 60 // 4 hours in seconds
+        };
+    }
+
+    /**
+     * Check if legacy API format should be returned
+     *
+     * Based on LEGACY_AUTH_API environment flag for backward compatibility
+     * during gradual migration to pure services.
+     */
+    private shouldReturnLegacyFormat(): boolean {
+        return process.env.LEGACY_AUTH_API === 'true';
+    }
+
+    /**
+     * Convert AuthResult to legacy format
+     *
+     * Maintains API compatibility during migration by converting
+     * the rich domain result to the flat legacy format.
+     */
+    private convertToLegacyFormat(result: AuthResult): LegacyAuthResult {
+        return {
+            success: result.success,
+            message: result.message,
+            user: result.user,
+            tokens: result.tokens ? {
+                accessToken: result.tokens.accessToken,
+                refreshToken: result.tokens.refreshToken,
+                expiresIn: result.tokens.expiresIn
+            } : undefined
         };
     }
 

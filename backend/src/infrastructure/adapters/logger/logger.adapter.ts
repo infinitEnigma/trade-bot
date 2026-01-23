@@ -8,7 +8,7 @@
  * @format
  */
 
-import { ILogger } from '../../../../../shared';
+import { ILogger } from '@trade-bot/shared';
 import logger from '../../../core/logging/logger.service';
 
 /**
