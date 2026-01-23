@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../../lib/api";
+import { marketApi } from "../../infrastructure/api";
 import { CandleData } from "../../components/CandlestickChart";
 
 /**
@@ -163,7 +163,7 @@ export const useChartHistorical = ({
         }
       };
 
-      const response: FreshnessAwareResponse = await api.getTvHistory({
+      const response: FreshnessAwareResponse = await marketApi.getTvHistory({
         symbol,
         resolution: getResolution(interval),
         from: fromTimestamp,
@@ -229,7 +229,7 @@ export const useLivePrices = ({
     queryKey: ["live-prices", symbol, interval],
     queryFn: async () => {
       console.log(`💰 Fetching live prices: ${symbol} ${interval}`);
-      const response = await api.getKlines({
+      const response = await marketApi.getKlines({
         symbol,
         interval,
         limit: 10, // Only need recent candles for live updates
@@ -276,7 +276,7 @@ export const useCurrentPrice = (symbol: string) => {
       try {
         // For BASIC users: Use public ticker (may be unavailable)
         if (userLevel === 'BASIC') {
-          const response: FreshnessAwareResponse = await api.getTicker(symbol);
+          const response: FreshnessAwareResponse = await marketApi.getTicker(symbol);
 
           if (response.success && response.data) {
             console.log(`💰 Got public ticker price: $${response.data.price}`);
@@ -297,7 +297,7 @@ export const useCurrentPrice = (symbol: string) => {
         }
 
         // For REGISTERED/VERIFIED users: Use authenticated mark price
-        const response: FreshnessAwareResponse = await api.getMarkPrice(symbol);
+        const response: FreshnessAwareResponse = await marketApi.getMarkPrice(symbol);
 
         if (response.success && response.data) {
           console.log(`💰 Got authenticated mark price: $${response.data.price}`);
@@ -311,7 +311,7 @@ export const useCurrentPrice = (symbol: string) => {
         } else {
           // Authenticated data unavailable - fallback to public if possible
           console.warn(`💰 Authenticated mark price unavailable for ${symbol}, trying public fallback`);
-          const publicResponse: FreshnessAwareResponse = await api.getTicker(symbol);
+          const publicResponse: FreshnessAwareResponse = await marketApi.getTicker(symbol);
 
           if (publicResponse.success && publicResponse.data) {
             console.log(`💰 Fallback to public ticker: $${publicResponse.data.price}`);

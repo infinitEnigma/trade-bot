@@ -2,11 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { UserLevel } from "@trade-bot/shared";
-
-// Import from infrastructure
-import { balanceApi } from "../../../../infrastructure/api";
-
-// Import from features
+import { globalBalanceManager } from "../../../../shared/services/balance-manager";
 import { useAuth } from "../../../auth";
 
 export interface Balance {
@@ -20,6 +16,7 @@ export interface Balance {
 
 /**
  * useBalance hook - migrated to trading/balance feature
+ * Now uses global balance manager for coordinated API requests
  */
 export const useBalance = (autoRefresh: boolean = true) => {
     const { user } = useAuth();
@@ -27,7 +24,10 @@ export const useBalance = (autoRefresh: boolean = true) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // ✅ Fetch balance from backend (only for VERIFIED users)
+    // Unique ID for this hook instance
+    const hookId = `balance-hook-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Initial fetch (only for VERIFIED users)
     const fetchBalance = async () => {
         // Don't fetch for BASIC users
         if (user?.userLevel !== UserLevel.VERIFIED) {
@@ -41,19 +41,15 @@ export const useBalance = (autoRefresh: boolean = true) => {
             setLoading(true);
             setError(null);
 
-            const response = await balanceApi.getCurrentBalance();
-
-            if (response.success) {
-                setBalance(response.data);
-            } else {
-                // Handle missing Kodiak credentials gracefully
-                if (response.error?.includes("Kodiak account not connected")) {
-                    setBalance(null); // No balance data available
-                    setError(null); // Don't show as error
-                } else {
-                    setError(response.error || "Failed to fetch balance");
-                }
+            // Use global manager's last known data first
+            const lastData = globalBalanceManager.getLastBalanceData();
+            if (lastData) {
+                setBalance(lastData);
             }
+
+            // Then trigger refresh (will notify subscribers via subscription)
+            await globalBalanceManager.forceRefresh();
+
         } catch (err) {
             setError((err as Error).message);
             console.error("Balance fetch error:", err);
@@ -62,17 +58,11 @@ export const useBalance = (autoRefresh: boolean = true) => {
         }
     };
 
-    // ✅ Refresh balance manually
+    // Manual refresh function using global manager
     const refresh = async () => {
         try {
             setLoading(true);
-            const response = await balanceApi.refreshBalance();
-
-            if (response.success) {
-                setBalance(response.data);
-            } else {
-                setError(response.error);
-            }
+            await globalBalanceManager.forceRefresh();
         } catch (err) {
             setError((err as Error).message);
         } finally {
@@ -80,24 +70,32 @@ export const useBalance = (autoRefresh: boolean = true) => {
         }
     };
 
-    // ✅ Initial fetch and smart auto-refresh (only for VERIFIED users)
+    // Initial fetch
     useEffect(() => {
         fetchBalance();
+    }, [user?.userLevel]);
 
-        // Smart auto-refresh: only when tab is visible, user is active, and VERIFIED
-        const shouldAutoRefresh = autoRefresh && user?.userLevel === UserLevel.VERIFIED;
-
-        if (shouldAutoRefresh) {
-            const interval = setInterval(() => {
-                // Only refresh if tab is visible (user is actively using the app)
-                if (document.visibilityState === 'visible') {
-                    fetchBalance();
-                }
-            }, 300000); // ⬆️ Increased from 2min to 5min for better rate limit management
-
-            return () => clearInterval(interval);
+    // Subscribe to global balance manager for auto-refresh
+    useEffect(() => {
+        if (!autoRefresh || user?.userLevel !== UserLevel.VERIFIED) {
+            return;
         }
-    }, [user?.userLevel, autoRefresh]);
+
+        console.log(`💰 useBalance: Subscribing ${hookId} to global manager`);
+
+        // Subscribe to global balance updates
+        const unsubscribe = globalBalanceManager.subscribe(hookId, (newBalance) => {
+            console.log(`💰 useBalance: Received update for ${hookId}`);
+            setBalance(newBalance);
+            setError(null);
+        });
+
+        // Cleanup subscription
+        return () => {
+            console.log(`💰 useBalance: Unsubscribing ${hookId}`);
+            unsubscribe();
+        };
+    }, [autoRefresh, user?.userLevel, hookId]);
 
     return {
         balance,

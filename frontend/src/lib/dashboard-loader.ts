@@ -7,7 +7,7 @@
  * Implements request prioritization, batching, and progressive loading.
  */
 
-import { api } from "./api";
+import { authApi, marketApi, balanceApi, tradingApi } from "../infrastructure/api";
 
 interface DashboardData {
     user: any;
@@ -114,8 +114,8 @@ class DashboardLoader {
 
         // Load user profile and balance in parallel (both are essential)
         const [userResult, balanceResult] = await Promise.allSettled([
-            this.loadWithRetry(() => api.getMe(), 'user profile', 3),
-            this.loadWithRetry(() => api.getCurrentBalance(), 'balance', 3),
+            this.loadWithRetry(() => authApi.getMe(), 'user profile', 3),
+            this.loadWithRetry(() => balanceApi.getCurrentBalance(), 'balance', 3),
         ]);
 
         const user = userResult.status === 'fulfilled' ? userResult.value : null;
@@ -137,8 +137,8 @@ class DashboardLoader {
 
         // Load positions and trades in parallel with error handling
         const [positionsResult, tradesResult] = await Promise.allSettled([
-            this.loadWithRetry(() => api.getKodiakPositions(), 'positions', 2),
-            this.loadWithRetry(() => api.getKodiakTrades(), 'trades', 2),
+            this.loadWithRetry(() => tradingApi.getKodiakPositions(), 'positions', 2),
+            this.loadWithRetry(() => tradingApi.getKodiakTrades(), 'trades', 2),
         ]);
 
         const positions = positionsResult.status === 'fulfilled' ? positionsResult.value : { rows: [] };
@@ -156,7 +156,7 @@ class DashboardLoader {
         await new Promise(resolve => setTimeout(resolve, 2000)); // Delay to prevent immediate load
 
         try {
-            const ticker = await api.getTicker('PERP_BTC_USDC');
+            const ticker = await marketApi.getTicker('PERP_BTC_USDC');
             console.log('📈 Optional market data loaded');
             return { marketData: ticker };
         } catch (error) {

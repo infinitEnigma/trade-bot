@@ -17,7 +17,7 @@ import { Card } from "../../../shared/components/ui";
 import { SectionHeader } from "../../../shared/components/ui";
 import { MetricIcon } from "../../../shared/components/ui";
 import { Container, Grid } from "../../../shared/components/layout";
-import { SmartToast } from "../../../lib/toast";
+import { SmartToast } from "../../../shared/utils/toast";
 
 const Settings: React.FC = () => {
   const { user } = useAuth();

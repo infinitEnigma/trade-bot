@@ -15,13 +15,13 @@ import {
 } from "lucide-react";
 
 // Import from infrastructure
-import { tradingApi } from "../../../../infrastructure/api";
+import { tradingApi, authApi } from "../../../../infrastructure/api";
 
 // Import from features
 import { useAuth } from "../../../auth";
 
 // Import utilities
-import { OperationToasts } from "../../../../lib/toast";
+import { OperationToasts } from "../../../../shared/utils/toast";
 
 interface BotControlsProps {
   strategyId: string;
@@ -102,7 +102,7 @@ const QualificationCheckButton: React.FC = () => {
   const handleCheckQualification = async () => {
     setIsChecking(true);
     try {
-      const response = await tradingApi.checkQualification();
+      const response = await authApi.checkQualification();
       if (response.success && response.qualified) {
         OperationToasts.qualificationSuccess();
         window.location.reload(); // Refresh to update UI

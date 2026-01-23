@@ -1,7 +1,7 @@
 /** @format */
 
 import { httpClient } from "./client";
-import { globalRequestManager } from "../../lib/global-request-manager";
+import { globalRequestManager } from "../request-manager";
 
 /**
  * Trading API endpoints
@@ -127,12 +127,5 @@ export const tradingApi = {
         );
     },
 
-    // Wallet qualification endpoint
-    async checkQualification() {
-        return globalRequestManager.deduplicateRequest(
-            "wallet:qualification",
-            () => httpClient.getClient().get("/api/wallet/qualification").then(r => r.data),
-            "tradingApi"
-        );
-    },
+
 };

@@ -43,4 +43,12 @@ export const authApi = {
         const response = await httpClient.getClient().get("/api/auth/qualification-config");
         return response.data;
     },
+
+    /**
+     * Get user profile information
+     */
+    async getProfile() {
+        const response = await httpClient.getClient().get("/api/user/profile");
+        return response.data;
+    },
 };

@@ -1,7 +1,7 @@
 /** @format */
 
 import { httpClient } from "./client";
-import { globalRequestManager } from "../../lib/global-request-manager";
+import { globalRequestManager } from "../request-manager";
 
 /**
  * Balance API endpoints

@@ -24,7 +24,7 @@ interface SimpleValidationState {
     isValid: boolean;
   };
 }
-import { SmartToast } from "../../../lib/toast";
+import { SmartToast } from "../../../shared/utils/toast";
 import {
   Mail,
   Shield,

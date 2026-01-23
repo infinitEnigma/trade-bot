@@ -8,7 +8,7 @@
  * Dramatically reduces API calls while maintaining data freshness.
  */
 
-import { balanceApi } from "../infrastructure/api";
+import { balanceApi } from "../../infrastructure/api";
 
 interface BalanceSubscriber {
     callback: (balance: any) => void;

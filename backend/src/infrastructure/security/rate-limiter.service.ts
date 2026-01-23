@@ -37,7 +37,7 @@ import { logger } from "../../core/logging";
 import { RateLimitConfig, RateLimitResult } from "./rate-limiter/rate-limit.types";
 import { memoryRateLimiter } from "./rate-limiter/memory-rate-limiter";
 import { progressiveAuthLimiter } from "./rate-limiter/progressive-auth-limiter";
-import { redisHealthMonitor } from "./rate-limiter/redis-health-monitor";
+//import { redisHealthMonitor } from "./rate-limiter/redis-health-monitor";
 import { RATE_LIMIT_CONFIGS } from "./rate-limiter/rate-limit.config";
 
 // Re-export for backward compatibility
@@ -108,7 +108,7 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
 
     try {
       // Check Redis health
-      const redisAvailable = await redisHealthMonitor.checkHealth();
+      const redisAvailable = await redisService.isHealthy();
 
       let current: number;
       let resetTime: number;

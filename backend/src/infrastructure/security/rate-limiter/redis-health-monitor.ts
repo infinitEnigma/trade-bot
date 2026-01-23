@@ -143,9 +143,10 @@ const redisHealthMonitor = new RedisHealthMonitor();
 /**
  * Legacy function for backward compatibility
  * @deprecated Use redisHealthMonitor.checkHealth() instead
- */
+
 async function checkRedisHealth(): Promise<boolean> {
     return redisHealthMonitor.checkHealth();
 }
 
 export { RedisHealthMonitor, redisHealthMonitor, checkRedisHealth };
+ */

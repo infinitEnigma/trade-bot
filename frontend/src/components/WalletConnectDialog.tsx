@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useAccount, useConnect, useDisconnect, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { toast } from "sonner";
-import { api } from "../lib/api";
+import { walletApi } from "../infrastructure/api";
 import { useAuth } from "../features/auth";
 
 interface WalletConnectDialogProps {
@@ -53,7 +53,7 @@ export const WalletConnectDialog: React.FC<WalletConnectDialogProps> = ({
       setIsVerifying(true);
 
       // Verify with backend
-      await api.verifyWallet({
+      await walletApi.verifyWallet({
         walletAddress: address,
         signature,
         message,

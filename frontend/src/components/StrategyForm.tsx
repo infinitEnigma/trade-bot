@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api } from "../lib/api";
+import { tradingApi } from "../infrastructure/api";
 import { Strategy, StrategyType } from "@trade-bot/shared";
 import { X, Loader2 } from "lucide-react";
 
@@ -110,7 +110,7 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
       if (data.exitThreshold) config.exitThreshold = data.exitThreshold;
       if (data.stopLoss) config.stopLoss = data.stopLoss;
 
-      return api.createStrategy({
+      return tradingApi.createStrategy({
         name: data.name,
         type: data.type,
         config,
@@ -146,7 +146,7 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
       if (data.exitThreshold) config.exitThreshold = data.exitThreshold;
       if (data.stopLoss) config.stopLoss = data.stopLoss;
 
-      return api.updateStrategy(strategy!.id, {
+      return tradingApi.updateStrategy(strategy!.id, {
         name: data.name,
         type: data.type,
         config,

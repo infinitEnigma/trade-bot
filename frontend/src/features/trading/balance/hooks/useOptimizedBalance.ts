@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { UserLevel } from "@trade-bot/shared";
 import { balanceApi } from "../../../../infrastructure/api";
-import { globalBalanceManager } from "../../../../lib/global-balance-manager";
+import { globalBalanceManager } from "../../../../shared/services/balance-manager";
 import { useAuth } from "../../../auth";
 
 export interface Balance {

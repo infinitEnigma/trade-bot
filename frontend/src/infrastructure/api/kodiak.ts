@@ -46,6 +46,13 @@ class KodiakApi {
     }
 
     /**
+     * Get Kodiak account balance
+     */
+    async getKodiakBalance(): Promise<any> {
+        return httpClient.getClient().get('/api/user/kodiak/balance');
+    }
+
+    /**
      * Validate Kodiak credentials format
      */
     validateCredentialsFormat(credentials: KodiakCredentials): {
