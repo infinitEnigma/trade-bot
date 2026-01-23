@@ -3,7 +3,7 @@
 import { Router, Request, Response } from "express";
 import Joi from "joi";
 import { v4 as uuidv4 } from "uuid";
-import { authService, TokenPayload } from "../../../core/auth/auth.service";
+import { selectAuthService } from "../../../core/service-selector";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
 import { Pool } from "pg";
 import { query } from "../../../database/pool"; // ✅ Import from centralized module

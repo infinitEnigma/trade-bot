@@ -18,16 +18,29 @@ export const useDashboard = () => {
         user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
     const hasAutomaticKodiakAccess = user?.userLevel === "VERIFIED"; // Only VERIFIED get automatic loading
 
-    // Fetch positions with optimized settings
+    // 🔧 FIXED: Single combined query to prevent duplicate API calls
+    // Previously: 2 separate queries both calling the same endpoints
+    // Now: 1 query fetching both positions and trades together
     const {
-        data: positionsData,
-        isLoading: positionsLoading,
-        error: positionsError,
-        refetch: refetchPositions,
-        dataUpdatedAt: positionsUpdatedAt,
+        data: kodiakData,
+        isLoading: kodiakLoading,
+        error: kodiakError,
+        refetch: refetchKodiakData,
+        dataUpdatedAt: kodiakUpdatedAt,
     } = useQuery({
-        queryKey: ["kodiak-positions"],
-        queryFn: () => dashboardService.getPositions(),
+        queryKey: ["kodiak-data"], // Single key instead of separate position/trade keys
+        queryFn: async () => {
+            // Fetch both positions and trades in parallel but deduplicated at API level
+            const [positionsResult, tradesResult] = await Promise.allSettled([
+                dashboardService.getPositions(),
+                dashboardService.getTrades(),
+            ]);
+
+            return {
+                positions: positionsResult.status === 'fulfilled' ? positionsResult.value : [],
+                trades: tradesResult.status === 'fulfilled' ? tradesResult.value : [],
+            };
+        },
         enabled: hasAutomaticKodiakAccess, // Only automatic for VERIFIED users
         staleTime: 60000,         // ⬆️ Increased to 60 seconds (from 30s)
         gcTime: 300000,           // 5 minutes
@@ -40,31 +53,9 @@ export const useDashboard = () => {
         },
     });
 
-    // Fetch trades with optimized settings
-    const {
-        data: tradesData,
-        isLoading: tradesLoading,
-        error: tradesError,
-        refetch: refetchTrades,
-        dataUpdatedAt: tradesUpdatedAt,
-    } = useQuery({
-        queryKey: ["kodiak-trades"],
-        queryFn: () => dashboardService.getTrades(),
-        enabled: hasAutomaticKodiakAccess, // Only automatic for VERIFIED users
-        staleTime: 60000,          // ⬆️ Increased to 60 seconds (from 30s)
-        gcTime: 300000,            // 5 minutes
-        refetchOnWindowFocus: false, // 🚫 Disable focus refetch to reduce requests
-        refetchInterval: 120000,      // 🔄 Auto-refresh every 2 minutes (from 30s)
-        retry: (failureCount, error: any) => {
-            if (error?.response?.status === 429) return false; // Don't retry rate limits
-            if (error?.response?.status === 400) return false;
-            return failureCount < 2;
-        },
-    });
-
-    // Process data
-    const positions: Position[] = positionsData || [];
-    const trades: Trade[] = tradesData || [];
+    // Process data from combined query
+    const positions: Position[] = kodiakData?.positions || [];
+    const trades: Trade[] = kodiakData?.trades || [];
     const profitablePositions = dashboardService.getProfitablePositionsCount(positions);
 
     // Create balance object
@@ -92,14 +83,11 @@ export const useDashboard = () => {
 
     // Manual refresh function
     const refreshKodiakData = async () => {
-        await Promise.all([
-            refetchPositions(),
-            refetchTrades(),
-        ]);
+        await refetchKodiakData();
     };
 
     // Data freshness indicators
-    const lastKodiakUpdate = Math.max(positionsUpdatedAt || 0, tradesUpdatedAt || 0);
+    const lastKodiakUpdate = kodiakUpdatedAt || 0;
     const kodiakDataFresh = Date.now() - lastKodiakUpdate < 60000; // Fresh if updated within 1 minute
     const kodiakDataStale = Date.now() - lastKodiakUpdate > 300000; // Stale if older than 5 minutes
 
@@ -116,13 +104,13 @@ export const useDashboard = () => {
         positionsCount: positions.length,
 
         // Loading states
-        isLoading: balanceLoading || positionsLoading || tradesLoading,
+        isLoading: balanceLoading || kodiakLoading,
         balanceLoading,
-        positionsLoading,
-        tradesLoading,
+        positionsLoading: kodiakLoading,
+        tradesLoading: kodiakLoading,
 
         // Errors
-        error: positionsError || tradesError,
+        error: kodiakError,
 
         // Access flags
         hasKodiakAccess,

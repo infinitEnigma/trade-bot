@@ -46,7 +46,8 @@ export class RoleManagementService {
             );
 
             // Invalidate cached user data (N+1 query optimization)
-            const { authService } = await import('./auth.service.js');
+            const { selectAuthService } = await import('../service-selector.js');
+            const authService = selectAuthService();
             if (authService.invalidateUserDataCache) {
                 await authService.invalidateUserDataCache(userId);
             }
@@ -81,7 +82,8 @@ export class RoleManagementService {
                 );
 
                 // Invalidate cached user data (N+1 query optimization)
-                const { authService } = await import('./auth.service.js');
+                const { selectAuthService } = await import('../service-selector.js');
+                const authService = selectAuthService();
                 if (authService.invalidateUserDataCache) {
                     await authService.invalidateUserDataCache(userId);
                 }

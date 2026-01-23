@@ -7,7 +7,7 @@
  */
 
 import { query } from "../../database/pool";
-import { authService } from "../../core/auth";
+import { selectAuthService } from "../../core/service-selector"; const authService = selectAuthService();
 import { kodiakIntegrationService } from "./kodiak-integration.service";
 import { encryptionService } from "../../infrastructure/security";
 import { logger } from "../../core/logging";

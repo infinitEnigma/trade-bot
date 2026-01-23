@@ -7,8 +7,7 @@
 
 import { Router, Request, Response } from "express";
 import { query } from "../../../database/pool";
-import { botStatusService } from "../../../core/trading/bot-status.service";
-import { botPerformanceService } from "../../../core/trading/bot-performance.service";
+// Bot services have been removed - using direct database operations instead
 import { engineManager } from "../../../core/trading/engine-manager.service";
 import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../../../core/notifications/error-notification.service";
 import logger from "../../../core/logging/logger.service";
@@ -72,8 +71,11 @@ router.post("/heartbeat", botEngineAuth, async (req: Request, res: Response) => 
             return res.status(400).json({ success: false, error: "Bot ID required" });
         }
 
-        // Validate bot exists and belongs to a valid user
-        const botData = await botStatusService.validateBotOwnership(bot_id, ""); // Empty userId for engine calls
+        // Validate bot exists (simplified - no ownership validation for engine calls)
+        const botExists = await query("SELECT id FROM bot_instances WHERE id = $1", [bot_id]);
+        if (botExists.rows.length === 0) {
+            return res.status(404).json({ success: false, error: "Bot not found" });
+        }
 
         // Update bot with heartbeat data
         await query(
@@ -88,11 +90,6 @@ router.post("/heartbeat", botEngineAuth, async (req: Request, res: Response) => 
                 bot_id,
             ]
         );
-
-        // Check if bot recovered from error state
-        if (botData.status === 'ERROR' && status === 'RUNNING') {
-            await botStatusService.checkBotRecovery(botData);
-        }
 
         logger.info("Bot heartbeat received", {
             botId: bot_id,
@@ -179,19 +176,7 @@ router.post("/report-trade", botEngineAuth, async (req: Request, res: Response) 
             );
         }
 
-        // Invalidate performance cache for this bot
-        if (strategyId) {
-            // Find bot by strategy ID to invalidate performance cache
-            const botResult = await query(
-                "SELECT id FROM bot_instances WHERE strategy_id = $1",
-                [strategyId]
-            );
-
-            if (botResult.rows.length > 0) {
-                const botId = botResult.rows[0].id;
-                await botPerformanceService.invalidateBotPerformance(botId, strategyId);
-            }
-        }
+        // Performance cache invalidation removed - bot services not implemented
 
         // Emit WebSocket event to notify frontend
         const io = global.io;
@@ -335,9 +320,10 @@ router.post("/engine-status", botEngineAuth, async (req: Request, res: Response)
 });
 
 // POST /api/bot/bot-error (called by bot engine when bot encounters error)
+// Simplified - bot services not implemented
 router.post("/bot-error", botEngineAuth, async (req: Request, res: Response) => {
     try {
-        const { botId, error, stackTrace, context, severity = 'medium' } = req.body;
+        const { botId, error } = req.body;
 
         if (!botId || !error) {
             return res.status(400).json({
@@ -346,46 +332,15 @@ router.post("/bot-error", botEngineAuth, async (req: Request, res: Response) => 
             });
         }
 
-        // Validate bot exists
-        const botData = await botStatusService.validateBotOwnership(botId, ""); // Empty userId for engine calls
-
-        // Update bot status to ERROR
-        await botStatusService.updateBotStatus(
-            botId,
-            'ERROR',
-            error,
-            'engine_reported_error'
-        );
-
-        // Notify about bot errors
-        const severityLevel = severity === 'critical' ? ErrorSeverity.CRITICAL :
-            severity === 'high' ? ErrorSeverity.HIGH :
-                severity === 'low' ? ErrorSeverity.LOW :
-                    ErrorSeverity.MEDIUM;
-
-        await errorNotificationService.notifyError(
-            new Error(error),
-            {
-                category: ErrorCategory.BUSINESS_LOGIC,
-                operation: "bot_execution_error",
-                userId: botData.user_id,
-                metadata: {
-                    botId,
-                    strategyId: botData.strategy_id,
-                    stackTrace,
-                    context,
-                    botExecutionError: true,
-                },
-            },
-            severityLevel
+        // Update bot status to ERROR (simplified)
+        await query(
+            "UPDATE bot_instances SET status = 'ERROR', last_error = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+            [error, botId]
         );
 
         logger.error("Bot error reported by engine", {
             botId,
             error,
-            stackTrace,
-            context,
-            severity,
         });
 
         res.json({
@@ -408,9 +363,10 @@ router.post("/bot-error", botEngineAuth, async (req: Request, res: Response) => 
 });
 
 // POST /api/bot/bot-recovery (called by bot engine when bot recovers)
+// Simplified - bot services not implemented
 router.post("/bot-recovery", botEngineAuth, async (req: Request, res: Response) => {
     try {
-        const { botId, recoveryReason, context } = req.body;
+        const { botId } = req.body;
 
         if (!botId) {
             return res.status(400).json({
@@ -419,36 +375,14 @@ router.post("/bot-recovery", botEngineAuth, async (req: Request, res: Response) 
             });
         }
 
-        // Validate bot exists
-        const botData = await botStatusService.validateBotOwnership(botId, ""); // Empty userId for engine calls
-
-        // Update bot status to RUNNING
-        await botStatusService.updateBotStatus(
-            botId,
-            'RUNNING',
-            null,
-            'engine_reported_recovery'
+        // Update bot status to RUNNING (simplified)
+        await query(
+            "UPDATE bot_instances SET status = 'RUNNING', last_error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            [botId]
         );
-
-        // Emit WebSocket event to notify frontend
-        const io = global.io;
-        if (io) {
-            io.to(`user:${botData.user_id}`).emit("bot:status", {
-                botId,
-                status: 'RUNNING',
-                previousStatus: 'ERROR',
-                reconciled: true,
-                reason: 'bot_recovered',
-                recoveryReason,
-                context,
-                timestamp: Date.now(),
-            });
-        }
 
         logger.info("Bot recovery reported by engine", {
             botId,
-            recoveryReason,
-            context,
         });
 
         res.json({
@@ -482,8 +416,15 @@ router.get("/engine/health", async (req: Request, res: Response) => {
             version: process.version,
         };
 
-        // Get bot statistics
-        const botStats = await botStatusService.getBotStats();
+        // Get basic bot statistics from database
+        const botStatsResult = await query(`
+            SELECT
+                COUNT(*) as total_bots,
+                COUNT(CASE WHEN status = 'RUNNING' THEN 1 END) as running_bots,
+                COUNT(CASE WHEN status = 'ERROR' THEN 1 END) as error_bots
+            FROM bot_instances
+        `);
+        const botStats = botStatsResult.rows[0];
 
         // Check database connectivity
         try {

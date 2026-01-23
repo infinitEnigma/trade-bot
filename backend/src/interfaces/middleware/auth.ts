@@ -2,7 +2,9 @@
 
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { authService } from "../../core/auth/auth.service";
+import { selectAuthService } from "../../core/service-selector";
+
+const authService = selectAuthService();
 import { redisService } from "../../infrastructure/cache/redis.service";
 import { setUserContext } from "../../shared/utils/context";
 import { roleManagementService } from "../../core/auth/role-management.service";

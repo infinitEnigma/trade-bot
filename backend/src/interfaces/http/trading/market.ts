@@ -2,7 +2,7 @@
 
 import { Router, Request, Response } from "express";
 import axios from "axios";
-import { authService, TokenPayload } from "../../../core/auth/auth.service";
+import { selectAuthService } from "../../../core/service-selector";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { query } from "../../../database/pool"; // ✅ Import from centralized module
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth"; // ✅ Import centralized auth

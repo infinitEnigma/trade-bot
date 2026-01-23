@@ -1,6 +1,7 @@
 /** @format */
 
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from "axios";
+import { globalRequestManager } from "./global-request-manager";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL; // || "http://localhost:3000";
 console.log("API_BASE_URL:", API_BASE_URL);
@@ -297,75 +298,102 @@ class ApiClient {
     return response.data;
   }
 
-  // Kodiak API methods
+  // Kodiak API methods with global deduplication
   async connectKodiak(data: {
     accountId: string;
     apiKey: string;
     secretKey: string;
   }) {
-    const response = await this.client.post("/api/user/kodiak/connect", data);
-    return response.data;
+    return globalRequestManager.deduplicateRequest(
+      "kodiak:connect",
+      () => this.client.post("/api/user/kodiak/connect", data).then(r => r.data),
+      "apiClient"
+    );
   }
 
   async disconnectKodiak() {
-    const response = await this.client.delete("/api/user/kodiak/disconnect");
-    return response.data;
+    return globalRequestManager.deduplicateRequest(
+      "kodiak:disconnect",
+      () => this.client.delete("/api/user/kodiak/disconnect").then(r => r.data),
+      "apiClient"
+    );
   }
 
   async getKodiakStatus() {
-    const response = await this.client.get("/api/user/kodiak/status");
-    return response.data;
+    return globalRequestManager.deduplicateRequest(
+      "kodiak:status",
+      () => this.client.get("/api/user/kodiak/status").then(r => r.data),
+      "apiClient"
+    );
   }
 
   async getKodiakPositions() {
-    try {
-      const response = await this.client.get("/api/user/kodiak/positions");
-      return response.data;
-    } catch (error: any) {
-      // Return empty data instead of throwing for missing credentials
-      if (error.response?.status === 403 || error.response?.status === 400) {
-        return {
-          success: true,
-          data: { rows: [] },
-          message: "Kodiak account not connected",
-        };
-      }
-      throw error;
-    }
+    return globalRequestManager.deduplicateRequest(
+      "kodiak:positions",
+      async () => {
+        try {
+          const response = await this.client.get("/api/user/kodiak/positions");
+          return response.data;
+        } catch (error: any) {
+          // Return empty data instead of throwing for missing credentials
+          if (error.response?.status === 403 || error.response?.status === 400) {
+            return {
+              success: true,
+              data: { rows: [] },
+              message: "Kodiak account not connected",
+            };
+          }
+          throw error;
+        }
+      },
+      "apiClient"
+    );
   }
 
   async getKodiakTrades() {
-    try {
-      const response = await this.client.get("/api/user/kodiak/trades");
-      return response.data;
-    } catch (error: any) {
-      // Return empty data instead of throwing for missing credentials
-      if (error.response?.status === 403 || error.response?.status === 400) {
-        return {
-          success: true,
-          data: { rows: [] },
-          message: "Kodiak account not connected",
-        };
-      }
-      throw error;
-    }
+    return globalRequestManager.deduplicateRequest(
+      "kodiak:trades",
+      async () => {
+        try {
+          const response = await this.client.get("/api/user/kodiak/trades");
+          return response.data;
+        } catch (error: any) {
+          // Return empty data instead of throwing for missing credentials
+          if (error.response?.status === 403 || error.response?.status === 400) {
+            return {
+              success: true,
+              data: { rows: [] },
+              message: "Kodiak account not connected",
+            };
+          }
+          throw error;
+        }
+      },
+      "apiClient"
+    );
   }
 
   async getKodiakBalance() {
-    try {
-      const response = await this.client.get("/api/user/kodiak/balance");
-      return response.data;
-    } catch (error: any) {
-      // Return empty data instead of throwing for missing credentials
-      if (error.response?.status === 403 || error.response?.status === 400) {
-        return {
-          success: true,
-          data: null,
-          message: "Kodiak account not connected",
-        };
-      }
-      throw error;
-    }
+    return globalRequestManager.deduplicateRequest(
+      "kodiak:balance",
+      async () => {
+        try {
+          const response = await this.client.get("/api/user/kodiak/balance");
+          return response.data;
+        } catch (error: any) {
+          // Return empty data instead of throwing for missing credentials
+          if (error.response?.status === 403 || error.response?.status === 400) {
+            return {
+              success: true,
+              data: null,
+              message: "Kodiak account not connected",
+            };
+          }
+          throw error;
+        }
+      },
+      "apiClient"
+    );
   }
 
   async verifyWallet(data: {

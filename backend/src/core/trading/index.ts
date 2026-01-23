@@ -17,8 +17,6 @@
  */
 
 // Export trading-related services
-export { botStatusService } from './bot-status.service';
-export { botPerformanceService } from './bot-performance.service';
 export { engineManager } from './engine-manager.service';
 export { positionSyncService } from './position-sync.service';
 export { positionValidatorService } from './position-validator.service';

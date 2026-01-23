@@ -1,16 +1,20 @@
 /** @format */
 
 import { httpClient } from "./client";
+import { globalRequestManager } from "../../lib/global-request-manager";
 
 /**
  * Trading API endpoints
- * Handles strategies, bots, and trading operations
+ * Handles strategies, bots, and trading operations with global deduplication
  */
 export const tradingApi = {
     // Strategy endpoints
     async getStrategies() {
-        const response = await httpClient.getClient().get("/api/strategies");
-        return response.data;
+        return globalRequestManager.deduplicateRequest(
+            "strategies:list",
+            () => httpClient.getClient().get("/api/strategies").then(r => r.data),
+            "tradingApi"
+        );
     },
 
     async createStrategy(data: {
@@ -44,13 +48,19 @@ export const tradingApi = {
 
     // Bot endpoints
     async getBotInstances() {
-        const response = await httpClient.getClient().get("/api/bot/instances");
-        return response.data;
+        return globalRequestManager.deduplicateRequest(
+            "bots:instances",
+            () => httpClient.getClient().get("/api/bot/instances").then(r => r.data),
+            "tradingApi"
+        );
     },
 
     async getEngineStatus() {
-        const response = await httpClient.getClient().get("/api/bot/engine/status");
-        return response.data;
+        return globalRequestManager.deduplicateRequest(
+            "bots:engine-status",
+            () => httpClient.getClient().get("/api/bot/engine/status").then(r => r.data),
+            "tradingApi"
+        );
     },
 
     async startBot(strategyId: string) {
@@ -70,51 +80,59 @@ export const tradingApi = {
         return response.data;
     },
 
-    // Kodiak exchange integration endpoints with request deduplication
-    _pendingPositions: null as Promise<any> | null,
-    _pendingTrades: null as Promise<any> | null,
-
+    // Kodiak exchange integration endpoints with global deduplication
     async getKodiakPositions() {
-        // Return existing request if one is pending (deduplication)
-        if (this._pendingPositions) {
-            return this._pendingPositions;
-        }
-
-        // Create new request
-        this._pendingPositions = httpClient.getClient().get("/api/user/kodiak/positions");
-
-        try {
-            const result = await this._pendingPositions;
-            return result.data;
-        } finally {
-            // Clear pending request after completion
-            this._pendingPositions = null;
-        }
+        return globalRequestManager.deduplicateRequest(
+            "kodiak:positions",
+            async () => {
+                try {
+                    const response = await httpClient.getClient().get("/api/user/kodiak/positions");
+                    return response.data;
+                } catch (error: any) {
+                    // Return empty data instead of throwing for missing credentials
+                    if (error.response?.status === 403 || error.response?.status === 400) {
+                        return {
+                            success: true,
+                            data: { rows: [] },
+                            message: "Kodiak account not connected",
+                        };
+                    }
+                    throw error;
+                }
+            },
+            "tradingApi"
+        );
     },
 
     async getKodiakTrades(limit = 50) {
-        //const key = `trades_${limit}`;
-
-        // Return existing request if one is pending (deduplication)
-        if (this._pendingTrades) {
-            return this._pendingTrades;
-        }
-
-        // Create new request
-        this._pendingTrades = httpClient.getClient().get(`/api/user/kodiak/trades?limit=${limit}`);
-
-        try {
-            const result = await this._pendingTrades;
-            return result.data;
-        } finally {
-            // Clear pending request after completion
-            this._pendingTrades = null;
-        }
+        return globalRequestManager.deduplicateRequest(
+            `kodiak:trades:${limit}`,
+            async () => {
+                try {
+                    const response = await httpClient.getClient().get(`/api/user/kodiak/trades?limit=${limit}`);
+                    return response.data;
+                } catch (error: any) {
+                    // Return empty data instead of throwing for missing credentials
+                    if (error.response?.status === 403 || error.response?.status === 400) {
+                        return {
+                            success: true,
+                            data: { rows: [] },
+                            message: "Kodiak account not connected",
+                        };
+                    }
+                    throw error;
+                }
+            },
+            "tradingApi"
+        );
     },
 
     // Wallet qualification endpoint
     async checkQualification() {
-        const response = await httpClient.getClient().get("/api/wallet/qualification");
-        return response.data;
+        return globalRequestManager.deduplicateRequest(
+            "wallet:qualification",
+            () => httpClient.getClient().get("/api/wallet/qualification").then(r => r.data),
+            "tradingApi"
+        );
     },
 };

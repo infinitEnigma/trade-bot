@@ -74,7 +74,7 @@ router.post(
   async (req: Request, res: Response) => {
     logger.info("Login attempt", { email: req.body?.email });
     try {
-      const result = await authService.login(req.body.email, req.body.password);
+      const result = await authService.login({ email: req.body.email, password: req.body.password });
       logger.info("Login result", {
         email: req.body.email,
         success: result.success,

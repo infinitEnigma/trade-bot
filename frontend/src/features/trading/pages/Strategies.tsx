@@ -82,11 +82,21 @@ const Strategies: React.FC = React.memo(() => {
   });
 
   // Fetch engine status first - only query bots if engine is running
+  // 🔧 FIXED: Reduced polling frequency and added better controls
   const { data: engineStatus } = useQuery({
     queryKey: ["engine-status"],
     queryFn: () => tradingApi.getEngineStatus(),
-    staleTime: 30000, // 30 seconds - engine status doesn't change often
-    gcTime: 60000, // 1 minute cache
+    staleTime: 120000,        // ⬆️ Increased to 2 minutes (from 30s)
+    gcTime: 300000,           // ⬆️ Increased to 5 minutes (from 1min)
+    refetchInterval: 300000,   // 🔄 Poll every 5 minutes (not continuously)
+    refetchOnWindowFocus: false, // 🚫 Don't refetch on focus
+    refetchIntervalInBackground: false, // 🚫 Don't poll in background
+    enabled: user?.userLevel === "VERIFIED", // Only for verified users
+    retry: (failureCount, error: any) => {
+      if (error?.response?.status === 429) return false; // Don't retry rate limits
+      if (error?.response?.status === 403) return false; // Don't retry auth errors
+      return failureCount < 1; // Only retry once for engine status
+    },
   });
 
   // Fetch bot instances only if engine is running

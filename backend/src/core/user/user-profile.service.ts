@@ -6,9 +6,11 @@
  */
 
 import { query } from "../../database/pool";
-import { authService } from "../auth";
+import { selectAuthService } from "../service-selector";
 import { redisService } from "../../infrastructure";
 import { logger } from "../../core/logging";
+
+const authService = selectAuthService();
 
 export interface ProfileUpdateData {
     email?: string;
@@ -130,17 +132,53 @@ export class UserProfileService {
     }
 
     /**
-     * Update user profile with validation
+     * Verify wallet ownership for user verification
+     */
+    async verifyWalletOwnership(
+        userId: string,
+        walletAddress: string,
+        signature: string,
+        message: string
+    ): Promise<{ success: boolean; message: string }> {
+        try {
+            return await authService.verifyWalletOwnership(
+                userId,
+                walletAddress,
+                signature,
+                message
+            );
+        } catch (error) {
+            logger.error("Wallet verification error", {
+                error: error instanceof Error ? error.message : String(error),
+                userId,
+            });
+
+            return {
+                success: false,
+                message: "Failed to verify wallet ownership",
+            };
+        }
+    }
+
+    /**
+     * Update user profile with validation (simplified)
      */
     async updateUserProfile(userId: string, updateData: ProfileUpdateData): Promise<ProfileUpdateResult> {
         try {
-            const { email, currentPassword, newPassword } = updateData;
+            const { email } = updateData;
 
-            // Check if there are any changes to make
-            const hasEmailChange = email && email.toLowerCase() !== (await this.getCurrentEmail(userId)).toLowerCase();
-            const hasPasswordChange = !!newPassword;
+            // Only support email changes for now (password change not implemented in pure service)
+            if (!email) {
+                return {
+                    success: false,
+                    message: "Only email updates are currently supported",
+                    error: "Only email updates are currently supported",
+                };
+            }
 
-            if (!hasEmailChange && !hasPasswordChange) {
+            // Check if email is actually changing
+            const currentEmail = await this.getCurrentEmail(userId);
+            if (email.toLowerCase() === currentEmail.toLowerCase()) {
                 return {
                     success: false,
                     message: "No changes detected",
@@ -148,76 +186,28 @@ export class UserProfileService {
                 };
             }
 
-            // Get current user data for validation
-            const currentUser = await authService.getUserById(userId);
-            if (!currentUser) {
+            // Check for email conflicts
+            const emailAvailable = await this.checkEmailAvailability(email, userId);
+            if (!emailAvailable) {
                 return {
                     success: false,
-                    message: "User not found",
-                    error: "User not found",
+                    message: "Email address is already in use",
+                    error: "Email address is already in use",
                 };
             }
 
-            // Validate current password if changing password
-            if (hasPasswordChange) {
-                const passwordValid = await this.validateCurrentPassword(userId, currentPassword);
-                if (!passwordValid) {
-                    return {
-                        success: false,
-                        message: "Current password is incorrect",
-                        error: "Current password is incorrect",
-                    };
-                }
-            }
-
-            // Check for email conflicts if email is being changed
-            if (hasEmailChange) {
-                const emailAvailable = await this.checkEmailAvailability(email!, userId);
-                if (!emailAvailable) {
-                    return {
-                        success: false,
-                        message: "Email address is already in use",
-                        error: "Email address is already in use",
-                    };
-                }
-            }
-
-            // Perform the update
-            const updateResult = await this.executeProfileUpdate(userId, {
-                email: hasEmailChange ? email : undefined,
-                newPassword: hasPasswordChange ? newPassword : undefined,
-            });
-
-            // CRITICAL SECURITY: Blacklist all refresh tokens when password changes
-            if (hasPasswordChange) {
-                logger.warn("Password changed - revoking all user tokens", { userId });
-                const tokenResult = await authService.invalidateUserTokens(userId);
-                if (!tokenResult.success) {
-                    logger.error("Failed to revoke user tokens on password change", {
-                        userId,
-                        errors: tokenResult.errors
-                    });
-                } else {
-                    logger.info("Successfully revoked user tokens on password change", {
-                        userId,
-                        tokensBlacklisted: tokenResult.tokensBlacklisted
-                    });
-                }
-            }
+            // Perform the email update
+            const updateResult = await this.executeProfileUpdate(userId, { email });
 
             // Clear cache after successful update
             await this.invalidateUserProfileCache(userId);
 
             // Log the profile update
-            const changes = [];
-            if (hasEmailChange) changes.push("email");
-            if (hasPasswordChange) changes.push("password");
-
-            await this.logProfileUpdate(userId, changes);
+            await this.logProfileUpdate(userId, ["email"]);
 
             logger.info("Profile updated successfully", {
                 userId,
-                changes,
+                changes: ["email"],
                 cacheInvalidated: true,
             });
 
@@ -244,45 +234,7 @@ export class UserProfileService {
         }
     }
 
-    /**
-     * Validate wallet ownership for user verification
-     */
-    async verifyWalletOwnership(
-        userId: string,
-        walletAddress: string,
-        signature: string,
-        message: string
-    ): Promise<{ success: boolean; message: string }> {
-        try {
-            const result = await authService.verifyWalletOwnership(
-                userId,
-                walletAddress,
-                signature,
-                message
-            );
 
-            if (result.success) {
-                logger.info("Wallet verified successfully", { userId, walletAddress });
-            } else {
-                logger.warn("Wallet verification failed", { userId, walletAddress, reason: result.message });
-            }
-
-            return {
-                success: result.success,
-                message: result.message || "Wallet verification completed",
-            };
-        } catch (error) {
-            logger.error("Wallet verification error", {
-                error: error instanceof Error ? error.message : String(error),
-                userId,
-            });
-
-            return {
-                success: false,
-                message: "Failed to verify wallet ownership",
-            };
-        }
-    }
 
     /**
      * Get current user email
@@ -295,27 +247,7 @@ export class UserProfileService {
         return result.rows[0].email;
     }
 
-    /**
-     * Validate current password
-     */
-    private async validateCurrentPassword(userId: string, currentPassword: string | undefined): Promise<boolean> {
-        if (!currentPassword) return false;
 
-        // Get user with password hash for verification
-        const passwordCheckResult = await query(
-            "SELECT password_hash FROM users WHERE id = $1",
-            [userId]
-        );
-
-        if (passwordCheckResult.rows.length === 0) {
-            return false;
-        }
-
-        return await authService.verifyPassword(
-            { password_hash: passwordCheckResult.rows[0].password_hash },
-            currentPassword
-        );
-    }
 
     /**
      * Check if email is available for use
@@ -334,37 +266,15 @@ export class UserProfileService {
      */
     private async executeProfileUpdate(
         userId: string,
-        changes: { email?: string; newPassword?: string }
+        changes: { email?: string }
     ): Promise<{ email: string; updatedAt: string }> {
-        const updateFields: string[] = [];
-        const updateValues: any[] = [];
-        let paramIndex = 1;
-
-        if (changes.email) {
-            updateFields.push(`email = $${paramIndex++}`);
-            updateValues.push(changes.email.toLowerCase());
-        }
-
-        if (changes.newPassword) {
-            const hashedPassword = await authService.hashPassword(changes.newPassword);
-            updateFields.push(`password_hash = $${paramIndex++}`);
-            updateValues.push(hashedPassword);
-        }
-
-        updateFields.push(`updated_at = $${paramIndex++}`);
-        updateValues.push(new Date());
-
-        updateValues.push(userId); // WHERE clause
-
-        // Execute update
-        const updateQuery = `
-      UPDATE users
-      SET ${updateFields.join(', ')}
-      WHERE id = $${paramIndex}
-      RETURNING id, email
-    `;
-
-        const updateResult = await query(updateQuery, updateValues);
+        // Execute email update
+        const updateResult = await query(`
+            UPDATE users
+            SET email = $1, updated_at = $2
+            WHERE id = $3
+            RETURNING id, email
+        `, [changes.email!.toLowerCase(), new Date(), userId]);
 
         if (updateResult.rows.length === 0) {
             throw new Error('User not found');

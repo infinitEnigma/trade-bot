@@ -12,60 +12,35 @@ import { diContainer } from '../infrastructure/dependency-injection.container';
 import { BalanceService } from './wallet/balance.service.pure';
 import { AuthService } from './auth/auth.service.pure';
 import { PositionService } from './trading/position.service.pure';
-import { BotStatusService } from './trading/bot-status.service.pure';
-import { BotPerformanceService } from './trading/bot-performance.service.pure';
 
-// Legacy service imports (impure implementations)
-import { balanceService as legacyBalanceService } from './wallet/balance.service';
-import { authService as legacyAuthService } from './auth/auth.service';
-import { botStatusService as legacyBotStatusService } from './trading/bot-status.service';
+// Legacy services have been removed - pure services are now active
 
 /**
  * Balance Service Selector
  *
- * Selects between pure and legacy balance service implementations
- * based on USE_PURE_BALANCE_SERVICE environment flag.
+ * Returns the pure BalanceService implementation.
+ * Legacy services have been removed.
  */
-export function selectBalanceService(): BalanceService | typeof legacyBalanceService {
-    const usePure = process.env.USE_PURE_BALANCE_SERVICE === 'true';
-
-    if (usePure) {
-        diContainer.loggerService.info('Using pure BalanceService implementation', {
-            featureFlag: 'USE_PURE_BALANCE_SERVICE',
-            implementation: 'pure'
-        });
-        return diContainer.balanceService;
-    } else {
-        diContainer.loggerService.info('Using legacy balance service implementation', {
-            featureFlag: 'USE_PURE_BALANCE_SERVICE',
-            implementation: 'legacy'
-        });
-        return legacyBalanceService;
-    }
+export function selectBalanceService(): BalanceService {
+    diContainer.loggerService.info('Using pure BalanceService implementation', {
+        implementation: 'pure',
+        phase: 'post-migration'
+    });
+    return diContainer.balanceService;
 }
 
 /**
  * Auth Service Selector
  *
- * Selects between pure and legacy auth service implementations
- * based on USE_PURE_AUTH_SERVICE environment flag.
+ * Returns the pure AuthService implementation.
+ * Legacy services have been removed.
  */
-export function selectAuthService(): AuthService | typeof legacyAuthService {
-    const usePure = process.env.USE_PURE_AUTH_SERVICE === 'true';
-
-    if (usePure) {
-        diContainer.loggerService.info('Using pure AuthService implementation', {
-            featureFlag: 'USE_PURE_AUTH_SERVICE',
-            implementation: 'pure'
-        });
-        return diContainer.authService;
-    } else {
-        diContainer.loggerService.info('Using legacy auth service implementation', {
-            featureFlag: 'USE_PURE_AUTH_SERVICE',
-            implementation: 'legacy'
-        });
-        return legacyAuthService;
-    }
+export function selectAuthService(): AuthService {
+    diContainer.loggerService.info('Using pure AuthService implementation', {
+        implementation: 'pure',
+        phase: 'post-migration'
+    });
+    return diContainer.authService;
 }
 
 /**
@@ -93,31 +68,7 @@ export function selectPositionService(): PositionService {
     }
 }
 
-/**
- * Bot Status Service Selector
- *
- * Selects between pure and legacy bot status service implementations
- * based on USE_PURE_BOT_STATUS_SERVICE environment flag.
- */
-export function selectBotStatusService(): BotStatusService | typeof legacyBotStatusService {
-    const usePure = process.env.USE_PURE_BOT_STATUS_SERVICE === 'true';
-
-    if (usePure) {
-        diContainer.loggerService.info('Using pure BotStatusService implementation', {
-            featureFlag: 'USE_PURE_BOT_STATUS_SERVICE',
-            implementation: 'pure'
-        });
-        // Note: Pure bot status service would need to be added to DI container
-        // For now, return legacy service
-        return legacyBotStatusService;
-    } else {
-        diContainer.loggerService.info('Using legacy bot status service implementation', {
-            featureFlag: 'USE_PURE_BOT_STATUS_SERVICE',
-            implementation: 'legacy'
-        });
-        return legacyBotStatusService;
-    }
-}
+// Bot status service selector removed - not currently used in application
 
 /**
  * Service Status Reporter

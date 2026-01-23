@@ -17,7 +17,7 @@
  */
 
 // Export auth-related services
-export { authService } from './auth.service';
+export { selectAuthService, selectBalanceService } from '../service-selector';
 export { roleManagementService } from './role-management.service';
 
 // Note: Type exports are not available yet - services need to be updated to export interfaces
