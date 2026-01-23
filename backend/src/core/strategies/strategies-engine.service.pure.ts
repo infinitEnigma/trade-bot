@@ -1,5 +1,5 @@
 /**
- * Pure Trading Engine Service - Clean Architecture Implementation
+ * Pure Strategies Engine Service - Clean Architecture Implementation
  *
  * Business logic for trading engine management with complete infrastructure abstraction.
  * This service contains pure business logic and depends only on interfaces from shared.
@@ -28,13 +28,13 @@ export interface IProcessManager {
     }>;
 }
 
-export interface TradingEngineServiceDependencies {
+export interface StrategiesEngineServiceDependencies {
     processManager: IProcessManager;
     logger: ILogger;
 }
 
 /**
- * Legacy Trading Engine Status - For API compatibility during migration
+ * Legacy Strategies Engine Status - For API compatibility during migration
  */
 export interface LegacyEngineStatus {
     running: boolean;
@@ -46,13 +46,13 @@ export interface LegacyEngineStatus {
 }
 
 /**
- * Pure Trading Engine Service
+ * Pure Strategies Engine Service
  *
  * Implements trading engine business logic using dependency injection.
  * No direct dependencies on child_process, file system, or external processes.
  */
-export class TradingEngineService {
-    constructor(private deps: TradingEngineServiceDependencies) { }
+export class StrategiesEngineService {
+    constructor(private deps: StrategiesEngineServiceDependencies) { }
 
     /**
      * Ensure trading engine is running
@@ -70,7 +70,7 @@ export class TradingEngineService {
             // Check if already running
             const status = await this.deps.processManager.getStatus();
             if (status.running) {
-                this.deps.logger.debug('Trading engine already running', {
+                this.deps.logger.debug('Strategies engine already running', {
                     pid: status.pid,
                     uptime: status.uptime
                 });
@@ -88,10 +88,10 @@ export class TradingEngineService {
             // Validate the process is running
             const newStatus = await this.deps.processManager.getStatus();
             if (!newStatus.running) {
-                throw new Error('Trading engine process failed to start');
+                throw new Error('Strategies engine process failed to start');
             }
 
-            this.deps.logger.info('Trading engine started successfully', {
+            this.deps.logger.info('Strategies engine started successfully', {
                 pid: newStatus.pid
             });
 
@@ -126,7 +126,7 @@ export class TradingEngineService {
                 } : undefined
             };
 
-            this.deps.logger.debug('Trading engine status retrieved', {
+            this.deps.logger.debug('Strategies engine status retrieved', {
                 running: engineStatus.running,
                 uptime: engineStatus.health?.uptime
             });
@@ -166,7 +166,7 @@ export class TradingEngineService {
 
                 const stopped = await this.deps.processManager.kill('SIGTERM');
                 if (stopped) {
-                    this.deps.logger.info('Trading engine stopped successfully');
+                    this.deps.logger.info('Strategies engine stopped successfully');
                 } else {
                     this.deps.logger.warn('Failed to stop trading engine gracefully');
                 }
@@ -195,7 +195,7 @@ export class TradingEngineService {
 
             const killed = await this.deps.processManager.kill('SIGKILL');
             if (killed) {
-                this.deps.logger.info('Trading engine force stopped successfully');
+                this.deps.logger.info('Strategies engine force stopped successfully');
             } else {
                 this.deps.logger.warn('Failed to force stop trading engine');
             }
@@ -240,6 +240,6 @@ export class TradingEngineService {
 }
 
 // Export factory function for creating service instances
-export function createTradingEngineService(deps: TradingEngineServiceDependencies): TradingEngineService {
-    return new TradingEngineService(deps);
+export function createStrategiesEngineService(deps: StrategiesEngineServiceDependencies): StrategiesEngineService {
+    return new StrategiesEngineService(deps);
 }

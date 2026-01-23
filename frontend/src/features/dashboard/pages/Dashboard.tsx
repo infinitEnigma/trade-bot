@@ -29,7 +29,7 @@ import { useBalance } from "../../strategies/balance/hooks";
 import { Container, Grid, Section } from "../../../shared/components/layout";
 
 // Lazy load heavy components
-const PriceChart = React.lazy(() => import("../../../components/PriceChart"));
+const PriceChart = React.lazy(() => import("../components/PriceChart"));
 const WalletConnectDialog = React.lazy(() =>
   import("../../../components/WalletConnectDialog").then(module => ({
     default: module.WalletConnectDialog,

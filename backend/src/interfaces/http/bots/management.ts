@@ -82,7 +82,7 @@ import {
 import { getCorrelationId, getContextForLogging } from "../../../shared/utils/context";
 import { validators } from "../../middleware/validation";
 import { withCredentials, SecureCredentials } from "../../../infrastructure/security/encryption.service"; // ✅ Secure credential handling
-import { engineManager } from "../../../core/trading/engine-manager.service";
+import { engineManager } from "../../../core/strategies/engine-manager.service";
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service"; // ✅ Rate limiting
 import { UserRole } from "@trade-bot/shared";
 import logger from "../../../core/logging/logger.service";
@@ -362,7 +362,7 @@ router.post(
 
             // ✅ POSITION VALIDATION: Validate position size before starting bot
             const { validateUserPosition } =
-                await import("../../../core/trading/position-validator.service.js");
+                await import("../../../core/strategies/position-validator.service.js");
             const validation = await validateUserPosition(
                 req.user!.userId,
                 parseFloat(notionalAmount),

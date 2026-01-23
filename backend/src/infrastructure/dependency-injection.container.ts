@@ -27,7 +27,7 @@ import { auditLogRepositoryAdapter } from './adapters/repositories/audit-log-rep
 // Pure Services
 import { BalanceService } from '../core/wallet/balance.service.pure';
 import { AuthService } from '../core/auth/auth.service.pure';
-import { PositionService } from '../core/trading/position.service.pure';
+import { PositionService } from '../core/strategies/position.service.pure';
 
 /**
  * Dependency Injection Container

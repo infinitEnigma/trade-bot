@@ -35,7 +35,7 @@ import { ProcessSpawner } from "./process-spawner";
 import { HealthMonitor, EngineHealth } from "./health-monitor";
 import { RestartManager } from "./restart-manager";
 import { CircuitBreaker } from "./circuit-breaker";
-import { ErrorCategory, ErrorSeverity } from "../../../core/notifications/error-notification.service";
+import { ErrorCategory, ErrorSeverity } from "../../notifications/error-notification.service";
 
 export enum ProcessState {
     STOPPED = 'stopped',       // Process not running (terminal)

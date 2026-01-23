@@ -2,10 +2,10 @@
 
 import axios from "axios";
 import { query } from "../../database/pool";
-import { logger } from "../../core/logging";
+import { logger } from "../logging";
 import { generateOrderlySignature } from "../../shared/utils/orderly-signature";
 import { withCredentials, SecureCredentials } from "../../infrastructure/security/encryption.service";
-import { positionSyncService } from "../trading/position-sync.service"; // ✅ Single source of truth
+import { positionSyncService } from "./position-sync.service"; // ✅ Single source of truth
 import { redisService } from "../../infrastructure";
 
 export interface AccountLimits {

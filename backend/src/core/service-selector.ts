@@ -11,7 +11,7 @@
 import { diContainer } from '../infrastructure/dependency-injection.container';
 import { BalanceService } from './wallet/balance.service.pure';
 import { AuthService } from './auth/auth.service.pure';
-import { PositionService } from './trading/position.service.pure';
+import { PositionService } from './strategies/position.service.pure';
 
 // Legacy services have been removed - pure services are now active
 

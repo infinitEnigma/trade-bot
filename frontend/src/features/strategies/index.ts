@@ -20,7 +20,7 @@ export type {
 
 // Strategies subdomain
 export { StrategyList, StrategyCard } from "./components";
-export { useStrategies } from "./strategies/hooks";
+//export { useStrategies } from "./strategies/hooks";
 export { strategyService } from "./services";
 
 // Bots subdomain

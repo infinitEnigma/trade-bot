@@ -23,7 +23,7 @@
  */
 
 import axios from "axios";
-import { logger } from "../../core/logging";
+import { logger } from "../logging";
 import {
   ProcessSpawner,
   HealthMonitor,

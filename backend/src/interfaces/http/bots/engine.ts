@@ -8,7 +8,7 @@
 import { Router, Request, Response } from "express";
 import { query } from "../../../database/pool";
 // Bot services have been removed - using direct database operations instead
-import { engineManager } from "../../../core/trading/engine-manager.service";
+import { engineManager } from "../../../core/strategies/engine-manager.service";
 import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../../../core/notifications/error-notification.service";
 import logger from "../../../core/logging/logger.service";
 
