@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { marketApi } from "../../infrastructure/api";
 import { CandleData } from "../../components/CandlestickChart";
+import { useAuth } from "../../features/auth";
 
 /**
  * Data freshness metadata from backend responses
@@ -264,9 +265,9 @@ export const useLivePrices = ({
  * Uses appropriate data sources based on user subscription level
  */
 export const useCurrentPrice = (symbol: string) => {
-  // TODO: Implement user level detection
-  // For now, assume basic user level - will be enhanced with auth integration
-  const userLevel = 'BASIC'; // 'BASIC' | 'REGISTERED' | 'VERIFIED'
+  const { user } = useAuth();
+  // Get actual user level from auth, default to BASIC if not authenticated
+  const userLevel = user?.userLevel || 'BASIC'; // 'BASIC' | 'REGISTERED' | 'VERIFIED'
 
   return useQuery({
     queryKey: ["current-price", symbol, userLevel],
