@@ -17,6 +17,44 @@ export interface KodiakStatus {
 }
 
 /**
+ * Kodiak API Response Interfaces
+ * Match backend API response structure
+ */
+export interface KodiakConnectResponse {
+    success: boolean;
+    message?: string;
+    data?: {
+        accountId: string;
+        connected: boolean;
+        verified: boolean;
+        userLevel?: string;
+    };
+    error?: string;
+}
+
+export interface KodiakDisconnectResponse {
+    success: boolean;
+    message?: string;
+    error?: string;
+}
+
+export interface KodiakBalanceResponse {
+    success: boolean;
+    data?: {
+        totalBalance: string;
+        availableBalance: string;
+        lockedBalance: string;
+        currency: string;
+        assets?: Array<{
+            asset: string;
+            free: string;
+            locked: string;
+        }>;
+    };
+    error?: string;
+}
+
+/**
  * Kodiak API Service
  * Handles Kodiak trading platform integration
  */
@@ -25,7 +63,7 @@ class KodiakApi {
      * Connect Kodiak credentials
      * Frontend sends encrypted credentials to backend for validation and storage
      */
-    async connectKodiak(credentials: KodiakCredentials): Promise<any> {
+    async connectKodiak(credentials: KodiakCredentials): Promise<KodiakConnectResponse> {
         return httpClient.getClient().post('/api/user/kodiak/connect', credentials);
     }
 
@@ -33,7 +71,7 @@ class KodiakApi {
      * Disconnect Kodiak credentials
      * Backend handles credential removal and user level downgrade
      */
-    async disconnectKodiak(): Promise<any> {
+    async disconnectKodiak(): Promise<KodiakDisconnectResponse> {
         return httpClient.getClient().post('/api/user/kodiak/disconnect');
     }
 
@@ -41,14 +79,14 @@ class KodiakApi {
      * Get Kodiak connection status
      * Backend returns encrypted status information
      */
-    async getKodiakStatus(): Promise<any> {
+    async getKodiakStatus(): Promise<{ success: boolean; data?: KodiakStatus; error?: string }> {
         return httpClient.getClient().get('/api/user/kodiak/status');
     }
 
     /**
      * Get Kodiak account balance
      */
-    async getKodiakBalance(): Promise<any> {
+    async getKodiakBalance(): Promise<{ success: boolean; data?: KodiakBalanceResponse; error?: string }> {
         return httpClient.getClient().get('/api/user/kodiak/balance');
     }
 

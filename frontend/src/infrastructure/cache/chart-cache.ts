@@ -1,5 +1,8 @@
 /** @format */
 
+import { CandleData } from "../../features/strategies/components/CandlestickChart";
+import { PriceDataPoint } from "../../features/analytics/types/analytics.types";
+
 /**
  * LRU Cache for Chart Data
  *
@@ -7,8 +10,25 @@
  * with automatic cleanup and configurable limits.
  */
 
+/**
+ * Union type for supported chart data formats
+ * CandleData - Used for trading charts with 'time' property
+ * PriceDataPoint - Used for analytics with 'timestamp' property
+ */
+type ChartCacheData = CandleData[] | PriceDataPoint[];
+
+/**
+ * Browser Performance Memory API interface
+ * Used for memory pressure detection in supported browsers
+ */
+interface MemoryInfo {
+    totalJSHeapSize: number;
+    usedJSHeapSize: number;
+    jsHeapSizeLimit: number;
+}
+
 interface CacheEntry {
-    data: any[];
+    data: ChartCacheData;
     timestamp: number;
     accessCount: number;
     lastAccessed: number;
@@ -44,7 +64,7 @@ class ChartDataLRUCache {
     }
 
     // Get data from cache
-    get(key: string): any[] | null {
+    get(key: string): ChartCacheData | null {
         const entry = this.cache.get(key);
         if (!entry) return null;
 
@@ -62,7 +82,7 @@ class ChartDataLRUCache {
     }
 
     // Set data in cache
-    set(key: string, data: any[]): void {
+    set(key: string, data: ChartCacheData): void {
         // Limit data points per entry
         const limitedData = data.slice(-this.options.maxDataPoints);
 
@@ -212,7 +232,7 @@ class ChartDataLRUCache {
         try {
             // Use Performance.memory if available (Chrome/Edge)
             if ('memory' in performance) {
-                const memInfo = (performance as any).memory;
+                const memInfo = performance.memory as unknown as MemoryInfo;
                 const usedPercent = memInfo.usedJSHeapSize / memInfo.totalJSHeapSize;
                 return {
                     pressure: usedPercent,

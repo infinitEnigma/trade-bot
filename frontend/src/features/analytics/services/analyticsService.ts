@@ -129,7 +129,8 @@ export class AnalyticsService {
         // Check cache first
         const cachedData = chartDataCache.get(cacheKey);
         if (cachedData) {
-            return cachedData;
+            // Type assertion: analytics cache only stores PriceDataPoint[]
+            return cachedData as PriceDataPoint[];
         }
 
         // Load from API

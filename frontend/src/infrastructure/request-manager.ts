@@ -7,15 +7,15 @@
  * Works as a singleton that coordinates requests globally.
  */
 
-interface PendingRequest {
-    promise: Promise<any>;
+interface PendingRequest<T> {
+    promise: Promise<T>;
     timestamp: number;
     clientId: string;
 }
 
 class GlobalRequestManager {
     private static instance: GlobalRequestManager;
-    private pendingRequests = new Map<string, PendingRequest>();
+    private pendingRequests = new Map<string, PendingRequest<unknown>>();
     private requestTimeout = 30000; // 30 seconds
 
     private constructor() { }
@@ -36,7 +36,7 @@ class GlobalRequestManager {
         requestFn: () => Promise<T>,
         clientId: string = 'unknown'
     ): Promise<T> {
-        const existing = this.pendingRequests.get(key);
+        const existing = this.pendingRequests.get(key) as PendingRequest<T> | undefined;
 
         if (existing && (Date.now() - existing.timestamp) < this.requestTimeout) {
             console.log(`🔄 Global deduplication: reusing request for ${key} from ${existing.clientId}`);

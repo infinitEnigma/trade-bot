@@ -9,6 +9,7 @@ import {
   CrosshairMode,
   CandlestickSeries,
   HistogramSeries,
+  Time,
 } from "lightweight-charts";
 import { useChartData } from "../hooks/useChartData";
 import { useVisibility } from "../../../shared/hooks/useVisibility";
@@ -178,10 +179,10 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       return;
     }
 
-    try {
+      try {
       // Transform data for the chart
       const chartDataForDisplay = chartData.map(item => ({
-        time: item.time as any, // Lightweight-charts expects number | string
+        time: item.time as Time, // Cast to Time type for lightweight-charts
         open: item.open,
         high: item.high,
         low: item.low,
@@ -195,7 +196,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       const volumeData = chartData
         .filter(item => item.volume !== undefined)
         .map(item => ({
-          time: item.time as any,
+          time: item.time as Time, // Cast to Time type for lightweight-charts
           value: item.volume || 0,
           color: item.close >= item.open ? "#10b981" : "#ef4444", // Green for up, red for down
         }));

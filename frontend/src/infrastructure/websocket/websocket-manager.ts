@@ -8,9 +8,65 @@
  */
 import { Socket } from "socket.io-client";
 
+/**
+ * WebSocket Data Types
+ * These interfaces define the structure of data received from WebSocket connections
+ */
+
+interface MarketData {
+    symbol: string;
+    timestamp: number;
+    type: 'ticker' | 'kline' | 'orderbook' | 'markprice';
+}
+
+interface TickerData extends MarketData {
+    type: 'ticker';
+    price: string;
+    change24h: string;
+    volume24h: string;
+    high24h: string;
+    low24h: string;
+    mark_price: string;
+    index_price: string;
+    open_interest: string;
+    est_funding_rate: string;
+}
+
+interface KlineData extends MarketData {
+    type: 'kline';
+    time: number;
+    open: string;
+    high: string;
+    low: string;
+    close: string;
+    volume: string;
+    interval: string;
+}
+
+interface OrderbookData extends MarketData {
+    type: 'orderbook';
+    bids: Array<[string, string]>; // [price, quantity]
+    asks: Array<[string, string]>; // [price, quantity]
+    timestamp: number;
+}
+
+interface MarkPriceData extends MarketData {
+    type: 'markprice';
+    price: string;
+    funding_rate: string;
+    next_funding_time: number;
+    impact_ask_price: string;
+    impact_bid_price: string;
+}
+
+/**
+ * Union type for all possible WebSocket data types
+ */
+type WebSocketData = TickerData | KlineData | OrderbookData | MarkPriceData;
+
 interface SubscriptionCallback {
     id: string;
-    callback: (data: any) => void;
+    callback: (data: WebSocketData) => void;
 }
 
 interface SubscriptionInfo {
@@ -40,7 +96,7 @@ class WebSocketSubscriptionManager {
     }
 
     // Subscribe to a symbol with ref counting
-    subscribe(symbol: string, callback: (data: any) => void): string {
+    subscribe(symbol: string, callback: (data: WebSocketData) => void): string {
         const callbackId = `cb-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
         let subscription = this.subscriptions.get(symbol);
@@ -172,7 +228,7 @@ class WebSocketSubscriptionManager {
     }
 
     // Handle incoming data for a symbol
-    handleData(symbol: string, data: any): void {
+    handleData(symbol: string, data: WebSocketData): void {
         const subscription = this.subscriptions.get(symbol);
         if (!subscription) return;
 

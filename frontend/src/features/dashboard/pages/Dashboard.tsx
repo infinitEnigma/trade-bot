@@ -28,6 +28,45 @@ import { LoadingSpinner } from "../../../shared/components/ui";
 import { useBalance } from "../../strategies/balance/hooks";
 import { Container, Grid, Section } from "../../../shared/components/layout";
 
+// Type definitions for Dashboard components
+interface StatsCardProps {
+  title: string;
+  value: number;
+  icon: React.ComponentType<{ className?: string }>;
+  format?: 'currency' | 'number';
+}
+
+interface PortfolioChartProps {
+  data: PerformanceData[];
+  selectedSymbol?: string;
+  onSymbolChange?: (symbol: string) => void;
+}
+
+interface Position {
+  symbol: string;
+  position_qty: string;
+  average_open_price: string;
+  mark_price: string;
+  unsettled_pnl: string;
+  side?: string;
+}
+
+interface Trade {
+  symbol: string;
+  side: string;
+  closed_position_qty: string;
+  avg_close_price: string;
+  avg_open_price: string;
+  realized_pnl: string;
+  close_timestamp?: number;
+  open_timestamp?: number;
+}
+
+interface PerformanceData {
+  time: string;
+  value: number;
+}
+
 // Lazy load heavy components
 const PriceChart = React.lazy(() => import("../components/PriceChart"));
 const WalletConnectDialog = React.lazy(() =>
@@ -36,7 +75,7 @@ const WalletConnectDialog = React.lazy(() =>
   }))
 );
 // Components removed during cleanup - using simple alternatives
-const StatsCard = ({ title, value, icon: Icon, format }: any) => (
+const StatsCard = ({ title, value, icon: Icon, format }: StatsCardProps) => (
   <div className="glass-card p-6">
     <div className="flex items-center justify-between mb-4">
       <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
@@ -50,7 +89,7 @@ const StatsCard = ({ title, value, icon: Icon, format }: any) => (
   </div>
 );
 
-const PortfolioChart = ({ data }: any) => (
+const PortfolioChart = ({ data }: PortfolioChartProps) => (
   <div className="h-80 flex items-center justify-center">
     <div className="text-center">
       <Activity className="w-12 h-12 text-textMuted mx-auto mb-4" />
@@ -64,7 +103,7 @@ const PortfolioChart = ({ data }: any) => (
 
 // Calculate real portfolio performance from trades data
 const calculatePortfolioPerformance = (
-  trades: any[],
+  trades: Trade[],
   initialBalance = 10000, // TODO: find first balance, replace arbitrary 10000
   currentTime = Date.now()
 ) => {
@@ -145,7 +184,7 @@ const Dashboard: React.FC = () => {
     ? positionsData.data?.rows || []
     : [];
   const profitablePositions = positions.filter(
-    (p: any) => p.unsettled_pnl >= 0
+    (p: Position) => parseFloat(p.unsettled_pnl || "0") >= 0
   ).length;
 
   // Process balance data from useBalance hook
@@ -250,20 +289,15 @@ const Dashboard: React.FC = () => {
                       <StatsCard
                         title="Wallet Balance"
                         value={realBalance?.walletBalance || 0}
-                        change={0}
                         icon={Wallet}
-                        color="primary"
                         format="currency"
-                        loading={realBalanceLoading}
                       />
                     )}
                     {index === 1 && (
                       <StatsCard
                         title="Account Balance"
                         value={realBalance?.accountBalance || 0}
-                        change={0}
                         icon={DollarSign}
-                        color="success"
                         format="currency"
                       />
                     )}
@@ -271,9 +305,7 @@ const Dashboard: React.FC = () => {
                       <StatsCard
                         title="Available Balance"
                         value={realBalance?.availableBalance || 0}
-                        change={0}
                         icon={Activity}
-                        color="warning"
                         format="currency"
                       />
                     )}
@@ -281,9 +313,7 @@ const Dashboard: React.FC = () => {
                       <StatsCard
                         title="Total Assets"
                         value={realBalance?.totalAssets || 0}
-                        change={0}
                         icon={TrendingUp}
-                        color="info"
                         format="currency"
                       />
                     )}
@@ -427,7 +457,7 @@ const Dashboard: React.FC = () => {
             />
 
             <div className="overflow-x-auto rounded-xl border border-white/5">
-              <table className="table-enhanced w-full min-w-[600px]">
+              <table className="table-enhanced w-full min-w-150">
                 <thead>
                   <tr>
                     <th className="text-left">Symbol</th>
@@ -475,7 +505,7 @@ const Dashboard: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    positions.map((position: any, index: number) => {
+                    positions.map((position: Position, index: number) => {
                       const pnl = parseFloat(position.unsettled_pnl || "0");
                       const size = parseFloat(position.position_qty || "0");
                       const markPrice = parseFloat(position.mark_price || "0");
@@ -630,7 +660,7 @@ const Dashboard: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    tradesData.data.rows.map((trade: any, index: number) => {
+                    tradesData.data.rows.map((trade: Trade, index: number) => {
                       const timestamp = new Date(
                         trade.close_timestamp ||
                           trade.open_timestamp ||

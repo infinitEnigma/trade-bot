@@ -11,6 +11,7 @@ export interface KodiakStatus {
     accountId?: string;
     connectedAt?: string;
     verified?: boolean;
+    userLevel?: string;
 }
 
 export interface AccountOverview {
@@ -40,11 +41,21 @@ export interface SettingsState {
     error: string | null;
 }
 
+/**
+ * Form validation state interface
+ */
+export interface ValidationState {
+    fieldErrors?: Record<string, string>;
+    formError?: string;
+    isValid?: boolean;
+    touched?: Record<string, boolean>;
+}
+
 export interface ProfileState {
     isEditing: boolean;
     isSaving: boolean;
     formData: ProfileFormData;
-    validation: any; // Using existing validation types
+    validation: ValidationState;
 }
 
 export interface SettingsActions {

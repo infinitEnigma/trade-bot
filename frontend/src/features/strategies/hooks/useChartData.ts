@@ -22,9 +22,33 @@ interface DataFreshnessMetadata {
 }
 
 /**
+ * TradingView data format - separated arrays for each candle property
+ */
+interface TradingViewData {
+  t: number[]; // timestamps
+  o: number[]; // opens
+  h: number[]; // highs
+  l: number[]; // lows
+  c: number[]; // closes
+  v?: number[]; // volumes (optional)
+}
+
+/**
+ * Kline data format from API responses
+ */
+interface KlineData {
+  time: number;
+  open: string | number;
+  high: string | number;
+  low: string | number;
+  close: string | number;
+  volume?: string | number;
+}
+
+/**
  * Enhanced response with freshness metadata
  */
-interface FreshnessAwareResponse<T = any> {
+interface FreshnessAwareResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
@@ -36,6 +60,22 @@ interface FreshnessAwareResponse<T = any> {
   message?: string;
 }
 
+/**
+ * Ticker data structure
+ */
+interface TickerData {
+  price: string;
+  change24h?: string;
+  volume24h?: string;
+}
+
+/**
+ * Mark price data structure
+ */
+interface MarkPriceData {
+  price: string;
+}
+
 interface UseChartDataOptions {
   symbol: string;
   interval: string;
@@ -43,7 +83,7 @@ interface UseChartDataOptions {
 }
 
 // Transform TradingView separated arrays to candle objects
-const transformTradingViewData = (tvData: any): CandleData[] => {
+const transformTradingViewData = (tvData: TradingViewData): CandleData[] => {
   if (!tvData || typeof tvData !== "object") {
     return [];
   }
@@ -165,7 +205,7 @@ export const useChartHistorical = ({
         }
       };
 
-      const response: FreshnessAwareResponse = await marketApi.getTvHistory({
+      const response: FreshnessAwareResponse<TradingViewData> = await marketApi.getTvHistory({
         symbol,
         resolution: getResolution(interval),
         from: fromTimestamp,
@@ -240,13 +280,13 @@ export const useLivePrices = ({
       if (response.success && response.data && response.data.length > 0) {
         // Transform to candle format
         const liveCandles: CandleData[] = response.data.map(
-          (kline: any) => ({
+          (kline: KlineData) => ({
             time: kline.time,
-            open: parseFloat(kline.open),
-            high: parseFloat(kline.high),
-            low: parseFloat(kline.low),
-            close: parseFloat(kline.close),
-            volume: parseFloat(kline.volume || 0),
+            open: parseFloat(String(kline.open)),
+            high: parseFloat(String(kline.high)),
+            low: parseFloat(String(kline.low)),
+            close: parseFloat(String(kline.close)),
+            volume: parseFloat(String(kline.volume || 0)),
           })
         );
         return liveCandles;
@@ -278,7 +318,7 @@ export const useCurrentPrice = (symbol: string) => {
       try {
         // For BASIC users: Use public ticker (may be unavailable)
         if (userLevel === 'BASIC') {
-          const response: FreshnessAwareResponse = await marketApi.getTicker(symbol);
+          const response: FreshnessAwareResponse<TickerData> = await marketApi.getTicker(symbol);
 
           if (response.success && response.data) {
             console.log(`💰 Got public ticker price: $${response.data.price}`);
@@ -299,7 +339,7 @@ export const useCurrentPrice = (symbol: string) => {
         }
 
         // For REGISTERED/VERIFIED users: Use authenticated mark price
-        const response: FreshnessAwareResponse = await marketApi.getMarkPrice(symbol);
+        const response: FreshnessAwareResponse<MarkPriceData> = await marketApi.getMarkPrice(symbol);
 
         if (response.success && response.data) {
           console.log(`💰 Got authenticated mark price: $${response.data.price}`);
@@ -313,7 +353,7 @@ export const useCurrentPrice = (symbol: string) => {
         } else {
           // Authenticated data unavailable - fallback to public if possible
           console.warn(`💰 Authenticated mark price unavailable for ${symbol}, trying public fallback`);
-          const publicResponse: FreshnessAwareResponse = await marketApi.getTicker(symbol);
+          const publicResponse: FreshnessAwareResponse<TickerData> = await marketApi.getTicker(symbol);
 
           if (publicResponse.success && publicResponse.data) {
             console.log(`💰 Fallback to public ticker: $${publicResponse.data.price}`);

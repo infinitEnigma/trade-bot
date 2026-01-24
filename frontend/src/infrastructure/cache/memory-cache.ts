@@ -10,8 +10,8 @@ interface CacheEntry<T> {
  * Simple in-memory cache with TTL support
  * Used for caching API responses and computed data
  */
-class MemoryCache {
-    private cache = new Map<string, CacheEntry<any>>();
+class MemoryCache<T = unknown> {
+    private cache = new Map<string, CacheEntry<T>>();
     private static instance: MemoryCache;
 
     private constructor() {
@@ -25,7 +25,7 @@ class MemoryCache {
         return MemoryCache.instance;
     }
 
-    public set<T>(key: string, data: T, ttl: number = 5 * 60 * 1000): void {
+    public set(key: string, data: T, ttl: number = 5 * 60 * 1000): void {
         const entry: CacheEntry<T> = {
             data,
             timestamp: Date.now(),
@@ -34,8 +34,8 @@ class MemoryCache {
         this.cache.set(key, entry);
     }
 
-    public get<T>(key: string): T | null {
-        const entry = this.cache.get(key) as CacheEntry<T> | undefined;
+    public get(key: string): T | null {
+        const entry = this.cache.get(key);
 
         if (!entry) {
             return null;

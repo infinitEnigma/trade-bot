@@ -54,12 +54,13 @@ export class SettingsService {
     async getKodiakStatus(): Promise<KodiakStatus> {
         try {
             const response = await kodiakApi.getKodiakStatus();
-            if (response.data?.success) {
+            if (response.success && response.data) {
                 return {
-                    connected: response.data?.connected || false,
-                    accountId: response.data?.accountId,
-                    connectedAt: response.data?.connectedAt,
-                    verified: response.data?.verified,
+                    connected: response.data.connected || false,
+                    accountId: response.data.accountId,
+                    connectedAt: response.data.connectedAt,
+                    verified: response.data.verified,
+                    userLevel: response.data.userLevel,
                 };
             }
             return { connected: false };

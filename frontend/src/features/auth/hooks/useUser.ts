@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authApi } from "../../../infrastructure/api/auth";
 import { kodiakApi } from "../../../infrastructure/api/kodiak";
 import { useAuth, updateAuthUser } from "./useAuth";
+import { UserLevel } from "@trade-bot/shared";
 
 /**
  * React Query hook for user data with caching and deduplication
@@ -71,7 +72,7 @@ export const useConnectKodiak = () => {
 
             // Directly update the Zustand store with new user level (immediate UI update)
             if (response.data?.userLevel) {
-                updateAuthUser({ userLevel: response.data.userLevel });
+                updateAuthUser({ userLevel: response.data.userLevel as UserLevel });
             }
         },
     });

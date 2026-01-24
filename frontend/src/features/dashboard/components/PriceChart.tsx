@@ -19,8 +19,38 @@ interface PriceChartProps {
   resolution?: string;
 }
 
+/**
+ * Chart point data structure for Recharts
+ */
+interface ChartPoint {
+  time: string;
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  price: number;
+  ma20?: number; // Optional moving average
+}
+
+/**
+ * Custom tooltip props from Recharts
+ */
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: Array<{
+    payload: ChartPoint;
+    value: number;
+    dataKey: string;
+    name: string;
+    stroke: string;
+  }>;
+  label?: string;
+}
+
 // Custom tooltip component for price charts - moved outside to avoid recreation
-const CustomTooltip = ({ active, payload, label }: any) => {
+const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
@@ -112,7 +142,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
       }
 
       // historyData is already transformed candle data from useChartHistorical
-      const chartPoints: any[] = [];
+      const chartPoints: ChartPoint[] = [];
       const prices: number[] = [];
 
       // Process the candle data directly
@@ -120,7 +150,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         const time = new Date(candle.time * 1000);
         const price = candle.close;
 
-        chartPoints.push({
+        const point: ChartPoint = {
           time: time.toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
@@ -132,8 +162,9 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
           close: candle.close,
           volume: candle.volume || 0,
           price, // For line chart
-        });
+        };
 
+        chartPoints.push(point);
         prices.push(price);
       });
 
@@ -144,14 +175,14 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
             // Calculate MA(20) for points that have enough historical data
             const sum = prices.slice(i - 19, i + 1).reduce((a, b) => a + b, 0);
             const avg = sum / 20;
-            (chartPoints[i] as any).ma20 = avg;
+            chartPoints[i].ma20 = avg;
           } else {
             // For early points, show MA if we have at least some data
             const availableData = Math.min(i + 1, 20);
             const startIndex = Math.max(0, i - 19);
             const sum = prices.slice(startIndex, i + 1).reduce((a, b) => a + b, 0);
             const avg = sum / availableData;
-            (chartPoints[i] as any).ma20 = avg;
+            chartPoints[i].ma20 = avg;
           }
         }
       } else if (prices.length >= 5) {
@@ -161,7 +192,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
           const startIndex = Math.max(0, i - 4); // Simple MA(5) for fewer data points
           const sum = prices.slice(startIndex, i + 1).reduce((a, b) => a + b, 0);
           const avg = sum / availableData;
-          (chartPoints[i] as any).ma20 = avg;
+          chartPoints[i].ma20 = avg;
         }
       }
 
@@ -181,9 +212,9 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         ? chartData[chartData.length - 1].price - chartData[chartData.length - 2].price
         : 0);
 
-    const priceChangePercent = currentPriceData?.change24h ?
+    const priceChangePercent = currentPriceData?.change24h && currentPrice !== null ?
       ((priceChange / (currentPrice - priceChange)) * 100) :
-      (chartData.length > 1
+      (chartData.length > 1 && currentPrice !== null
         ? (priceChange / chartData[chartData.length - 2].price) * 100
         : 0);
 
