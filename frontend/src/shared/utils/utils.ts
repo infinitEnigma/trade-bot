@@ -87,7 +87,7 @@ export function getGradientClass(
 /**
  * Debounce function for performance optimization
  */
-export function debounce<T extends (...args: any[]) => any>(
+/*export function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
@@ -96,7 +96,7 @@ export function debounce<T extends (...args: any[]) => any>(
     clearTimeout(timeout);
     timeout = setTimeout(() => func(...args), wait);
   };
-}
+}*/
 
 /**
  * Truncates text with ellipsis

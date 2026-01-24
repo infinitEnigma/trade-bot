@@ -79,7 +79,7 @@ export const useAnalytics = ({
             unsubscribe();
             subscriptionIdRef.current = null;
         };
-    }, [symbol, timeWindow.value, timeWindow.days, enabled, userLevel, subscriptionId, handleAnalyticsUpdate]);
+    }, [symbol, timeWindow, enabled, userLevel, subscriptionId, handleAnalyticsUpdate]);
 
     // Get time windows
     const timeWindows = analyticsService.getTimeWindows();
@@ -102,9 +102,11 @@ export const useAnalytics = ({
 
     // Cleanup on unmount
     useEffect(() => {
+        // Copy ref value to local variable to avoid accessing ref during cleanup
+        const abortController = abortControllerRef.current;
         return () => {
-            if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
+            if (abortController) {
+                abortController.abort();
             }
         };
     }, []);

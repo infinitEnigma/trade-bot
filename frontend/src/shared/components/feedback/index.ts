@@ -13,7 +13,8 @@ export {
     ListSkeleton,
     ProfileSkeleton,
     ContentSkeleton,
-    LoadingStates,
 } from "./EnhancedLoading";
+
+export { LoadingStates } from "./loading-config";
 
 export { default as AnalyticsLoading } from "./AnalyticsLoading";

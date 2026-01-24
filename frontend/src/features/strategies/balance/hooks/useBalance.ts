@@ -1,6 +1,6 @@
 /** @format */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { UserLevel, Balance as DomainBalance } from "@trade-bot/shared";
 import { globalBalanceManager } from "../../../../shared/services/balance-manager";
 import { useAuth } from "../../../auth";
@@ -42,7 +42,7 @@ export const useBalance = (autoRefresh: boolean = true) => {
     const hookId = `balance-hook-${Math.random().toString(36).substr(2, 9)}`;
 
     // Initial fetch (only for VERIFIED users)
-    const fetchBalance = async () => {
+    const fetchBalance = useCallback(async () => {
         // Don't fetch for BASIC users
         if (user?.userLevel !== UserLevel.VERIFIED) {
             setBalance(null);
@@ -79,7 +79,7 @@ export const useBalance = (autoRefresh: boolean = true) => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [user?.userLevel]);
 
     // Manual refresh function using global manager
     const refresh = async () => {
@@ -96,7 +96,7 @@ export const useBalance = (autoRefresh: boolean = true) => {
     // Initial fetch
     useEffect(() => {
         fetchBalance();
-    }, []);
+    }, [fetchBalance]);
 
     // Subscribe to global balance manager for auto-refresh
     useEffect(() => {

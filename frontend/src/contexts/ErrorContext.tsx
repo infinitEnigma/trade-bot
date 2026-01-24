@@ -1,47 +1,8 @@
 /** @format */
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
-import type { ErrorType, ErrorAction } from "../shared/components/ui/ErrorState";
-
-interface ErrorState {
-  id: string;
-  timestamp: Date;
-  type?: ErrorType;
-  title?: string;
-  message?: string;
-  description?: string;
-  actions?: ErrorAction[];
-  showReport?: boolean;
-  showHome?: boolean;
-  className?: string;
-  size?: "sm" | "md" | "lg" | "xl";
-  icon?: React.ReactNode;
-  // Recovery UI state
-  status?: 'idle' | 'pending' | 'success' | 'failed';
-  retryCount?: number;
-  lastRetryAt?: Date;
-  maxRetries?: number;
-  retryCooldownMs?: number;
-  // Advanced recovery features
-  circuitBreakerState?: 'closed' | 'open' | 'half-open';
-  consecutiveFailures?: number;
-  lastFailureAt?: Date;
-  backoffMultiplier?: number;
-  nextRetryAt?: Date;
-}
-
-interface ErrorContextValue {
-  errors: ErrorState[];
-  addError: (error: Omit<ErrorState, 'id' | 'timestamp'>) => string;
-  removeError: (id: string) => void;
-  clearErrors: () => void;
-  updateError: (id: string, updates: Partial<ErrorState>) => void;
-  retryError: (id: string) => void;
-  hasErrors: boolean;
-  errorCount: number;
-}
-
-const ErrorContext = createContext<ErrorContextValue | undefined>(undefined);
+import React, { useState, useCallback, useEffect } from "react";
+import { useErrorContext } from "./error-hooks";
+import { ErrorContext, ErrorState } from "./error-context";
 
 interface ErrorProviderProps {
   children: React.ReactNode;
@@ -250,7 +211,7 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [errors.length, clearErrors]);
 
-  const value: ErrorContextValue = {
+  const value = {
     errors,
     addError,
     removeError,
@@ -268,63 +229,6 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
   );
 };
 
-// Hook to use error context
-export const useErrorContext = (): ErrorContextValue => {
-  const context = useContext(ErrorContext);
-  if (!context) {
-    throw new Error('useErrorContext must be used within an ErrorProvider');
-  }
-  return context;
-};
-
-// Helper hook for component-level error handling
-export const useErrorHandler = () => {
-  const { addError, removeError } = useErrorContext();
-
-  const handleError = useCallback((
-    type: ErrorType,
-    title?: string,
-    message?: string,
-    actions?: ErrorAction[]
-  ) => {
-    return addError({ type, title, message, actions });
-  }, [addError]);
-
-  const handleNetworkError = useCallback((message?: string) => {
-    return handleError('network', undefined, message);
-  }, [handleError]);
-
-  const handleAuthError = useCallback((message?: string) => {
-    return handleError('auth', undefined, message);
-  }, [handleError]);
-
-  const handleValidationError = useCallback((message?: string) => {
-    return handleError('validation', undefined, message);
-  }, [handleError]);
-
-  const handleServerError = useCallback((message?: string) => {
-    return handleError('server', undefined, message);
-  }, [handleError]);
-
-  const handleTimeoutError = useCallback((message?: string) => {
-    return handleError('timeout', undefined, message);
-  }, [handleError]);
-
-  const handlePermissionError = useCallback((message?: string) => {
-    return handleError('permission', undefined, message);
-  }, [handleError]);
-
-  return {
-    handleError,
-    handleNetworkError,
-    handleAuthError,
-    handleValidationError,
-    handleServerError,
-    handleTimeoutError,
-    handlePermissionError,
-    removeError,
-  };
-};
 
 // Error notification component
 interface ErrorNotificationsProps {
@@ -428,4 +332,3 @@ export const ErrorNotifications: React.FC<ErrorNotificationsProps> = ({
   );
 };
 
-export default ErrorContext;

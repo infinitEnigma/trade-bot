@@ -14,132 +14,26 @@ import {
   Lock,
 } from "lucide-react";
 import { Card } from "./Card";
+import { errorConfigs } from "./error-utils";
+import { ErrorType, ErrorAction, ErrorStateProps } from "./error-types";
 
-export type ErrorType =
-  | "network"
-  | "auth"
-  | "permission"
-  | "validation"
-  | "server"
-  | "timeout"
-  | "not-found"
-  | "maintenance"
-  | "rate-limit"
-  | "unknown";
-
-export interface ErrorAction {
-  label: string;
-  onClick: () => void;
-  icon?: React.ReactNode;
-  variant?: "primary" | "secondary" | "ghost";
-  disabled?: boolean;
-}
-
-export interface ErrorStateProps {
-  type?: ErrorType;
-  title?: string;
-  message?: string;
-  description?: string;
-  actions?: ErrorAction[];
-  showReport?: boolean;
-  showHome?: boolean;
-  className?: string;
-  size?: "sm" | "md" | "lg" | "xl";
-}
-
-// Error type configurations
-const errorConfigs = {
-  network: {
-    icon: <Wifi className="w-8 h-8" />,
-    title: "Connection Lost",
-    message: "Unable to connect to our servers",
-    description: "Please check your internet connection and try again.",
-    color: "text-blue-400",
-    bgColor: "bg-blue-500/10",
-    borderColor: "border-blue-500/20",
-  },
-  auth: {
-    icon: <Lock className="w-8 h-8" />,
-    title: "Authentication Required",
-    message: "You need to sign in to continue",
-    description: "Please log in to access this feature.",
-    color: "text-orange-400",
-    bgColor: "bg-orange-500/10",
-    borderColor: "border-orange-500/20",
-  },
-  permission: {
-    icon: <Shield className="w-8 h-8" />,
-    title: "Access Denied",
-    message: "You don't have permission to view this",
-    description: "Contact your administrator if you believe this is an error.",
-    color: "text-yellow-400",
-    bgColor: "bg-yellow-500/10",
-    borderColor: "border-yellow-500/20",
-  },
-  validation: {
-    icon: <AlertCircle className="w-8 h-8" />,
-    title: "Invalid Input",
-    message: "Please check your information",
-    description: "Some fields contain errors. Please review and try again.",
-    color: "text-red-400",
-    bgColor: "bg-red-500/10",
-    borderColor: "border-red-500/20",
-  },
-  server: {
-    icon: <Server className="w-8 h-8" />,
-    title: "Server Error",
-    message: "Something went wrong on our end",
-    description: "We're working to fix this issue. Please try again later.",
-    color: "text-red-400",
-    bgColor: "bg-red-500/10",
-    borderColor: "border-red-500/20",
-  },
-  timeout: {
-    icon: <Clock className="w-8 h-8" />,
-    title: "Request Timeout",
-    message: "The request took too long to complete",
-    description: "Please check your connection and try again.",
-    color: "text-yellow-400",
-    bgColor: "bg-yellow-500/10",
-    borderColor: "border-yellow-500/20",
-  },
-  "not-found": {
-    icon: <XCircle className="w-8 h-8" />,
-    title: "Not Found",
-    message: "The page you're looking for doesn't exist",
-    description: "The content may have been moved or deleted.",
-    color: "text-gray-400",
-    bgColor: "bg-gray-500/10",
-    borderColor: "border-gray-500/20",
-  },
-  maintenance: {
-    icon: <AlertTriangle className="w-8 h-8" />,
-    title: "Under Maintenance",
-    message: "We're currently updating our systems",
-    description: "We'll be back online shortly. Thank you for your patience.",
-    color: "text-blue-400",
-    bgColor: "bg-blue-500/10",
-    borderColor: "border-blue-500/20",
-  },
-  "rate-limit": {
-    icon: <Clock className="w-8 h-8" />,
-    title: "Too Many Requests",
-    message: "You've made too many requests",
-    description: "Please wait a moment before trying again.",
-    color: "text-orange-400",
-    bgColor: "bg-orange-500/10",
-    borderColor: "border-orange-500/20",
-  },
-  unknown: {
-    icon: <AlertTriangle className="w-8 h-8" />,
-    title: "Something Went Wrong",
-    message: "An unexpected error occurred",
-    description: "Please try again or contact support if the issue persists.",
-    color: "text-red-400",
-    bgColor: "bg-red-500/10",
-    borderColor: "border-red-500/20",
-  },
+// Helper function to get icon component from icon name
+const getIconComponent = (iconName: string) => {
+  const iconMap: Record<string, React.ReactNode> = {
+    Wifi: <Wifi className="w-8 h-8" />,
+    Lock: <Lock className="w-8 h-8" />,
+    Shield: <Shield className="w-8 h-8" />,
+    AlertCircle: <AlertCircle className="w-8 h-8" />,
+    Server: <Server className="w-8 h-8" />,
+    Clock: <Clock className="w-8 h-8" />,
+    XCircle: <XCircle className="w-8 h-8" />,
+    AlertTriangle: <AlertTriangle className="w-8 h-8" />,
+  };
+  return iconMap[iconName] || <AlertTriangle className="w-8 h-8" />;
 };
+
+
+
 
 export const ErrorState: React.FC<ErrorStateProps> = ({
   type = "unknown",
@@ -205,7 +99,7 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
         <div className="text-center">
           <div className="flex justify-center mb-4">
             <div className={`w-16 h-16 rounded-full ${config.bgColor} flex items-center justify-center`}>
-              {config.icon}
+              {getIconComponent(config.icon)}
             </div>
           </div>
 
@@ -319,7 +213,11 @@ export class ErrorBoundary extends React.Component<
   },
   ErrorBoundaryState
 > {
-  constructor(props: any) {
+  constructor(props: {
+    children: React.ReactNode;
+    fallback?: React.ComponentType<{ error?: Error; resetError: () => void }>;
+    onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
+  }) {
     super(props);
     this.state = { hasError: false };
   }
@@ -375,31 +273,5 @@ export class ErrorBoundary extends React.Component<
     return this.props.children;
   }
 }
-
-// Hook for component-level error handling
-export const useErrorHandler = () => {
-  const [error, setError] = React.useState<ErrorStateProps | null>(null);
-
-  const handleError = React.useCallback((errorProps: ErrorStateProps) => {
-    setError(errorProps);
-  }, []);
-
-  const clearError = React.useCallback(() => {
-    setError(null);
-  }, []);
-
-  const retry = React.useCallback(() => {
-    clearError();
-    // Additional retry logic can be added here
-  }, [clearError]);
-
-  return {
-    error,
-    handleError,
-    clearError,
-    retry,
-    hasError: !!error,
-  };
-};
 
 export default ErrorState;
