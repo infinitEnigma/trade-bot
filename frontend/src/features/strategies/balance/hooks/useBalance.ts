@@ -96,7 +96,7 @@ export const useBalance = (autoRefresh: boolean = true) => {
     // Initial fetch
     useEffect(() => {
         fetchBalance();
-    }, [user?.userLevel === UserLevel.VERIFIED]);
+    }, []);
 
     // Subscribe to global balance manager for auto-refresh
     useEffect(() => {

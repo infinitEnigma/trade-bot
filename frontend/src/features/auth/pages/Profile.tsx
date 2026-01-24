@@ -84,7 +84,7 @@ const Profile: React.FC = () => {
       SmartToast.success("Profile updated successfully!");
       setIsEditing(false);
 
-    } catch (error) {
+    } catch {
       SmartToast.error("Failed to update profile. Please try again.");
     } finally {
       setIsSaving(false);

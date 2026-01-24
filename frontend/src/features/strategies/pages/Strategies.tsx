@@ -32,7 +32,7 @@ const Strategies: React.FC = React.memo(() => {
   const [kodiakError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
-  const [_selectedSymbol, _setSelectedSymbol] = useState("PERP_BTC_USDC");
+  const [_selectedSymbol] = useState("PERP_BTC_USDC");
   const queryClient = useQueryClient();
 
   // Note: Kodiak connectivity check removed for simplicity
@@ -233,7 +233,7 @@ const Strategies: React.FC = React.memo(() => {
         <div className="mb-8">
           <Suspense fallback={<div className="glass-card p-6 animate-pulse">
             <div className="w-32 h-5 bg-surface rounded mb-4"></div>
-            <div className="bg-surface rounded-lg h-[450px]"></div>
+            <div className="bg-surface rounded-lg h-110"></div>
           </div>}>
             <CandlestickChart
               symbol={_selectedSymbol}

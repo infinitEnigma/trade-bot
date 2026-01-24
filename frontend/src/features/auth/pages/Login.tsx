@@ -75,7 +75,7 @@ const Login: React.FC = () => {
     try {
       await login({ email, password });
       // AuthContext will handle redirect when isAuthenticated becomes true
-    } catch (error) {
+    } catch {
       // Error is already handled in the context
     } finally {
       setLoading(false);

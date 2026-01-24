@@ -19,6 +19,37 @@ interface PriceChartProps {
   resolution?: string;
 }
 
+// Custom tooltip component for price charts - moved outside to avoid recreation
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="glass-card p-3 border border-white/10">
+        <p className="text-sm font-medium">{`Time: ${label}`}</p>
+        <p className="text-sm text-success">{`Open: $${data.open?.toFixed(
+          2
+        )}`}</p>
+        <p className="text-sm text-primary">{`High: $${data.high?.toFixed(
+          2
+        )}`}</p>
+        <p className="text-sm text-danger">{`Low: $${data.low?.toFixed(
+          2
+        )}`}</p>
+        <p className="text-sm text-text">{`Close: $${data.close?.toFixed(
+          2
+        )}`}</p>
+        {data.ma20 && (
+          <p className="text-sm text-warning">{`MA(20): $${data.ma20?.toFixed(
+            2
+          )}`}</p>
+        )}
+        <p className="text-sm text-info">{`Volume: ${data.volume?.toLocaleString()}`}</p>
+      </div>
+    );
+  }
+  return null;
+};
+
 const PriceChart: React.FC<PriceChartProps> = React.memo(
   ({ symbol = "PERP_BTC_USDC", resolution = "1" }) => {
     const [selectedSymbol, setSelectedSymbol] = useState(symbol);
@@ -69,8 +100,10 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
       error: priceError,
     } = useCurrentPrice(selectedSymbol);
 
-    // Extract candles from the response object
-    const historyData = historyResult?.candles || [];
+    // Extract candles from the response object - memoized to prevent unnecessary recalculations
+    const historyData = useMemo(() => {
+      return historyResult?.candles || [];
+    }, [historyResult]);
 
     // Transform TradingView data to Recharts format - memoized for performance
     const chartData = useMemo(() => {
@@ -98,7 +131,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
           low: candle.low,
           close: candle.close,
           volume: candle.volume || 0,
-          price: price, // For line chart
+          price, // For line chart
         });
 
         prices.push(price);
@@ -153,37 +186,6 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
       (chartData.length > 1
         ? (priceChange / chartData[chartData.length - 2].price) * 100
         : 0);
-
-    // Custom tooltip for price data
-    const CustomTooltip = ({ active, payload, label }: any) => {
-      if (active && payload && payload.length) {
-        const data = payload[0].payload;
-        return (
-          <div className="glass-card p-3 border border-white/10">
-            <p className="text-sm font-medium">{`Time: ${label}`}</p>
-            <p className="text-sm text-success">{`Open: $${data.open?.toFixed(
-              2
-            )}`}</p>
-            <p className="text-sm text-primary">{`High: $${data.high?.toFixed(
-              2
-            )}`}</p>
-            <p className="text-sm text-danger">{`Low: $${data.low?.toFixed(
-              2
-            )}`}</p>
-            <p className="text-sm text-text">{`Close: $${data.close?.toFixed(
-              2
-            )}`}</p>
-            {data.ma20 && (
-              <p className="text-sm text-warning">{`MA(20): $${data.ma20?.toFixed(
-                2
-              )}`}</p>
-            )}
-            <p className="text-sm text-info">{`Volume: ${data.volume?.toLocaleString()}`}</p>
-          </div>
-        );
-      }
-      return null;
-    };
 
     return (
       <Card className="mb-8">

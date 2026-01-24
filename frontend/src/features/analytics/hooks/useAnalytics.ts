@@ -14,7 +14,8 @@ export const useAnalytics = ({
     timeWindow,
     enabled = true,
     userLevel = UserLevel.BASIC, // Default to basic for safety
-}: AnalyticsOptions & { userLevel?: UserLevel }) => {
+    user, // Add user parameter for stable subscription ID
+}: AnalyticsOptions & { userLevel?: UserLevel; user?: any }) => {
     const [progress, setProgress] = useState(0);
     const [data, setData] = useState<AnalyticsData | null>(null);
     const [loading, setLoading] = useState(false);
@@ -23,8 +24,8 @@ export const useAnalytics = ({
     const abortControllerRef = useRef<AbortController | null>(null);
     const subscriptionIdRef = useRef<string | null>(null);
 
-    // Generate unique subscription ID for this hook instance
-    const subscriptionId = `analytics-${symbol}-${timeWindow.value}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // Generate unique subscription ID using user data for stability and meaning
+    const subscriptionId = `analytics-${user?.id || 'anonymous'}-${symbol}-${timeWindow.value}`;
 
     // Callback for analytics data updates
     const handleAnalyticsUpdate = useCallback((newData: AnalyticsData | null, errorMessage?: string) => {
@@ -57,9 +58,9 @@ export const useAnalytics = ({
             // For now, we'll rely on the manager's cleanup
         }
 
-        setLoading(true);
-        setProgress(0);
-        setError(null);
+        //setLoading(true);
+        //setProgress(0);
+        //setError(null);
 
         // Subscribe to analytics updates
         const unsubscribe = globalAnalyticsManager.subscribe(

@@ -31,7 +31,7 @@ const Register: React.FC = () => {
     try {
       await register({ email, password });
       navigate("/dashboard");
-    } catch (error) {
+    } catch {
       // Error is already handled in the context
     } finally {
       setLoading(false);

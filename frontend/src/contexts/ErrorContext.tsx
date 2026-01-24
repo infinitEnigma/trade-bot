@@ -203,7 +203,7 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
           removeError(id);
         }, 2000);
 
-      } catch (_retryError) {
+      } catch {
         // On failure, update circuit breaker state
         const newConsecutiveFailures = consecutiveFailures + 1;
         const newCircuitState = getCircuitBreakerState({

@@ -94,16 +94,17 @@ const Analytics: React.FC = () => {
     value: '30d'
   });
 
+  // Load analytics data - moved before conditional to comply with Rules of Hooks
+  const { data, loading, error, progress, timeWindows, refetch } = useAnalytics({
+    symbol: selectedSymbol,
+    timeWindow: selectedTimeWindow,
+    user, // Pass user data for stable subscription ID
+  });
+
   // Check if user has QUALIFIED_ALPHA role
   if (!user?.roles?.includes(UserRole.QUALIFIED_ALPHA)) {
     return <AccessDenied requiredRole="QUALIFIED_ALPHA" />;
   }
-
-  // Load analytics data
-  const { data, loading, error, progress, timeWindows, refetch } = useAnalytics({
-    symbol: selectedSymbol,
-    timeWindow: selectedTimeWindow,
-  });
 
   return (
     <div className="container mx-auto px-4 py-10 space-y-10 bg-background">

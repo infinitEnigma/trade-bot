@@ -134,7 +134,7 @@ export class AnalyticsService {
 
         // Load from API
         const response = await marketApi.getTvHistory({
-            symbol: symbol,
+            symbol,
             resolution: '1D', // Daily data for analytics
             from: Math.floor(startDate.getTime() / 1000),
             to: Math.floor(endDate.getTime() / 1000),
@@ -227,7 +227,7 @@ export class AnalyticsService {
             worstDay: `${worstDay.toFixed(1)}%`,
             sharpeRatio: 1.8, // Mock
             maxDrawdown: Math.abs(worstDay), // Simplified
-            volatility: volatility,
+            volatility,
             beta: 0.85, // Mock
             alpha: 3.2, // Mock
             marketCorrelation: 0.72, // Mock

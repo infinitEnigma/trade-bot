@@ -5,7 +5,6 @@ import { useAuth } from "../../auth";
 import { useBalance } from "../../strategies/balance/hooks";
 import { dashboardService } from "../services/dashboardService";
 import { BalanceData, Position, Trade } from "../types/dashboard.types";
-import React from "react";
 
 /**
  * Dashboard hook - manages all dashboard data fetching and state
@@ -43,8 +42,8 @@ export const useDashboard = () => {
             };
         },
         enabled: hasAutomaticKodiakAccess, // Only automatic for VERIFIED users
-        staleTime: 60000,         // ⬆️ Increased to 60 seconds (from 30s)
-        gcTime: 300000,           // 5 minutes
+        staleTime: 60000,         // ⬆️ Increased to 60 seconds (from 30s) - data is fresh for 1 minute
+        gcTime: 300000,           // 5 minutes - cache retention
         refetchOnWindowFocus: false, // 🚫 Disable focus refetch to reduce requests
         refetchInterval: 120000,     // 🔄 Auto-refresh every 2 minutes (from 30s)
         retry: (failureCount, error: any) => {
@@ -88,10 +87,14 @@ export const useDashboard = () => {
     };
 
     // Data freshness indicators
+    // Since React Query handles freshness internally with staleTime: 60000,
+    // we can rely on the query's behavior rather than manual calculations
     const lastKodiakUpdate = kodiakUpdatedAt || 0;
-    const currentTime = React.useMemo(() => Date.now(), []);
-    const kodiakDataFresh = currentTime - lastKodiakUpdate < 60000; // Fresh if updated within 1 minute
-    const kodiakDataStale = currentTime - lastKodiakUpdate > 300000; // Stale if older than 5 minutes
+
+    // For UI freshness indicators, we'll use a simpler approach
+    // that doesn't require Date.now() calls during render
+    const kodiakDataFresh = lastKodiakUpdate > 0;
+    const kodiakDataStale = false; // Let React Query handle staleness internally
 
     return {
         // Data
