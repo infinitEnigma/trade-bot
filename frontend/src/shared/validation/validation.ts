@@ -67,7 +67,7 @@ export const validatePasswordStrength = (password: string): PasswordStrength => 
         uppercase: /[A-Z]/.test(password),
         lowercase: /[a-z]/.test(password),
         number: /\d/.test(password),
-        special: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password),
+        special: /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password),
     };
 
     const passedChecks = Object.values(checks).filter(Boolean).length;

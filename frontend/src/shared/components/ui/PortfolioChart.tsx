@@ -3,8 +3,44 @@
 import React from "react";
 import { Card } from "./Card";
 
+interface PortfolioData {
+  // Basic portfolio metrics
+  totalBalance: number;
+  totalPnl: number;
+  availableBalance: number;
+
+  // Performance metrics
+  dailyChange: number;
+  weeklyChange: number;
+  monthlyChange: number;
+
+  // Asset allocation
+  assets?: Array<{
+    symbol: string;
+    value: number;
+    percentage: number;
+    change24h: number;
+  }>;
+
+  // Historical performance data for charting
+  historicalData?: Array<{
+    date: string | Date;
+    value: number;
+  }>;
+
+  // Current positions
+  positions?: Array<{
+    symbol: string;
+    quantity: number;
+    entryPrice: number;
+    currentPrice: number;
+    pnl: number;
+    pnlPercentage: number;
+  }>;
+}
+
 interface PortfolioChartProps {
-  data?: any;
+  data?: PortfolioData;
   selectedSymbol?: string;
   onSymbolChange?: (symbol: string) => void;
 }

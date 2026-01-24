@@ -21,13 +21,13 @@ export const marketApi = {
         );
     },
 
-    async getFuturesPrice(symbol: string) {
+    /*async getFuturesPrice(symbol: string) {
         return globalRequestManager.deduplicateRequest(
             `market:futures:${symbol}`,
             () => httpClient.getClient().get(`/api/market/futures/${symbol}`).then(r => r.data),
             "marketApi"
         );
-    },
+    },*/
 
     async getMarkPrice(symbol: string) {
         return globalRequestManager.deduplicateRequest(

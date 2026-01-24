@@ -21,6 +21,7 @@ import { UserRole } from "@trade-bot/shared";
 // Components
 import { LoadingSpinner } from "./shared/components/ui";
 import { AppHeader } from "./components/ui/AppHeader";
+import { getWebSocketUrl } from "./infrastructure/config";
 
 // Lazy load pages
 const Login = React.lazy(() => import("./features/auth/pages/Login"));
@@ -257,7 +258,7 @@ const ConditionalWebSocketInitializer = () => {
       console.log('📡 Initializing WebSocket for VERIFIED user:', user.email);
 
       // Initialize WebSocket connection for market data
-      const socket = io("https://rewireapp.ddns.net", {
+      const socket = io(getWebSocketUrl(), {
         withCredentials: true,
         transports: ["websocket", "polling"],
       });

@@ -6,6 +6,7 @@
  * Prevents race conditions and duplicate subscriptions by maintaining
  * reference counting for each symbol subscription.
  */
+import { Socket } from "socket.io-client";
 
 interface SubscriptionCallback {
     id: string;
@@ -21,11 +22,11 @@ interface SubscriptionInfo {
 
 class WebSocketSubscriptionManager {
     private subscriptions = new Map<string, SubscriptionInfo>();
-    private socket: any = null;
+    private socket: Socket | null = null;
     private connectionId: string | null = null;
 
     // Set the WebSocket connection
-    setSocket(socket: any, connectionId?: string) {
+    setSocket(socket: Socket, connectionId?: string) {
         // Clean up previous connection
         if (this.socket && this.connectionId !== connectionId) {
             this.cleanup();

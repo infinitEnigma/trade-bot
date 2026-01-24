@@ -1,7 +1,7 @@
 /** @format */
 
 import { useEffect, useState } from "react";
-import { UserLevel } from "@trade-bot/shared";
+import { UserLevel, Balance as DomainBalance } from "@trade-bot/shared";
 import { globalBalanceManager } from "../../../../shared/services/balance-manager";
 import { useAuth } from "../../../auth";
 
@@ -12,6 +12,20 @@ export interface Balance {
     reservedBalance: number;
     totalAssets: number;
     timestamp: string;
+}
+
+/**
+ * Convert domain Balance class to legacy format for frontend compatibility
+ */
+function convertDomainBalanceToLegacy(domainBalance: DomainBalance): Balance {
+    return {
+        walletBalance: domainBalance.total,
+        accountBalance: domainBalance.total,
+        availableBalance: domainBalance.available,
+        reservedBalance: domainBalance.locked,
+        totalAssets: domainBalance.total,
+        timestamp: domainBalance.lastUpdated.toISOString()
+    };
 }
 
 /**
@@ -44,7 +58,16 @@ export const useBalance = (autoRefresh: boolean = true) => {
             // Use global manager's last known data first
             const lastData = globalBalanceManager.getLastBalanceData();
             if (lastData) {
-                setBalance(lastData);
+                // Handle both domain Balance class and legacy format
+                let balanceToSet: Balance | null = null;
+                if (lastData instanceof DomainBalance) {
+                    // Convert domain balance to legacy format
+                    balanceToSet = convertDomainBalanceToLegacy(lastData);
+                } else if (lastData && typeof lastData === 'object' && 'timestamp' in lastData) {
+                    // Already in legacy format
+                    balanceToSet = lastData as Balance;
+                }
+                setBalance(balanceToSet);
             }
 
             // Then trigger refresh (will notify subscribers via subscription)
@@ -73,7 +96,7 @@ export const useBalance = (autoRefresh: boolean = true) => {
     // Initial fetch
     useEffect(() => {
         fetchBalance();
-    }, [user?.userLevel]);
+    }, [user?.userLevel === UserLevel.VERIFIED]);
 
     // Subscribe to global balance manager for auto-refresh
     useEffect(() => {
@@ -86,7 +109,18 @@ export const useBalance = (autoRefresh: boolean = true) => {
         // Subscribe to global balance updates
         const unsubscribe = globalBalanceManager.subscribe(hookId, (newBalance) => {
             console.log(`💰 useBalance: Received update for ${hookId}`);
-            setBalance(newBalance);
+
+            // Handle both domain Balance class and legacy format
+            let balanceToSet: Balance | null = null;
+            if (newBalance instanceof DomainBalance) {
+                // Convert domain balance to legacy format
+                balanceToSet = convertDomainBalanceToLegacy(newBalance);
+            } else if (newBalance && typeof newBalance === 'object' && 'timestamp' in newBalance) {
+                // Already in legacy format
+                balanceToSet = newBalance as Balance;
+            }
+
+            setBalance(balanceToSet);
             setError(null);
         });
 

@@ -72,24 +72,24 @@ export const CACHE_TTL: CacheTTLConfig = {
     JWT_BLACKLIST: 30 * 24 * 60 * 60, // 30 days - matches longest token expiry
 
     // Market data (real-time trading data)
-    MARKET_TICK: 60, // 1 minute - high frequency price updates
-    MARKET_MARK_PRICE: 30, // 30 seconds - very high frequency mark prices
-    MARKET_KLINES_SHORT: 5 * 60, // 5 minutes - 1m, 5m candlestick data
+    MARKET_TICK: 10, // 1/2 minute - high frequency price updates
+    MARKET_MARK_PRICE: 10, // 1 second - very high frequency mark prices
+    MARKET_KLINES_SHORT: 1 * 60, // 5 minutes - 1m, 5m candlestick data
     MARKET_KLINES_MEDIUM: 15 * 60, // 15 minutes - 15m, 30m candlestick data
     MARKET_KLINES_LONG: 60 * 60, // 1 hour - 1h, 4h candlestick data
-    MARKET_FUTURES: 10 * 60, // 10 minutes - futures contract data (less volatile)
+    MARKET_FUTURES: 10, // 10 minutes - futures contract data (less volatile)
     MARKET_TRADINGVIEW_CONFIG: 5 * 60, // 5 minutes - TV widget config (rarely changes)
 
     // Rate limiting (must align with business rules)
     RATE_LIMIT_AUTH: 15 * 60, // 15 minutes - strict authentication limits
-    RATE_LIMIT_MARKET: 60, // 1 minute - moderate market data limits
-    RATE_LIMIT_TRADING: 60, // 1 minute - strict trading operation limits
-    RATE_LIMIT_GENERAL: 60, // 1 minute - general API rate limits
+    RATE_LIMIT_MARKET: 10, // 2 minutes - moderate market data limits
+    RATE_LIMIT_TRADING: 10, // 2 minutes - strict trading operation limits
+    RATE_LIMIT_GENERAL: 1 * 60, // 2 minutes - general API rate limits
 
     // Application data
     CREDENTIAL_CACHE: 5 * 60, // 5 minutes - encrypted API credentials
-    POSITION_CACHE: 30, // 30 seconds - open trading positions
-    BALANCE_CACHE: 30, // 30 seconds - account balance data
+    POSITION_CACHE: 10, // 60 seconds - open trading positions
+    BALANCE_CACHE: 10, // 60 seconds - account balance data
 
     // Temporary data
     TEMP_DATA_DEFAULT: 5 * 60, // 5 minutes - general temporary data
@@ -136,16 +136,16 @@ export const CACHE_TTL_DEV: CacheTTLConfig = {
  */
 export const DATA_FRESHNESS: DataFreshnessConfig = {
     // Market data update frequencies (in milliseconds) - MORE FREQUENT FOR PRICE DATA
-    MARKET_REALTIME: 2000, // WebSocket data updates every 2 seconds (price is very available)
-    MARKET_HIGH_FREQ: 10000, // High frequency data (10 seconds) - increased from 30s
+    MARKET_REALTIME: 1000, // WebSocket data updates every 1 seconds (price is very available)
+    MARKET_HIGH_FREQ: 5000, // High frequency data (5 seconds) - increased from 30s
     MARKET_MEDIUM_FREQ: 60000, // Medium frequency (1 minute) - increased from 5min for charts
     MARKET_LOW_FREQ: 300000, // Low frequency (5 minutes) - reduced from 15min
     MARKET_STATIC: 900000, // Static data (15 minutes) - reduced from 30min
 
     // Frontend polling guidance (recommended intervals in milliseconds) - MORE AGGRESSIVE POLLING
-    POLL_REALTIME: 5000, // Poll every 5 seconds for real-time data (price charts need frequent updates)
-    POLL_HIGH_FREQ: 15000, // Poll every 15 seconds for high frequency (good balance)
-    POLL_MEDIUM_FREQ: 30000, // Poll every 30 seconds for medium frequency (charts need updates)
+    POLL_REALTIME: 2000, // Poll every 2 seconds for real-time data (price charts need frequent updates)
+    POLL_HIGH_FREQ: 5000, // Poll every 5 seconds for high frequency (good balance)
+    POLL_MEDIUM_FREQ: 60000, // Poll every 60 seconds for medium frequency (charts need updates)
     POLL_LOW_FREQ: 120000, // Poll every 2 minutes for low frequency
     POLL_STATIC: 300000, // Poll every 5 minutes for static data
 

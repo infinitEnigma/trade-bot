@@ -2,7 +2,7 @@
 
 import { Router, Request, Response } from "express";
 import axios from "axios";
-import { selectAuthService } from "../../../core/service-selector";
+//import { selectAuthService } from "../../../core/service-selector";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { query } from "../../../database/pool"; // ✅ Import from centralized module
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth"; // ✅ Import centralized auth
@@ -17,13 +17,6 @@ import { getCacheConfig, getFullCacheConfig } from "../../../config/cache.config
 
 const router = Router();
 
-/*const pool = new Pool({
-  host: process.env.DB_HOST || "localhost",
-  port: parseInt(process.env.DB_PORT || "5432"),
-  database: process.env.DB_NAME || "trade_bot",
-  user: process.env.DB_USER || "postgres",
-  password: process.env.DB_PASSWORD || "postgres",
-});*/
 
 const KODIAK_API_BASE =
   process.env.KODIAK_API_URL || "https://api.orderly.org/v1";
@@ -97,7 +90,6 @@ router.get(
           status: apiError.response?.status,
         });
 
-        // CRITICAL: On a real money trading platform, NEVER show fake prices
         // Return clear error so user knows data is unavailable
         return res.status(503).json({
           success: false,
@@ -142,7 +134,6 @@ router.get(
         error: err.message,
       });
 
-      // CRITICAL: On a real money trading platform, NEVER show fake prices
       // Return clear error so user knows data is unavailable
       res.status(503).json({
         success: false,
@@ -184,7 +175,7 @@ router.get(
 
       const symbolStr = (symbol as string) || "PERP_BTC_USDC";
       const intervalStr = (interval as string) || "1h";
-      const limitNum = parseInt(limit as string) || 300;
+      const limitNum = parseInt(limit as string) || 500;
 
       // Get kline data from WebSocket cache
       const klines = await marketStreamService.getKlines(
@@ -274,7 +265,7 @@ router.get("/orderbook", async (req: Request, res: Response) => {
 });
 
 // GET /api/market/futures/:symbol - Futures market data (more detailed than ticker)
-router.get(
+/*router.get(
   "/futures/:symbol",
   RateLimiters.kodiakApi, // STRICT: 10 req/sec to match API limits
   RateLimiters.market,    // PERMISSIVE: 10,000 req/min for users
@@ -344,7 +335,7 @@ router.get(
       });
     }
   }
-);
+);*/
 
 // GET /api/market/markprice/:symbol - Mark price data (real-time via WebSocket)
 router.get(
@@ -531,7 +522,7 @@ router.get(
 // TradingView Public Endpoints (No authentication required)
 
 // GET /api/market/tv/config
-router.get("/tv/config", async (req: Request, res: Response) => {
+router.get("/tv/config", RateLimiters.market, async (req: Request, res: Response) => {
   try {
     const cacheKey = "tv:config";
     const cacheConfig = getCacheConfig();
@@ -576,7 +567,7 @@ router.get("/tv/config", async (req: Request, res: Response) => {
 });
 
 // GET /api/market/tv/symbols
-router.get("/tv/symbols", async (req: Request, res: Response) => {
+router.get("/tv/symbols", RateLimiters.market, async (req: Request, res: Response) => {
   try {
     const symbol = (req.query.symbol as string) || "PERP_BTC_USDC";
 
@@ -598,7 +589,7 @@ router.get("/tv/symbols", async (req: Request, res: Response) => {
 });
 
 // GET /api/market/tv/history - MOST IMPORTANT (used every 5 seconds by charts)
-router.get("/tv/history", async (req: Request, res: Response) => {
+router.get("/tv/history", RateLimiters.market, async (req: Request, res: Response) => {
   const { symbol, resolution, from, to } = req.query;
   const symbolStr = (symbol as string) || "PERP_BTC_USDC";
   const resolutionStr = (resolution as string) || "1";

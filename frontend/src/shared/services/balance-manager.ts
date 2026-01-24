@@ -9,9 +9,10 @@
  */
 
 import { balanceApi } from "../../infrastructure/api";
+import { Balance } from "@trade-bot/shared";
 
 interface BalanceSubscriber {
-    callback: (balance: any) => void;
+    callback: (balance: Balance) => void;
     id: string;
 }
 
@@ -19,7 +20,7 @@ class GlobalBalanceManager {
     private static instance: GlobalBalanceManager;
     private subscribers = new Map<string, BalanceSubscriber>();
     private refreshTimer: NodeJS.Timeout | null = null;
-    private lastBalanceData: any = null;
+    private lastBalanceData: Balance | null = null;
     private isRefreshing = false;
 
     private constructor() { }
@@ -34,7 +35,7 @@ class GlobalBalanceManager {
     /**
      * Subscribe to balance updates
      */
-    subscribe(id: string, callback: (balance: any) => void): () => void {
+    subscribe(id: string, callback: (balance: Balance) => void): () => void {
         console.log(`💰 Global Balance: Subscribing ${id}`);
 
         this.subscribers.set(id, { callback, id });
@@ -125,7 +126,7 @@ class GlobalBalanceManager {
     /**
      * Get last known balance data
      */
-    getLastBalanceData(): any {
+    getLastBalanceData(): Balance | null {
         return this.lastBalanceData;
     }
 

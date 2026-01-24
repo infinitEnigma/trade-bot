@@ -1,7 +1,7 @@
 /** @format */
 
 import React from "react";
-import { motion } from "framer-motion";
+import { motion, HTMLMotionProps } from "framer-motion";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../../utils";
 
@@ -34,11 +34,19 @@ const buttonVariants = cva(
   }
 );
 
-interface ButtonProps
+/*interface ButtonProps
   extends
     React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   loading?: boolean;
+}*/
+
+interface ButtonProps
+  extends
+    Omit<HTMLMotionProps<"button">, "ref">,
+    VariantProps<typeof buttonVariants> {
+  loading?: boolean;
+  children?: React.ReactNode; 
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
@@ -55,7 +63,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           stiffness: 400,
           damping: 17,
         }}
-        {...(props as any)}
+        {...props}
       >
         {loading && (
           <motion.div

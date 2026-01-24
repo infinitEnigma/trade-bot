@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { marketApi } from "../../../infrastructure/api";
 import { CandleData } from "../components/CandlestickChart";
 import { useAuth } from "../../auth";
+import React from "react";
 
 /**
  * Data freshness metadata from backend responses
@@ -335,8 +336,8 @@ export const useCurrentPrice = (symbol: string) => {
       }
     },
     enabled: !!symbol,
-    staleTime: userLevel === 'BASIC' ? 120000 : 60000, // Basic: 2min, Premium: 1min (was 15sec)
-    gcTime: 5 * 60 * 1000, // 5 minutes cache
+    staleTime: userLevel === 'BASIC' ? 10000 : 1000, // Basic: 2min, Premium: 1min (was 15sec)
+    gcTime: 1 * 10 * 1000, // 10 seconds cache
     retry: (failureCount, error) => {
       // Don't retry on 403/503 (auth/data unavailable errors)
       if (error instanceof Error) {
@@ -349,16 +350,16 @@ export const useCurrentPrice = (symbol: string) => {
     refetchInterval: (query) => {
       // Dynamic polling based on user level and data availability
       if (userLevel === 'BASIC') {
-        return 60000; // 1 minute for basic users
+        return 10000; // 10 seconds for basic users
       }
 
       // For premium users, check freshness metadata
       const data = query.state.data;
       if (data?.freshness?.recommendedPollInterval) {
-        return Math.max(data.freshness.recommendedPollInterval, 30000); // Min 30 seconds
+        return Math.max(data.freshness.recommendedPollInterval, 1000); // Min 1 seconds
       }
 
-      return 60000; // Default 60 seconds for premium users (was 10 seconds)
+      return 2000; // Default 2 seconds for premium users (was 10 seconds)
     },
     refetchIntervalInBackground: false,
   });
@@ -372,49 +373,43 @@ export const useChartData = ({
   symbol,
   interval,
 }: UseChartDataOptions) => {
-  const [data, setData] = useState<CandleData[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   // Get historical data (1x/minute)
   const historicalQuery = useChartHistorical({ symbol, interval });
 
   // Get live price updates (more frequent)
   const liveQuery = useLivePrices({ symbol, interval });
 
-  // Merge data when either query updates
-  useEffect(() => {
-    const historicalResult = historicalQuery.data;
-    const historicalData = historicalResult?.candles || [];
-    const liveData = liveQuery.data || [];
+  // Extract data from queries with useMemo
+  const historicalData = React.useMemo(() => {
+    return historicalQuery.data?.candles || [];
+  }, [historicalQuery.data]);
 
+  const liveData = React.useMemo(() => {
+    return liveQuery.data || [];
+  }, [liveQuery.data]);
+
+
+  // Merge data using React.useMemo to avoid unnecessary recalculations
+  const mergedData = React.useMemo(() => {
     if (historicalData.length > 0 || liveData.length > 0) {
-      // Merge historical + live data, with live data taking precedence
-      const mergedData = mergeCandleData(historicalData, liveData);
-      setData(mergedData);
-      setError(null);
+      return mergeCandleData(historicalData, liveData);
     }
-  }, [historicalQuery.data, liveQuery.data]);
+    return [];
+  }, [historicalData, liveData]);
 
-  // Set loading state
-  useEffect(() => {
-    setLoading(historicalQuery.isLoading || liveQuery.isLoading);
-  }, [historicalQuery.isLoading, liveQuery.isLoading]);
-
-  // Set error state (prioritize historical data errors)
-  useEffect(() => {
+  // Determine error state (prioritize historical data errors)
+  const error = React.useMemo(() => {
     if (historicalQuery.error) {
-      setError(historicalQuery.error?.message || "Failed to load historical data");
+      return historicalQuery.error?.message || "Failed to load historical data";
     } else if (liveQuery.error) {
-      setError(liveQuery.error?.message || "Failed to load live prices");
-    } else {
-      setError(null);
+      return liveQuery.error?.message || "Failed to load live prices";
     }
+    return null;
   }, [historicalQuery.error, liveQuery.error]);
 
   return {
-    data,
-    loading,
+    data: mergedData,
+    loading: historicalQuery.isLoading || liveQuery.isLoading,
     error,
     refetch: () => {
       historicalQuery.refetch();

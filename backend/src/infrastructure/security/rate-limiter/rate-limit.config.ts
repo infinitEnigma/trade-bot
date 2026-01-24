@@ -40,7 +40,7 @@ const ENVIRONMENT_MULTIPLIERS = {
 const USER_TIER_RATIOS = {
     [UserLevel.BASIC]: 1,       // Baseline limits
     [UserLevel.REGISTERED]: 1.5, // 50% more than basic
-    [UserLevel.VERIFIED]: 2.5,   // 2.5x more than basic
+    [UserLevel.VERIFIED]: 5,   // 2.5x more than basic
 } as const;
 
 /**

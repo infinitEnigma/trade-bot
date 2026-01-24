@@ -227,7 +227,7 @@ class ChartDataLRUCache {
                 pressure,
                 isHigh: pressure > this.options.memoryPressureThreshold
             };
-        } catch (error) {
+        } catch {
             // If memory detection fails, assume no pressure
             return { pressure: 0, isHigh: false };
         }

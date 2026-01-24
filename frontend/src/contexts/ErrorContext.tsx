@@ -138,7 +138,7 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
     if (circuitState === 'open') {
       console.warn(`Circuit breaker open for error ${id}, skipping retry`);
       updateError(id, {
-        message: error.message + ' (Circuit breaker open)',
+        message: `${error.message} Circuit breaker open`,
         circuitBreakerState: 'open'
       });
       return;
@@ -149,7 +149,7 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
       console.warn(`Max retries exceeded for error ${id}`);
       updateError(id, {
         status: 'failed',
-        message: error.message + ` (Max retries: ${maxRetries})`,
+        message: `${error.message}  Max retries: ${maxRetries}`,
         circuitBreakerState: 'open'
       });
       return;
@@ -181,7 +181,7 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
           retryCount: currentRetries + 1,
           lastRetryAt: new Date(),
           nextRetryAt: new Date(now + backoffDelay),
-          message: error.message + ' (Retrying...)',
+          message: `${error.message} Retrying...`,
           circuitBreakerState: circuitState === 'half-open' ? 'half-open' : 'closed',
           backoffMultiplier
         });
@@ -203,7 +203,7 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
           removeError(id);
         }, 2000);
 
-      } catch (retryError) {
+      } catch (_retryError) {
         // On failure, update circuit breaker state
         const newConsecutiveFailures = consecutiveFailures + 1;
         const newCircuitState = getCircuitBreakerState({

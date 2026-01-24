@@ -5,6 +5,7 @@ import { useAuth } from "../../auth";
 import { useBalance } from "../../strategies/balance/hooks";
 import { dashboardService } from "../services/dashboardService";
 import { BalanceData, Position, Trade } from "../types/dashboard.types";
+import React from "react";
 
 /**
  * Dashboard hook - manages all dashboard data fetching and state
@@ -88,8 +89,9 @@ export const useDashboard = () => {
 
     // Data freshness indicators
     const lastKodiakUpdate = kodiakUpdatedAt || 0;
-    const kodiakDataFresh = Date.now() - lastKodiakUpdate < 60000; // Fresh if updated within 1 minute
-    const kodiakDataStale = Date.now() - lastKodiakUpdate > 300000; // Stale if older than 5 minutes
+    const currentTime = React.useMemo(() => Date.now(), []);
+    const kodiakDataFresh = currentTime - lastKodiakUpdate < 60000; // Fresh if updated within 1 minute
+    const kodiakDataStale = currentTime - lastKodiakUpdate > 300000; // Stale if older than 5 minutes
 
     return {
         // Data

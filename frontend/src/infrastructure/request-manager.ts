@@ -66,7 +66,7 @@ class GlobalRequestManager {
         try {
             console.log(`🚀 Executing request: ${key} from ${clientId}`);
             const result = await requestFn();
-            console.log(`✅ Request completed: ${key}`);
+            console.log(`✅ Request completed: ${key} ${JSON.stringify(result)}`);
             return result;
         } finally {
             // Clean up after request completes (success or failure)

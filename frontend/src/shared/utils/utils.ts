@@ -173,7 +173,7 @@ export function sleep(ms: number): Promise<void> {
 /**
  * Checks if a value is empty
  */
-export function isEmpty(value: any): boolean {
+export function isEmpty(value: unknown): boolean {
   if (value === null || value === undefined) return true;
   if (typeof value === "string" && value.trim() === "") return true;
   if (Array.isArray(value) && value.length === 0) return true;
@@ -188,7 +188,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
     return true;
-  } catch (err) {
+  } catch {
     // Fallback for older browsers
     const textArea = document.createElement("textarea");
     textArea.value = text;
@@ -197,7 +197,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
     try {
       document.execCommand("copy");
       return true;
-    } catch (err) {
+    } catch {
       return false;
     } finally {
       document.body.removeChild(textArea);

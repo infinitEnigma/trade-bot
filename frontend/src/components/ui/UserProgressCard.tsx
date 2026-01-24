@@ -2,7 +2,7 @@
 
 import React from "react";
 import { useAuth } from "../../features/auth";
-import { UserLevel, UserRole } from "@trade-bot/shared";
+import { User, UserLevel, UserRole } from "@trade-bot/shared";
 import {
   CheckCircle,
   Lock,
@@ -170,7 +170,7 @@ const ProgressStepItem: React.FC<{
   </div>
 );
 
-const NextActionPrompt: React.FC<{ user: any }> = ({ user }) => {
+const NextActionPrompt: React.FC<{ user: User }> = ({ user }) => {
   if (user.roles && user.roles.includes(UserRole.QUALIFIED_ALPHA)) {
     return (
       <div className="mt-6 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
@@ -226,7 +226,7 @@ const NextActionPrompt: React.FC<{ user: any }> = ({ user }) => {
   return null;
 };
 
-const getNextStepLabel = (user: any): string => {
+const getNextStepLabel = (user: User): string => {
   if (user.roles && user.roles.includes(UserRole.QUALIFIED_ALPHA)) {
     return "Complete";
   }

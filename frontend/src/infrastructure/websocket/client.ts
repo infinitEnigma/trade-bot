@@ -1,6 +1,7 @@
 /** @format */
 
 import { io, Socket } from "socket.io-client";
+import { getWebSocketUrl } from "../config";
 
 /**
  * WebSocket client for real-time market data
@@ -21,7 +22,7 @@ class WebSocketClient {
         return WebSocketClient.instance;
     }
 
-    public connect(url: string = "https://rewireapp.ddns.net"): Socket {
+    public connect(url: string = getWebSocketUrl()): Socket {
         if (this.socket?.connected) {
             return this.socket;
         }

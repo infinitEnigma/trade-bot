@@ -1,6 +1,6 @@
 /** @format */
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   createChart,
   IChartApi,
@@ -37,9 +37,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const [isChartReady, setIsChartReady] = useState(false);
-  const [candleData, setCandleData] = useState<CandleData[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const isChartReady = useRef(false);
 
   // Visibility detection - pause WebSocket when page loses focus
   const isVisible = useVisibility();
@@ -50,23 +48,13 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     loading,
     error: chartError,
   } = useChartData({
-    symbol: symbol, // Use full symbol name for WebSocket subscriptions
+    symbol, //: symbol, // Use full symbol name for WebSocket subscriptions
     interval,
   });
 
-  // Update candle data when chart data changes
-  useEffect(() => {
-    if (chartData && chartData.length > 0) {
-      setCandleData(chartData);
-      setError(null);
-    } else if (chartError) {
-      setError(chartError);
-    }
-  }, [chartData, chartError]);
-
   // Initialize chart
   useEffect(() => {
-    if (!containerRef.current || error) return;
+    if (!containerRef.current || chartError) return;
 
     try {
       // Create chart instance with dark theme to match page style
@@ -77,7 +65,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
           fontFamily: "system-ui, -apple-system, sans-serif",
         },
         width: containerRef.current.clientWidth,
-        height: height,
+        height,
         timeScale: {
           timeVisible: true,
           secondsVisible: false,
@@ -153,7 +141,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       chartRef.current = chart;
       candlestickSeriesRef.current = candlestickSeries;
       volumeSeriesRef.current = volumeSeries;
-      setIsChartReady(true);
+      isChartReady.current = true;
 
       // Handle window resize
       const handleResize = () => {
@@ -171,27 +159,28 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         if (chart) {
           chart.remove();
         }
-        setIsChartReady(false);
+        isChartReady.current = false;
       };
     } catch (chartError) {
       console.error("Failed to create chart:", chartError);
     }
-  }, [height, error]);
+  }, [height, chartError]);
 
   // Update chart data when candleData changes
   useEffect(() => {
     if (
-      !isChartReady ||
+      !isChartReady.current ||
       !candlestickSeriesRef.current ||
       !volumeSeriesRef.current ||
-      candleData.length === 0
+      !chartData ||
+      chartData.length === 0
     ) {
       return;
     }
 
     try {
       // Transform data for the chart
-      const chartData = candleData.map(item => ({
+      const chartDataForDisplay = chartData.map(item => ({
         time: item.time as any, // Lightweight-charts expects number | string
         open: item.open,
         high: item.high,
@@ -200,10 +189,10 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       }));
 
       // Set candlestick data
-      candlestickSeriesRef.current.setData(chartData);
+      candlestickSeriesRef.current.setData(chartDataForDisplay);
 
       // Set volume data if available
-      const volumeData = candleData
+      const volumeData = chartData
         .filter(item => item.volume !== undefined)
         .map(item => ({
           time: item.time as any,
@@ -216,13 +205,13 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       }
 
       // Auto-fit the chart to show all data
-      if (chartRef.current && chartData.length > 0) {
+      if (chartRef.current && chartDataForDisplay.length > 0) {
         chartRef.current.timeScale().fitContent();
       }
     } catch (dataError) {
       console.error("Failed to update chart data:", dataError);
     }
-  }, [candleData, isChartReady, isVisible]);
+  }, [chartData, isChartReady, isVisible]);
 
   return (
     <div className="w-full bg-surface rounded-lg shadow-sm border border-white/10">
@@ -235,23 +224,23 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
             {interval}
           </span>
         </div>
-        {error && (
+        {chartError && (
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-danger rounded-full"></div>
-            <span className="text-sm text-danger">{error}</span>
+            <span className="text-sm text-danger">{chartError}</span>
           </div>
         )}
-        {loading && !error && (
+        {loading && !chartError && (
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
             <span className="text-sm text-textMuted">Loading...</span>
           </div>
         )}
-        {!loading && !error && candleData.length > 0 && (
+        {!loading && !chartError && chartData && chartData.length > 0 && (
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-success rounded-full"></div>
             <span className="text-sm text-success">
-              Live • {candleData.length} candles
+              Live • {chartData.length} candles
             </span>
           </div>
         )}
@@ -275,19 +264,19 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
           </div>
         )}
 
-        {error && (
+        {chartError && (
           <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10">
             <div className="text-center">
               <div className="w-12 h-12 mx-auto mb-2">⚠️</div>
               <p className="text-sm font-medium text-danger">
                 Error loading chart
               </p>
-              <p className="text-xs text-textMuted mt-2">{error}</p>
+              <p className="text-xs text-textMuted mt-2">{chartError}</p>
             </div>
           </div>
         )}
 
-        {!loading && !error && candleData.length === 0 && (
+        {!loading && !chartError && (!chartData || chartData.length === 0) && (
           <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10">
             <div className="text-center">
               <div className="w-12 h-12 mx-auto mb-2">📡</div>
