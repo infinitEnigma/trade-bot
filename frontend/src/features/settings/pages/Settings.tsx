@@ -18,6 +18,16 @@ import { SectionHeader } from "../../../shared/components/ui";
 import { MetricIcon } from "../../../shared/components/ui";
 import { Container, Grid } from "../../../shared/components/layout";
 import { SmartToast } from "../../../shared/utils/toast";
+import { KodiakConnectResponse } from "../../../infrastructure/api/kodiak";
+
+interface ApiError extends Error {
+  response?: {
+    data?: {
+      error?: string;
+      message?: string;
+    };
+  };
+}
 
 const Settings: React.FC = () => {
   const { user } = useAuth();
@@ -107,7 +117,7 @@ const Settings: React.FC = () => {
     SmartToast.loading("Connecting to Kodiak...");
 
     connectMutation.mutate(formData, {
-      onSuccess: (response) => {
+      onSuccess: (response: KodiakConnectResponse) => {
         // Clear form on success
         setFormData({ accountId: "", apiKey: "", secretKey: "" });
         SmartToast.success("Kodiak account connected successfully! Your user level has been upgraded to REGISTERED.");
@@ -119,9 +129,10 @@ const Settings: React.FC = () => {
           }, 2000);
         }
       },
-      onError: (error: any) => {
-        const errorMessage = error?.response?.data?.error ||
-                           error?.response?.data?.message ||
+      onError: (error: Error) => {
+        const axiosError = error as ApiError;
+        const errorMessage = axiosError?.response?.data?.error ||
+                           axiosError?.response?.data?.message ||
                            "Failed to connect Kodiak credentials. Please check your credentials and try again.";
         SmartToast.error(errorMessage);
       },
@@ -134,8 +145,9 @@ const Settings: React.FC = () => {
         onSuccess: () => {
           SmartToast.success("Kodiak account disconnected successfully.");
         },
-        onError: (error: any) => {
-          SmartToast.error(error?.response?.data?.error || "Failed to disconnect Kodiak account");
+        onError: (error: Error) => {
+          const axiosError = error as ApiError;
+          SmartToast.error(axiosError?.response?.data?.error || "Failed to disconnect Kodiak account");
         },
       });
     }

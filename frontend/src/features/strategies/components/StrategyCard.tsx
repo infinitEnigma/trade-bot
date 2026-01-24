@@ -5,6 +5,7 @@ import { Strategy, StrategyType } from "@trade-bot/shared";
 import { Zap, Edit, Trash2} from "lucide-react";
 import { Card } from "../../../shared/components/ui";
 import { BotControls } from "../bots/components/BotControls";
+import { getStrategyConfig } from "../types/strategies.types";
 //import { BotInstance } from "../../types/trading.types";
 
 interface StrategyCardProps {
@@ -36,7 +37,8 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
   getStrategyTypeColor,
   formatStrategyType,
 }) => {
-  const config = strategy.config as any;
+  const strategyConfig = getStrategyConfig(strategy);
+  //const config = strategyConfig?.config || {};
 
   return (
     <Card className="p-6">
@@ -72,24 +74,38 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
         <div className="flex justify-between text-sm">
           <span className="text-textMuted">Symbol:</span>
           <span className="text-text font-medium">
-            {config.symbol
-              ?.replace("PERP_", "")
-              .replace("_USDC", "") || "N/A"}
+            {strategyConfig && 'symbol' in strategyConfig.config
+              ? (strategyConfig.config.symbol as string)
+                  ?.replace("PERP_", "")
+                  .replace("_USDC", "") || "N/A"
+              : "N/A"}
           </span>
         </div>
         {strategy.type === StrategyType.GRID && (
           <>
             <div className="flex justify-between text-sm">
               <span className="text-textMuted">Grid Size:</span>
-              <span className="text-text">{config.gridSize || 0} levels</span>
+              <span className="text-text">
+                {strategyConfig && 'gridSize' in strategyConfig.config
+                  ? (strategyConfig.config.gridSize as number) || 0
+                  : 0} levels
+              </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-textMuted">Range:</span>
-              <span className="text-text">{config.gridRange || 0}%</span>
+              <span className="text-text">
+                {strategyConfig && 'gridRange' in strategyConfig.config
+                  ? (strategyConfig.config.gridRange as number) || 0
+                  : 0}%
+              </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-textMuted">Order Qty:</span>
-              <span className="text-text">{config.orderQuantity || 0}</span>
+              <span className="text-text">
+                {strategyConfig && 'orderQuantity' in strategyConfig.config
+                  ? (strategyConfig.config.orderQuantity as number) || 0
+                  : 0}
+              </span>
             </div>
           </>
         )}

@@ -2,6 +2,7 @@
 
 import { kodiakApi } from "../../../infrastructure/api";
 import { KodiakCredentials, KodiakStatus } from "../types/settings.types";
+import { KodiakConnectResponse, KodiakDisconnectResponse } from "../../../infrastructure/api/kodiak";
 
 /**
  * Settings Service
@@ -23,7 +24,7 @@ export class SettingsService {
      * Connect Kodiak credentials
      * Sends encrypted credentials to backend for validation and storage
      */
-    async connectKodiak(credentials: KodiakCredentials): Promise<any> {
+    async connectKodiak(credentials: KodiakCredentials): Promise<KodiakConnectResponse> {
         try {
             const response = await kodiakApi.connectKodiak(credentials);
             return response;
@@ -37,7 +38,7 @@ export class SettingsService {
      * Disconnect Kodiak credentials
      * Backend handles secure credential removal and user level updates
      */
-    async disconnectKodiak(): Promise<any> {
+    async disconnectKodiak(): Promise<KodiakDisconnectResponse> {
         try {
             const response = await kodiakApi.disconnectKodiak();
             return response;

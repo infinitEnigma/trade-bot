@@ -109,8 +109,13 @@ const QualificationCheckButton: React.FC = () => {
       } else {
         OperationToasts.qualificationFailed(response.reasons?.[0] || "Qualification check failed");
       }
-    } catch (error: any) {
-      OperationToasts.qualificationFailed(error?.response?.data?.error || "Failed to check qualification");
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null && 'response' in error
+          ? (error as { response: { data: { error: string } } }).response.data.error
+          : "Failed to check qualification";
+      OperationToasts.qualificationFailed(errorMessage);
     } finally {
       setIsChecking(false);
     }
@@ -146,8 +151,13 @@ export const BotControls: React.FC<BotControlsProps> = ({
       OperationToasts.botStarted("Strategy");
       onStatusChange();
     },
-    onError: (error: any) => {
-      OperationToasts.botError("start", error?.response?.data?.error || "Unknown error");
+    onError: (error: unknown) => {
+      const errorMessage = error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null && 'response' in error
+          ? (error as { response: { data: { error: string } } }).response.data.error
+          : "Unknown error";
+      OperationToasts.botError("start", errorMessage);
     },
   });
 
@@ -158,8 +168,13 @@ export const BotControls: React.FC<BotControlsProps> = ({
       OperationToasts.botStopped("Strategy");
       onStatusChange();
     },
-    onError: (error: any) => {
-      OperationToasts.botError("stop", error?.response?.data?.error || "Unknown error");
+    onError: (error: unknown) => {
+      const errorMessage = error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null && 'response' in error
+          ? (error as { response: { data: { error: string } } }).response.data.error
+          : "Unknown error";
+      OperationToasts.botError("stop", errorMessage);
     },
   });
 
@@ -170,8 +185,13 @@ export const BotControls: React.FC<BotControlsProps> = ({
       OperationToasts.botEmergencyStop("Strategy");
       onStatusChange();
     },
-    onError: (error: any) => {
-      OperationToasts.botError("emergency stop", error?.response?.data?.error || "Unknown error");
+    onError: (error: unknown) => {
+      const errorMessage = error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null && 'response' in error
+          ? (error as { response: { data: { error: string } } }).response.data.error
+          : "Unknown error";
+      OperationToasts.botError("emergency stop", errorMessage);
     },
   });
 

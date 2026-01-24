@@ -6,6 +6,12 @@ import { useBalance } from "../../strategies/balance/hooks";
 import { dashboardService } from "../services/dashboardService";
 import { BalanceData, Position, Trade } from "../types/dashboard.types";
 
+interface ApiError extends Error {
+    response?: {
+        status?: number;
+    };
+}
+
 /**
  * Dashboard hook - manages all dashboard data fetching and state
  */
@@ -46,9 +52,10 @@ export const useDashboard = () => {
         gcTime: 300000,           // 5 minutes - cache retention
         refetchOnWindowFocus: false, // 🚫 Disable focus refetch to reduce requests
         refetchInterval: 120000,     // 🔄 Auto-refresh every 2 minutes (from 30s)
-        retry: (failureCount, error: any) => {
-            if (error?.response?.status === 429) return false; // Don't retry rate limits
-            if (error?.response?.status === 400) return false;
+        retry: (failureCount, error: Error) => {
+            const apiError = error as ApiError;
+            if (apiError?.response?.status === 429) return false; // Don't retry rate limits
+            if (apiError?.response?.status === 400) return false;
             return failureCount < 2;
         },
     });

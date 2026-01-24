@@ -2,7 +2,7 @@
 
 import { Strategy, StrategyType } from "@trade-bot/shared";
 import { tradingApi } from "../../../infrastructure/api";
-import { StrategyFormData } from "../types/strategies.types";
+import { StrategyFormData, BotInstance } from "../types/strategies.types";
 
 /**
  * Strategy Service
@@ -59,10 +59,17 @@ export class StrategyService {
      */
     async updateStrategy(id: string, data: Partial<StrategyFormData>): Promise<Strategy | null> {
         try {
-            const updateData: any = {};
-            if (data.name !== undefined) updateData.name = data.name;
-            if (data.type !== undefined) updateData.type = data.type;
-            if (data.config !== undefined) updateData.config = data.config;
+            const updateData: {
+                name: string;
+                type: StrategyType;
+                config: Record<string, unknown>;
+                active?: boolean;
+            } = {
+                name: data.name || "",
+                type: data.type || StrategyType.GRID,
+                config: data.config || { type: StrategyType.GRID, config: { symbol: '', leverage: 1, gridSize: 10, gridRange: 5, orderQuantity: 1 } }
+            };
+
             if (data.active !== undefined) updateData.active = data.active;
 
             const response = await tradingApi.updateStrategy(id, updateData);
@@ -93,11 +100,22 @@ export class StrategyService {
     /**
      * Get bot instance for a strategy
      */
-    async getBotForStrategy(strategyId: string): Promise<any | null> {
+    async getBotForStrategy(strategyId: string): Promise<BotInstance | null> {
         try {
             const response = await tradingApi.getBotInstances();
             if (response.success && response.data) {
-                return response.data.find((bot: any) => bot.strategy_id === strategyId) || null;
+                const bot = response.data.find((bot: { strategy_id: string }) => bot.strategy_id === strategyId);
+                if (bot) {
+                    return {
+                        id: bot.id,
+                        strategy_id: bot.strategy_id,
+                        status: bot.status,
+                        total_trades: bot.total_trades,
+                        total_pnl: bot.total_pnl,
+                        last_updated: bot.last_updated,
+                        config: bot.config || { type: StrategyType.GRID, config: { symbol: '', leverage: 1, gridSize: 10, gridRange: 5, orderQuantity: 1 } }
+                    };
+                }
             }
             return null;
         } catch (error) {
@@ -107,9 +125,33 @@ export class StrategyService {
     }
 
     /**
+     * Get all bot instances
+     */
+    async getAllBotInstances(): Promise<BotInstance[]> {
+        try {
+            const response = await tradingApi.getBotInstances();
+            if (response.success && response.data) {
+                return response.data.map((bot: { strategy_id: string; status: string; total_trades: number; total_pnl: number; last_updated: string; config?: unknown }) => ({
+                    id: bot.strategy_id,
+                    strategy_id: bot.strategy_id,
+                    status: bot.status as "RUNNING" | "STOPPED" | "ERROR" | "STARTING" | "STOPPING",
+                    total_trades: bot.total_trades,
+                    total_pnl: bot.total_pnl,
+                    last_updated: bot.last_updated,
+                    config: bot.config || { type: StrategyType.GRID, config: { symbol: '', leverage: 1, gridSize: 10, gridRange: 5, orderQuantity: 1 } }
+                }));
+            }
+            return [];
+        } catch (error) {
+            console.error("Strategy service getAllBotInstances error:", error);
+            return [];
+        }
+    }
+
+    /**
      * Validate strategy configuration
      */
-    validateStrategyConfig(type: StrategyType, config: Record<string, any>): {
+    validateStrategyConfig(type: StrategyType, config: Record<string, unknown>): {
         isValid: boolean;
         errors: string[];
     } {
@@ -120,13 +162,13 @@ export class StrategyService {
                 if (!config.symbol || typeof config.symbol !== 'string') {
                     errors.push("Symbol is required");
                 }
-                if (!config.gridSize || config.gridSize < 2) {
+                if (!config.gridSize || (typeof config.gridSize === 'number' && config.gridSize < 2)) {
                     errors.push("Grid size must be at least 2");
                 }
-                if (!config.gridRange || config.gridRange <= 0) {
+                if (!config.gridRange || (typeof config.gridRange === 'number' && config.gridRange <= 0)) {
                     errors.push("Grid range must be positive");
                 }
-                if (!config.orderQuantity || config.orderQuantity <= 0) {
+                if (!config.orderQuantity || (typeof config.orderQuantity === 'number' && config.orderQuantity <= 0)) {
                     errors.push("Order quantity must be positive");
                 }
                 break;

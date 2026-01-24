@@ -3,6 +3,12 @@
 import { httpClient } from "./client";
 import { globalRequestManager } from "../request-manager";
 
+interface ApiError extends Error {
+    response?: {
+        status?: number;
+    };
+}
+
 /**
  * Trading API endpoints
  * Handles strategies, bots, and trading operations with global deduplication
@@ -88,9 +94,10 @@ export const tradingApi = {
                 try {
                     const response = await httpClient.getClient().get("/api/user/kodiak/positions");
                     return response.data;
-                } catch (error: any) {
+                } catch (error: unknown) {
                     // Return empty data instead of throwing for missing credentials
-                    if (error.response?.status === 403 || error.response?.status === 400) {
+                    const apiError = error as ApiError;
+                    if (apiError.response?.status === 403 || apiError.response?.status === 400) {
                         return {
                             success: true,
                             data: { rows: [] },
@@ -111,9 +118,10 @@ export const tradingApi = {
                 try {
                     const response = await httpClient.getClient().get(`/api/user/kodiak/trades?limit=${limit}`);
                     return response.data;
-                } catch (error: any) {
+                } catch (error: unknown) {
                     // Return empty data instead of throwing for missing credentials
-                    if (error.response?.status === 403 || error.response?.status === 400) {
+                    const apiError = error as ApiError;
+                    if (apiError.response?.status === 403 || apiError.response?.status === 400) {
                         return {
                             success: true,
                             data: { rows: [] },

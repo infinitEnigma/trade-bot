@@ -1,8 +1,9 @@
 /** @format */
 
 import React from "react";
-import { Strategy } from "@trade-bot/shared";
+import { Strategy, StrategyType } from "@trade-bot/shared";
 import { BarChart3 } from "lucide-react";
+import { StrategyConfig } from "../types/strategies.types";
 //import { Link } from "react-router-dom";
 import { Card } from "../../../shared/components/ui";
 import { StrategyCard } from "./StrategyCard";
@@ -17,9 +18,9 @@ interface StrategyListProps {
   onBotStatusChange: () => void;
   isLoading: boolean;
   formatCurrency: (value: number) => string;
-  validateStrategyConfig: (type: any, config: any) => { isValid: boolean; errors: string[] };
-  formatStrategyType: (type: any) => string;
-  getStrategyTypeColor: (type: any) => string;
+  validateStrategyConfig: (type: StrategyType, config: StrategyConfig) => { isValid: boolean; errors: string[] };
+  formatStrategyType: (type: StrategyType) => string;
+  getStrategyTypeColor: (type: StrategyType) => string;
 }
 
 /**

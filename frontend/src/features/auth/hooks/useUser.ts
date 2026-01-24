@@ -6,6 +6,12 @@ import { kodiakApi } from "../../../infrastructure/api/kodiak";
 import { useAuth, updateAuthUser } from "./useAuth";
 import { UserLevel } from "@trade-bot/shared";
 
+interface ApiError extends Error {
+    response?: {
+        status?: number;
+    };
+}
+
 /**
  * React Query hook for user data with caching and deduplication
  * This replaces direct API calls in components
@@ -21,9 +27,10 @@ export const useUser = () => {
         gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache
         refetchOnWindowFocus: false, // Don't refetch on window focus
         refetchOnReconnect: false, // Don't refetch on reconnect
-        retry: (failureCount, error: any) => {
+        retry: (failureCount, error: Error) => {
             // Don't retry on 401/403 (auth errors)
-            if (error?.response?.status === 401 || error?.response?.status === 403) {
+            const apiError = error as ApiError;
+            if (apiError?.response?.status === 401 || apiError?.response?.status === 403) {
                 return false;
             }
             // Retry up to 2 times for other errors
@@ -45,9 +52,10 @@ export const useKodiakStatus = () => {
         staleTime: 2 * 60 * 1000, // 2 minutes - Kodiak status changes less frequently
         gcTime: 5 * 60 * 1000, // 5 minutes cache
         refetchOnWindowFocus: false,
-        retry: (failureCount, error: any) => {
+        retry: (failureCount, error: Error) => {
             // Don't retry auth errors
-            if (error?.response?.status === 401 || error?.response?.status === 403) {
+            const apiError = error as ApiError;
+            if (apiError?.response?.status === 401 || apiError?.response?.status === 403) {
                 return false;
             }
             return failureCount < 1; // Only retry once for Kodiak status

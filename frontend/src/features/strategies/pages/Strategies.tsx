@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { tradingApi } from "../../../infrastructure/api";
 import { Strategy, StrategyType } from "@trade-bot/shared";
+import { getStrategyConfig } from "../types/strategies.types";
 import {
   Plus,
   BarChart3,
@@ -92,9 +93,10 @@ const Strategies: React.FC = React.memo(() => {
     refetchOnWindowFocus: false, // 🚫 Don't refetch on focus
     refetchIntervalInBackground: false, // 🚫 Don't poll in background
     enabled: user?.userLevel === "VERIFIED", // Only for verified users
-    retry: (failureCount, error: any) => {
-      if (error?.response?.status === 429) return false; // Don't retry rate limits
-      if (error?.response?.status === 403) return false; // Don't retry auth errors
+    retry: (failureCount, error: unknown) => {
+      const err = error as { response?: { status?: number } };
+      if (err.response?.status === 429) return false; // Don't retry rate limits
+      if (err.response?.status === 403) return false; // Don't retry auth errors
       return failureCount < 1; // Only retry once for engine status
     },
   });
@@ -131,7 +133,7 @@ const Strategies: React.FC = React.memo(() => {
   };
 
   const getBotForStrategy = (strategyId: string) => {
-    return bots.find((bot: any) => bot.strategy_id === strategyId);
+    return bots.find((bot: { strategy_id: string }) => bot.strategy_id === strategyId);
   };
 
   // ✅ Fetch real balance data (WebSocket for verified users)
@@ -381,7 +383,8 @@ const Strategies: React.FC = React.memo(() => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {strategies.map((strategy: Strategy) => {
               const bot = getBotForStrategy(strategy.id);
-              const config = strategy.config as any;
+              const strategyConfig = getStrategyConfig(strategy);
+              const config = strategyConfig?.config || {};
 
               return (
                 <div key={strategy.id} className="glass-card p-6">
@@ -419,9 +422,11 @@ const Strategies: React.FC = React.memo(() => {
                     <div className="flex justify-between text-sm">
                       <span className="text-textMuted">Symbol:</span>
                       <span className="text-text font-medium">
-                        {config.symbol
-                          ?.replace("PERP_", "")
-                          .replace("_USDC", "") || "N/A"}
+                        {config && 'symbol' in config
+                          ? (config.symbol as string)
+                              ?.replace("PERP_", "")
+                              .replace("_USDC", "") || "N/A"
+                          : "N/A"}
                       </span>
                     </div>
                     {strategy.type === StrategyType.GRID && (
@@ -429,19 +434,19 @@ const Strategies: React.FC = React.memo(() => {
                         <div className="flex justify-between text-sm">
                           <span className="text-textMuted">Grid Size:</span>
                           <span className="text-text">
-                            {config.gridSize || 0} levels
+                            {config && 'gridSize' in config ? (config.gridSize as number) || 0 : 0} levels
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-textMuted">Range:</span>
                           <span className="text-text">
-                            {config.gridRange || 0}%
+                            {config && 'gridRange' in config ? (config.gridRange as number) || 0 : 0}%
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-textMuted">Order Qty:</span>
                           <span className="text-text">
-                            {config.orderQuantity || 0}
+                            {config && 'orderQuantity' in config ? (config.orderQuantity as number) || 0 : 0}
                           </span>
                         </div>
                       </>

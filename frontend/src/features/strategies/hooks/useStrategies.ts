@@ -25,9 +25,9 @@ export const useStrategies = () => {
     });
 
     // Fetch bot instances
-    const { data: bots = [] } = useQuery({
+    const { data: bots = [] } = useQuery<BotInstance[]>({
         queryKey: ["bot-instances"],
-        queryFn: () => strategyService.getBotForStrategy(""), // This will get all bots
+        queryFn: () => strategyService.getAllBotInstances(),
         staleTime: 30000,
         gcTime: 300000,
     });
@@ -41,8 +41,13 @@ export const useStrategies = () => {
                 toast.success("Strategy created successfully!");
             }
         },
-        onError: (error: any) => {
-            toast.error(error?.message || "Failed to create strategy");
+        onError: (error: unknown) => {
+            const errorMessage = error instanceof Error
+                ? error.message
+                : typeof error === 'object' && error !== null && 'message' in error
+                    ? (error as { message: string }).message
+                    : "Failed to create strategy";
+            toast.error(errorMessage);
         },
     });
 
@@ -54,8 +59,13 @@ export const useStrategies = () => {
             queryClient.invalidateQueries({ queryKey: ["strategies"] });
             toast.success("Strategy updated successfully!");
         },
-        onError: (error: any) => {
-            toast.error(error?.message || "Failed to update strategy");
+        onError: (error: unknown) => {
+            const errorMessage = error instanceof Error
+                ? error.message
+                : typeof error === 'object' && error !== null && 'message' in error
+                    ? (error as { message: string }).message
+                    : "Failed to update strategy";
+            toast.error(errorMessage);
         },
     });
 
@@ -74,7 +84,10 @@ export const useStrategies = () => {
 
     // Helper function to get bot for strategy
     const getBotForStrategy = (strategyId: string): BotInstance | undefined => {
-        return bots.find((bot: any) => bot.strategy_id === strategyId);
+        if (!Array.isArray(bots)) {
+            return undefined;
+        }
+        return bots.find((bot) => bot.strategy_id === strategyId);
     };
 
     // Helper function to format currency

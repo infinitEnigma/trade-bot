@@ -1,7 +1,7 @@
 /** @format */
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { UserLevel } from "@trade-bot/shared";
+import { UserLevel, User } from "@trade-bot/shared";
 import { globalAnalyticsManager } from "../../../shared/services/analytics-manager";
 import { analyticsService } from "../services/analyticsService";
 import { AnalyticsOptions, AnalyticsData } from "../types/analytics.types";
@@ -15,7 +15,7 @@ export const useAnalytics = ({
     enabled = true,
     userLevel = UserLevel.BASIC, // Default to basic for safety
     user, // Add user parameter for stable subscription ID
-}: AnalyticsOptions & { userLevel?: UserLevel; user?: any }) => {
+}: AnalyticsOptions & { userLevel?: UserLevel; user?: User | null }) => {
     const [progress, setProgress] = useState(0);
     const [data, setData] = useState<AnalyticsData | null>(null);
     const [loading, setLoading] = useState(false);

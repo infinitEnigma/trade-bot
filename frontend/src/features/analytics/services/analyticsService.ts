@@ -11,6 +11,15 @@ import {
     AnalyticsData
 } from "../types/analytics.types";
 
+interface TradingViewData {
+    t?: number[]; // timestamps
+    o?: number[]; // opens
+    h?: number[]; // highs
+    l?: number[]; // lows
+    c?: number[]; // closes
+    v?: number[]; // volumes
+}
+
 /**
  * Analytics Service
  * Handles all analytics-related data fetching and calculations
@@ -155,7 +164,7 @@ export class AnalyticsService {
     /**
      * Transform TradingView data to analytics format
      */
-    private transformTradingViewData(tvData: any): PriceDataPoint[] {
+    private transformTradingViewData(tvData: TradingViewData): PriceDataPoint[] {
         if (!tvData || typeof tvData !== 'object') return [];
 
         const { t: timestamps, o: opens, h: highs, l: lows, c: closes, v: volumes } = tvData;

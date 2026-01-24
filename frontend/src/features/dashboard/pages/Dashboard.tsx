@@ -19,6 +19,12 @@ import {
   X,
 } from "lucide-react";
 
+interface ApiError extends Error {
+    response?: {
+        status?: number;
+    };
+}
+
 import { Link } from "react-router-dom";
 import { Card } from "../../../shared/components/ui/Card";
 import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
@@ -159,8 +165,9 @@ const Dashboard: React.FC = () => {
     enabled: hasKodiakAccess && !!user?.id,
     staleTime: 30000, // 30 seconds
     gcTime: 300000, // 5 minutes
-    retry: (failureCount, error: any) => {
-      if (error?.response?.status === 400) return false;
+    retry: (failureCount, error: Error) => {
+      const apiError = error as ApiError;
+      if (apiError?.response?.status === 400) return false;
       return failureCount < 2;
     },
   });
@@ -171,8 +178,9 @@ const Dashboard: React.FC = () => {
     enabled: hasKodiakAccess && !!user?.id,
     staleTime: 30000,
     gcTime: 300000,
-    retry: (failureCount, error: any) => {
-      if (error?.response?.status === 400) return false;
+    retry: (failureCount, error: Error) => {
+      const apiError = error as ApiError;
+      if (apiError?.response?.status === 400) return false;
       return failureCount < 2;
     },
   });

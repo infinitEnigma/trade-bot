@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { tradingApi } from "../../../infrastructure/api";
 import { Strategy, StrategyType } from "@trade-bot/shared";
 import { X, Loader2 } from "lucide-react";
+import { getStrategyConfig } from "../types/strategies.types";
 
 // Form validation schema
 const strategySchema = z.object({
@@ -67,19 +68,64 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
   } = useForm<StrategyFormData>({
     resolver: zodResolver(strategySchema),
     defaultValues: strategy
-      ? {
-          name: strategy.name,
-          type: strategy.type,
-          symbol: (strategy.config as any)?.symbol || "",
-          leverage: (strategy.config as any)?.leverage || 1,
-          gridSize: (strategy.config as any)?.gridSize || 10,
-          gridRange: (strategy.config as any)?.gridRange || 5,
-          orderQuantity: (strategy.config as any)?.orderQuantity || 1,
-          takeProfit: (strategy.config as any)?.takeProfit,
-          entryThreshold: (strategy.config as any)?.entryThreshold,
-          exitThreshold: (strategy.config as any)?.exitThreshold,
-          stopLoss: (strategy.config as any)?.stopLoss,
-        }
+      ? (() => {
+          const strategyConfig = getStrategyConfig(strategy);
+          if (!strategyConfig) {
+            return {
+              name: strategy.name,
+              type: strategy.type,
+              symbol: "",
+              leverage: 1,
+              gridSize: 10,
+              gridRange: 5,
+              orderQuantity: 1,
+            };
+          }
+
+          switch (strategyConfig.type) {
+            case StrategyType.GRID:
+              return {
+                name: strategy.name,
+                type: strategy.type,
+                symbol: strategyConfig.config.symbol,
+                leverage: strategyConfig.config.leverage,
+                gridSize: strategyConfig.config.gridSize,
+                gridRange: strategyConfig.config.gridRange,
+                orderQuantity: strategyConfig.config.orderQuantity,
+                takeProfit: strategyConfig.config.takeProfit,
+                entryThreshold: strategyConfig.config.entryThreshold,
+                exitThreshold: strategyConfig.config.exitThreshold,
+                stopLoss: strategyConfig.config.stopLoss,
+              };
+            case StrategyType.TREND_FOLLOWING:
+              return {
+                name: strategy.name,
+                type: strategy.type,
+                symbol: strategyConfig.config.symbol,
+                leverage: strategyConfig.config.leverage,
+                entryThreshold: strategyConfig.config.entryThreshold,
+                exitThreshold: strategyConfig.config.exitThreshold,
+                takeProfit: strategyConfig.config.takeProfit,
+                stopLoss: strategyConfig.config.stopLoss,
+              };
+            case StrategyType.ARBITRAGE:
+              return {
+                name: strategy.name,
+                type: strategy.type,
+                symbol: strategyConfig.config.symbol,
+                leverage: strategyConfig.config.leverage,
+                takeProfit: strategyConfig.config.takeProfit,
+                stopLoss: strategyConfig.config.stopLoss,
+              };
+            default:
+              return {
+                name: strategy.name,
+                type: strategy.type,
+                symbol: "",
+                leverage: 1,
+              };
+          }
+        })()
       : {
           type: StrategyType.GRID,
           leverage: 1,
@@ -120,8 +166,13 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
       onSuccess();
       reset();
     },
-    onError: (error: any) => {
-      toast.error(error?.response?.data?.error || "Failed to create strategy");
+    onError: (error: unknown) => {
+      const errorMessage = error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null && 'response' in error
+          ? (error as { response: { data: { error: string } } }).response.data.error
+          : "Failed to create strategy";
+      toast.error(errorMessage);
     },
   });
 
@@ -156,8 +207,13 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
       onSuccess();
       reset();
     },
-    onError: (error: any) => {
-      toast.error(error?.response?.data?.error || "Failed to update strategy");
+    onError: (error: unknown) => {
+      const errorMessage = error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null && 'response' in error
+          ? (error as { response: { data: { error: string } } }).response.data.error
+          : "Failed to update strategy";
+      toast.error(errorMessage);
     },
   });
 
