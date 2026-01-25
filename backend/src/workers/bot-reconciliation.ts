@@ -10,6 +10,21 @@ import { logger } from "../core/logging";
 import { query } from "../database/pool";
 
 /**
+ * Bot data interfaces
+ */
+interface BotData {
+    id: string;
+    user_id: string;
+    strategy_id: string;
+    status: string;
+    running_time: string;
+    total_trades: number;
+    strategy_name: string;
+    strategy_type: string;
+    user_email: string;
+}
+
+/**
  * Bot Reconciliation Worker
  *
  * This worker performs periodic reconciliation tasks:
@@ -119,7 +134,7 @@ export class BotReconciliationWorker {
     /**
      * Get all active bots that need reconciliation
      */
-    private async getActiveBots(): Promise<any[]> {
+    private async getActiveBots(): Promise<BotData[]> {
         try {
             const result = await query(`
         SELECT
@@ -151,7 +166,7 @@ export class BotReconciliationWorker {
     /**
      * Reconcile a single bot
      */
-    private async reconcileBot(bot: any): Promise<void> {
+    private async reconcileBot(bot: BotData): Promise<void> {
         logger.debug("Reconciling bot", {
             botId: bot.id,
             userId: bot.user_id,

@@ -20,6 +20,6 @@ export { authRoutes } from '../auth';
 export { userRoutes, userProfileRoutes, userKodiakRoutes } from '../users';
 export { marketRoutes, strategyRoutes } from '../trading';
 export { botRoutes, botEngineRoutes, botManagementRoutes } from '../bots';
-export { walletRoutes, balanceRoutes } from '../wallet';
+export { walletRoutes, walletBalanceRoutes } from '../wallet';
 export { healthRoutes } from './health';
 export { securityRoutes } from './security';

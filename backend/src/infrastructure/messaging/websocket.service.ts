@@ -173,7 +173,8 @@ export class WebSocketService implements IWebSocketService {
                         code: error.code,
                     });
                 } else {
-                    this.logger.error("Unexpected authentication error", error, {
+                    const errorObj = error instanceof Error ? error : new Error(String(error));
+                    this.logger.error("Unexpected authentication error", errorObj, {
                         socketId: socket.id,
                         ip: socket.handshake.address,
                     });
@@ -206,7 +207,8 @@ export class WebSocketService implements IWebSocketService {
             socket.on("subscribe", (room: string) => {
                 this.metrics.messagesProcessed++;
                 this.eventHandlers.handleSubscribe(socket, room).catch(error => {
-                    this.logger.error("Subscribe handler error", error, { socketId: socket.id });
+                    const errorObj = error instanceof Error ? error : new Error(String(error));
+                    this.logger.error("Subscribe handler error", errorObj, { socketId: socket.id });
                     this.metrics.errorsCount++;
                 });
             });
@@ -214,7 +216,8 @@ export class WebSocketService implements IWebSocketService {
             socket.on("unsubscribe", (room: string) => {
                 this.metrics.messagesProcessed++;
                 this.eventHandlers.handleUnsubscribe(socket, room).catch(error => {
-                    this.logger.error("Unsubscribe handler error", error, { socketId: socket.id });
+                    const errorObj = error instanceof Error ? error : new Error(String(error));
+                    this.logger.error("Unsubscribe handler error", errorObj, { socketId: socket.id });
                     this.metrics.errorsCount++;
                 });
             });
@@ -222,7 +225,8 @@ export class WebSocketService implements IWebSocketService {
             socket.on("subscribe_market", (symbol: string) => {
                 this.metrics.messagesProcessed++;
                 this.eventHandlers.handleMarketSubscribe(socket, symbol).catch(error => {
-                    this.logger.error("Market subscribe handler error", error, { socketId: socket.id });
+                    const errorObj = error instanceof Error ? error : new Error(String(error));
+                    this.logger.error("Market subscribe handler error", errorObj, { socketId: socket.id });
                     this.metrics.errorsCount++;
                 });
             });
@@ -243,9 +247,10 @@ export class WebSocketService implements IWebSocketService {
         if (!this.io) return;
 
         this.io.on("connection_error", (error) => {
-            this.logger.error("WebSocket connection error", error, {
-                message: error.message,
-                context: error.context,
+            const errorObj = error instanceof Error ? error : new Error(String(error));
+            this.logger.error("WebSocket connection error", errorObj, {
+                message: error instanceof Error ? error.message : String(error),
+                context: (error as any)?.context,
             });
             this.metrics.errorsCount++;
         });

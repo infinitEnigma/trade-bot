@@ -1,12 +1,12 @@
 /** @format */
 
 import { Router, Request, Response } from "express";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 //import { selectAuthService } from "../../../core/service-selector";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { query } from "../../../database/pool"; // ✅ Import from centralized module
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth"; // ✅ Import centralized auth
-import { createErrorResponse, ValidationError, NotFoundError, ExternalServiceError, DatabaseError, DataFreshnessUtils, FreshnessAwareResponse } from "../../../shared/types/errors";
+import { createErrorResponse, ExternalServiceError, DataFreshnessUtils, FreshnessAwareResponse } from "../../../shared/types/errors";
 import { getCorrelationId } from "../../../shared/utils/context";
 import logger from "../../../core/logging/logger.service"; // ✅ Import structured logger
 import { encryptionService } from "../../../infrastructure/security/encryption.service"; // ✅ Import encryption service
@@ -83,11 +83,13 @@ router.get(
         response = await axios.get(`${KODIAK_API_BASE}/public/futures/${symbol}`, {
           timeout: 5000,
         });
-      } catch (apiError: any) {
+      } catch (apiError: unknown) {
+        const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+        const axiosError = apiError as AxiosError;
         logger.warn("Futures API failed - NO MOCK DATA USED", {
           symbol,
-          error: apiError.message,
-          status: apiError.response?.status,
+          error: errorMessage,
+          status: axiosError.response?.status,
         });
 
         // Return clear error so user knows data is unavailable
@@ -128,10 +130,11 @@ router.get(
         data: tickerData,
         timestamp: Date.now(),
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       logger.error("Ticker endpoint error", {
         symbol: req.query.symbol,
-        error: err.message,
+        error: errorMessage,
       });
 
       // Return clear error so user knows data is unavailable
@@ -156,8 +159,9 @@ router.get("/tickers", async (req: Request, res: Response) => {
       data: response.data.data,
       timestamp: Date.now(),
     });
-  } catch (err: any) {
-    logger.error("Tickers endpoint error", { error: err.message });
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logger.error("Tickers endpoint error", { error: errorMessage });
     const externalError = new ExternalServiceError("Kodiak API", { service: "Kodiak", operation: "fetch_tickers" });
     res.status(externalError.statusCode).json(
       createErrorResponse(externalError, getCorrelationId())
@@ -227,12 +231,13 @@ router.get(
           interval: intervalStr,
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       logger.error("Klines endpoint error", {
         symbol: req.query.symbol,
         interval: req.query.interval,
         limit: req.query.limit,
-        error: err.message,
+        error: errorMessage,
       });
       const externalError = new ExternalServiceError("Market Stream Service", { service: "WebSocket", operation: "get_klines" });
       res.status(externalError.statusCode).json(
@@ -256,8 +261,9 @@ router.get("/orderbook", async (req: Request, res: Response) => {
       data: response.data.data,
       timestamp: Date.now(),
     });
-  } catch (err: any) {
-    logger.error("Orderbook endpoint error", { error: err.message });
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logger.error("Orderbook endpoint error", { error: errorMessage });
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch orderbook" });
@@ -373,10 +379,11 @@ router.get(
           symbol,
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       logger.error("Mark price endpoint error", {
         symbol: req.params.symbol,
-        error: err.message,
+        error: errorMessage,
       });
       res.status(500).json({
         success: false,
@@ -392,7 +399,7 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const credentials = await getKodiakCredentials(req.user!.userId);
+      const credentials = await getKodiakCredentials(req.user?.userId || "");
 
       if (!credentials) {
         return res
@@ -424,10 +431,11 @@ router.get(
         data: response.data.data,
         timestamp: Date.now(),
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       logger.error("Positions endpoint error", {
-        userId: req.user!.userId,
-        error: err.message,
+        userId: req.user?.userId,
+        error: errorMessage,
       });
       res
         .status(500)
@@ -442,7 +450,7 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const credentials = await getKodiakCredentials(req.user!.userId);
+      const credentials = await getKodiakCredentials(req.user?.userId || "");
 
       if (!credentials) {
         return res
@@ -474,10 +482,11 @@ router.get(
         data: response.data.data,
         timestamp: Date.now(),
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       logger.error("Balance endpoint error", {
-        userId: req.user!.userId,
-        error: err.message,
+        userId: req.user?.userId,
+        error: errorMessage,
       });
       res
         .status(500)
@@ -492,7 +501,7 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const credentials = await getKodiakCredentials(req.user!.userId);
+      const credentials = await getKodiakCredentials(req.user?.userId || "");
 
       if (!credentials) {
         return res
@@ -507,10 +516,11 @@ router.get(
           timestamp: Date.now(),
         },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       logger.error("WS URL endpoint error", {
-        userId: req.user!.userId,
-        error: err.message,
+        userId: req.user?.userId,
+        error: errorMessage,
       });
       res
         .status(500)
@@ -558,8 +568,9 @@ router.get("/tv/config", RateLimiters.market, async (req: Request, res: Response
     await redisService.setex(cacheKey, cacheConfig.MARKET_TRADINGVIEW_CONFIG, JSON.stringify(result));
 
     res.json(result);
-  } catch (err: any) {
-    logger.error("TV Config endpoint error", { error: err.message });
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logger.error("TV Config endpoint error", { error: errorMessage });
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch TV config" });
@@ -580,8 +591,9 @@ router.get("/tv/symbols", RateLimiters.market, async (req: Request, res: Respons
       data: response.data,
       timestamp: Date.now(),
     });
-  } catch (err: any) {
-    logger.error("TV Symbols endpoint error", { error: err.message });
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logger.error("TV Symbols endpoint error", { error: errorMessage });
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch TV symbols" });
@@ -675,13 +687,14 @@ router.get("/tv/history", RateLimiters.market, async (req: Request, res: Respons
     });
 
     res.json(result);
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
     logger.error("TV History endpoint error", {
       symbol: symbolStr,
       resolution: resolutionStr,
       from: fromNum,
       to: toNum,
-      error: err.message,
+      error: errorMessage,
     });
     res
       .status(500)
@@ -707,7 +720,7 @@ router.get(
 
       // SECURITY REQUIREMENT: Only allow access to historical data if user has verified Kodiak credentials
       // This ensures trading features are only available to properly connected users
-      const credentials = await getKodiakCredentials(req.user!.userId);
+      const credentials = await getKodiakCredentials(req.user?.userId || "");
 
       if (!credentials) {
         return res.status(403).json({
@@ -728,7 +741,7 @@ router.get(
       logger.debug(
         "Fetching historical kline data with credential verification",
         {
-          userId: req.user!.userId,
+          userId: req.user?.userId,
           symbol: symbolStr,
           resolution: resolutionStr,
           from: fromNum,
@@ -761,7 +774,7 @@ router.get(
       });
 
       // Handle TradingView format - separated OHLC arrays
-      let tvData = response.data;
+      const tvData = response.data;
 
       if (typeof tvData !== "object" || !tvData) {
         logger.error("Invalid TradingView response - not an object", {
@@ -873,25 +886,27 @@ router.get(
           source: "tv_history_with_verification",
         },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const axiosError = err as AxiosError;
       logger.error("Historical kline data error", {
         userId: req.user?.userId,
         symbol: req.query.symbol,
-        error: err.message,
-        status: err.response?.status,
-        response: err.response?.data,
+        error: errorMessage,
+        status: axiosError.response?.status,
+        response: axiosError.response?.data,
       });
 
       // Handle specific error cases
-      if (err.response?.status === 429) {
+      if (axiosError.response?.status === 429) {
         return res.status(429).json({
           success: false,
           error: "Rate limit exceeded. Please try again later.",
-          retryAfter: err.response.headers?.["retry-after"] || 10,
+          retryAfter: axiosError.response.headers?.["retry-after"] || 10,
         });
       }
 
-      if (err.code === "ECONNABORTED" || err.code === "ENOTFOUND") {
+      if (axiosError.code === "ECONNABORTED" || axiosError.code === "ENOTFOUND") {
         return res.status(503).json({
           success: false,
           error:

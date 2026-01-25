@@ -1,6 +1,6 @@
 /** @format */
 
-import { Router, Request, Response } from "express";
+import { Router, Response } from "express";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
 import { walletQualificationService } from "../../../core/wallet/wallet-qualification.service";
 import logger from "../../../core/logging/logger.service";
@@ -13,7 +13,14 @@ const router = Router();
  */
 router.get("/qualification", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const userId = req.user!.userId as string;
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: "Unauthorized - user not authenticated"
+            });
+        }
+
         const result = await walletQualificationService.checkAlphaQualification(userId);
 
         res.json({
@@ -25,7 +32,7 @@ router.get("/qualification", authMiddleware, async (req: AuthenticatedRequest, r
     } catch (error) {
         logger.error("Wallet qualification check error", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
         });
 
         res.status(500).json({
@@ -36,6 +43,6 @@ router.get("/qualification", authMiddleware, async (req: AuthenticatedRequest, r
 });
 
 // Re-export individual route modules for domain access
-export { balanceRoutes } from "./balance";
+export { walletBalanceRoutes } from "./balance";
 
 export { router as walletRoutes };

@@ -25,6 +25,19 @@ import {
 } from "./database-schema-parser";
 import logger from "../../core/logging/logger.service";
 
+/**
+ * Validation result interface
+ */
+interface ValidationResult {
+    isValid: boolean;
+    errors?: Array<{
+        field: string;
+        message: string;
+        value?: unknown;
+    }>;
+    cleanedData?: unknown;
+}
+
 export class SchemaGenerator {
     /**
      * Generate Joi validation schema for a specific table
@@ -137,12 +150,13 @@ export class SchemaGenerator {
 
             case 'VARCHAR':
             case 'CHAR':
-            case 'TEXT':
+            case 'TEXT': {
                 let stringSchema = Joi.string().trim();
                 if (length) {
                     stringSchema = stringSchema.max(length);
                 }
                 return stringSchema;
+            }
 
             case 'INTEGER':
             case 'INT':
@@ -150,7 +164,7 @@ export class SchemaGenerator {
                 return Joi.number().integer();
 
             case 'DECIMAL':
-            case 'NUMERIC':
+            case 'NUMERIC': {
                 let numberSchema = Joi.number();
                 if (precision !== undefined) {
                     numberSchema = numberSchema.precision(precision);
@@ -158,15 +172,17 @@ export class SchemaGenerator {
                         // For decimal places, we validate the string representation
                         // since Joi doesn't have built-in decimal scale validation
                         const decimalRegex = new RegExp(`^\\d+(\\.\\d{1,${scale}})?$`);
-                        return Joi.alternatives().try(
+                        const decimalSchema = Joi.alternatives().try(
                             Joi.number().precision(precision),
                             Joi.string().pattern(decimalRegex).messages({
                                 'string.pattern.base': `Must have at most ${scale} decimal places`,
                             })
                         );
+                        return decimalSchema;
                     }
                 }
                 return numberSchema;
+            }
 
             case 'BOOLEAN':
                 return Joi.boolean();
@@ -176,8 +192,10 @@ export class SchemaGenerator {
                 return Joi.date();
 
             case 'JSONB':
-            case 'JSON':
-                return Joi.object();
+            case 'JSON': {
+                const jsonSchema = Joi.object();
+                return jsonSchema;
+            }
 
             default:
                 // Default to string for unknown types
@@ -200,11 +218,11 @@ export class SchemaGenerator {
             let rangedSchema = schema;
 
             if (constraint.range.min !== undefined) {
-                rangedSchema = (rangedSchema as any).min(constraint.range.min);
+                rangedSchema = (rangedSchema as Joi.NumberSchema).min(constraint.range.min);
             }
 
             if (constraint.range.max !== undefined) {
-                rangedSchema = (rangedSchema as any).max(constraint.range.max);
+                rangedSchema = (rangedSchema as Joi.NumberSchema).max(constraint.range.max);
             }
 
             return rangedSchema;
@@ -214,7 +232,7 @@ export class SchemaGenerator {
         if (constraint.pattern) {
             try {
                 const regex = new RegExp(constraint.pattern);
-                return (schema as any).pattern(regex);
+                return (schema as Joi.StringSchema).pattern(regex);
             } catch (error) {
                 logger.warn("Invalid regex pattern in CHECK constraint", {
                     pattern: constraint.pattern,
@@ -246,7 +264,7 @@ export class SchemaGenerator {
         }
 
         // Add custom validation that checks foreign key exists
-        return schema.custom((value, helpers) => {
+        return schema.custom((value, _helpers) => {
             // Note: This would typically validate against the database
             // For now, we just validate the format/type is correct
             // Full FK validation would be done at the middleware level
@@ -277,21 +295,17 @@ export class SchemaGenerator {
     /**
      * Convert Joi schema to code representation (for auto-generation)
      */
-    joiSchemaToCode(schema: Joi.ObjectSchema): string {
-        // This would generate code that recreates the schema
-        // For now, return a placeholder - full implementation would
-        // recursively build the schema code
-        return `Joi.object({/* Auto-generated schema */}).unknown(false)`;
-    }
+    //joiSchemaToCode(schema: Joi.ObjectSchema): string {
+    // This would generate code that recreates the schema
+    // For now, return a placeholder - full implementation would
+    // recursively build the schema code
+    //  return `Joi.object({/* Auto-generated schema */}).unknown(false)`;
+    //}
 
     /**
      * Validate data against generated schema
      */
-    validateData(tableName: string, data: any, schema: DatabaseSchema): {
-        isValid: boolean;
-        errors?: Array<{ field: string; message: string; value?: any }>;
-        cleanedData?: any;
-    } {
+    validateData(tableName: string, data: unknown, schema: DatabaseSchema): ValidationResult {
         const joiSchema = this.generateTableSchema(tableName, schema);
         if (!joiSchema) {
             return {

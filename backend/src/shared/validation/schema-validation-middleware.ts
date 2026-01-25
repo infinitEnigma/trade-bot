@@ -24,6 +24,52 @@ import { DatabaseSchemaParser, DatabaseSchema } from "./database-schema-parser";
 import { SchemaGenerator } from "./schema-generator";
 import logger from "../../core/logging/logger.service";
 
+/**
+ * Error response with validation details
+ */
+interface ValidationErrorResponse {
+    [key: string]: unknown;
+    success: boolean;
+    error: string;
+    code: unknown;
+    correlationId?: string;
+    details: {
+        table?: string;
+        source?: string;
+        validationType?: string;
+        errors: Array<{
+            field: string;
+            message: string;
+            value?: unknown;
+            constraint?: {
+                type?: string;
+                constraint?: string;
+                allowedValues?: string[];
+                required?: boolean;
+            } | null;
+        }>;
+    };
+}
+
+/**
+ * Foreign key validation error
+ */
+interface ForeignKeyError {
+    field: string;
+    message: string;
+    value?: unknown;
+}
+
+/**
+ * Constraint information
+ */
+interface ConstraintInfo {
+    type?: string;
+    constraint?: string;
+    allowedValues?: string[];
+    required?: boolean;
+}
+
 export interface SchemaValidationOptions {
     // Table to validate against
     table: string;
@@ -114,7 +160,7 @@ export class SchemaValidationMiddleware {
                 }
 
                 // Get data from specified source
-                let dataToValidate: any;
+                let dataToValidate: unknown;
                 switch (source) {
                     case 'body':
                         dataToValidate = req.body;
@@ -155,7 +201,7 @@ export class SchemaValidationMiddleware {
                     );
 
                     // Add detailed validation errors
-                    const errorResponse = createErrorResponse(validationError, getCorrelationId()) as any;
+                    const errorResponse = createErrorResponse(validationError, getCorrelationId()) as ValidationErrorResponse;
                     errorResponse.details = {
                         table,
                         source,
@@ -178,7 +224,7 @@ export class SchemaValidationMiddleware {
                     if (fkErrors.length > 0) {
                         const fkError = new ValidationError('Foreign key validation failed');
 
-                        const errorResponse = createErrorResponse(fkError, getCorrelationId()) as any;
+                        const errorResponse = createErrorResponse(fkError, getCorrelationId()) as ValidationErrorResponse;
                         errorResponse.details = {
                             table,
                             source,
@@ -224,20 +270,12 @@ export class SchemaValidationMiddleware {
     /**
      * Validate foreign key constraints
      */
-    private async validateForeignKeys(tableName: string, data: any): Promise<Array<{
-        field: string;
-        message: string;
-        value?: any;
-    }>> {
+    private async validateForeignKeys(tableName: string, data: unknown): Promise<ForeignKeyError[]> {
         if (!this.dbSchema) {
             return [];
         }
 
-        const errors: Array<{
-            field: string;
-            message: string;
-            value?: any;
-        }> = [];
+        const errors: ForeignKeyError[] = [];
 
         const tableDef = this.dbSchema.tables[tableName];
         if (!tableDef) {
@@ -246,7 +284,7 @@ export class SchemaValidationMiddleware {
 
         // Check each foreign key
         for (const [columnName, fkDef] of Object.entries(tableDef.foreignKeys)) {
-            const foreignValue = data[columnName];
+            const foreignValue = (data as Record<string, unknown>)[columnName];
             if (foreignValue) {
                 try {
                     const exists = await this.checkForeignKeyExists(
@@ -286,7 +324,7 @@ export class SchemaValidationMiddleware {
     /**
      * Check if a foreign key reference exists in the database
      */
-    private async checkForeignKeyExists(table: string, column: string, value: any): Promise<boolean> {
+    private async checkForeignKeyExists(table: string, column: string, value: unknown): Promise<boolean> {
         try {
             // Import database connection dynamically to avoid circular dependencies
             const { query } = await import("../../database/pool.js");
@@ -306,12 +344,7 @@ export class SchemaValidationMiddleware {
     /**
      * Get constraint information for better error messages
      */
-    private getConstraintInfo(tableName: string, fieldName: string): {
-        type?: string;
-        constraint?: string;
-        allowedValues?: string[];
-        required?: boolean;
-    } | null {
+    private getConstraintInfo(tableName: string, fieldName: string): ConstraintInfo | null {
         if (!this.dbSchema) {
             return null;
         }
@@ -326,7 +359,7 @@ export class SchemaValidationMiddleware {
             return null;
         }
 
-        const constraint: any = {
+        const constraint: ConstraintInfo = {
             type: columnDef.type,
             required: columnDef.notNull,
         };
@@ -485,7 +518,7 @@ export const validators = {
 
         if (error) {
             const validationError = new ValidationError('Token refresh validation failed');
-            const errorResponse = createErrorResponse(validationError, getCorrelationId()) as any;
+            const errorResponse = createErrorResponse(validationError, getCorrelationId()) as Record<string, unknown>;
             errorResponse.details = {
                 errors: error.details.map(detail => ({
                     field: detail.path.join('.'),
@@ -540,7 +573,7 @@ export const validators = {
 
         if (error) {
             const validationError = new ValidationError('Pagination validation failed');
-            const errorResponse = createErrorResponse(validationError, getCorrelationId()) as any;
+            const errorResponse = createErrorResponse(validationError, getCorrelationId()) as Record<string, unknown>;
             errorResponse.details = {
                 errors: error.details.map(detail => ({
                     field: detail.path.join('.'),

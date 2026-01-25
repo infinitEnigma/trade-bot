@@ -46,10 +46,10 @@ export enum ErrorCode {
 
 export interface ErrorContext {
   field?: string;
-  value?: any;
+  value?: unknown;
   limit?: number;
-  expected?: any;
-  received?: any;
+  expected?: unknown;
+  received?: unknown;
   correlationId?: string;
   userId?: string;
   service?: string;
@@ -111,7 +111,7 @@ export class AppError extends Error {
   /**
    * Get additional response data
    */
-  protected getAdditionalData(): Record<string, any> {
+  protected getAdditionalData(): Record<string, unknown> {
     return {};
   }
 }
@@ -140,7 +140,7 @@ export class InvalidFormatError extends ValidationError {
   constructor(
     field: string,
     expected: string,
-    received?: any,
+    received?: unknown,
     context: ErrorContext = {}
   ) {
     super(`Field '${field}' has invalid format. Expected: ${expected}`, {
@@ -392,7 +392,7 @@ export interface DataFreshnessMetadata {
 /**
  * Enhanced API response with freshness metadata
  */
-export interface FreshnessAwareResponse<T = any> {
+export interface FreshnessAwareResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;

@@ -105,7 +105,7 @@ export function runInContext<T>(fn: () => T | Promise<T>): T | Promise<T> {
 /**
  * Add context information to logging
  */
-export function getContextForLogging(): Record<string, any> {
+export function getContextForLogging(): Record<string, string | number | undefined> {
   const context = getCurrentContext();
   if (!context) {
     return {};

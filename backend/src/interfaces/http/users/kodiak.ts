@@ -10,7 +10,7 @@ import Joi from "joi";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
 import { kodiakConnectionService } from "../../../infrastructure/external/kodiak-connection.service";
 import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
-import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
+//import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
 import logger from "../../../core/logging/logger.service";
 
 const router = Router();
@@ -26,6 +26,11 @@ const kodiakConnectionSchema = Joi.object({
 // POST /api/user/kodiak/connect
 router.post("/kodiak/connect", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
+        // Ensure user is authenticated (should always be true due to authMiddleware)
+        if (!req.user) {
+            throw new Error("User not authenticated");
+        }
+
         // Validate request body
         const { error, value } = kodiakConnectionSchema.validate(req.body);
         if (error) {
@@ -35,7 +40,7 @@ router.post("/kodiak/connect", authMiddleware, async (req: AuthenticatedRequest,
             });
         }
 
-        const userId = req.user!.userId as string;
+        const userId = req.user.userId as string;
         const result = await kodiakConnectionService.connectKodiak(userId, value);
 
         if (!result.success) {
@@ -55,7 +60,7 @@ router.post("/kodiak/connect", authMiddleware, async (req: AuthenticatedRequest,
     } catch (error) {
         logger.error("Kodiak connect error", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
         });
 
         res.status(500).json({
@@ -68,7 +73,12 @@ router.post("/kodiak/connect", authMiddleware, async (req: AuthenticatedRequest,
 // DELETE /api/user/kodiak/disconnect
 router.delete("/kodiak/disconnect", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const userId = req.user!.userId as string;
+        // Ensure user is authenticated (should always be true due to authMiddleware)
+        if (!req.user) {
+            throw new Error("User not authenticated");
+        }
+
+        const userId = req.user.userId as string;
         const result = await kodiakConnectionService.disconnectKodiak(userId);
 
         if (!result.success) {
@@ -87,7 +97,7 @@ router.delete("/kodiak/disconnect", authMiddleware, async (req: AuthenticatedReq
     } catch (error) {
         logger.error("Kodiak disconnect error", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
         });
 
         res.status(500).json({
@@ -100,7 +110,12 @@ router.delete("/kodiak/disconnect", authMiddleware, async (req: AuthenticatedReq
 // GET /api/user/kodiak/status
 router.get("/kodiak/status", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const userId = req.user!.userId;
+        // Ensure user is authenticated (should always be true due to authMiddleware)
+        if (!req.user) {
+            throw new Error("User not authenticated");
+        }
+
+        const userId = req.user.userId;
         const status = await kodiakConnectionService.getConnectionStatus(userId);
 
         // Prevent caching of user-specific data
@@ -116,7 +131,7 @@ router.get("/kodiak/status", authMiddleware, async (req: AuthenticatedRequest, r
     } catch (error) {
         logger.error("Get Kodiak status error", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
         });
 
         res.status(500).json({
@@ -129,7 +144,12 @@ router.get("/kodiak/status", authMiddleware, async (req: AuthenticatedRequest, r
 // GET /api/user/kodiak/positions
 router.get("/kodiak/positions", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const userId = req.user!.userId as string;
+        // Ensure user is authenticated (should always be true due to authMiddleware)
+        if (!req.user) {
+            throw new Error("User not authenticated");
+        }
+
+        const userId = req.user.userId as string;
         const result = await kodiakIntegrationService.getPositions(userId);
 
         if (!result.success) {
@@ -147,7 +167,7 @@ router.get("/kodiak/positions", authMiddleware, async (req: AuthenticatedRequest
     } catch (error) {
         logger.error("Get Kodiak positions error", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
         });
 
         res.status(500).json({
@@ -160,7 +180,12 @@ router.get("/kodiak/positions", authMiddleware, async (req: AuthenticatedRequest
 // GET /api/user/kodiak/trades
 router.get("/kodiak/trades", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const userId = req.user!.userId as string;
+        // Ensure user is authenticated (should always be true due to authMiddleware)
+        if (!req.user) {
+            throw new Error("User not authenticated");
+        }
+
+        const userId = req.user.userId as string;
         const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
         const result = await kodiakIntegrationService.getTrades(userId, limit);
 
@@ -179,7 +204,7 @@ router.get("/kodiak/trades", authMiddleware, async (req: AuthenticatedRequest, r
     } catch (error) {
         logger.error("Get Kodiak trades error", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
         });
 
         res.status(500).json({
@@ -192,7 +217,12 @@ router.get("/kodiak/trades", authMiddleware, async (req: AuthenticatedRequest, r
 // GET /api/user/kodiak/balance
 router.get("/kodiak/balance", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const userId = req.user!.userId as string;
+        // Ensure user is authenticated (should always be true due to authMiddleware)
+        if (!req.user) {
+            throw new Error("User not authenticated");
+        }
+
+        const userId = req.user.userId as string;
         const result = await kodiakIntegrationService.getBalance(userId);
 
         if (!result.success) {
@@ -210,7 +240,7 @@ router.get("/kodiak/balance", authMiddleware, async (req: AuthenticatedRequest, 
     } catch (error) {
         logger.error("Get Kodiak balance error", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
         });
 
         res.status(500).json({
@@ -223,7 +253,12 @@ router.get("/kodiak/balance", authMiddleware, async (req: AuthenticatedRequest, 
 // GET /api/user/kodiak/account-info
 router.get("/kodiak/account-info", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const userId = req.user!.userId as string;
+        // Ensure user is authenticated (should always be true due to authMiddleware)
+        if (!req.user) {
+            throw new Error("User not authenticated");
+        }
+
+        const userId = req.user.userId as string;
         const result = await kodiakIntegrationService.getAccountInfo(userId);
 
         if (!result.success) {
@@ -241,7 +276,7 @@ router.get("/kodiak/account-info", authMiddleware, async (req: AuthenticatedRequ
     } catch (error) {
         logger.error("Get Kodiak account info error", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
         });
 
         res.status(500).json({

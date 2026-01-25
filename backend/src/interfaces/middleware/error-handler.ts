@@ -50,7 +50,7 @@ export interface ErrorHandlerConfig {
     errorTransformers?: Array<(error: Error) => Error>;
 
     /** Custom response transformers */
-    responseTransformers?: Array<(response: any, error: Error) => any>;
+    responseTransformers?: Array<(response: Record<string, unknown>, error: Error) => Record<string, unknown>>;
 }
 
 /**
@@ -72,7 +72,7 @@ export class ErrorHandlerMiddleware {
     /**
      * Main error handling middleware
      */
-    handle = (error: Error, req: Request, res: Response, next: NextFunction): void => {
+    handle = (error: Error, req: Request, res: Response, _next: NextFunction): void => {
         // Skip if response already sent
         if (res.headersSent) {
             return;
@@ -86,7 +86,7 @@ export class ErrorHandlerMiddleware {
             } catch (transformError) {
                 logger.error("Error transformer failed", {
                     originalError: processedError.message,
-                    transformerError: (transformError as Error).message,
+                    transformerError: transformError instanceof Error ? transformError.message : String(transformError),
                 });
             }
         }
@@ -109,7 +109,7 @@ export class ErrorHandlerMiddleware {
                 finalResponse = transformer(finalResponse, processedError);
             } catch (transformError) {
                 logger.error("Response transformer failed", {
-                    transformerError: (transformError as Error).message,
+                    transformerError: transformError instanceof Error ? transformError.message : String(transformError),
                 });
             }
         }
@@ -122,7 +122,7 @@ export class ErrorHandlerMiddleware {
     /**
      * Create structured error response
      */
-    private createErrorResponse(error: Error, correlationId?: string): any {
+    private createErrorResponse(error: Error, correlationId?: string): Record<string, unknown> {
         if (error instanceof AppError) {
             // Use AppError's built-in response method
             return error.toResponse(correlationId);
@@ -136,10 +136,14 @@ export class ErrorHandlerMiddleware {
      * Extract correlation ID from request
      */
     private extractCorrelationId(req: Request): string | undefined {
+        const correlationId = req.headers['x-correlation-id'];
+        const requestId = req.headers['x-request-id'];
+        const customCorrelationId = (req as unknown as { correlationId?: string }).correlationId;
+
         return (
-            req.headers['x-correlation-id'] as string ||
-            (req as any).correlationId ||
-            req.headers['x-request-id'] as string
+            (typeof correlationId === 'string' ? correlationId : undefined) ||
+            customCorrelationId ||
+            (typeof requestId === 'string' ? requestId : undefined)
         );
     }
 
@@ -164,7 +168,7 @@ export class ErrorHandlerMiddleware {
             url: req.url,
             userAgent: req.get('User-Agent'),
             ip: req.ip,
-            userId: (req as any).user?.userId,
+            userId: (req as unknown as { user?: { userId?: string } }).user?.userId,
             isOperational,
             stack: this.config.includeStackTrace ? error.stack : undefined,
         };
@@ -203,7 +207,7 @@ export class ErrorHandlerUtils {
     /**
      * Wrap async route handlers to catch errors
      */
-    static asyncHandler(fn: Function) {
+    static asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => unknown) {
         return (req: Request, res: Response, next: NextFunction) => {
             Promise.resolve(fn(req, res, next)).catch(next);
         };
@@ -216,7 +220,7 @@ export class ErrorHandlerUtils {
         message: string,
         code: ErrorCode,
         statusCode: number = 500,
-        context: Record<string, any> = {}
+        context: Record<string, unknown> = {}
     ): AppError {
         return new AppError(message, code, statusCode, context);
     }

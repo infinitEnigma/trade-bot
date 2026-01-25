@@ -304,11 +304,21 @@ MiddlewareConfig.configure(app, {
 // Routes are organized by functional domain for clarity
 // ===========================================
 
-RouteConfig.register(app, {
-    enableApiRoutes: true,
-    enableHealthRoutes: true,
-    io, // Pass Socket.IO server for routes that need it
-});
+// Register routes asynchronously
+(async () => {
+    try {
+        await RouteConfig.register(app, {
+            enableApiRoutes: true,
+            enableHealthRoutes: true,
+            io, // Pass Socket.IO server for routes that need it
+        });
+    } catch (error) {
+        logger.error("Failed to register routes", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        process.exit(1);
+    }
+})();
 
 // ===========================================
 // 🚨 7.5 UNIFIED ERROR HANDLING MIDDLEWARE

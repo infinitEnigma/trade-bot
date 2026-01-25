@@ -393,7 +393,6 @@ export class DatabaseSchemaParser {
 
         for (let i = 0; i < content.length; i++) {
             const char = content[i];
-            const nextChar = content[i + 1];
 
             // Handle string literals
             if ((char === '"' || char === "'") && (i === 0 || content[i - 1] !== '\\')) {

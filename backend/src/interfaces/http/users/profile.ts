@@ -5,7 +5,7 @@
  * Focused on user account operations.
  */
 
-import { Router, Request, Response } from "express";
+import { Router, Response } from "express";
 import Joi from "joi";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
 import { userProfileService } from "../../../core/user/user-profile.service";
@@ -36,7 +36,12 @@ const walletVerificationSchema = Joi.object({
 // GET /api/user/profile
 router.get("/profile", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const userId = req.user!.userId as string;
+        // Ensure user is authenticated (should always be true due to authMiddleware)
+        if (!req.user) {
+            throw new Error("User not authenticated");
+        }
+
+        const userId = req.user.userId as string;
         const profile = await userProfileService.getUserProfile(userId);
 
         res.json({
@@ -47,11 +52,12 @@ router.get("/profile", authMiddleware, async (req: AuthenticatedRequest, res: Re
         logger.info("Profile retrieved successfully", {
             userId,
             hasKodiak: profile.hasKodiak,
+            correlationId: getCorrelationId(),
         });
     } catch (error) {
         logger.error("Get profile error", {
-            error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            ...createErrorResponse(error instanceof Error ? error : new Error(String(error)), getCorrelationId()),
+            userId: req.user?.userId,
         });
 
         res.status(500).json({
@@ -64,6 +70,11 @@ router.get("/profile", authMiddleware, async (req: AuthenticatedRequest, res: Re
 // POST /api/user/profile/update
 router.post("/profile/update", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
+        // Ensure user is authenticated (should always be true due to authMiddleware)
+        if (!req.user) {
+            throw new Error("User not authenticated");
+        }
+
         // Validate request body
         const { error, value } = profileUpdateSchema.validate(req.body);
         if (error) {
@@ -73,7 +84,7 @@ router.post("/profile/update", authMiddleware, async (req: AuthenticatedRequest,
             });
         }
 
-        const userId = req.user!.userId as string;
+        const userId = req.user.userId as string;
         const result = await userProfileService.updateUserProfile(userId, value);
 
         if (!result.success) {
@@ -92,8 +103,8 @@ router.post("/profile/update", authMiddleware, async (req: AuthenticatedRequest,
 
     } catch (error) {
         logger.error("Profile update error", {
-            error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            ...createErrorResponse(error instanceof Error ? error : new Error(String(error)), getCorrelationId()),
+            userId: req.user?.userId,
         });
 
         res.status(500).json({
@@ -106,6 +117,11 @@ router.post("/profile/update", authMiddleware, async (req: AuthenticatedRequest,
 // POST /api/user/verify-wallet
 router.post("/verify-wallet", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
+        // Ensure user is authenticated (should always be true due to authMiddleware)
+        if (!req.user) {
+            throw new Error("User not authenticated");
+        }
+
         // Validate request body
         const { error, value } = walletVerificationSchema.validate(req.body);
         if (error) {
@@ -115,7 +131,7 @@ router.post("/verify-wallet", authMiddleware, async (req: AuthenticatedRequest, 
             });
         }
 
-        const userId = req.user!.userId as string;
+        const userId = req.user.userId as string;
         const result = await userProfileService.verifyWalletOwnership(
             userId,
             value.walletAddress,
@@ -137,8 +153,8 @@ router.post("/verify-wallet", authMiddleware, async (req: AuthenticatedRequest, 
 
     } catch (error) {
         logger.error("Wallet verification error", {
-            error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            ...createErrorResponse(error instanceof Error ? error : new Error(String(error)), getCorrelationId()),
+            userId: req.user?.userId,
         });
 
         res.status(500).json({

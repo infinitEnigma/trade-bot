@@ -3,11 +3,12 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { selectAuthService } from "../../core/service-selector";
+import { AuthResult, LegacyAuthResult } from "../../core/auth/auth.service.pure";
 
 const authService = selectAuthService();
 import { redisService } from "../../infrastructure/cache/redis.service";
 import { setUserContext } from "../../shared/utils/context";
-import { roleManagementService } from "../../core/auth/role-management.service";
+//import { roleManagementService } from "../../core/auth/role-management.service";
 import { logger } from "../../core/logging";
 import { progressiveAuthLimiter } from "../../infrastructure/security/rate-limiter.service";
 
@@ -21,14 +22,14 @@ export interface AuthenticatedRequest extends Request {
 }
 
 // Exponential backoff retry for token refresh with Redis mutex
-async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest, maxRetries = 3): Promise<any> {
-  let lastError: any = null;
+async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest, maxRetries = 3): Promise<AuthResult | LegacyAuthResult> {
+  let lastError: unknown = null;
   let userId: string | undefined;
 
   // Extract userId from the token for mutex key
   try {
-    const decoded = jwt.decode(refreshToken) as any;
-    userId = decoded?.userId;
+    const decoded = jwt.decode(refreshToken);
+    userId = (decoded as Record<string, unknown>)?.userId as string | undefined;
   } catch (e) {
     logger.warn("Could not decode refresh token for mutex", {
       error: e instanceof Error ? e.message : String(e),

@@ -96,7 +96,8 @@ export class WebSocketEventHandlers {
                     correlationId,
                 });
             } else {
-                this.logger.error("Unexpected subscription error", error, {
+                const errorObj = error instanceof Error ? error : new Error(String(error));
+                this.logger.error("Unexpected subscription error", errorObj, {
                     socketId: socket.id,
                     userId: client.userId,
                     room,
@@ -142,7 +143,8 @@ export class WebSocketEventHandlers {
             });
 
         } catch (error) {
-            this.logger.error("Unsubscribe error", error, {
+            const errorObj = error instanceof Error ? error : new Error(String(error));
+            this.logger.error("Unsubscribe error", errorObj, {
                 socketId: socket.id,
                 userId: client.userId,
                 room,
@@ -279,7 +281,8 @@ export class WebSocketEventHandlers {
                     correlationId,
                 });
             } else {
-                this.logger.error("Unexpected market subscription error", error, {
+                const errorObj = error instanceof Error ? error : new Error(String(error));
+                this.logger.error("Unexpected market subscription error", errorObj, {
                     socketId: socket.id,
                     userId: client.userId,
                     symbol,
@@ -317,7 +320,8 @@ export class WebSocketEventHandlers {
             // This is just for logging
 
         } catch (error) {
-            this.logger.error("Disconnect handling error", error, {
+            const errorObj = error instanceof Error ? error : new Error(String(error));
+            this.logger.error("Disconnect handling error", errorObj, {
                 socketId: socket.id,
                 correlationId,
             });

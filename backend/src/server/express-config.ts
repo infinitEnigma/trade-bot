@@ -59,14 +59,14 @@ export class ExpressConfig {
     /**
      * Configure Express application with all middleware and settings
      */
-    static configure(app: Express, options: ExpressConfigOptions = {}): void {
+    static async configure(app: Express, options: ExpressConfigOptions = {}): Promise<void> {
         const config = { ...this.DEFAULT_OPTIONS, ...options };
 
         this.configureTrustProxy(app, config);
         this.configureCors(app, config);
         this.configureSecurity(app, config);
         this.configureParsing(app);
-        this.configureLogging(app);
+        await this.configureLogging(app);
 
         logger.info("Express application configured successfully", {
             corsEnabled: config.enableCors,
@@ -187,12 +187,14 @@ export class ExpressConfig {
     /**
      * Configure logging and monitoring middleware
      */
-    private static configureLogging(app: Express): void {
+    private static async configureLogging(app: Express): Promise<void> {
         // Request context middleware (must be first)
-        app.use(require("../interfaces/middleware/context").contextMiddleware);
+        const { contextMiddleware } = await import("../interfaces/middleware/context.js");
+        app.use(contextMiddleware);
 
         // HTTP request logging middleware
-        app.use(require("../interfaces/middleware/logger").httpLogger);
+        const { httpLogger } = await import("../interfaces/middleware/logger.js");
+        app.use(httpLogger);
 
         logger.debug("Logging and monitoring middleware configured");
     }
@@ -202,7 +204,16 @@ export class ExpressConfig {
      */
     static createApp(options: ExpressConfigOptions = {}): Express {
         const app = express();
-        this.configure(app, options);
+
+        // Configure the app asynchronously but return the app synchronously
+        // This is a common pattern for Express apps - configure async but return sync
+        this.configure(app, options).catch((error) => {
+            logger.error("Failed to configure Express application", {
+                error: error instanceof Error ? error.message : String(error),
+            });
+            throw error; // Re-throw to fail fast in development
+        });
+
         return app;
     }
 }

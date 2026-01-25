@@ -46,9 +46,11 @@ export function httpLogger(
       // Override res.end to log response details
       const originalEnd = res.end;
       res.end = function (
-        chunk?: any,
-        encoding?: BufferEncoding | (() => void)
-      ) {
+        this: Response,
+        chunk?: string | Buffer,
+        encoding?: BufferEncoding,
+        cb?: () => void
+      ): Response {
         const duration = Date.now() - startTime;
 
         // Log the response
@@ -64,8 +66,8 @@ export function httpLogger(
         });
 
         // Call original end method
-        return originalEnd.call(this, chunk, encoding as any);
-      };
+        return originalEnd.call(this, chunk, encoding ?? 'utf8', cb);
+      } as typeof res.end;
 
       next();
     }

@@ -6,14 +6,15 @@ import { AuthenticatedRequest } from "./auth";
 
 export function requireRole(role: UserRole) {
     return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-        const userRoles = req.user!.roles || [];
+        const userRoles = req.user?.roles || [];
+        const success = false;
 
         if (!userRoles.includes(role)) {
             return res.status(403).json({
-                success: false,
+                success,
                 error: `${role} role required for this action`,
                 requiredRole: role,
-                userRoles: userRoles
+                userRoles
             });
         }
         next();
@@ -22,16 +23,17 @@ export function requireRole(role: UserRole) {
 
 export function requireAnyRole(...roles: UserRole[]) {
     return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-        const userRoles = req.user!.roles || [];
+        const userRoles = req.user?.roles || [];
+        const success = false;
 
         const hasRequiredRole = roles.some(role => userRoles.includes(role));
 
         if (!hasRequiredRole) {
             return res.status(403).json({
-                success: false,
+                success,
                 error: `One of the following roles required: ${roles.join(', ')}`,
                 requiredRoles: roles,
-                userRoles: userRoles
+                userRoles
             });
         }
         next();

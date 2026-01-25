@@ -1,11 +1,11 @@
 /** @format */
 
-import { Router, Request, Response } from "express";
+import { Router, Response } from "express";
 import Joi from "joi";
-import { v4 as uuidv4 } from "uuid";
-import { selectAuthService } from "../../../core/service-selector";
+//import { v4 as uuidv4 } from "uuid";
+//import { selectAuthService } from "../../../core/service-selector";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
-import { Pool } from "pg";
+//import { Pool } from "pg";
 import { query } from "../../../database/pool"; // ✅ Import from centralized module
 import logger from "../../../core/logging/logger.service";
 

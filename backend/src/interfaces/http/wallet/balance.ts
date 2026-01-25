@@ -1,45 +1,63 @@
 /** @format */
 
-import { Router, Request, Response } from "express";
+import { Router, Response } from "express";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
-import { selectBalanceService } from "../../../core/service-selector";
+import { blockchainService } from "../../../infrastructure/external/blockchain.service";
 import logger from "../../../core/logging/logger.service";
 import { RateLimiters } from "../../../infrastructure";
 import { UserLevel, ValidationError, NotFoundError, ExternalServiceError } from "@trade-bot/shared";
-
-// Select service implementation based on feature flags
-const balanceService = selectBalanceService();
 
 const router = Router();
 
 /**
  * GET /api/balance/current
- * Get user's current account balance from Orderly
+ * Get user's current wallet balance from connected blockchain wallet
  */
 router.get(
   "/current",
   RateLimiters.balance,
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user!.userId;
-    const userLevel = req.user!.userLevel;
+    // Ensure user is authenticated (should always be true due to authMiddleware)
+    if (!req.user) {
+      throw new ValidationError("User not authenticated", {
+        operation: "wallet_balance_fetch"
+      });
+    }
+
+    const userId = req.user.userId;
+    const userLevel = req.user.userLevel;
 
     try {
-      // BASIC users don't have balance data yet - skip API calls
+      // BASIC users don't have wallet balance data yet - skip API calls
       if (userLevel === UserLevel.BASIC) {
-        logger.debug("Balance request from BASIC user, skipping API call", {
+        logger.debug("Wallet balance request from BASIC user, skipping rpc call", {
           userId,
           userLevel
         });
         return res.json({
           success: true,
           data: null,
-          message: "Balance data available after Kodiak account setup"
+          message: "Wallet balance data available after wallet connection"
         });
       }
 
-      // VERIFIED users get real balance data
-      const balance = await balanceService.getUserBalance(userId);
+      // Get user's wallet address from database
+      const walletAddress = await blockchainService.getUserWalletAddress(userId);
+
+      if (!walletAddress) {
+        logger.debug("No wallet address found for user", {
+          userId,
+          userLevel
+        });
+        throw new ValidationError("No connected wallet found. Please connect your wallet in Settings.", {
+          userId,
+          operation: "wallet_balance_fetch"
+        });
+      }
+
+      // VERIFIED users get real wallet balance data from blockchain
+      const balance = await blockchainService.getNativeBalance(walletAddress);
 
       res.json({
         success: true,
@@ -51,7 +69,7 @@ router.get(
       // Log differently based on user level
       if (userLevel === UserLevel.VERIFIED) {
         // Only log as error for VERIFIED users (unexpected failures)
-        logger.error("Balance fetch failed for VERIFIED user", {
+        logger.error("Wallet balance fetch failed for VERIFIED user", {
           userId,
           userLevel,
           error: errorMessage,
@@ -59,40 +77,41 @@ router.get(
 
         // Throw structured errors for VERIFIED users
         if (errorMessage.includes("no Kodiak account connected") ||
-          errorMessage.includes("Kodiak credentials not found")) {
-          throw new ValidationError("Kodiak account not connected. Please connect your trading account in Settings.", {
+          errorMessage.includes("Kodiak credentials not found") ||
+          errorMessage.includes("No connected wallet found")) {
+          throw new ValidationError("Wallet not connected. Please connect your wallet in Settings.", {
             userId,
-            operation: "balance_fetch"
+            operation: "wallet_balance_fetch"
           });
         }
 
-        // External service errors (Kodiak API failures)
-        if (errorMessage.includes("Orderly API") || errorMessage.includes("Kodiak")) {
-          throw new ExternalServiceError("Kodiak", {
+        // Blockchain service errors
+        if (errorMessage.includes("Failed to get balance") || errorMessage.includes("blockchain")) {
+          throw new ExternalServiceError("Blockchain", {
             userId,
-            operation: "balance_fetch",
-            service: "kodiak_api"
+            operation: "wallet_balance_fetch",
+            service: "blockchain_rpc"
           });
         }
 
         // Generic internal error for unexpected failures
-        throw new NotFoundError("Balance data temporarily unavailable", {
+        throw new NotFoundError("Wallet balance data temporarily unavailable", {
           userId,
-          operation: "balance_fetch"
+          operation: "wallet_balance_fetch"
         });
       } else {
         // Log as debug for non-VERIFIED users (expected behavior)
-        logger.debug("Balance fetch skipped/failed for non-VERIFIED user", {
+        logger.debug("Wallet balance fetch skipped/failed for non-VERIFIED user", {
           userId,
           userLevel,
           error: errorMessage,
         });
 
         // For non-VERIFIED users, still return user-friendly error
-        throw new ValidationError("Balance data requires VERIFIED account status", {
+        throw new ValidationError("Wallet balance data requires VERIFIED account status", {
           userId,
           userLevel,
-          operation: "balance_fetch"
+          operation: "wallet_balance_fetch"
         });
       }
     }
@@ -101,38 +120,56 @@ router.get(
 
 /**
  * POST /api/balance/refresh
- * Force refresh balance from Orderly API
+ * Force refresh wallet balance from blockchain
  */
 router.post(
   "/refresh",
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const userId = req.user!.userId;
+      // Ensure user is authenticated (should always be true due to authMiddleware)
+      if (!req.user) {
+        throw new ValidationError("User not authenticated", {
+          operation: "wallet_balance_refresh"
+        });
+      }
+
+      const userId = req.user.userId;
+
+      // Get user's wallet address
+      const walletAddress = await blockchainService.getUserWalletAddress(userId);
+
+      if (!walletAddress) {
+        logger.debug("No wallet address found for refresh", { userId });
+        throw new ValidationError("No connected wallet found. Please connect your wallet in Settings.", {
+          userId,
+          operation: "wallet_balance_refresh"
+        });
+      }
 
       // ✅ Invalidate cache to force fresh fetch
-      await balanceService.invalidateBalanceCache(userId);
+      await blockchainService.invalidateUserCache(userId, walletAddress);
 
-      const balance = await balanceService.getUserBalance(userId);
+      const balance = await blockchainService.getNativeBalance(walletAddress);
 
-      logger.info("Balance manually refreshed", { userId });
+      logger.info("Wallet balance manually refreshed", { userId });
 
       res.json({
         success: true,
         data: balance,
       });
     } catch (error) {
-      logger.error("Refresh balance error", {
+      logger.error("Refresh wallet balance error", {
         userId: (req as AuthenticatedRequest).user?.userId,
         error: (error as Error).message,
       });
 
       res.status(500).json({
-        success: false,
+        success: true,
         error: (error as Error).message,
       });
     }
   }
 );
 
-export const balanceRoutes = router;
+export const walletBalanceRoutes = router;

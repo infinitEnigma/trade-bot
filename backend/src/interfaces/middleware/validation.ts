@@ -31,7 +31,7 @@ export function validateRequest(schema: Joi.ObjectSchema, options: ValidationOpt
     return (req: Request, res: Response, next: NextFunction) => {
         try {
             // Get data from specified source
-            let dataToValidate: any;
+            let dataToValidate: Record<string, unknown>;
             switch (source) {
                 case 'body':
                     dataToValidate = req.body;
@@ -71,8 +71,8 @@ export function validateRequest(schema: Joi.ObjectSchema, options: ValidationOpt
                 const validationError = new ValidationError(`${errorPrefix}: ${error.details[0].message}`);
 
                 // Add detailed validation errors to response
-                const errorResponse = createErrorResponse(validationError, getCorrelationId()) as any;
-                errorResponse.details = {
+                const errorResponse = createErrorResponse(validationError, getCorrelationId());
+                (errorResponse as Record<string, unknown>).details = {
                     source,
                     errors: error.details.map(detail => ({
                         field: detail.path.join('.'),

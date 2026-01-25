@@ -47,16 +47,16 @@ export interface RouteConfigOptions {
  * Handles all HTTP route registration and mounting
  */
 export class RouteConfig {
-    private static readonly DEFAULT_OPTIONS: Required<RouteConfigOptions> = {
+    private static readonly DEFAULT_OPTIONS = {
         enableApiRoutes: true,
         enableHealthRoutes: true,
-        io: undefined as any,
-    };
+        io: undefined,
+    } as const;
 
     /**
      * Register all routes with the Express application
      */
-    static register(app: Express, options: RouteConfigOptions = {}): void {
+    static async register(app: Express, options: RouteConfigOptions = {}): Promise<void> {
         const config = { ...this.DEFAULT_OPTIONS, ...options };
 
         // Make io available to routes
@@ -65,11 +65,11 @@ export class RouteConfig {
         }
 
         if (config.enableApiRoutes) {
-            this.registerApiRoutes(app);
+            await this.registerApiRoutes(app);
         }
 
         if (config.enableHealthRoutes) {
-            this.registerHealthRoutes(app);
+            await this.registerHealthRoutes(app);
         }
 
         logger.info("Route registration completed", {
@@ -82,24 +82,24 @@ export class RouteConfig {
     /**
      * Register all API routes by functional domain
      */
-    private static registerApiRoutes(app: Express): void {
+    private static async registerApiRoutes(app: Express): Promise<void> {
         // 🔐 Authentication & Authorization
-        this.registerAuthRoutes(app);
+        await this.registerAuthRoutes(app);
 
         // 👤 User Management
-        this.registerUserRoutes(app);
+        await this.registerUserRoutes(app);
 
         // 📊 Market Data & Trading
-        this.registerMarketRoutes(app);
+        await this.registerMarketRoutes(app);
 
         // 🤖 Bot Management & Engine
-        this.registerBotRoutes(app);
+        await this.registerBotRoutes(app);
 
         // 💰 Wallet & Balance
-        this.registerWalletRoutes(app);
+        await this.registerWalletRoutes(app);
 
         // 🛡️ Security & Monitoring
-        this.registerSecurityRoutes(app);
+        await this.registerSecurityRoutes(app);
 
         logger.debug("API routes registered by domain");
     }
@@ -107,8 +107,8 @@ export class RouteConfig {
     /**
      * Register authentication routes
      */
-    private static registerAuthRoutes(app: Express): void {
-        const { authRoutes } = require("../interfaces/http/auth");
+    private static async registerAuthRoutes(app: Express): Promise<void> {
+        const { authRoutes } = await import("../interfaces/http/auth/index.js");
         app.use("/api/auth", authRoutes);
         logger.debug("Authentication routes registered");
     }
@@ -116,8 +116,8 @@ export class RouteConfig {
     /**
      * Register user management routes
      */
-    private static registerUserRoutes(app: Express): void {
-        const { userRoutes } = require("../interfaces/http/users");
+    private static async registerUserRoutes(app: Express): Promise<void> {
+        const { userRoutes } = await import("../interfaces/http/users/index.js");
         app.use("/api/user", userRoutes);
         logger.debug("User management routes registered");
     }
@@ -125,8 +125,8 @@ export class RouteConfig {
     /**
      * Register market data and trading routes
      */
-    private static registerMarketRoutes(app: Express): void {
-        const { marketRoutes, strategyRoutes } = require("../interfaces/http/trading");
+    private static async registerMarketRoutes(app: Express): Promise<void> {
+        const { marketRoutes, strategyRoutes } = await import("../interfaces/http/trading/index.js");
         app.use("/api/market", marketRoutes);
         app.use("/api/strategies", strategyRoutes);
         logger.debug("Market and trading routes registered");
@@ -135,8 +135,8 @@ export class RouteConfig {
     /**
      * Register bot management routes
      */
-    private static registerBotRoutes(app: Express): void {
-        const { botRoutes, botEngineRoutes, botManagementRoutes } = require("../interfaces/http/bots");
+    private static async registerBotRoutes(app: Express): Promise<void> {
+        const { botRoutes } = await import("../interfaces/http/bots/index.js");
         app.use("/api/bot", botRoutes);
         logger.debug("Bot management routes registered");
     }
@@ -144,19 +144,19 @@ export class RouteConfig {
     /**
      * Register wallet and balance routes
      */
-    private static registerWalletRoutes(app: Express): void {
-        const { walletRoutes } = require("../interfaces/http/wallet");
-        const { balanceRoutes } = require("../interfaces/http/wallet/balance");
+    private static async registerWalletRoutes(app: Express): Promise<void> {
+        const { walletRoutes } = await import("../interfaces/http/wallet/index.js");
+        const { walletBalanceRoutes } = await import("../interfaces/http/wallet/balance.js");
         app.use("/api/wallet", walletRoutes);
-        app.use("/api/balance", balanceRoutes);
+        app.use("/api/balance", walletBalanceRoutes);
         logger.debug("Wallet and balance routes registered");
     }
 
     /**
      * Register security and monitoring routes
      */
-    private static registerSecurityRoutes(app: Express): void {
-        const { securityRoutes } = require("../interfaces/http/system");
+    private static async registerSecurityRoutes(app: Express): Promise<void> {
+        const { securityRoutes } = await import("../interfaces/http/system/security.js");
         app.use("/api/security", securityRoutes);
         logger.debug("Security routes registered");
     }
@@ -164,8 +164,8 @@ export class RouteConfig {
     /**
      * Register health check routes
      */
-    private static registerHealthRoutes(app: Express): void {
-        const { healthRoutes } = require("../interfaces/http/system");
+    private static async registerHealthRoutes(app: Express): Promise<void> {
+        const { healthRoutes } = await import("../interfaces/http/system/health.js");
 
         // Health check (must be last to catch all routes)
         app.use("/api", healthRoutes);
@@ -180,7 +180,7 @@ export class RouteConfig {
         const routes: string[] = [];
 
         // Walk through the Express app's router stack
-        const stack = (app as any)._router?.stack;
+        const stack = (app as Express)._router?.stack;
         if (stack) {
             for (const layer of stack) {
                 if (layer.route) {

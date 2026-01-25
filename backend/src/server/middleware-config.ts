@@ -2,6 +2,19 @@
 
 import { Express } from "express";
 import { logger } from "../core/logging";
+import { AuthenticatedRequest } from "../interfaces/middleware";
+import { UserLevel } from "@trade-bot/shared";
+
+/**
+ * Express Layer type for middleware stack validation
+ */
+interface ExpressLayer {
+    name?: string;
+    regexp?: RegExp;
+    handle?: unknown;
+    route?: unknown;
+    [key: string]: unknown;
+}
 
 /**
  * ===========================================
@@ -52,7 +65,7 @@ export class MiddlewareConfig {
     /**
      * Configure all middleware for the Express application
      */
-    static configure(app: Express, options: MiddlewareConfigOptions = {}): void {
+    static async configure(app: Express, options: MiddlewareConfigOptions = {}): Promise<void> {
         const config = { ...this.DEFAULT_OPTIONS, ...options };
 
         // CSRF token generation for auth routes (login/register/refresh)
@@ -92,8 +105,8 @@ export class MiddlewareConfig {
     /**
      * Configure CSRF token generation for authentication routes
      */
-    private static configureCsrfProtection(app: Express): void {
-        const { csrfTokenMiddleware } = require("../interfaces/middleware/csrf");
+    private static async configureCsrfProtection(app: Express): Promise<void> {
+        const { csrfTokenMiddleware } = await import("../interfaces/middleware/csrf.js");
 
         // CSRF token generation for auth routes (login/register/refresh)
         app.use("/api/auth", csrfTokenMiddleware);
@@ -104,8 +117,8 @@ export class MiddlewareConfig {
     /**
      * Configure CSRF validation for state-changing operations
      */
-    private static configureCsrfValidation(app: Express): void {
-        const { csrfMiddleware } = require("../interfaces/middleware/csrf");
+    private static async configureCsrfValidation(app: Express): Promise<void> {
+        const { csrfMiddleware } = await import("../interfaces/middleware/csrf.js");
 
         // CSRF validation for ALL state-changing operations (browser routes)
         // Note: Bot engine routes are excluded because they use API key auth
@@ -126,8 +139,8 @@ export class MiddlewareConfig {
     /**
      * Configure per-endpoint rate limiting with user-based scaling
      */
-    private static configureRateLimiting(app: Express): void {
-        const { RateLimiters } = require("../infrastructure");
+    private static async configureRateLimiting(app: Express): Promise<void> {
+        const { RateLimiters } = await import("../infrastructure/index.js");
 
         // 🔐 CRITICAL: Authentication endpoints MUST be excluded from general rate limiting
         // They use specialized auth-aware rate limiting instead
@@ -169,8 +182,8 @@ export class MiddlewareConfig {
     /**
      * Configure specialized Kodiak API protection
      */
-    private static configureKodiakProtection(app: Express): void {
-        const { kodiakRequestQueue } = require("../infrastructure/external/kodiak-queue");
+    private static async configureKodiakProtection(app: Express): Promise<void> {
+        const { kodiakRequestQueue } = await import("../infrastructure/external/kodiak-queue.js");
 
         // 🎯 KODIAK-SPECIFIC PROTECTION: Request queuing + rate limiting for trading routes ONLY
         // EXCLUDE chart/market data routes - they need fast updates for real-time charts
@@ -196,7 +209,10 @@ export class MiddlewareConfig {
             });
 
             // Additional rate limiting per Kodiak account
-            app.use(route, this.createKodiakRateLimiter());
+            app.use(route, async (req, res, next) => {
+                const rateLimiter = await this.createKodiakRateLimiter();
+                rateLimiter(req, res, next);
+            });
         });
 
         logger.debug("Kodiak API protection configured for specific routes", {
@@ -207,19 +223,20 @@ export class MiddlewareConfig {
     /**
      * Create specialized rate limiter for Kodiak routes
      */
-    private static createKodiakRateLimiter() {
-        const { createRateLimiter } = require("../infrastructure/security/rate-limiter.service");
+    private static async createKodiakRateLimiter() {
+        const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service.js");
 
         return createRateLimiter("kodiak-synced", {
             max: 8,                   // 8 requests per minute per user (safe for 10/min Orderly limit)
             windowMs: 60000,          // 1 minute window (matches Orderly limit)
             message: "Kodiak data synchronized with Orderly rate limits",
-            progressiveDelay: true,   // Add delays for frequent requests
+            progressiveBackoff: true,   // Add delays for frequent requests
             failOpen: false,          // Protect Orderly API - fail closed
-            userBasedLimits: {
-                BASIC: 1,             // Basic users: 1 req/min
-                REGISTERED: 3,        // Registered users: 3 req/min
-                VERIFIED: 8,          // Verified users: 8 req/min (full access)
+            enableUserBasedLimits: true,
+            userLimits: {
+                [UserLevel.BASIC]: 1,             // Basic users: 1 req/min
+                [UserLevel.REGISTERED]: 3,        // Registered users: 3 req/min
+                [UserLevel.VERIFIED]: 8,          // Verified users: 8 req/min (full access)
             },
         });
     }
@@ -237,7 +254,7 @@ export class MiddlewareConfig {
                 logger.debug("API activity tracked", {
                     method: req.method,
                     url: req.url,
-                    userId: (req as any).user?.userId,
+                    userId: (req as AuthenticatedRequest).user?.userId,
                 });
             };
 
@@ -253,14 +270,14 @@ export class MiddlewareConfig {
      */
     static validateConfiguration(app: Express): { isValid: boolean; issues: string[] } {
         const issues: string[] = [];
-        const stack = (app as any)._router?.stack || [];
+        const stack = (app as { _router?: { stack?: ExpressLayer[] } })._router?.stack || [];
 
         // Check for required middleware
-        const hasCsrf = stack.some((layer: any) =>
+        const hasCsrf = stack.some((layer: ExpressLayer) =>
             layer.name === "csrfMiddleware" || layer.regexp?.toString().includes("csrf")
         );
 
-        const hasRateLimiting = stack.some((layer: any) =>
+        const hasRateLimiting = stack.some((layer: ExpressLayer) =>
             layer.name?.includes("rateLimit") || layer.regexp?.toString().includes("rate")
         );
 
@@ -273,11 +290,11 @@ export class MiddlewareConfig {
         }
 
         // Check middleware order (CSRF should come before rate limiting)
-        const csrfIndex = stack.findIndex((layer: any) =>
+        const csrfIndex = stack.findIndex((layer: ExpressLayer) =>
             layer.name === "csrfMiddleware" || layer.regexp?.toString().includes("csrf")
         );
 
-        const rateLimitIndex = stack.findIndex((layer: any) =>
+        const rateLimitIndex = stack.findIndex((layer: ExpressLayer) =>
             layer.name?.includes("rateLimit") || layer.regexp?.toString().includes("rate")
         );
 

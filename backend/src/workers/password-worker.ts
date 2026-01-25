@@ -5,9 +5,10 @@
  * event loop blocking during computationally expensive bcrypt operations.
  */
 
-import { Worker, isMainThread, parentPort, workerData } from 'worker_threads';
+//import { Worker, isMainThread, parentPort, workerData } from 'worker_threads';
+import { Worker } from 'worker_threads';
 import { EventEmitter } from 'events';
-import * as path from 'path';
+//import * as path from 'path';
 import * as os from 'os';
 import logger from '../core/logging/logger.service';
 
@@ -54,16 +55,51 @@ parentPort.on('message', async (message) => {
 `;
 
 /**
- * Password hashing task interface
+ * Worker message interface
+ */
+interface WorkerMessage {
+    id: string;
+    success: boolean;
+    result?: string | boolean;
+    error?: string;
+    stack?: string;
+}
+
+/**
+ * Hash task data interfaces
+ */
+interface HashTaskData {
+    password: string;
+    rounds: number;
+}
+
+interface CompareTaskData {
+    password: string;
+    hash: string;
+}
+
+/**
+ * Password hashing task interfaces
  */
 interface HashTask {
     id: string;
-    action: 'hash' | 'compare';
-    data: any;
-    resolve: (result: any) => void;
+    action: 'hash';
+    data: HashTaskData;
+    resolve: (result: string) => void;
     reject: (error: Error) => void;
     timeout: NodeJS.Timeout;
 }
+
+interface CompareTask {
+    id: string;
+    action: 'compare';
+    data: CompareTaskData;
+    resolve: (result: boolean) => void;
+    reject: (error: Error) => void;
+    timeout: NodeJS.Timeout;
+}
+
+type PasswordTask = HashTask | CompareTask;
 
 /**
  * Worker thread pool for non-blocking password operations
@@ -71,8 +107,8 @@ interface HashTask {
 class PasswordWorkerPool extends EventEmitter {
     private workers: Worker[] = [];
     private availableWorkers: Worker[] = [];
-    private taskQueue: HashTask[] = [];
-    private activeTasks = new Map<string, HashTask>();
+    private taskQueue: PasswordTask[] = [];
+    private activeTasks = new Map<string, PasswordTask>();
     private nextTaskId = 0;
     private isShuttingDown = false;
 
@@ -128,7 +164,7 @@ class PasswordWorkerPool extends EventEmitter {
     /**
      * Handle messages from worker threads
      */
-    private handleWorkerMessage(worker: Worker, message: any): void {
+    private handleWorkerMessage(worker: Worker, message: WorkerMessage): void {
         const { id, success, result, error } = message;
         const task = this.activeTasks.get(id);
 
@@ -148,7 +184,11 @@ class PasswordWorkerPool extends EventEmitter {
 
         // Complete the task
         if (success) {
-            task.resolve(result);
+            if (task.action === 'hash') {
+                (task as HashTask).resolve(result as string);
+            } else {
+                (task as CompareTask).resolve(result as boolean);
+            }
         } else {
             const err = new Error(error || 'Worker task failed');
             task.reject(err);
@@ -239,8 +279,12 @@ class PasswordWorkerPool extends EventEmitter {
             return;
         }
 
-        const worker = this.availableWorkers.shift()!;
-        const task = this.taskQueue.shift()!;
+        const worker = this.availableWorkers.shift();
+        const task = this.taskQueue.shift();
+
+        if (!worker || !task) {
+            return;
+        }
 
         // Remove from available workers temporarily
         this.activeTasks.set(task.id, task);
@@ -279,7 +323,7 @@ class PasswordWorkerPool extends EventEmitter {
                 data: { password, rounds },
                 resolve,
                 reject,
-                timeout: null as any,
+                timeout: null as unknown as NodeJS.Timeout,
             };
 
             this.taskQueue.push(task);
@@ -292,13 +336,13 @@ class PasswordWorkerPool extends EventEmitter {
      */
     async comparePassword(password: string, hash: string): Promise<boolean> {
         return new Promise((resolve, reject) => {
-            const task: HashTask = {
+            const task: CompareTask = {
                 id: `compare_${this.nextTaskId++}_${Date.now()}`,
                 action: 'compare',
                 data: { password, hash },
                 resolve,
                 reject,
-                timeout: null as any,
+                timeout: null as unknown as NodeJS.Timeout,
             };
 
             this.taskQueue.push(task);

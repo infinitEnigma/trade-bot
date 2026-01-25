@@ -1,6 +1,7 @@
 /** @format */
 
-import { UserLevel } from "@trade-bot/shared";
+import { UserLevel, User, TokenPayload } from "@trade-bot/shared";
+import { TickData } from "../../infrastructure/messaging/market-stream/types";
 
 /**
  * WebSocket Service Interface
@@ -123,7 +124,7 @@ export interface WebSocketErrorPayload {
     code: string;
     message: string;
     correlationId?: string;
-    details?: any;
+    details?: Record<string, unknown>;
 }
 
 /**
@@ -160,20 +161,20 @@ export interface WebSocketConfig {
 export interface IMarketStreamService {
     subscribe(clientId: string, topic: string): void;
     unsubscribe(clientId: string, topic: string): void;
-    getLatestTick(symbol: string): Promise<any>;
+    getLatestTick(symbol: string): Promise<TickData | null>;
     connectToOrderly(symbols: string[]): Promise<void>;
 }
 
 export interface IAuthService {
-    validateToken(token: string): Promise<any>;
-    getUserById(userId: string): Promise<any>;
+    validateToken(token: string): Promise<TokenPayload | null>;
+    getUserById(userId: string): Promise<User | null>;
 }
 
 export interface ILogger {
-    info(message: string, meta?: any): void;
-    error(message: string, error?: any, meta?: any): void;
-    warn(message: string, meta?: any): void;
-    debug(message: string, meta?: any): void;
+    info(message: string, meta?: Record<string, unknown>): void;
+    error(message: string, error?: Error, meta?: Record<string, unknown>): void;
+    warn(message: string, meta?: Record<string, unknown>): void;
+    debug(message: string, meta?: Record<string, unknown>): void;
 }
 
 export interface IRateLimiter {
