@@ -361,7 +361,7 @@ router.post(
             await engineManager.ensureEngineRunning();
 
             // Verify strategy belongs to user
-            const strategyResult = await query<{ id: string; name: string; type: string; config: any; user_id: string }>(
+            const strategyResult = await query<{ id: string; name: string; type: string; config: Record<string, unknown>; user_id: string }>(
                 "SELECT * FROM strategies WHERE id = $1 AND user_id = $2",
                 [strategyId, userId]
             );
@@ -393,7 +393,7 @@ router.post(
             const validation = await validateUserPosition(
                 userId,
                 parseFloat(notionalAmount),
-                strategy.config?.symbol || "PERP_BTC_USDC"
+                (strategy.config as { symbol?: string })?.symbol || "PERP_BTC_USDC"
             );
 
             if (!validation.isValid) {
@@ -611,10 +611,10 @@ router.get(
                 user_id: string;
                 strategy_id: string;
                 status: string;
-                last_heartbeat: any;
-                last_error: any;
-                created_at: any;
-                updated_at: any;
+                last_heartbeat: Date | string | null;
+                last_error: string | null;
+                created_at: Date | string;
+                updated_at: Date | string;
             }>(
                 "SELECT * FROM bot_instances WHERE id = $1 AND user_id = $2",
                 [botId, userId]

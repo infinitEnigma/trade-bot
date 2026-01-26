@@ -66,10 +66,10 @@ export enum ErrorCode {
 
 export interface ErrorContext {
     field?: string;
-    value?: any;
+    value?: string | number | boolean;
     limit?: number;
-    expected?: any;
-    received?: any;
+    expected?: string | number | boolean;
+    received?: string | number | boolean;
     correlationId?: string;
     userId?: string;
     userLevel?: string;
@@ -133,7 +133,7 @@ export class AppError extends Error {
     /**
      * Get additional response data
      */
-    protected getAdditionalData(): Record<string, any> {
+    protected getAdditionalData(): Record<string, number | undefined> {
         return {};
     }
 }
@@ -162,7 +162,7 @@ export class InvalidFormatError extends ValidationError {
     constructor(
         field: string,
         expected: string,
-        received?: any,
+        received?: string | number | boolean,
         context: ErrorContext = {}
     ) {
         super(`Field '${field}' has invalid format. Expected: ${expected}`, {

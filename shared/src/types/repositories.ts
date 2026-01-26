@@ -237,7 +237,7 @@ export interface AuditLogEntry {
     id: string;
     userId: string;
     action: string;
-    details: Record<string, any>;
+    details: Record<string, unknown>;
     timestamp: Date;
     ipAddress?: string;
     userAgent?: string;

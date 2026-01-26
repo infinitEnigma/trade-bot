@@ -105,8 +105,8 @@ export class UserProfileService {
         const hasKodiak = !!row.account_id;
         const kodiakStatus = hasKodiak
             ? {
-                accountId: row.account_id!,
-                verified: row.verified!,
+                accountId: row.account_id ?? '', // Provide empty string default if null
+                verified: row.verified ?? false, // Provide false default if null
             }
             : null;
 

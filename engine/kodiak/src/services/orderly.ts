@@ -6,6 +6,36 @@ import { createHash } from "crypto";
 import * as ed25519 from "@noble/ed25519";
 import { logger } from "../utils/logger";
 
+interface OrderlyPosition {
+  symbol: string;
+  position_qty: number;
+  mark_price: number;
+  [key: string]: unknown;
+}
+
+interface OrderlyAccountInfo {
+  total_value: number;
+  max_leverage: number;
+  max_notional?: Record<string, number>;
+  [key: string]: unknown;
+}
+
+interface OrderlyTicker {
+  price: number;
+  symbol: string;
+  [key: string]: unknown;
+}
+
+interface OrderlyKline {
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  [key: string]: unknown;
+}
+
 interface OrderlyConfig {
   accountId: string;
   orderlyKey: string;
@@ -64,8 +94,7 @@ export class OrderlyClient {
       return Buffer.from(signature).toString("base64url");
     } catch (error) {
       throw new Error(
-        `Failed to generate Kodiak signature: ${
-          error instanceof Error ? error.message : String(error)
+        `Failed to generate Kodiak signature: ${error instanceof Error ? error.message : String(error)
         }`
       );
     }
@@ -210,7 +239,7 @@ export class OrderlyClient {
     };
   }
 
-  async getPositions(): Promise<any[]> {
+  async getPositions(): Promise<OrderlyPosition[]> {
     const path = "/v1/positions";
     const headers = await this.signRequest("GET", path);
 
@@ -218,7 +247,7 @@ export class OrderlyClient {
     return response.data.data.rows || [];
   }
 
-  async getAccountInfo(): Promise<any> {
+  async getAccountInfo(): Promise<OrderlyAccountInfo> {
     const path = "/v1/client/info";
     const headers = await this.signRequest("GET", path);
 
@@ -226,7 +255,7 @@ export class OrderlyClient {
     return response.data.data;
   }
 
-  async getTicker(symbol: string): Promise<any> {
+  async getTicker(symbol: string): Promise<OrderlyTicker> {
     const path = `/v1/public/ticker?symbol=${symbol}`;
     const response = await this.client.get(path);
     return response.data.data;
@@ -236,7 +265,7 @@ export class OrderlyClient {
     symbol: string,
     interval: string = "1m",
     limit: number = 100
-  ): Promise<any[]> {
+  ): Promise<OrderlyKline[]> {
     const path = `/v1/kline?symbol=${symbol}&type=${interval}&limit=${limit}`;
     const response = await this.client.get(path);
     return response.data.data.rows || [];

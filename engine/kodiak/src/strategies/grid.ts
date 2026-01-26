@@ -73,15 +73,15 @@ export class GridTradingStrategy {
       if (level.buyOrderId) {
         try {
           await this.orderly.cancelOrder(level.buyOrderId, this.config.symbol);
-        } catch (e) {
-          // Order may already be filled or cancelled
+        } catch {
+          /* Order may already be filled or cancelled */
         }
       }
       if (level.sellOrderId) {
         try {
           await this.orderly.cancelOrder(level.sellOrderId, this.config.symbol);
-        } catch (e) {
-          // Order may already be filled or cancelled
+        } catch {
+          /* Order may already be filled or cancelled */
         }
       }
     }
@@ -237,7 +237,7 @@ export class GridTradingStrategy {
             if (level.buyOrderId) {
               this.lastOrderCheck.set(level.buyOrderId, new Date());
             }
-          } catch (error) {
+          } catch {
             // Order may not exist anymore
           }
         }
@@ -285,7 +285,7 @@ export class GridTradingStrategy {
             if (level.sellOrderId) {
               this.lastOrderCheck.set(level.sellOrderId, new Date());
             }
-          } catch (error) {
+          } catch {
             // Order may not exist anymore
           }
         }

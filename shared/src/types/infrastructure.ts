@@ -126,12 +126,12 @@ export interface IHttpClient {
     /**
      * Make a POST request
      */
-    post<T = unknown>(url: string, data?: any, config?: HttpConfig): Promise<HttpResponse<T>>;
+    post<T = unknown>(url: string, data?: unknown, config?: HttpConfig): Promise<HttpResponse<T>>;
 
     /**
      * Make a PUT request
      */
-    put<T = unknown>(url: string, data?: any, config?: HttpConfig): Promise<HttpResponse<T>>;
+    put<T = unknown>(url: string, data?: unknown, config?: HttpConfig): Promise<HttpResponse<T>>;
 
     /**
      * Make a DELETE request
@@ -161,27 +161,27 @@ export interface ILogger {
     /**
      * Debug level logging
      */
-    debug(message: string, meta?: any): void;
+    debug(message: string, meta?: unknown): void;
 
     /**
      * Info level logging
      */
-    info(message: string, meta?: any): void;
+    info(message: string, meta?: unknown): void;
 
     /**
      * Warning level logging
      */
-    warn(message: string, meta?: any): void;
+    warn(message: string, meta?: unknown): void;
 
     /**
      * Error level logging
      */
-    error(message: string, meta?: any): void;
+    error(message: string, meta?: unknown): void;
 
     /**
      * Create a child logger with context
      */
-    child(meta: any): ILogger;
+    child(meta: unknown): ILogger;
 }
 
 // ===========================================
@@ -323,17 +323,36 @@ export interface IBotStatusService {
     /**
      * Get comprehensive bot status information
      */
-    getBotStatusInfo(botId: string, userId: string): Promise<any>;
+    getBotStatusInfo(botId: string, userId: string): Promise<{
+        status: BotStatus;
+        lastHeartbeat?: number;
+        errorMessage?: string;
+        performance?: {
+            totalTrades: number;
+            totalPnl: number;
+        };
+        [key: string]: unknown;
+    }>;
 
     /**
      * Send heartbeat for bot health monitoring
      */
-    sendBotHeartbeat(botId: string, statusInfo?: any): Promise<{ success: boolean; error?: string }>;
+    sendBotHeartbeat(botId: string, statusInfo?: {
+        timestamp?: number;
+        memoryUsage?: number;
+        cpuUsage?: number;
+        [key: string]: unknown;
+    }): Promise<{ success: boolean; error?: string }>;
 
     /**
      * Validate bot status and perform reconciliation
      */
-    validateBotStatus(botData: any, currentTime: number): Promise<{
+    validateBotStatus(botData: {
+        id: string;
+        status: string;
+        lastHeartbeat?: number;
+        [key: string]: unknown;
+    }, currentTime: number): Promise<{
         updatedStatus: string;
         errorMessage: string | null;
         isStale: boolean;
@@ -426,10 +445,17 @@ export interface IDatabaseConnection {
     query<T = unknown>(sql: string, params?: unknown[]): Promise<DatabaseResult<T>>;
 }
 
+export interface DatabaseField {
+    name: string;
+    dataType: string;
+    columnID?: number;
+    [key: string]: unknown;
+}
+
 export interface DatabaseResult<T = unknown> {
     rows: T[];
     rowCount: number;
-    fields?: any[];
+    fields?: DatabaseField[];
     command?: string;
     oid?: number;
 }

@@ -17,7 +17,7 @@ export interface KodiakCredentials {
     secretKey: string;
 }
 
-export interface KodiakApiResponse<T = any> {
+export interface KodiakApiResponse<T = unknown> {
     success: boolean;
     data?: T;
     error?: string;
@@ -76,6 +76,25 @@ export interface KodiakApiAccountInfoResponse {
     total_pnl_all?: string;
     trading_volume_last_24_hours?: string;
     account_type?: string;
+}
+
+export interface KodiakPublicAccountInfo {
+    address?: string;
+    account_id?: string;
+    [key: string]: unknown; // Allow for additional properties from API
+}
+
+export interface KodiakHolding {
+    holding?: string;
+    balance?: string;
+    price?: string;
+    [key: string]: unknown; // Allow for additional properties from API
+}
+
+export interface KodiakHoldingsResponse {
+    holding?: KodiakHolding[];
+    balance?: KodiakHolding[];
+    [key: string]: unknown; // Allow for additional properties from API
 }
 
 /**
@@ -183,7 +202,7 @@ export class KodiakIntegrationService {
                 "GET",
                 "/positions",
                 credentials
-            );
+            ) as KodiakPosition[];
 
             const result: KodiakApiResponse<KodiakPosition[]> = {
                 success: true,
@@ -195,7 +214,7 @@ export class KodiakIntegrationService {
 
             logger.debug("Kodiak positions retrieved and cached", {
                 userId,
-                positionsCount: positionsData?.rows?.length || 0,
+                positionsCount: Array.isArray(positionsData) ? positionsData.length : 0,
             });
 
             return result;
@@ -246,7 +265,7 @@ export class KodiakIntegrationService {
                 "GET",
                 `/position_history?limit=${limit}`,
                 credentials
-            );
+            ) as KodiakTrade[];
 
             const result: KodiakApiResponse<KodiakTrade[]> = {
                 success: true,
@@ -259,7 +278,7 @@ export class KodiakIntegrationService {
             logger.debug("Kodiak trades retrieved and cached", {
                 userId,
                 limit,
-                tradesCount: tradesData?.rows?.length || 0,
+                tradesCount: Array.isArray(tradesData) ? tradesData.length : 0,
             });
 
             return result;
@@ -304,14 +323,14 @@ export class KodiakIntegrationService {
                 "GET",
                 "/client/holding?all=true",
                 credentials
-            );
+            ) as KodiakHoldingsResponse | KodiakHolding[];
 
             // Get account info
             const accountInfoData = await this.makeKodiakRequest(
                 "GET",
                 "/client/info",
                 credentials
-            );
+            ) as KodiakApiAccountInfoResponse;
 
             const holdings = Array.isArray(holdingsData)
                 ? holdingsData
@@ -324,6 +343,17 @@ export class KodiakIntegrationService {
                 return sum + holdingBalance * price;
             }, 0);
 
+            // Map KodiakHolding to KodiakBalance for the account info
+            const balances: KodiakBalance[] = holdings.map((holding: KodiakHolding) => ({
+                asset: holding.holding || holding.balance || 'UNKNOWN',
+                free: holding.balance || '0',
+                locked: '0',
+                freeze: '0',
+                withdrawing: '0',
+                ipoable: '0',
+                btcValuation: '0',
+            }));
+
             const accountInfo: KodiakAccountInfo = {
                 totalBalance: totalBalance.toString(),
                 totalPnl24H: accountInfoData?.total_pnl_24_h || "0",
@@ -331,7 +361,7 @@ export class KodiakIntegrationService {
                 totalPnlAll: accountInfoData?.total_pnl_all || "0",
                 tradingVolume24H: accountInfoData?.trading_volume_last_24_hours || "0",
                 accountType: accountInfoData?.account_type || "UNKNOWN",
-                balances: holdings,
+                balances,
             };
 
             const result: KodiakApiResponse<KodiakAccountInfo> = {
@@ -390,7 +420,7 @@ export class KodiakIntegrationService {
                 "GET",
                 "/client/info",
                 credentials
-            );
+            ) as KodiakAccountInfo;
 
             const result: KodiakApiResponse<KodiakAccountInfo> = {
                 success: true,
@@ -402,7 +432,7 @@ export class KodiakIntegrationService {
 
             logger.debug("Kodiak account info retrieved and cached", {
                 userId,
-                accountType: accountInfoData?.account_type,
+                accountType: accountInfoData.accountType,
             });
 
             return result;
@@ -423,7 +453,7 @@ export class KodiakIntegrationService {
      * Get Kodiak account information (authenticated - for wallet address)
      * Note: This endpoint may require authentication now
      */
-    async getPublicAccountInfo(accountId: string, credentials?: KodiakCredentials): Promise<KodiakApiResponse<unknown>> {
+    async getPublicAccountInfo(accountId: string, credentials?: KodiakCredentials): Promise<KodiakApiResponse<KodiakPublicAccountInfo>> {
         try {
             const cacheKey = `kodiak:public_account:${accountId}`;
 
@@ -446,9 +476,20 @@ export class KodiakIntegrationService {
                         credentials
                     );
 
-                    const result: KodiakApiResponse = {
+                    // Handle different response formats with proper type checking
+                    let responseData: KodiakPublicAccountInfo = {};
+                    if (accountInfoData && typeof accountInfoData === 'object') {
+                        const typedData = accountInfoData as Record<string, unknown>;
+                        if ('data' in typedData && typeof typedData.data === 'object') {
+                            responseData = typedData.data as KodiakPublicAccountInfo;
+                        } else {
+                            responseData = accountInfoData as KodiakPublicAccountInfo;
+                        }
+                    }
+
+                    const result: KodiakApiResponse<KodiakPublicAccountInfo> = {
                         success: true,
-                        data: accountInfoData.data || accountInfoData, // Handle different response formats
+                        data: responseData,
                     };
 
                     // Cache the result
@@ -502,11 +543,27 @@ export class KodiakIntegrationService {
                 throw new Error(`Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`);
             }
 
-            const responseData = await response.json() as { success: boolean; data: any; timestamp: number };
+            const responseData = await response.json();
 
-            const result: KodiakApiResponse = {
+            // Validate response structure
+            if (!responseData || typeof responseData !== 'object') {
+                throw new Error("Invalid API response structure");
+            }
+
+            // Extract data safely with proper type checking
+            let accountData: KodiakPublicAccountInfo = {};
+            const typedResponse = responseData as Record<string, unknown>;
+            if ('data' in typedResponse && typeof typedResponse.data === 'object') {
+                accountData = typedResponse.data as KodiakPublicAccountInfo;
+            } else if (typeof typedResponse === 'object') {
+                accountData = typedResponse as KodiakPublicAccountInfo;
+            } else {
+                throw new Error("Invalid account data structure");
+            }
+
+            const result: KodiakApiResponse<KodiakPublicAccountInfo> = {
                 success: true,
-                data: responseData.data, // The actual data is in responseData.data
+                data: accountData,
             };
 
             // Cache the result
@@ -514,7 +571,7 @@ export class KodiakIntegrationService {
 
             logger.debug("Kodiak account info retrieved and cached (public)", {
                 accountId,
-                address: responseData.data?.address,
+                address: accountData?.address,
             });
 
             return result;
@@ -558,8 +615,8 @@ export class KodiakIntegrationService {
         method: string,
         path: string,
         credentials: KodiakCredentials,
-        body?: any
-    ): Promise<any> {
+        body?: unknown
+    ): Promise<unknown> {
         try {
             const signaturePath = path.startsWith("/v1/") ? path : `/v1${path}`;
             const timestamp = Date.now();
@@ -640,20 +697,28 @@ export class KodiakIntegrationService {
                 return new Uint8Array(hash.digest());
             };
 
-            // Set hash function
-            if ((ed25519 as any).hashes) {
-                (ed25519 as any).hashes.sha512 = sha512Hash;
-            } else if ((ed25519 as any).etc && typeof (ed25519 as any).etc.sha512Sync !== "undefined") {
-                (ed25519 as any).etc.sha512Sync = sha512Hash;
-            } else if ((ed25519 as any).utils) {
-                (ed25519 as any).utils.sha512Sync = sha512Hash;
+            // Set hash function - using type assertions for third-party library
+            const ed25519Lib = ed25519 as unknown as {
+                hashes?: { sha512?: (message: Uint8Array) => Uint8Array };
+                etc?: { sha512Sync?: (message: Uint8Array) => Uint8Array };
+                utils?: { sha512Sync?: (message: Uint8Array) => Uint8Array };
+                sign?: (message: Uint8Array, privateKey: Uint8Array) => Uint8Array | Promise<Uint8Array>;
+            };
+
+            if (ed25519Lib.hashes) {
+                ed25519Lib.hashes.sha512 = sha512Hash;
+            } else if (ed25519Lib.etc && typeof ed25519Lib.etc?.sha512Sync !== "undefined") {
+                ed25519Lib.etc.sha512Sync = sha512Hash;
+            } else if (ed25519Lib.utils) {
+                ed25519Lib.utils.sha512Sync = sha512Hash;
             }
 
             const privateKey = bs58.decode(secretKey);
             const messageBytes = new TextEncoder().encode(message);
-            const signature = await ed25519.sign(messageBytes, privateKey);
+            const signature = ed25519Lib.sign?.(messageBytes, privateKey) || Promise.resolve(new Uint8Array());
+            const signatureResult = await (signature instanceof Promise ? signature : Promise.resolve(signature));
 
-            return Buffer.from(signature).toString("base64url");
+            return Buffer.from(signatureResult).toString("base64url");
         } catch (error) {
             logger.error("Failed to generate Kodiak signature", {
                 error: error instanceof Error ? error.message : String(error),
