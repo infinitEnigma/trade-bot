@@ -7,7 +7,7 @@
 
 import { query } from "../../database/pool";
 import { redisService } from "../../infrastructure";
-import { kodiakIntegrationService } from "../../infrastructure/external/kodiak-integration.service";
+import { kodiakIntegrationService, KodiakAccountInfo, KodiakPosition } from "../../infrastructure/external/kodiak-integration.service";
 import { CACHE_KEYS } from "../../config/cache.config";
 import { cacheInvalidationService } from "../../infrastructure";
 import { positionSyncLogger } from "../logging/context-aware-logger.service";
@@ -41,36 +41,6 @@ export interface KodiakMaxNotional {
     };
 }
 
-/**
- * Interface for Kodiak API account information response
- */
-export interface KodiakAccountInfo {
-    total_balance: string;
-    max_leverage: string;
-    max_notional: KodiakMaxNotional;
-    taker_fee_rate: string;
-    maker_fee_rate: string;
-    // Add other account info fields as needed
-}
-
-/**
- * Interface for raw position data from Kodiak API
- */
-export interface KodiakPosition {
-    symbol: string;
-    position_qty: string | number;
-    cost_position: string | number;
-    average_open_price: string | number;
-    mark_price: string | number;
-    unsettled_pnl: string | number;
-    pnl_24_h: string | number;
-    leverage: string | number;
-    imr: string | number;
-    mmr: string | number;
-    est_liq_price: string | number;
-    // Add other position fields as needed from API
-}
-
 export interface PositionSyncResult {
     success: boolean;
     positionsSynced: number;
@@ -89,7 +59,7 @@ export class PositionSyncService {
      */
     private async storeAccountInfoInDatabase(
         userId: string,
-        accountData: any // Use any to avoid type mismatch with centralized service
+        accountData: KodiakAccountInfo
     ): Promise<void> {
         await query(`
     INSERT INTO kodiak_accounts (
@@ -106,7 +76,7 @@ export class PositionSyncService {
       updated_at = EXCLUDED.updated_at
   `, [
             userId,
-            accountData?.totalBalance || accountData?.total_balance || "0",
+            accountData?.totalBalance || "0",
             10, // Default max leverage (should come from account data if available)
             JSON.stringify({}), // Max notional data if available
             0.001, // Default taker fee rate
@@ -217,21 +187,21 @@ export class PositionSyncService {
      */
     private async storePositionInDatabase(
         userId: string,
-        positionData: any // Use any to avoid type mismatch with centralized service
+        positionData: KodiakPosition
     ): Promise<void> {
         const position: PositionData = {
             symbol: positionData.symbol,
-            // Handle both camelCase (from centralized service) and snake_case formats
-            positionQty: parseFloat(String(positionData.positionAmt || positionData.position_qty || "0")),
-            costPosition: parseFloat(String(positionData.entryPrice || positionData.cost_position || "0")),
-            averageOpenPrice: parseFloat(String(positionData.entryPrice || positionData.average_open_price || "0")),
-            markPrice: parseFloat(String(positionData.markPrice || positionData.mark_price || "0")),
-            unsettledPnl: parseFloat(String(positionData.pnl || positionData.unsettled_pnl || "0")),
-            pnl24h: parseFloat(String(positionData.pnl24h || positionData.pnl_24_h || "0")),
-            leverage: parseFloat(String(positionData.leverage || "1")),
-            imr: parseFloat(String(positionData.imr || "0.1")),
-            mmr: parseFloat(String(positionData.mmr || "0.05")),
-            estLiqPrice: parseFloat(String(positionData.estLiqPrice || positionData.est_liq_price || "0")),
+            // Use only the available properties from KodiakPosition interface
+            positionQty: parseFloat(String(positionData.positionAmt || "0")),
+            costPosition: parseFloat(String(positionData.entryPrice || "0")),
+            averageOpenPrice: parseFloat(String(positionData.entryPrice || "0")),
+            markPrice: parseFloat(String(positionData.markPrice || "0")),
+            unsettledPnl: parseFloat(String(positionData.pnl || "0")),
+            pnl24h: 0, // Not available in KodiakPosition, default to 0
+            leverage: 1, // Not available in KodiakPosition, default to 1 (no leverage)
+            imr: 0.1, // Not available in KodiakPosition, default to 0.1 (10%)
+            mmr: 0.05, // Not available in KodiakPosition, default to 0.05 (5%)
+            estLiqPrice: 0, // Not available in KodiakPosition, default to 0
             lastUpdated: new Date(),
         };
 

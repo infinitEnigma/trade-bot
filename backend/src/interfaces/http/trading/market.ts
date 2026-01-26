@@ -1,7 +1,7 @@
 /** @format */
 
 import { Router, Request, Response } from "express";
-import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
+import { kodiakIntegrationService, KodiakMarketTicker } from "../../../infrastructure/external/kodiak-integration.service";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { query } from "../../../database/pool"; // ✅ Import from centralized module
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth"; // ✅ Import centralized auth
@@ -48,11 +48,11 @@ router.get(
       }
 
       // Transform futures data to ticker format
-      const futuresData = response.data || {};
+      const futuresData: KodiakMarketTicker = response.data || { symbol };
 
       // Calculate 24h change: current mark price vs 24h close
-      const currentPrice = parseFloat(futuresData.mark_price || "0");
-      const prevClose = parseFloat(futuresData['24h_close'] || "0");
+      const currentPrice = parseFloat(futuresData.mark_price?.toString() || "0");
+      const prevClose = parseFloat(futuresData['24h_close']?.toString() || "0");
       const change24h = currentPrice - prevClose;
 
       // Format ticker response
@@ -60,14 +60,14 @@ router.get(
         symbol: futuresData.symbol || symbol,
         price: currentPrice.toFixed(2),
         change24h: change24h.toFixed(2),
-        volume24h: futuresData['24h_volume'] || '0',
-        high24h: futuresData['24h_high'] || '0',
-        low24h: futuresData['24h_low'] || '0',
+        volume24h: futuresData['24h_volume']?.toString() || '0',
+        high24h: futuresData['24h_high']?.toString() || '0',
+        low24h: futuresData['24h_low']?.toString() || '0',
         // Additional data available from futures endpoint
-        mark_price: futuresData.mark_price,
-        index_price: futuresData.index_price,
-        open_interest: futuresData.open_interest,
-        est_funding_rate: futuresData.est_funding_rate,
+        mark_price: futuresData.mark_price?.toString(),
+        index_price: futuresData.index_price?.toString(),
+        open_interest: futuresData.open_interest?.toString(),
+        est_funding_rate: futuresData.est_funding_rate?.toString(),
       };
 
       res.json({
@@ -817,11 +817,11 @@ router.get(
       for (let i = 0; i < length; i++) {
         transformedData.push({
           startTime: tvData.t[i] * 1000, // Convert seconds to milliseconds
-          open: parseFloat(tvData.o[i]),
-          high: parseFloat(tvData.h[i]),
-          low: parseFloat(tvData.l[i]),
-          close: parseFloat(tvData.c[i]),
-          volume: parseFloat(tvData.v?.[i] || 0),
+          open: parseFloat(tvData.o[i].toString()),
+          high: parseFloat(tvData.h[i].toString()),
+          low: parseFloat(tvData.l[i].toString()),
+          close: parseFloat(tvData.c[i].toString()),
+          volume: parseFloat((tvData.v?.[i] || 0).toString()),
           symbol: symbolStr,
           type: resolutionStr === "60" ? "1h" : resolutionStr,
         });

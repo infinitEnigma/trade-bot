@@ -99,6 +99,88 @@ export interface KodiakHoldingsResponse {
 }
 
 /**
+ * Market Ticker Data from Kodiak API
+ */
+export interface KodiakMarketTicker {
+    symbol: string;
+    index_price?: number;
+    mark_price?: number;
+    sum_unitary_funding?: number;
+    est_funding_rate?: number;
+    last_funding_rate?: number;
+    next_funding_time?: number;
+    open_interest?: string;
+    '24h_open'?: number;
+    '24h_close'?: number;
+    '24h_high'?: number;
+    '24h_low'?: number;
+    '24h_amount'?: number;
+    '24h_volume'?: number;
+    [key: string]: unknown; // Allow for additional properties from API
+}
+
+/**
+ * Orderbook Data from Kodiak API
+ */
+export interface KodiakOrderbook {
+    asks: Array<[number, number]>; // [price, quantity]
+    bids: Array<[number, number]>; // [price, quantity]
+    timestamp?: number;
+    symbol?: string;
+    [key: string]: unknown; // Allow for additional properties from API
+}
+
+/**
+ * TradingView Configuration from Kodiak API
+ */
+export interface KodiakTradingViewConfig {
+    supported_resolutions: string[];
+    exchanges?: Record<string, {
+        value: string;
+        name: string;
+        desc: string;
+    }>;
+    symbols_types?: Record<string, {
+        value: string;
+        name: string;
+    }>;
+    [key: string]: unknown; // Allow for additional properties from API
+}
+
+/**
+ * TradingView Symbols from Kodiak API
+ */
+export interface KodiakTradingViewSymbols {
+    name: string;
+    ticker: string;
+    description: string;
+    session: string;
+    timezone: string;
+    minmov: number;
+    pricescale: number;
+    has_intraday: boolean;
+    has_daily: boolean;
+    has_weekly_and_monthly: boolean;
+    supported_resolutions: string[];
+    intraday_multipliers?: string[];
+    [key: string]: unknown; // Allow for additional properties from API
+}
+
+/**
+ * TradingView History Data from Kodiak API
+ */
+export interface KodiakTradingViewHistory {
+    s: string; // status
+    t: number[]; // timestamps
+    o: number[]; // open prices
+    h: number[]; // high prices
+    l: number[]; // low prices
+    c: number[]; // close prices
+    v: number[]; // volumes
+    [key: string]: unknown; // Allow for additional properties from API
+}
+
+/**
  * Kodiak Integration Service
  */
 export class KodiakIntegrationService {
@@ -453,7 +535,7 @@ export class KodiakIntegrationService {
     /**
      * Get market ticker data from Kodiak API
      */
-    async getMarketTicker(symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<any>> {
+    async getMarketTicker(symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<KodiakMarketTicker>> {
         try {
             const cacheKey = `kodiak:ticker:${symbol}`;
             const cacheResult = await redisService.get(cacheKey);
@@ -478,9 +560,14 @@ export class KodiakIntegrationService {
             }
 
             const responseData = await response.json();
-            const result: KodiakApiResponse<any> = {
+            // Extract ticker data from response, handling different response formats
+            const tickerData = (responseData as { data?: { rows?: KodiakMarketTicker[] } }).data?.rows?.[0] ||
+                (responseData as { data?: KodiakMarketTicker }).data ||
+                (responseData as KodiakMarketTicker);
+
+            const result: KodiakApiResponse<KodiakMarketTicker> = {
                 success: true,
-                data: (responseData as { data?: any }).data || responseData,
+                data: tickerData,
             };
 
             // Cache for 30 seconds
@@ -504,7 +591,7 @@ export class KodiakIntegrationService {
     /**
      * Get orderbook data from Kodiak API
      */
-    async getOrderbook(symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<any>> {
+    async getOrderbook(symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<KodiakOrderbook>> {
         try {
             const cacheKey = `kodiak:orderbook:${symbol}`;
             const cacheResult = await redisService.get(cacheKey);
@@ -529,9 +616,12 @@ export class KodiakIntegrationService {
             }
 
             const responseData = await response.json();
-            const result: KodiakApiResponse<any> = {
+            // Extract orderbook data from response
+            const orderbookData = (responseData as { data?: KodiakOrderbook }).data || responseData as KodiakOrderbook;
+
+            const result: KodiakApiResponse<KodiakOrderbook> = {
                 success: true,
-                data: (responseData as { data?: any }).data || responseData,
+                data: orderbookData,
             };
 
             // Cache for 1 minute
@@ -555,7 +645,7 @@ export class KodiakIntegrationService {
     /**
      * Get TradingView configuration from Kodiak API
      */
-    async getTradingViewConfig(): Promise<KodiakApiResponse<any>> {
+    async getTradingViewConfig(): Promise<KodiakApiResponse<KodiakTradingViewConfig>> {
         try {
             const cacheKey = "kodiak:tv:config";
             const cacheResult = await redisService.get(cacheKey);
@@ -580,9 +670,11 @@ export class KodiakIntegrationService {
             }
 
             const responseData = await response.json();
-            const result: KodiakApiResponse<any> = {
+            const configData = (responseData as { data?: KodiakTradingViewConfig }).data || responseData as KodiakTradingViewConfig;
+
+            const result: KodiakApiResponse<KodiakTradingViewConfig> = {
                 success: true,
-                data: (responseData as { data?: any }).data || responseData,
+                data: configData,
             };
 
             // Cache for 1 hour
@@ -605,7 +697,7 @@ export class KodiakIntegrationService {
     /**
      * Get TradingView symbols from Kodiak API
      */
-    async getTradingViewSymbols(symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<any>> {
+    async getTradingViewSymbols(symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<KodiakTradingViewSymbols>> {
         try {
             const cacheKey = `kodiak:tv:symbols:${symbol}`;
             const cacheResult = await redisService.get(cacheKey);
@@ -630,9 +722,11 @@ export class KodiakIntegrationService {
             }
 
             const responseData = await response.json();
-            const result: KodiakApiResponse<any> = {
+            const symbolsData = (responseData as { data?: KodiakTradingViewSymbols }).data || responseData as KodiakTradingViewSymbols;
+
+            const result: KodiakApiResponse<KodiakTradingViewSymbols> = {
                 success: true,
-                data: (responseData as { data?: any }).data || responseData,
+                data: symbolsData,
             };
 
             // Cache for 1 hour
@@ -656,7 +750,7 @@ export class KodiakIntegrationService {
     /**
      * Get TradingView history data from Kodiak API
      */
-    async getTradingViewHistory(symbol: string, resolution: string, from: number, to: number): Promise<KodiakApiResponse<any>> {
+    async getTradingViewHistory(symbol: string, resolution: string, from: number, to: number): Promise<KodiakApiResponse<KodiakTradingViewHistory>> {
         try {
             // Create cache key with rounded timestamps for better cache hit rate
             const roundTo5Minutes = (timestamp: number) => {
@@ -688,9 +782,11 @@ export class KodiakIntegrationService {
             }
 
             const responseData = await response.json();
-            const result: KodiakApiResponse<any> = {
+            const historyData = (responseData as { data?: KodiakTradingViewHistory }).data || responseData as KodiakTradingViewHistory;
+
+            const result: KodiakApiResponse<KodiakTradingViewHistory> = {
                 success: true,
-                data: (responseData as { data?: any }).data || responseData,
+                data: historyData,
             };
 
             // Cache for 5 minutes (short TTL for chart data)
