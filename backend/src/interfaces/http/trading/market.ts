@@ -1,78 +1,24 @@
 /** @format */
 
 import { Router, Request, Response } from "express";
-import axios, { AxiosError } from "axios";
-//import { selectAuthService } from "../../../core/service-selector";
+import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { query } from "../../../database/pool"; // ✅ Import from centralized module
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth"; // ✅ Import centralized auth
 import { createErrorResponse, ExternalServiceError, DataFreshnessUtils, FreshnessAwareResponse } from "../../../shared/types/errors";
 import { getCorrelationId } from "../../../shared/utils/context";
 import logger from "../../../core/logging/logger.service"; // ✅ Import structured logger
-import { encryptionService } from "../../../infrastructure/security/encryption.service"; // ✅ Import encryption service
 import { RateLimiters } from "../../../infrastructure";
 import { marketStreamService } from "../../../infrastructure/messaging/market-stream.service";
-import { generateKodiakSignature } from "../../../shared/utils/orderly-signature"; // ✅ Import backend crypto utility
 import { getCacheConfig, getFullCacheConfig } from "../../../config/cache.config"; // ✅ Import centralized cache config
+import { AxiosError } from "axios";
 
 const router = Router();
 
 
-const KODIAK_API_BASE =
-  process.env.KODIAK_API_URL || "https://api.orderly.org/v1";
+//const KODIAK_API_BASE = process.env.KODIAK_API_URL || "https://api.orderly.org/v1";
 const WS_BASE =
   process.env.KODIAK_WS_URL || "wss://ws-evm.orderly.org/ws/stream";
-
-// ✅ Using centralized AuthenticatedRequest and authMiddleware
-
-// Helper to get Kodiak credentials for user
-async function getKodiakCredentials(userId: string): Promise<{
-  accountId: string;
-  apiKey: string;
-  secretKey: string;
-  verified: boolean;
-} | null> {
-  try {
-    const result = await query<{
-      account_id: string;
-      api_key_encrypted: string;
-      secret_key_encrypted: string;
-      verified: boolean;
-    }>(
-      "SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1",
-      [userId]
-    );
-
-    if (result.rows.length === 0) {
-      logger.debug("No Kodiak credentials found for user", { userId });
-      return null;
-    }
-
-    const row = result.rows[0];
-    if (!row.verified) {
-      logger.debug("Kodiak credentials found but not verified", { userId });
-      return null;
-    }
-
-    const apiKey = encryptionService.decryptApiKey(row.api_key_encrypted);
-    const secretKey = encryptionService.decryptSecretKey(
-      row.secret_key_encrypted
-    );
-
-    return {
-      accountId: row.account_id,
-      apiKey,
-      secretKey,
-      verified: row.verified,
-    };
-  } catch (error) {
-    logger.error("Failed to get Kodiak credentials", {
-      userId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
-}
 
 // GET /api/market/ticker
 router.get(
@@ -82,19 +28,13 @@ router.get(
     try {
       const symbol = (req.query.symbol as string) || "PERP_BTC_USDC";
 
-      // Use /public/futures/{symbol} endpoint which provides current market data
-      let response;
-      try {
-        response = await axios.get(`${KODIAK_API_BASE}/public/futures/${symbol}`, {
-          timeout: 5000,
-        });
-      } catch (apiError: unknown) {
-        const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-        const axiosError = apiError as AxiosError;
-        logger.warn("Futures API failed - NO MOCK DATA USED", {
+      // Use centralized service to get market ticker data
+      const response = await kodiakIntegrationService.getMarketTicker(symbol);
+
+      if (!response.success) {
+        logger.warn("Market ticker API failed", {
           symbol,
-          error: errorMessage,
-          status: axiosError.response?.status,
+          error: response.error,
         });
 
         // Return clear error so user knows data is unavailable
@@ -108,16 +48,16 @@ router.get(
       }
 
       // Transform futures data to ticker format
-      const futuresData = response.data.data || response.data;
+      const futuresData = response.data || {};
 
       // Calculate 24h change: current mark price vs 24h close
-      const currentPrice = parseFloat(futuresData.mark_price);
-      const prevClose = parseFloat(futuresData['24h_close']);
+      const currentPrice = parseFloat(futuresData.mark_price || "0");
+      const prevClose = parseFloat(futuresData['24h_close'] || "0");
       const change24h = currentPrice - prevClose;
 
       // Format ticker response
       const tickerData = {
-        symbol: futuresData.symbol,
+        symbol: futuresData.symbol || symbol,
         price: currentPrice.toFixed(2),
         change24h: change24h.toFixed(2),
         volume24h: futuresData['24h_volume'] || '0',
@@ -157,11 +97,19 @@ router.get(
 // GET /api/market/tickers
 router.get("/tickers", async (req: Request, res: Response) => {
   try {
-    const response = await axios.get(`${KODIAK_API_BASE}/public/tickers`);
+    // Use centralized service to get all market tickers
+    const response = await kodiakIntegrationService.getMarketTicker();
+
+    if (!response.success) {
+      const externalError = new ExternalServiceError("Kodiak API", { service: "Kodiak", operation: "fetch_tickers" });
+      return res.status(externalError.statusCode).json(
+        createErrorResponse(externalError, getCorrelationId())
+      );
+    }
 
     res.json({
       success: true,
-      data: response.data.data,
+      data: response.data,
       timestamp: Date.now(),
     });
   } catch (err: unknown) {
@@ -257,13 +205,19 @@ router.get("/orderbook", async (req: Request, res: Response) => {
   try {
     const symbol = (req.query.symbol as string) || "PERP_BTC_USDC";
 
-    const response = await axios.get(`${KODIAK_API_BASE}/public/orderbook`, {
-      params: { symbol },
-    });
+    // Use centralized service for orderbook
+    const response = await kodiakIntegrationService.getOrderbook(symbol);
+
+    if (!response.success) {
+      return res.status(400).json({
+        success: false,
+        error: response.error || "Failed to fetch orderbook"
+      });
+    }
 
     res.json({
       success: true,
-      data: response.data.data,
+      data: response.data,
       timestamp: Date.now(),
     });
   } catch (err: unknown) {
@@ -404,36 +358,27 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const credentials = await getKodiakCredentials(req.user?.userId || "");
-
-      if (!credentials) {
-        return res
-          .status(403)
-          .json({ success: false, error: "Kodiak credentials required" });
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: "Authentication required"
+        });
       }
 
-      const timestamp = Date.now();
-      const path = "/v1/positions";
-      const signature = await generateKodiakSignature(
-        timestamp,
-        "GET",
-        path,
-        "",
-        credentials.secretKey
-      );
+      // Use centralized service to get positions
+      const positionsResponse = await kodiakIntegrationService.getPositions(userId);
 
-      const response = await axios.get(`${KODIAK_API_BASE}${path}`, {
-        headers: {
-          "orderly-account-id": credentials.accountId,
-          "orderly-key": credentials.apiKey,
-          "orderly-signature": signature,
-          "orderly-timestamp": timestamp.toString(),
-        },
-      });
+      if (!positionsResponse.success) {
+        return res.status(400).json({
+          success: false,
+          error: positionsResponse.error || "Failed to fetch positions"
+        });
+      }
 
       res.json({
         success: true,
-        data: response.data.data,
+        data: positionsResponse.data,
         timestamp: Date.now(),
       });
     } catch (err: unknown) {
@@ -455,36 +400,27 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const credentials = await getKodiakCredentials(req.user?.userId || "");
-
-      if (!credentials) {
-        return res
-          .status(403)
-          .json({ success: false, error: "Kodiak credentials required" });
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: "Authentication required"
+        });
       }
 
-      const timestamp = Date.now();
-      const path = "/v1/client/info";
-      const signature = await generateKodiakSignature(
-        timestamp,
-        "GET",
-        path,
-        "",
-        credentials.secretKey
-      );
+      // Use centralized service to get account balance
+      const balanceResponse = await kodiakIntegrationService.getBalance(userId);
 
-      const response = await axios.get(`${KODIAK_API_BASE}${path}`, {
-        headers: {
-          "orderly-account-id": credentials.accountId,
-          "orderly-key": credentials.apiKey,
-          "orderly-signature": signature,
-          "orderly-timestamp": timestamp.toString(),
-        },
-      });
+      if (!balanceResponse.success) {
+        return res.status(400).json({
+          success: false,
+          error: balanceResponse.error || "Failed to fetch balance"
+        });
+      }
 
       res.json({
         success: true,
-        data: response.data.data,
+        data: balanceResponse.data,
         timestamp: Date.now(),
       });
     } catch (err: unknown) {
@@ -506,18 +442,32 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const credentials = await getKodiakCredentials(req.user?.userId || "");
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: "Authentication required"
+        });
+      }
 
-      if (!credentials) {
+      // Get account ID for WebSocket connection
+      const result = await query<{ account_id: string }>(
+        "SELECT account_id FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
+        [userId]
+      );
+
+      if (result.rows.length === 0) {
         return res
           .status(403)
           .json({ success: false, error: "Kodiak credentials required" });
       }
 
+      const accountId = result.rows[0].account_id;
+
       res.json({
         success: true,
         data: {
-          publicWsUrl: `${WS_BASE}/${credentials.accountId}`,
+          publicWsUrl: `${WS_BASE}/${accountId}`,
           timestamp: Date.now(),
         },
       });
@@ -553,18 +503,20 @@ router.get("/tv/config", RateLimiters.market, async (req: Request, res: Response
       });
     }
 
-    logger.debug("TV Config cache miss, fetching from Kodiak");
-    const response = await axios.get(`${KODIAK_API_BASE}/tv/config`);
+    logger.debug("TV Config cache miss, fetching from centralized service");
+    // Use centralized service instead of direct axios call
+    const response = await kodiakIntegrationService.getTradingViewConfig();
 
-    // Log the actual response structure for debugging
-    logger.debug("TV History API response structure", {
-      dataKeys: Object.keys(response.data),
-      data: response.data,
-    });
+    if (!response.success) {
+      return res.status(400).json({
+        success: false,
+        error: response.error || "Failed to fetch TV config"
+      });
+    }
 
     const result = {
       success: true,
-      data: response.data.data || response.data, // Handle both response.data.data and response.data formats
+      data: response.data,
       timestamp: Date.now(),
       cached: false,
     };
@@ -587,9 +539,15 @@ router.get("/tv/symbols", RateLimiters.market, async (req: Request, res: Respons
   try {
     const symbol = (req.query.symbol as string) || "PERP_BTC_USDC";
 
-    const response = await axios.get(`${KODIAK_API_BASE}/tv/symbols`, {
-      params: { symbol },
-    });
+    // Use centralized service instead of direct axios call
+    const response = await kodiakIntegrationService.getTradingViewSymbols(symbol);
+
+    if (!response.success) {
+      return res.status(400).json({
+        success: false,
+        error: response.error || "Failed to fetch TV symbols"
+      });
+    }
 
     res.json({
       success: true,
@@ -653,15 +611,15 @@ router.get("/tv/history", RateLimiters.market, async (req: Request, res: Respons
       });
     }
 
-    // No cached data - make external API call to get fresh chart data
-    const response = await axios.get(`${KODIAK_API_BASE}/tv/history`, {
-      params: {
-        symbol: symbolStr,
-        resolution: resolutionStr,
-        from: fromNum, // Use original timestamps for API call
-        to: toNum,
-      },
-    });
+    // No cached data - use centralized service to get fresh chart data
+    const response = await kodiakIntegrationService.getTradingViewHistory(symbolStr, resolutionStr, fromNum, toNum);
+
+    if (!response.success) {
+      return res.status(400).json({
+        success: false,
+        error: response.error || "Failed to fetch TV history"
+      });
+    }
 
     const result: FreshnessAwareResponse = {
       success: true,
@@ -725,9 +683,21 @@ router.get(
 
       // SECURITY REQUIREMENT: Only allow access to historical data if user has verified Kodiak credentials
       // This ensures trading features are only available to properly connected users
-      const credentials = await getKodiakCredentials(req.user?.userId || "");
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: "Authentication required"
+        });
+      }
 
-      if (!credentials) {
+      // Check if user has verified Kodiak credentials (without decrypting)
+      const result = await query(
+        "SELECT id FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
+        [userId]
+      );
+
+      if (result.rows.length === 0) {
         return res.status(403).json({
           success: false,
           error:
@@ -735,18 +705,10 @@ router.get(
         });
       }
 
-      if (!credentials.verified) {
-        return res.status(403).json({
-          success: false,
-          error:
-            "Kodiak credentials not verified. Please reconnect your account.",
-        });
-      }
-
       logger.debug(
         "Fetching historical kline data with credential verification",
         {
-          userId: req.user?.userId,
+          userId,
           symbol: symbolStr,
           resolution: resolutionStr,
           from: fromNum,
@@ -755,27 +717,21 @@ router.get(
         }
       );
 
-      // Since authenticated kline history endpoint doesn't exist, use public TV history
+      // Use centralized service to get historical kline data
       // but maintain security by requiring verified credentials
-      const response = await axios.get(`${KODIAK_API_BASE}/tv/history`, {
-        params: {
-          symbol: symbolStr,
-          resolution: resolutionStr,
-          from: fromNum,
-          to: toNum,
-        },
-        timeout: 10000, // 10 second timeout
-      });
+      const response = await kodiakIntegrationService.getTradingViewHistory(symbolStr, resolutionStr, fromNum, toNum);
+
+      if (!response.success) {
+        return res.status(400).json({
+          success: false,
+          error: response.error || "Failed to fetch historical kline data"
+        });
+      }
 
       logger.debug("Historical kline data response received", {
-        status: response.status,
         responseKeys: Object.keys(response.data || {}),
         dataType: typeof response.data,
-        dataLength: Array.isArray(response.data)
-          ? response.data.length
-          : "not array",
         symbol: symbolStr,
-        fullResponse: JSON.stringify(response.data).substring(0, 500),
       });
 
       // Handle TradingView format - separated OHLC arrays

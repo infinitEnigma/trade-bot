@@ -1,5 +1,26 @@
 /** @format */
 
+/**
+ * Kodiak/Orderly API Client for Engine
+ *
+ * NOTE: This client makes direct calls to Kodiak API. For full system centralization,
+ * this engine should eventually call the backend's centralized Kodiak service instead:
+ * - Backend service: backend/src/infrastructure/external/kodiak-integration.service.ts
+ * - This would require the engine to make HTTP calls to backend API endpoints
+ *
+ * CURRENT ARCHITECTURE:
+ * Engine (OrderlyClient) → Direct Kodiak API
+ *
+ * PLANNED ARCHITECTURE:
+ * Engine (OrderlyClient) → Backend API Endpoints → Centralized Kodiak Service
+ *
+ * Benefits of planned approach:
+ * - Single source of truth for all Kodiak API access
+ * - Unified caching, rate limiting, and error handling
+ * - Consistent authentication and signature generation
+ * - Easier to audit and maintain API integration
+ */
+
 import axios, { AxiosInstance } from "axios";
 import { OrderRequest, OrderResponse } from "../types/strategy";
 import { createHash } from "crypto";

@@ -68,6 +68,7 @@ export interface KodiakAccountInfo {
     tradingVolume24H: string;
     accountType: string;
     balances: KodiakBalance[];
+    maxLeverage?: string;
 }
 
 export interface KodiakApiAccountInfoResponse {
@@ -198,11 +199,11 @@ export class KodiakIntegrationService {
             }
 
             // Make API request
-            const positionsData = await this.makeKodiakRequest(
+            const positionsData = await this.makeKodiakRequest<KodiakPosition[]>(
                 "GET",
                 "/positions",
                 credentials
-            ) as KodiakPosition[];
+            );
 
             const result: KodiakApiResponse<KodiakPosition[]> = {
                 success: true,
@@ -261,11 +262,11 @@ export class KodiakIntegrationService {
             }
 
             // Make API request
-            const tradesData = await this.makeKodiakRequest(
+            const tradesData = await this.makeKodiakRequest<KodiakTrade[]>(
                 "GET",
                 `/position_history?limit=${limit}`,
                 credentials
-            ) as KodiakTrade[];
+            );
 
             const result: KodiakApiResponse<KodiakTrade[]> = {
                 success: true,
@@ -319,18 +320,18 @@ export class KodiakIntegrationService {
             }
 
             // Get account holdings
-            const holdingsData = await this.makeKodiakRequest(
+            const holdingsData = await this.makeKodiakRequest<KodiakHoldingsResponse | KodiakHolding[]>(
                 "GET",
                 "/client/holding?all=true",
                 credentials
-            ) as KodiakHoldingsResponse | KodiakHolding[];
+            );
 
             // Get account info
-            const accountInfoData = await this.makeKodiakRequest(
+            const accountInfoData = await this.makeKodiakRequest<KodiakApiAccountInfoResponse>(
                 "GET",
                 "/client/info",
                 credentials
-            ) as KodiakApiAccountInfoResponse;
+            );
 
             const holdings = Array.isArray(holdingsData)
                 ? holdingsData
@@ -416,11 +417,11 @@ export class KodiakIntegrationService {
             }
 
             // Make API request
-            const accountInfoData = await this.makeKodiakRequest(
+            const accountInfoData = await this.makeKodiakRequest<KodiakAccountInfo>(
                 "GET",
                 "/client/info",
                 credentials
-            ) as KodiakAccountInfo;
+            );
 
             const result: KodiakApiResponse<KodiakAccountInfo> = {
                 success: true,
@@ -450,6 +451,268 @@ export class KodiakIntegrationService {
     }
 
     /**
+     * Get market ticker data from Kodiak API
+     */
+    async getMarketTicker(symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<any>> {
+        try {
+            const cacheKey = `kodiak:ticker:${symbol}`;
+            const cacheResult = await redisService.get(cacheKey);
+
+            if (cacheResult.success && cacheResult.data) {
+                logger.debug("Returning cached Kodiak ticker data", { symbol });
+                return JSON.parse(cacheResult.data);
+            }
+
+            const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org";
+            const response = await fetch(`${baseUrl}/v1/public/futures/${symbol}`, {
+                method: "GET",
+                headers: {
+                    "Accept": "application/json",
+                    "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
+                },
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`);
+            }
+
+            const responseData = await response.json();
+            const result: KodiakApiResponse<any> = {
+                success: true,
+                data: (responseData as { data?: any }).data || responseData,
+            };
+
+            // Cache for 30 seconds
+            await redisService.setex(cacheKey, 30, JSON.stringify(result));
+
+            logger.debug("Kodiak ticker data retrieved and cached", { symbol });
+            return result;
+        } catch (error) {
+            logger.error("Get Kodiak ticker error", {
+                symbol,
+                error: error instanceof Error ? error.message : String(error),
+            });
+
+            return {
+                success: false,
+                error: "Failed to get Kodiak ticker data",
+            };
+        }
+    }
+
+    /**
+     * Get orderbook data from Kodiak API
+     */
+    async getOrderbook(symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<any>> {
+        try {
+            const cacheKey = `kodiak:orderbook:${symbol}`;
+            const cacheResult = await redisService.get(cacheKey);
+
+            if (cacheResult.success && cacheResult.data) {
+                logger.debug("Returning cached Kodiak orderbook data", { symbol });
+                return JSON.parse(cacheResult.data);
+            }
+
+            const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org";
+            const response = await fetch(`${baseUrl}/v1/public/orderbook?symbol=${symbol}`, {
+                method: "GET",
+                headers: {
+                    "Accept": "application/json",
+                    "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
+                },
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`);
+            }
+
+            const responseData = await response.json();
+            const result: KodiakApiResponse<any> = {
+                success: true,
+                data: (responseData as { data?: any }).data || responseData,
+            };
+
+            // Cache for 1 minute
+            await redisService.setex(cacheKey, 60, JSON.stringify(result));
+
+            logger.debug("Kodiak orderbook data retrieved and cached", { symbol });
+            return result;
+        } catch (error) {
+            logger.error("Get Kodiak orderbook error", {
+                symbol,
+                error: error instanceof Error ? error.message : String(error),
+            });
+
+            return {
+                success: false,
+                error: "Failed to get Kodiak orderbook data",
+            };
+        }
+    }
+
+    /**
+     * Get TradingView configuration from Kodiak API
+     */
+    async getTradingViewConfig(): Promise<KodiakApiResponse<any>> {
+        try {
+            const cacheKey = "kodiak:tv:config";
+            const cacheResult = await redisService.get(cacheKey);
+
+            if (cacheResult.success && cacheResult.data) {
+                logger.debug("Returning cached Kodiak TradingView config");
+                return JSON.parse(cacheResult.data);
+            }
+
+            const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org";
+            const response = await fetch(`${baseUrl}/v1/tv/config`, {
+                method: "GET",
+                headers: {
+                    "Accept": "application/json",
+                    "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
+                },
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`);
+            }
+
+            const responseData = await response.json();
+            const result: KodiakApiResponse<any> = {
+                success: true,
+                data: (responseData as { data?: any }).data || responseData,
+            };
+
+            // Cache for 1 hour
+            await redisService.setex(cacheKey, 3600, JSON.stringify(result));
+
+            logger.debug("Kodiak TradingView config retrieved and cached");
+            return result;
+        } catch (error) {
+            logger.error("Get Kodiak TradingView config error", {
+                error: error instanceof Error ? error.message : String(error),
+            });
+
+            return {
+                success: false,
+                error: "Failed to get Kodiak TradingView config",
+            };
+        }
+    }
+
+    /**
+     * Get TradingView symbols from Kodiak API
+     */
+    async getTradingViewSymbols(symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<any>> {
+        try {
+            const cacheKey = `kodiak:tv:symbols:${symbol}`;
+            const cacheResult = await redisService.get(cacheKey);
+
+            if (cacheResult.success && cacheResult.data) {
+                logger.debug("Returning cached Kodiak TradingView symbols", { symbol });
+                return JSON.parse(cacheResult.data);
+            }
+
+            const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org";
+            const response = await fetch(`${baseUrl}/v1/tv/symbols?symbol=${symbol}`, {
+                method: "GET",
+                headers: {
+                    "Accept": "application/json",
+                    "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
+                },
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`);
+            }
+
+            const responseData = await response.json();
+            const result: KodiakApiResponse<any> = {
+                success: true,
+                data: (responseData as { data?: any }).data || responseData,
+            };
+
+            // Cache for 1 hour
+            await redisService.setex(cacheKey, 3600, JSON.stringify(result));
+
+            logger.debug("Kodiak TradingView symbols retrieved and cached", { symbol });
+            return result;
+        } catch (error) {
+            logger.error("Get Kodiak TradingView symbols error", {
+                symbol,
+                error: error instanceof Error ? error.message : String(error),
+            });
+
+            return {
+                success: false,
+                error: "Failed to get Kodiak TradingView symbols",
+            };
+        }
+    }
+
+    /**
+     * Get TradingView history data from Kodiak API
+     */
+    async getTradingViewHistory(symbol: string, resolution: string, from: number, to: number): Promise<KodiakApiResponse<any>> {
+        try {
+            // Create cache key with rounded timestamps for better cache hit rate
+            const roundTo5Minutes = (timestamp: number) => {
+                return Math.floor(timestamp / 300) * 300; // 300 seconds = 5 minutes
+            };
+
+            const fromRounded = roundTo5Minutes(from);
+            const toRounded = roundTo5Minutes(to);
+            const cacheKey = `kodiak:tv:history:${symbol}:${resolution}:${fromRounded}:${toRounded}`;
+
+            const cacheResult = await redisService.get(cacheKey);
+            if (cacheResult.success && cacheResult.data) {
+                logger.debug("Returning cached Kodiak TradingView history", { symbol, resolution });
+                return JSON.parse(cacheResult.data);
+            }
+
+            const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org";
+            const response = await fetch(`${baseUrl}/v1/tv/history?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}`, {
+                method: "GET",
+                headers: {
+                    "Accept": "application/json",
+                    "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
+                },
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`);
+            }
+
+            const responseData = await response.json();
+            const result: KodiakApiResponse<any> = {
+                success: true,
+                data: (responseData as { data?: any }).data || responseData,
+            };
+
+            // Cache for 5 minutes (short TTL for chart data)
+            await redisService.setex(cacheKey, 300, JSON.stringify(result));
+
+            logger.debug("Kodiak TradingView history retrieved and cached", { symbol, resolution });
+            return result;
+        } catch (error) {
+            logger.error("Get Kodiak TradingView history error", {
+                symbol,
+                resolution,
+                error: error instanceof Error ? error.message : String(error),
+            });
+
+            return {
+                success: false,
+                error: "Failed to get Kodiak TradingView history",
+            };
+        }
+    }
+
+    /**
      * Get Kodiak account information (authenticated - for wallet address)
      * Note: This endpoint may require authentication now
      */
@@ -470,7 +733,7 @@ export class KodiakIntegrationService {
             if (credentials) {
                 // Try authenticated request first
                 try {
-                    const accountInfoData = await this.makeKodiakRequest(
+                    const accountInfoData = await this.makeKodiakRequest<unknown>(
                         "GET",
                         `/v1/public/account?account_id=${encodeURIComponent(accountId)}`,
                         credentials
@@ -611,12 +874,12 @@ export class KodiakIntegrationService {
     /**
      * Make authenticated Kodiak API request
      */
-    private async makeKodiakRequest(
+    private async makeKodiakRequest<T>(
         method: string,
         path: string,
         credentials: KodiakCredentials,
         body?: unknown
-    ): Promise<unknown> {
+    ): Promise<T> {
         try {
             const signaturePath = path.startsWith("/v1/") ? path : `/v1${path}`;
             const timestamp = Date.now();
@@ -669,7 +932,7 @@ export class KodiakIntegrationService {
             }
 
             const responseData = await response.json();
-            return responseData;
+            return responseData as T;
         } catch (error) {
             logger.error("Kodiak API request failed", {
                 method,

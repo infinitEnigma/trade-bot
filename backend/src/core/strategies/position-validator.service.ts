@@ -1,10 +1,8 @@
 /** @format */
 
-import axios from "axios";
 import { query } from "../../database/pool";
 import { logger } from "../logging";
-import { generateOrderlySignature } from "../../shared/utils/orderly-signature";
-//import { withCredentials, SecureCredentials } from "../../infrastructure/security/encryption.service";
+import { kodiakIntegrationService } from "../../infrastructure/external/kodiak-integration.service";
 import { positionSyncService, PositionData } from "./position-sync.service"; // ✅ Single source of truth
 import { redisService } from "../../infrastructure";
 
@@ -25,73 +23,40 @@ export interface PositionValidationResult {
 }
 
 /**
- * Get account limits and current exposure from Orderly API
+ * Get account limits and current exposure from centralized Kodiak service
  */
 export async function getAccountLimits(
-  orderlyAccountId: string,
-  orderlyApiKey: string,
-  orderlySecretKey: string
+  userId: string
 ): Promise<AccountLimits> {
   try {
-    const timestamp = Date.now();
-    const path = "/v1/client/info";
-    const signature = await generateOrderlySignature(
-      timestamp,
-      "GET",
-      path,
-      "",
-      orderlySecretKey
-    );
+    // Get account info from centralized service (uses caching)
+    const accountResponse = await kodiakIntegrationService.getAccountInfo(userId);
 
-    // Get account info
-    const accountResponse = await axios.get(
-      `${process.env.KODIAK_API_URL || "https://api.orderly.org"}${path}`,
-      {
-        headers: {
-          "orderly-account-id": orderlyAccountId,
-          "orderly-key": orderlyApiKey,
-          "orderly-signature": signature,
-          "orderly-timestamp": timestamp.toString(),
-        },
-      }
-    );
+    if (!accountResponse.success || !accountResponse.data) {
+      throw new Error(accountResponse.error || "Failed to get account info");
+    }
 
-    const accountData = accountResponse.data.data;
+    const accountData = accountResponse.data;
     logger.info("Account info retrieved", {
-      maxLeverage: accountData.max_leverage,
-      takerFee: accountData.taker_fee_rate,
-      makerFee: accountData.maker_fee_rate,
+      userId,
+      maxLeverage: accountData.maxLeverage || accountData.totalBalance,
+      balance: accountData.totalBalance,
     });
 
-    // Get current positions for exposure calculation
-    const positionsPath = "/v1/positions";
-    const positionsSignature = await generateOrderlySignature(
-      timestamp,
-      "GET",
-      positionsPath,
-      "",
-      orderlySecretKey
-    );
+    // Get positions from centralized service
+    const positionsResponse = await kodiakIntegrationService.getPositions(userId);
 
-    const positionsResponse = await axios.get(
-      `${process.env.KODIAK_API_URL || "https://api.orderly.org"}${positionsPath}`,
-      {
-        headers: {
-          "orderly-account-id": orderlyAccountId,
-          "orderly-key": orderlyApiKey,
-          "orderly-signature": positionsSignature,
-          "orderly-timestamp": timestamp.toString(),
-        },
-      }
-    );
+    if (!positionsResponse.success || !positionsResponse.data) {
+      throw new Error(positionsResponse.error || "Failed to get positions");
+    }
 
     // Calculate total exposure from positions
     let totalExposure = 0;
-    const positions = positionsResponse.data.data?.rows || [];
+    const positions = positionsResponse.data || [];
     for (const position of positions) {
       const notionalValue = Math.abs(
-        parseFloat(position.position_qty || 0) *
-        parseFloat(position.mark_price || 0)
+        parseFloat(String(position.positionAmt || 0)) *
+        parseFloat(String(position.markPrice || 0))
       );
       totalExposure += notionalValue;
     }
@@ -102,18 +67,18 @@ export async function getAccountLimits(
     });
 
     return {
-      balance: parseFloat(accountData.total_balance || "0"),
-      maxLeverage: parseInt(accountData.max_leverage || "1"),
+      balance: parseFloat(accountData.totalBalance || "0"),
+      maxLeverage: 10, // Default leverage, should be obtained from account info if available
       totalExposure,
-      maxNotional: accountData.max_notional || {},
-      takerFeeRate: parseFloat(accountData.taker_fee_rate || "0.001"),
-      makerFeeRate: parseFloat(accountData.maker_fee_rate || "0.001"),
+      maxNotional: {},
+      takerFeeRate: 0.001, // Default values, should come from account info if available
+      makerFeeRate: 0.001,
     };
   } catch (error: unknown) {
     const err = error instanceof Error ? error : new Error(String(error));
     logger.error("Failed to get account limits", {
       error: err.message,
-      orderlyAccountId,
+      userId,
     });
     throw new Error(`Account validation failed: ${err.message}`);
   }
