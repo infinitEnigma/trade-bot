@@ -84,10 +84,10 @@ export class ProcessSpawner {
                 });
 
                 // Handle process events
-                this.engineProcess.on("error", (error) => {
-                    logger.error("Engine process spawn error", { error: error.message });
+                this.engineProcess.on("error", () => {
+                    logger.error("Engine process spawn error", { error: "Process spawn failed" });
                     this.engineProcess = null;
-                    reject(error);
+                    reject(new Error("Process spawn failed"));
                 });
 
                 this.engineProcess.on("exit", (code, signal) => {
@@ -107,12 +107,12 @@ export class ProcessSpawner {
                     }
                 }, 3000);
 
-            } catch (error) {
+            } catch {
                 logger.error("Failed to spawn engine process", {
-                    error: error instanceof Error ? error.message : String(error),
+                    error: "Process spawning failed",
                 });
                 this.engineProcess = null;
-                reject(error);
+                reject(new Error("Process spawning failed"));
             }
         });
     }
@@ -146,7 +146,7 @@ export class ProcessSpawner {
                     logger.info("Engine readiness check passed", { attempt });
                     return;
                 }
-            } catch (error) {
+            } catch {
                 // Engine not ready yet, continue waiting
                 logger.debug(`Engine not ready, attempt ${attempt}/${finalConfig.maxAttempts}`);
             }
@@ -163,7 +163,7 @@ export class ProcessSpawner {
     /**
      * Terminate the process gracefully, with force kill fallback
      */
-    async kill(signal: string = "SIGTERM", forceKillTimeout = 10000): Promise<void> {
+    async kill(signal: NodeJS.Signals | string = "SIGTERM", forceKillTimeout = 10000): Promise<void> {
         if (!this.engineProcess) {
             logger.debug("No engine process to kill");
             return;
@@ -176,7 +176,7 @@ export class ProcessSpawner {
         });
 
         // Send graceful termination signal
-        this.engineProcess.kill(signal as any);
+        this.engineProcess.kill(signal as NodeJS.Signals);
 
         // Wait for graceful exit or force kill
         const exitPromise = new Promise<void>((resolve) => {
@@ -206,13 +206,13 @@ export class ProcessSpawner {
      * Check if the process is currently alive (OS level)
      */
     isAlive(): boolean {
-        if (!this.engineProcess) return false;
+        if (!this.engineProcess?.pid) return false;
 
         try {
             // Send signal 0 to check if process exists without actually sending a signal
-            process.kill(this.engineProcess.pid!, 0 as any);
+            process.kill(this.engineProcess.pid, 0);
             return true;
-        } catch (error) {
+        } catch {
             // ESRCH means process doesn't exist
             return false;
         }

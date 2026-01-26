@@ -5,6 +5,61 @@ import { Server } from "socket.io";
 import { marketStreamLogger } from "../../core/logging/context-aware-logger.service";
 import { redisService } from "../cache";
 import { query } from "../../database/pool";
+import { KlineData, BaseWebSocketMessage } from "./market-stream/types";
+
+// Define specific WebSocket message types to eliminate 'any' usage
+interface WebSocketAuthMessage {
+  event: "auth";
+  id?: string;
+  success?: boolean;
+  code?: number;
+  [key: string]: unknown;
+}
+
+interface WebSocketSubscriptionMessage {
+  event: "subscribed" | "subscribe";
+  method?: "SUBSCRIBE";
+  success?: boolean;
+  code?: number;
+  topic?: string;
+  params?: string | string[];
+  [key: string]: unknown;
+}
+
+interface WebSocketMarketDataMessage {
+  topic: string;
+  data: {
+    symbol?: string;
+    price?: string;
+    lastPrice?: string;
+    volume?: string;
+    bid?: string;
+    ask?: string;
+    change24h?: string;
+    startTime?: number;
+    open?: string;
+    close?: string;
+    high?: string;
+    low?: string;
+    amount?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+interface WebSocketErrorMessage {
+  error?: string;
+  message?: string;
+  code?: number;
+  [key: string]: unknown;
+}
+
+type WebSocketMessage =
+  | WebSocketAuthMessage
+  | WebSocketSubscriptionMessage
+  | WebSocketMarketDataMessage
+  | WebSocketErrorMessage
+  | BaseWebSocketMessage;
 
 interface TickData {
   symbol: string;
@@ -135,10 +190,10 @@ class WebSocketManager {
 
     // Check if connection already exists and is healthy
     if (this.websockets.has("market")) {
-      const existingWs = this.websockets.get("market")!;
+      const existingWs = this.websockets.get("market");
       const health = this.connectionHealth.get("market");
 
-      if (existingWs.readyState === WebSocket.OPEN &&
+      if (existingWs?.readyState === WebSocket.OPEN &&
         health &&
         health.overall > 70 &&
         !this.emergencyMode) {
@@ -152,7 +207,7 @@ class WebSocketManager {
       url: wsUrl,
       accountId,
       totalConnections: this.websockets.size,
-      accountConnections: accountConnections,
+      accountConnections,
     });
 
     return new Promise((resolve, reject) => {
@@ -211,7 +266,7 @@ class WebSocketManager {
         this.scheduleReconnect("market");
       });
 
-      ws.on("message", (data: WebSocket.Data) => {
+      ws.on("message", (_data: WebSocket.Data) => {
         // Update connection health for successful message
         this.updateConnectionHealth("market", 'message_received');
 
@@ -596,7 +651,10 @@ class WebSocketManager {
 class AuthManager {
   async authenticate(ws: WebSocket, accountId: string): Promise<void> {
     try {
-      const credsResult = await query(
+      const credsResult = await query<{
+        api_key_encrypted: string;
+        secret_key_encrypted: string;
+      }>(
         "SELECT api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE account_id = $1",
         [accountId]
       );
@@ -673,7 +731,7 @@ class CacheManager {
   async cacheKlines(
     symbol: string,
     interval: string,
-    klines: any[]
+    klines: KlineData[]
   ): Promise<void> {
     const cacheKey = `kline:${symbol}:${interval}`;
 
@@ -693,7 +751,7 @@ class CacheManager {
    */
   private async atomicCacheUpdate(
     key: string,
-    data: any,
+    data: unknown,
     ttlSeconds: number,
     maxRetries: number = 3
   ): Promise<{ success: boolean; error?: string }> {
@@ -749,7 +807,7 @@ class CacheManager {
         // Always unwatch the key
         try {
           await client.unwatch();
-        } catch (unwatchError) {
+        } catch (_unwatchError) {
           // Ignore unwatch errors
         }
       }
@@ -768,11 +826,11 @@ class CacheManager {
     symbol: string,
     interval: string,
     limit: number = 300
-  ): Promise<any[]> {
+  ): Promise<KlineData[]> {
     const cacheKey = `kline:${symbol}:${interval}`;
     const result = await redisService.get(cacheKey);
     if (result.success && result.data) {
-      const klines = JSON.parse(result.data);
+      const klines = JSON.parse(result.data) as KlineData[];
       return klines.slice(-limit);
     } else if (!result.success) {
       marketStreamLogger.warn("Klines cache read failed", {
@@ -784,7 +842,7 @@ class CacheManager {
     return [];
   }
 
-  async cacheMarkPrice(symbol: string, data: any): Promise<void> {
+  async cacheMarkPrice(symbol: string, data: { symbol: string; price: number; timestamp: number }): Promise<void> {
     const cacheKey = `markprice:${symbol}`;
     const result = await redisService.setex(cacheKey, 30, JSON.stringify(data));
     if (!result.success) {
@@ -795,11 +853,11 @@ class CacheManager {
     }
   }
 
-  async getMarkPrice(symbol: string): Promise<any | null> {
+  async getMarkPrice(symbol: string): Promise<{ symbol: string; price: number; timestamp: number } | null> {
     const cacheKey = `markprice:${symbol}`;
     const result = await redisService.get(cacheKey);
     if (result.success && result.data) {
-      return JSON.parse(result.data);
+      return JSON.parse(result.data) as { symbol: string; price: number; timestamp: number };
     } else if (!result.success) {
       marketStreamLogger.warn("Mark price cache read failed", {
         symbol,
@@ -814,7 +872,7 @@ class CacheManager {
  * Manages processing queue with backpressure handling
  */
 class ProcessingQueue {
-  private queue: any[] = [];
+  private queue: BaseWebSocketMessage[] = [];
   private isProcessing = false;
   private maxQueueSize = 1000;
   private processingPromises: Map<string, Promise<void>> = new Map();
@@ -824,7 +882,7 @@ class ProcessingQueue {
   /**
    * Add message to processing queue
    */
-  enqueue(message: any): boolean {
+  enqueue(message: BaseWebSocketMessage): boolean {
     if (this.queue.length >= this.maxQueueSize) {
       marketStreamLogger.warn("Processing queue full, dropping message", {
         queueSize: this.queue.length,
@@ -854,7 +912,12 @@ class ProcessingQueue {
 
     try {
       while (this.queue.length > 0) {
-        const message = this.queue.shift()!;
+        const message = this.queue.shift();
+
+        // If queue is empty or message is undefined, break
+        if (!message) {
+          break;
+        }
 
         // Check if we have too many concurrent processing operations
         if (this.processingPromises.size >= 10) {
@@ -932,18 +995,18 @@ class MessageHandler {
   /**
    * Enqueue message for processing with backpressure handling
    */
-  enqueueMessage(message: any): boolean {
+  enqueueMessage(message: BaseWebSocketMessage): boolean {
     return this.processingQueue.enqueue(message);
   }
 
-  async handleMessage(message: any): Promise<void> {
+  async handleMessage(message: BaseWebSocketMessage): Promise<void> {
     try {
       // Handle authentication responses
       if (message.event === "auth" || message.method === "AUTH") {
         if (message.success || message.code === 0) {
           marketStreamLogger.info("WebSocket authentication successful");
         } else {
-          marketStreamLogger.error("WebSocket authentication failed", new Error(String(message)));
+          marketStreamLogger.error("WebSocket authentication failed", new Error(JSON.stringify(message)));
         }
         return;
       }
@@ -952,10 +1015,10 @@ class MessageHandler {
       if (message.event === "subscribed" || message.method === "SUBSCRIBE") {
         if (message.success || message.code === 0) {
           marketStreamLogger.info("WebSocket subscription successful", {
-            topic: message.topic || message.params,
+            topic: message.topic || (message as WebSocketSubscriptionMessage).params,
           });
         } else {
-          marketStreamLogger.error("WebSocket subscription failed", new Error(message), {});
+          marketStreamLogger.error("WebSocket subscription failed", new Error(JSON.stringify(message)), {});
         }
         return;
       }
@@ -966,11 +1029,16 @@ class MessageHandler {
         marketStreamLogger.info("Processing market data message", { topic });
 
         if (topic.includes("@kline_")) {
-          await this.handleKlineData(message);
+          await this.handleKlineData(message as WebSocketMarketDataMessage);
         } else if (topic === "ticker") {
-          await this.handleTickerData(message.data.symbol, message.data);
+          const data = message.data as { symbol?: string; price?: string; lastPrice?: string; volume?: string; bid?: string; ask?: string; change24h?: string };
+          if (data.symbol) {
+            await this.handleTickerData(data.symbol, data);
+          } else {
+            marketStreamLogger.warn("Ticker data missing symbol", { topic });
+          }
         } else if (topic.includes("@markprice")) {
-          await this.handleMarkPriceData(message);
+          await this.handleMarkPriceData(message as WebSocketMarketDataMessage);
         } else {
           marketStreamLogger.debug("Unhandled message topic", { topic });
         }
@@ -980,16 +1048,16 @@ class MessageHandler {
     }
   }
 
-  private async handleTickerData(symbol: string, data: any): Promise<void> {
+  private async handleTickerData(symbol: string, data: { price?: string; lastPrice?: string; volume?: string; bid?: string; ask?: string; change24h?: string }): Promise<void> {
     try {
       const tickData: TickData = {
         symbol,
-        price: parseFloat(data.price || data.lastPrice || 0),
-        volume: parseFloat(data.volume || 0),
+        price: parseFloat(data.price || data.lastPrice || '0'),
+        volume: parseFloat(data.volume || '0'),
         timestamp: Date.now(),
-        bid: parseFloat(data.bid || 0),
-        ask: parseFloat(data.ask || 0),
-        change24h: parseFloat(data.change24h || 0),
+        bid: parseFloat(data.bid || '0'),
+        ask: parseFloat(data.ask || '0'),
+        change24h: parseFloat(data.change24h || '0'),
       };
 
       await this.cacheManager.cacheTick(symbol, tickData);
@@ -1009,7 +1077,7 @@ class MessageHandler {
     }
   }
 
-  private async handleMarkPriceData(message: any): Promise<void> {
+  private async handleMarkPriceData(message: { topic: string; data: { symbol?: string; price?: string; timestamp?: number } }): Promise<void> {
     try {
       const markPriceData = message.data;
       if (!markPriceData?.symbol) {
@@ -1020,7 +1088,7 @@ class MessageHandler {
       const symbol = message.topic.split("@")[0];
       const priceData = {
         symbol,
-        price: parseFloat(markPriceData.price || 0),
+        price: parseFloat(markPriceData.price || '0'),
         timestamp: markPriceData.timestamp || Date.now(),
       };
 
@@ -1039,7 +1107,7 @@ class MessageHandler {
     }
   }
 
-  private async handleKlineData(message: any): Promise<void> {
+  private async handleKlineData(message: { topic: string; data: { symbol?: string; startTime?: number; open?: string; close?: string; high?: string; low?: string; volume?: string; amount?: string } }): Promise<void> {
     try {
       const klineData = message.data;
       if (!klineData?.symbol) {
@@ -1047,16 +1115,22 @@ class MessageHandler {
         return;
       }
 
-      const [symbol, klinePart] = message.topic.split("@");
+      const parts = message.topic.split("@");
+      const symbol = parts[0];
+      const klinePart = parts[1] || "";
       const interval = klinePart.replace("kline_", "");
 
-      const newCandle = {
-        time: Math.floor(klineData.startTime / 1000),
-        open: parseFloat(klineData.open.toString()),
-        high: parseFloat(klineData.high.toString()),
-        low: parseFloat(klineData.low.toString()),
-        close: parseFloat(klineData.close.toString()),
-        volume: parseFloat(klineData.volume.toString()),
+      const newCandle: KlineData = {
+        symbol,
+        type: "kline",
+        open: parseFloat((klineData.open || "0").toString()),
+        high: parseFloat((klineData.high || "0").toString()),
+        low: parseFloat((klineData.low || "0").toString()),
+        close: parseFloat((klineData.close || "0").toString()),
+        volume: parseFloat((klineData.volume || "0").toString()),
+        amount: parseFloat((klineData.amount || "0").toString()),
+        startTime: klineData.startTime ? parseInt(klineData.startTime.toString()) : 0,
+        endTime: klineData.startTime ? parseInt(klineData.startTime.toString()) : 0,
       };
 
       const existingKlines = await this.cacheManager.getKlines(
@@ -1067,7 +1141,7 @@ class MessageHandler {
       const updatedKlines = [...existingKlines, newCandle]
         .filter(
           (candle, index, arr) =>
-            arr.findIndex(c => c.time === candle.time) === index
+            arr.findIndex(c => c.startTime === candle.startTime) === index
         )
         .slice(-300);
 
@@ -1242,7 +1316,9 @@ export class MarketStreamService {
 
     try {
       // Get account ID for WebSocket URL
-      const accountResult = await query(
+      const accountResult = await query<{
+        account_id: string;
+      }>(
         "SELECT account_id FROM kodiak_credentials LIMIT 1"
       );
       if (accountResult.rows.length === 0) {
@@ -1259,7 +1335,7 @@ export class MarketStreamService {
       // Set up message handling with backpressure queue
       ws.on("message", (data: WebSocket.Data) => {
         try {
-          const message = JSON.parse(data.toString());
+          const message = JSON.parse(data.toString()) as WebSocketMessage;
           const queued = this.messageHandler.enqueueMessage(message);
           if (!queued) {
             marketStreamLogger.warn("Message dropped due to queue overflow", {
@@ -1323,7 +1399,7 @@ export class MarketStreamService {
       const message = JSON.stringify({
         id: `sub_${topic}_${Date.now()}`,
         event: "subscribe",
-        topic: topic,
+        topic,
       });
 
       ws.send(message);
@@ -1361,7 +1437,7 @@ export class MarketStreamService {
   subscribe(
     clientId: string,
     topic: string,
-    options: { priority?: "high" | "medium" | "low" } = {}
+    _options: { priority?: "high" | "medium" | "low" } = {}
   ): void {
     this.subscriptionManager.subscribe(clientId, topic);
   }
@@ -1387,14 +1463,14 @@ export class MarketStreamService {
     symbol: string,
     interval: string,
     limit: number = 300
-  ): Promise<any[]> {
+  ): Promise<KlineData[]> {
     return this.cacheManager.getKlines(symbol, interval, limit);
   }
 
   /**
    * Get latest mark price data from cache
    */
-  async getLatestMarkPrice(symbol: string): Promise<any | null> {
+  async getLatestMarkPrice(symbol: string): Promise<{ symbol: string; price: number; timestamp: number } | null> {
     return this.cacheManager.getMarkPrice(symbol);
   }
 
@@ -1410,7 +1486,15 @@ export class MarketStreamService {
   /**
    * Get service status
    */
-  getStatus(): any {
+  getStatus(): {
+    connected: number;
+    websockets: string[];
+    pendingSubscriptions: number;
+    activeHeartbeats: number;
+    activeSubscriptions: number;
+    totalReferences: number;
+    topics: string[];
+  } {
     return {
       connected: this.wsManager.isConnected() ? 1 : 0,
       websockets: this.wsManager.isConnected() ? ["market"] : [],

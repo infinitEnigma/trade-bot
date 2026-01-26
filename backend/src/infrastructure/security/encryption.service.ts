@@ -16,7 +16,7 @@
  */
 
 import "dotenv/config";
-import { createCipheriv, createDecipheriv, randomBytes, scrypt } from "crypto";
+import { createCipheriv, createDecipheriv, randomBytes, scrypt, scryptSync as cryptoScryptSync } from "crypto";
 import { promisify } from "util";
 import { logger } from "../../core/logging";
 import { query } from "../../database/pool";
@@ -49,7 +49,7 @@ import { query } from "../../database/pool";
  *
  * // Context manager pattern
  * const result = await withCredentials(userId, async (creds) => {
- *   return await validatePosition(creds.get('apiKey'), creds.get('secretKey'));
+ *   return await makeApiCall(creds.get('apiKey'), creds.get('secretKey'));
  * });
  * ```
  */
@@ -183,7 +183,12 @@ export async function withCredentials<T>(
  */
 async function decryptUserCredentials(userId: string): Promise<{ [key: string]: string }> {
   try {
-    const result = await query(
+    const result = await query<{
+      account_id: string;
+      api_key_encrypted: string;
+      secret_key_encrypted: string;
+      encryption_version: number;
+    }>(
       "SELECT account_id, api_key_encrypted, secret_key_encrypted, encryption_version FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
       [userId]
     );
@@ -196,7 +201,7 @@ async function decryptUserCredentials(userId: string): Promise<{ [key: string]: 
     const encryptionService = new EncryptionService();
 
     // Decrypt using version-aware decryption
-    const encryptionVersion = row.encryption_version || 1;
+    const _encryptionVersion = row.encryption_version || 1;
     const accountId = await encryptionService.decryptWithVersion(row.account_id);
     const apiKey = await encryptionService.decryptWithVersion(row.api_key_encrypted);
     const secretKey = await encryptionService.decryptWithVersion(row.secret_key_encrypted);
@@ -226,7 +231,7 @@ const SALT_LENGTH = 32;
 const CURRENT_KEY_VERSION = 2;
 const KEY_ROTATION_INTERVAL_MONTHS = 3; // Quarterly rotation
 
-interface EncryptionMetadata {
+interface _EncryptionMetadata {
   version: number;
   salt: Buffer;
   iv: Buffer;
@@ -234,16 +239,16 @@ interface EncryptionMetadata {
   encryptedData: Buffer;
 }
 
-function getKey(password: string, salt: Buffer): Buffer {
-  return scryptSync(password, salt, 32) as Buffer;
+function _getKey(password: string, salt: Buffer): Buffer {
+  return _scryptSync(password, salt, 32) as Buffer;
 }
 
-function scryptSync(
+function _scryptSync(
   password: string,
   salt: string | Buffer,
   length: number
 ): Buffer | string {
-  return require("crypto").scryptSync(password, salt, length);
+  return cryptoScryptSync(password, salt, length);
 }
 
 export class EncryptionService {
@@ -268,7 +273,7 @@ export class EncryptionService {
 
   encrypt(plaintext: string): string {
     const salt = randomBytes(SALT_LENGTH);
-    const key = scryptSync(this.masterKey, salt, 32) as Buffer;
+    const key = _scryptSync(this.masterKey, salt, 32) as Buffer;
     const iv = randomBytes(IV_LENGTH);
     const cipher = createCipheriv(ALGORITHM, key, iv);
 
@@ -296,7 +301,7 @@ export class EncryptionService {
     );
     const encrypted = buffer.subarray(SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
 
-    const key = scryptSync(this.masterKey, salt, 32) as Buffer;
+    const key = _scryptSync(this.masterKey, salt, 32) as Buffer;
     const decipher = createDecipheriv(ALGORITHM, key, iv);
     decipher.setAuthTag(tag);
 
@@ -403,7 +408,9 @@ export class EncryptionService {
    */
   async isKeyRotationNeeded(): Promise<boolean> {
     try {
-      const result = await query(
+      const result = await query<{
+        created_at: Date;
+      }>(
         "SELECT created_at FROM encryption_keys ORDER BY version DESC LIMIT 1"
       );
 
@@ -472,7 +479,11 @@ export class EncryptionService {
       logger.info("Starting migration to versioned encryption");
 
       // Get all credentials that need migration
-      const credentials = await query(
+      const credentials = await query<{
+        id: string;
+        api_key_encrypted: string;
+        secret_key_encrypted: string;
+      }>(
         "SELECT id, api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE encryption_version IS NULL OR encryption_version < $1",
         [CURRENT_KEY_VERSION]
       );

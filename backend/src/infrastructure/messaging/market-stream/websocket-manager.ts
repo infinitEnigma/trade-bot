@@ -21,7 +21,7 @@ interface QueuedMessage {
   id: string;
   priority: MessagePriority;
   topic: string;
-  data: any;
+  data: unknown;
   timestamp: number;
   retryCount: number;
   clientId?: string;
@@ -129,7 +129,10 @@ export class WebSocketManager {
     // Check if already connected
     if (this.websockets.has(connectionKey)) {
       logger.debug("WebSocket already exists", { connectionKey });
-      return this.websockets.get(connectionKey)!;
+      const existingWs = this.websockets.get(connectionKey);
+      if (existingWs) {
+        return existingWs;
+      }
     }
 
     const wsUrl = `${this.config.baseUrl}/${accountId}`;
@@ -365,7 +368,9 @@ export class WebSocketManager {
     // Close all WebSocket connections
     this.websockets.forEach((ws, connectionKey) => {
       try {
-        ws.close();
+        if (ws) {
+          ws.close();
+        }
       } catch (error) {
         logger.warn("Error closing WebSocket", {
           connectionKey,
@@ -403,7 +408,7 @@ export class WebSocketManager {
    */
   queueMessage(
     topic: string,
-    data: any,
+    data: unknown,
     priority: MessagePriority = MessagePriority.MEDIUM,
     clientId?: string
   ): boolean {
@@ -462,7 +467,7 @@ export class WebSocketManager {
   async sendMessage(
     connectionKey: string,
     topic: string,
-    data: any,
+    data: unknown,
     priority: MessagePriority = MessagePriority.MEDIUM,
     clientId?: string
   ): Promise<boolean> {
@@ -596,7 +601,15 @@ export class WebSocketManager {
         return;
       }
 
-      const ws = this.getConnection(availableConnection)!;
+      const ws = this.getConnection(availableConnection);
+      if (!ws) {
+        logger.error("Available connection not found", {
+          messageId: message.id,
+          topic: message.topic,
+        });
+        return;
+      }
+
       const messageData = JSON.stringify({
         topic: message.topic,
         data: message.data,
@@ -819,7 +832,7 @@ export class WebSocketManager {
   /**
    * Perform ping/pong health check
    */
-  private async performPingPongCheck(ws: WebSocket, connectionKey: string): Promise<void> {
+  private async performPingPongCheck(ws: WebSocket, _connectionKey: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error("Ping timeout"));

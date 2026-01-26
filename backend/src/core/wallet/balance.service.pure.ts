@@ -19,7 +19,8 @@ import {
     IExternalApiService,
     ILogger,
     Balance,
-    ApiResult
+    ApiResult,
+    BalanceHistory
 } from '@trade-bot/shared';
 
 export interface BalanceServiceDependencies {
@@ -96,7 +97,16 @@ export class BalanceService {
             throw new Error(`Balance fetch failed: ${apiResult.error}`);
         }
 
-        const balance = apiResult.data!;
+        if (!apiResult.data) {
+            this.deps.logger.error('Balance data is missing from successful API result', {
+                userId,
+                apiSuccess: apiResult.success,
+                apiError: apiResult.error
+            });
+            throw new Error('Balance data is missing from successful API result');
+        }
+
+        const balance = apiResult.data;
         this.validateBalance(balance);
 
         // 3. Cache the result
@@ -155,7 +165,7 @@ export class BalanceService {
      * - Retrieve historical balance changes
      * - Useful for audit trails and analytics
      */
-    async getBalanceHistory(userId: string, limit: number = 50): Promise<any[]> {
+    async getBalanceHistory(userId: string, limit: number = 50): Promise<BalanceHistory[]> {
         // Note: This would use the repository interface when implemented
         // For now, this is a placeholder for future enhancement
         this.deps.logger.debug('Getting balance history', { userId, limit });
@@ -223,7 +233,16 @@ export class BalanceService {
             throw new Error(`Balance fetch failed: ${apiResult.error}`);
         }
 
-        const balance = apiResult.data!;
+        if (!apiResult.data) {
+            this.deps.logger.error('Balance data is missing from successful API result', {
+                userId,
+                apiSuccess: apiResult.success,
+                apiError: apiResult.error
+            });
+            throw new Error('Balance data is missing from successful API result');
+        }
+
+        const balance = apiResult.data;
         this.validateBalance(balance);
 
         // Cache the result

@@ -136,7 +136,7 @@ export class BotReconciliationWorker {
      */
     private async getActiveBots(): Promise<BotData[]> {
         try {
-            const result = await query(`
+            const result = await query<BotData>(`
         SELECT
           bi.id,
           bi.user_id,
@@ -266,7 +266,12 @@ export class BotReconciliationWorker {
     private async updateBotStatistics(botId: string): Promise<void> {
         try {
             // Calculate and update bot statistics
-            const statsResult = await query(`
+            const statsResult = await query<{
+                trade_count: string;
+                total_pnl: string;
+                avg_pnl: string;
+                last_trade_time: string;
+            }>(`
         SELECT
           COUNT(*) as trade_count,
           SUM(pnl) as total_pnl,

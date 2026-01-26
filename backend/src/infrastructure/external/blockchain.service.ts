@@ -47,7 +47,7 @@ export class BlockchainService {
     constructor(config: Partial<BlockchainServiceConfig> = {}) {
         // Set default configuration with fallback values
         this.config = {
-            defaultRpcUrl: config.defaultRpcUrl || process.env.BLOCKCHAIN_RPC_URL || "https://mainnet.infura.io/v3/" + (process.env.INFURA_API_KEY || "your-infura-key"),
+            defaultRpcUrl: config.defaultRpcUrl || process.env.BLOCKCHAIN_RPC_URL || `https://mainnet.infura.io/v3/${process.env.INFURA_API_KEY || "your-infura-key"}`,
             chainId: config.chainId || 1, // Mainnet by default
             chainName: config.chainName || "Ethereum Mainnet",
             nativeSymbol: config.nativeSymbol || "ETH",
@@ -228,7 +228,9 @@ export class BlockchainService {
         try {
             const { query } = await import("../../database/pool.js");
 
-            const result = await query(
+            const result = await query<{
+                wallet_address: string;
+            }>(
                 "SELECT wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
                 [userId]
             );

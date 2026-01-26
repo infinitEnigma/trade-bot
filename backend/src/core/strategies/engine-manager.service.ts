@@ -30,12 +30,13 @@ import {
   RestartManager,
   CircuitBreaker,
   ProcessSupervisor,
-  ProcessState,
 } from "./engine";
 
 // Extend global object to include io
+import { Server } from "../../interfaces/websocket";
+
 declare global {
-  var io: any;
+  var io: Server;
 }
 
 interface EngineStatus {
@@ -107,7 +108,7 @@ export class EngineManager {
         running: true,
         health: response.data,
       };
-    } catch (error) {
+    } catch {
       return { running: false };
     }
   }
@@ -118,7 +119,7 @@ export class EngineManager {
   async stopEngineIfNoActiveBots(): Promise<void> {
     try {
       const { query } = await import("../../database/pool.js");
-      const result = await query(
+      const result = await query<{ count: string }>(
         "SELECT COUNT(*) FROM bot_instances WHERE status = 'RUNNING'",
         []
       );
@@ -131,9 +132,9 @@ export class EngineManager {
       } else {
         logger.debug(`Engine kept running for ${activeBotCount} active bots`);
       }
-    } catch (error) {
+    } catch {
       logger.error("Error checking for engine shutdown", {
-        error: error instanceof Error ? error.message : String(error),
+        error: "Failed to check for engine shutdown",
       });
     }
   }
@@ -230,17 +231,6 @@ export class EngineManager {
   }
 }
 
-// Enhanced health interface
-interface EngineHealth {
-  processAlive: boolean;
-  httpResponsive: boolean;
-  websocketConnected: boolean;
-  botsResponding: boolean;
-  lastTradeActivity: Date;
-  memoryUsage: number;
-  errorRate: number;
-  overallHealthy: boolean;
-}
 
 // Export singleton instance
 export const engineManager = new EngineManager();

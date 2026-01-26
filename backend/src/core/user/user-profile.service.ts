@@ -75,7 +75,15 @@ export class UserProfileService {
         }
 
         // Single optimized query with LEFT JOIN to eliminate N+1 problem
-        const result = await query(`
+        const result = await query<{
+            id: string;
+            email: string;
+            user_level: string;
+            user_created_at: string;
+            account_id: string | null;
+            verified: boolean | null;
+            kodiak_connected_at: string | null;
+        }>(`
       SELECT
         u.id,
         u.email,
@@ -97,8 +105,8 @@ export class UserProfileService {
         const hasKodiak = !!row.account_id;
         const kodiakStatus = hasKodiak
             ? {
-                accountId: row.account_id,
-                verified: row.verified,
+                accountId: row.account_id!,
+                verified: row.verified!,
             }
             : null;
 
@@ -240,7 +248,7 @@ export class UserProfileService {
      * Get current user email
      */
     private async getCurrentEmail(userId: string): Promise<string> {
-        const result = await query("SELECT email FROM users WHERE id = $1", [userId]);
+        const result = await query<{ email: string }>("SELECT email FROM users WHERE id = $1", [userId]);
         if (result.rows.length === 0) {
             throw new Error('User not found');
         }
@@ -269,12 +277,13 @@ export class UserProfileService {
         changes: { email?: string }
     ): Promise<{ email: string; updatedAt: string }> {
         // Execute email update
-        const updateResult = await query(`
+        const emailToSet = changes.email ? changes.email.toLowerCase() : '';
+        const updateResult = await query<{ id: string; email: string }>(`
             UPDATE users
             SET email = $1, updated_at = $2
             WHERE id = $3
             RETURNING id, email
-        `, [changes.email!.toLowerCase(), new Date(), userId]);
+        `, [emailToSet, new Date(), userId]);
 
         if (updateResult.rows.length === 0) {
             throw new Error('User not found');

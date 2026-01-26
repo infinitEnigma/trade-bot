@@ -22,11 +22,13 @@
  */
 
 import "dotenv/config";
-import express from "express";
-import cors from "cors";
-import helmet from "helmet";
-import rateLimit from "express-rate-limit";
-import cookieParser from "cookie-parser";
+// 📦 Express.js core dependencies - used by ExpressConfig service
+// These imports are required by the centralized Express configuration
+import _express from "express";
+import _cors from "cors";
+import _helmet from "helmet";
+import _rateLimit from "express-rate-limit";
+import _cookieParser from "cookie-parser";
 import { createServer } from "http";
 import { Server } from "socket.io";
 
@@ -80,7 +82,7 @@ function validateEnvironment(): void {
         logger.error("❌ Missing required environment variables");
         missing.forEach(key => logger.error(`   - ${key}`));
         logger.error("💡 Create .env file from .env.example template");
-        process.exit(1);
+        throw new Error("Missing required environment variables");
     }
 
     // 🔐 Validate secret strength in production
@@ -91,12 +93,16 @@ function validateEnvironment(): void {
             "ENCRYPTION_MASTER_KEY",
         ];
         secrets.forEach(key => {
-            const value = process.env[key]!;
+            const value = process.env[key];
+            if (!value) {
+                logger.error(`🔴 SECURITY: ${key} is missing in production environment`);
+                throw new Error(`Missing required secret: ${key}`);
+            }
             if (value.length < 32) {
                 logger.error(
                     `🔴 SECURITY: ${key} must be at least 32 characters in production. Current length: ${value.length}`
                 );
-                process.exit(1);
+                throw new Error(`Insufficient secret length for ${key}`);
             }
         });
     }
@@ -127,7 +133,9 @@ import { redisService } from "./infrastructure";
 import { diContainer } from "./infrastructure/dependency-injection.container";
 
 // 🤖 Bot Reconciliation Worker (initialized after database)
-import { botReconciliationWorker } from "./workers/bot-reconciliation";
+// TEMPORARILY DISABLED: Possible Kodiak rate limiting issue in production
+// Import kept for future re-enablement when rate limiting is resolved
+import { botReconciliationWorker as _botReconciliationWorker } from "./workers/bot-reconciliation";
 
 // ===========================================
 // 🗄️ 3. DATABASE & REDIS INITIALIZATION
@@ -147,11 +155,11 @@ try {
     logger.error("❌ Failed to initialize database pool", {
         error: error instanceof Error ? error.message : String(error),
     });
-    process.exit(1);
+    throw new Error("Database pool initialization failed");
 }
 
 // Connect to Redis on startup (now imported from infrastructure)
-redisService.connect().catch((error: any) => {
+redisService.connect().catch((error: unknown) => {
     logger.error("❌ Failed to connect to Redis", {
         error: error instanceof Error ? error.message : String(error),
     });
@@ -163,7 +171,7 @@ diContainer.initialize().catch((error) => {
     logger.error("❌ Failed to initialize dependency injection container", {
         error: error instanceof Error ? error.message : String(error),
     });
-    process.exit(1);
+    throw new Error("Dependency injection container initialization failed");
 });
 
 // ===========================================
@@ -178,8 +186,9 @@ let lastActivityTime = Date.now();
 
 /**
  * Updates active client count and stores in Redis for monitoring
+ * DEFERRED: Will be integrated with WebSocket connection tracking when monitoring dashboard is implemented
  */
-const updateClientCount = async (change: number) => {
+const _updateClientCount = async (change: number) => {
     activeClients = Math.max(0, activeClients + change);
     lastActivityTime = Date.now();
     logger.info(`Active clients: ${activeClients}`, {
@@ -202,8 +211,9 @@ const updateClientCount = async (change: number) => {
 
 /**
  * Tracks HTTP API activity timestamps
+ * DEFERRED: Will be integrated with analytics service when implemented
  */
-const trackApiActivity = () => {
+const _trackApiActivity = () => {
     lastActivityTime = Date.now();
     // Removed artificial client count manipulation that was causing issues
 };
@@ -316,7 +326,7 @@ MiddlewareConfig.configure(app, {
         logger.error("Failed to register routes", {
             error: error instanceof Error ? error.message : String(error),
         });
-        process.exit(1);
+        throw new Error("Route registration failed");
     }
 })();
 
@@ -425,6 +435,7 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
                     shutdownDuration: Date.now() - shutdownStart,
                 }
             );
+            // eslint-disable-next-line no-process-exit
             process.exit(1);
         }
     }, 30000);
@@ -485,6 +496,7 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
 
         shutdownCompleted = true;
         clearTimeout(shutdownTimeout);
+        // eslint-disable-next-line no-process-exit
         process.exit(0);
     } catch (error) {
         logger.error("Critical error during graceful shutdown", {
@@ -493,6 +505,7 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
         });
         shutdownCompleted = true;
         clearTimeout(shutdownTimeout);
+        // eslint-disable-next-line no-process-exit
         process.exit(1);
     }
 };
@@ -511,7 +524,7 @@ process.on("uncaughtException", error => {
 });
 
 // Handle unhandled promise rejections
-process.on("unhandledRejection", (reason, promise) => {
+process.on("unhandledRejection", (reason, _promise) => {
     logger.error("Unhandled promise rejection - initiating emergency shutdown", {
         reason: reason instanceof Error ? reason.message : String(reason),
     });

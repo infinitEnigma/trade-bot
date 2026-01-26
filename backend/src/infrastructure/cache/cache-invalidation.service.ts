@@ -166,7 +166,7 @@ export class CacheInvalidationService {
         userId?: string
     ): Promise<void> {
         let keys: string[] = [];
-        let reason = `${dataType}_updated`;
+        const reason = `${dataType}_updated`;
 
         switch (dataType) {
             case 'market_data':

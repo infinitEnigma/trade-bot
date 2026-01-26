@@ -1,6 +1,7 @@
 /** @format */
 
-import { Server as SocketIOServer } from "socket.io";
+//import { Server as SocketIOServer } from "socket.io";
+import { Socket } from "socket.io";
 import {
     IWebSocketService,
     WebSocketClient,
@@ -13,7 +14,7 @@ import {
 } from "../../interfaces/websocket";
 import { WebSocketAuthMiddleware } from "./websocket/auth";
 import { WebSocketEventHandlers } from "./websocket/handlers";
-import { WebSocketError, WebSocketErrorCode, WEBSOCKET_CONSTANTS } from "./websocket/types";
+import { WebSocketError, WEBSOCKET_CONSTANTS } from "./websocket/types";
 
 /**
  * WebSocket Service
@@ -152,7 +153,7 @@ export class WebSocketService implements IWebSocketService {
         this.io.use(async (socket, next) => {
             try {
                 const client = await this.authMiddleware.authenticate(socket);
-                (socket as any).client = client;
+                (socket as unknown as { client: WebSocketClient }).client = client;
                 this.clients.set(socket.id, client);
                 this.metrics.totalConnections++;
                 this.metrics.activeConnections = this.clients.size;
@@ -193,7 +194,7 @@ export class WebSocketService implements IWebSocketService {
         if (!this.io) return;
 
         this.io.on("connection", (socket) => {
-            const client = (socket as any).client as WebSocketClient;
+            const client = (socket as unknown as { client: WebSocketClient }).client;
 
             this.logger.info("WebSocket client connected", {
                 socketId: socket.id,
@@ -250,7 +251,7 @@ export class WebSocketService implements IWebSocketService {
             const errorObj = error instanceof Error ? error : new Error(String(error));
             this.logger.error("WebSocket connection error", errorObj, {
                 message: error instanceof Error ? error.message : String(error),
-                context: (error as any)?.context,
+                context: (error as { context?: unknown })?.context,
             });
             this.metrics.errorsCount++;
         });
@@ -259,8 +260,8 @@ export class WebSocketService implements IWebSocketService {
     /**
      * Handle client disconnection
      */
-    private handleDisconnect(socket: any): void {
-        const client = socket.client as WebSocketClient;
+    private handleDisconnect(socket: Socket): void {
+        const client = (socket as unknown as { client: WebSocketClient }).client;
 
         if (client) {
             const connectedDuration = Date.now() - client.connectedAt.getTime();

@@ -415,7 +415,7 @@ export interface DataFreshnessMetadata {
 /**
  * Enhanced API response with freshness metadata
  */
-export interface FreshnessAwareResponse<T = any> {
+export interface FreshnessAwareResponse<T = unknown> {
     success: boolean;
     data?: T;
     error?: string;

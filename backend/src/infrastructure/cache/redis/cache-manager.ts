@@ -16,11 +16,10 @@
  */
 
 import { RedisConnectionManager } from "./connection-manager";
-import { RedisTransactions, TransactionOptions } from "./transactions";
-import { RedisResult } from "./operations";
+import { RedisTransactions } from "./transactions";
 import { logger } from "../../../core/logging";
 
-export interface CacheResult<T = any> {
+export interface CacheResult<T = unknown> {
     success: boolean;
     data?: T | null;
     version?: number;
@@ -37,11 +36,10 @@ export class RedisCacheManager {
     /**
      * Store data in cache with optional TTL
      */
-    async set(
+    async set<T = unknown>(
         key: string,
-        data: any,
-        ttlSeconds?: number,
-        options?: TransactionOptions
+        data: T,
+        ttlSeconds?: number
     ): Promise<CacheResult> {
         try {
             const serializedData = JSON.stringify(data);
@@ -64,7 +62,7 @@ export class RedisCacheManager {
     /**
      * Get data from cache
      */
-    async get<T = any>(key: string): Promise<CacheResult<T>> {
+    async get<T = unknown>(key: string): Promise<CacheResult<T>> {
         try {
             const result = await this.connectionManager.getClient().get(key);
 
@@ -89,19 +87,18 @@ export class RedisCacheManager {
     /**
      * Atomic cache update with conflict resolution
      */
-    async atomicCacheUpdate(
+    async atomicCacheUpdate<T = unknown>(
         key: string,
-        data: any,
+        data: T,
         versionKey?: string,
-        maxRetries: number = 3,
-        options?: TransactionOptions
+        maxRetries: number = 3
     ): Promise<CacheResult<number>> {
         const serializedData = JSON.stringify(data);
         const watchKeys = versionKey ? [key, versionKey] : [key];
 
         const result = await this.transactions.watchMultiExec(
             watchKeys,
-            async (multi) => {
+            async (multi: unknown) => {
                 // Get current version if versioning is enabled
                 let currentVersion = 0;
                 if (versionKey) {
@@ -110,17 +107,17 @@ export class RedisCacheManager {
                 }
 
                 // Set the cache data
-                multi.set(key, serializedData);
+                (multi as { set: (key: string, value: string) => void }).set(key, serializedData);
 
                 // Update version if versioning is enabled
                 if (versionKey) {
-                    multi.set(versionKey, (currentVersion + 1).toString());
+                    (multi as { set: (key: string, value: string) => void }).set(versionKey, (currentVersion + 1).toString());
                 }
 
                 return currentVersion + 1;
             },
             maxRetries,
-            { ...options, context: 'cache_update' }
+            { context: 'cache_update' }
         );
 
         if (result.success) {
@@ -133,10 +130,10 @@ export class RedisCacheManager {
     /**
      * Get cache entry with version checking
      */
-    async getWithVersion<T = any>(
+    async getWithVersion<T = unknown>(
         key: string,
         versionKey?: string
-    ): Promise<CacheResult<T>> {
+    ): Promise<CacheResult<T & { version?: number }>> {
         try {
             let version: number | undefined;
 
@@ -150,7 +147,8 @@ export class RedisCacheManager {
             const dataResult = await this.get<T>(key);
             if (dataResult.success && dataResult.data !== null) {
                 // Add version to the data object
-                const dataWithVersion = { ...dataResult.data as any, version };
+                const baseData = dataResult.data as Record<string, unknown>;
+                const dataWithVersion = { ...baseData, version } as T & { version?: number };
                 return {
                     success: true,
                     data: dataWithVersion,
@@ -191,7 +189,7 @@ export class RedisCacheManager {
                 timestamp: new Date().toISOString()
             }));
 
-            const results = await multi.exec();
+            await multi.exec();
             const keysInvalidated = keys.length;
 
             return { success: true, data: keysInvalidated };
@@ -204,10 +202,9 @@ export class RedisCacheManager {
     /**
      * Cache multiple key-value pairs
      */
-    async mset(
-        keyValues: Record<string, any>,
-        ttlSeconds?: number,
-        options?: TransactionOptions
+    async mset<T = unknown>(
+        keyValues: Record<string, T>,
+        ttlSeconds?: number
     ): Promise<CacheResult> {
         try {
             const serializedValues: Record<string, string> = {};
@@ -241,7 +238,7 @@ export class RedisCacheManager {
     /**
      * Get multiple cache entries
      */
-    async mget<T = any>(keys: string[]): Promise<CacheResult<Record<string, T>>> {
+    async mget<T = unknown>(keys: string[]): Promise<CacheResult<Record<string, T>>> {
         try {
             const client = this.connectionManager.getClient();
             const values = await client.mGet(keys);

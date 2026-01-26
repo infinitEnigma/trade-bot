@@ -24,6 +24,21 @@ import { logger } from "../../core/logging";
  * @format
  */
 
+/**
+ * Extended Express Request type with user authentication
+ */
+interface AuthenticatedRequest extends Request {
+    user?: {
+        userId: string;
+        [key: string]: unknown;
+    };
+}
+
+/**
+ * Middleware function type for queue processing
+ */
+type QueueMiddleware = (req: Request, res: Response) => Promise<void>;
+
 export interface QueueConfig {
     /** Minimum interval between requests (milliseconds) */
     minIntervalMs: number;
@@ -44,7 +59,7 @@ export interface QueuedRequest {
     id: string;
     req: Request;
     res: Response;
-    next: Function;
+    next: QueueMiddleware;
     priority: number;
     enqueuedAt: number;
     userId: string;
@@ -83,8 +98,8 @@ export class KodiakRequestQueue {
     /**
      * Add request to queue with priority-based ordering
      */
-    enqueue(req: Request, res: Response, next: Function): boolean {
-        const userId = (req as any).user?.userId || 'anonymous';
+    enqueue(req: Request, res: Response, next: QueueMiddleware): boolean {
+        const userId = (req as AuthenticatedRequest).user?.userId || 'anonymous';
         const endpoint = this.getEndpointType(req.path);
 
         // Check queue size limits
@@ -185,7 +200,7 @@ export class KodiakRequestQueue {
 
                 try {
                     // Process the request
-                    await nextRequest.next();
+                    await nextRequest.next(nextRequest.req, nextRequest.res);
                 } catch (error) {
                     logger.error("Error processing queued Kodiak request", {
                         requestId: nextRequest.id,

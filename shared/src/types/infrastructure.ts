@@ -64,7 +64,7 @@ export interface ICacheService {
     ): Promise<CacheResult<boolean>>;
 }
 
-export interface CacheResult<T = any> {
+export interface CacheResult<T = unknown> {
     success: boolean;
     data?: T;
     error?: string;
@@ -106,7 +106,7 @@ export interface IExternalApiService {
     invalidateUserCache(userId: string): Promise<void>;
 }
 
-export interface ApiResult<T = any> {
+export interface ApiResult<T = unknown> {
     success: boolean;
     data?: T;
     error?: string;
@@ -121,22 +121,22 @@ export interface IHttpClient {
     /**
      * Make a GET request
      */
-    get<T = any>(url: string, config?: HttpConfig): Promise<HttpResponse<T>>;
+    get<T = unknown>(url: string, config?: HttpConfig): Promise<HttpResponse<T>>;
 
     /**
      * Make a POST request
      */
-    post<T = any>(url: string, data?: any, config?: HttpConfig): Promise<HttpResponse<T>>;
+    post<T = unknown>(url: string, data?: any, config?: HttpConfig): Promise<HttpResponse<T>>;
 
     /**
      * Make a PUT request
      */
-    put<T = any>(url: string, data?: any, config?: HttpConfig): Promise<HttpResponse<T>>;
+    put<T = unknown>(url: string, data?: any, config?: HttpConfig): Promise<HttpResponse<T>>;
 
     /**
      * Make a DELETE request
      */
-    delete<T = any>(url: string, config?: HttpConfig): Promise<HttpResponse<T>>;
+    delete<T = unknown>(url: string, config?: HttpConfig): Promise<HttpResponse<T>>;
 }
 
 export interface HttpConfig {
@@ -146,7 +146,7 @@ export interface HttpConfig {
     baseURL?: string;
 }
 
-export interface HttpResponse<T = any> {
+export interface HttpResponse<T = unknown> {
     status: number;
     statusText: string;
     data: T;
@@ -423,12 +423,15 @@ export interface IDatabaseConnection {
     /**
      * Execute a query
      */
-    query<T = any>(sql: string, params?: any[]): Promise<DatabaseResult<T>>;
+    query<T = unknown>(sql: string, params?: unknown[]): Promise<DatabaseResult<T>>;
 }
 
-export interface DatabaseResult<T = any> {
+export interface DatabaseResult<T = unknown> {
     rows: T[];
     rowCount: number;
+    fields?: any[];
+    command?: string;
+    oid?: number;
 }
 
 // Domain types are imported at the top

@@ -201,7 +201,13 @@ export class MiddlewareConfig {
         kodiakRoutes.forEach(route => {
             app.use(route, (req, res, next) => {
                 // Queue requests to comply with Orderly rate limits
-                const queued = kodiakRequestQueue.enqueue(req, res, next);
+                // Wrap next function in Promise to match QueueMiddleware type
+                const queued = kodiakRequestQueue.enqueue(req, res, async () => {
+                    return new Promise<void>((resolve) => {
+                        next();
+                        resolve();
+                    });
+                });
                 if (!queued) {
                     // Queue is full, response already sent by queue
                     return;

@@ -136,8 +136,8 @@ export function emergencyRollback(): void {
 export function validateRolloutOrder(): { valid: boolean; violations: string[] } {
     const violations: string[] = [];
 
-    const balanceEnabled = process.env.USE_PURE_BALANCE_SERVICE === 'true';
-    const authEnabled = process.env.USE_PURE_AUTH_SERVICE === 'true';
+    //const balanceEnabled = process.env.USE_PURE_BALANCE_SERVICE === 'true';
+    //const authEnabled = process.env.USE_PURE_AUTH_SERVICE === 'true';
     const positionEnabled = process.env.USE_PURE_POSITION_SERVICE === 'true';
     const tradingEnabled = process.env.USE_PURE_TRADING_SERVICES === 'true';
 

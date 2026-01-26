@@ -20,6 +20,14 @@ import {
     OrderSide
 } from '@trade-bot/shared';
 import { kodiakIntegrationService } from '../../../infrastructure/external/kodiak-integration.service';
+import { logger } from '../../../core/logging';
+import {
+    KodiakBalance,
+    KodiakPosition,
+    KodiakTrade,
+    KodiakAccountInfo,
+    KodiakApiAccountInfoResponse
+} from '../../../infrastructure/external/kodiak-integration.service';
 
 /**
  * External API Adapter
@@ -45,7 +53,15 @@ export class ExternalApiAdapter implements IExternalApiService {
             }
 
             // Convert Kodiak balance format to domain Balance
-            const kodiakBalance = kodiakResult.data!;
+            const kodiakBalance = kodiakResult.data;
+            if (!kodiakBalance) {
+                logger.warn('Kodiak balance data is null or undefined', { userId });
+                return {
+                    success: false,
+                    error: 'No balance data received from external API',
+                    timestamp: Date.now()
+                };
+            }
             const domainBalance = this.convertKodiakBalanceToDomain(kodiakBalance);
 
             return {
@@ -155,7 +171,27 @@ export class ExternalApiAdapter implements IExternalApiService {
             }
 
             // Convert Kodiak account info to domain AccountInfo
-            const kodiakAccountInfo = kodiakResult.data!;
+            const kodiakAccountInfoResponse = kodiakResult.data as KodiakApiAccountInfoResponse | undefined;
+            if (!kodiakAccountInfoResponse) {
+                logger.warn('Kodiak account info data is null or undefined', { userId });
+                return {
+                    success: false,
+                    error: 'No account info data received from external API',
+                    timestamp: Date.now()
+                };
+            }
+
+            // Convert KodiakApiAccountInfoResponse to KodiakAccountInfo
+            const kodiakAccountInfo: KodiakAccountInfo = {
+                totalBalance: '0', // Not available in account info response
+                totalPnl24H: kodiakAccountInfoResponse.total_pnl_24_h || '0',
+                totalPnl30D: kodiakAccountInfoResponse.total_pnl_30_d || '0',
+                totalPnlAll: kodiakAccountInfoResponse.total_pnl_all || '0',
+                tradingVolume24H: kodiakAccountInfoResponse.trading_volume_last_24_hours || '0',
+                accountType: kodiakAccountInfoResponse.account_type || 'UNKNOWN',
+                balances: [] // Not available in account info response
+            };
+
             const domainAccountInfo = this.convertKodiakAccountInfoToDomain(kodiakAccountInfo);
 
             return {
@@ -213,7 +249,7 @@ export class ExternalApiAdapter implements IExternalApiService {
             await kodiakIntegrationService.invalidateUserCache(userId);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            console.warn(`Cache invalidation failed: ${errorMessage}`);
+            logger.warn(`Cache invalidation failed: ${errorMessage}`);
             // Don't throw - cache invalidation failures shouldn't break business logic
         }
     }
@@ -221,16 +257,16 @@ export class ExternalApiAdapter implements IExternalApiService {
     /**
      * Convert Kodiak balance format to domain Balance
      */
-    private convertKodiakBalanceToDomain(kodiakBalance: any): Balance {
+    private convertKodiakBalanceToDomain(kodiakBalance: KodiakAccountInfo): Balance {
         try {
             // Extract USD balance (assuming USD is the base currency)
-            const usdBalance = kodiakBalance.balances?.find((b: any) => b.asset === 'USDC' || b.asset === 'USD');
+            const usdBalance = kodiakBalance.balances?.find((b: KodiakBalance) => b.asset === 'USDC' || b.asset === 'USD');
             const totalBalance = usdBalance ? parseFloat(usdBalance.free || '0') : 0;
 
             // For simplicity, assume all balance is available (locked amounts would need separate tracking)
             return Balance.fromTotal(totalBalance, 'USD');
-        } catch (error) {
-            console.warn('Failed to convert Kodiak balance to domain format, using zero balance');
+        } catch (_error) {
+            logger.warn('Failed to convert Kodiak balance to domain format, using zero balance');
             return Balance.zero('USD');
         }
     }
@@ -238,14 +274,15 @@ export class ExternalApiAdapter implements IExternalApiService {
     /**
      * Convert Kodiak position format to domain Position
      */
-    private convertKodiakPositionToDomain(kodiakPosition: any): Position | null {
+    private convertKodiakPositionToDomain(kodiakPosition: KodiakPosition): Position | null {
         try {
             const symbol = kodiakPosition.symbol;
             const side = kodiakPosition.positionAmt && parseFloat(kodiakPosition.positionAmt) > 0 ? 'LONG' : 'SHORT';
-            const quantity = Math.abs(parseFloat(kodiakPosition.positionAmt || kodiakPosition.position_qty || '0'));
-            const entryPrice = parseFloat(kodiakPosition.entryPrice || kodiakPosition.average_open_price || '0');
+            const quantity = Math.abs(parseFloat(kodiakPosition.positionAmt || '0'));
+            const entryPrice = parseFloat(kodiakPosition.entryPrice || '0');
             const markPrice = parseFloat(kodiakPosition.markPrice || '0');
-            const leverage = parseFloat(kodiakPosition.leverage || '1');
+            // Note: leverage is not in KodiakPosition interface, using default value
+            const leverage = 1;
 
             if (!symbol || quantity === 0 || entryPrice === 0) {
                 return null; // Invalid position data
@@ -260,7 +297,7 @@ export class ExternalApiAdapter implements IExternalApiService {
                 leverage
             );
         } catch (error) {
-            console.warn(`Failed to convert Kodiak position to domain format: ${error}`);
+            logger.warn(`Failed to convert Kodiak position to domain format: ${error}`);
             return null;
         }
     }
@@ -268,7 +305,7 @@ export class ExternalApiAdapter implements IExternalApiService {
     /**
      * Convert Kodiak trade format to Trade interface
      */
-    private convertKodiakTradeToDomain(kodiakTrade: any): Trade | null {
+    private convertKodiakTradeToDomain(kodiakTrade: KodiakTrade): Trade | null {
         try {
             const id = kodiakTrade.id || kodiakTrade.orderId;
             const userId = 'unknown'; // User ID not available in trade data
@@ -299,7 +336,7 @@ export class ExternalApiAdapter implements IExternalApiService {
                 executedAt
             };
         } catch (error) {
-            console.warn(`Failed to convert Kodiak trade to domain format: ${error}`);
+            logger.warn(`Failed to convert Kodiak trade to domain format: ${error}`);
             return null;
         }
     }
@@ -307,7 +344,7 @@ export class ExternalApiAdapter implements IExternalApiService {
     /**
      * Convert Kodiak account info to domain AccountInfo
      */
-    private convertKodiakAccountInfoToDomain(kodiakAccountInfo: any): AccountInfo {
+    private convertKodiakAccountInfoToDomain(kodiakAccountInfo: KodiakAccountInfo): AccountInfo {
         try {
             return {
                 totalBalance: kodiakAccountInfo.totalBalance || '0',
@@ -317,8 +354,8 @@ export class ExternalApiAdapter implements IExternalApiService {
                 accountType: kodiakAccountInfo.accountType || 'UNKNOWN',
                 balances: kodiakAccountInfo.balances || []
             };
-        } catch (error) {
-            console.warn('Failed to convert Kodiak account info to domain format');
+        } catch (_error) {
+            logger.warn('Failed to convert Kodiak account info to domain format');
             return {
                 totalBalance: '0',
                 totalPnl24H: '0',

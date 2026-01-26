@@ -361,7 +361,7 @@ export class PositionService {
             this.deps.logger.info('Risk assessment completed', {
                 userId,
                 riskLevel,
-                utilizationPercentage: utilizationPercentage.toFixed(2) + '%',
+                utilizationPercentage: `${utilizationPercentage.toFixed(2)}%`,
                 recommendationsCount: recommendations.length
             });
 
@@ -503,10 +503,11 @@ export class PositionService {
         }
     }
 
+
     /**
      * Validate and convert position data to domain object
      */
-    private validateAndConvertPosition(positionData: any): Position | null {
+    private validateAndConvertPosition(positionData: PositionRepositoryData): Position | null {
         try {
             // Convert repository data to domain Position object
             const position = new Position(
@@ -541,4 +542,21 @@ export class PositionService {
 // Export factory function for creating service instances
 export function createPositionService(deps: PositionServiceDependencies): PositionService {
     return new PositionService(deps);
+}
+
+/**
+    * Interface for position data from repository
+    */
+interface PositionRepositoryData {
+    symbol: string;
+    side?: 'LONG' | 'SHORT';
+    quantity?: number;
+    positionQty?: number;
+    entryPrice?: number;
+    averageOpenPrice?: number;
+    markPrice?: number;
+    leverage?: number;
+    marginRatio?: number;
+    liquidationPrice?: number;
+    estLiqPrice?: number;
 }

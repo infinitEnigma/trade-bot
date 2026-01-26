@@ -247,7 +247,7 @@ router.get("/health/redis", async (req: Request, res: Response) => {
     const pingResult = await client.ping();
 
     // Get Redis info
-    const info = await client.info();
+    const _info = await client.info();
 
     const responseTime = Date.now() - startTime;
 
@@ -298,7 +298,10 @@ router.get("/health/external", async (req: Request, res: Response) => {
       throw new Error(`Kodiak API returned ${kodiakResponse.status}`);
     }
 
-    const data = (await kodiakResponse.json()) as any;
+    const data = await kodiakResponse.json();
+
+    // Safely extract symbol from Kodiak API response
+    const symbol = (data as { data?: { symbol?: string } })?.data?.symbol || "unknown";
 
     res.json({
       status: "healthy",
@@ -308,7 +311,7 @@ router.get("/health/external", async (req: Request, res: Response) => {
         kodiak: {
           status: "healthy",
           responseTime: `${responseTime}ms`,
-          symbol: data?.data?.symbol || "unknown",
+          symbol,
         },
       },
     });

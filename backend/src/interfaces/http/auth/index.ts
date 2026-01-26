@@ -7,7 +7,6 @@ import { walletQualificationService } from "../../../core/wallet/wallet-qualific
 import { roleManagementService } from "../../../core/auth/role-management.service";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
 import { UserRole, UserLevel } from "@trade-bot/shared";
-import { RateLimiters } from "../../../infrastructure";
 import { createErrorResponse, ValidationError } from "../../../shared/types/errors";
 import { getCorrelationId } from "../../../shared/utils/context";
 import { validators } from "../../middleware/validation";
@@ -36,14 +35,22 @@ router.post(
       }
 
       // Set httpOnly cookies for security
-      res.cookie("accessToken", result.tokens!.accessToken, {
+      if (!result.tokens) {
+        logger.error("Registration successful but tokens missing");
+        const internalError = new ValidationError("Registration successful but tokens missing");
+        return res.status(internalError.statusCode).json(
+          createErrorResponse(internalError, getCorrelationId())
+        );
+      }
+
+      res.cookie("accessToken", result.tokens.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
         maxAge: 4 * 60 * 60 * 1000, // 4 hours
       });
 
-      res.cookie("refreshToken", result.tokens!.refreshToken, {
+      res.cookie("refreshToken", result.tokens.refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
@@ -103,14 +110,22 @@ router.post(
       await progressiveAuthLimiter.recordSuccess(identifier);
 
       // Set httpOnly cookies for security
-      res.cookie("accessToken", result.tokens!.accessToken, {
+      if (!result.tokens) {
+        logger.error("Login successful but tokens missing");
+        const internalError = new ValidationError("Login successful but tokens missing");
+        return res.status(internalError.statusCode).json(
+          createErrorResponse(internalError, getCorrelationId())
+        );
+      }
+
+      res.cookie("accessToken", result.tokens.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
         maxAge: 4 * 60 * 60 * 1000, // 4 hours
       });
 
-      res.cookie("refreshToken", result.tokens!.refreshToken, {
+      res.cookie("refreshToken", result.tokens.refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
@@ -150,14 +165,22 @@ router.post(
       }
 
       // Set httpOnly cookies for security
-      res.cookie("accessToken", result.tokens!.accessToken, {
+      if (!result.tokens) {
+        logger.error("Token refresh successful but tokens missing");
+        const internalError = new ValidationError("Token refresh successful but tokens missing");
+        return res.status(internalError.statusCode).json(
+          createErrorResponse(internalError, getCorrelationId())
+        );
+      }
+
+      res.cookie("accessToken", result.tokens.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
         maxAge: 4 * 60 * 60 * 1000, // 4 hours
       });
 
-      res.cookie("refreshToken", result.tokens!.refreshToken, {
+      res.cookie("refreshToken", result.tokens.refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
@@ -222,7 +245,7 @@ router.post("/logout", async (req: Request, res: Response) => {
     });
 
     logger.info("User logged out successfully", {
-      userId: (req as any).user?.userId,
+      userId: (req as AuthenticatedRequest)?.user?.userId,
     });
 
     res.json({
@@ -246,8 +269,17 @@ router.post(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const userId = req.user!.userId;
-      const userLevel = req.user!.userLevel;
+      // Defensive check - user should be set by authMiddleware
+      if (!req.user) {
+        logger.warn("Qualification check requested without authenticated user");
+        return res.status(401).json({
+          success: false,
+          error: "Unauthorized - user not authenticated",
+        });
+      }
+
+      const userId = req.user.userId;
+      const userLevel = req.user.userLevel;
 
       // Only VERIFIED users can check qualifications
       if (userLevel !== UserLevel.VERIFIED) {
@@ -266,12 +298,12 @@ router.post(
           userId,
           UserRole.QUALIFIED_ALPHA,
           'system',
-          result.criteria
+          result.criteria as unknown as JSON
         );
 
         logger.info("User qualified for QUALIFIED_ALPHA role", {
           userId,
-          criteria: result.criteria
+          qualificationCriteria: result.criteria
         });
       }
 
@@ -287,7 +319,7 @@ router.post(
 
     } catch (error) {
       logger.error("Qualification check error", {
-        userId: req.user!.userId,
+        userId: req.user?.userId,
         error: (error as Error).message
       });
       const internalError = new ValidationError("Qualification check failed");
@@ -304,6 +336,15 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
+      // Defensive check - user should be set by authMiddleware
+      if (!req.user) {
+        logger.warn("Qualification config requested without authenticated user");
+        return res.status(401).json({
+          success: false,
+          error: "Unauthorized - user not authenticated",
+        });
+      }
+
       const config = walletQualificationService.getQualificationConfig();
       res.json({
         success: true,
@@ -311,7 +352,8 @@ router.get(
       });
     } catch (error) {
       logger.error("Qualification config error", {
-        error: (error as Error).message
+        error: (error as Error).message,
+        userId: req.user?.userId
       });
       const internalError = new ValidationError("Failed to get qualification config");
       res.status(internalError.statusCode).json(
@@ -327,10 +369,25 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
+      // Defensive check - user should be set by authMiddleware
+      if (!req.user) {
+        logger.warn("/me endpoint accessed without authenticated user");
+        return res.status(401).json({
+          success: false,
+          error: "Unauthorized - user not authenticated",
+        });
+      }
+
       // Get complete user data including timestamps
-      const result = await query(
+      const result = await query<{
+        id: string;
+        email: string;
+        user_level: string;
+        created_at: Date;
+        updated_at: Date;
+      }>(
         "SELECT id, email, user_level, created_at, updated_at FROM users WHERE id = $1",
-        [req.user!.userId]
+        [req.user.userId]
       );
 
       if (result.rows.length === 0) {
@@ -343,9 +400,9 @@ router.get(
       const userRow = result.rows[0];
 
       // Get user roles
-      const rolesResult = await query(
+      const rolesResult = await query<{ role: string }>(
         "SELECT role FROM user_roles WHERE user_id = $1",
-        [req.user!.userId]
+        [req.user.userId]
       );
 
       const roles = rolesResult.rows.map(row => row.role);
@@ -354,7 +411,7 @@ router.get(
         id: userRow.id,
         email: userRow.email,
         userLevel: userRow.user_level,
-        roles: roles,
+        roles,
         createdAt: new Date(userRow.created_at),
         updatedAt: new Date(userRow.updated_at),
       };
@@ -377,7 +434,7 @@ router.get(
       });
     } catch (error) {
       logger.error("Get me error", {
-        userId: req.user!.userId,
+        userId: req.user?.userId,
         error: (error as Error).message
       });
       const internalError = new ValidationError("Failed to get user data");

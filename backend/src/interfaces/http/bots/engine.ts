@@ -5,12 +5,29 @@
  * Processes heartbeats, trade reports, and engine status updates.
  */
 
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { query } from "../../../database/pool";
 // Bot services have been removed - using direct database operations instead
 import { engineManager } from "../../../core/strategies/engine-manager.service";
 import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../../../core/notifications/error-notification.service";
 import logger from "../../../core/logging/logger.service";
+
+/**
+ * Engine health status interface
+ */
+interface EngineHealth {
+    status: string;
+    timestamp: number;
+    uptime: number;
+    memory: NodeJS.MemoryUsage;
+    version: string;
+    database?: string;
+    botStats?: {
+        total_bots: number;
+        running_bots: number;
+        error_bots: number;
+    };
+}
 
 const router = Router();
 
@@ -18,7 +35,7 @@ const router = Router();
  * Bot Engine API Key Authentication Middleware
  * Protects bot engine routes from unauthorized access
  */
-const botEngineAuth = (req: Request, res: Response, next: Function) => {
+const botEngineAuth = (req: Request, res: Response, next: NextFunction) => {
     const apiKey = req.headers['x-bot-engine-key'] as string;
 
     if (!apiKey) {
@@ -408,7 +425,7 @@ router.post("/bot-recovery", botEngineAuth, async (req: Request, res: Response) 
 router.get("/engine/health", async (req: Request, res: Response) => {
     try {
         // Get basic system health
-        const health: any = {
+        const health: EngineHealth = {
             status: "healthy",
             timestamp: Date.now(),
             uptime: process.uptime(),
@@ -430,7 +447,7 @@ router.get("/engine/health", async (req: Request, res: Response) => {
         try {
             await query("SELECT 1");
             health.database = "connected";
-        } catch (error) {
+        } catch (_error) {
             health.database = "disconnected";
             health.status = "degraded";
         }

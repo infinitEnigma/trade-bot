@@ -18,11 +18,75 @@
 
 import { RedisConnectionManager } from "./connection-manager";
 import { RedisTransactions, TransactionOptions } from "./transactions";
-import { logger } from "../../../core/logging";
+import { redisLogger } from "../../../core/logging/context-aware-logger.service";
 
-export interface AtomicResult<T = any> {
+export interface AtomicResult<T = unknown> {
     success: boolean;
     data?: T;
+    error?: string;
+    attempts?: number;
+}
+
+export interface AtomicIncrementResult {
+    success: boolean;
+    data?: number;
+    error?: string;
+    attempts?: number;
+}
+
+export interface ConditionalUpdateResult {
+    success: boolean;
+    data?: boolean;
+    error?: string;
+    attempts?: number;
+}
+
+export interface BalanceTransferResult {
+    success: boolean;
+    data?: {
+        transferred: boolean;
+        fromBalance?: number;
+        toBalance?: number;
+    };
+    error?: string;
+    attempts?: number;
+}
+
+export interface VersionedUpdateResult {
+    success: boolean;
+    data?: {
+        updated: boolean;
+        newVersion?: number;
+        currentVersion?: number;
+    };
+    error?: string;
+    attempts?: number;
+}
+
+export interface ReadModifyWriteResult<T> {
+    success: boolean;
+    data?: T;
+    error?: string;
+    attempts?: number;
+}
+
+export interface OptimisticUpdateResult<T> {
+    success: boolean;
+    data?: {
+        newData?: T;
+        version?: number;
+    };
+    error?: string;
+    attempts?: number;
+}
+
+export interface CompositeUpdateResult {
+    success: boolean;
+    data?: Array<{
+        key: string;
+        operation: 'set' | 'incr' | 'decr';
+        value: unknown;
+    }>;
     error?: string;
     attempts?: number;
 }
@@ -44,14 +108,14 @@ export class RedisAtomicOperations {
     ): Promise<AtomicResult<number>> {
         const result = await this.transactions.watchMultiExec(
             [key],
-            async (multi) => {
+            async (multi: unknown) => {
                 // Increment the counter
-                multi.incrBy(key, increment);
+                (multi as { incrBy: (key: string, increment: number) => void }).incrBy(key, increment);
 
                 // Set expiry if this is the first increment (TTL doesn't exist before)
                 if (ttlMs) {
                     // Use Lua script to set expiry only if key didn't exist
-                    multi.eval(`
+                    (multi as { eval: (script: string, config: { keys: string[]; arguments: string[] }) => void }).eval(`
                         local count = redis.call('INCRBY', KEYS[1], ARGV[1])
                         if count == tonumber(ARGV[1]) then
                             redis.call('PEXPIRE', KEYS[1], ARGV[2])
@@ -62,7 +126,7 @@ export class RedisAtomicOperations {
                         arguments: [increment.toString(), ttlMs.toString()]
                     });
                 } else {
-                    multi.incrBy(key, increment);
+                    (multi as { incrBy: (key: string, increment: number) => void }).incrBy(key, increment);
                 }
 
                 return increment; // Return the increment amount
@@ -78,6 +142,7 @@ export class RedisAtomicOperations {
 
             return { success: true, data: finalValue };
         } else {
+            redisLogger.error("Atomic increment failed", undefined, { key, error: result.error, attempts: result.attempts });
             return { success: false, error: result.error, attempts: result.attempts };
         }
     }
@@ -87,8 +152,8 @@ export class RedisAtomicOperations {
      */
     async atomicConditionalUpdate(
         key: string,
-        newValue: any,
-        expectedValue: any,
+        newValue: unknown,
+        expectedValue: unknown,
         options?: TransactionOptions
     ): Promise<AtomicResult<boolean>> {
         const serializedNewValue = JSON.stringify(newValue);
@@ -96,7 +161,7 @@ export class RedisAtomicOperations {
 
         const result = await this.transactions.watchMultiExec(
             [key],
-            async (multi) => {
+            async (multi: unknown) => {
                 // Get current value
                 const currentResult = await this.connectionManager.getClient().get(key);
                 const currentValue = currentResult ? JSON.parse(currentResult) : null;
@@ -107,7 +172,7 @@ export class RedisAtomicOperations {
                 }
 
                 // Condition met, perform update
-                multi.set(key, serializedNewValue);
+                (multi as { set: (key: string, value: string) => void }).set(key, serializedNewValue);
                 return { updated: true };
             },
             3,
@@ -115,13 +180,14 @@ export class RedisAtomicOperations {
         );
 
         if (result.success) {
-            const updateResult = result.result as any;
+            const updateResult = result.result as { updated: boolean; reason?: string };
             return {
                 success: true,
                 data: updateResult.updated,
                 error: updateResult.reason
             };
         } else {
+            redisLogger.error("Conditional update failed", undefined, { key, error: result.error, attempts: result.attempts });
             return { success: false, error: result.error, attempts: result.attempts };
         }
     }
@@ -138,7 +204,7 @@ export class RedisAtomicOperations {
     ): Promise<AtomicResult<{ transferred: boolean; fromBalance?: number; toBalance?: number }>> {
         const result = await this.transactions.watchMultiExec(
             [fromKey, toKey],
-            async (multi) => {
+            async (multi: unknown) => {
                 // Get current balances
                 const fromResult = await this.connectionManager.getClient().get(fromKey);
                 const toResult = await this.connectionManager.getClient().get(toKey);
@@ -155,8 +221,8 @@ export class RedisAtomicOperations {
                 const newFromBalance = fromBalance - amount;
                 const newToBalance = toBalance + amount;
 
-                multi.set(fromKey, newFromBalance.toString());
-                multi.set(toKey, newToBalance.toString());
+                (multi as { set: (key: string, value: string) => void }).set(fromKey, newFromBalance.toString());
+                (multi as { set: (key: string, value: string) => void }).set(toKey, newToBalance.toString());
 
                 return {
                     transferred: true,
@@ -169,7 +235,7 @@ export class RedisAtomicOperations {
         );
 
         if (result.success) {
-            const transferResult = result.result as any;
+            const transferResult = result.result as { transferred: boolean; reason?: string; fromBalance: number; toBalance: number };
             return {
                 success: true,
                 data: {
@@ -180,6 +246,7 @@ export class RedisAtomicOperations {
                 error: transferResult.reason
             };
         } else {
+            redisLogger.error("Balance transfer failed", undefined, { fromKey, toKey, error: result.error, attempts: result.attempts });
             return {
                 success: false,
                 error: result.error,
@@ -194,7 +261,7 @@ export class RedisAtomicOperations {
      */
     async atomicVersionedUpdate(
         dataKey: string,
-        newData: any,
+        newData: unknown,
         expectedVersion?: number,
         versionKey?: string,
         options?: TransactionOptions
@@ -204,7 +271,7 @@ export class RedisAtomicOperations {
 
         const result = await this.transactions.watchMultiExec(
             watchKeys,
-            async (multi) => {
+            async (multi: unknown) => {
                 // Get current version
                 const versionResult = await this.connectionManager.getClient().get(actualVersionKey);
                 const currentVersion = versionResult ? parseInt(versionResult) : 0;
@@ -216,8 +283,8 @@ export class RedisAtomicOperations {
 
                 // Update data and version
                 const newVersion = currentVersion + 1;
-                multi.set(dataKey, JSON.stringify(newData));
-                multi.set(actualVersionKey, newVersion.toString());
+                (multi as { set: (key: string, value: string) => void }).set(dataKey, JSON.stringify(newData));
+                (multi as { set: (key: string, value: string) => void }).set(actualVersionKey, newVersion.toString());
 
                 return { updated: true, newVersion };
             },
@@ -226,7 +293,7 @@ export class RedisAtomicOperations {
         );
 
         if (result.success) {
-            const updateResult = result.result as any;
+            const updateResult = result.result as { updated: boolean; reason?: string; newVersion: number; currentVersion?: number };
             return {
                 success: true,
                 data: {
@@ -237,6 +304,7 @@ export class RedisAtomicOperations {
                 error: updateResult.reason
             };
         } else {
+            redisLogger.error("Versioned update failed", undefined, { dataKey, versionKey, error: result.error, attempts: result.attempts });
             return {
                 success: false,
                 error: result.error,
@@ -257,7 +325,7 @@ export class RedisAtomicOperations {
     ): Promise<AtomicResult<T>> {
         const result = await this.transactions.watchMultiExec(
             [key],
-            async (multi) => {
+            async (multi: unknown) => {
                 // Read current value
                 const currentResult = await this.connectionManager.getClient().get(key);
                 let currentValue: T | null = null;
@@ -265,8 +333,9 @@ export class RedisAtomicOperations {
                 if (currentResult) {
                     try {
                         currentValue = JSON.parse(currentResult);
-                    } catch (parseError) {
+                    } catch (_parseError) {
                         // If parsing fails, treat as null
+                        redisLogger.warn("Failed to parse cached data", { key, error: "JSON parse error" });
                         currentValue = null;
                     }
                 }
@@ -275,7 +344,7 @@ export class RedisAtomicOperations {
                 const newValue = modifier(currentValue);
 
                 // Write back new value
-                multi.set(key, JSON.stringify(newValue));
+                (multi as { set: (key: string, value: string) => void }).set(key, JSON.stringify(newValue));
 
                 return newValue;
             },
@@ -286,6 +355,7 @@ export class RedisAtomicOperations {
         if (result.success) {
             return { success: true, data: result.result as T };
         } else {
+            redisLogger.error("Read-modify-write failed", undefined, { key, error: result.error, attempts: result.attempts });
             return { success: false, error: result.error, attempts: result.attempts };
         }
     }
@@ -306,7 +376,7 @@ export class RedisAtomicOperations {
 
                 const result = await this.transactions.watchMultiExec(
                     watchKeys,
-                    async (multi) => {
+                    async (multi: unknown) => {
                         // Read current data and version
                         const dataResult = await this.connectionManager.getClient().get(key);
                         let currentData: T | null = null;
@@ -325,9 +395,9 @@ export class RedisAtomicOperations {
                         const newData = updateFunction(currentData);
 
                         // Write back
-                        multi.set(key, JSON.stringify(newData));
+                        (multi as { set: (key: string, value: string) => void }).set(key, JSON.stringify(newData));
                         if (versionKey) {
-                            multi.set(versionKey, (currentVersion + 1).toString());
+                            (multi as { set: (key: string, value: string) => void }).set(versionKey, (currentVersion + 1).toString());
                         }
 
                         return { newData, version: currentVersion + 1 };
@@ -337,7 +407,7 @@ export class RedisAtomicOperations {
                 );
 
                 if (result.success) {
-                    const updateResult = result.result as any;
+                    const updateResult = result.result as { newData: T; version: number };
                     return {
                         success: true,
                         data: {
@@ -356,10 +426,12 @@ export class RedisAtomicOperations {
 
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : String(error);
+                redisLogger.error("Optimistic update failed", undefined, { key, error: errorMessage, attempt });
                 return { success: false, error: errorMessage };
             }
         }
 
+        redisLogger.error("Optimistic update max retries exceeded", undefined, { key, maxRetries });
         return { success: false, error: 'Max retries exceeded' };
     }
 
@@ -367,30 +439,30 @@ export class RedisAtomicOperations {
      * Atomic composite operation on multiple keys
      */
     async atomicCompositeUpdate(
-        updates: Array<{ key: string; value: any; operation?: 'set' | 'incr' | 'decr' }>,
+        updates: Array<{ key: string; value: unknown; operation?: 'set' | 'incr' | 'decr' }>,
         options?: TransactionOptions
-    ): Promise<AtomicResult<any[]>> {
+    ): Promise<AtomicResult<Array<{ key: string; operation: 'set' | 'incr' | 'decr'; value: unknown }>>> {
         const watchKeys = updates.map(update => update.key);
 
         const result = await this.transactions.watchMultiExec(
             watchKeys,
-            async (multi) => {
-                const results: any[] = [];
+            async (multi: unknown) => {
+                const results: Array<{ key: string; operation: 'set' | 'incr' | 'decr'; value: unknown }> = [];
 
                 for (const update of updates) {
                     const { key, value, operation = 'set' } = update;
 
                     switch (operation) {
                         case 'set':
-                            multi.set(key, JSON.stringify(value));
+                            (multi as { set: (key: string, value: string) => void }).set(key, JSON.stringify(value));
                             results.push({ key, operation: 'set', value });
                             break;
                         case 'incr':
-                            multi.incrBy(key, value);
+                            (multi as { incrBy: (key: string, increment: number) => void }).incrBy(key, value as number);
                             results.push({ key, operation: 'incr', value });
                             break;
                         case 'decr':
-                            multi.decrBy(key, value);
+                            (multi as { decrBy: (key: string, decrement: number) => void }).decrBy(key, value as number);
                             results.push({ key, operation: 'decr', value });
                             break;
                     }
@@ -403,8 +475,9 @@ export class RedisAtomicOperations {
         );
 
         if (result.success) {
-            return { success: true, data: result.result as any[] };
+            return { success: true, data: result.result as Array<{ key: string; operation: 'set' | 'incr' | 'decr'; value: unknown }> };
         } else {
+            redisLogger.error(`Composite update failed: ${result.error}`, undefined, { keys: watchKeys.join(','), attempts: result.attempts });
             return { success: false, error: result.error, attempts: result.attempts };
         }
     }

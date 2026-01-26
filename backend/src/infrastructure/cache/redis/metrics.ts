@@ -64,7 +64,7 @@ export class RedisMetrics {
     /**
      * Record transaction attempt
      */
-    recordTransactionAttempt(success: boolean, attempts: number, totalDelay: number): void {
+    recordTransactionAttempt(success: boolean, attempts: number, _totalDelay: number): void {
         this.transactionStats.transactionsAttempted++;
         this.transactionStats.lastTransactionTime = Date.now();
 
@@ -82,7 +82,7 @@ export class RedisMetrics {
     /**
      * Record transaction conflict
      */
-    recordConflict(attempts: number): void {
+    recordConflict(_attempts: number): void {
         this.conflictStats.totalConflicts++;
 
         // Check if recent (last 5 minutes)
@@ -204,7 +204,12 @@ export class RedisMetrics {
     /**
      * Calculate overall system health score
      */
-    private calculateOverallHealth(components: any): number {
+    private calculateOverallHealth(components: {
+        connection: { connected: boolean; ready: boolean };
+        cache: { connected: boolean; error?: string };
+        transactions: { transactionsAttempted: number; transactionsSuccessful: number };
+        conflicts: { totalConflicts: number };
+    }): number {
         let score = 0;
         let totalWeight = 0;
 

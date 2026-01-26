@@ -4,7 +4,7 @@ import { redisService } from "../../cache/redis.service";
 import { getCacheConfig, CACHE_KEYS } from "../../../config/cache.config";
 import { cacheInvalidationService } from "../../cache/cache-invalidation.service";
 import logger from "../../../core/logging/logger.service";
-import { TickData, KlineData } from "./types";
+import { TickData, KlineData, MarkPriceData } from "./types";
 
 /**
  * Manages Redis caching operations for market data
@@ -17,7 +17,7 @@ export class CacheManager {
   async cacheTick(symbol: string, data: TickData): Promise<void> {
     try {
       const cacheKey = CACHE_KEYS.tick(symbol);
-      const config = getCacheConfig();
+      const _config = getCacheConfig();
       const result = await redisService.atomicCacheUpdate(
         cacheKey,
         data,
@@ -171,10 +171,10 @@ export class CacheManager {
   /**
    * Cache mark price data with configured TTL
    */
-  async cacheMarkPrice(symbol: string, data: any): Promise<void> {
+  async cacheMarkPrice(symbol: string, data: MarkPriceData): Promise<void> {
     try {
       const cacheKey = CACHE_KEYS.markPrice(symbol);
-      const config = getCacheConfig();
+      const _config = getCacheConfig();
       const result = await redisService.atomicCacheUpdate(
         cacheKey,
         data,
@@ -201,7 +201,7 @@ export class CacheManager {
   /**
    * Get cached mark price data
    */
-  async getMarkPrice(symbol: string): Promise<any | null> {
+  async getMarkPrice(symbol: string): Promise<MarkPriceData | null> {
     try {
       const cacheKey = CACHE_KEYS.markPrice(symbol);
       const result = await redisService.get(cacheKey);

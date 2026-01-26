@@ -10,9 +10,12 @@
 
 import {
     IStrategyRepository,
-    Strategy
+    Strategy,
+    StrategyConfig,
+    StrategyType
 } from '@trade-bot/shared';
 import { query } from '../../../database/pool';
+import { logger } from '../../../core/logging';
 
 /**
  * Strategy Repository Adapter
@@ -27,7 +30,7 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
      */
     async getStrategies(userId: string): Promise<Strategy[]> {
         try {
-            const result = await query(
+            const result = await query<StrategyRow>(
                 'SELECT id, user_id, name, type, config, active, created_at, updated_at FROM strategies WHERE user_id = $1 ORDER BY created_at DESC',
                 [userId]
             );
@@ -44,7 +47,7 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
      */
     async getStrategy(id: string): Promise<Strategy | null> {
         try {
-            const result = await query(
+            const result = await query<StrategyRow>(
                 'SELECT id, user_id, name, type, config, active, created_at, updated_at FROM strategies WHERE id = $1',
                 [id]
             );
@@ -65,7 +68,7 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
      */
     async createStrategy(strategy: Omit<Strategy, 'id' | 'createdAt' | 'updatedAt'>): Promise<Strategy> {
         try {
-            const result = await query(
+            const result = await query<{ id: string, created_at: string, updated_at: string }>(
                 'INSERT INTO strategies (user_id, name, type, config, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING id, created_at, updated_at',
                 [strategy.userId, strategy.name, strategy.type, JSON.stringify(strategy.config), strategy.active]
             );
@@ -94,10 +97,10 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
     /**
      * Update strategy configuration
      */
-    async updateStrategy(id: string, updates: any): Promise<void> {
+    async updateStrategy(id: string, _updates: Partial<StrategyConfig>): Promise<void> {
         try {
             // This would update strategy configuration in the database
-            console.log(`Strategy config update for strategy ${id}`);
+            logger.info(`Strategy config update for strategy ${id}`);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to update strategy: ${errorMessage}`);
@@ -141,7 +144,7 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
     /**
      * Map database row to Strategy interface object
      */
-    private mapRowToStrategy(row: any): Strategy | null {
+    private mapRowToStrategy(row: StrategyRow): Strategy | null {
         try {
             // Return plain object matching Strategy interface
             return {
@@ -155,11 +158,24 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
                 updatedAt: new Date(row.updated_at)
             };
         } catch (error) {
-            console.warn(`Failed to map strategy row to domain object: ${error}`);
+            logger.warn(`Failed to map strategy row to domain object: ${error}`);
             return null;
         }
     }
 }
 
+/**
+ * Database row interface for strategy data
+ */
+interface StrategyRow {
+    id: string;
+    user_id: string;
+    name: string;
+    type: StrategyType;
+    config: string | StrategyConfig;
+    active: boolean;
+    created_at: string;
+    updated_at: string;
+}
 // Export singleton instance
 export const strategyRepositoryAdapter = new StrategyRepositoryAdapter();

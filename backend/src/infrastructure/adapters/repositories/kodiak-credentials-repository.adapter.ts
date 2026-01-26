@@ -15,6 +15,20 @@ import {
 import { query } from '../../../database/pool';
 
 /**
+ * Database row interface for Kodiak credentials
+ */
+interface KodiakCredentialsRow {
+    id: string;
+    user_id: string;
+    account_id: string;
+    api_key_encrypted: string;
+    secret_key_encrypted: string;
+    verified: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+/**
  * Kodiak Credentials Repository Adapter
  *
  * Implements the IKodiakCredentialsRepository interface using PostgreSQL database operations.
@@ -27,7 +41,7 @@ export class KodiakCredentialsRepositoryAdapter implements IKodiakCredentialsRep
      */
     async getCredentials(userId: string): Promise<KodiakCredentials | null> {
         try {
-            const result = await query(
+            const result = await query<KodiakCredentialsRow>(
                 'SELECT id, user_id, account_id, api_key_encrypted, secret_key_encrypted, verified, created_at, updated_at FROM kodiak_credentials WHERE user_id = $1 AND verified = true',
                 [userId]
             );
@@ -49,7 +63,7 @@ export class KodiakCredentialsRepositoryAdapter implements IKodiakCredentialsRep
      */
     async saveCredentials(credentials: Omit<KodiakCredentials, 'id' | 'createdAt' | 'updatedAt'>): Promise<KodiakCredentials> {
         try {
-            const result = await query(
+            const result = await query<{ id: string, created_at: string, updated_at: string }>(
                 'INSERT INTO kodiak_credentials (user_id, account_id, api_key_encrypted, secret_key_encrypted, verified, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING id, created_at, updated_at',
                 [credentials.userId, credentials.accountId, credentials.apiKey, credentials.secretKey, credentials.verified]
             );
@@ -131,7 +145,7 @@ export class KodiakCredentialsRepositoryAdapter implements IKodiakCredentialsRep
     /**
      * Map database row to KodiakCredentials object
      */
-    private mapRowToCredentials(row: any): KodiakCredentials {
+    private mapRowToCredentials(row: KodiakCredentialsRow): KodiakCredentials {
         return {
             id: row.id,
             userId: row.user_id,

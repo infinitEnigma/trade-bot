@@ -4,8 +4,8 @@ import axios from "axios";
 import { query } from "../../database/pool";
 import { logger } from "../logging";
 import { generateOrderlySignature } from "../../shared/utils/orderly-signature";
-import { withCredentials, SecureCredentials } from "../../infrastructure/security/encryption.service";
-import { positionSyncService } from "./position-sync.service"; // ✅ Single source of truth
+//import { withCredentials, SecureCredentials } from "../../infrastructure/security/encryption.service";
+import { positionSyncService, PositionData } from "./position-sync.service"; // ✅ Single source of truth
 import { redisService } from "../../infrastructure";
 
 export interface AccountLimits {
@@ -109,12 +109,13 @@ export async function getAccountLimits(
       takerFeeRate: parseFloat(accountData.taker_fee_rate || "0.001"),
       makerFeeRate: parseFloat(accountData.maker_fee_rate || "0.001"),
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
     logger.error("Failed to get account limits", {
-      error: error.message,
+      error: err.message,
       orderlyAccountId,
     });
-    throw new Error(`Account validation failed: ${error.message}`);
+    throw new Error(`Account validation failed: ${err.message}`);
   }
 }
 
@@ -296,16 +297,17 @@ export async function validateUserPosition(
       maxExposurePercent
     );
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
     logger.error("Position validation failed", {
-      error: error.message,
+      error: err.message,
       userId,
       notionalAmount,
       symbol,
     });
     return {
       isValid: false,
-      reason: `Validation error: ${error.message}`,
+      reason: `Validation error: ${err.message}`,
     };
   }
 }
@@ -316,7 +318,7 @@ export async function validateUserPosition(
  */
 async function calculateAccountLimitsFromDatabase(
   userId: string,
-  positions: any[]
+  positions: PositionData[]
 ): Promise<AccountLimits> {
   try {
     // Get account information (balance, leverage, etc.)
@@ -385,7 +387,14 @@ async function getAccountInfoFromDatabase(userId: string): Promise<{
     }
 
     // Fetch account info from database (synced from API)
-    const result = await query(
+    const result = await query<{
+      balance: string;
+      max_leverage: string;
+      max_notional: Record<string, number>;
+      taker_fee_rate: string;
+      maker_fee_rate: string;
+      updated_at: string;
+    }>(
       "SELECT balance, max_leverage, max_notional, taker_fee_rate, maker_fee_rate, updated_at FROM kodiak_accounts WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 1",
       [userId]
     );

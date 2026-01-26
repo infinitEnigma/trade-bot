@@ -12,7 +12,7 @@ export class RoleManagementService {
         userId: string,
         role: UserRole,
         grantedBy: string = 'system',
-        criteria?: any
+        criteria?: JSON
     ): Promise<void> {
         try {
             // Check if role already exists
@@ -127,12 +127,12 @@ export class RoleManagementService {
      */
     async getUserRoles(userId: string): Promise<UserRole[]> {
         try {
-            const result = await query(
+            const result = await query<{ role: UserRole }>(
                 "SELECT role FROM user_roles WHERE user_id = $1",
                 [userId]
             );
 
-            return result.rows.map(row => row.role as UserRole);
+            return result.rows.map(row => row.role);
         } catch (error) {
             logger.error("Failed to get user roles", {
                 userId,
@@ -148,7 +148,7 @@ export class RoleManagementService {
     async getRoleDetails(userId: string, role: UserRole): Promise<{
         grantedAt: Date;
         grantedBy: string;
-        criteriaMet?: any;
+        criteriaMet?: boolean | JSON;
     } | null> {
         try {
             const result = await query(
@@ -160,7 +160,11 @@ export class RoleManagementService {
                 return null;
             }
 
-            const row = result.rows[0];
+            const row = result.rows[0] as {
+                granted_at: Date;
+                granted_by: string;
+                criteria_met?: string;
+            };
             return {
                 grantedAt: row.granted_at,
                 grantedBy: row.granted_by,
@@ -191,11 +195,18 @@ export class RoleManagementService {
                 [role]
             );
 
-            return result.rows.map(row => ({
-                userId: row.user_id,
-                grantedAt: row.granted_at,
-                grantedBy: row.granted_by
-            }));
+            return result.rows.map(row => {
+                const typedRow = row as {
+                    user_id: string;
+                    granted_at: Date;
+                    granted_by: string;
+                };
+                return {
+                    userId: typedRow.user_id,
+                    grantedAt: typedRow.granted_at,
+                    grantedBy: typedRow.granted_by
+                };
+            });
 
         } catch (error) {
             logger.error("Failed to get users with role", {

@@ -6,6 +6,8 @@ import {
   randomBytes,
   scrypt,
   hkdf,
+  CipherGCM,
+  DecipherGCM,
 } from "crypto";
 import { promisify } from "util";
 import { logger } from "../../core/logging";
@@ -137,7 +139,7 @@ export class KeyManagementService {
         KEY_CONFIG.algorithm,
         derivedKey,
         iv
-      ) as any;
+      ) as CipherGCM;
       let encrypted = cipher.update(data, "utf8", "hex");
       encrypted += cipher.final("hex");
 
@@ -206,7 +208,7 @@ export class KeyManagementService {
         KEY_CONFIG.algorithm,
         derivedKey,
         iv
-      ) as any;
+      ) as DecipherGCM;
       decipher.setAuthTag(tag);
 
       let decrypted = decipher.update(encrypted.toString("hex"), "hex", "utf8");

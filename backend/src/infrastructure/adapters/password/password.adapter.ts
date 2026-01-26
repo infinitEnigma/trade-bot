@@ -10,6 +10,7 @@
 
 import { IPasswordService } from '@trade-bot/shared';
 import { hashPassword, comparePassword } from '../../../workers/password-worker';
+import { logger } from '../../../core/logging';
 
 /**
  * Password Service Adapter
@@ -65,7 +66,7 @@ export class PasswordAdapter implements IPasswordService {
             // For security, verification errors should return false
             // rather than throwing exceptions that could leak information
             const errorMessage = error instanceof Error ? error.message : String(error);
-            console.warn(`Password verification error: ${errorMessage}`);
+            logger.warn(`Password verification error: ${errorMessage}`);
             return false;
         }
     }

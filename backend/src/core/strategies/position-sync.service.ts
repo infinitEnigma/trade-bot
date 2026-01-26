@@ -8,10 +8,11 @@
 import axios from "axios";
 import { query } from "../../database/pool";
 import { redisService } from "../../infrastructure";
-import { getCacheConfig, CACHE_KEYS } from "../../config/cache.config";
+import { CACHE_KEYS } from "../../config/cache.config";
 import { cacheInvalidationService } from "../../infrastructure";
 import { generateOrderlySignature } from "../../shared/utils/orderly-signature";
 import { positionSyncLogger } from "../logging/context-aware-logger.service";
+import { IEncryptionService } from "../../../../shared/src/types/infrastructure";
 
 export interface PositionData {
     symbol: string;
@@ -26,6 +27,49 @@ export interface PositionData {
     mmr: number;
     estLiqPrice: number;
     lastUpdated: Date;
+}
+
+/**
+ * Interface for Kodiak API max notional data structure
+ */
+export interface KodiakMaxNotional {
+    [symbol: string]: {
+        maxNotional: number;
+        minNotional: number;
+        maxLeverage: number;
+        pricePrecision: number;
+        quantityPrecision: number;
+    };
+}
+
+/**
+ * Interface for Kodiak API account information response
+ */
+export interface KodiakAccountInfo {
+    total_balance: string;
+    max_leverage: string;
+    max_notional: KodiakMaxNotional;
+    taker_fee_rate: string;
+    maker_fee_rate: string;
+    // Add other account info fields as needed
+}
+
+/**
+ * Interface for raw position data from Kodiak API
+ */
+export interface KodiakPosition {
+    symbol: string;
+    position_qty: string | number;
+    cost_position: string | number;
+    average_open_price: string | number;
+    mark_price: string | number;
+    unsettled_pnl: string | number;
+    pnl_24_h: string | number;
+    leverage: string | number;
+    imr: string | number;
+    mmr: string | number;
+    est_liq_price: string | number;
+    // Add other position fields as needed from API
 }
 
 export interface PositionSyncResult {
@@ -49,7 +93,7 @@ export class PositionSyncService {
         accountId: string,
         apiKey: string,
         secretKey: string
-    ): Promise<any> {
+    ): Promise<KodiakAccountInfo> {
         try {
             const timestamp = Date.now();
             const path = "/v1/client/info";
@@ -88,7 +132,7 @@ export class PositionSyncService {
     private async storeAccountInfoInDatabase(
         userId: string,
         accountId: string,
-        accountData: any
+        accountData: KodiakAccountInfo
     ): Promise<void> {
         await query(`
     INSERT INTO kodiak_accounts (
@@ -141,7 +185,12 @@ export class PositionSyncService {
 
         try {
             // Get user's Kodiak credentials
-            const credsResult = await query(
+            const credsResult = await query<{
+                account_id: string;
+                api_key_encrypted: string;
+                secret_key_encrypted: string;
+                verified: boolean;
+            }>(
                 "SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1",
                 [userId]
             );
@@ -155,7 +204,9 @@ export class PositionSyncService {
                 };
             }
 
-            const { encryptionService } = await import("../../infrastructure/security/encryption.service.js");
+            const { encryptionService } = await import("../../infrastructure/security/encryption.service.js") as {
+                encryptionService: IEncryptionService;
+            };
             const row = credsResult.rows[0];
             const accountId = row.account_id;
             const apiKey = encryptionService.decryptApiKey(row.api_key_encrypted);
@@ -236,7 +287,7 @@ export class PositionSyncService {
         accountId: string,
         apiKey: string,
         secretKey: string
-    ): Promise<any[]> {
+    ): Promise<KodiakPosition[]> {
         const timestamp = Date.now();
         const path = "/v1/positions";
         const signature = await generateOrderlySignature(
@@ -268,20 +319,20 @@ export class PositionSyncService {
     private async storePositionInDatabase(
         userId: string,
         accountId: string,
-        positionData: any
+        positionData: KodiakPosition
     ): Promise<void> {
         const position: PositionData = {
             symbol: positionData.symbol,
-            positionQty: parseFloat(positionData.position_qty || 0),
-            costPosition: parseFloat(positionData.cost_position || 0),
-            averageOpenPrice: parseFloat(positionData.average_open_price || 0),
-            markPrice: parseFloat(positionData.mark_price || 0),
-            unsettledPnl: parseFloat(positionData.unsettled_pnl || 0),
-            pnl24h: parseFloat(positionData.pnl_24_h || 0),
-            leverage: parseInt(positionData.leverage || 1),
-            imr: parseFloat(positionData.imr || 0.1),
-            mmr: parseFloat(positionData.mmr || 0.05),
-            estLiqPrice: parseFloat(positionData.est_liq_price || 0),
+            positionQty: parseFloat(String(positionData.position_qty || "0")),
+            costPosition: parseFloat(String(positionData.cost_position || "0")),
+            averageOpenPrice: parseFloat(String(positionData.average_open_price || "0")),
+            markPrice: parseFloat(String(positionData.mark_price || "0")),
+            unsettledPnl: parseFloat(String(positionData.unsettled_pnl || "0")),
+            pnl24h: parseFloat(String(positionData.pnl_24_h || "0")),
+            leverage: parseInt(String(positionData.leverage || "1")),
+            imr: parseFloat(String(positionData.imr || "0.1")),
+            mmr: parseFloat(String(positionData.mmr || "0.05")),
+            estLiqPrice: parseFloat(String(positionData.est_liq_price || "0")),
             lastUpdated: new Date(),
         };
 
@@ -346,7 +397,20 @@ export class PositionSyncService {
         ORDER BY updated_at DESC
       `, [userId]);
 
-            const positions: PositionData[] = result.rows.map(row => ({
+            const positions: PositionData[] = (result.rows as Array<{
+                symbol: string;
+                position_qty: string;
+                cost_position: string;
+                average_open_price: string;
+                mark_price: string;
+                unsettled_pnl: string;
+                pnl_24_h: string;
+                leverage: string;
+                imr: string;
+                mmr: string;
+                est_liq_price: string;
+                updated_at: string;
+            }>).map((row) => ({
                 symbol: row.symbol,
                 positionQty: parseFloat(row.position_qty),
                 costPosition: parseFloat(row.cost_position),
@@ -401,7 +465,7 @@ export class PositionSyncService {
 
         try {
             // Get all users with verified Kodiak credentials
-            const usersResult = await query(`
+            const usersResult = await query<{ user_id: string }>(`
         SELECT DISTINCT kc.user_id
         FROM kodiak_credentials kc
         WHERE kc.verified = true
@@ -464,14 +528,20 @@ export class PositionSyncService {
             const databasePositions = dbPositions.length;
 
             // Get positions from API
-            const credsResult = await query(
+            const credsResult = await query<{
+                account_id: string;
+                api_key_encrypted: string;
+                secret_key_encrypted: string;
+            }>(
                 "SELECT account_id, api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
                 [userId]
             );
 
             let apiPositions = 0;
             if (credsResult.rows.length > 0) {
-                const { encryptionService } = await import("../../infrastructure/security/encryption.service.js");
+                const { encryptionService } = await import("../../infrastructure/security/encryption.service.js") as {
+                    encryptionService: IEncryptionService;
+                };
                 const row = credsResult.rows[0];
                 const accountId = row.account_id;
                 const apiKey = encryptionService.decryptApiKey(row.api_key_encrypted);

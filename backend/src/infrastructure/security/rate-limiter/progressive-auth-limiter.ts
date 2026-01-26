@@ -60,7 +60,7 @@ class ProgressiveAuthLimiter {
                 return { delayMs: this.BASE_DELAY_MS, totalFailures: 1 };
             }
 
-            const totalFailures = result.newValue!;
+            const totalFailures = result.newValue ?? 1;
             const delayMs = this.calculateProgressiveDelay(totalFailures);
 
             // Set expiry on the failure counter (24 hours)

@@ -13,7 +13,7 @@ export interface KodiakCredentials {
     secretKey: string;
 }
 
-export interface KodiakApiResponse<T = any> {
+export interface KodiakApiResponse<T = unknown> {
     success: boolean;
     data?: T;
     error?: string;
@@ -43,39 +43,39 @@ export class KodiakClient {
     /**
      * Make authenticated GET request to Kodiak API
      */
-    async get<T = any>(path: string, credentials: KodiakCredentials): Promise<KodiakApiResponse<T>> {
+    async get<T = unknown>(path: string, credentials: KodiakCredentials): Promise<KodiakApiResponse<T>> {
         return this.request<T>("GET", path, credentials);
     }
 
     /**
      * Make authenticated POST request to Kodiak API
      */
-    async post<T = any>(path: string, credentials: KodiakCredentials, body?: any): Promise<KodiakApiResponse<T>> {
+    async post<T = unknown>(path: string, credentials: KodiakCredentials, body?: unknown): Promise<KodiakApiResponse<T>> {
         return this.request<T>("POST", path, credentials, body);
     }
 
     /**
      * Make authenticated PUT request to Kodiak API
      */
-    async put<T = any>(path: string, credentials: KodiakCredentials, body?: any): Promise<KodiakApiResponse<T>> {
+    async put<T = unknown>(path: string, credentials: KodiakCredentials, body?: unknown): Promise<KodiakApiResponse<T>> {
         return this.request<T>("PUT", path, credentials, body);
     }
 
     /**
      * Make authenticated DELETE request to Kodiak API
      */
-    async delete<T = any>(path: string, credentials: KodiakCredentials): Promise<KodiakApiResponse<T>> {
+    async delete<T = unknown>(path: string, credentials: KodiakCredentials): Promise<KodiakApiResponse<T>> {
         return this.request<T>("DELETE", path, credentials);
     }
 
     /**
      * Core request method with authentication
      */
-    private async request<T = any>(
+    private async request<T = unknown>(
         method: string,
         path: string,
         credentials: KodiakCredentials,
-        body?: any
+        body?: unknown
     ): Promise<KodiakApiResponse<T>> {
         const url = this.buildUrl(path);
         const timestamp = Date.now();
@@ -133,7 +133,7 @@ export class KodiakClient {
 
                         // Don't retry on client errors (4xx)
                         if (response.status >= 400 && response.status < 500) {
-                            return this.handleApiError(response.status, errorText);
+                            return this.handleApiError(response.status, errorText) as KodiakApiResponse<T>;
                         }
 
                         // Retry on server errors (5xx) or network issues
@@ -208,13 +208,19 @@ export class KodiakClient {
                 return new Uint8Array(hash.digest());
             };
 
-            // Set hash function
-            if ((ed25519 as any).hashes) {
-                (ed25519 as any).hashes.sha512 = sha512Hash;
-            } else if ((ed25519 as any).etc && typeof (ed25519 as any).etc.sha512Sync !== "undefined") {
-                (ed25519 as any).etc.sha512Sync = sha512Hash;
-            } else if ((ed25519 as any).utils) {
-                (ed25519 as any).utils.sha512Sync = sha512Hash;
+            // Set hash function with proper typing
+            const ed25519Module = ed25519 as {
+                hashes?: { sha512?: (message: Uint8Array) => Uint8Array };
+                etc?: { sha512Sync?: (message: Uint8Array) => Uint8Array };
+                utils?: { sha512Sync?: (message: Uint8Array) => Uint8Array };
+            };
+
+            if (ed25519Module.hashes) {
+                ed25519Module.hashes.sha512 = sha512Hash;
+            } else if (ed25519Module.etc && typeof ed25519Module.etc.sha512Sync !== "undefined") {
+                ed25519Module.etc.sha512Sync = sha512Hash;
+            } else if (ed25519Module.utils) {
+                ed25519Module.utils.sha512Sync = sha512Hash;
             }
 
             const privateKey = bs58.decode(secretKey);
@@ -241,18 +247,19 @@ export class KodiakClient {
     /**
      * Handle successful API response
      */
-    private handleApiSuccess<T>(data: any): KodiakApiResponse<T> {
+    private handleApiSuccess<T>(data: unknown): KodiakApiResponse<T> {
         // Kodiak API typically wraps successful responses
         if (data && typeof data === "object" && "success" in data) {
-            if (data.success) {
+            const responseData = data as { success: boolean; data?: T; message?: string; error?: string };
+            if (responseData.success) {
                 return {
                     success: true,
-                    data: data.data || data,
+                    data: responseData.data || data as T,
                 };
             } else {
                 return {
                     success: false,
-                    error: data.message || data.error || "API returned success: false",
+                    error: responseData.message || responseData.error || "API returned success: false",
                 };
             }
         }
@@ -260,18 +267,18 @@ export class KodiakClient {
         // Assume success if no explicit success field
         return {
             success: true,
-            data,
+            data: data as T,
         };
     }
 
     /**
      * Handle API error responses
      */
-    private handleApiError(statusCode: number, errorText: string): KodiakApiResponse {
+    private handleApiError(statusCode: number, errorText: string): KodiakApiResponse<unknown> {
         let errorMessage = `HTTP ${statusCode}`;
 
         try {
-            const errorData = JSON.parse(errorText);
+            const errorData = JSON.parse(errorText) as { message?: string; error?: string };
             if (errorData.message) {
                 errorMessage = errorData.message;
             } else if (errorData.error) {

@@ -1,6 +1,6 @@
 /** @format */
 
-import { UserRole } from "@trade-bot/shared";
+//import { UserRole } from "@trade-bot/shared";
 import { query } from "../../database/pool";
 import { logger } from "../../core/logging";
 
@@ -65,7 +65,7 @@ export class WalletQualificationService {
 
         try {
             // Get user's wallet address from kodiak_credentials
-            const credsResult = await query(
+            const credsResult = await query<{ wallet_address: string }>(
                 "SELECT wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
                 [userId]
             );

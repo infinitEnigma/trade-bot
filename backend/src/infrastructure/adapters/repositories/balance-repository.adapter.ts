@@ -10,9 +10,11 @@
 
 import {
     IBalanceRepository,
-    Balance
+    Balance,
+    BalanceHistory
 } from '@trade-bot/shared';
-import { query } from '../../../database/pool';
+import { logger } from '../../../core/logging';
+//import { query } from '../../../database/pool';
 
 /**
  * Balance Repository Adapter
@@ -25,7 +27,7 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
     /**
      * Get user's current balance
      */
-    async getBalance(userId: string): Promise<Balance> {
+    async getBalance(_userId: string): Promise<Balance> {
         try {
             // For now, return a zero balance since balance tracking might be external
             // In a full implementation, this would query balance tables
@@ -43,7 +45,7 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
         try {
             // For now, this is a no-op since balance tracking might be external
             // In a full implementation, this would update balance tables
-            console.log(`Balance update for user ${userId}: ${balance.total} ${balance.currency}`);
+            logger.info(`Balance update for user ${userId}: ${balance.total} ${balance.currency}`);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to update balance: ${errorMessage}`);
@@ -53,7 +55,7 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
     /**
      * Get balance history for a user
      */
-    async getBalanceHistory(userId: string, limit: number = 50): Promise<any[]> {
+    async getBalanceHistory(_userId: string, _limit: number = 50): Promise<BalanceHistory[]> {
         try {
             // For now, return empty array since balance history might be external
             // In a full implementation, this would query balance history tables

@@ -70,6 +70,14 @@ export interface KodiakAccountInfo {
     balances: KodiakBalance[];
 }
 
+export interface KodiakApiAccountInfoResponse {
+    total_pnl_24_h?: string;
+    total_pnl_30_d?: string;
+    total_pnl_all?: string;
+    trading_volume_last_24_hours?: string;
+    account_type?: string;
+}
+
 /**
  * Kodiak Integration Service
  */
@@ -82,7 +90,12 @@ export class KodiakIntegrationService {
      */
     async getUserCredentials(userId: string): Promise<KodiakCredentials | null> {
         try {
-            const result = await query(
+            const result = await query<{
+                account_id: string;
+                api_key_encrypted: string;
+                secret_key_encrypted: string;
+                verified: boolean;
+            }>(
                 "SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
                 [userId]
             );
@@ -147,7 +160,13 @@ export class KodiakIntegrationService {
             const cached = kodiakCache.get(cacheKey);
             if (cached) {
                 logger.debug("Returning cached Kodiak positions", { userId });
-                return cached;
+                // Ensure cached data matches KodiakApiResponse interface
+                if (cached && typeof cached === 'object' && 'success' in cached) {
+                    return cached as KodiakApiResponse<KodiakPosition[]>;
+                } else {
+                    logger.warn("Cached Kodiak positions data has invalid structure, clearing cache", { userId });
+                    kodiakCache.delete(cacheKey);
+                }
             }
 
             // Get credentials
@@ -204,7 +223,13 @@ export class KodiakIntegrationService {
             const cached = kodiakCache.get(cacheKey);
             if (cached) {
                 logger.debug("Returning cached Kodiak trades", { userId, limit });
-                return cached;
+                // Ensure cached data matches KodiakApiResponse interface
+                if (cached && typeof cached === 'object' && 'success' in cached) {
+                    return cached as KodiakApiResponse<KodiakTrade[]>;
+                } else {
+                    logger.warn("Cached Kodiak trades data has invalid structure, clearing cache", { userId, limit });
+                    kodiakCache.delete(cacheKey);
+                }
             }
 
             // Get credentials
@@ -293,9 +318,9 @@ export class KodiakIntegrationService {
                 : holdingsData?.holding || [];
 
             // Calculate total balance
-            const totalBalance = holdings.reduce((sum: number, holding: any) => {
-                const holdingBalance = parseFloat(holding.holding || holding.balance || "0");
-                const price = parseFloat(holding.price || "0");
+            const totalBalance = holdings.reduce((sum: number, holding: Record<string, unknown>) => {
+                const holdingBalance = parseFloat((holding as Record<string, unknown>).holding?.toString() || (holding as Record<string, unknown>).balance?.toString() || "0");
+                const price = parseFloat((holding as Record<string, unknown>).price?.toString() || "0");
                 return sum + holdingBalance * price;
             }, 0);
 
@@ -340,7 +365,7 @@ export class KodiakIntegrationService {
     /**
      * Get Kodiak account information (authenticated)
      */
-    async getAccountInfo(userId: string): Promise<KodiakApiResponse<any>> {
+    async getAccountInfo(userId: string): Promise<KodiakApiResponse<KodiakAccountInfo>> {
         try {
             const cacheKey = `kodiak:account:${userId}`;
 
@@ -367,7 +392,7 @@ export class KodiakIntegrationService {
                 credentials
             );
 
-            const result: KodiakApiResponse = {
+            const result: KodiakApiResponse<KodiakAccountInfo> = {
                 success: true,
                 data: accountInfoData,
             };
@@ -398,7 +423,7 @@ export class KodiakIntegrationService {
      * Get Kodiak account information (authenticated - for wallet address)
      * Note: This endpoint may require authentication now
      */
-    async getPublicAccountInfo(accountId: string, credentials?: KodiakCredentials): Promise<KodiakApiResponse<any>> {
+    async getPublicAccountInfo(accountId: string, credentials?: KodiakCredentials): Promise<KodiakApiResponse<unknown>> {
         try {
             const cacheKey = `kodiak:public_account:${accountId}`;
 

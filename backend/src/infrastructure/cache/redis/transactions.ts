@@ -77,7 +77,7 @@ export class RedisTransactions {
      */
     async watchMultiExec<T>(
         watchKeys: string[],
-        operation: (multi: any) => Promise<T>,
+        operation: (multi: unknown) => Promise<T>,
         maxRetries: number = 5,
         options?: TransactionOptions
     ): Promise<SmartRetryResult<T>> {
@@ -136,7 +136,7 @@ class TransactionRecoveryManager {
      */
     async executeWithSmartRetry<T>(
         watchKeys: string[],
-        operation: (multi: any) => Promise<T>,
+        operation: (multi: unknown) => Promise<T>,
         context: TransactionContext
     ): Promise<SmartRetryResult<T>> {
         const keySignature = this.generateKeySignature(watchKeys);
@@ -154,14 +154,14 @@ class TransactionRecoveryManager {
      */
     private async executeWithStrategy<T>(
         watchKeys: string[],
-        operation: (multi: any) => Promise<T>,
+        operation: (multi: unknown) => Promise<T>,
         strategy: RetryStrategy,
         context: TransactionContext
     ): Promise<SmartRetryResult<T>> {
         const keySignature = this.generateKeySignature(watchKeys);
         let attempts = 0;
         let totalDelay = 0;
-        const startTime = Date.now();
+        const _startTime = Date.now();
 
         while (attempts < context.maxRetries) {
             attempts++;
@@ -268,7 +268,7 @@ class TransactionRecoveryManager {
      */
     private async attemptTransaction<T>(
         watchKeys: string[],
-        operation: (multi: any) => Promise<T>
+        operation: (multi: unknown) => Promise<T>
     ): Promise<{ success: boolean; data?: T; aborted?: boolean }> {
         const client = redisService.getClient();
 
@@ -290,13 +290,11 @@ class TransactionRecoveryManager {
 
             return { success: true, data: result };
 
-        } catch (error) {
-            throw error;
         } finally {
             // Always unwatch keys
             try {
                 await client.unwatch();
-            } catch (unwatchError) {
+            } catch (_unwatchError) {
                 // Ignore unwatch errors
             }
         }
@@ -307,10 +305,10 @@ class TransactionRecoveryManager {
      */
     private selectRetryStrategy(
         conflictStats: ConflictStats,
-        context: TransactionContext
+        _context: TransactionContext
     ): RetryStrategy {
         // High priority transactions get immediate retry
-        if (context.priority === 'critical') {
+        if (_context.priority === 'critical') {
             return RetryStrategy.IMMEDIATE_RETRY;
         }
 
@@ -335,7 +333,7 @@ class TransactionRecoveryManager {
         strategy: RetryStrategy,
         keySignature: string,
         attempt: number,
-        context: TransactionContext
+        _context: TransactionContext
     ): number {
         switch (strategy) {
             case RetryStrategy.IMMEDIATE_RETRY:
@@ -375,7 +373,7 @@ class TransactionRecoveryManager {
     /**
      * Calculate adaptive delay based on historical performance
      */
-    private calculateAdaptiveDelay(keySignature: string, attempt: number): number {
+    private calculateAdaptiveDelay(keySignature: string, _attempt: number): number {
         const successRate = this.successRates.get(keySignature) || 0.5;
         const optimalDelay = this.optimalDelays.get(keySignature) || this.BASE_DELAY;
 
@@ -384,7 +382,7 @@ class TransactionRecoveryManager {
         const baseDelay = optimalDelay * adaptiveMultiplier;
 
         const exponentialDelay = Math.min(
-            baseDelay * Math.pow(this.MULTIPLIER, attempt - 1),
+            baseDelay * Math.pow(this.MULTIPLIER, _attempt - 1),
             this.MAX_DELAY
         );
 
@@ -445,7 +443,7 @@ class TransactionRecoveryManager {
     /**
      * Record transaction conflict
      */
-    private recordConflict(keySignature: string, attempt: number): void {
+    private recordConflict(keySignature: string, _attempt: number): void {
         const stats = this.getConflictStats(keySignature);
 
         stats.totalConflicts++;
@@ -474,19 +472,19 @@ class TransactionRecoveryManager {
     /**
      * Handle max retries reached - escalate appropriately
      */
-    private handleMaxRetriesReached(keySignature: string, context: TransactionContext): void {
+    private handleMaxRetriesReached(keySignature: string, _context: TransactionContext): void {
         logger.warn("Max transaction retries reached", {
             keySignature,
-            context: context.context,
-            priority: context.priority,
-            maxRetries: context.maxRetries
+            context: _context.context,
+            priority: _context.priority,
+            maxRetries: _context.maxRetries
         });
 
         // For high priority transactions, could trigger alerts or alternative handling
-        if (context.priority === 'critical') {
+        if (_context.priority === 'critical') {
             logger.error("Critical transaction failed after max retries", {
                 keySignature,
-                context: context.context
+                context: _context.context
             });
         }
     }

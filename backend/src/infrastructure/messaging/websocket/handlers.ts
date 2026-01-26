@@ -19,7 +19,7 @@ export class WebSocketEventHandlers {
      * Handle room subscription
      */
     async handleSubscribe(socket: Socket, room: string): Promise<void> {
-        const client = (socket as any).client as WebSocketClient;
+        const client = (socket as unknown as { client: WebSocketClient }).client;
         const correlationId = WebSocketUtils.generateCorrelationId();
 
         try {
@@ -118,7 +118,7 @@ export class WebSocketEventHandlers {
      * Handle room unsubscription
      */
     async handleUnsubscribe(socket: Socket, room: string): Promise<void> {
-        const client = (socket as any).client as WebSocketClient;
+        const client = (socket as unknown as { client: WebSocketClient }).client;
         const correlationId = WebSocketUtils.generateCorrelationId();
 
         try {
@@ -164,7 +164,7 @@ export class WebSocketEventHandlers {
      * Handle market data subscription
      */
     async handleMarketSubscribe(socket: Socket, symbol: string): Promise<void> {
-        const client = (socket as any).client as WebSocketClient;
+        const client = (socket as unknown as { client: WebSocketClient }).client;
         const correlationId = WebSocketUtils.generateCorrelationId();
 
         try {
@@ -303,7 +303,7 @@ export class WebSocketEventHandlers {
      * Handle client disconnection
      */
     async handleDisconnect(socket: Socket): Promise<void> {
-        const client = (socket as any).client as WebSocketClient;
+        const client = (socket as unknown as { client: WebSocketClient }).client;
         const correlationId = WebSocketUtils.generateCorrelationId();
 
         try {
@@ -333,7 +333,7 @@ export class WebSocketEventHandlers {
      */
     private checkRateLimit(userId: string, action: string): boolean {
         try {
-            const cost = WebSocketUtils.calculateRateLimitCost(action);
+            const _cost = WebSocketUtils.calculateRateLimitCost(action);
             return this.rateLimiter.canSubscribe(userId); // Simplified - in real implementation would track tokens
         } catch (error) {
             this.logger.warn("Rate limit check failed", {

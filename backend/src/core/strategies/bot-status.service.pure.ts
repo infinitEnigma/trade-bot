@@ -17,17 +17,51 @@ import {
     ICacheService,
     ILogger,
     IAuditLogRepository,
-    BotStatus,
     CacheResult
 } from '@trade-bot/shared';
 
+// Bot interface for repository operations
+export interface Bot {
+    id: string;
+    user_id: string;
+    strategy_id: string;
+    status: string;
+    last_heartbeat: string | null;
+    last_error: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+// Bot status information with validation
+export interface BotStatusInfo {
+    isStale: boolean;
+    lastHeartbeatAge: number;
+    engineHealth: {
+        running: boolean;
+        lastHealthCheck: number;
+        status: string;
+    };
+}
+
+// Bot with validation information
+export interface BotWithValidation extends Bot {
+    statusValidation: BotStatusInfo;
+}
+
+// Audit log details
+export interface AuditDetails {
+    botId: string;
+    userId: string;
+    [key: string]: unknown;
+}
+
 // Bot repository interface (to be implemented)
 export interface IBotRepository {
-    findById(botId: string): Promise<any | null>;
-    findByUserId(userId: string): Promise<any[]>;
+    findById(botId: string): Promise<Bot | null>;
+    findByUserId(userId: string): Promise<Bot[]>;
     updateStatus(botId: string, status: string, errorMessage?: string): Promise<boolean>;
     updateHeartbeat(botId: string): Promise<boolean>;
-    getActiveBots(): Promise<any[]>;
+    getActiveBots(): Promise<Bot[]>;
     getBotStats(): Promise<{
         totalBots: number;
         runningBots: number;
@@ -199,7 +233,7 @@ export class BotStatusService {
             const cacheKey = `${this.CACHE_PREFIX}:${botId}`;
 
             // Try cache first
-            const cachedResult: CacheResult<any> = await this.deps.cache.get(cacheKey);
+            const cachedResult: CacheResult<BotWithValidation> = await this.deps.cache.get(cacheKey);
             if (cachedResult.success && cachedResult.data) {
                 // Validate cache is still for correct user
                 if (cachedResult.data.user_id === userId) {
@@ -232,7 +266,7 @@ export class BotStatusService {
                 bot.last_error = validation.errorMessage;
             }
 
-            const statusInfo = {
+            const statusInfo: BotWithValidation = {
                 ...bot,
                 statusValidation: {
                     isStale: validation.isStale,
@@ -279,7 +313,7 @@ export class BotStatusService {
      * 3. Handle status transitions based on heartbeat
      * 4. Log the operation
      */
-    async sendBotHeartbeat(botId: string, statusInfo?: any): Promise<{ success: boolean; error?: string }> {
+    async sendBotHeartbeat(botId: string): Promise<{ success: boolean; error?: string }> {
         try {
             this.deps.logger.debug('Processing bot heartbeat', { botId });
 
@@ -332,7 +366,7 @@ export class BotStatusService {
      * - Validate status consistency
      * - Return validation results
      */
-    async validateBotStatus(botData: any, currentTime: number): Promise<{
+    private async validateBotStatus(botData: Bot, currentTime: number): Promise<{
         updatedStatus: string;
         errorMessage: string | null;
         isStale: boolean;
@@ -442,7 +476,7 @@ export class BotStatusService {
     /**
      * Convert status info to legacy format
      */
-    private convertToLegacyFormat(statusInfo: any): LegacyBotStatusInfo {
+    private convertToLegacyFormat(statusInfo: BotWithValidation): LegacyBotStatusInfo {
         return {
             id: statusInfo.id,
             user_id: statusInfo.user_id,
@@ -459,7 +493,7 @@ export class BotStatusService {
     /**
      * Log audit event if audit logger is available
      */
-    private async logAuditEvent(action: string, details: Record<string, any>): Promise<void> {
+    private async logAuditEvent(action: string, details: AuditDetails): Promise<void> {
         if (this.deps.auditLogger) {
             try {
                 await this.deps.auditLogger.logEvent({

@@ -5,7 +5,7 @@
  * Provides access to database security checks and encryption management.
  */
 
-import { Router, Request, Response } from "express";
+import { Router, Response } from "express";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
 import { databaseSecurityService } from "../../../infrastructure/security/database-security.service";
 import logger from "../../../core/logging/logger.service";
@@ -21,9 +21,18 @@ const adminMiddleware = [authMiddleware];
  */
 router.get("/assessment", adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
+        // Defensive check - user should be set by authMiddleware
+        if (!req.user) {
+            logger.warn("Security assessment requested without authenticated user");
+            return res.status(401).json({
+                success: false,
+                error: "Unauthorized - user not authenticated",
+            });
+        }
+
         logger.info("Security assessment requested", {
-            userId: req.user!.userId,
-            userLevel: req.user!.userLevel,
+            userId: req.user.userId,
+            userLevel: req.user.userLevel,
         });
 
         const assessment = await databaseSecurityService.assessDatabaseSecurity();
@@ -37,7 +46,7 @@ router.get("/assessment", adminMiddleware, async (req: AuthenticatedRequest, res
     } catch (error) {
         logger.error("Security assessment failed", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
         });
 
         res.status(500).json({
@@ -53,6 +62,15 @@ router.get("/assessment", adminMiddleware, async (req: AuthenticatedRequest, res
  */
 router.get("/metrics", adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
+        // Defensive check - user should be set by authMiddleware
+        if (!req.user) {
+            logger.warn("Security metrics requested without authenticated user");
+            return res.status(401).json({
+                success: false,
+                error: "Unauthorized - user not authenticated",
+            });
+        }
+
         const metrics = await databaseSecurityService.getSecurityMetrics();
 
         res.json({
@@ -63,7 +81,7 @@ router.get("/metrics", adminMiddleware, async (req: AuthenticatedRequest, res: R
     } catch (error) {
         logger.error("Security metrics retrieval failed", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
         });
 
         res.status(500).json({
@@ -79,9 +97,18 @@ router.get("/metrics", adminMiddleware, async (req: AuthenticatedRequest, res: R
  */
 router.get("/audit-report", adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
+        // Defensive check - user should be set by authMiddleware
+        if (!req.user) {
+            logger.warn("Security audit report requested without authenticated user");
+            return res.status(401).json({
+                success: false,
+                error: "Unauthorized - user not authenticated",
+            });
+        }
+
         logger.info("Security audit report requested", {
-            userId: req.user!.userId,
-            userLevel: req.user!.userLevel,
+            userId: req.user.userId,
+            userLevel: req.user.userLevel,
         });
 
         const report = await databaseSecurityService.generateSecurityAuditReport();
@@ -95,7 +122,7 @@ router.get("/audit-report", adminMiddleware, async (req: AuthenticatedRequest, r
     } catch (error) {
         logger.error("Security audit report generation failed", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
         });
 
         res.status(500).json({
@@ -111,6 +138,15 @@ router.get("/audit-report", adminMiddleware, async (req: AuthenticatedRequest, r
  */
 router.get("/migration-plan", adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
+        // Defensive check - user should be set by authMiddleware
+        if (!req.user) {
+            logger.warn("Migration plan requested without authenticated user");
+            return res.status(401).json({
+                success: false,
+                error: "Unauthorized - user not authenticated",
+            });
+        }
+
         const migrationPlan = await databaseSecurityService.generateEncryptionMigrationPlan();
 
         res.json({
@@ -122,7 +158,7 @@ router.get("/migration-plan", adminMiddleware, async (req: AuthenticatedRequest,
     } catch (error) {
         logger.error("Migration plan generation failed", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
         });
 
         res.status(500).json({
@@ -138,6 +174,15 @@ router.get("/migration-plan", adminMiddleware, async (req: AuthenticatedRequest,
  */
 router.post("/migrate-table", adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
+        // Defensive check - user should be set by authMiddleware
+        if (!req.user) {
+            logger.warn("Table encryption migration requested without authenticated user");
+            return res.status(401).json({
+                success: false,
+                error: "Unauthorized - user not authenticated",
+            });
+        }
+
         const { tableName, columns } = req.body;
 
         if (!tableName || !Array.isArray(columns) || columns.length === 0) {
@@ -148,7 +193,7 @@ router.post("/migrate-table", adminMiddleware, async (req: AuthenticatedRequest,
         }
 
         logger.info("Table encryption migration requested", {
-            userId: req.user!.userId,
+            userId: req.user.userId,
             tableName,
             columns,
         });
@@ -172,7 +217,7 @@ router.post("/migrate-table", adminMiddleware, async (req: AuthenticatedRequest,
     } catch (error) {
         logger.error("Table encryption migration failed", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
             tableName: req.body.tableName,
         });
 
@@ -189,9 +234,18 @@ router.post("/migrate-table", adminMiddleware, async (req: AuthenticatedRequest,
  */
 router.post("/enable-encryption", adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
+        // Defensive check - user should be set by authMiddleware
+        if (!req.user) {
+            logger.warn("Database encryption enable requested without authenticated user");
+            return res.status(401).json({
+                success: false,
+                error: "Unauthorized - user not authenticated",
+            });
+        }
+
         logger.warn("Database encryption enable requested", {
-            userId: req.user!.userId,
-            userLevel: req.user!.userLevel,
+            userId: req.user.userId,
+            userLevel: req.user.userLevel,
         });
 
         const result = await databaseSecurityService.enableDatabaseEncryption();
@@ -212,7 +266,7 @@ router.post("/enable-encryption", adminMiddleware, async (req: AuthenticatedRequ
     } catch (error) {
         logger.error("Database encryption enable failed", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
         });
 
         res.status(500).json({
@@ -228,9 +282,18 @@ router.post("/enable-encryption", adminMiddleware, async (req: AuthenticatedRequ
  */
 router.post("/rotate-keys", adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
+        // Defensive check - user should be set by authMiddleware
+        if (!req.user) {
+            logger.warn("Encryption key rotation requested without authenticated user");
+            return res.status(401).json({
+                success: false,
+                error: "Unauthorized - user not authenticated",
+            });
+        }
+
         logger.warn("Encryption key rotation requested", {
-            userId: req.user!.userId,
-            userLevel: req.user!.userLevel,
+            userId: req.user.userId,
+            userLevel: req.user.userLevel,
         });
 
         const { encryptionService } = await import("../../../infrastructure/security/encryption.service.js");
@@ -256,7 +319,7 @@ router.post("/rotate-keys", adminMiddleware, async (req: AuthenticatedRequest, r
     } catch (error) {
         logger.error("Encryption key rotation failed", {
             error: error instanceof Error ? error.message : String(error),
-            userId: req.user!.userId,
+            userId: req.user?.userId,
         });
 
         res.status(500).json({

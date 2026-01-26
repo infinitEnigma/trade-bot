@@ -127,7 +127,7 @@ export class DatabaseSecurityService {
         WHERE name = 'data_directory_encrypted'
       `);
 
-            const hasTDE = tdeResult.rows.length > 0 && tdeResult.rows[0].setting === 'on';
+            const hasTDE = tdeResult.rows.length > 0 && (tdeResult.rows[0] as { setting: string }).setting === 'on';
 
             // Check for application-level encryption usage
             const encryptedColumnsResult = await query(`
@@ -204,7 +204,7 @@ export class DatabaseSecurityService {
         AND data_type IN ('text', 'varchar')
       `);
 
-            for (const field of kodiakFields.rows) {
+            for (const field of kodiakFields.rows as Array<{ column_name: string }>) {
                 if (field.column_name.includes('encrypted')) {
                     encryptedFields.push(`kodiak_credentials.${field.column_name}`);
                 } else if (['api_key', 'secret_key', 'wallet_address'].includes(field.column_name)) {
@@ -222,14 +222,14 @@ export class DatabaseSecurityService {
           )
         `, [table]);
 
-                if (tableExists.rows[0].exists) {
+                if ((tableExists.rows[0] as { exists: boolean }).exists) {
                     const sensitiveColumns = await query(`
             SELECT column_name FROM information_schema.columns
             WHERE table_name = $1
             AND column_name LIKE '%token%' OR column_name LIKE '%key%' OR column_name LIKE '%secret%'
           `, [table]);
 
-                    sensitiveColumns.rows.forEach(col => {
+                    (sensitiveColumns.rows as Array<{ column_name: string }>).forEach((col) => {
                         unencryptedFields.push(`${table}.${col.column_name}`);
                     });
                 }
@@ -283,7 +283,7 @@ export class DatabaseSecurityService {
     private async assessAuditLogging(): Promise<SecurityAssessment['auditLogging']> {
         try {
             // Check if audit_logs table exists and has data
-            const auditTableExists = await query(`
+            const auditTableExists = await query<{ exists: boolean }>(`
         SELECT EXISTS (
           SELECT 1 FROM information_schema.tables
           WHERE table_name = 'audit_logs'
@@ -314,7 +314,12 @@ export class DatabaseSecurityService {
         WHERE created_at >= NOW() - INTERVAL '30 days'
       `);
 
-            const stats = auditStats.rows[0];
+            const stats = auditStats.rows[0] as {
+                total_logs: number;
+                oldest_log: string | null;
+                newest_log: string | null;
+                unique_users: number;
+            };
             const retentionDays = stats.oldest_log
                 ? Math.floor((Date.now() - new Date(stats.oldest_log).getTime()) / (1000 * 60 * 60 * 24))
                 : 0;
@@ -372,16 +377,16 @@ export class DatabaseSecurityService {
             const recommendations: string[] = [];
 
             // Check for RLS (Row Level Security) - basic check
-            const rlsEnabled = await query(`
+            const rlsEnabled = await query<{ rls_policies: string }>(`
         SELECT COUNT(*) as rls_policies
         FROM pg_policies
         WHERE schemaname = 'public'
       `);
 
-            const hasRLS = rlsEnabled.rows[0].rls_policies > 0;
+            const hasRLS = parseInt(rlsEnabled.rows[0].rls_policies) > 0;
 
             // Check connection encryption (SSL/TLS)
-            const sslEnabled = await query(`
+            const sslEnabled = await query<{ setting: string }>(`
         SELECT setting FROM pg_settings
         WHERE name = 'ssl'
       `);
@@ -452,7 +457,7 @@ export class DatabaseSecurityService {
       )
     `);
 
-        if (userSessionsExists.rows[0].exists) {
+        if ((userSessionsExists.rows[0] as { exists: boolean }).exists) {
             migrationPlans.push({
                 table: 'user_sessions',
                 columns: ['session_token', 'refresh_token'],
@@ -487,22 +492,22 @@ export class DatabaseSecurityService {
             // Get all rows that need migration
             const rows = await query(`SELECT id, ${columns.join(', ')} FROM ${tableName}`);
 
-            for (const row of rows.rows) {
+            for (const row of rows.rows as Array<Record<string, unknown>>) {
                 try {
                     const updates: string[] = [];
-                    const values: any[] = [];
+                    const values: (string | number)[] = [];
 
                     for (const column of columns) {
                         if (row[column]) {
                             // Encrypt the value
-                            const encryptedValue = await encryptionService.encryptWithVersion(row[column]);
+                            const encryptedValue = await encryptionService.encryptWithVersion(row[column] as string);
                             updates.push(`${column}_encrypted = $${updates.length + 1}`);
                             values.push(encryptedValue);
                         }
                     }
 
                     if (updates.length > 0) {
-                        values.push(row.id);
+                        values.push(row.id as string | number);
                         await query(
                             `UPDATE ${tableName} SET ${updates.join(', ')} WHERE id = $${values.length}`,
                             values
@@ -510,9 +515,9 @@ export class DatabaseSecurityService {
                         migratedRows++;
                     }
                 } catch (rowError) {
-                    const error = `Failed to migrate row ${row.id}: ${rowError}`;
+                    const error = `Failed to migrate row ${row.id as string | number}: ${rowError}`;
                     errors.push(error);
-                    logger.error("Row migration failed", { tableName, rowId: row.id, error: rowError });
+                    logger.error("Row migration failed", { tableName, rowId: row.id as string | number, error: rowError });
                 }
             }
 
@@ -555,7 +560,7 @@ export class DatabaseSecurityService {
         WHERE name = 'data_directory_encrypted'
       `);
 
-            if (currentStatus.rows.length > 0 && currentStatus.rows[0].setting === 'on') {
+            if (currentStatus.rows.length > 0 && (currentStatus.rows[0] as { setting: string }).setting === 'on') {
                 return {
                     success: true,
                     message: 'Database encryption is already enabled',
@@ -616,8 +621,11 @@ export class DatabaseSecurityService {
           )
         `, [table]);
 
-                if (tableExists.rows[0].exists) {
-                    const stats = await query(`
+                if ((tableExists.rows[0] as { exists: boolean }).exists) {
+                    const stats = await query<{
+                        total: string;
+                        encrypted: string;
+                    }>(`
             SELECT
               COUNT(*) as total,
               COUNT(CASE WHEN api_key_encrypted IS NOT NULL THEN 1 END) +

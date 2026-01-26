@@ -15,10 +15,10 @@
  * @format
  */
 
-import { kodiakConnectionService } from "../../infrastructure/external/kodiak-connection.service";
+//import { kodiakConnectionService } from "../../infrastructure/external/kodiak-connection.service";
 
 // Note: validateCredentials method may not exist - using basic validation for now
-const isValid = true; // Simplified validation
+const _isValid = true; // Simplified validation
 import { credentialCacheService } from "../../infrastructure/cache/credential-cache.service";
 import { logger } from "../../core/logging";
 
@@ -53,7 +53,7 @@ export class UserKodiakService {
     ): Promise<{ success: boolean; message: string }> {
         try {
             // Validate credentials by attempting connection
-            const credentials = await credentialCacheService.getOrCacheCredentials(
+            const _credentials = await credentialCacheService.getOrCacheCredentials(
                 userId,
                 encryptedApiKey,
                 encryptedSecretKey,

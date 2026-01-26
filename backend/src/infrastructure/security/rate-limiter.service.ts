@@ -27,14 +27,14 @@
  * - ✅ Backup preservation of original implementation
  */
 
-import { Request, Response, NextFunction } from "express";
+import { Response, NextFunction } from "express";
 import { redisService } from "../../infrastructure";
 import { AuthenticatedRequest } from "../../interfaces/middleware";
 import { UserLevel } from "@trade-bot/shared";
 import { logger } from "../../core/logging";
 
 // Import extracted modules
-import { RateLimitConfig, RateLimitResult } from "./rate-limiter/rate-limit.types";
+import { RateLimitConfig } from "./rate-limiter/rate-limit.types";
 import { memoryRateLimiter } from "./rate-limiter/memory-rate-limiter";
 import { progressiveAuthLimiter } from "./rate-limiter/progressive-auth-limiter";
 //import { redisHealthMonitor } from "./rate-limiter/redis-health-monitor";

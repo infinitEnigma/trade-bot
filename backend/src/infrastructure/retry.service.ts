@@ -227,7 +227,11 @@ export async function withRetry<T>(
         throw result.error || new Error(`${operationName} failed after ${result.attempts} attempts`);
     }
 
-    return result.result!;
+    if (result.result === undefined) {
+        throw new Error(`${operationName} completed successfully but returned no result`);
+    }
+
+    return result.result;
 }
 
 /**

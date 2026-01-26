@@ -10,6 +10,7 @@
 
 import { IEncryptionService } from '@trade-bot/shared';
 import { encryptionService } from '../../../infrastructure/security/encryption.service';
+import { logger } from '../../../core/logging';
 
 /**
  * Encryption Service Adapter
@@ -144,7 +145,7 @@ export class EncryptionAdapter implements IEncryptionService {
             return await encryptionService.isKeyRotationNeeded();
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            console.warn(`Key rotation check failed: ${errorMessage}`);
+            logger.warn(`Key rotation check failed: ${errorMessage}`);
             return false; // Fail safe - don't force rotation on errors
         }
     }

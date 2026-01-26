@@ -17,6 +17,17 @@ import {
 import { query } from '../../../database/pool';
 
 /**
+ * Database row interface for user data
+ */
+interface UserRow {
+    id: string;
+    email: string;
+    user_level: string;
+    created_at: string;
+    updated_at: string;
+}
+
+/**
  * User Repository Adapter
  *
  * Implements the IUserRepository interface using PostgreSQL database operations.
@@ -38,7 +49,7 @@ export class UserRepositoryAdapter implements IUserRepository {
                 return null;
             }
 
-            const row = result.rows[0];
+            const row = result.rows[0] as UserRow;
             return this.mapRowToUser(row);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -60,7 +71,7 @@ export class UserRepositoryAdapter implements IUserRepository {
                 return null;
             }
 
-            const row = result.rows[0];
+            const row = result.rows[0] as UserRow & { password_hash?: string };
             return {
                 ...this.mapRowToUser(row),
                 passwordHash: row.password_hash || ''
@@ -85,7 +96,7 @@ export class UserRepositoryAdapter implements IUserRepository {
                 return null;
             }
 
-            const row = result.rows[0];
+            const row = result.rows[0] as UserRow;
             return this.mapRowToUser(row);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -107,7 +118,7 @@ export class UserRepositoryAdapter implements IUserRepository {
                 throw new Error('User creation failed - no rows returned');
             }
 
-            const row = result.rows[0];
+            const row = result.rows[0] as UserRow;
             return this.mapRowToUser(row);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -173,7 +184,15 @@ export class UserRepositoryAdapter implements IUserRepository {
                 return null;
             }
 
-            const row = result.rows[0];
+            const row = result.rows[0] as {
+                id: string;
+                email: string;
+                user_level: string;
+                created_at: string;
+                updated_at: string;
+                roles?: string[];
+                has_credentials?: boolean;
+            };
             const user = this.mapRowToUser({
                 id: row.id,
                 email: row.email,
@@ -196,7 +215,7 @@ export class UserRepositoryAdapter implements IUserRepository {
     /**
      * Map database row to User domain object
      */
-    private mapRowToUser(row: any): User {
+    private mapRowToUser(row: UserRow): User {
         return {
             id: row.id,
             email: row.email,

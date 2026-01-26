@@ -21,7 +21,6 @@ import { randomBytes } from "crypto";
 import {
     getCurrentContext,
     createChildContext,
-    runWithContext,
     RequestContext,
 } from "../../shared/utils/context";
 import { contextLogger, ContextAwareLogger } from "../../core/logging";
@@ -223,8 +222,8 @@ export class AsyncOperationManager {
                 logger.info("Background job started with context", {
                     jobId: job.id,
                     jobName: job.name,
-                    correlationId: job.context!.correlationId,
-                    userId: job.context!.userId,
+                    correlationId: job.context?.correlationId || 'unknown',
+                    userId: job.context?.userId || 'unknown',
                 });
 
                 await job.function();
@@ -338,8 +337,8 @@ export class AsyncOperationManager {
      * Clean up completed jobs (for memory management)
      */
     cleanupCompletedJobs(maxAge: number = 3600000): number { // 1 hour default
-        const cutoffTime = Date.now() - maxAge;
-        let cleaned = 0;
+        const _cutoffTime = Date.now() - maxAge;
+        const cleaned = 0;
 
         // Note: In a real implementation, we'd keep a history of completed jobs
         // For now, this is a placeholder

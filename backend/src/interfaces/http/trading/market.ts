@@ -33,7 +33,12 @@ async function getKodiakCredentials(userId: string): Promise<{
   verified: boolean;
 } | null> {
   try {
-    const result = await query(
+    const result = await query<{
+      account_id: string;
+      api_key_encrypted: string;
+      secret_key_encrypted: string;
+      verified: boolean;
+    }>(
       "SELECT account_id, api_key_encrypted, secret_key_encrypted, verified FROM kodiak_credentials WHERE user_id = $1",
       [userId]
     );
@@ -189,7 +194,7 @@ router.get(
       );
 
       // Check for duplicate timestamps before returning
-      const timestamps = klines.map(k => k.time);
+      const timestamps = klines.map(k => k.startTime);
       const uniqueTimestamps = new Set(timestamps);
       const hasDuplicates = timestamps.length !== uniqueTimestamps.size;
 
@@ -708,7 +713,7 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const { symbol, resolution, from, to, limit } = req.query;
+      const { symbol, resolution, from, to, _limit } = req.query;
 
       const symbolStr = (symbol as string) || "PERP_BTC_USDC";
       const resolutionStr = (resolution as string) || "60"; // TradingView format: 60 = 1 hour

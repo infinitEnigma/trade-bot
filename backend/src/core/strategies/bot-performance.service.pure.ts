@@ -15,8 +15,19 @@
 import {
     ILogger,
     ICacheService,
-    CacheResult
+    CacheResult,
+    Trade
 } from '@trade-bot/shared';
+
+// Bot-specific trade interface extending the base Trade type
+export interface BotTrade extends Trade {
+    botId: string;
+    pnl: number;
+    fee: number;
+    timestamp: number;
+    quantity: number;
+    price: number;
+}
 
 // Bot performance repository interface (to be implemented)
 export interface IBotPerformanceRepository {
@@ -31,9 +42,9 @@ export interface IBotPerformanceRepository {
         timestamp: number;
     }): Promise<boolean>;
 
-    getTrades(botId: string, timeframe: '1h' | '24h' | '7d' | '30d'): Promise<any[]>;
+    getTrades(botId: string, timeframe: '1h' | '24h' | '7d' | '30d'): Promise<BotTrade[]>;
 
-    getAllTrades(userId: string): Promise<any[]>;
+    getAllTrades(userId: string): Promise<BotTrade[]>;
 
     getBotStats(botId: string): Promise<{
         totalTrades: number;
@@ -147,7 +158,7 @@ export class BotPerformanceService {
             const cacheKey = `${this.CACHE_PREFIX}:${botId}:${timeframe}`;
 
             // Try cache first
-            const cachedResult: CacheResult<any> = await this.deps.cache.get(cacheKey);
+            const cachedResult: CacheResult<LegacyBotPerformance> = await this.deps.cache.get(cacheKey);
             if (cachedResult.success && cachedResult.data) {
                 this.deps.logger.debug('Bot performance cache hit', { botId, timeframe });
                 return this.shouldReturnLegacyFormat()
@@ -344,7 +355,7 @@ export class BotPerformanceService {
     /**
      * Calculate performance metrics from trades
      */
-    private calculatePerformanceMetrics(trades: any[]): {
+    private calculatePerformanceMetrics(trades: BotTrade[]): {
         totalTrades: number;
         totalVolume: number;
         totalPnl: number;
@@ -382,7 +393,7 @@ export class BotPerformanceService {
     /**
      * Calculate daily returns from trades
      */
-    private calculateDailyReturns(trades: any[]): number[] {
+    private calculateDailyReturns(trades: BotTrade[]): number[] {
         // Group trades by day and calculate daily PnL
         const dailyPnL = new Map<string, number>();
 
@@ -421,7 +432,7 @@ export class BotPerformanceService {
     /**
      * Calculate maximum drawdown
      */
-    private calculateMaxDrawdown(trades: any[]): number {
+    private calculateMaxDrawdown(trades: BotTrade[]): number {
         if (trades.length === 0) return 0;
 
         // Sort trades by timestamp
@@ -473,14 +484,14 @@ export class BotPerformanceService {
     /**
      * Group trades by bot ID
      */
-    private groupTradesByBot(trades: any[]): Record<string, any[]> {
+    private groupTradesByBot(trades: BotTrade[]): Record<string, BotTrade[]> {
         return trades.reduce((groups, trade) => {
             if (!groups[trade.botId]) {
                 groups[trade.botId] = [];
             }
             groups[trade.botId].push(trade);
             return groups;
-        }, {} as Record<string, any[]>);
+        }, {} as Record<string, BotTrade[]>);
     }
 
     /**
@@ -539,7 +550,15 @@ export class BotPerformanceService {
     /**
      * Convert performance data to legacy format
      */
-    private convertToLegacyFormat(performance: any): LegacyBotPerformance {
+    private convertToLegacyFormat(performance: {
+        totalTrades: number;
+        totalVolume: number;
+        totalPnl: number;
+        winRate: number;
+        averageTrade: number;
+        sharpeRatio?: number;
+        maxDrawdown: number;
+    }): LegacyBotPerformance {
         return {
             totalTrades: performance.totalTrades,
             totalVolume: performance.totalVolume,

@@ -37,7 +37,7 @@ export class RedisCacheAdapter implements ICacheService {
                         success: true,
                         data: parsedData
                     };
-                } catch (parseError) {
+                } catch (_parseError) {
                     // If parsing fails, return as string
                     return {
                         success: true,

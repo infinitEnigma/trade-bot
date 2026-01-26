@@ -2,6 +2,7 @@
 
 import { Pool, PoolClient } from "pg";
 import { logger } from "../core/logging";
+import { DatabaseError, DatabaseResult } from "@trade-bot/shared";
 
 // ✅ Singleton pattern - only one pool instance ever created
 let pool: Pool | null = null;
@@ -100,7 +101,11 @@ export function initializePool(): Pool {
   // ✅ Error event handler
   pool.on("error", err => {
     logger.error("Unexpected error on idle client", { error: err.message });
-    process.exit(-1);
+    throw new DatabaseError("Database connection pool error", {
+      service: "postgresql",
+      operation: "pool_error_handler",
+      received: err.message
+    });
   });
 
   // ✅ Connect event handler - set per-connection timeouts
@@ -128,7 +133,7 @@ export function initializePool(): Pool {
   });
 
   // ✅ Connection removed from pool
-  pool.on("remove", client => {
+  pool.on("remove", _client => {
     poolMetrics.totalConnections = Math.max(
       0,
       poolMetrics.totalConnections - 1
@@ -182,10 +187,10 @@ export async function closePool(): Promise<void> {
 /**
  * Execute a query using the pool
  */
-export async function query(
+export async function query<T = unknown>(
   text: string,
-  params?: any[]
-): Promise<{ rows: any[]; rowCount: number }> {
+  params?: unknown[]
+): Promise<DatabaseResult<T>> {
   const pool = getPool();
   const result = await pool.query(text, params);
   return {
@@ -197,11 +202,11 @@ export async function query(
 /**
  * Execute a query with timeout protection
  */
-export async function queryWithTimeout(
+export async function queryWithTimeout<T = unknown>(
   text: string,
-  params?: any[],
+  params?: unknown[],
   timeoutMs: number = 5000
-): Promise<{ rows: any[]; rowCount: number }> {
+): Promise<DatabaseResult<T>> {
   const pool = getPool();
 
   // Create a promise that rejects after timeout
@@ -443,14 +448,14 @@ export function getPoolMetrics(): {
 /**
  * Execute a query with automatic timeout based on query type
  */
-export async function queryWithAutoTimeout(
+export async function queryWithAutoTimeout<T = unknown>(
   text: string,
-  params?: any[],
+  params?: unknown[],
   options?: {
     category?: keyof QueryTimeoutConfig;
     customTimeout?: number;
   }
-): Promise<{ rows: any[]; rowCount: number }> {
+): Promise<DatabaseResult<T>> {
   const category = options?.category || 'default';
   const timeoutMs = options?.customTimeout || currentTimeoutConfig[category];
 
@@ -466,23 +471,23 @@ export async function queryWithAutoTimeout(
 /**
  * Execute a query with a specific timeout category
  */
-export async function queryFast(text: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> {
+export async function queryFast<T = unknown>(text: string, params?: unknown[]): Promise<DatabaseResult<T>> {
   return queryWithAutoTimeout(text, params, { category: 'fast' });
 }
 
-export async function queryMedium(text: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> {
+export async function queryMedium<T = unknown>(text: string, params?: unknown[]): Promise<DatabaseResult<T>> {
   return queryWithAutoTimeout(text, params, { category: 'medium' });
 }
 
-export async function querySlow(text: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> {
+export async function querySlow<T = unknown>(text: string, params?: unknown[]): Promise<DatabaseResult<T>> {
   return queryWithAutoTimeout(text, params, { category: 'slow' });
 }
 
-export async function queryComplex(text: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> {
+export async function queryComplex<T = unknown>(text: string, params?: unknown[]): Promise<DatabaseResult<T>> {
   return queryWithAutoTimeout(text, params, { category: 'complex' });
 }
 
-export async function queryReport(text: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> {
+export async function queryReport<T = unknown>(text: string, params?: unknown[]): Promise<DatabaseResult<T>> {
   return queryWithAutoTimeout(text, params, { category: 'report' });
 }
 

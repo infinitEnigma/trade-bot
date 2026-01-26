@@ -13,6 +13,7 @@ import {
     Position
 } from '@trade-bot/shared';
 import { query } from '../../../database/pool';
+import { logger } from '../../../core/logging';
 
 /**
  * Position Repository Adapter
@@ -27,7 +28,7 @@ export class PositionRepositoryAdapter implements IPositionRepository {
      */
     async getPositions(userId: string): Promise<Position[]> {
         try {
-            const result = await query(
+            const result = await query<PositionRow>(
                 `SELECT
                     symbol,
                     position_qty as quantity,
@@ -55,7 +56,7 @@ export class PositionRepositoryAdapter implements IPositionRepository {
      */
     async getPosition(userId: string, symbol: string): Promise<Position | null> {
         try {
-            const result = await query(
+            const result = await query<PositionRow>(
                 `SELECT
                     symbol,
                     position_qty as quantity,
@@ -88,7 +89,7 @@ export class PositionRepositoryAdapter implements IPositionRepository {
         try {
             // This would typically update the position in the database
             // For now, positions are synced from external APIs
-            console.log(`Position update for user ${userId}, symbol ${position.symbol}`);
+            logger.info(`Position update for user ${userId}, symbol ${position.symbol}`);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to update position: ${errorMessage}`);
@@ -102,7 +103,7 @@ export class PositionRepositoryAdapter implements IPositionRepository {
         try {
             // This would typically mark the position as closed or remove it
             // For now, positions are managed by external APIs
-            console.log(`Position close for user ${userId}, symbol ${symbol}`);
+            logger.info(`Position close for user ${userId}, symbol ${symbol}`);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to close position: ${errorMessage}`);
@@ -112,7 +113,7 @@ export class PositionRepositoryAdapter implements IPositionRepository {
     /**
      * Map database row to Position domain object
      */
-    private mapRowToPosition(row: any): Position | null {
+    private mapRowToPosition(row: PositionRow): Position | null {
         try {
             const symbol = row.symbol;
             const quantity = parseFloat(row.quantity || '0');
@@ -138,11 +139,23 @@ export class PositionRepositoryAdapter implements IPositionRepository {
                 row.liquidationPrice ? parseFloat(row.liquidationPrice) : undefined
             );
         } catch (error) {
-            console.warn(`Failed to map position row to domain object: ${error}`);
+            logger.warn(`Failed to map position row to domain object: ${error}`);
             return null;
         }
     }
 }
 
+/**
+ * Database row interface for position data
+ */
+interface PositionRow {
+    symbol: string;
+    quantity: string;
+    entryPrice: string;
+    markPrice: string;
+    leverage: string;
+    imr: string;
+    liquidationPrice?: string;
+}
 // Export singleton instance
 export const positionRepositoryAdapter = new PositionRepositoryAdapter();

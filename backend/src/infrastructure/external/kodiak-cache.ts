@@ -26,9 +26,9 @@ import { logger } from "../../core/logging";
  * @format
  */
 
-export interface CacheEntry {
+export interface CacheEntry<T = unknown> {
     /** Cached data */
-    data: any;
+    data: T;
 
     /** When this entry expires (timestamp) */
     expires: number;
@@ -69,8 +69,8 @@ export interface CacheConfig {
 /**
  * Kodiak Response Cache - Reduces external API calls
  */
-export class KodiakCache {
-    private cache = new Map<string, CacheEntry>();
+export class KodiakCache<T = unknown> {
+    private cache = new Map<string, CacheEntry<T>>();
     private config: Required<CacheConfig>;
     private cleanupTimer?: NodeJS.Timeout;
     private stats = {
@@ -109,7 +109,7 @@ export class KodiakCache {
     /**
      * Get cached data if available and not expired
      */
-    get(key: string): any | null {
+    get(key: string): T | null {
         const entry = this.cache.get(key);
 
         if (!entry) {
@@ -147,7 +147,7 @@ export class KodiakCache {
     /**
      * Set data in cache with appropriate TTL
      */
-    set(key: string, data: any, customTtlMs?: number): void {
+    set(key: string, data: T, customTtlMs?: number): void {
         const userId = this.extractUserIdFromKey(key);
         const endpoint = this.extractEndpointFromKey(key);
         const ttlMs = customTtlMs || this.getTtlForEndpoint(endpoint);
@@ -157,7 +157,7 @@ export class KodiakCache {
             this.evictOldest();
         }
 
-        const entry: CacheEntry = {
+        const entry: CacheEntry<T> = {
             data,
             expires: Date.now() + ttlMs,
             lastAccessed: Date.now(),

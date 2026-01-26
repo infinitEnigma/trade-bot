@@ -219,10 +219,10 @@ export class DependencyInjectionContainer {
     async healthCheck(): Promise<{
         healthy: boolean;
         services: Record<string, boolean>;
-        details: Record<string, any>;
+        details: Record<string, unknown>;
     }> {
         const services: Record<string, boolean> = {};
-        const details: Record<string, any> = {};
+        const details: Record<string, unknown> = {};
 
         try {
             // Check cache service
@@ -235,7 +235,7 @@ export class DependencyInjectionContainer {
             details.externalApi = 'healthy';
 
             // Check database connectivity via user repository
-            const dbTest = await this.userRepository.findById('health-check-user');
+            const _dbTest = await this.userRepository.findById('health-check-user');
             services.database = true; // If no exception thrown
             details.database = 'healthy';
 

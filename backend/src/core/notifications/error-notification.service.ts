@@ -53,7 +53,7 @@ export interface ErrorContext {
     userId?: string;
     requestId?: string;
     correlationId?: string;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     timestamp: number;
 }
 
@@ -64,6 +64,7 @@ export interface ErrorNotification {
     stackTrace?: string;
     retryCount?: number;
     recoveryAction?: string;
+    id?: string;
 }
 
 /**
@@ -343,7 +344,8 @@ export class ErrorNotificationService {
 
         try {
             while (this.notificationQueue.length > 0) {
-                const notification = this.notificationQueue.shift()!;
+                const notification = this.notificationQueue.shift();
+                if (!notification) continue;
 
                 try {
                     await this.sendToChannelsWithRetry(notification);
@@ -431,7 +433,7 @@ export class ErrorNotificationService {
     async notifyBackgroundFailure(
         operation: string,
         error: Error,
-        metadata?: Record<string, any>
+        metadata?: Record<string, unknown>
     ): Promise<void> {
         await this.notifyError(
             error,
@@ -454,7 +456,7 @@ export class ErrorNotificationService {
     async notifyWebSocketFailure(
         operation: string,
         error: Error,
-        metadata?: Record<string, any>
+        metadata?: Record<string, unknown>
     ): Promise<void> {
         await this.notifyError(
             error,
@@ -477,7 +479,7 @@ export class ErrorNotificationService {
     async notifyApiFailure(
         operation: string,
         error: Error,
-        metadata?: Record<string, any>
+        metadata?: Record<string, unknown>
     ): Promise<void> {
         await this.notifyError(
             error,
@@ -629,7 +631,7 @@ export class ErrorNotificationService {
     /**
      * Get failed notifications from persistence (stub for production)
      */
-    private async getFailedNotifications(): Promise<any[]> {
+    private async getFailedNotifications(): Promise<ErrorNotification[]> {
         // TODO: In production, query database for failed notifications
         // SELECT * FROM failed_notifications WHERE processed = false
         return [];

@@ -138,7 +138,7 @@ class RedisHealthMonitor {
 }
 
 // Global Redis health monitor instance
-const redisHealthMonitor = new RedisHealthMonitor();
+const _redisHealthMonitor = new RedisHealthMonitor();
 
 /**
  * Legacy function for backward compatibility

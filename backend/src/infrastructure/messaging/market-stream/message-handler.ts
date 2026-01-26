@@ -2,7 +2,20 @@
 
 import { Server } from "socket.io";
 import logger from "../../../core/logging/logger.service";
-import { TickData, KlineData } from "./types";
+import {
+  TickData,
+  KlineData,
+  BaseWebSocketMessage,
+  isAuthMessage,
+  isSubscriptionMessage,
+  isMarketDataMessage,
+  isTickerMessage,
+  isKlineMessage,
+  isMarkPriceMessage,
+  hasTickerData,
+  hasKlineData,
+  hasMarkPriceData
+} from "./types";
 import { CacheManager } from "./cache-manager";
 import { errorNotificationService } from "../../../core/notifications";
 import { WebSocketManager, MessagePriority } from "./websocket-manager";
@@ -40,22 +53,22 @@ export class MessageHandler {
   /**
    * Process incoming WebSocket messages from the market data feed
    */
-  async handleMessage(message: any): Promise<void> {
+  async handleMessage(message: BaseWebSocketMessage): Promise<void> {
     try {
       // Handle authentication responses
-      if (message.event === "auth" || message.method === "AUTH") {
+      if (isAuthMessage(message)) {
         this.handleAuthResponse(message);
         return;
       }
 
       // Handle subscription responses
-      if (message.event === "subscribed" || message.method === "SUBSCRIBE") {
+      if (isSubscriptionMessage(message)) {
         this.handleSubscriptionResponse(message);
         return;
       }
 
       // Handle market data messages
-      if (message.topic && message.data) {
+      if (isMarketDataMessage(message)) {
         await this.handleMarketData(message);
         return;
       }
@@ -86,7 +99,7 @@ export class MessageHandler {
   /**
    * Handle authentication response messages
    */
-  private handleAuthResponse(message: any): void {
+  private handleAuthResponse(message: BaseWebSocketMessage): void {
     const isSuccess = message.success || message.code === 0;
 
     if (isSuccess) {
@@ -99,9 +112,9 @@ export class MessageHandler {
   /**
    * Handle subscription response messages
    */
-  private handleSubscriptionResponse(message: any): void {
+  private handleSubscriptionResponse(message: BaseWebSocketMessage): void {
     const isSuccess = message.success || message.code === 0;
-    const topic = message.topic || message.params;
+    const topic = message.topic || (message as Record<string, unknown>).params;
 
     if (isSuccess) {
       logger.info("WebSocket subscription successful", { topic });
@@ -113,17 +126,17 @@ export class MessageHandler {
   /**
    * Handle market data messages
    */
-  private async handleMarketData(message: any): Promise<void> {
+  private async handleMarketData(message: BaseWebSocketMessage): Promise<void> {
     const topic = message.topic;
 
     logger.debug("Processing market data message", { topic });
 
     try {
-      if (topic.includes("@kline_")) {
+      if (isKlineMessage(message) && hasKlineData(message.data)) {
         await this.handleKlineData(message);
-      } else if (topic === "ticker") {
+      } else if (isTickerMessage(message) && hasTickerData(message.data)) {
         await this.handleTickerData(message.data.symbol, message.data);
-      } else if (topic.includes("@markprice")) {
+      } else if (isMarkPriceMessage(message) && hasMarkPriceData(message.data)) {
         await this.handleMarkPriceData(message);
       } else {
         logger.debug("Unknown market data topic", { topic });
@@ -139,16 +152,16 @@ export class MessageHandler {
   /**
    * Handle ticker data messages
    */
-  private async handleTickerData(symbol: string, data: any): Promise<void> {
+  private async handleTickerData(symbol: string, data: { price?: string; lastPrice?: string; volume?: string; bid?: string; ask?: string; change24h?: string }): Promise<void> {
     try {
       const tickData: TickData = {
         symbol,
-        price: parseFloat(data.price || data.lastPrice || 0),
-        volume: parseFloat(data.volume || 0),
+        price: parseFloat(data.price || data.lastPrice || "0"),
+        volume: parseFloat(data.volume || "0"),
         timestamp: Date.now(),
-        bid: parseFloat(data.bid || 0),
-        ask: parseFloat(data.ask || 0),
-        change24h: parseFloat(data.change24h || 0),
+        bid: parseFloat(data.bid || "0"),
+        ask: parseFloat(data.ask || "0"),
+        change24h: parseFloat(data.change24h || "0"),
       };
 
       // Cache the tick data
@@ -172,15 +185,15 @@ export class MessageHandler {
   /**
    * Handle kline/candlestick data messages
    */
-  private async handleKlineData(message: any): Promise<void> {
+  private async handleKlineData(message: BaseWebSocketMessage): Promise<void> {
     try {
       const klineData = message.data;
-      if (!klineData?.symbol) {
+      if (!hasKlineData(klineData)) {
         logger.warn("Invalid kline data format", { message });
         return;
       }
 
-      const [symbol, klinePart] = message.topic.split("@");
+      const [symbol, klinePart] = (message.topic || "").split("@");
       const interval = klinePart.replace("kline_", "");
 
       const newCandle: KlineData = {
@@ -223,7 +236,7 @@ export class MessageHandler {
       });
     } catch (error) {
       logger.error("Error handling kline data", {
-        topic: message.topic,
+        topic: message.topic ?? "unknown",
         error: (error as Error).message,
       });
     }
@@ -232,18 +245,18 @@ export class MessageHandler {
   /**
    * Handle mark price data messages
    */
-  private async handleMarkPriceData(message: any): Promise<void> {
+  private async handleMarkPriceData(message: BaseWebSocketMessage): Promise<void> {
     try {
       const markPriceData = message.data;
-      if (!markPriceData?.symbol) {
+      if (!hasMarkPriceData(markPriceData)) {
         logger.warn("Invalid mark price data format", { message });
         return;
       }
 
-      const symbol = message.topic.split("@")[0];
+      const symbol = (message.topic || "").split("@")[0];
       const priceData = {
         symbol,
-        price: parseFloat(markPriceData.price || 0),
+        price: parseFloat(markPriceData.price || "0"),
         timestamp: markPriceData.timestamp || Date.now(),
       };
 
@@ -259,7 +272,7 @@ export class MessageHandler {
       });
     } catch (error) {
       logger.error("Error handling mark price data", {
-        topic: message.topic,
+        topic: message.topic ?? "unknown",
         error: (error as Error).message,
       });
     }
@@ -298,7 +311,7 @@ export class MessageHandler {
   /**
    * Broadcast kline data to clients subscribed to klines for a symbol/interval
    */
-  private async broadcastToKlines(symbol: string, interval: string, data: any): Promise<void> {
+  private async broadcastToKlines(symbol: string, interval: string, data: Record<string, unknown>): Promise<void> {
     if (!this.wsManager) {
       logger.warn("Cannot broadcast - no WebSocket manager with backpressure support");
       return;
@@ -323,7 +336,7 @@ export class MessageHandler {
   /**
    * Broadcast mark price data to clients subscribed to mark price for a symbol
    */
-  private async broadcastToMarkPrice(symbol: string, data: any): Promise<void> {
+  private async broadcastToMarkPrice(symbol: string, data: Record<string, unknown>): Promise<void> {
     if (!this.wsManager) {
       logger.warn("Cannot broadcast - no WebSocket manager with backpressure support");
       return;
@@ -347,7 +360,7 @@ export class MessageHandler {
   /**
    * Send a message to a specific client room with backpressure handling
    */
-  async broadcastToRoom(room: string, event: string, data: any, priority: MessagePriority = MessagePriority.MEDIUM): Promise<boolean> {
+  async broadcastToRoom(room: string, event: string, data: Record<string, unknown>, priority: MessagePriority = MessagePriority.MEDIUM): Promise<boolean> {
     if (!this.wsManager) {
       logger.warn("Cannot broadcast - no WebSocket manager with backpressure support");
       return false;

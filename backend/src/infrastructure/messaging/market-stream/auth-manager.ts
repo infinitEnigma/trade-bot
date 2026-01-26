@@ -3,6 +3,7 @@
 import WebSocket from "ws";
 import logger from "../../../core/logging/logger.service";
 import { query } from "../../../database/pool";
+import { BaseWebSocketMessage } from "./types";
 
 /**
  * Handles WebSocket authentication with external services
@@ -16,7 +17,10 @@ export class AuthManager {
   async authenticate(ws: WebSocket, accountId: string): Promise<void> {
     try {
       // Get API credentials from database
-      const credsResult = await query(
+      const credsResult = await query<{
+        api_key_encrypted: string;
+        secret_key_encrypted: string;
+      }>(
         "SELECT api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE account_id = $1",
         [accountId]
       );
@@ -73,7 +77,7 @@ export class AuthManager {
   /**
    * Validate authentication response from the service
    */
-  validateAuthResponse(message: any): boolean {
+  validateAuthResponse(message: BaseWebSocketMessage): boolean {
     try {
       // Check if this is an authentication response
       if (message.event === "auth" || message.method === "AUTH") {
@@ -103,7 +107,9 @@ export class AuthManager {
    */
   async hasCredentials(accountId: string): Promise<boolean> {
     try {
-      const result = await query(
+      const result = await query<{
+        count: string;
+      }>(
         "SELECT COUNT(*) as count FROM kodiak_credentials WHERE account_id = $1 AND verified = true",
         [accountId]
       );
@@ -125,7 +131,9 @@ export class AuthManager {
    */
   async getAccountId(): Promise<string | null> {
     try {
-      const result = await query(
+      const result = await query<{
+        account_id: string;
+      }>(
         "SELECT account_id FROM kodiak_credentials LIMIT 1"
       );
 

@@ -11,6 +11,7 @@ import { selectAuthService } from "../../core/service-selector"; const authServi
 import { kodiakIntegrationService } from "./kodiak-integration.service";
 import { encryptionService } from "../../infrastructure/security";
 import { logger } from "../../core/logging";
+import { UserLevel } from "@trade-bot/shared";
 
 export interface KodiakConnectionData {
     accountId: string;
@@ -86,7 +87,7 @@ export class KodiakConnectionService {
             await this.fetchAndStoreWalletAddress(userId, connectionData);
 
             // Update user level to REGISTERED (after Kodiak connection)
-            await this.updateUserLevel(userId, "REGISTERED");
+            await this.updateUserLevel(userId, UserLevel.REGISTERED);
 
             // Invalidate cached user data so frontend gets updated level immediately
             await authService.invalidateUserDataCache(userId);
@@ -134,7 +135,7 @@ export class KodiakConnectionService {
             await query("DELETE FROM kodiak_credentials WHERE user_id = $1", [userId]);
 
             // Downgrade user level back to BASIC
-            await this.updateUserLevel(userId, "BASIC");
+            await this.updateUserLevel(userId, UserLevel.BASIC);
 
             // Invalidate cached user data so frontend gets updated level immediately
             await authService.invalidateUserDataCache(userId);
@@ -177,7 +178,11 @@ export class KodiakConnectionService {
                 return { connected: false };
             }
 
-            const row = result.rows[0];
+            const row = result.rows[0] as {
+                account_id: string;
+                verified: boolean;
+                created_at: string;
+            };
 
             return {
                 connected: true,
@@ -305,7 +310,7 @@ export class KodiakConnectionService {
     /**
      * Update user level after successful connection
      */
-    private async updateUserLevel(userId: string, newLevel: string): Promise<void> {
+    private async updateUserLevel(userId: string, newLevel: UserLevel): Promise<void> {
         try {
             // Get current user level first
             const user = await authService.getUserById(userId);
@@ -324,7 +329,7 @@ export class KodiakConnectionService {
                 throw new Error(`Invalid user level transition from ${user.userLevel} to ${newLevel}`);
             }
 
-            await authService.updateUserLevel(userId, newLevel as any);
+            await authService.updateUserLevel(userId, newLevel);
             logger.info(`User level updated from ${user.userLevel} to ${newLevel}`, { userId });
         } catch (error) {
             logger.error("Failed to update user level", {
@@ -358,7 +363,7 @@ export class KodiakConnectionService {
             }
 
             // Extract wallet address from public account info
-            const accountInfo = accountInfoResult.data;
+            const accountInfo = accountInfoResult.data as { address?: string;[key: string]: unknown };
             const walletAddress = accountInfo.address;
 
             if (!walletAddress) {
@@ -475,9 +480,9 @@ export class KodiakConnectionService {
             const pendingResult = await query("SELECT COUNT(*) as count FROM kodiak_credentials WHERE verified = false");
 
             return {
-                totalConnections: parseInt(totalResult.rows[0].count),
-                verifiedConnections: parseInt(verifiedResult.rows[0].count),
-                pendingConnections: parseInt(pendingResult.rows[0].count),
+                totalConnections: parseInt((totalResult.rows[0] as { count: string }).count),
+                verifiedConnections: parseInt((verifiedResult.rows[0] as { count: string }).count),
+                pendingConnections: parseInt((pendingResult.rows[0] as { count: string }).count),
             };
 
         } catch (error) {
@@ -539,7 +544,7 @@ export class KodiakConnectionService {
             let reVerified = 0;
             let failed = 0;
 
-            for (const connection of connections.rows) {
+            for (const connection of connections.rows as Array<{ user_id: string; account_id: string }>) {
                 try {
                     const credentials = await kodiakIntegrationService.getUserCredentials(connection.user_id);
 

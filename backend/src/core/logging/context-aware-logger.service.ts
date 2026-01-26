@@ -22,7 +22,6 @@ import {
     getCurrentUserId,
     getCurrentContext,
     createChildContext,
-    runInContext,
 } from "../../shared/utils/context";
 
 export interface LogContext {
@@ -33,7 +32,7 @@ export interface LogContext {
     operationDuration?: number;
     component?: string;
     operation?: string;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 /**
@@ -41,7 +40,7 @@ export interface LogContext {
  */
 export class ContextAwareLogger {
     private componentName: string;
-    private additionalMeta?: Record<string, any>;
+    private additionalMeta?: Record<string, unknown>;
 
     constructor(componentName: string = "unknown") {
         this.componentName = componentName;
@@ -50,7 +49,7 @@ export class ContextAwareLogger {
     /**
      * Get current context information for logging
      */
-    private getContextInfo(additionalMeta?: Record<string, any>): LogContext {
+    private getContextInfo(additionalMeta?: Record<string, unknown>): LogContext {
         const correlationId = getCorrelationId();
         const userId = getCurrentUserId();
         const context = getCurrentContext();
@@ -74,15 +73,15 @@ export class ContextAwareLogger {
     /**
      * Info level logging with automatic context
      */
-    info(message: string, meta?: Record<string, any>): void {
+    info(message: string, meta?: Record<string, unknown>): void {
         logger.info(message, this.getContextInfo(meta));
     }
 
     /**
      * Error level logging with automatic context
      */
-    error(message: string, error?: Error, meta?: Record<string, any>): void {
-        const errorInfo: Record<string, any> = { ...meta };
+    error(message: string, error?: Error, meta?: Record<string, unknown>): void {
+        const errorInfo: Record<string, unknown> = { ...meta };
 
         if (error) {
             errorInfo.error = error.message;
@@ -96,21 +95,21 @@ export class ContextAwareLogger {
     /**
      * Warning level logging with automatic context
      */
-    warn(message: string, meta?: Record<string, any>): void {
+    warn(message: string, meta?: Record<string, unknown>): void {
         logger.warn(message, this.getContextInfo(meta));
     }
 
     /**
      * Debug level logging with automatic context
      */
-    debug(message: string, meta?: Record<string, any>): void {
+    debug(message: string, meta?: Record<string, unknown>): void {
         logger.debug(message, this.getContextInfo(meta));
     }
 
     /**
      * Create child logger for sub-operations
      */
-    child(operationName: string, additionalMeta?: Record<string, any>): ContextAwareLogger {
+    child(operationName: string, additionalMeta?: Record<string, unknown>): ContextAwareLogger {
         const childLogger = new ContextAwareLogger(`${this.componentName}:${operationName}`);
 
         // Create child context if we have a current context
@@ -131,14 +130,14 @@ export class ContextAwareLogger {
     /**
      * Start operation timing
      */
-    startOperation(operationName: string, meta?: Record<string, any>): OperationTimer {
+    startOperation(operationName: string, meta?: Record<string, unknown>): OperationTimer {
         return new OperationTimer(this, operationName, meta);
     }
 
     /**
      * Log performance metrics
      */
-    performance(operation: string, duration: number, success: boolean, meta?: Record<string, any>): void {
+    performance(operation: string, duration: number, success: boolean, meta?: Record<string, unknown>): void {
         const level = success ? 'debug' : 'warn';
         const status = success ? 'completed' : 'failed';
 
@@ -154,7 +153,7 @@ export class ContextAwareLogger {
     /**
      * Generic log method
      */
-    private log(level: string, message: string, meta?: Record<string, any>): void {
+    private log(level: string, message: string, meta?: Record<string, unknown>): void {
         const contextInfo = this.getContextInfo(meta);
 
         switch (level) {
@@ -182,9 +181,9 @@ export class OperationTimer {
     private startTime: number;
     private logger: ContextAwareLogger;
     private operationName: string;
-    private meta?: Record<string, any>;
+    private meta?: Record<string, unknown>;
 
-    constructor(logger: ContextAwareLogger, operationName: string, meta?: Record<string, any>) {
+    constructor(logger: ContextAwareLogger, operationName: string, meta?: Record<string, unknown>) {
         this.startTime = Date.now();
         this.logger = logger;
         this.operationName = operationName;
@@ -200,7 +199,7 @@ export class OperationTimer {
     /**
      * Complete the operation with success
      */
-    success(resultMeta?: Record<string, any>): void {
+    success(resultMeta?: Record<string, unknown>): void {
         const duration = Date.now() - this.startTime;
 
         this.logger.performance(this.operationName, duration, true, {
@@ -212,7 +211,7 @@ export class OperationTimer {
     /**
      * Complete the operation with failure
      */
-    failure(error?: Error, errorMeta?: Record<string, any>): void {
+    failure(error?: Error, errorMeta?: Record<string, unknown>): void {
         const duration = Date.now() - this.startTime;
 
         this.logger.performance(this.operationName, duration, false, {

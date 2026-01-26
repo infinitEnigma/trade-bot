@@ -2,6 +2,7 @@
 
 import winston from "winston";
 import DailyRotateFile from "winston-daily-rotate-file";
+//import * as winston from "winston";
 import path from "path";
 import { getContextForLogging } from "../../shared/utils/context";
 
@@ -28,7 +29,7 @@ const customFormat = winston.format.combine(
   winston.format.timestamp({
     format: "YYYY-MM-DD HH:mm:ss:ms",
   }),
-  winston.format.printf((info: any) => {
+  winston.format.printf((info: winston.Logform.TransformableInfo) => {
     const context = getContextForLogging();
     const contextStr =
       Object.keys(context).length > 0
@@ -58,8 +59,7 @@ if (process.env.NODE_ENV !== "production") {
         winston.format.colorize({ all: true }),
         winston.format.printf(
           info =>
-            `${info.timestamp} ${info.level}: ${info.message}` +
-            (info.metadata ? ` ${JSON.stringify(info.metadata)}` : "")
+            `${info.timestamp} ${info.level}: ${info.message}${info.metadata ? ` ${JSON.stringify(info.metadata)}` : ""}`
         )
       ),
     })

@@ -13,6 +13,57 @@ import {
     AuditLogEntry
 } from '@trade-bot/shared';
 import { query } from '../../../database/pool';
+import { logger } from '../../../core/logging';
+
+/**
+ * Database row interfaces for audit log data
+ */
+interface AuditLogRow {
+    id: string;
+    user_id: string;
+    action: string;
+    details: string | Record<string, unknown>;
+    ip_address?: string;
+    user_agent?: string;
+    created_at: string;
+}
+
+interface SecurityEventRow {
+    id: string;
+    user_id: string;
+    action: string;
+    details: string | Record<string, unknown>;
+    ip_address?: string;
+    created_at: string;
+}
+
+/**
+ * Legacy type definitions for backward compatibility
+ * These interfaces maintain type safety for legacy audit log methods
+ */
+interface SecurityEventDetails {
+    [key: string]: unknown;
+    event?: string;
+}
+
+interface AuditLogLegacy {
+    id: string;
+    userId: string;
+    eventType: string;
+    eventData: Record<string, unknown>;
+    ipAddress?: string;
+    userAgent?: string;
+    createdAt: Date;
+}
+
+interface SecurityEventLegacy {
+    id: string;
+    userId: string;
+    eventType: string;
+    eventData: Record<string, unknown>;
+    ipAddress?: string;
+    createdAt: Date;
+}
 
 /**
  * Audit Log Repository Adapter
@@ -33,7 +84,7 @@ export class AuditLogRepositoryAdapter implements IAuditLogRepository {
             );
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            console.error(`Failed to log audit event: ${errorMessage}`);
+            logger.error(`Failed to log audit event: ${errorMessage}`);
             // Don't throw - audit logging failures shouldn't break business logic
         }
     }
@@ -43,7 +94,7 @@ export class AuditLogRepositoryAdapter implements IAuditLogRepository {
      */
     async getUserLogs(userId: string, limit: number = 100): Promise<AuditLogEntry[]> {
         try {
-            const result = await query(
+            const result = await query<AuditLogRow>(
                 'SELECT id, user_id, action, details, ip_address, user_agent, created_at FROM audit_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2',
                 [userId, limit]
             );
@@ -91,7 +142,7 @@ export class AuditLogRepositoryAdapter implements IAuditLogRepository {
     /**
      * Log security event (legacy method for backward compatibility)
      */
-    async logSecurityEvent(userId: string, event: string, details: any, ipAddress?: string): Promise<void> {
+    async logSecurityEvent(userId: string, event: string, details: SecurityEventDetails, ipAddress?: string): Promise<void> {
         await this.logEvent({
             userId,
             action: 'security',
@@ -103,7 +154,7 @@ export class AuditLogRepositoryAdapter implements IAuditLogRepository {
     /**
      * Get audit logs for a user (legacy method for backward compatibility)
      */
-    async getUserAuditLogs(userId: string, limit: number = 100): Promise<any[]> {
+    async getUserAuditLogs(userId: string, limit: number = 100): Promise<AuditLogLegacy[]> {
         const logs = await this.getUserLogs(userId, limit);
         return logs.map(log => ({
             id: log.id,
@@ -119,9 +170,9 @@ export class AuditLogRepositoryAdapter implements IAuditLogRepository {
     /**
      * Get security events within a time range (legacy method for backward compatibility)
      */
-    async getSecurityEvents(startDate: Date, endDate: Date, limit: number = 1000): Promise<any[]> {
+    async getSecurityEvents(startDate: Date, endDate: Date, limit: number = 1000): Promise<SecurityEventLegacy[]> {
         try {
-            const result = await query(
+            const result = await query<SecurityEventRow>(
                 'SELECT id, user_id, action, details, ip_address, created_at FROM audit_logs WHERE action = $1 AND created_at BETWEEN $2 AND $3 ORDER BY created_at DESC LIMIT $4',
                 ['security', startDate, endDate, limit]
             );

@@ -11,9 +11,11 @@
 import {
     ITradeRepository,
     Trade,
-    OrderStatus
+    OrderStatus,
+    OrderSide
 } from '@trade-bot/shared';
 import { query } from '../../../database/pool';
+import { logger } from '../../../core/logging';
 
 /**
  * Trade Repository Adapter
@@ -28,7 +30,7 @@ export class TradeRepositoryAdapter implements ITradeRepository {
      */
     async getTrades(userId: string, limit: number = 50): Promise<Trade[]> {
         try {
-            const result = await query(
+            const result = await query<TradeRow>(
                 `SELECT
                     id,
                     strategy_id,
@@ -59,7 +61,7 @@ export class TradeRepositoryAdapter implements ITradeRepository {
      */
     async getTradesByStrategy(userId: string, strategyId: string, limit: number = 50): Promise<Trade[]> {
         try {
-            const result = await query(
+            const result = await query<TradeRow>(
                 `SELECT
                     id,
                     strategy_id,
@@ -90,8 +92,8 @@ export class TradeRepositoryAdapter implements ITradeRepository {
      */
     async createTrade(trade: Omit<Trade, 'id' | 'executedAt'>): Promise<Trade> {
         try {
-            const result = await query(
-                `INSERT INTO trades (
+            const result = await query<{ id: string, executed_at: string }>(`
+                INSERT INTO trades (
                     user_id,
                     strategy_id,
                     order_id,
@@ -146,10 +148,10 @@ export class TradeRepositoryAdapter implements ITradeRepository {
     /**
      * Update trade status
      */
-    async updateTradeStatus(tradeId: string, status: any): Promise<void> {
+    async updateTradeStatus(tradeId: string, status: OrderStatus): Promise<void> {
         try {
             // This would update trade status in the database
-            console.log(`Trade status update for trade ${tradeId}: ${status}`);
+            logger.info(`Trade status update for trade ${tradeId}: ${status}`);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to update trade status: ${errorMessage}`);
@@ -159,7 +161,7 @@ export class TradeRepositoryAdapter implements ITradeRepository {
     /**
      * Map database row to Trade interface object
      */
-    private mapRowToTrade(row: any): Trade | null {
+    private mapRowToTrade(row: TradeRow): Trade | null {
         try {
             // Return plain object matching Trade interface
             return {
@@ -177,11 +179,26 @@ export class TradeRepositoryAdapter implements ITradeRepository {
                 executedAt: new Date(row.executed_at)
             };
         } catch (error) {
-            console.warn(`Failed to map trade row to domain object: ${error}`);
+            logger.warn(`Failed to map trade row to domain object: ${error}`);
             return null;
         }
     }
 }
 
+/**
+ * Database row interface for trade data
+ */
+interface TradeRow {
+    id: string;
+    strategy_id?: string;
+    order_id: string;
+    symbol: string;
+    side: OrderSide;
+    quantity: string;
+    price: string;
+    fee: string;
+    pnl?: string;
+    executed_at: string;
+}
 // Export singleton instance
 export const tradeRepositoryAdapter = new TradeRepositoryAdapter();

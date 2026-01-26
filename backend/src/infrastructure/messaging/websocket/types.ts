@@ -75,7 +75,7 @@ export interface WebSocketEventContext {
     correlationId: string;
     timestamp: Date;
     event: string;
-    payload?: any;
+    payload?: unknown;
 }
 
 /**
@@ -208,13 +208,13 @@ export enum WebSocketErrorCode {
 export class WebSocketError extends Error {
     public readonly code: WebSocketErrorCode;
     public readonly statusCode: number;
-    public readonly context: Record<string, any>;
+    public readonly context: Record<string, unknown>;
 
     constructor(
         message: string,
         code: WebSocketErrorCode,
         statusCode: number = 400,
-        context: Record<string, any> = {}
+        context: Record<string, unknown> = {}
     ) {
         super(message);
         this.name = "WebSocketError";

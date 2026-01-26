@@ -3,9 +3,8 @@
 import WebSocket from "ws";
 import { Server } from "socket.io";
 import logger from "../../../core/logging/logger.service";
-import { query } from "../../../database/pool";
 
-import { TickData, KlineData, MarketStreamStatus } from "./types";
+import { TickData, KlineData, MarketStreamStatus, MarkPriceData } from "./types";
 import { WebSocketManager } from "./websocket-manager";
 import { AuthManager } from "./auth-manager";
 import { CacheManager } from "./cache-manager";
@@ -128,7 +127,7 @@ export class MarketStreamService {
       const message = JSON.stringify({
         id: `sub_${topic}_${Date.now()}`,
         event: "subscribe",
-        topic: topic,
+        topic,
       });
 
       ws.send(message);
@@ -166,8 +165,7 @@ export class MarketStreamService {
    */
   subscribe(
     clientId: string,
-    topic: string,
-    options: { priority?: "high" | "medium" | "low" } = {}
+    topic: string
   ): void {
     this.subscriptionManager.subscribe(clientId, topic);
   }
@@ -200,7 +198,7 @@ export class MarketStreamService {
   /**
    * Get latest mark price data from cache
    */
-  async getLatestMarkPrice(symbol: string): Promise<any | null> {
+  async getLatestMarkPrice(symbol: string): Promise<MarkPriceData | null> {
     return this.cacheManager.getMarkPrice(symbol);
   }
 
@@ -233,16 +231,21 @@ export class MarketStreamService {
    * Get detailed service statistics
    */
   getDetailedStats(): {
-    websocket: any;
-    cache: any;
-    subscriptions: any;
-    messageHandler: any;
+    websocket: unknown;
+    cache: unknown;
+    subscriptions: unknown;
+    messageHandler: unknown;
   } {
+    const websocket = this.wsManager.getStats();
+    const cache = this.cacheManager.getStats();
+    const subscriptions = this.subscriptionManager.getDetailedStats();
+    const messageHandler = this.messageHandler.getStats();
+
     return {
-      websocket: this.wsManager.getStats(),
-      cache: this.cacheManager.getStats(),
-      subscriptions: this.subscriptionManager.getDetailedStats(),
-      messageHandler: this.messageHandler.getStats(),
+      websocket,
+      cache,
+      subscriptions,
+      messageHandler,
     };
   }
 }

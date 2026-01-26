@@ -33,12 +33,60 @@ export interface CacheConfig {
   compression?: boolean;
 }
 
-export interface CacheEntry<T = any> {
+/**
+ * Cache metadata interface to replace loose any typing
+ */
+export interface CacheMetadata {
+  [key: string]: unknown;
+  createdAt?: number;
+  updatedAt?: number;
+  source?: string;
+  tags?: string[];
+  version?: string;
+  custom?: Record<string, unknown>;
+}
+
+/**
+ * Cache entry with proper typing
+ */
+export interface CacheEntry<T = unknown> {
   key: string;
   value: T;
   expiresAt?: number;
-  metadata?: Record<string, any>;
+  metadata?: CacheMetadata;
 }
+
+/**
+ * Redis Multi command interface for type safety
+ */
+export interface RedisMultiCommand {
+  set: (key: string, value: string) => RedisMultiCommand;
+  get: (key: string) => RedisMultiCommand;
+  del: (key: string | string[]) => RedisMultiCommand;
+  incrBy: (key: string, increment: number) => RedisMultiCommand;
+  decrBy: (key: string, decrement: number) => RedisMultiCommand;
+  pExpire: (key: string, ttlMs: number) => RedisMultiCommand;
+  expire: (key: string, ttlSeconds: number) => RedisMultiCommand;
+  eval: (script: string, options: { keys: string[]; arguments: string[] }) => RedisMultiCommand;
+  exec: () => Promise<unknown[] | null>;
+}
+
+/**
+ * Redis transaction operation callback with proper typing
+ */
+export type RedisOperationCallback<T> = (multi: RedisMultiCommand) => Promise<T>;
+
+/**
+ * Redis transaction result type
+ */
+export type RedisTransactionResult<T> = {
+  success: boolean;
+  result?: T;
+  error?: string;
+  attempts?: number;
+  totalDelay?: number;
+  strategy?: string;
+};
 
 // Import components directly to avoid circular dependencies
 import { RedisConnectionManager } from "./redis/connection-manager";
@@ -208,7 +256,7 @@ class RedisService {
     try {
       await this.client.ping();
       return true;
-    } catch (error) {
+    } catch (_error) {
       return false;
     }
   }
@@ -244,10 +292,10 @@ class RedisService {
    */
   public async watchMultiExec<T>(
     watchKeys: string[],
-    operation: (multi: any) => Promise<T>,
+    operation: RedisOperationCallback<T>,
     maxRetries: number = 5,
     options?: TransactionOptions
-  ): Promise<{ success: boolean; result?: T; error?: string; attempts?: number }> {
+  ): Promise<RedisTransactionResult<T>> {
     return this.transactionRecoveryManager.executeWithSmartRetry(
       watchKeys,
       operation,
@@ -265,7 +313,7 @@ class RedisService {
    */
   public async atomicCacheUpdate(
     key: string,
-    data: any,
+    data: unknown,
     versionKey?: string,
     maxRetries: number = 3
   ): Promise<{ success: boolean; version?: number; error?: string }> {
@@ -308,7 +356,7 @@ class RedisService {
   public async getWithVersion(
     key: string,
     versionKey?: string
-  ): Promise<{ success: boolean; data?: any; version?: number; error?: string }> {
+  ): Promise<{ success: boolean; data?: unknown; version?: number; error?: string }> {
     try {
       let version: number | undefined;
 
@@ -324,7 +372,7 @@ class RedisService {
         try {
           const parsedData = JSON.parse(dataResult.data);
           return { success: true, data: parsedData, version };
-        } catch (parseError) {
+        } catch (_parseError) {
           return { success: false, error: 'Failed to parse cached data' };
         }
       }
@@ -361,7 +409,7 @@ class RedisService {
         timestamp: new Date().toISOString()
       }));
 
-      const results = await multi.exec();
+      const _results = await multi.exec();
       const keysInvalidated = keys.length; // Assume success if exec doesn't fail
 
       return { success: true, keysInvalidated };
@@ -377,7 +425,7 @@ class RedisService {
   public async getCacheStats(): Promise<{
     connected: boolean;
     dbSize?: number;
-    memoryUsage?: any;
+    memoryUsage?: unknown;
     hitRate?: number;
     uptime?: number;
     error?: string;
@@ -475,8 +523,8 @@ class RedisService {
    */
   public async atomicConditionalUpdate(
     key: string,
-    newValue: any,
-    expectedValue: any,
+    newValue: unknown,
+    expectedValue: unknown,
     maxRetries: number = 3
   ): Promise<{ success: boolean; updated: boolean; error?: string }> {
     const serializedNewValue = JSON.stringify(newValue);
@@ -502,7 +550,7 @@ class RedisService {
     );
 
     if (result.success) {
-      return { success: true, updated: (result.result as any)?.updated || false };
+      return { success: true, updated: (result.result as { updated: boolean })?.updated || false };
     } else {
       return { success: false, updated: false, error: result.error };
     }
@@ -527,7 +575,7 @@ class RedisService {
         if (currentResult) {
           try {
             currentValue = JSON.parse(currentResult);
-          } catch (parseError) {
+          } catch (_parseError) {
             // If parsing fails, treat as null
             currentValue = null;
           }
@@ -589,7 +637,7 @@ class RedisService {
     );
 
     if (result.success) {
-      const transferResult = result.result as any;
+      const transferResult = result.result as { transferred: boolean; reason?: string };
       return {
         success: true,
         transferred: transferResult.transferred,
@@ -605,7 +653,7 @@ class RedisService {
    */
   public async atomicVersionedUpdate(
     dataKey: string,
-    newData: any,
+    newData: unknown,
     expectedVersion?: number,
     versionKey?: string,
     maxRetries: number = 3
@@ -636,7 +684,7 @@ class RedisService {
     );
 
     if (result.success) {
-      const updateResult = result.result as any;
+      const updateResult = result.result as { updated: boolean; newVersion: number; reason?: string };
       return {
         success: true,
         updated: updateResult.updated,
@@ -693,7 +741,7 @@ class RedisService {
         );
 
         if (result.success) {
-          const updateResult = result.result as any;
+          const updateResult = result.result as { newData: T; version: number };
           return {
             success: true,
             newData: updateResult.newData,
@@ -721,15 +769,15 @@ class RedisService {
    * Atomic composite operation on multiple keys
    */
   public async atomicCompositeUpdate(
-    updates: Array<{ key: string; value: any; operation?: 'set' | 'incr' | 'decr' }>,
+    updates: Array<{ key: string; value: unknown; operation?: 'set' | 'incr' | 'decr' }>,
     maxRetries: number = 3
-  ): Promise<{ success: boolean; results?: any[]; error?: string }> {
+  ): Promise<{ success: boolean; results?: Array<{ key: string; operation: string; value: unknown }>; error?: string }> {
     const watchKeys = updates.map(update => update.key);
 
     const result = await this.watchMultiExec(
       watchKeys,
       async (multi) => {
-        const results: any[] = [];
+        const results: Array<{ key: string; operation: string; value: unknown }> = [];
 
         for (const update of updates) {
           const { key, value, operation = 'set' } = update;
@@ -740,11 +788,11 @@ class RedisService {
               results.push({ key, operation: 'set', value });
               break;
             case 'incr':
-              multi.incrBy(key, value);
+              multi.incrBy(key, value as number);
               results.push({ key, operation: 'incr', value });
               break;
             case 'decr':
-              multi.decrBy(key, value);
+              multi.decrBy(key, value as number);
               results.push({ key, operation: 'decr', value });
               break;
           }
@@ -756,7 +804,7 @@ class RedisService {
     );
 
     if (result.success) {
-      return { success: true, results: result.result as any[] };
+      return { success: true, results: result.result as Array<{ key: string; operation: string; value: unknown }> };
     } else {
       return { success: false, error: result.error };
     }
@@ -796,8 +844,6 @@ enum RetryStrategy {
   CIRCUIT_BREAKER = 'circuit',       // Circuit breaker (for persistent issues)
   ADAPTIVE_DELAY = 'adaptive',       // Adaptive delay based on conflict rate
 }
-
-
 
 /**
  * Transaction context for analytics
@@ -874,7 +920,7 @@ class TransactionRecoveryManager {
    */
   async executeWithSmartRetry<T>(
     watchKeys: string[],
-    operation: (multi: any) => Promise<T>,
+    operation: RedisOperationCallback<T>,
     context: TransactionContext
   ): Promise<SmartRetryResult<T>> {
     const keySignature = this.generateKeySignature(watchKeys);
@@ -892,14 +938,14 @@ class TransactionRecoveryManager {
    */
   private async executeWithStrategy<T>(
     watchKeys: string[],
-    operation: (multi: any) => Promise<T>,
+    operation: RedisOperationCallback<T>,
     strategy: RetryStrategy,
     context: TransactionContext
   ): Promise<SmartRetryResult<T>> {
     const keySignature = this.generateKeySignature(watchKeys);
     let attempts = 0;
     let totalDelay = 0;
-    const startTime = Date.now();
+    const _startTime = Date.now();
 
     while (attempts < context.maxRetries) {
       attempts++;
@@ -1006,7 +1052,7 @@ class TransactionRecoveryManager {
    */
   private async attemptTransaction<T>(
     watchKeys: string[],
-    operation: (multi: any) => Promise<T>
+    operation: RedisOperationCallback<T>
   ): Promise<{ success: boolean; data?: T; aborted?: boolean }> {
     const client = redisService.getClient();
 
@@ -1028,13 +1074,11 @@ class TransactionRecoveryManager {
 
       return { success: true, data: result };
 
-    } catch (error) {
-      throw error;
     } finally {
       // Always unwatch keys
       try {
         await client.unwatch();
-      } catch (unwatchError) {
+      } catch (_unwatchError) {
         // Ignore unwatch errors
       }
     }
@@ -1073,7 +1117,7 @@ class TransactionRecoveryManager {
     strategy: RetryStrategy,
     keySignature: string,
     attempt: number,
-    context: TransactionContext
+    _context: TransactionContext
   ): number {
     switch (strategy) {
       case RetryStrategy.IMMEDIATE_RETRY:
@@ -1183,7 +1227,7 @@ class TransactionRecoveryManager {
   /**
    * Record transaction conflict
    */
-  private recordConflict(keySignature: string, attempt: number): void {
+  private recordConflict(keySignature: string, _attemptNumber: number): void {
     const stats = this.getConflictStats(keySignature);
 
     stats.totalConflicts++;

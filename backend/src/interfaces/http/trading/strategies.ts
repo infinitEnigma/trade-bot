@@ -33,9 +33,14 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
+      // Ensure user is authenticated (should always be true due to authMiddleware)
+      if (!req.user) {
+        throw new Error("User not authenticated");
+      }
+
       const result = await query(
         "SELECT * FROM strategies WHERE user_id = $1 ORDER BY created_at DESC",
-        [req.user!.userId]
+        [req.user.userId]
       );
 
       res.json({
@@ -46,7 +51,7 @@ router.get(
     } catch (err) {
       logger.error("Get strategies error", {
         error: err instanceof Error ? err.message : String(err),
-        userId: req.user!.userId,
+        userId: req.user?.userId,
       });
       res
         .status(500)
@@ -61,6 +66,11 @@ router.post(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
+      // Ensure user is authenticated (should always be true due to authMiddleware)
+      if (!req.user) {
+        throw new Error("User not authenticated");
+      }
+
       const { error, value } = strategySchema.validate(req.body);
       if (error) {
         return res
@@ -72,7 +82,7 @@ router.post(
         `INSERT INTO strategies (user_id, name, type, config)
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
-        [req.user!.userId, value.name, value.type, JSON.stringify(value.config)]
+        [req.user.userId, value.name, value.type, JSON.stringify(value.config)]
       );
 
       res.status(201).json({
@@ -83,7 +93,7 @@ router.post(
     } catch (err) {
       logger.error("Create strategy error", {
         error: err instanceof Error ? err.message : String(err),
-        userId: req.user!.userId,
+        userId: req.user?.userId,
       });
       res
         .status(500)
@@ -98,9 +108,14 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
+      // Ensure user is authenticated (should always be true due to authMiddleware)
+      if (!req.user) {
+        throw new Error("User not authenticated");
+      }
+
       const result = await query(
         "SELECT * FROM strategies WHERE id = $1 AND user_id = $2",
-        [req.params.id, req.user!.userId]
+        [req.params.id, req.user.userId]
       );
 
       if (result.rows.length === 0) {
@@ -117,7 +132,7 @@ router.get(
     } catch (err) {
       logger.error("Get strategy error", {
         error: err instanceof Error ? err.message : String(err),
-        userId: req.user!.userId,
+        userId: req.user?.userId,
         strategyId: req.params.id,
       });
       res.status(500).json({ success: false, error: "Failed to get strategy" });
@@ -131,6 +146,11 @@ router.put(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
+      // Ensure user is authenticated (should always be true due to authMiddleware)
+      if (!req.user) {
+        throw new Error("User not authenticated");
+      }
+
       const { error, value } = strategySchema.validate(req.body);
       if (error) {
         return res
@@ -148,7 +168,7 @@ router.put(
           value.type,
           JSON.stringify(value.config),
           req.params.id,
-          req.user!.userId,
+          req.user.userId,
         ]
       );
 
@@ -166,7 +186,7 @@ router.put(
     } catch (err) {
       logger.error("Update strategy error", {
         error: err instanceof Error ? err.message : String(err),
-        userId: req.user!.userId,
+        userId: req.user?.userId,
         strategyId: req.params.id,
       });
       res
@@ -182,10 +202,15 @@ router.delete(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
+      // Ensure user is authenticated (should always be true due to authMiddleware)
+      if (!req.user) {
+        throw new Error("User not authenticated");
+      }
+
       // Check if strategy exists
       const existing = await query(
         "SELECT id FROM strategies WHERE id = $1 AND user_id = $2",
-        [req.params.id, req.user!.userId]
+        [req.params.id, req.user.userId]
       );
 
       if (existing.rows.length === 0) {
@@ -202,7 +227,7 @@ router.delete(
       // Delete the strategy
       await query("DELETE FROM strategies WHERE id = $1 AND user_id = $2", [
         req.params.id,
-        req.user!.userId,
+        req.user.userId,
       ]);
 
       res.json({
@@ -213,7 +238,7 @@ router.delete(
     } catch (err) {
       logger.error("Delete strategy error", {
         error: err instanceof Error ? err.message : String(err),
-        userId: req.user!.userId,
+        userId: req.user?.userId,
         strategyId: req.params.id,
       });
       res
@@ -229,9 +254,14 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
+      // Ensure user is authenticated (should always be true due to authMiddleware)
+      if (!req.user) {
+        throw new Error("User not authenticated");
+      }
+
       const strategyResult = await query(
         "SELECT id FROM strategies WHERE id = $1 AND user_id = $2",
-        [req.params.id, req.user!.userId]
+        [req.params.id, req.user.userId]
       );
 
       if (strategyResult.rows.length === 0) {
@@ -268,7 +298,7 @@ router.get(
     } catch (err) {
       logger.error("Get performance error", {
         error: err instanceof Error ? err.message : String(err),
-        userId: req.user!.userId,
+        userId: req.user?.userId,
         strategyId: req.params.id,
       });
       res

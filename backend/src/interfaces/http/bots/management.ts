@@ -66,17 +66,17 @@
  * @format
  */
 
-import { Router, Request, Response, NextFunction } from "express";
+import { Router, Response, NextFunction } from "express";
 import { v4 as uuidv4 } from "uuid";
-import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
+import { randomBytes, createCipheriv } from "crypto";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
-import { requireRole } from "../../middleware/role-protection";
 import { query } from "../../../database/pool";
 import {
     ValidationError,
     NotFoundError,
     DatabaseError,
     ConflictError,
+    AuthenticationError,
     createErrorResponse,
 } from "../../../shared/types/errors";
 import { getCorrelationId, getContextForLogging } from "../../../shared/utils/context";
@@ -84,10 +84,24 @@ import { validators } from "../../middleware/validation";
 import { withCredentials, SecureCredentials } from "../../../infrastructure/security/encryption.service"; // ✅ Secure credential handling
 import { engineManager } from "../../../core/strategies/engine-manager.service";
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service"; // ✅ Rate limiting
-import { UserRole } from "@trade-bot/shared";
 import logger from "../../../core/logging/logger.service";
 
 const router = Router();
+
+/**
+ * Helper function to get user ID with proper null checking
+ */
+function getUserId(req: AuthenticatedRequest): string {
+    const userId = req.user?.userId;
+    if (!userId) {
+        logger.error("Unauthorized access attempt - user not authenticated", {
+            ...getContextForLogging(),
+            userId: "unauthenticated",
+        });
+        throw new AuthenticationError("User not authenticated");
+    }
+    return userId;
+}
 
 /**
  * Check if user has verified Kodiak credentials (without decrypting)
@@ -169,7 +183,18 @@ router.get(
     authMiddleware,
     RateLimiters.botInstances, // ✅ Apply rate limiting
     async (req: AuthenticatedRequest, res: Response) => {
-        const userId = req.user!.userId as string;
+        const userId = req.user?.userId;
+        if (!userId) {
+            logger.error("Unauthorized access attempt - user not authenticated", {
+                ...getContextForLogging(),
+                userId: "unauthenticated",
+            });
+            const authError = new AuthenticationError("User not authenticated");
+            return res.status(authError.statusCode).json(
+                createErrorResponse(authError, getCorrelationId())
+            );
+        }
+
         try {
             const result = await query(
                 `SELECT bi.*, s.name as strategy_name, s.type as strategy_type, s.config as strategy_config
@@ -188,7 +213,7 @@ router.get(
         } catch (err) {
             logger.error("Get bot instances error", {
                 error: err instanceof Error ? err.message : String(err),
-                userId: userId,
+                userId,
             });
             const dbError = new DatabaseError("Failed to get bot instances");
             res.status(dbError.statusCode).json(
@@ -317,7 +342,8 @@ router.post(
     authMiddleware,
     async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
         // Only VERIFIED users can start bots
-        if (req.user!.userLevel !== "VERIFIED") {
+        const userLevel = req.user?.userLevel;
+        if (userLevel !== "VERIFIED") {
             return res.status(403).json({
                 success: false,
                 error: "Bot functions require VERIFIED user level. Please complete wallet verification."
@@ -328,15 +354,16 @@ router.post(
     validators.startBot,
     async (req: AuthenticatedRequest, res: Response) => {
         try {
+            const userId = getUserId(req);
             const { strategyId, notionalAmount } = req.body;
 
             // Ensure trading engine is running
             await engineManager.ensureEngineRunning();
 
             // Verify strategy belongs to user
-            const strategyResult = await query(
+            const strategyResult = await query<{ id: string; name: string; type: string; config: any; user_id: string }>(
                 "SELECT * FROM strategies WHERE id = $1 AND user_id = $2",
-                [strategyId, req.user!.userId]
+                [strategyId, userId]
             );
 
             if (strategyResult.rows.length === 0) {
@@ -364,15 +391,15 @@ router.post(
             const { validateUserPosition } =
                 await import("../../../core/strategies/position-validator.service.js");
             const validation = await validateUserPosition(
-                req.user!.userId,
+                userId,
                 parseFloat(notionalAmount),
                 strategy.config?.symbol || "PERP_BTC_USDC"
             );
 
             if (!validation.isValid) {
                 const positionError = new ValidationError(validation.reason || "Position size validation failed");
-                const errorResponse = createErrorResponse(positionError, getCorrelationId()) as any;
-                errorResponse.data = {
+                const errorResponse = createErrorResponse(positionError, getCorrelationId());
+                (errorResponse as Record<string, unknown>).data = {
                     requested: notionalAmount,
                     max_allowed: validation.maxAllowed,
                     recommended: validation.recommended,
@@ -385,11 +412,11 @@ router.post(
             await query(
                 `INSERT INTO bot_instances (id, strategy_id, user_id, status, running_time, total_trades, total_pnl)
        VALUES ($1, $2, $3, 'RUNNING', 0, 0, 0)`,
-                [botId, strategyId, req.user!.userId]
+                [botId, strategyId, userId]
             );
 
             // Check if user has verified credentials first
-            const hasCredentials = await hasUserKodiakCredentials(req.user!.userId);
+            const hasCredentials = await hasUserKodiakCredentials(userId);
             if (!hasCredentials) {
                 const authError = new ValidationError("No verified Kodiak credentials found");
                 return res.status(authError.statusCode).json(
@@ -401,7 +428,7 @@ router.post(
             await query(
                 "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
                 [
-                    req.user!.userId,
+                    userId,
                     "CREDENTIAL_ACCESS",
                     {
                         action: "bot_start",
@@ -418,7 +445,7 @@ router.post(
             ]);
 
             // Use secure credential handling - decrypt, use, and auto-cleanup
-            await withCredentials(req.user!.userId, async (credentials: SecureCredentials) => {
+            await withCredentials(userId, async (credentials: SecureCredentials) => {
                 // Generate session key for end-to-end encryption
                 const sessionKey = randomBytes(32).toString('hex');
 
@@ -444,7 +471,7 @@ router.post(
                 const authTag = cipher.getAuthTag();
 
                 const encryptedCredentialsPayload = {
-                    encrypted: encrypted,
+                    encrypted,
                     iv: iv.toString('hex'),
                     authTag: authTag.toString('hex'),
                 };
@@ -455,7 +482,7 @@ router.post(
                     botId,
                     strategyId,
                     strategy,
-                    userId: req.user!.userId,
+                    userId,
                     encryptedCredentials: encryptedCredentialsPayload,
                     sessionKey: encryptedSessionKey, // Encrypted session key for engine to decrypt
                 });
@@ -479,7 +506,7 @@ router.post(
             logger.error("Start bot error", {
                 ...getContextForLogging(),
                 error: err instanceof Error ? err.message : String(err),
-                userId: req.user!.userId,
+                userId: req.user?.userId,
             });
             const internalError = new DatabaseError("Failed to start bot");
             res.status(internalError.statusCode).json(
@@ -495,7 +522,8 @@ router.post(
     authMiddleware,
     async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
         // Only VERIFIED users can stop bots
-        if (req.user!.userLevel !== "VERIFIED") {
+        const userLevel = req.user?.userLevel;
+        if (userLevel !== "VERIFIED") {
             return res.status(403).json({
                 success: false,
                 error: "Bot functions require VERIFIED user level. Please complete wallet verification."
@@ -506,12 +534,13 @@ router.post(
     validators.stopBot,
     async (req: AuthenticatedRequest, res: Response) => {
         try {
+            const userId = getUserId(req);
             const { botId } = req.body;
 
             // Validate bot ownership (simplified)
-            const botResult = await query(
+            const botResult = await query<{ strategy_id: string; status: string }>(
                 "SELECT strategy_id, status FROM bot_instances WHERE id = $1 AND user_id = $2",
-                [botId, req.user!.userId]
+                [botId, userId]
             );
 
             if (botResult.rows.length === 0) {
@@ -557,7 +586,7 @@ router.post(
         } catch (err) {
             logger.error("Stop bot error", {
                 error: err instanceof Error ? err.message : String(err),
-                userId: req.user!.userId,
+                userId: req.user?.userId,
             });
             const dbError = new DatabaseError("Failed to stop bot");
             res.status(dbError.statusCode).json(
@@ -573,11 +602,20 @@ router.get(
     authMiddleware,
     async (req: AuthenticatedRequest, res: Response) => {
         try {
-            const userId = req.user!.userId as string;
+            const userId = getUserId(req);
             const botId = req.params.botId as string;
 
             // Get bot status from database
-            const botResult = await query(
+            const botResult = await query<{
+                id: string;
+                user_id: string;
+                strategy_id: string;
+                status: string;
+                last_heartbeat: any;
+                last_error: any;
+                created_at: any;
+                updated_at: any;
+            }>(
                 "SELECT * FROM bot_instances WHERE id = $1 AND user_id = $2",
                 [botId, userId]
             );
@@ -618,7 +656,7 @@ router.get(
         } catch (err) {
             logger.error("Get bot status error", {
                 error: err instanceof Error ? err.message : String(err),
-                userId: req.user!.userId,
+                userId: req.user?.userId,
                 botId: req.params.botId,
             });
             const dbError = new DatabaseError("Failed to get bot status");
@@ -635,6 +673,7 @@ router.post(
     authMiddleware,
     async (req: AuthenticatedRequest, res: Response) => {
         try {
+            const userId = getUserId(req);
             const { botId } = req.body;
 
             if (!botId) {
@@ -645,7 +684,7 @@ router.post(
             }
 
             // Validate bot ownership (simplified)
-            const botResult = await query("SELECT id FROM bot_instances WHERE id = $1 AND user_id = $2", [botId, req.user!.userId]);
+            const botResult = await query<{ id: string; status: string }>("SELECT id, status FROM bot_instances WHERE id = $1 AND user_id = $2", [botId, userId]);
             if (botResult.rows.length === 0) {
                 const notFoundError = new NotFoundError("Bot not found");
                 return res.status(notFoundError.statusCode).json(
@@ -668,7 +707,7 @@ router.post(
         } catch (err) {
             logger.error("Bot status sync error", {
                 error: err instanceof Error ? err.message : String(err),
-                userId: req.user!.userId,
+                userId: req.user?.userId,
                 botId: req.body?.botId,
             });
             const dbError = new DatabaseError("Failed to sync bot status");
@@ -685,11 +724,11 @@ router.get(
     authMiddleware,
     async (req: AuthenticatedRequest, res: Response) => {
         try {
-            const userId = req.user!.userId as string;
+            const userId = getUserId(req);
             const botId = req.params.botId as string;
 
             // Get basic performance from database (simplified)
-            const performanceResult = await query(
+            const performanceResult = await query<{ total_trades: number; total_pnl: number }>(
                 "SELECT total_trades, total_pnl FROM bot_instances WHERE id = $1 AND user_id = $2",
                 [botId, userId]
             );
@@ -718,7 +757,7 @@ router.get(
         } catch (err) {
             logger.error("Get bot performance error", {
                 error: err instanceof Error ? err.message : String(err),
-                userId: req.user!.userId,
+                userId: req.user?.userId,
                 botId: req.params.botId,
             });
             const dbError = new DatabaseError("Failed to get bot performance");
@@ -735,6 +774,7 @@ router.get(
     authMiddleware,
     async (req: AuthenticatedRequest, res: Response) => {
         try {
+            const _userId = getUserId(req);
             const status = await engineManager.getEngineStatus();
 
             res.json({
@@ -745,7 +785,7 @@ router.get(
         } catch (err) {
             logger.error("Get engine status error", {
                 error: err instanceof Error ? err.message : String(err),
-                userId: req.user!.userId,
+                userId: req.user?.userId,
             });
             const dbError = new DatabaseError("Failed to get engine status");
             res.status(dbError.statusCode).json(
@@ -761,6 +801,7 @@ router.post(
     authMiddleware,
     async (req: AuthenticatedRequest, res: Response) => {
         try {
+            const userId = getUserId(req);
             const { botId } = req.body;
 
             if (!botId) {
@@ -770,9 +811,9 @@ router.post(
             }
 
             // Validate bot ownership (simplified)
-            const botResult = await query(
+            const botResult = await query<{ strategy_id: string; status: string }>(
                 "SELECT strategy_id, status FROM bot_instances WHERE id = $1 AND user_id = $2",
-                [botId, req.user!.userId]
+                [botId, userId]
             );
 
             if (botResult.rows.length === 0) {
@@ -797,7 +838,7 @@ router.post(
             await query(
                 "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
                 [
-                    req.user!.userId,
+                    userId,
                     "EMERGENCY_STOP",
                     { botId, strategyId: botData.strategy_id },
                 ]
@@ -815,7 +856,7 @@ router.post(
             // Set timeout to mark as stopped if bot doesn't respond
             setTimeout(async () => {
                 try {
-                    const currentBot = await query(
+                    const currentBot = await query<{ status: string }>(
                         "SELECT status FROM bot_instances WHERE id = $1",
                         [botId]
                     );
@@ -848,7 +889,7 @@ router.post(
         } catch (err) {
             logger.error("Emergency stop error", {
                 error: err instanceof Error ? err.message : String(err),
-                userId: req.user!.userId,
+                userId: req.user?.userId,
             });
             res
                 .status(500)

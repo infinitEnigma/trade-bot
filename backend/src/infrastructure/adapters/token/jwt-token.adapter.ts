@@ -67,16 +67,16 @@ export class JwtTokenAdapter implements ITokenService {
             // Try to verify as access token first
             try {
                 return jwt.verify(token, this.JWT_SECRET) as TokenPayload;
-            } catch (accessTokenError) {
+            } catch (_accessTokenError) {
                 // If access token verification fails, try refresh token
                 try {
                     return jwt.verify(token, this.JWT_REFRESH_SECRET) as TokenPayload;
-                } catch (refreshTokenError) {
+                } catch (_refreshTokenError) {
                     // Both verifications failed
                     return null;
                 }
             }
-        } catch (error) {
+        } catch (_error) {
             return null;
         }
     }
@@ -146,7 +146,7 @@ export class JwtTokenAdapter implements ITokenService {
     decodeTokenUnsafe(token: string): TokenPayload | null {
         try {
             return jwt.decode(token) as TokenPayload | null;
-        } catch (error) {
+        } catch (_error) {
             return null;
         }
     }

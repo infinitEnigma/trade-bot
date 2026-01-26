@@ -321,7 +321,7 @@ export class AuthService {
             const cacheKey = `${this.CACHE_PREFIX}:${userId}`;
 
             // Try cache first
-            const cachedResult: CacheResult<any> = await this.deps.cache.get(cacheKey);
+            const cachedResult: CacheResult<{ user: User; roles: string[]; hasCredentials: boolean; } | null> = await this.deps.cache.get(cacheKey);
             if (cachedResult.success && cachedResult.data) {
                 this.deps.logger.debug('Auth user data cache hit', { userId });
                 return cachedResult.data;
@@ -453,8 +453,8 @@ export class AuthService {
     async verifyWalletOwnership(
         userId: string,
         walletAddress: string,
-        signature: string,
-        message: string
+        _signature: string,
+        _message: string
     ): Promise<{ success: boolean; message: string }> {
         try {
             // This is a placeholder implementation
@@ -526,7 +526,7 @@ export class AuthService {
      * - Mark user tokens as invalid
      * - Used when passwords change or manual logout is required
      */
-    async invalidateUserTokens(userId: string): Promise<{ success: boolean; tokensBlacklisted?: number; errors?: any[] }> {
+    async invalidateUserTokens(userId: string): Promise<{ success: boolean; tokensBlacklisted?: number; errors?: string[] }> {
         try {
             this.deps.logger.info('Invalidating user tokens', { userId });
 
@@ -607,13 +607,15 @@ export class AuthService {
     /**
      * Log audit event if audit logger is available
      */
-    private async logAuditEvent(action: string, details: Record<string, any>): Promise<void> {
+    private async logAuditEvent(action: string, details: Record<string, unknown>): Promise<void> {
         if (this.deps.auditLogger) {
             try {
                 await this.deps.auditLogger.logEvent({
-                    userId: details.userId || 'system',
+                    userId: (details.userId as string) || 'system',
                     action,
-                    details
+                    details,
+                    ipAddress: undefined,
+                    userAgent: undefined
                 });
             } catch (error) {
                 this.deps.logger.warn('Failed to log audit event', {
