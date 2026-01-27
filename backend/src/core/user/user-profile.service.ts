@@ -5,10 +5,15 @@
  * Provides centralized profile management with proper validation and auditing.
  */
 
+import { userLogger } from "../../core/logging";
+import {
+    ErrorInfo,
+    createErrorInfo,
+    createEnhancedErrorInfo
+} from "../../core/logging";
 import { query } from "../../database/pool";
 import { selectAuthService } from "../service-selector";
 import { redisService } from "../../infrastructure";
-import { logger } from "../../core/logging";
 
 const authService = selectAuthService();
 
@@ -64,13 +69,13 @@ export class UserProfileService {
         try {
             const cachedResult = await redisService.get(cacheKey);
             if (cachedResult.success && cachedResult.data) {
-                logger.debug("User profile retrieved from cache", { userId });
+                userLogger.debug("User profile retrieved from cache", { userId });
                 return JSON.parse(cachedResult.data);
             }
         } catch (cacheError) {
-            logger.warn("Failed to read from cache, falling back to database", {
+            userLogger.warn("Failed to read from cache, falling back to database", {
                 userId,
-                error: (cacheError as Error).message,
+                error: cacheError instanceof Error ? cacheError.message : String(cacheError),
             });
         }
 
@@ -122,15 +127,15 @@ export class UserProfileService {
         // Cache the profile for future requests
         try {
             await redisService.setex(cacheKey, this.CACHE_TTL, JSON.stringify(profile));
-            logger.debug("User profile cached", { userId, ttl: this.CACHE_TTL });
+            userLogger.debug("User profile cached", { userId, ttl: this.CACHE_TTL });
         } catch (cacheError) {
-            logger.warn("Failed to cache user profile", {
+            userLogger.warn("Failed to cache user profile", {
                 userId,
-                error: (cacheError as Error).message,
+                error: cacheError instanceof Error ? cacheError.message : String(cacheError),
             });
         }
 
-        logger.debug("User profile retrieved with optimized query", {
+        userLogger.debug("User profile retrieved with optimized query", {
             userId: row.id,
             hasKodiak,
             cached: false,
@@ -149,16 +154,25 @@ export class UserProfileService {
         message: string
     ): Promise<{ success: boolean; message: string }> {
         try {
-            return await authService.verifyWalletOwnership(
+            // Start operation timing
+            const timer = userLogger.startOperation("verifyWalletOwnership", {
+                userId,
+                walletAddress
+            });
+
+            const result = await authService.verifyWalletOwnership(
                 userId,
                 walletAddress,
                 signature,
                 message
             );
+
+            timer.success();
+            return result;
         } catch (error) {
-            logger.error("Wallet verification error", {
-                error: error instanceof Error ? error.message : String(error),
+            userLogger.error("Wallet verification error", error instanceof Error ? error : undefined, {
                 userId,
+                walletAddress
             });
 
             return {
@@ -213,7 +227,7 @@ export class UserProfileService {
             // Log the profile update
             await this.logProfileUpdate(userId, ["email"]);
 
-            logger.info("Profile updated successfully", {
+            userLogger.info("Profile updated successfully", {
                 userId,
                 changes: ["email"],
                 cacheInvalidated: true,
@@ -229,8 +243,7 @@ export class UserProfileService {
             };
 
         } catch (error) {
-            logger.error("Profile update error", {
-                error: error instanceof Error ? error.message : String(error),
+            userLogger.error("Profile update error", error instanceof Error ? error : undefined, {
                 userId,
             });
 
@@ -312,11 +325,11 @@ export class UserProfileService {
         const cacheKey = `user:profile:${userId}`;
         try {
             await redisService.del(cacheKey);
-            logger.debug("User profile cache invalidated", { userId });
+            userLogger.debug("User profile cache invalidated", { userId });
         } catch (error) {
-            logger.warn("Failed to invalidate user profile cache", {
+            userLogger.warn("Failed to invalidate user profile cache", {
                 userId,
-                error: (error as Error).message,
+                error: error instanceof Error ? error.message : String(error),
             });
         }
     }

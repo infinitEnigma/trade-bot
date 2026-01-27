@@ -14,6 +14,7 @@
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
     "dev:engine": "cd engine/kodiak && npm run dev",
+    "prod": "NODE_ENV=production node -r dotenv/config backend/dist/index.js",
     "build": "npm run build:shared && npm run build:backend && npm run build:frontend && npm run build:engine",
     "build:shared": "cd shared && npm run build",
     "build:backend": "cd backend && npm run build",

@@ -20,8 +20,8 @@ import { Request, Response, NextFunction } from "express";
 import Joi from "joi";
 import { createErrorResponse, ValidationError } from "../../shared/types/errors";
 import { getCorrelationId } from "../../shared/utils/context";
-import { DatabaseSchemaParser, DatabaseSchema } from "./database-schema-parser";
-import { SchemaGenerator } from "./schema-generator";
+import { DatabaseSchemaParser, DatabaseSchema } from "../../shared/validation/database-schema-parser";
+import { SchemaGenerator } from "../../shared/validation/schema-generator";
 import logger from "../../core/logging/logger.service";
 
 /**

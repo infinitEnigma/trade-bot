@@ -22,7 +22,7 @@ import {
     ColumnDefinition,
     CheckConstraint,
     ForeignKeyDefinition,
-} from "./database-schema-parser";
+} from "../validation/database-schema-parser";
 import logger from "../../core/logging/logger.service";
 
 /**

@@ -8,9 +8,14 @@
  * @format
  */
 
+import { integrationLogger } from '../../../core/logging';
+/*import {
+    ErrorInfo,
+    createErrorInfo,
+    createEnhancedErrorInfo
+} from '../../../core/logging';*/
 import { IEncryptionService } from '@trade-bot/shared';
 import { encryptionService } from '../../../infrastructure/security/encryption.service';
-import { logger } from '../../../core/logging';
 
 /**
  * Encryption Service Adapter
@@ -32,8 +37,16 @@ export class EncryptionAdapter implements IEncryptionService {
                 throw new Error('API key cannot be empty');
             }
 
-            return encryptionService.encryptApiKey(apiKey);
+            // Start operation timing
+            const timer = integrationLogger.startOperation("encryptApiKey", { apiKeyLength: apiKey.length });
+
+            const result = encryptionService.encryptApiKey(apiKey);
+            timer.success();
+            return result;
         } catch (error) {
+            integrationLogger.error("API key encryption failed", error instanceof Error ? error : undefined, {
+                apiKeyLength: apiKey.length,
+            });
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`API key encryption failed: ${errorMessage}`);
         }
@@ -51,8 +64,16 @@ export class EncryptionAdapter implements IEncryptionService {
                 throw new Error('Encrypted API key cannot be empty');
             }
 
-            return encryptionService.decryptApiKey(encryptedApiKey);
+            // Start operation timing
+            const timer = integrationLogger.startOperation("decryptApiKey", { encryptedLength: encryptedApiKey.length });
+
+            const result = encryptionService.decryptApiKey(encryptedApiKey);
+            timer.success();
+            return result;
         } catch (error) {
+            integrationLogger.error("API key decryption failed", error instanceof Error ? error : undefined, {
+                encryptedLength: encryptedApiKey.length,
+            });
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`API key decryption failed: ${errorMessage}`);
         }
@@ -70,8 +91,16 @@ export class EncryptionAdapter implements IEncryptionService {
                 throw new Error('Secret key cannot be empty');
             }
 
-            return encryptionService.encryptSecretKey(secretKey);
+            // Start operation timing
+            const timer = integrationLogger.startOperation("encryptSecretKey", { secretKeyLength: secretKey.length });
+
+            const result = encryptionService.encryptSecretKey(secretKey);
+            timer.success();
+            return result;
         } catch (error) {
+            integrationLogger.error("Secret key encryption failed", error instanceof Error ? error : undefined, {
+                secretKeyLength: secretKey.length,
+            });
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Secret key encryption failed: ${errorMessage}`);
         }
@@ -89,8 +118,16 @@ export class EncryptionAdapter implements IEncryptionService {
                 throw new Error('Encrypted secret key cannot be empty');
             }
 
-            return encryptionService.decryptSecretKey(encryptedSecretKey);
+            // Start operation timing
+            const timer = integrationLogger.startOperation("decryptSecretKey", { encryptedLength: encryptedSecretKey.length });
+
+            const result = encryptionService.decryptSecretKey(encryptedSecretKey);
+            timer.success();
+            return result;
         } catch (error) {
+            integrationLogger.error("Secret key decryption failed", error instanceof Error ? error : undefined, {
+                encryptedLength: encryptedSecretKey.length,
+            });
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Secret key decryption failed: ${errorMessage}`);
         }
@@ -108,8 +145,16 @@ export class EncryptionAdapter implements IEncryptionService {
                 throw new Error('Encrypted data cannot be empty');
             }
 
-            return await encryptionService.decryptWithVersion(encryptedData);
+            // Start operation timing
+            const timer = integrationLogger.startOperation("decryptWithVersion", { encryptedLength: encryptedData.length });
+
+            const result = await encryptionService.decryptWithVersion(encryptedData);
+            timer.success();
+            return result;
         } catch (error) {
+            integrationLogger.error("Versioned decryption failed", error instanceof Error ? error : undefined, {
+                encryptedLength: encryptedData.length,
+            });
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Versioned decryption failed: ${errorMessage}`);
         }
@@ -128,8 +173,20 @@ export class EncryptionAdapter implements IEncryptionService {
                 throw new Error('Plaintext cannot be empty');
             }
 
-            return await encryptionService.encryptWithVersion(plaintext, version);
+            // Start operation timing
+            const timer = integrationLogger.startOperation("encryptWithVersion", {
+                plaintextLength: plaintext.length,
+                version: version ?? 'current'
+            });
+
+            const result = await encryptionService.encryptWithVersion(plaintext, version);
+            timer.success();
+            return result;
         } catch (error) {
+            integrationLogger.error("Versioned encryption failed", error instanceof Error ? error : undefined, {
+                plaintextLength: plaintext.length,
+                version: version ?? 'current',
+            });
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Versioned encryption failed: ${errorMessage}`);
         }
@@ -142,10 +199,16 @@ export class EncryptionAdapter implements IEncryptionService {
      */
     async isKeyRotationNeeded(): Promise<boolean> {
         try {
-            return await encryptionService.isKeyRotationNeeded();
+            // Start operation timing
+            const timer = integrationLogger.startOperation("isKeyRotationNeeded");
+
+            const result = await encryptionService.isKeyRotationNeeded();
+            timer.success();
+            return result;
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.warn(`Key rotation check failed: ${errorMessage}`);
+            integrationLogger.warn("Key rotation check failed", {
+                error: error instanceof Error ? error.message : String(error),
+            });
             return false; // Fail safe - don't force rotation on errors
         }
     }
@@ -157,8 +220,13 @@ export class EncryptionAdapter implements IEncryptionService {
      */
     async rotateEncryptionKeys(): Promise<void> {
         try {
+            // Start operation timing
+            const timer = integrationLogger.startOperation("rotateEncryptionKeys");
+
             await encryptionService.rotateEncryptionKeys();
+            timer.success();
         } catch (error) {
+            integrationLogger.error("Key rotation failed", error instanceof Error ? error : undefined);
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Key rotation failed: ${errorMessage}`);
         }

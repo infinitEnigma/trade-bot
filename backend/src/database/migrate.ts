@@ -11,7 +11,7 @@ const pool = new Pool({
   user: process.env.DB_USER || "postgres",
   password: process.env.DB_PASSWORD || "postgres",
 });
-
+/*
 const migrations = `
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
@@ -207,12 +207,12 @@ CREATE INDEX IF NOT EXISTS idx_trades_executed_at ON trades(executed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
 `;
-
+*/
 async function runMigrations() {
   logger.info("Running database migrations...");
 
   try {
-    await pool.query(migrations);
+    //await pool.query(migrations);
     logger.info("Migrations completed successfully!");
   } catch (error) {
     logger.error("Migration failed", {

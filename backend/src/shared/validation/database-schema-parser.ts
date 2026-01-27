@@ -18,7 +18,7 @@
 
 import fs from "fs/promises";
 import path from "path";
-import logger from "../../core/logging/logger.service";
+import { logger } from "../../core/logging";
 
 export interface ColumnDefinition {
     name: string;
@@ -64,7 +64,7 @@ export interface DatabaseSchema {
 }
 
 export class DatabaseSchemaParser {
-    private migrationDir = path.join(process.cwd(), "database", "migrations");
+    private migrationDir = path.join(process.cwd(), "..", "database", "migrations");
 
     /**
      * Parse all migration files to build complete database schema

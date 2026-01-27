@@ -5,8 +5,8 @@
  * (Discord webhooks, email, logging) to ensure failures are not silent.
  */
 
-import axios, { AxiosResponse } from "axios";
-import { logger } from "../../core/logging";
+//import axios, { AxiosResponse } from "axios";
+import { ContextAwareLogger } from "../../core/logging";
 import { getCurrentContext, getContextForLogging } from "../../shared/utils/context";
 
 export enum ErrorSeverity {
@@ -75,7 +75,7 @@ interface NotificationChannel {
     enabled: boolean;
     send(notification: ErrorNotification): Promise<boolean>;
 }
-
+/**
 class DiscordWebhookChannel implements NotificationChannel {
     name = "discord";
     enabled: boolean;
@@ -238,10 +238,14 @@ class EmailChannel implements NotificationChannel {
         return false;
     }
 }
+ */
 
 class LogChannel implements NotificationChannel {
     name = "log";
     enabled = true; // Always enabled
+
+    // Context-aware logger for notification service
+    private notificationLogger = new ContextAwareLogger('error-notification');
 
     async send(notification: ErrorNotification): Promise<boolean> {
         const logData = {
@@ -258,17 +262,17 @@ class LogChannel implements NotificationChannel {
 
         switch (notification.severity) {
             case ErrorSeverity.CRITICAL:
-                logger.error("CRITICAL ERROR NOTIFICATION", logData);
+                this.notificationLogger.error("CRITICAL ERROR NOTIFICATION");
                 break;
             case ErrorSeverity.HIGH:
-                logger.error("HIGH ERROR NOTIFICATION", logData);
+                this.notificationLogger.error("HIGH ERROR NOTIFICATION");
                 break;
             case ErrorSeverity.MEDIUM:
-                logger.warn("MEDIUM ERROR NOTIFICATION", logData);
+                this.notificationLogger.warn("MEDIUM ERROR NOTIFICATION", logData);
                 break;
             case ErrorSeverity.LOW:
             default:
-                logger.info("LOW ERROR NOTIFICATION", logData);
+                this.notificationLogger.info("LOW ERROR NOTIFICATION", logData);
                 break;
         }
 
@@ -294,16 +298,19 @@ export class ErrorNotificationService {
     private processing = false;
     private retryInterval: NodeJS.Timeout | null = null;
 
+    // Context-aware logger for notification service
+    private notificationLogger = new ContextAwareLogger('error-notification');
+
     constructor() {
         // Initialize notification channels
-        this.channels.push(new DiscordWebhookChannel());
-        this.channels.push(new EmailChannel());
+        //this.channels.push(new DiscordWebhookChannel());
+        //this.channels.push(new EmailChannel());
         this.channels.push(new LogChannel());
 
         // Start background retry processor
         this.startRetryProcessor();
 
-        logger.info("Error notification service initialized", {
+        this.notificationLogger.info("Error notification service initialized", {
             channels: this.channels.map(c => ({ name: c.name, enabled: c.enabled })),
         });
     }
@@ -319,7 +326,7 @@ export class ErrorNotificationService {
     notify(notification: ErrorNotification): void {
         // Check if we should throttle this notification
         if (this.shouldThrottleNotification(notification)) {
-            logger.debug("Error notification throttled", {
+            this.notificationLogger.debug("Error notification throttled", {
                 category: notification.context.category,
                 operation: notification.context.operation,
             });
@@ -350,8 +357,9 @@ export class ErrorNotificationService {
                 try {
                     await this.sendToChannelsWithRetry(notification);
                 } catch (error) {
-                    logger.error("Failed to process notification from queue", {
-                        error: error instanceof Error ? error.message : String(error),
+                    this.notificationLogger.error("Failed to process notification from queue", undefined, {
+                        errorMessage: error instanceof Error ? error.message : String(error),
+                        errorName: error instanceof Error ? error.name : 'UnknownError',
                         severity: notification.severity,
                         category: notification.context.category,
                     });
@@ -369,7 +377,7 @@ export class ErrorNotificationService {
         const enabledChannels = this.channels.filter(c => c.enabled);
 
         if (enabledChannels.length === 0) {
-            logger.warn("No notification channels enabled", { severity: notification.severity });
+            this.notificationLogger.warn("No notification channels enabled", { severity: notification.severity });
             return false;
         }
 
@@ -382,7 +390,7 @@ export class ErrorNotificationService {
         const failures = results.length - successes;
 
         if (failures > 0) {
-            logger.warn("Some error notifications failed", {
+            this.notificationLogger.warn("Some error notifications failed", {
                 total: results.length,
                 successes,
                 failures,
@@ -570,7 +578,7 @@ export class ErrorNotificationService {
             await this.retryFailedNotifications();
         }, 5 * 60 * 1000);
 
-        logger.debug("Started notification retry processor");
+        this.notificationLogger.debug("Started notification retry processor");
     }
 
     /**
@@ -585,21 +593,23 @@ export class ErrorNotificationService {
                     const success = await this.sendToChannelsWithRetry(notification);
                     if (success) {
                         await this.markNotificationDelivered(notification.id || 'unknown');
-                        logger.info("Successfully retried failed notification", {
+                        this.notificationLogger.info("Successfully retried failed notification", {
                             id: notification.id || 'unknown',
                             severity: notification.severity,
                         });
                     }
                 } catch (error) {
-                    logger.warn("Failed to retry notification", {
+                    this.notificationLogger.warn("Failed to retry notification", {
                         id: notification.id || 'unknown',
-                        error: error instanceof Error ? error.message : String(error),
+                        errorMessage: error instanceof Error ? error.message : String(error),
+                        errorName: error instanceof Error ? error.name : 'UnknownError',
                     });
                 }
             }
         } catch (error) {
-            logger.error("Error in notification retry processor", {
-                error: error instanceof Error ? error.message : String(error),
+            this.notificationLogger.error("Error in notification retry processor", undefined, {
+                errorMessage: error instanceof Error ? error.message : String(error),
+                errorName: error instanceof Error ? error.name : 'UnknownError',
             });
         }
     }
@@ -611,7 +621,7 @@ export class ErrorNotificationService {
         try {
             // For now, just log - in production you'd persist to database
             // This ensures critical notifications aren't completely lost
-            logger.warn("Persisting failed critical notification for retry", {
+            this.notificationLogger.warn("Persisting failed critical notification for retry", {
                 severity: notification.severity,
                 category: notification.context.category,
                 operation: notification.context.operation,
@@ -622,8 +632,9 @@ export class ErrorNotificationService {
             // INSERT INTO failed_notifications (data, created_at) VALUES (...)
 
         } catch (error) {
-            logger.error("Failed to persist notification for retry", {
-                error: error instanceof Error ? error.message : String(error),
+            this.notificationLogger.error("Failed to persist notification for retry", undefined, {
+                errorMessage: error instanceof Error ? error.message : String(error),
+                errorName: error instanceof Error ? error.name : 'UnknownError',
             });
         }
     }
@@ -643,7 +654,7 @@ export class ErrorNotificationService {
     private async markNotificationDelivered(notificationId: string): Promise<void> {
         // TODO: In production, update database record
         // UPDATE failed_notifications SET processed = true WHERE id = ?
-        logger.debug("Marked notification as delivered", { notificationId });
+        this.notificationLogger.debug("Marked notification as delivered", { notificationId });
     }
 
     /**

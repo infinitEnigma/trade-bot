@@ -15,8 +15,13 @@
  * @format
  */
 
+import { userLogger } from "../../core/logging";
+import {
+    ErrorInfo,
+    createErrorInfo,
+    createEnhancedErrorInfo
+} from "../../core/logging";
 import { kodiakConnectionService } from "../../infrastructure/external/kodiak-connection.service";
-import { logger } from "../../core/logging";
 import { KodiakConnectionData, KodiakConnectionResult, KodiakConnectionStatus } from "../../infrastructure/external/kodiak-connection.service";
 
 export interface KodiakUserConfig {
@@ -47,7 +52,13 @@ export class UserKodiakService {
         connectionData: KodiakConnectionData
     ): Promise<KodiakConnectionResult> {
         try {
-            logger.info("Linking Kodiak account for user", {
+            userLogger.info("Linking Kodiak account for user", {
+                userId,
+                accountId: connectionData.accountId
+            });
+
+            // Start operation timing
+            const timer = userLogger.startOperation("linkKodiakAccount", {
                 userId,
                 accountId: connectionData.accountId
             });
@@ -56,13 +67,17 @@ export class UserKodiakService {
             const result = await kodiakConnectionService.connectKodiak(userId, connectionData);
 
             if (result.success) {
-                logger.info("Kodiak account linked successfully", {
+                timer.success({
+                    verified: result.data?.verified
+                });
+                userLogger.info("Kodiak account linked successfully", {
                     userId,
                     accountId: connectionData.accountId,
                     verified: result.data?.verified
                 });
             } else {
-                logger.warn("Kodiak account linking failed", {
+                timer.failure();
+                userLogger.warn("Kodiak account linking failed", {
                     userId,
                     accountId: connectionData.accountId,
                     error: result.error
@@ -71,8 +86,7 @@ export class UserKodiakService {
 
             return result;
         } catch (error) {
-            logger.error("Failed to link Kodiak account", {
-                error: error instanceof Error ? error.message : String(error),
+            userLogger.error("Failed to link Kodiak account", error instanceof Error ? error : undefined, {
                 userId,
                 accountId: connectionData.accountId
             });
@@ -89,19 +103,24 @@ export class UserKodiakService {
      */
     async unlinkKodiakAccount(userId: string): Promise<{ success: boolean; message: string; error?: string }> {
         try {
-            logger.info("Unlinking Kodiak account for user", { userId });
+            userLogger.info("Unlinking Kodiak account for user", { userId });
+
+            // Start operation timing
+            const timer = userLogger.startOperation("unlinkKodiakAccount", { userId });
 
             // Delegate to infrastructure service for actual disconnection
             const result = await kodiakConnectionService.disconnectKodiak(userId);
 
             if (result.success) {
-                logger.info("Kodiak account unlinked successfully", { userId });
+                timer.success();
+                userLogger.info("Kodiak account unlinked successfully", { userId });
+            } else {
+                timer.failure();
             }
 
             return result;
         } catch (error) {
-            logger.error("Failed to unlink Kodiak account", {
-                error: error instanceof Error ? error.message : String(error),
+            userLogger.error("Failed to unlink Kodiak account", error instanceof Error ? error : undefined, {
                 userId
             });
             return {
@@ -117,12 +136,16 @@ export class UserKodiakService {
      */
     async getKodiakConnectionStatus(userId: string): Promise<KodiakConnectionStatus> {
         try {
-            logger.debug("Getting Kodiak connection status for user", { userId });
+            userLogger.debug("Getting Kodiak connection status for user", { userId });
+
+            // Start operation timing
+            const timer = userLogger.startOperation("getKodiakConnectionStatus", { userId });
 
             // Delegate to infrastructure service for status check
             const status = await kodiakConnectionService.getConnectionStatus(userId);
 
-            logger.debug("Kodiak connection status retrieved", {
+            timer.success();
+            userLogger.debug("Kodiak connection status retrieved", {
                 userId,
                 connected: status.connected,
                 verified: status.verified
@@ -130,8 +153,7 @@ export class UserKodiakService {
 
             return status;
         } catch (error) {
-            logger.error("Failed to get Kodiak connection status", {
-                error: error instanceof Error ? error.message : String(error),
+            userLogger.error("Failed to get Kodiak connection status", error instanceof Error ? error : undefined, {
                 userId
             });
             // Return disconnected status on error
@@ -144,16 +166,21 @@ export class UserKodiakService {
      */
     async getUserKodiakConfig(userId: string): Promise<KodiakUserConfig | null> {
         try {
-            logger.debug("Getting Kodiak configuration for user", { userId });
+            userLogger.debug("Getting Kodiak configuration for user", { userId });
+
+            // Start operation timing
+            const timer = userLogger.startOperation("getUserKodiakConfig", { userId });
 
             // Get connection status first
             const status = await this.getKodiakConnectionStatus(userId);
 
             if (!status.connected || !status.accountId) {
-                logger.debug("No active Kodiak connection found for user", { userId });
+                timer.success();
+                userLogger.debug("No active Kodiak connection found for user", { userId });
                 return null;
             }
 
+            timer.success();
             // Return configuration based on connection status
             return {
                 userId,
@@ -168,8 +195,7 @@ export class UserKodiakService {
                 updatedAt: new Date()
             };
         } catch (error) {
-            logger.error("Failed to get user Kodiak config", {
-                error: error instanceof Error ? error.message : String(error),
+            userLogger.error("Failed to get user Kodiak config", error instanceof Error ? error : undefined, {
                 userId
             });
             return null;
@@ -184,12 +210,16 @@ export class UserKodiakService {
         preferences: Partial<KodiakUserConfig['preferences']>
     ): Promise<{ success: boolean; message: string }> {
         try {
-            logger.info("Updating Kodiak preferences for user", { userId, preferences });
+            userLogger.info("Updating Kodiak preferences for user", { userId, preferences });
+
+            // Start operation timing
+            const timer = userLogger.startOperation("updateKodiakPreferences", { userId, preferences });
 
             // Validate that user has an active Kodiak connection
             const status = await this.getKodiakConnectionStatus(userId);
             if (!status.connected) {
-                logger.warn("Cannot update preferences - no active Kodiak connection", { userId });
+                timer.failure();
+                userLogger.warn("Cannot update preferences - no active Kodiak connection", { userId });
                 return {
                     success: false,
                     message: "Cannot update preferences - no active Kodiak connection"
@@ -198,15 +228,15 @@ export class UserKodiakService {
 
             // Note: In a real implementation, this would update database
             // For now, just log the preference update
-            logger.info("Kodiak preferences updated", { userId, preferences });
+            timer.success();
+            userLogger.info("Kodiak preferences updated", { userId, preferences });
 
             return {
                 success: true,
                 message: "Kodiak preferences updated successfully"
             };
         } catch (error) {
-            logger.error("Failed to update Kodiak preferences", {
-                error: error instanceof Error ? error.message : String(error),
+            userLogger.error("Failed to update Kodiak preferences", error instanceof Error ? error : undefined, {
                 userId,
                 preferences
             });
@@ -225,8 +255,7 @@ export class UserKodiakService {
             const status = await this.getKodiakConnectionStatus(userId);
             return status.connected === true && status.verified === true;
         } catch (error) {
-            logger.error("Failed to check verified connection status", {
-                error: error instanceof Error ? error.message : String(error),
+            userLogger.error("Failed to check verified connection status", error instanceof Error ? error : undefined, {
                 userId
             });
             return false;
