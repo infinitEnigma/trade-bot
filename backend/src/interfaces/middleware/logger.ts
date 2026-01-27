@@ -1,7 +1,7 @@
 /** @format */
 
 import { Request, Response, NextFunction } from "express";
-import { logger } from "../../core/logging";
+import { logger, httpLogger as contextHttpLogger } from "../../core/logging";
 import {
   generateCorrelationId,
   runWithContext,
@@ -28,9 +28,8 @@ export function httpLogger(
       startTime,
     },
     () => {
-      // Log the incoming request
-      logger.http("HTTP request", {
-        ...getContextForLogging(),
+      // Log the incoming request using context-aware HTTP logger
+      contextHttpLogger.http("HTTP request", {
         method: req.method,
         url: req.url,
         userAgent: req.get("User-Agent"),
@@ -53,9 +52,8 @@ export function httpLogger(
       ): Response {
         const duration = Date.now() - startTime;
 
-        // Log the response
-        logger.http("HTTP response", {
-          ...getContextForLogging(),
+        // Log the response using context-aware HTTP logger
+        contextHttpLogger.http("HTTP response", {
           method: req.method,
           url: req.url,
           statusCode: res.statusCode,

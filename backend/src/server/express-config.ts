@@ -4,7 +4,7 @@ import express, { Express } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
-import { logger } from "../core/logging";
+import { ContextAwareLogger } from "../core/logging";
 
 /**
  * ===========================================
@@ -56,23 +56,42 @@ export class ExpressConfig {
         trustProxy: true,
     };
 
+    private static expressLogger = new ContextAwareLogger('express-config');
+
     /**
      * Configure Express application with all middleware and settings
      */
     static async configure(app: Express, options: ExpressConfigOptions = {}): Promise<void> {
         const config = { ...this.DEFAULT_OPTIONS, ...options };
 
-        this.configureTrustProxy(app, config);
-        this.configureCors(app, config);
-        this.configureSecurity(app, config);
-        this.configureParsing(app);
-        await this.configureLogging(app);
-
-        logger.info("Express application configured successfully", {
+        const configTimer = this.expressLogger.startOperation('express-configuration', {
             corsEnabled: config.enableCors,
             securityEnabled: config.enableSecurity,
             trustProxy: config.trustProxy,
         });
+
+        try {
+            this.configureTrustProxy(app, config);
+            this.configureCors(app, config);
+            this.configureSecurity(app, config);
+            this.configureParsing(app);
+            await this.configureLogging(app);
+
+            configTimer.success();
+            this.expressLogger.info("Express application configured successfully", {
+                corsEnabled: config.enableCors,
+                securityEnabled: config.enableSecurity,
+                trustProxy: config.trustProxy,
+            });
+        } catch (error) {
+            configTimer.failure(error as Error);
+            this.expressLogger.error("Failed to configure Express application", error as Error, {
+                corsEnabled: config.enableCors,
+                securityEnabled: config.enableSecurity,
+                trustProxy: config.trustProxy,
+            });
+            throw error;
+        }
     }
 
     /**
@@ -82,7 +101,9 @@ export class ExpressConfig {
         if (config.trustProxy) {
             // Trust proxy headers from nginx (required for rate limiting with X-Forwarded-For)
             app.set("trust proxy", 1);
-            logger.debug("Proxy trust enabled for load balancer headers");
+            this.expressLogger.debug("Proxy trust enabled for load balancer headers", {
+                component: 'proxy-configuration'
+            });
         }
     }
 
@@ -131,16 +152,21 @@ export class ExpressConfig {
                         }
                     }
 
-                    logger.warn("CORS policy violation", { origin, allowedOrigins });
+                    this.expressLogger.warn("CORS policy violation", {
+                        origin,
+                        allowedOrigins,
+                        component: 'cors-configuration'
+                    });
                     return callback(new Error("CORS policy violation"));
                 },
                 credentials: config.corsOptions?.credentials ?? true,
             })
         );
 
-        logger.debug("CORS configured", {
+        this.expressLogger.debug("CORS configured", {
             allowedOrigins: allowedOrigins.length,
             credentials: config.corsOptions?.credentials,
+            component: 'cors-configuration'
         });
     }
 
@@ -165,7 +191,9 @@ export class ExpressConfig {
             })
         );
 
-        logger.debug("Security middleware (Helmet) configured");
+        this.expressLogger.debug("Security middleware (Helmet) configured", {
+            component: 'security-configuration'
+        });
     }
 
     /**
@@ -181,7 +209,9 @@ export class ExpressConfig {
         // Note: Removed global rate limiter - now using per-endpoint limits
         // Rate limiting is handled per-endpoint with user-based limits
 
-        logger.debug("Request parsing middleware configured");
+        this.expressLogger.debug("Request parsing middleware configured", {
+            component: 'parsing-configuration'
+        });
     }
 
     /**
@@ -196,7 +226,9 @@ export class ExpressConfig {
         const { httpLogger } = await import("../interfaces/middleware/logger.js");
         app.use(httpLogger);
 
-        logger.debug("Logging and monitoring middleware configured");
+        this.expressLogger.debug("Logging and monitoring middleware configured", {
+            component: 'logging-configuration'
+        });
     }
 
     /**
@@ -208,8 +240,8 @@ export class ExpressConfig {
         // Configure the app asynchronously but return the app synchronously
         // This is a common pattern for Express apps - configure async but return sync
         this.configure(app, options).catch((error) => {
-            logger.error("Failed to configure Express application", {
-                error: error instanceof Error ? error.message : String(error),
+            this.expressLogger.error("Failed to configure Express application", error as Error, {
+                component: 'app-creation'
             });
             throw error; // Re-throw to fail fast in development
         });

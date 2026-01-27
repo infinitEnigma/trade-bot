@@ -15,12 +15,9 @@
  * @format
  */
 
-//import { kodiakConnectionService } from "../../infrastructure/external/kodiak-connection.service";
-
-// Note: validateCredentials method may not exist - using basic validation for now
-const _isValid = true; // Simplified validation
-import { credentialCacheService } from "../../infrastructure/cache/credential-cache.service";
+import { kodiakConnectionService } from "../../infrastructure/external/kodiak-connection.service";
 import { logger } from "../../core/logging";
+import { KodiakConnectionData, KodiakConnectionResult, KodiakConnectionStatus } from "../../infrastructure/external/kodiak-connection.service";
 
 export interface KodiakUserConfig {
     userId: string;
@@ -47,48 +44,42 @@ export class UserKodiakService {
      */
     async linkKodiakAccount(
         userId: string,
-        encryptedApiKey: string,
-        encryptedSecretKey: string,
-        accountId: string
-    ): Promise<{ success: boolean; message: string }> {
+        connectionData: KodiakConnectionData
+    ): Promise<KodiakConnectionResult> {
         try {
-            // Validate credentials by attempting connection
-            const _credentials = await credentialCacheService.getOrCacheCredentials(
+            logger.info("Linking Kodiak account for user", {
                 userId,
-                encryptedApiKey,
-                encryptedSecretKey,
-                accountId
-            );
-
-            // Simplified validation for now
-            const isValid = true;
-            if (!isValid) {
-                return {
-                    success: false,
-                    message: "Invalid Kodiak credentials"
-                };
-            }
-
-            // Store user-Kodiak configuration
-            // Note: In a real implementation, this would save to database
-            logger.info("Kodiak account linked successfully", {
-                userId,
-                accountId
+                accountId: connectionData.accountId
             });
 
-            return {
-                success: true,
-                message: "Kodiak account linked successfully"
-            };
+            // Delegate to infrastructure service for actual connection
+            const result = await kodiakConnectionService.connectKodiak(userId, connectionData);
+
+            if (result.success) {
+                logger.info("Kodiak account linked successfully", {
+                    userId,
+                    accountId: connectionData.accountId,
+                    verified: result.data?.verified
+                });
+            } else {
+                logger.warn("Kodiak account linking failed", {
+                    userId,
+                    accountId: connectionData.accountId,
+                    error: result.error
+                });
+            }
+
+            return result;
         } catch (error) {
             logger.error("Failed to link Kodiak account", {
+                error: error instanceof Error ? error.message : String(error),
                 userId,
-                accountId,
-                error: error instanceof Error ? error.message : String(error)
+                accountId: connectionData.accountId
             });
             return {
                 success: false,
-                message: "Failed to link Kodiak account"
+                message: "Failed to link Kodiak account",
+                error: "Internal server error during connection"
             };
         }
     }
@@ -96,28 +87,55 @@ export class UserKodiakService {
     /**
      * Unlink Kodiak account from user
      */
-    async unlinkKodiakAccount(userId: string): Promise<{ success: boolean; message: string }> {
+    async unlinkKodiakAccount(userId: string): Promise<{ success: boolean; message: string; error?: string }> {
         try {
-            // Clear cached credentials
-            credentialCacheService.invalidateCredentials(userId);
+            logger.info("Unlinking Kodiak account for user", { userId });
 
-            // Remove user-Kodiak configuration
-            // Note: In a real implementation, this would update database
-            logger.info("Kodiak account unlinked successfully", { userId });
+            // Delegate to infrastructure service for actual disconnection
+            const result = await kodiakConnectionService.disconnectKodiak(userId);
 
-            return {
-                success: true,
-                message: "Kodiak account unlinked successfully"
-            };
+            if (result.success) {
+                logger.info("Kodiak account unlinked successfully", { userId });
+            }
+
+            return result;
         } catch (error) {
             logger.error("Failed to unlink Kodiak account", {
-                userId,
-                error: error instanceof Error ? error.message : String(error)
+                error: error instanceof Error ? error.message : String(error),
+                userId
             });
             return {
                 success: false,
-                message: "Failed to unlink Kodiak account"
+                message: "Failed to unlink Kodiak account",
+                error: "Internal server error during disconnection"
             };
+        }
+    }
+
+    /**
+     * Get user's Kodiak connection status
+     */
+    async getKodiakConnectionStatus(userId: string): Promise<KodiakConnectionStatus> {
+        try {
+            logger.debug("Getting Kodiak connection status for user", { userId });
+
+            // Delegate to infrastructure service for status check
+            const status = await kodiakConnectionService.getConnectionStatus(userId);
+
+            logger.debug("Kodiak connection status retrieved", {
+                userId,
+                connected: status.connected,
+                verified: status.verified
+            });
+
+            return status;
+        } catch (error) {
+            logger.error("Failed to get Kodiak connection status", {
+                error: error instanceof Error ? error.message : String(error),
+                userId
+            });
+            // Return disconnected status on error
+            return { connected: false };
         }
     }
 
@@ -126,12 +144,21 @@ export class UserKodiakService {
      */
     async getUserKodiakConfig(userId: string): Promise<KodiakUserConfig | null> {
         try {
-            // Note: In a real implementation, this would query database
-            // For now, return a mock configuration
+            logger.debug("Getting Kodiak configuration for user", { userId });
+
+            // Get connection status first
+            const status = await this.getKodiakConnectionStatus(userId);
+
+            if (!status.connected || !status.accountId) {
+                logger.debug("No active Kodiak connection found for user", { userId });
+                return null;
+            }
+
+            // Return configuration based on connection status
             return {
                 userId,
-                kodiakAccountId: "mock-account-id",
-                isActive: true,
+                kodiakAccountId: status.accountId,
+                isActive: status.connected && status.verified === true,
                 preferences: {
                     defaultLeverage: 5,
                     riskLevel: 'medium',
@@ -142,8 +169,8 @@ export class UserKodiakService {
             };
         } catch (error) {
             logger.error("Failed to get user Kodiak config", {
-                userId,
-                error: error instanceof Error ? error.message : String(error)
+                error: error instanceof Error ? error.message : String(error),
+                userId
             });
             return null;
         }
@@ -157,7 +184,20 @@ export class UserKodiakService {
         preferences: Partial<KodiakUserConfig['preferences']>
     ): Promise<{ success: boolean; message: string }> {
         try {
+            logger.info("Updating Kodiak preferences for user", { userId, preferences });
+
+            // Validate that user has an active Kodiak connection
+            const status = await this.getKodiakConnectionStatus(userId);
+            if (!status.connected) {
+                logger.warn("Cannot update preferences - no active Kodiak connection", { userId });
+                return {
+                    success: false,
+                    message: "Cannot update preferences - no active Kodiak connection"
+                };
+            }
+
             // Note: In a real implementation, this would update database
+            // For now, just log the preference update
             logger.info("Kodiak preferences updated", { userId, preferences });
 
             return {
@@ -166,14 +206,30 @@ export class UserKodiakService {
             };
         } catch (error) {
             logger.error("Failed to update Kodiak preferences", {
+                error: error instanceof Error ? error.message : String(error),
                 userId,
-                preferences,
-                error: error instanceof Error ? error.message : String(error)
+                preferences
             });
             return {
                 success: false,
                 message: "Failed to update Kodiak preferences"
             };
+        }
+    }
+
+    /**
+     * Check if user has verified Kodiak connection
+     */
+    async hasVerifiedConnection(userId: string): Promise<boolean> {
+        try {
+            const status = await this.getKodiakConnectionStatus(userId);
+            return status.connected === true && status.verified === true;
+        } catch (error) {
+            logger.error("Failed to check verified connection status", {
+                error: error instanceof Error ? error.message : String(error),
+                userId
+            });
+            return false;
         }
     }
 }

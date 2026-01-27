@@ -7,11 +7,14 @@ import { query } from "../../../database/pool"; // ✅ Import from centralized m
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth"; // ✅ Import centralized auth
 import { createErrorResponse, ExternalServiceError, DataFreshnessUtils, FreshnessAwareResponse } from "../../../shared/types/errors";
 import { getCorrelationId } from "../../../shared/utils/context";
-import logger from "../../../core/logging/logger.service"; // ✅ Import structured logger
+import { ContextAwareLogger } from "../../../core/logging/"; // ✅ Import context-aware logger
 import { RateLimiters } from "../../../infrastructure";
 import { marketStreamService } from "../../../infrastructure/messaging/market-stream.service";
 import { getCacheConfig, getFullCacheConfig } from "../../../config/cache.config"; // ✅ Import centralized cache config
 import { AxiosError } from "axios";
+
+// Create context-aware logger instance for market operations
+const marketLogger = new ContextAwareLogger('market-api');
 
 const router = Router();
 
@@ -23,7 +26,7 @@ const WS_BASE =
 // GET /api/market/ticker
 router.get(
   "/ticker",
-  RateLimiters.market,
+  //RateLimiters.market,
   async (req: Request, res: Response) => {
     try {
       const symbol = (req.query.symbol as string) || "PERP_BTC_USDC";
@@ -32,9 +35,10 @@ router.get(
       const response = await kodiakIntegrationService.getMarketTicker(symbol);
 
       if (!response.success) {
-        logger.warn("Market ticker API failed", {
+        marketLogger.warn("Market ticker API failed", {
           symbol,
           error: response.error,
+          operation: "get_market_ticker",
         });
 
         // Return clear error so user knows data is unavailable
@@ -77,9 +81,10 @@ router.get(
       });
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      logger.error("Ticker endpoint error", {
+      marketLogger.error("Ticker endpoint error", err instanceof Error ? err : undefined, {
         symbol: req.query.symbol,
         error: errorMessage,
+        operation: "ticker_endpoint",
       });
 
       // Return clear error so user knows data is unavailable
@@ -114,7 +119,10 @@ router.get("/tickers", async (req: Request, res: Response) => {
     });
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    logger.error("Tickers endpoint error", { error: errorMessage });
+    marketLogger.error("Tickers endpoint error", err instanceof Error ? err : undefined, {
+      error: errorMessage,
+      operation: "tickers_endpoint",
+    });
     const externalError = new ExternalServiceError("Kodiak API", { service: "Kodiak", operation: "fetch_tickers" });
     res.status(externalError.statusCode).json(
       createErrorResponse(externalError, getCorrelationId())
@@ -146,7 +154,7 @@ router.get(
       const uniqueTimestamps = new Set(timestamps);
       const hasDuplicates = timestamps.length !== uniqueTimestamps.size;
 
-      logger.debug("Klines endpoint returning data", {
+      marketLogger.debug("Klines endpoint returning data", {
         symbol: symbolStr,
         interval: intervalStr,
         requestedLimit: limitNum,
@@ -165,7 +173,7 @@ router.get(
           timestamp: Date.now(),
         });
 
-        logger.debug("Klines served from WebSocket cache", {
+        marketLogger.debug("Klines served from WebSocket cache", {
           symbol: symbolStr,
           interval: intervalStr,
           count: klines.length,
@@ -179,18 +187,19 @@ router.get(
           message: "Kline data not available yet - WebSocket connecting",
         });
 
-        logger.debug("Klines requested but no cached data available", {
+        marketLogger.debug("Klines requested but no cached data available", {
           symbol: symbolStr,
           interval: intervalStr,
         });
       }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      logger.error("Klines endpoint error", {
+      marketLogger.error("Klines endpoint error", undefined, {
         symbol: req.query.symbol,
         interval: req.query.interval,
         limit: req.query.limit,
         error: errorMessage,
+        operation: "klines_endpoint",
       });
       const externalError = new ExternalServiceError("Market Stream Service", { service: "WebSocket", operation: "get_klines" });
       res.status(externalError.statusCode).json(
@@ -222,7 +231,10 @@ router.get("/orderbook", async (req: Request, res: Response) => {
     });
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    logger.error("Orderbook endpoint error", { error: errorMessage });
+    marketLogger.error("Orderbook endpoint error", undefined, {
+      error: errorMessage,
+      operation: "orderbook_endpoint",
+    });
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch orderbook" });
@@ -230,38 +242,54 @@ router.get("/orderbook", async (req: Request, res: Response) => {
 });
 
 // GET /api/market/futures/:symbol - Futures market data (more detailed than ticker)
-/*router.get(
+router.get(
   "/futures/:symbol",
   RateLimiters.kodiakApi, // STRICT: 10 req/sec to match API limits
   RateLimiters.market,    // PERMISSIVE: 10,000 req/min for users
   async (req: Request, res: Response) => {
     try {
-      const { symbol } = req.params;
+      //const { symbol } = req.params;
+      const symbol = (req.query.symbol as string) || "PERP_BTC_USDC";
       const cacheKey = `futures:${symbol}`;
 
       // Try Redis cache first (5 minute TTL for futures data)
       const cacheResult = await redisService.get(cacheKey);
       if (cacheResult.success && cacheResult.data) {
-        logger.debug("Futures data cache hit", { symbol });
+        marketLogger.debug("Futures data cache hit", { symbol });
         return res.json(JSON.parse(cacheResult.data));
       } else if (!cacheResult.success) {
-        logger.warn("Futures data cache read failed", {
+        marketLogger.warn("Futures data cache read failed", {
           symbol,
           error: cacheResult.error,
         });
       }
 
-      logger.debug("Futures data cache miss, fetching from Kodiak", { symbol });
-      const response = await axios.get(
+      marketLogger.debug("Futures data cache miss, fetching from Kodiak", { symbol });
+      /*const response = await axios.get(
         `${KODIAK_API_BASE}/public/futures/${symbol}`,
         {
           timeout: 5000,
         }
-      );
+      );*/
+      const response = await kodiakIntegrationService.getMarketTicker(symbol);
+      if (!response.success) {
+        marketLogger.warn("Market futures(ticker) API failed", {
+          symbol,
+          error: response.error,
+        });
 
+        // Return clear error so user knows data is unavailable
+        return res.status(503).json({
+          success: false,
+          error: "Market data temporarily unavailable. Please try again later.",
+          symbol,
+          timestamp: Date.now(),
+          retryAfter: 30, // Suggest retry after 30 seconds
+        });
+      }
       const result = {
         success: true,
-        data: response.data.data || response.data,
+        data: response.data || { symbol },
         timestamp: Date.now(),
         cached: false,
       };
@@ -271,24 +299,24 @@ router.get("/orderbook", async (req: Request, res: Response) => {
 
       res.json(result);
     } catch (err: any) {
-      logger.error("Futures endpoint error", {
+      marketLogger.error("Futures endpoint error", err, {
         symbol: req.params.symbol,
-        error: err.message,
         status: err.response?.status,
+        operation: "futures_endpoint",
       });
 
       // Return cached data if available, even if stale
       const cacheKey = `futures:${req.params.symbol}`;
       const cacheResult = await redisService.get(cacheKey);
       if (cacheResult.success && cacheResult.data) {
-        logger.debug("Returning stale futures data due to API error", {
+        marketLogger.debug("Returning stale futures data due to API error", {
           symbol: req.params.symbol,
         });
         const staleData = JSON.parse(cacheResult.data);
         staleData.stale = true;
         return res.json(staleData);
       } else if (!cacheResult.success) {
-        logger.warn("Stale futures cache read failed", {
+        marketLogger.warn("Stale futures cache read failed", {
           symbol: req.params.symbol,
           error: cacheResult.error,
         });
@@ -300,7 +328,7 @@ router.get("/orderbook", async (req: Request, res: Response) => {
       });
     }
   }
-);*/
+);
 
 // GET /api/market/markprice/:symbol - Mark price data (real-time via WebSocket)
 router.get(
@@ -322,7 +350,7 @@ router.get(
           timestamp: Date.now(),
           cached: true, // Always from cache/WebSocket
         });
-        logger.debug("Mark price served from cache", {
+        marketLogger.debug("Mark price served from cache", {
           symbol,
           price: markPriceData.price,
         });
@@ -334,15 +362,16 @@ router.get(
           timestamp: Date.now(),
           message: "Mark price data not available yet - WebSocket connecting",
         });
-        logger.debug("Mark price requested but no cached data available", {
+        marketLogger.debug("Mark price requested but no cached data available", {
           symbol,
         });
       }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      logger.error("Mark price endpoint error", {
+      marketLogger.error("Mark price endpoint error", undefined, {
         symbol: req.params.symbol,
         error: errorMessage,
+        operation: "markprice_endpoint",
       });
       res.status(500).json({
         success: false,
@@ -383,9 +412,10 @@ router.get(
       });
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      logger.error("Positions endpoint error", {
+      marketLogger.error("Positions endpoint error", undefined, {
         userId: req.user?.userId,
         error: errorMessage,
+        operation: "positions_endpoint",
       });
       res
         .status(500)
@@ -425,9 +455,10 @@ router.get(
       });
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      logger.error("Balance endpoint error", {
+      marketLogger.error("Balance endpoint error", undefined, {
         userId: req.user?.userId,
         error: errorMessage,
+        operation: "balance_endpoint",
       });
       res
         .status(500)
@@ -473,9 +504,10 @@ router.get(
       });
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      logger.error("WS URL endpoint error", {
+      marketLogger.error("WS URL endpoint error", undefined, {
         userId: req.user?.userId,
         error: errorMessage,
+        operation: "ws_url_endpoint",
       });
       res
         .status(500)
@@ -495,15 +527,15 @@ router.get("/tv/config", RateLimiters.market, async (req: Request, res: Response
     // Try Redis cache first
     const cacheResult = await redisService.get(cacheKey);
     if (cacheResult.success && cacheResult.data) {
-      logger.debug("TV Config cache hit");
+      marketLogger.debug("TV Config cache hit");
       return res.json(JSON.parse(cacheResult.data));
     } else if (!cacheResult.success) {
-      logger.warn("TV Config cache read failed", {
+      marketLogger.warn("TV Config cache read failed", {
         error: cacheResult.error,
       });
     }
 
-    logger.debug("TV Config cache miss, fetching from centralized service");
+    marketLogger.debug("TV Config cache miss, fetching from centralized service");
     // Use centralized service instead of direct axios call
     const response = await kodiakIntegrationService.getTradingViewConfig();
 
@@ -527,7 +559,10 @@ router.get("/tv/config", RateLimiters.market, async (req: Request, res: Response
     res.json(result);
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    logger.error("TV Config endpoint error", { error: errorMessage });
+    marketLogger.error("TV Config endpoint error", undefined, {
+      error: errorMessage,
+      operation: "tv_config_endpoint",
+    });
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch TV config" });
@@ -556,7 +591,10 @@ router.get("/tv/symbols", RateLimiters.market, async (req: Request, res: Respons
     });
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    logger.error("TV Symbols endpoint error", { error: errorMessage });
+    marketLogger.error("TV Symbols endpoint error", undefined, {
+      error: errorMessage,
+      operation: "tv_symbols_endpoint",
+    });
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch TV symbols" });
@@ -605,7 +643,7 @@ router.get("/tv/history", RateLimiters.market, async (req: Request, res: Respons
 
       return res.json(cachedData);
     } else if (!cacheResult.success) {
-      logger.warn("TV History cache read failed, falling back to API", {
+      marketLogger.warn("TV History cache read failed, falling back to API", {
         cacheKey,
         error: cacheResult.error,
       });
@@ -641,7 +679,7 @@ router.get("/tv/history", RateLimiters.market, async (req: Request, res: Respons
     // Cache the result using centralized configuration
     await redisService.setex(cacheKey, cacheConfig.MARKET_KLINES_SHORT, JSON.stringify(result));
 
-    logger.debug("TV History cached successfully", {
+    marketLogger.debug("TV History cached successfully", {
       cacheKey,
       symbol: symbolStr,
       resolution: resolutionStr,
@@ -652,12 +690,13 @@ router.get("/tv/history", RateLimiters.market, async (req: Request, res: Respons
     res.json(result);
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    logger.error("TV History endpoint error", {
+    marketLogger.error("TV History endpoint error", undefined, {
       symbol: symbolStr,
       resolution: resolutionStr,
       from: fromNum,
       to: toNum,
       error: errorMessage,
+      operation: "tv_history_endpoint",
     });
     res
       .status(500)
@@ -705,7 +744,7 @@ router.get(
         });
       }
 
-      logger.debug(
+      marketLogger.debug(
         "Fetching historical kline data with credential verification",
         {
           userId,
@@ -728,7 +767,7 @@ router.get(
         });
       }
 
-      logger.debug("Historical kline data response received", {
+      marketLogger.debug("Historical kline data response received", {
         responseKeys: Object.keys(response.data || {}),
         dataType: typeof response.data,
         symbol: symbolStr,
@@ -738,9 +777,9 @@ router.get(
       const tvData = response.data;
 
       if (typeof tvData !== "object" || !tvData) {
-        logger.error("Invalid TradingView response - not an object", {
-          tvData,
+        marketLogger.error("Invalid TradingView response - not an object", undefined, {
           dataType: typeof tvData,
+          operation: "tv_data_validation",
         });
         return res.status(500).json({
           success: false,
@@ -750,7 +789,7 @@ router.get(
 
       // Check if there's no data available
       if (tvData.s === "no_data" || !tvData.t || tvData.t.length === 0) {
-        logger.debug("No historical data available for the requested period", {
+        marketLogger.debug("No historical data available for the requested period", {
           symbol: symbolStr,
           resolution: resolutionStr,
           from: fromNum,
@@ -777,13 +816,14 @@ router.get(
 
       // Validate that we have all required OHLC arrays
       if (!tvData.t || !tvData.o || !tvData.h || !tvData.l || !tvData.c) {
-        logger.error("Missing required OHLC arrays in TradingView response", {
+        marketLogger.error("Missing required OHLC arrays in TradingView response", undefined, {
           hasTimestamps: !!tvData.t,
           hasOpens: !!tvData.o,
           hasHighs: !!tvData.h,
           hasLows: !!tvData.l,
           hasCloses: !!tvData.c,
           hasVolumes: !!tvData.v,
+          operation: "ohlc_validation",
         });
         return res.status(500).json({
           success: false,
@@ -799,12 +839,13 @@ router.get(
         tvData.l.length !== length ||
         tvData.c.length !== length
       ) {
-        logger.error("OHLC arrays have different lengths", {
+        marketLogger.error("OHLC arrays have different lengths", undefined, {
           timestamps: tvData.t.length,
           opens: tvData.o.length,
           highs: tvData.h.length,
           lows: tvData.l.length,
           closes: tvData.c.length,
+          operation: "array_length_validation",
         });
         return res.status(500).json({
           success: false,
@@ -827,7 +868,7 @@ router.get(
         });
       }
 
-      logger.debug("Successfully transformed TradingView data", {
+      marketLogger.debug("Successfully transformed TradingView data", {
         symbol: symbolStr,
         candleCount: transformedData.length,
         firstCandle: transformedData[0],
@@ -850,12 +891,11 @@ router.get(
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       const axiosError = err as AxiosError;
-      logger.error("Historical kline data error", {
+      marketLogger.error("Historical kline data error", axiosError, {
         userId: req.user?.userId,
         symbol: req.query.symbol,
-        error: errorMessage,
         status: axiosError.response?.status,
-        response: axiosError.response?.data,
+        operation: "historical_kline_endpoint",
       });
 
       // Handle specific error cases

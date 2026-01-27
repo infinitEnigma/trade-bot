@@ -18,4 +18,48 @@
 
 // Export logging services
 export { default as logger } from './logger.service';
-export { ContextAwareLogger, contextLogger, marketStreamLogger, positionSyncLogger, redisLogger, websocketLogger } from './context-aware-logger.service';
+export {
+    ContextAwareLogger,
+    contextLogger,
+    marketStreamLogger,
+    positionSyncLogger,
+    redisLogger,
+    websocketLogger,
+    // Infrastructure Layer Loggers
+    httpLogger,
+    databaseLogger,
+    cacheLogger,
+    // Core Domain Loggers
+    tradingLogger,
+    walletLogger,
+    authLogger,
+    userLogger,
+    // Cross-cutting Concern Loggers
+    securityLogger,
+    validationLogger,
+    performanceLogger,
+    integrationLogger
+} from './context-aware-logger.service';
+
+// Re-export logging types for convenience
+export {
+    ErrorSeverity,
+    ErrorType,
+    ErrorInfo,
+    StackFrame,
+    PerformanceMetrics,
+    DatabaseMetrics,
+    HttpRequestInfo,
+    UserContextInfo,
+    LogContext,
+    ErrorCodes,
+    ErrorCode,
+    createErrorInfo,
+    createPerformanceMetrics,
+    createDatabaseMetrics,
+    createHttpRequestInfo,
+    createUserContextInfo,
+    parseStackTrace,
+    classifyError,
+    createEnhancedErrorInfo
+} from './context-aware-logger.service';

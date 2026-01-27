@@ -275,6 +275,12 @@ export * from './types/domain';
 
 export * from './types/errors';
 
+// ============================================
+// Logging Types & Utilities
+// ============================================
+
+export * from './types/logging';
+
 // Explicitly export error classes for better discoverability
 export {
   AppError,
@@ -303,3 +309,25 @@ export {
   FreshnessAwareResponse,
   DataFreshnessUtils
 } from './types/errors';
+
+// Explicitly export logging types for better discoverability
+export {
+  LoggerErrorSeverity,
+  LoggerErrorType,
+  ErrorInfo,
+  StackFrame,
+  PerformanceMetrics,
+  DatabaseMetrics,
+  HttpRequestInfo,
+  UserContextInfo,
+  LogContext,
+  ErrorCodes,
+  createErrorInfo,
+  createPerformanceMetrics,
+  createDatabaseMetrics,
+  createHttpRequestInfo,
+  createUserContextInfo,
+  parseStackTrace,
+  classifyError,
+  createEnhancedErrorInfo
+} from './types/logging';

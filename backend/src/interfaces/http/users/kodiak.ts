@@ -8,8 +8,8 @@
 import { Router, Request, Response } from "express";
 import Joi from "joi";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
-import { kodiakConnectionService } from "../../../infrastructure/external/kodiak-connection.service";
 import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
+import { userKodiakService } from "../../../core/user/user-kodiak.service";
 //import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
 import logger from "../../../core/logging/logger.service";
 
@@ -41,7 +41,7 @@ router.post("/kodiak/connect", authMiddleware, async (req: AuthenticatedRequest,
         }
 
         const userId = req.user.userId as string;
-        const result = await kodiakConnectionService.connectKodiak(userId, value);
+        const result = await userKodiakService.linkKodiakAccount(userId, value);
 
         if (!result.success) {
             return res.status(400).json({
@@ -79,7 +79,7 @@ router.delete("/kodiak/disconnect", authMiddleware, async (req: AuthenticatedReq
         }
 
         const userId = req.user.userId as string;
-        const result = await kodiakConnectionService.disconnectKodiak(userId);
+        const result = await userKodiakService.unlinkKodiakAccount(userId);
 
         if (!result.success) {
             return res.status(400).json({
@@ -116,7 +116,7 @@ router.get("/kodiak/status", authMiddleware, async (req: AuthenticatedRequest, r
         }
 
         const userId = req.user.userId;
-        const status = await kodiakConnectionService.getConnectionStatus(userId);
+        const status = await userKodiakService.getKodiakConnectionStatus(userId);
 
         // Prevent caching of user-specific data
         res.set('Cache-Control', 'no-cache, no-store, must-revalidate');

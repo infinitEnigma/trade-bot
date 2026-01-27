@@ -22,18 +22,34 @@ import {
     getCurrentUserId,
     getCurrentContext,
     createChildContext,
-} from "../../shared/utils/context";
+    RequestContext,
+} from "../../shared";
 
-export interface LogContext {
-    correlationId?: string;
-    userId?: string;
-    userLevel?: string;
-    requestId?: string;
-    operationDuration?: number;
-    component?: string;
-    operation?: string;
-    [key: string]: unknown;
-}
+// Import from shared logging types
+import {
+    LoggerErrorSeverity as ErrorSeverity,
+    LoggerErrorType as ErrorType,
+    ErrorInfo,
+    StackFrame,
+    PerformanceMetrics,
+    DatabaseMetrics,
+    HttpRequestInfo,
+    UserContextInfo,
+    LogContext,
+    ErrorCodes as SharedErrorCodes,
+    //ErrorCode,
+    createErrorInfo,
+    createPerformanceMetrics,
+    createDatabaseMetrics,
+    createHttpRequestInfo,
+    createUserContextInfo,
+    parseStackTrace,
+    classifyError,
+    createEnhancedErrorInfo
+} from "@trade-bot/shared";
+
+// Re-export for backward compatibility
+export { ErrorSeverity, ErrorType, ErrorInfo, StackFrame, PerformanceMetrics, DatabaseMetrics, HttpRequestInfo, UserContextInfo, LogContext, createErrorInfo, createPerformanceMetrics, createDatabaseMetrics, createHttpRequestInfo, createUserContextInfo, parseStackTrace, classifyError, createEnhancedErrorInfo };
 
 /**
  * Context-aware logger that automatically includes tracing information
@@ -42,14 +58,64 @@ export class ContextAwareLogger {
     private componentName: string;
     private additionalMeta?: Record<string, unknown>;
 
+    /**
+     * Context caching mechanism to optimize performance
+     * Caches context information to avoid repeated lookups
+     */
+    private contextCache: {
+        contextRef: RequestContext | undefined;
+        cachedInfo: LogContext | undefined;
+        generation: number;
+    } = {
+            contextRef: undefined,
+            cachedInfo: undefined,
+            generation: 0
+        };
+
     constructor(componentName: string = "unknown") {
         this.componentName = componentName;
     }
 
     /**
-     * Get current context information for logging
+     * Check if context has changed and update generation counter
+     */
+    private checkContextChange(): number {
+        const currentContext = getCurrentContext();
+        const currentCorrelationId = getCorrelationId();
+        const currentUserId = getCurrentUserId();
+
+        // Invalidate cache if:
+        // 1. Context reference changed, OR
+        // 2. Correlation ID changed, OR
+        // 3. User ID changed
+        // This ensures we catch all meaningful context changes
+        const shouldInvalidate =
+            currentContext !== this.contextCache.contextRef ||
+            currentCorrelationId !== this.contextCache.cachedInfo?.correlationId ||
+            currentUserId !== this.contextCache.cachedInfo?.userId;
+
+        if (shouldInvalidate) {
+            this.contextCache.generation++;
+            this.contextCache.contextRef = currentContext;
+        }
+        return this.contextCache.generation;
+    }
+
+    /**
+     * Get current context information for logging with caching optimization
      */
     private getContextInfo(additionalMeta?: Record<string, unknown>): LogContext {
+        const currentGeneration = this.checkContextChange();
+
+        // Return cached version if context hasn't changed and we have cached info
+        if (this.contextCache.cachedInfo && this.contextCache.generation === currentGeneration) {
+            return {
+                ...this.contextCache.cachedInfo,
+                ...additionalMeta
+            };
+        }
+
+        // Compute fresh context info
         const correlationId = getCorrelationId();
         const userId = getCurrentUserId();
         const context = getCurrentContext();
@@ -67,6 +133,8 @@ export class ContextAwareLogger {
             contextInfo.operationDuration = Date.now() - context.startTime;
         }
 
+        // Cache the result for future calls
+        this.contextCache.cachedInfo = contextInfo;
         return contextInfo;
     }
 
@@ -93,6 +161,16 @@ export class ContextAwareLogger {
     }
 
     /**
+     * Type-safe error logging with structured error information
+     */
+    errorWithInfo(message: string, errorInfo: ErrorInfo, meta?: Record<string, unknown>): void {
+        logger.error(message, this.getContextInfo({
+            errorInfo,
+            ...meta
+        }));
+    }
+
+    /**
      * Warning level logging with automatic context
      */
     warn(message: string, meta?: Record<string, unknown>): void {
@@ -104,6 +182,14 @@ export class ContextAwareLogger {
      */
     debug(message: string, meta?: Record<string, unknown>): void {
         logger.debug(message, this.getContextInfo(meta));
+    }
+
+    /**
+     * HTTP level logging with automatic context
+     * Matches the Winston HTTP transport for HTTP request/response logging
+     */
+    http(message: string, meta?: Record<string, unknown>): void {
+        logger.http(message, this.getContextInfo(meta));
     }
 
     /**
@@ -167,6 +253,11 @@ export class ContextAwareLogger {
                 logger.warn(message, contextInfo);
                 break;
             case 'debug':
+                logger.debug(message, contextInfo);
+                break;
+            case 'http':
+                logger.http(message, contextInfo);
+                break;
             default:
                 logger.debug(message, contextInfo);
                 break;
@@ -238,11 +329,33 @@ export class OperationTimer {
     }
 }
 
+
 // Create singleton instances for common components
 export const marketStreamLogger = new ContextAwareLogger('market-stream');
 export const positionSyncLogger = new ContextAwareLogger('position-sync');
 export const redisLogger = new ContextAwareLogger('redis');
 export const websocketLogger = new ContextAwareLogger('websocket');
 
+// Infrastructure Layer Loggers
+export const httpLogger = new ContextAwareLogger('http');
+export const databaseLogger = new ContextAwareLogger('database');
+export const cacheLogger = new ContextAwareLogger('cache');
+
+// Core Domain Loggers
+export const tradingLogger = new ContextAwareLogger('trading');
+export const walletLogger = new ContextAwareLogger('wallet');
+export const authLogger = new ContextAwareLogger('auth');
+export const userLogger = new ContextAwareLogger('user');
+
+// Cross-cutting Concern Loggers
+export const securityLogger = new ContextAwareLogger('security');
+export const validationLogger = new ContextAwareLogger('validation');
+export const performanceLogger = new ContextAwareLogger('performance');
+export const integrationLogger = new ContextAwareLogger('integration');
+
 // Default instance
 export const contextLogger = new ContextAwareLogger('application');
+
+// Re-export ErrorCodes from shared for backward compatibility
+export { SharedErrorCodes as ErrorCodes };
+export type ErrorCode = typeof SharedErrorCodes[keyof typeof SharedErrorCodes];

@@ -63,19 +63,19 @@ const BASE_RATE_LIMITS = {
     // Market data - permissive for real-time charts
     market: {
         windowMs: 60 * 1000, // 1 minute
-        max: 100000, // ⬆️ 100,000 requests per minute (very permissive for charts)
+        max: 10000, // ⬆️ 100,000 requests per minute (very permissive for charts)
     },
 
     // Trading endpoints - strict, user-based, fail-closed
     trading: {
         windowMs: 60 * 1000, // 1 minute
-        max: 10, // 10 requests per minute (IP limit)
+        max: 60, // 10 requests per minute (IP limit)
     },
 
     // Balance endpoints - moderate, user-based
     balance: {
         windowMs: 60 * 1000, // 1 minute
-        max: 60, // 60 requests per minute (IP limit)
+        max: 30, // 60 requests per minute (IP limit)
     },
 
     // WebSocket connections - lenient, user-based, fail-open
@@ -87,7 +87,7 @@ const BASE_RATE_LIMITS = {
     // Bot instance management - moderate, user-based
     botInstances: {
         windowMs: 60 * 1000, // 1 minute
-        max: 30, // 30 requests per minute (IP limit)
+        max: 10, // 30 requests per minute (IP limit)
     },
 
     // Kodiak status endpoints - very lenient, fail-open
@@ -99,7 +99,7 @@ const BASE_RATE_LIMITS = {
     // Kodiak API calls - relaxed limits for frontend compatibility
     kodiakApi: {
         windowMs: 60000, // ⬆️ 1 minute (instead of 1 second)
-        max: 50, // ⬆️ 50 requests per minute (instead of 10 per second)
+        max: 60, // ⬆️ 50 requests per minute (instead of 10 per second)
     },
 } as const;
 

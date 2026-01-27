@@ -1,9 +1,12 @@
 /** @format */
 
 import { Express } from "express";
-import { logger } from "../core/logging";
+import { ContextAwareLogger } from "../core/logging/context-aware-logger.service";
 import { AuthenticatedRequest } from "../interfaces/middleware";
 import { UserLevel } from "@trade-bot/shared";
+
+// Create context-aware logger instance for middleware operations
+const middlewareLogger = new ContextAwareLogger('middleware-config');
 
 /**
  * Express Layer type for middleware stack validation
@@ -94,11 +97,12 @@ export class MiddlewareConfig {
             this.configureActivityTracking(app);
         }
 
-        logger.info("Middleware configuration completed", {
+        middlewareLogger.info("Middleware configuration completed", {
             csrfEnabled: config.enableCsrf,
             rateLimitingEnabled: config.enableRateLimiting,
             kodiakProtectionEnabled: config.enableRateLimiting,
             activityTrackingEnabled: config.enableActivityTracking,
+            operation: "middleware_setup",
         });
     }
 
@@ -111,7 +115,9 @@ export class MiddlewareConfig {
         // CSRF token generation for auth routes (login/register/refresh)
         app.use("/api/auth", csrfTokenMiddleware);
 
-        logger.debug("CSRF token generation configured for auth routes");
+        middlewareLogger.debug("CSRF token generation configured for auth routes", {
+            operation: "csrf_token_setup",
+        });
     }
 
     /**
@@ -133,7 +139,9 @@ export class MiddlewareConfig {
         app.use("/api/wallet", csrfMiddleware);
         app.use("/api/security", csrfMiddleware);
 
-        logger.debug("CSRF validation configured for state-changing routes");
+        middlewareLogger.debug("CSRF validation configured for state-changing routes", {
+            operation: "csrf_validation_setup",
+        });
     }
 
     /**
@@ -146,11 +154,11 @@ export class MiddlewareConfig {
         // They use specialized auth-aware rate limiting instead
 
         // 👤 Profile endpoints - TEMPORARILY DISABLED for testing
-        // app.use("/api/auth/me", RateLimiters.public);
-        // app.use("/api/auth/check-qualification", RateLimiters.public);
-        // app.use("/api/auth/qualification-config", RateLimiters.public);
-        // app.use("/api/auth/csrf-token", RateLimiters.public);
-        // app.use("/api/auth/logout", RateLimiters.public);
+        /*app.use("/api/auth/me", RateLimiters.public);
+        app.use("/api/auth/check-qualification", RateLimiters.public);
+        app.use("/api/auth/qualification-config", RateLimiters.public);
+        app.use("/api/auth/csrf-token", RateLimiters.public);
+        app.use("/api/auth/logout", RateLimiters.public);*/
 
         // 👤 User management endpoints (moderate limits)
         // EXCLUDE /api/user/kodiak/* routes - they use specialized protection
@@ -176,7 +184,9 @@ export class MiddlewareConfig {
         // 🛡️ Security & monitoring (moderate limits)
         app.use("/api/security", RateLimiters.public);
 
-        logger.debug("Per-endpoint rate limiting configured (auth routes excluded from general limits)");
+        middlewareLogger.debug("Per-endpoint rate limiting configured (auth routes excluded from general limits)", {
+            operation: "rate_limiting_setup",
+        });
     }
 
     /**
@@ -221,8 +231,9 @@ export class MiddlewareConfig {
             });
         });
 
-        logger.debug("Kodiak API protection configured for specific routes", {
-            routesProtected: kodiakRoutes.length
+        middlewareLogger.debug("Kodiak API protection configured for specific routes", {
+            routesProtected: kodiakRoutes.length,
+            operation: "kodiak_protection_setup",
         });
     }
 
@@ -233,7 +244,7 @@ export class MiddlewareConfig {
         const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service.js");
 
         return createRateLimiter("kodiak-synced", {
-            max: 8,                   // 8 requests per minute per user (safe for 10/min Orderly limit)
+            max: 60,                   // 60 requests per minute per user (safe for 60/min Orderly limit)
             windowMs: 60000,          // 1 minute window (matches Orderly limit)
             message: "Kodiak data synchronized with Orderly rate limits",
             progressiveBackoff: true,   // Add delays for frequent requests
@@ -241,8 +252,8 @@ export class MiddlewareConfig {
             enableUserBasedLimits: true,
             userLimits: {
                 [UserLevel.BASIC]: 1,             // Basic users: 1 req/min
-                [UserLevel.REGISTERED]: 3,        // Registered users: 3 req/min
-                [UserLevel.VERIFIED]: 8,          // Verified users: 8 req/min (full access)
+                [UserLevel.REGISTERED]: 10,        // Registered users: 10 req/min
+                [UserLevel.VERIFIED]: 60,          // Verified users: 60 req/min (full access)
             },
         });
     }
@@ -257,10 +268,11 @@ export class MiddlewareConfig {
             // This will be moved to a proper service later
             const trackApiActivity = () => {
                 // Activity tracking logic will be implemented in a separate service
-                logger.debug("API activity tracked", {
+                middlewareLogger.debug("API activity tracked", {
                     method: req.method,
                     url: req.url,
                     userId: (req as AuthenticatedRequest).user?.userId,
+                    operation: "api_activity_tracking",
                 });
             };
 
@@ -268,7 +280,9 @@ export class MiddlewareConfig {
             next();
         });
 
-        logger.debug("API activity tracking configured");
+        middlewareLogger.debug("API activity tracking configured", {
+            operation: "activity_tracking_setup",
+        });
     }
 
     /**

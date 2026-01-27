@@ -6,6 +6,7 @@ import { redisService } from "../../../infrastructure/cache/redis.service";
 import { keyManagementService } from "../../../infrastructure/security/key-management.service";
 import { getServiceStatus } from "../../../core/service-selector";
 import logger from "../../../core/logging/logger.service";
+import { httpLogger } from "../../../core/logging";
 
 const router = Router();
 
@@ -14,7 +15,7 @@ const START_TIME = Date.now();
 
 // Basic health check endpoint
 router.get("/health", (req: Request, res: Response) => {
-  logger.http("Health check requested", {
+  httpLogger.http("Health check requested", {
     userAgent: req.get("User-Agent"),
     ip: req.ip,
   });
@@ -113,7 +114,7 @@ router.get("/health/detailed", async (req: Request, res: Response) => {
       ...(errors.length > 0 && { errors }),
     });
 
-    logger.http("Detailed health check completed", {
+    httpLogger.http("Detailed health check completed", {
       overallHealth,
       responseTime,
       errorCount: errors.length,
