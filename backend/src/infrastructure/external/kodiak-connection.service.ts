@@ -11,7 +11,7 @@ import { selectAuthService } from "../../core/service-selector"; const authServi
 import { kodiakIntegrationService } from "./kodiak-integration.service";
 import { encryptionService } from "../../infrastructure/security";
 import { logger } from "../../core/logging";
-import { UserLevel } from "@trade-bot/shared";
+import { UserLevel } from "../../../shared/src";
 
 export interface KodiakConnectionData {
     accountId: string;

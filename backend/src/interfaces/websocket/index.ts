@@ -1,6 +1,6 @@
 /** @format */
 
-import { UserLevel, User, TokenPayload } from "@trade-bot/shared";
+import { UserLevel, User, TokenPayload } from "../../../shared/src";
 import { TickData } from "../../infrastructure/messaging/market-stream/types";
 
 /**

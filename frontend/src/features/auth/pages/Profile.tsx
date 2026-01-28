@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useAuth } from "../../auth";
-import { UserRole } from "@trade-bot/shared";
+import { UserRole } from "../../../../../shared/src";
 import { Card } from "../../../shared/components/ui/Card";
 import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
 import { ValidatedInput } from "../../../shared/components/forms";
@@ -299,7 +299,7 @@ const Profile: React.FC = () => {
 
               <div className="space-y-3">
                 {user.roles && user.roles.length > 0 ? (
-                  user.roles.map(role => (
+                  user.roles.map((role: string) => (
                     <div key={role} className="flex justify-between items-center">
                       <span className="text-textMuted capitalize">
                         {role.replace('_', ' ').toLowerCase()}

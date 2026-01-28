@@ -2,7 +2,7 @@
 
 import React from "react";
 import { useAuth } from "../../features/auth";
-import { User, UserLevel, UserRole } from "@trade-bot/shared";
+import { User, UserLevel, UserRole } from "../../../../shared/src";
 import {
   CheckCircle,
   Lock,

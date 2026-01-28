@@ -17,7 +17,7 @@
  */
 
 // Export logging services
-export { default as logger } from './logger.service';
+export { default as logger } from '../logging/logger.service';
 export {
     ContextAwareLogger,
     contextLogger,
@@ -44,7 +44,7 @@ export {
 // Re-export logging types for convenience
 export {
     ErrorSeverity,
-    ErrorType,
+    //ErrorType,
     ErrorInfo,
     StackFrame,
     PerformanceMetrics,
@@ -52,8 +52,8 @@ export {
     HttpRequestInfo,
     UserContextInfo,
     LogContext,
-    ErrorCodes,
-    ErrorCode,
+    SharedErrorCodes,
+    //ErrorCode,
     createErrorInfo,
     createPerformanceMetrics,
     createDatabaseMetrics,

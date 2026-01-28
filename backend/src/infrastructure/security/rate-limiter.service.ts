@@ -30,7 +30,7 @@
 import { Response, NextFunction } from "express";
 import { redisService } from "../../infrastructure";
 import { AuthenticatedRequest } from "../../interfaces/middleware";
-import { UserLevel } from "@trade-bot/shared";
+import { UserLevel } from "../../../shared/src";
 import { logger } from "../../core/logging";
 
 // Import extracted modules

@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useAuth } from "../../auth";
-import { UserRole } from "@trade-bot/shared";
+import { UserRole } from "../../../../../shared/src";
 import { AppHeader } from "../../../components/ui/AppHeader";
 import { Card } from "../../../shared/components/ui/Card";
 import { SectionHeader } from "../../../shared/components/ui/SectionHeader";

@@ -11,7 +11,7 @@
 import {
     ICacheService,
     CacheResult
-} from '@trade-bot/shared';
+} from '../../../shared/src';
 import { redisService } from '../../cache/redis.service';
 
 /**

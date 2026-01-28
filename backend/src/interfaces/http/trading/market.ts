@@ -171,6 +171,7 @@ router.get(
           success: true,
           data: klines,
           timestamp: Date.now(),
+          source: "websocket_cache",
         });
 
         marketLogger.debug("Klines served from WebSocket cache", {
@@ -185,6 +186,7 @@ router.get(
           data: [],
           timestamp: Date.now(),
           message: "Kline data not available yet - WebSocket connecting",
+          source: "websocket_cache",
         });
 
         marketLogger.debug("Klines requested but no cached data available", {

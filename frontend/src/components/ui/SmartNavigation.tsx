@@ -3,7 +3,7 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../features/auth";
-import { UserRole } from "@trade-bot/shared";
+import { UserRole } from "../../../../shared/src";
 import {
   Home,
   Zap,

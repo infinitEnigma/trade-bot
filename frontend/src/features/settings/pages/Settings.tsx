@@ -51,11 +51,15 @@ const Settings: React.FC = () => {
   // Disconnect Kodiak mutation with React Query
   const disconnectMutation = useDisconnectKodiak();
 
-  // VERIFIED and REGISTERED users have authenticated Kodiak credentials
-  // Only BASIC users need to connect
-  const isConnected = user?.userLevel === "VERIFIED" ||
-    user?.userLevel === "REGISTERED" ||
-    (kodiakStatus?.data?.connected || false);
+  // Follow existing pattern: only fetch for users who have Kodiak access
+  const hasKodiakAccess = user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
+
+  // For BASIC users, we know the status is disconnected without making API calls
+  //const effectiveKodiakStatus = hasKodiakAccess ? kodiakStatus : { connected: false };
+  const effectiveStatusLoading = hasKodiakAccess ? statusLoading : false;
+
+  // Connection status logic (following existing pattern)
+  const isConnected = hasKodiakAccess && (kodiakStatus?.data?.connected || false);
   const kodiakData = kodiakStatus?.data;
 
   // Real-time form validation
@@ -189,12 +193,12 @@ const Settings: React.FC = () => {
             <div className="flex items-center gap-3 p-4 rounded-lg bg-surface border border-white/5">
               <div
                 className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                  isConnected ? "bg-success/10" : "bg-warning/10"
+                  hasKodiakAccess && isConnected ? "bg-success/10" : "bg-warning/10"
                 }`}
               >
-                {statusLoading ? (
+                {effectiveStatusLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin text-warning" />
-                ) : isConnected ? (
+                ) : hasKodiakAccess && isConnected ? (
                   <CheckCircle className="w-4 h-4 text-success" />
                 ) : (
                   <XCircle className="w-4 h-4 text-warning" />
@@ -203,9 +207,9 @@ const Settings: React.FC = () => {
               <div>
                 <p className="text-sm text-textMuted">Kodiak Status</p>
                 <p className="font-medium text-text">
-                  {statusLoading
+                  {effectiveStatusLoading
                     ? "Loading..."
-                    : isConnected
+                    : hasKodiakAccess && isConnected
                       ? "Connected"
                       : "Not Connected"}
                 </p>

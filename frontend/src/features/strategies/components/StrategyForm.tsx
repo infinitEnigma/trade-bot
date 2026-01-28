@@ -7,7 +7,7 @@ import { z } from "zod";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { tradingApi } from "../../../infrastructure/api";
-import { Strategy, StrategyType } from "@trade-bot/shared";
+import { Strategy, StrategyType } from "../../../../../shared/src";
 import { X, Loader2 } from "lucide-react";
 import { getStrategyConfig } from "../types/strategies.types";
 

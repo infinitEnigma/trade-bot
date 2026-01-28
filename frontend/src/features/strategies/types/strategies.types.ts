@@ -1,6 +1,6 @@
 /** @format */
 
-import { Strategy, StrategyType } from "@trade-bot/shared";
+import { Strategy, StrategyType } from "../../../../../shared/src";
 
 // Strategy Configuration Interfaces
 export interface GridStrategyConfig {

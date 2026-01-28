@@ -28,7 +28,7 @@ import {
 // Import from shared logging types
 import {
     LoggerErrorSeverity as ErrorSeverity,
-    LoggerErrorType as ErrorType,
+    LoggerErrorType,
     ErrorInfo,
     StackFrame,
     PerformanceMetrics,
@@ -36,7 +36,7 @@ import {
     HttpRequestInfo,
     UserContextInfo,
     LogContext,
-    ErrorCodes as SharedErrorCodes,
+    SharedErrorCodes,
     //ErrorCode,
     createErrorInfo,
     createPerformanceMetrics,
@@ -46,10 +46,10 @@ import {
     parseStackTrace,
     classifyError,
     createEnhancedErrorInfo
-} from "@trade-bot/shared";
+} from "../../../../shared/src";
 
 // Re-export for backward compatibility
-export { ErrorSeverity, ErrorType, ErrorInfo, StackFrame, PerformanceMetrics, DatabaseMetrics, HttpRequestInfo, UserContextInfo, LogContext, createErrorInfo, createPerformanceMetrics, createDatabaseMetrics, createHttpRequestInfo, createUserContextInfo, parseStackTrace, classifyError, createEnhancedErrorInfo };
+export { SharedErrorCodes, ErrorSeverity, LoggerErrorType, ErrorInfo, StackFrame, PerformanceMetrics, DatabaseMetrics, HttpRequestInfo, UserContextInfo, LogContext, createErrorInfo, createPerformanceMetrics, createDatabaseMetrics, createHttpRequestInfo, createUserContextInfo, parseStackTrace, classifyError, createEnhancedErrorInfo };
 
 /**
  * Context-aware logger that automatically includes tracing information
@@ -357,5 +357,5 @@ export const integrationLogger = new ContextAwareLogger('integration');
 export const contextLogger = new ContextAwareLogger('application');
 
 // Re-export ErrorCodes from shared for backward compatibility
-export { SharedErrorCodes as ErrorCodes };
-export type ErrorCode = typeof SharedErrorCodes[keyof typeof SharedErrorCodes];
+//export { SharedErrorCodes };
+export type ErrorCodes = typeof SharedErrorCodes[keyof typeof SharedErrorCodes];

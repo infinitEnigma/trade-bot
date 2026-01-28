@@ -3,11 +3,11 @@
 import { Request, Response, NextFunction } from "express";
 import {
     AppError,
-    ErrorCode,
+    SharedErrorCodes,
     createErrorResponse,
     getErrorStatusCode,
     isOperationalError
-} from "@trade-bot/shared";
+} from "../../../shared/src";
 import { logger } from "../../core/logging";
 
 /**
@@ -218,7 +218,7 @@ export class ErrorHandlerUtils {
      */
     static createCustomError(
         message: string,
-        code: ErrorCode,
+        code: SharedErrorCodes,
         statusCode: number = 500,
         context: Record<string, unknown> = {}
     ): AppError {
@@ -232,10 +232,10 @@ export class ErrorHandlerUtils {
         if (error instanceof AppError) {
             // Alert on critical system errors
             return [
-                ErrorCode.INTERNAL_ERROR,
-                ErrorCode.DATABASE_ERROR,
-                ErrorCode.EXTERNAL_SERVICE_ERROR,
-                ErrorCode.CONFIGURATION_ERROR,
+                SharedErrorCodes.INTERNAL_ERROR,
+                SharedErrorCodes.DATABASE_ERROR,
+                SharedErrorCodes.EXTERNAL_SERVICE_ERROR,
+                SharedErrorCodes.CONFIGURATION_ERROR,
             ].includes(error.code);
         }
 
@@ -249,17 +249,17 @@ export class ErrorHandlerUtils {
     static getSeverity(error: Error): 'low' | 'medium' | 'high' | 'critical' {
         if (error instanceof AppError) {
             switch (error.code) {
-                case ErrorCode.INTERNAL_ERROR:
-                case ErrorCode.DATABASE_ERROR:
-                case ErrorCode.CONFIGURATION_ERROR:
+                case SharedErrorCodes.INTERNAL_ERROR:
+                case SharedErrorCodes.DATABASE_ERROR:
+                case SharedErrorCodes.CONFIGURATION_ERROR:
                     return 'critical';
 
-                case ErrorCode.EXTERNAL_SERVICE_ERROR:
-                case ErrorCode.CONNECTION_ERROR:
+                case SharedErrorCodes.EXTERNAL_SERVICE_ERROR:
+                case SharedErrorCodes.CONNECTION_ERROR:
                     return 'high';
 
-                case ErrorCode.UNAUTHENTICATED:
-                case ErrorCode.INSUFFICIENT_PERMISSIONS:
+                case SharedErrorCodes.UNAUTHENTICATED:
+                case SharedErrorCodes.INSUFFICIENT_PERMISSIONS:
                     return 'medium';
 
                 default:

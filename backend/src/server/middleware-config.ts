@@ -3,7 +3,7 @@
 import { Express } from "express";
 import { ContextAwareLogger } from "../core/logging/context-aware-logger.service";
 import { AuthenticatedRequest } from "../interfaces/middleware";
-import { UserLevel } from "@trade-bot/shared";
+import { UserLevel } from "../../../shared/src";
 
 // Create context-aware logger instance for middleware operations
 const middlewareLogger = new ContextAwareLogger('middleware-config');
@@ -169,7 +169,6 @@ export class MiddlewareConfig {
             RateLimiters.public(req, res, next);
         });
         app.use("/api/user-profile", RateLimiters.public);
-
         // 📊 Market data endpoints (user-based scaling)
         app.use("/api/market", RateLimiters.market);
         app.use("/api/strategies", RateLimiters.market);
@@ -194,22 +193,22 @@ export class MiddlewareConfig {
      */
     private static async configureKodiakProtection(app: Express): Promise<void> {
         const { kodiakRequestQueue } = await import("../infrastructure/external/kodiak-queue.js");
-
+        const { authMiddleware } = await import("../interfaces/middleware/auth.js");
         // 🎯 KODIAK-SPECIFIC PROTECTION: Request queuing + rate limiting for trading routes ONLY
         // EXCLUDE chart/market data routes - they need fast updates for real-time charts
         const kodiakRoutes = [
+            "/api/user/kodiak/connect",      // ✅ Connection endpoint - needs protection
             "/api/user/kodiak/positions",    // ✅ Trading data - needs protection
             "/api/user/kodiak/trades",       // ✅ Trading data - needs protection
             "/api/user/kodiak/balance",      // ✅ Trading data - needs protection
-            "/api/user/kodiak/account-info", // ✅ Trading data - needs protection
-            "/api/user/kodiak/status",       // ✅ Trading data - needs protection
+            "/api/user/kodiak/account-info", // ✅ Trading data - needs protection            
             "/api/balance/current"           // ✅ Trading data - needs protection
             // ❌ EXCLUDED: /api/market/* routes (charts need real-time updates)
         ];
 
         // Apply queuing and rate limiting to each Kodiak route
         kodiakRoutes.forEach(route => {
-            app.use(route, (req, res, next) => {
+            app.use(route, authMiddleware, (req, res, next) => {
                 // Queue requests to comply with Orderly rate limits
                 // Wrap next function in Promise to match QueueMiddleware type
                 const queued = kodiakRequestQueue.enqueue(req, res, async () => {
@@ -226,7 +225,11 @@ export class MiddlewareConfig {
 
             // Additional rate limiting per Kodiak account
             app.use(route, async (req, res, next) => {
-                const rateLimiter = await this.createKodiakRateLimiter();
+                // Use connection-specific rate limiter for connect endpoint
+                // Use data-specific rate limiter for other endpoints
+                const rateLimiter = route === "/api/user/kodiak/connect"
+                    ? await this.createKodiakConnectionRateLimiter()
+                    : await this.createKodiakRateLimiter();
                 rateLimiter(req, res, next);
             });
         });
@@ -243,9 +246,9 @@ export class MiddlewareConfig {
     private static async createKodiakRateLimiter() {
         const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service.js");
 
-        return createRateLimiter("kodiak-synced", {
-            max: 60,                   // 60 requests per minute per user (safe for 60/min Orderly limit)
-            windowMs: 60000,          // 1 minute window (matches Orderly limit)
+        return createRateLimiter("kodiak-data", {
+            max: 20,                   // 20 requests per minute per user (reduced from 60)
+            windowMs: 60000,          // 1 minute window
             message: "Kodiak data synchronized with Orderly rate limits",
             progressiveBackoff: true,   // Add delays for frequent requests
             failOpen: false,          // Protect Orderly API - fail closed
@@ -253,7 +256,49 @@ export class MiddlewareConfig {
             userLimits: {
                 [UserLevel.BASIC]: 1,             // Basic users: 1 req/min
                 [UserLevel.REGISTERED]: 10,        // Registered users: 10 req/min
-                [UserLevel.VERIFIED]: 60,          // Verified users: 60 req/min (full access)
+                [UserLevel.VERIFIED]: 20,          // Verified users: 20 req/min (reduced from 60)
+            },
+        });
+    }
+
+    /**
+     * Create status-specific rate limiter with higher limits
+     */
+    private static async createKodiakStatusRateLimiter() {
+        const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service.js");
+
+        return createRateLimiter("kodiak-status", {
+            max: 300,                  // 300 requests per minute for status checks
+            windowMs: 60000,          // 1 minute window
+            message: "Kodiak status check rate limit exceeded",
+            progressiveBackoff: false,
+            failOpen: true,           // Allow if rate limiting fails - status should be available
+            enableUserBasedLimits: true,
+            userLimits: {
+                [UserLevel.BASIC]: 5,             // Basic users: 5 req/min
+                [UserLevel.REGISTERED]: 25,        // Registered users: 25 req/min
+                [UserLevel.VERIFIED]: 300,         // Verified users: 300 req/min (full access)
+            },
+        });
+    }
+
+    /**
+     * Create connection-specific rate limiter with moderate limits
+     */
+    private static async createKodiakConnectionRateLimiter() {
+        const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service.js");
+
+        return createRateLimiter("kodiak-connection", {
+            max: 20,                   // 20 requests per minute for connection operations
+            windowMs: 60000,          // 1 minute window
+            message: "Kodiak connection rate limit exceeded",
+            progressiveBackoff: false,
+            failOpen: true,           // Allow if rate limiting fails - connection should work
+            enableUserBasedLimits: true,
+            userLimits: {
+                [UserLevel.BASIC]: 2,             // Basic users: 2 req/min
+                [UserLevel.REGISTERED]: 10,        // Registered users: 10 req/min
+                [UserLevel.VERIFIED]: 20,          // Verified users: 20 req/min
             },
         });
     }

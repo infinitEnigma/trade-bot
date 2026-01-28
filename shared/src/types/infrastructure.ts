@@ -252,6 +252,18 @@ export interface ITokenService {
     verifyToken(token: string): TokenPayload | null;
 
     /**
+     * Verify token with database validation
+     * 
+     * This method verifies the token and checks if the user still exists in the database.
+     * If the user doesn't exist (e.g., after database reset), the token is considered invalid.
+     * 
+     * @param token - JWT token to verify
+     * @param authService - Auth service instance to check user existence
+     * @returns TokenPayload if valid and user exists, null otherwise
+     */
+    verifyTokenWithDatabaseValidation(token: string, authService: any): Promise<TokenPayload | null>;
+
+    /**
      * Hash token for storage (not for security, just for key length)
      */
     hashTokenForStorage(token: string): string;

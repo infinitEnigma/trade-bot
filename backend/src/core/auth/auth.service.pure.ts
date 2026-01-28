@@ -29,7 +29,7 @@ import {
     AuthTokens,
     TokenPayload,
     CacheResult
-} from '@trade-bot/shared';
+} from '../../../shared/src';
 
 export interface AuthServiceDependencies {
     userRepository: IUserRepository;
@@ -286,15 +286,23 @@ export class AuthService {
     }
 
     /**
-     * Validate access token
+     * Validate access token with database validation
      *
      * Business Logic:
      * - Verify JWT signature and expiration
-     * - Return decoded payload if valid
+     * - Check if user still exists in database (handles database resets)
+     * - Return decoded payload if valid and user exists
      */
     async validateToken(token: string): Promise<TokenPayload | null> {
         try {
-            return this.deps.tokenService.verifyToken(token);
+            // Use the new database validation method
+            const payload = await this.deps.tokenService.verifyTokenWithDatabaseValidation(token, this);
+            if (!payload) {
+                this.deps.logger.debug('Token validation failed - invalid token or user not found');
+                return null;
+            }
+
+            return payload;
         } catch (error) {
             this.deps.logger.debug('Token validation failed', {
                 error: error instanceof Error ? error.message : String(error)

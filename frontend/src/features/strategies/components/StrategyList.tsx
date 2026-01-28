@@ -1,7 +1,7 @@
 /** @format */
 
 import React from "react";
-import { Strategy, StrategyType } from "@trade-bot/shared";
+import { Strategy, StrategyType } from "../../../../../shared/src";
 import { BarChart3 } from "lucide-react";
 import { StrategyConfig } from "../types/strategies.types";
 //import { Link } from "react-router-dom";

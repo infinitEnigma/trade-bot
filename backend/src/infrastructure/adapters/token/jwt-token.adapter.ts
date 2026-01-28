@@ -10,7 +10,7 @@
 
 import jwt from 'jsonwebtoken';
 import { createHash } from 'crypto';
-import { ITokenService, TokenPayload } from '@trade-bot/shared';
+import { ITokenService, TokenPayload } from '../../../shared/src';
 
 /**
  * JWT Token Adapter
@@ -76,6 +76,38 @@ export class JwtTokenAdapter implements ITokenService {
                     return null;
                 }
             }
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    /**
+     * Verify token with database validation
+     * 
+     * This method verifies the token and checks if the user still exists in the database.
+     * If the user doesn't exist (e.g., after database reset), the token is considered invalid.
+     * 
+     * @param token - JWT token to verify
+     * @param authService - Auth service instance to check user existence
+     * @returns TokenPayload if valid and user exists, null otherwise
+     */
+    async verifyTokenWithDatabaseValidation(
+        token: string,
+        authService: any
+    ): Promise<TokenPayload | null> {
+        try {
+            const payload = this.verifyToken(token);
+            if (!payload) {
+                return null;
+            }
+
+            // Check if user still exists in database (handles database resets)
+            const userExists = await authService.getUserById(payload.userId);
+            if (!userExists) {
+                return null; // User doesn't exist anymore (e.g., after DB reset)
+            }
+
+            return payload;
         } catch (_error) {
             return null;
         }

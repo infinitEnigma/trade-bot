@@ -9,7 +9,7 @@
  */
 
 import { balanceApi } from "../../infrastructure/api";
-import { Balance } from "@trade-bot/shared";
+import { Balance } from "../../../../shared/src";
 
 interface BalanceSubscriber {
     callback: (balance: Balance) => void;

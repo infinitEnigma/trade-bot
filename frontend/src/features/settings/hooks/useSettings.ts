@@ -1,7 +1,7 @@
 /** @format */
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth";
 import { settingsService } from "../services/settingsService";
 import { KodiakCredentials } from "../types/settings.types";
@@ -21,17 +21,6 @@ export const useSettings = () => {
         secretKey: "",
     });
 
-    // Fetch Kodiak status
-    const {
-        data: kodiakStatus = { connected: false },
-        isLoading: statusLoading,
-        refetch: refetchStatus,
-    } = useQuery({
-        queryKey: ["kodiak-status"],
-        queryFn: () => settingsService.getKodiakStatus(),
-        staleTime: 30000, // 30 seconds
-        gcTime: 300000, // 5 minutes
-    });
 
     // Connect Kodiak mutation
     const connectMutation = useMutation({
@@ -54,7 +43,6 @@ export const useSettings = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["kodiak-status"] });
             queryClient.invalidateQueries({ queryKey: ["profile"] });
-            refetchStatus();
         },
     });
 
@@ -90,19 +78,15 @@ export const useSettings = () => {
     const accountOverview = {
         userLevel: user?.userLevel || "BASIC",
         accountStatus: "Active",
-        kodiakConnected: kodiakStatus.connected,
-        lastSync: kodiakStatus.connectedAt,
     };
 
     return {
         // State
-        kodiakStatus,
         accountOverview,
         formData,
         showSecrets,
 
         // Loading states
-        statusLoading,
         isConnecting: connectMutation.isPending,
         isDisconnecting: disconnectMutation.isPending,
 
@@ -115,7 +99,6 @@ export const useSettings = () => {
         handleDisconnect,
         updateFormField,
         setShowSecrets,
-        refetchStatus,
 
         // Validation
         validateCredentials: settingsService.validateCredentials,

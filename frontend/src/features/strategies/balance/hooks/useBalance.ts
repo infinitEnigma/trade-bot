@@ -1,7 +1,7 @@
 /** @format */
 
 import { useEffect, useState, useCallback } from "react";
-import { UserLevel, Balance as DomainBalance } from "@trade-bot/shared";
+import { UserLevel, Balance as DomainBalance } from "../../../../../../shared/src";
 import { globalBalanceManager } from "../../../../shared/services/balance-manager";
 import { useAuth } from "../../../auth";
 
@@ -65,7 +65,7 @@ export const useBalance = (autoRefresh: boolean = true) => {
                     balanceToSet = convertDomainBalanceToLegacy(lastData);
                 } else if (lastData && typeof lastData === 'object' && 'timestamp' in lastData) {
                     // Already in legacy format
-                    balanceToSet = lastData as Balance;
+                    balanceToSet = lastData as unknown as Balance;
                 }
                 setBalance(balanceToSet);
             }
@@ -117,7 +117,7 @@ export const useBalance = (autoRefresh: boolean = true) => {
                 balanceToSet = convertDomainBalanceToLegacy(newBalance);
             } else if (newBalance && typeof newBalance === 'object' && 'timestamp' in newBalance) {
                 // Already in legacy format
-                balanceToSet = newBalance as Balance;
+                balanceToSet = newBalance as unknown as Balance;
             }
 
             setBalance(balanceToSet);

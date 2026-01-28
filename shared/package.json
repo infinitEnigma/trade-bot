@@ -1,5 +1,5 @@
 {
-  "name": "@trade-bot/shared",
+  "name": "../../../shared/src",
   "version": "1.0.0",
   "description": "Shared TypeScript types for trade-bot",
   "main": "dist/index.js",

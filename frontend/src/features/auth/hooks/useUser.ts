@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authApi } from "../../../infrastructure/api/auth";
 import { kodiakApi } from "../../../infrastructure/api/kodiak";
 import { useAuth, updateAuthUser } from "./useAuth";
-import { UserLevel } from "@trade-bot/shared";
+import { UserLevel } from "../../../../../shared/src";
 
 interface ApiError extends Error {
     response?: {
@@ -41,21 +41,27 @@ export const useUser = () => {
 
 /**
  * Hook for Kodiak status with React Query caching
+ * Only fetches for users who have Kodiak access (REGISTERED/VERIFIED)
  */
 export const useKodiakStatus = () => {
     const { user } = useAuth();
 
+    // Follow existing pattern: only fetch for users who have Kodiak access
+    const hasKodiakAccess = user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
+
     return useQuery({
         queryKey: ["kodiak-status", user?.id],
         queryFn: () => kodiakApi.getKodiakStatus(),
-        enabled: !!user?.id,
+        enabled: !!user?.id && hasKodiakAccess, // Skip for BASIC users
         staleTime: 2 * 60 * 1000, // 2 minutes - Kodiak status changes less frequently
         gcTime: 5 * 60 * 1000, // 5 minutes cache
+        refetchInterval: 60 * 1000, // refetch every 60 seconds
+        refetchIntervalInBackground: false, // Don't refetch when tab is not active
         refetchOnWindowFocus: false,
         retry: (failureCount, error: Error) => {
             // Don't retry auth errors
             const apiError = error as ApiError;
-            if (apiError?.response?.status === 401 || apiError?.response?.status === 403) {
+            if (apiError?.response?.status === 401 || apiError?.response?.status === 403 || apiError?.response?.status === 429) {
                 return false;
             }
             return failureCount < 1; // Only retry once for Kodiak status

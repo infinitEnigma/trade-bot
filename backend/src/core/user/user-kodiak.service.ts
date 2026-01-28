@@ -23,6 +23,16 @@ import {
 } from "../../core/logging";
 import { kodiakConnectionService } from "../../infrastructure/external/kodiak-connection.service";
 import { KodiakConnectionData, KodiakConnectionResult, KodiakConnectionStatus } from "../../infrastructure/external/kodiak-connection.service";
+import { connectionCache } from "../../infrastructure/cache/connection-cache.service";
+
+// Simple in-memory cache for Kodiak status
+interface KodiakStatusCache {
+    status: KodiakConnectionStatus;
+    timestamp: number;
+}
+
+const STATUS_CACHE_TTL = 10000; // 10 seconds cache
+const statusCache = new Map<string, KodiakStatusCache>();
 
 export interface KodiakUserConfig {
     userId: string;
@@ -63,8 +73,41 @@ export class UserKodiakService {
                 accountId: connectionData.accountId
             });
 
+            // Check cache first to avoid duplicate API calls
+            const cachedResult = await connectionCache.getCachedResult(userId, connectionData.accountId);
+            if (cachedResult) {
+                timer.success({
+                    cached: true,
+                    verified: cachedResult.success
+                });
+                userLogger.info("Kodiak connection result retrieved from cache", {
+                    userId,
+                    accountId: connectionData.accountId,
+                    success: cachedResult.success,
+                    error: cachedResult.error
+                });
+
+                return {
+                    success: cachedResult.success,
+                    message: cachedResult.success ? "Connection successful" : "Connection failed",
+                    error: cachedResult.error,
+                    data: cachedResult.success ? {
+                        accountId: connectionData.accountId,
+                        verified: true
+                    } : undefined
+                };
+            }
+
             // Delegate to infrastructure service for actual connection
             const result = await kodiakConnectionService.connectKodiak(userId, connectionData);
+
+            // Cache the result
+            await connectionCache.setCachedResult(
+                userId,
+                connectionData.accountId,
+                result.success,
+                result.error
+            );
 
             if (result.success) {
                 timer.success({
@@ -132,7 +175,7 @@ export class UserKodiakService {
     }
 
     /**
-     * Get user's Kodiak connection status
+     * Get user's Kodiak connection status with caching
      */
     async getKodiakConnectionStatus(userId: string): Promise<KodiakConnectionStatus> {
         try {
@@ -141,11 +184,32 @@ export class UserKodiakService {
             // Start operation timing
             const timer = userLogger.startOperation("getKodiakConnectionStatus", { userId });
 
-            // Delegate to infrastructure service for status check
+            // Check cache first
+            const cached = statusCache.get(userId);
+            const now = Date.now();
+
+            if (cached && (now - cached.timestamp) < STATUS_CACHE_TTL) {
+                timer.success();
+                userLogger.debug("Kodiak connection status retrieved from cache", {
+                    userId,
+                    connected: cached.status.connected,
+                    verified: cached.status.verified,
+                    cacheAge: now - cached.timestamp
+                });
+                return cached.status;
+            }
+
+            // Cache miss or expired, fetch from infrastructure service
             const status = await kodiakConnectionService.getConnectionStatus(userId);
 
+            // Update cache
+            statusCache.set(userId, {
+                status,
+                timestamp: now
+            });
+
             timer.success();
-            userLogger.debug("Kodiak connection status retrieved", {
+            userLogger.debug("Kodiak connection status retrieved and cached", {
                 userId,
                 connected: status.connected,
                 verified: status.verified

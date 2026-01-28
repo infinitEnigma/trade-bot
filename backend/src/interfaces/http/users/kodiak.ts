@@ -10,7 +10,9 @@ import Joi from "joi";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
 import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
 import { userKodiakService } from "../../../core/user/user-kodiak.service";
-//import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
+import { createRateLimiter } from "../../../infrastructure/security/rate-limiter.service";
+//import { UserLevel } from "../../../shared/src";
+import { kodiakConnectionRateLimit, kodiakSyncedRateLimit, kodiakRateLimit } from "../../../infrastructure/security/rate-limiter/rate-limit.config";
 import logger from "../../../core/logging/logger.service";
 
 const router = Router();
@@ -24,7 +26,7 @@ const kodiakConnectionSchema = Joi.object({
 });
 
 // POST /api/user/kodiak/connect
-router.post("/kodiak/connect", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/kodiak/connect", authMiddleware, createRateLimiter("kodiak-connection", kodiakConnectionRateLimit), async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Ensure user is authenticated (should always be true due to authMiddleware)
         if (!req.user) {
@@ -108,7 +110,7 @@ router.delete("/kodiak/disconnect", authMiddleware, async (req: AuthenticatedReq
 });
 
 // GET /api/user/kodiak/status
-router.get("/kodiak/status", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/kodiak/status", createRateLimiter("kodiak-status", kodiakSyncedRateLimit), async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Ensure user is authenticated (should always be true due to authMiddleware)
         if (!req.user) {
@@ -119,9 +121,9 @@ router.get("/kodiak/status", authMiddleware, async (req: AuthenticatedRequest, r
         const status = await userKodiakService.getKodiakConnectionStatus(userId);
 
         // Prevent caching of user-specific data
-        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-        res.set('Pragma', 'no-cache');
-        res.set('Expires', '0');
+        //res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        //res.set('Pragma', 'no-cache');
+        //res.set('Expires', '0');
 
         res.json({
             success: true,

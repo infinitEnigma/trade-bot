@@ -17,7 +17,7 @@ import {
     ICacheService,
     CacheResult,
     Trade
-} from '@trade-bot/shared';
+} from '../../../shared/src';
 
 // Bot-specific trade interface extending the base Trade type
 export interface BotTrade extends Trade {

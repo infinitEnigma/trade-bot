@@ -25,7 +25,7 @@
  * @format
  */
 
-export enum ErrorCode {
+export enum ErrorCodes {
     // Validation Errors (400)
     VALIDATION_ERROR = "VALIDATION_ERROR",
     MISSING_REQUIRED_FIELD = "MISSING_REQUIRED_FIELD",
@@ -63,7 +63,7 @@ export enum ErrorCode {
     CONFIGURATION_ERROR = "CONFIGURATION_ERROR",
     ENCRYPTION_ERROR = "ENCRYPTION_ERROR",
 }
-
+export { ErrorCodes as SharedErrorCodes };
 export interface ErrorContext {
     field?: string;
     value?: string | number | boolean;
@@ -85,14 +85,14 @@ export interface ErrorContext {
  * Base application error class
  */
 export class AppError extends Error {
-    public code: ErrorCode;
+    public code: ErrorCodes;
     public statusCode: number;
     public readonly isOperational: boolean;
     public readonly context: ErrorContext;
 
     constructor(
         message: string,
-        code: ErrorCode,
+        code: ErrorCodes,
         statusCode: number = 500,
         context: ErrorContext = {},
         isOperational: boolean = true
@@ -143,7 +143,7 @@ export class AppError extends Error {
  */
 export class ValidationError extends AppError {
     constructor(message: string, context: ErrorContext = {}) {
-        super(message, ErrorCode.VALIDATION_ERROR, 400, context);
+        super(message, ErrorCodes.VALIDATION_ERROR, 400, context);
     }
 
     protected getUserMessage(): string {
@@ -183,7 +183,7 @@ export class AuthenticationError extends AppError {
         message: string = "Authentication required",
         context: ErrorContext = {}
     ) {
-        super(message, ErrorCode.UNAUTHENTICATED, 401, context);
+        super(message, ErrorCodes.UNAUTHENTICATED, 401, context);
     }
 }
 
@@ -192,7 +192,7 @@ export class AuthorizationError extends AppError {
         message: string = "Insufficient permissions",
         context: ErrorContext = {}
     ) {
-        super(message, ErrorCode.INSUFFICIENT_PERMISSIONS, 403, context);
+        super(message, ErrorCodes.INSUFFICIENT_PERMISSIONS, 403, context);
     }
 }
 
@@ -200,7 +200,7 @@ export class InvalidCredentialsError extends AppError {
     constructor(context: ErrorContext = {}) {
         super(
             "Invalid credentials provided",
-            ErrorCode.INVALID_CREDENTIALS,
+            ErrorCodes.INVALID_CREDENTIALS,
             401,
             context
         );
@@ -213,13 +213,13 @@ export class InvalidCredentialsError extends AppError {
  */
 export class NotFoundError extends AppError {
     constructor(resource: string, context: ErrorContext = {}) {
-        super(`${resource} not found`, ErrorCode.NOT_FOUND, 404, context);
+        super(`${resource} not found`, ErrorCodes.NOT_FOUND, 404, context);
     }
 }
 
 export class ConflictError extends AppError {
     constructor(message: string, context: ErrorContext = {}) {
-        super(message, ErrorCode.CONFLICT, 409, context);
+        super(message, ErrorCodes.CONFLICT, 409, context);
     }
 }
 
@@ -231,7 +231,7 @@ export class DatabaseError extends AppError {
         message: string = "Database operation failed",
         context: ErrorContext = {}
     ) {
-        super(message, ErrorCode.DATABASE_ERROR, 500, context);
+        super(message, ErrorCodes.DATABASE_ERROR, 500, context);
     }
 
     protected getUserMessage(): string {
@@ -243,7 +243,7 @@ export class ConnectionError extends DatabaseError {
     constructor(context: ErrorContext = {}) {
         super("Database connection failed", context);
         this.name = "ConnectionError";
-        this.code = ErrorCode.CONNECTION_ERROR;
+        this.code = ErrorCodes.CONNECTION_ERROR;
     }
 
     protected getUserMessage(): string {
@@ -258,7 +258,7 @@ export class ExternalServiceError extends AppError {
     constructor(service: string, context: ErrorContext = {}) {
         super(
             `${service} service unavailable`,
-            ErrorCode.EXTERNAL_SERVICE_ERROR,
+            ErrorCodes.EXTERNAL_SERVICE_ERROR,
             502,
             {
                 ...context,
@@ -277,7 +277,7 @@ export class ServiceUnavailableError extends ExternalServiceError {
         super(service, context);
         this.name = "ServiceUnavailableError";
         this.statusCode = 503;
-        this.code = ErrorCode.SERVICE_UNAVAILABLE;
+        this.code = ErrorCodes.SERVICE_UNAVAILABLE;
     }
 }
 
@@ -295,7 +295,7 @@ export class InsufficientBalanceError extends ValidationError {
             }
         );
         this.name = "InsufficientBalanceError";
-        this.code = ErrorCode.INSUFFICIENT_BALANCE;
+        this.code = ErrorCodes.INSUFFICIENT_BALANCE;
     }
 
     protected getAdditionalData() {
@@ -318,7 +318,7 @@ export class PositionSizeExceededError extends ValidationError {
             maxAllowed,
         });
         this.name = "PositionSizeExceededError";
-        this.code = ErrorCode.POSITION_SIZE_EXCEEDED;
+        this.code = ErrorCodes.POSITION_SIZE_EXCEEDED;
     }
 
     protected getAdditionalData() {
@@ -337,7 +337,7 @@ export class InternalError extends AppError {
         message: string = "Internal server error",
         context: ErrorContext = {}
     ) {
-        super(message, ErrorCode.INTERNAL_ERROR, 500, context);
+        super(message, ErrorCodes.INTERNAL_ERROR, 500, context);
     }
 
     protected getUserMessage(): string {
@@ -349,7 +349,7 @@ export class ConfigurationError extends InternalError {
     constructor(message: string, context: ErrorContext = {}) {
         super(message, context);
         this.name = "ConfigurationError";
-        this.code = ErrorCode.CONFIGURATION_ERROR;
+        this.code = ErrorCodes.CONFIGURATION_ERROR;
     }
 }
 
@@ -376,7 +376,7 @@ export function createErrorResponse(error: Error, correlationId?: string) {
     return {
         success: false,
         error: "An unexpected error occurred",
-        code: ErrorCode.INTERNAL_ERROR,
+        code: ErrorCodes.INTERNAL_ERROR,
         correlationId,
         timestamp: new Date().toISOString(),
     };

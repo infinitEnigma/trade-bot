@@ -1,6 +1,6 @@
 /** @format */
 
-import { ContextAwareLogger, createErrorInfo, createEnhancedErrorInfo, createPerformanceMetrics, createDatabaseMetrics, createHttpRequestInfo, createUserContextInfo, ErrorCodes, classifyError, parseStackTrace } from "./context-aware-logger.service";
+import { ContextAwareLogger, createErrorInfo, createEnhancedErrorInfo, createPerformanceMetrics, createDatabaseMetrics, createHttpRequestInfo, createUserContextInfo, classifyError, parseStackTrace, SharedErrorCodes } from "../logging";
 import { setRequestContext, getCurrentContext } from "../../shared/utils/context";
 
 describe("ContextAwareLogger Performance Optimization", () => {
@@ -256,7 +256,7 @@ describe("ContextAwareLogger Performance Optimization", () => {
 
                 const classification = classifyError(dbError);
                 expect(classification.errorType).toBe('database');
-                expect(classification.errorCode).toBe(ErrorCodes.DB_CONNECTION_FAILED);
+                expect(classification.errorCode).toBe(SharedErrorCodes.CONNECTION_ERROR);
                 expect(classification.errorSeverity).toBe('high');
             });
 
@@ -266,7 +266,7 @@ describe("ContextAwareLogger Performance Optimization", () => {
 
                 const classification = classifyError(networkError);
                 expect(classification.errorType).toBe('network');
-                expect(classification.errorCode).toBe(ErrorCodes.NETWORK_TIMEOUT);
+                expect(classification.errorCode).toBe(SharedErrorCodes.EXTERNAL_SERVICE_ERROR);
                 expect(classification.errorSeverity).toBe('high');
             });
 
@@ -276,7 +276,7 @@ describe("ContextAwareLogger Performance Optimization", () => {
 
                 const classification = classifyError(validationError);
                 expect(classification.errorType).toBe('validation');
-                expect(classification.errorCode).toBe(ErrorCodes.VALIDATION_FAILED);
+                expect(classification.errorCode).toBe(SharedErrorCodes.VALIDATION_ERROR);
                 expect(classification.errorSeverity).toBe('medium');
             });
 
@@ -286,7 +286,7 @@ describe("ContextAwareLogger Performance Optimization", () => {
 
                 const classification = classifyError(authError);
                 expect(classification.errorType).toBe('authentication');
-                expect(classification.errorCode).toBe(ErrorCodes.AUTH_TOKEN_INVALID);
+                expect(classification.errorCode).toBe(SharedErrorCodes.TOKEN_EXPIRED);
                 expect(classification.errorSeverity).toBe('medium');
             });
 
@@ -296,7 +296,7 @@ describe("ContextAwareLogger Performance Optimization", () => {
 
                 const classification = classifyError(unknownError);
                 expect(classification.errorType).toBe('unknown');
-                expect(classification.errorCode).toBe(ErrorCodes.UNKNOWN_ERROR);
+                expect(classification.errorCode).toBe(SharedErrorCodes.INTERNAL_ERROR);
                 expect(classification.errorSeverity).toBe('high');
             });
         });
@@ -369,7 +369,7 @@ describe("ContextAwareLogger Performance Optimization", () => {
                 expect(errorInfo.error).toBe("Database connection pool exhausted");
                 expect(errorInfo.errorName).toBe("DatabaseError");
                 expect(errorInfo.errorType).toBe('database');
-                expect(errorInfo.errorCode).toBe(ErrorCodes.DB_POOL_EXHAUSTED);
+                expect(errorInfo.errorCode).toBe(SharedErrorCodes.DATABASE_ERROR);
                 expect(errorInfo.errorSeverity).toBe('critical');
                 expect(errorInfo.timestamp).toBeDefined();
                 expect(errorInfo.stackFrames).toBeDefined();
@@ -383,12 +383,12 @@ describe("ContextAwareLogger Performance Optimization", () => {
 
                 const errorInfo = createEnhancedErrorInfo(error, {
                     errorType: 'integration',
-                    errorCode: ErrorCodes.INTEGRATION_API_ERROR,
+                    errorCode: SharedErrorCodes.API_RATE_LIMITED,
                     isOperational: true
                 });
 
                 expect(errorInfo.errorType).toBe('integration'); // Overridden
-                expect(errorInfo.errorCode).toBe(ErrorCodes.INTEGRATION_API_ERROR); // Overridden
+                expect(errorInfo.errorCode).toBe(SharedErrorCodes.API_RATE_LIMITED); // Overridden
                 expect(errorInfo.isOperational).toBe(true);
             });
 
@@ -401,21 +401,21 @@ describe("ContextAwareLogger Performance Optimization", () => {
                 expect(errorInfo.error).toBe("Error without stack");
                 expect(errorInfo.stackFrames).toEqual([]);
                 expect(errorInfo.errorType).toBe('unknown');
-                expect(errorInfo.errorCode).toBe(ErrorCodes.UNKNOWN_ERROR);
+                expect(errorInfo.errorCode).toBe(SharedErrorCodes.INTERNAL_ERROR);
             });
         });
 
         describe("Error Code Constants", () => {
             it("should have defined error codes for all categories", () => {
-                expect(ErrorCodes.DB_CONNECTION_FAILED).toBe('DB_CONNECTION_FAILED');
-                expect(ErrorCodes.NETWORK_TIMEOUT).toBe('NETWORK_TIMEOUT');
-                expect(ErrorCodes.VALIDATION_FAILED).toBe('VALIDATION_FAILED');
-                expect(ErrorCodes.AUTH_TOKEN_EXPIRED).toBe('AUTH_TOKEN_EXPIRED');
-                expect(ErrorCodes.BUSINESS_RULE_VIOLATION).toBe('BUSINESS_RULE_VIOLATION');
-                expect(ErrorCodes.INTEGRATION_API_ERROR).toBe('INTEGRATION_API_ERROR');
-                expect(ErrorCodes.CONFIG_MISSING).toBe('CONFIG_MISSING');
-                expect(ErrorCodes.RATE_LIMIT_EXCEEDED).toBe('RATE_LIMIT_EXCEEDED');
-                expect(ErrorCodes.UNKNOWN_ERROR).toBe('UNKNOWN_ERROR');
+                expect(SharedErrorCodes.CONNECTION_ERROR).toBe('DB_CONNECTION_FAILED');
+                expect(SharedErrorCodes.EXTERNAL_SERVICE_ERROR).toBe('NETWORK_TIMEOUT');
+                expect(SharedErrorCodes.VALIDATION_ERROR).toBe('VALIDATION_FAILED');
+                expect(SharedErrorCodes.TOKEN_EXPIRED).toBe('AUTH_TOKEN_EXPIRED');
+                expect(SharedErrorCodes.INSUFFICIENT_BALANCE).toBe('BUSINESS_RULE_VIOLATION');
+                expect(SharedErrorCodes.CONNECTION_ERROR).toBe('INTEGRATION_API_ERROR');
+                expect(SharedErrorCodes.CONFIGURATION_ERROR).toBe('CONFIG_MISSING');
+                expect(SharedErrorCodes.API_RATE_LIMITED).toBe('RATE_LIMIT_EXCEEDED');
+                expect(SharedErrorCodes.INTERNAL_ERROR).toBe('UNKNOWN_ERROR');
             });
         });
 

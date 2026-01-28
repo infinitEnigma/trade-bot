@@ -18,7 +18,7 @@ import {
     ILogger,
     IAuditLogRepository,
     CacheResult
-} from '@trade-bot/shared';
+} from '../../../shared/src';
 
 // Bot interface for repository operations
 export interface Bot {

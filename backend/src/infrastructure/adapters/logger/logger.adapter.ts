@@ -9,7 +9,7 @@
  * @format
  */
 
-import { ILogger } from '@trade-bot/shared';
+import { ILogger } from '../../../shared/src';
 import { ContextAwareLogger, createErrorInfo, createEnhancedErrorInfo, createPerformanceMetrics, ErrorCodes } from '../../../core/logging/context-aware-logger.service';
 
 // Import OperationTimer for performance tracking

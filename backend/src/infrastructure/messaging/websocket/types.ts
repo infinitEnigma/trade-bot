@@ -1,6 +1,6 @@
 /** @format */
 
-import { UserLevel } from "@trade-bot/shared";
+import { UserLevel } from "../../../shared/src";
 
 /**
  * WebSocket-specific types for the messaging infrastructure

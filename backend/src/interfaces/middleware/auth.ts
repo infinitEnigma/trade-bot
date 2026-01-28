@@ -4,6 +4,7 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { selectAuthService } from "../../core/service-selector";
 import { AuthResult, LegacyAuthResult } from "../../core/auth/auth.service.pure";
+import { jwtTokenAdapter } from "../../infrastructure/adapters/token/jwt-token.adapter";
 
 const authService = selectAuthService();
 import { redisService } from "../../infrastructure/cache/redis.service";

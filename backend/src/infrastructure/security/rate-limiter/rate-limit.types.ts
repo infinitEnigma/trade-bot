@@ -6,7 +6,7 @@
  * @format
  */
 
-import { UserLevel } from "@trade-bot/shared";
+import { UserLevel } from "../../../shared/src";
 
 /**
  * Configuration interface for rate limiting behavior.

@@ -22,7 +22,7 @@
  *
  * @format
  */
-
+import * as Errors from "../types/errors";
 /**
  * Error severity levels for logging and monitoring
  * Used for prioritization, alerting, and log filtering
@@ -161,7 +161,7 @@ export interface LogContext {
  * Standardized error codes for consistent error classification
  * Enables programmatic error handling and monitoring
  */
-export const ErrorCodes = {
+/*export const ErrorCodes = {
     // Database errors
     DB_CONNECTION_FAILED: 'DB_CONNECTION_FAILED',
     DB_QUERY_TIMEOUT: 'DB_QUERY_TIMEOUT',
@@ -209,12 +209,12 @@ export const ErrorCodes = {
     INTERNAL_SERVER_ERROR: 'INTERNAL_SERVER_ERROR',
     SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
     UNKNOWN_ERROR: 'UNKNOWN_ERROR',
-} as const;
+} as const;*/
 
 /**
  * Union type of all error codes for type safety
  */
-export type ErrorCode = typeof ErrorCodes[keyof typeof ErrorCodes];
+//export type ErrorCode = typeof ErrorCodes[keyof typeof ErrorCodes];
 
 /**
  * Helper functions for creating type-safe metadata objects
@@ -400,7 +400,7 @@ function parseStackLine(line: string): StackFrame | null {
  */
 export function classifyError(error: Error): {
     errorType: LoggerErrorType;
-    errorCode: ErrorCode;
+    errorCode: Errors.ErrorCodes;
     errorSeverity: LoggerErrorSeverity;
 } {
     const errorMessage = error.message.toLowerCase();
@@ -422,25 +422,25 @@ export function classifyError(error: Error): {
         if (errorMessage.includes('connection') && errorMessage.includes('failed')) {
             return {
                 errorType: 'database',
-                errorCode: ErrorCodes.DB_CONNECTION_FAILED,
+                errorCode: Errors.ErrorCodes.CONNECTION_ERROR,
                 errorSeverity: 'high'
             };
         } else if (errorMessage.includes('timeout')) {
             return {
                 errorType: 'database',
-                errorCode: ErrorCodes.DB_QUERY_TIMEOUT,
+                errorCode: Errors.ErrorCodes.QUERY_ERROR,
                 errorSeverity: 'high'
             };
         } else if (errorMessage.includes('pool exhausted') || errorMessage.includes('too many clients')) {
             return {
                 errorType: 'database',
-                errorCode: ErrorCodes.DB_POOL_EXHAUSTED,
+                errorCode: Errors.ErrorCodes.DATABASE_ERROR,
                 errorSeverity: 'critical'
             };
         } else {
             return {
                 errorType: 'database',
-                errorCode: ErrorCodes.DB_QUERY_TIMEOUT,
+                errorCode: Errors.ErrorCodes.QUERY_ERROR,
                 errorSeverity: 'high'
             };
         }
@@ -467,19 +467,19 @@ export function classifyError(error: Error): {
         if (errorMessage.includes('timeout')) {
             return {
                 errorType: 'network',
-                errorCode: ErrorCodes.NETWORK_TIMEOUT,
+                errorCode: Errors.ErrorCodes.SERVICE_UNAVAILABLE,
                 errorSeverity: 'high'
             };
         } else if (errorMessage.includes('connection refused') || errorMessage.includes('econnrefused')) {
             return {
                 errorType: 'network',
-                errorCode: ErrorCodes.NETWORK_CONNECTION_FAILED,
+                errorCode: Errors.ErrorCodes.API_RATE_LIMITED,
                 errorSeverity: 'high'
             };
         } else {
             return {
                 errorType: 'network',
-                errorCode: ErrorCodes.NETWORK_CONNECTION_FAILED,
+                errorCode: Errors.ErrorCodes.EXTERNAL_SERVICE_ERROR,
                 errorSeverity: 'high'
             };
         }
@@ -504,25 +504,25 @@ export function classifyError(error: Error): {
         if (errorMessage.includes('expired')) {
             return {
                 errorType: 'authentication',
-                errorCode: ErrorCodes.AUTH_TOKEN_EXPIRED,
+                errorCode: Errors.ErrorCodes.TOKEN_EXPIRED,
                 errorSeverity: 'medium'
             };
         } else if (errorMessage.includes('permission denied') || errorMessage.includes('forbidden')) {
             return {
                 errorType: 'authentication',
-                errorCode: ErrorCodes.AUTH_PERMISSION_DENIED,
+                errorCode: Errors.ErrorCodes.INSUFFICIENT_PERMISSIONS,
                 errorSeverity: 'medium'
             };
         } else if (errorMessage.includes('invalid') && (errorMessage.includes('token') || errorMessage.includes('jwt') || errorMessage.includes('auth'))) {
             return {
                 errorType: 'authentication',
-                errorCode: ErrorCodes.AUTH_TOKEN_INVALID,
+                errorCode: Errors.ErrorCodes.TOKEN_EXPIRED,
                 errorSeverity: 'medium'
             };
         } else {
             return {
                 errorType: 'authentication',
-                errorCode: ErrorCodes.AUTH_INVALID_CREDENTIALS,
+                errorCode: Errors.ErrorCodes.INVALID_CREDENTIALS,
                 errorSeverity: 'medium'
             };
         }
@@ -543,7 +543,7 @@ export function classifyError(error: Error): {
 
         return {
             errorType: 'validation',
-            errorCode: ErrorCodes.VALIDATION_FAILED,
+            errorCode: Errors.ErrorCodes.VALIDATION_ERROR,
             errorSeverity: 'medium'
         };
     }
@@ -556,7 +556,7 @@ export function classifyError(error: Error): {
 
         return {
             errorType: 'rate_limit',
-            errorCode: ErrorCodes.RATE_LIMIT_EXCEEDED,
+            errorCode: Errors.ErrorCodes.API_RATE_LIMITED,
             errorSeverity: 'medium'
         };
     }
@@ -572,7 +572,7 @@ export function classifyError(error: Error): {
 
         return {
             errorType: 'configuration',
-            errorCode: ErrorCodes.CONFIG_MISSING,
+            errorCode: Errors.ErrorCodes.CONFIGURATION_ERROR,
             errorSeverity: 'high'
         };
     }
@@ -589,7 +589,7 @@ export function classifyError(error: Error): {
 
         return {
             errorType: 'business',
-            errorCode: ErrorCodes.BUSINESS_RULE_VIOLATION,
+            errorCode: Errors.ErrorCodes.INSUFFICIENT_BALANCE,
             errorSeverity: 'medium'
         };
     }
@@ -607,13 +607,13 @@ export function classifyError(error: Error): {
         if (errorMessage.includes('unavailable') || errorMessage.includes('503')) {
             return {
                 errorType: 'integration',
-                errorCode: ErrorCodes.INTEGRATION_SERVICE_UNAVAILABLE,
+                errorCode: Errors.ErrorCodes.EXTERNAL_SERVICE_ERROR,
                 errorSeverity: 'high'
             };
         } else {
             return {
                 errorType: 'integration',
-                errorCode: ErrorCodes.INTEGRATION_API_ERROR,
+                errorCode: Errors.ErrorCodes.SERVICE_UNAVAILABLE,
                 errorSeverity: 'high'
             };
         }
@@ -622,7 +622,7 @@ export function classifyError(error: Error): {
     // Default classification
     return {
         errorType: 'unknown',
-        errorCode: ErrorCodes.UNKNOWN_ERROR,
+        errorCode: Errors.ErrorCodes.INTERNAL_ERROR,
         errorSeverity: 'high'
     };
 }

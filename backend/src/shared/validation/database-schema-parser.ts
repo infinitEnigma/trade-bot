@@ -64,7 +64,7 @@ export interface DatabaseSchema {
 }
 
 export class DatabaseSchemaParser {
-    private migrationDir = path.join(process.cwd(), "..", "database", "migrations");
+    private migrationDir = path.join(__dirname, "..", "..", "..", "..", "database", "migrations");
 
     /**
      * Parse all migration files to build complete database schema
@@ -72,6 +72,7 @@ export class DatabaseSchemaParser {
     async parseSchema(): Promise<DatabaseSchema> {
         try {
             const migrationFiles = await this.getMigrationFiles();
+
             const schema: DatabaseSchema = {
                 tables: {},
                 relationships: {},
@@ -132,12 +133,12 @@ export class DatabaseSchemaParser {
         for (const statement of statements) {
             const trimmed = statement.trim();
 
-            if (trimmed.startsWith('CREATE TABLE')) {
+            if (trimmed.includes('CREATE TABLE')) {
                 const tableDef = this.parseCreateTableStatement(trimmed);
                 if (tableDef) {
                     schema.tables[tableDef.name] = tableDef;
                 }
-            } else if (trimmed.startsWith('ALTER TABLE')) {
+            } else if (trimmed.includes('ALTER TABLE')) {
                 this.parseAlterTableStatement(trimmed, schema);
             }
         }
@@ -155,14 +156,29 @@ export class DatabaseSchemaParser {
             const match = statement.match(createTableRegex);
 
             if (!match) {
+                logger.debug("CREATE TABLE regex did not match", {
+                    statement: statement.substring(0, 100)
+                });
                 return null;
             }
 
             const tableName = match[1];
             const columnsDefinition = match[2];
 
+            logger.debug("Parsing CREATE TABLE", {
+                tableName,
+                columnsDefinitionLength: columnsDefinition.length,
+                columnsDefinitionPreview: columnsDefinition.substring(0, 200)
+            });
+
             const columns = this.parseColumnDefinitions(columnsDefinition);
             const constraints = this.extractTableConstraints(columnsDefinition);
+
+            logger.debug("CREATE TABLE parsed successfully", {
+                tableName,
+                columnCount: Object.keys(columns).length,
+                columns: Object.keys(columns)
+            });
 
             return {
                 name: tableName,
@@ -185,16 +201,33 @@ export class DatabaseSchemaParser {
      */
     private parseColumnDefinitions(columnsDef: string): Record<string, ColumnDefinition> {
         const columns: Record<string, ColumnDefinition> = {};
-        const columnRegex = /["`]?(\w+)["`]?\s+([^,\n]+(?:\([^)]*\))?)[\s,]/gi;
+
+        // More robust regex to handle complex column definitions
+        // Matches: column_name type [constraints] [,]
+        const columnRegex = /["`]?(\w+)["`]?\s+([^,\n]+?)(?:\s*(?:,|$|\s*--.*$))/gim;
 
         let match;
+        let matchCount = 0;
+
         while ((match = columnRegex.exec(columnsDef)) !== null) {
             const columnName = match[1];
             const columnType = match[2].trim();
 
+            matchCount++;
+            logger.debug("Found column definition", {
+                columnName,
+                columnType,
+                matchCount
+            });
+
             const columnDef = this.parseColumnType(columnName, columnType);
             columns[columnName] = columnDef;
         }
+
+        logger.debug("Total columns parsed", {
+            totalColumns: matchCount,
+            columns: Object.keys(columns)
+        });
 
         return columns;
     }
@@ -360,22 +393,59 @@ export class DatabaseSchemaParser {
             const tableName = match[1];
             const alterClause = match[2];
 
+            // Only log warning if table doesn't exist and it's not a migration that will create it later
             if (!schema.tables[tableName]) {
-                logger.warn("ALTER TABLE references unknown table", { tableName });
+                // Check if this is a migration that creates the table later
+                const createsTable = alterClause.includes('CREATE TABLE') ||
+                    alterClause.includes('IF NOT EXISTS');
+
+                if (!createsTable) {
+                    logger.debug("ALTER TABLE references table not yet parsed (may be created in later migration)", {
+                        tableName,
+                        statement: statement.substring(0, 100) + "..."
+                    });
+                }
                 return;
             }
 
             // Handle ADD COLUMN
-            if (alterRegex.test(alterClause)) {
-                // This could be extended to handle ALTER TABLE statements
-                logger.debug("ALTER TABLE statement found (not fully implemented)", {
-                    tableName,
-                    statement: alterClause,
-                });
+            if (alterClause.includes('ADD COLUMN')) {
+                this.handleAddColumnStatement(tableName, alterClause, schema);
             }
         } catch (error) {
             logger.warn("Failed to parse ALTER TABLE statement", {
-                statement,
+                statement: statement.substring(0, 100),
+                error: (error as Error).message,
+            });
+        }
+    }
+
+    /**
+     * Handle ADD COLUMN statements to update table schema
+     */
+    private handleAddColumnStatement(tableName: string, alterClause: string, schema: DatabaseSchema): void {
+        try {
+            // Extract column definition from ADD COLUMN statement
+            const columnRegex = /ADD COLUMN\s+["`]?(\w+)["`]?\s+([^,;]+)/i;
+            const match = alterClause.match(columnRegex);
+
+            if (match) {
+                const columnName = match[1];
+                const columnType = match[2].trim();
+
+                const columnDef = this.parseColumnType(columnName, columnType);
+                schema.tables[tableName].columns[columnName] = columnDef;
+
+                logger.debug("Added column to table schema", {
+                    tableName,
+                    columnName,
+                    columnType
+                });
+            }
+        } catch (error) {
+            logger.warn("Failed to handle ADD COLUMN statement", {
+                tableName,
+                alterClause,
                 error: (error as Error).message,
             });
         }
@@ -385,50 +455,28 @@ export class DatabaseSchemaParser {
      * Split SQL content into individual statements
      */
     private splitSqlStatements(content: string): string[] {
+        // Simple approach: split by semicolons and filter
+        const rawStatements = content.split(';');
         const statements: string[] = [];
-        let currentStatement = '';
-        let inString = false;
-        let stringChar = '';
-        let parenthesesDepth = 0;
 
-        for (let i = 0; i < content.length; i++) {
-            const char = content[i];
+        for (const statement of rawStatements) {
+            const trimmed = statement.trim();
 
-            // Handle string literals
-            if ((char === '"' || char === "'") && (i === 0 || content[i - 1] !== '\\')) {
-                if (!inString) {
-                    inString = true;
-                    stringChar = char;
-                } else if (char === stringChar) {
-                    inString = false;
-                    stringChar = '';
-                }
-            }
+            if (trimmed.length === 0) continue;
 
-            // Track parentheses depth
-            if (!inString) {
-                if (char === '(') {
-                    parenthesesDepth++;
-                } else if (char === ')') {
-                    parenthesesDepth--;
-                }
-            }
+            // Skip pure comment statements
+            const lines = trimmed.split('\n');
+            const nonCommentLines = lines.filter(line => {
+                const trimmedLine = line.trim();
+                return trimmedLine.length > 0 && !trimmedLine.startsWith('--') && !trimmedLine.startsWith('/*');
+            });
 
-            currentStatement += char;
-
-            // Check for statement end
-            if (!inString && parenthesesDepth === 0 && char === ';') {
-                statements.push(currentStatement.trim());
-                currentStatement = '';
+            if (nonCommentLines.length > 0) {
+                statements.push(trimmed + ';'); // Add back the semicolon
             }
         }
 
-        // Add any remaining statement
-        if (currentStatement.trim()) {
-            statements.push(currentStatement.trim());
-        }
-
-        return statements.filter(stmt => stmt.length > 0);
+        return statements;
     }
 
     /**

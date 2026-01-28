@@ -11,7 +11,7 @@
 import {
     IAuditLogRepository,
     AuditLogEntry
-} from '@trade-bot/shared';
+} from '../../../shared/src';
 import { query } from '../../../database/pool';
 import { logger } from '../../../core/logging';
 
@@ -79,8 +79,8 @@ export class AuditLogRepositoryAdapter implements IAuditLogRepository {
     async logEvent(event: Omit<AuditLogEntry, 'id' | 'timestamp'>): Promise<void> {
         try {
             await query(
-                'INSERT INTO audit_logs (user_id, action, details, ip_address, user_agent, created_at) VALUES ($1, $2, $3, $4, $5, NOW())',
-                [event.userId, event.action, JSON.stringify(event.details), event.ipAddress, event.userAgent]
+                'INSERT INTO audit_logs (user_id, action, details, ip_address, created_at) VALUES ($1, $2, $3, $4, NOW())',
+                [event.userId, event.action, JSON.stringify(event.details), event.ipAddress]
             );
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -122,8 +122,8 @@ export class AuditLogRepositoryAdapter implements IAuditLogRepository {
             userId,
             action: 'auth',
             details: { event },
-            ipAddress,
-            userAgent
+            ipAddress
+            // userAgent: userAgent // Commented out - not used in database schema
         });
     }
 

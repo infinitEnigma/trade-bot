@@ -14,7 +14,7 @@ import { integrationLogger } from '../../../core/logging';
     createErrorInfo,
     createEnhancedErrorInfo
 } from '../../../core/logging';*/
-import { IEncryptionService } from '@trade-bot/shared';
+import { IEncryptionService } from '../../../shared/src';
 import { encryptionService } from '../../../infrastructure/security/encryption.service';
 
 /**

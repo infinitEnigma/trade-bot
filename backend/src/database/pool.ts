@@ -2,7 +2,7 @@
 
 import { Pool, PoolClient } from "pg";
 import { logger } from "../core/logging";
-import { DatabaseError, DatabaseResult } from "@trade-bot/shared";
+import { DatabaseError, DatabaseResult } from "../../../shared/src";
 
 // ✅ Singleton pattern - only one pool instance ever created
 let pool: Pool | null = null;

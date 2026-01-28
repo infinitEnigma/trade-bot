@@ -12,7 +12,7 @@ import {
     IBalanceRepository,
     Balance,
     BalanceHistory
-} from '@trade-bot/shared';
+} from '../../../shared/src';
 import { logger } from '../../../core/logging';
 //import { query } from '../../../database/pool';
 

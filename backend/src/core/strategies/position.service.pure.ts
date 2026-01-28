@@ -20,7 +20,7 @@ import {
     ILogger,
     Position,
     Balance,
-} from '@trade-bot/shared';
+} from '../../../shared/src';
 
 export interface PositionServiceDependencies {
     positionRepository: IPositionRepository;

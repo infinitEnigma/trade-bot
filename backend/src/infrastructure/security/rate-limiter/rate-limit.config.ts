@@ -21,7 +21,7 @@
  * @format
  */
 
-import { UserLevel } from "@trade-bot/shared";
+import { UserLevel } from "../../../shared/src";
 import { RateLimitConfig } from "./rate-limit.types";
 
 /**
@@ -93,13 +93,19 @@ const BASE_RATE_LIMITS = {
     // Kodiak status endpoints - very lenient, fail-open
     kodiakStatus: {
         windowMs: 60 * 1000, // 1 minute
-        max: 10000, // Very high limits, just database queries
+        max: 600, // ⬆️ 300 requests per minute (5 req/sec for real-time updates)
     },
 
-    // Kodiak API calls - relaxed limits for frontend compatibility
+    // Kodiak API calls - moderate limits for connection process
     kodiakApi: {
-        windowMs: 60000, // ⬆️ 1 minute (instead of 1 second)
-        max: 60, // ⬆️ 50 requests per minute (instead of 10 per second)
+        windowMs: 60000, // 1 minute
+        max: 600, // 20 requests per minute for connection operations
+    },
+
+    // Kodiak data endpoints - trading data with user-based limits
+    kodiakData: {
+        windowMs: 60000, // 1 minute
+        max: 60, // 60 requests per minute (1 req/sec for trading data)
     },
 } as const;
 
@@ -246,6 +252,15 @@ export const RATE_LIMIT_CONFIGS = {
     }),
 
     /**
+     * Kodiak connection endpoints - relaxed limits for frontend compatibility
+     * Prevents 400 errors while allowing reasonable request frequency
+     */
+    kodiakConnection: createRateLimitConfig(BASE_RATE_LIMITS.kodiakApi, {
+        failOpen: true, // Allow requests if rate limiting fails - prioritize UX
+        customMessage: "Kodiak connection rate limit exceeded",
+    }),
+
+    /**
      * Kodiak API calls - relaxed limits for frontend compatibility
      * Prevents 400 errors while allowing reasonable request frequency
      */
@@ -273,41 +288,51 @@ export const RateLimitConfigUtils = {
      * Get user tier ratios
      */
     getUserTierRatios: () => USER_TIER_RATIOS,
+};
 
-    /**
-     * Calculate effective limit for a user tier
-     */
-    calculateUserLimit: (baseLimit: number, userLevel: UserLevel): number => {
-        const envMultiplier = getEnvironmentMultiplier();
-        const tierRatio = USER_TIER_RATIOS[userLevel];
-        return Math.round(baseLimit * envMultiplier * tierRatio);
-    },
+/**
+ * Rate limit configuration for Kodiak connection attempts
+ * Relaxed limits for frontend compatibility and user experience
+ */
+export const kodiakConnectionRateLimit: RateLimitConfig = {
+    windowMs: 60000, // 1 minute
+    max: 60, // ⬆️ 60 connection attempts per minute (1 per second)
+    progressiveBackoff: false, // Disabled to prevent false lockouts
+    maxProgressiveDelay: 300000, // 5 minutes max delay (if enabled)
+    progressiveBaseDelay: 1000, // 1 second base delay (if enabled)
+    skipSuccessfulRequests: false,
+    skipFailedRequests: false,
+    message: "Too many Kodiak connection attempts. Please wait before trying again.",
+    failOpen: true, // ⬆️ Allow requests if rate limiting fails - prioritize UX
+};
 
-    /**
-     * Validate a rate limit configuration
-     */
-    validateConfig: (config: RateLimitConfig): { valid: boolean; errors: string[] } => {
-        const errors: string[] = [];
+/**
+ * Rate limit configuration for Kodiak status checks
+ * Reduced limits for status operations
+ */
+export const kodiakSyncedRateLimit: RateLimitConfig = {
+    windowMs: 60000, // 1 minute
+    max: 20, // Reduced from 60 to 20 for status checks
+    progressiveBackoff: true,
+    maxProgressiveDelay: 300000, // 5 minutes max delay
+    progressiveBaseDelay: 1000, // 1 second base delay
+    skipSuccessfulRequests: false,
+    skipFailedRequests: false,
+    message: "Too many Kodiak status requests, please try again later.",
+    failOpen: true, // Allow if Redis fails - just status checks
+};
 
-        if (config.windowMs <= 0) {
-            errors.push("windowMs must be positive");
-        }
-
-        if (config.max < 0) {
-            errors.push("max must be non-negative");
-        }
-
-        if (config.enableUserBasedLimits && !config.userLimits) {
-            errors.push("userLimits required when enableUserBasedLimits is true");
-        }
-
-        if (config.progressiveBackoff && config.failOpen) {
-            errors.push("progressiveBackoff and failOpen cannot both be enabled");
-        }
-
-        return {
-            valid: errors.length === 0,
-            errors,
-        };
-    },
+/**
+ * Rate limit configuration for Kodiak endpoints (legacy)
+ */
+export const kodiakRateLimit: RateLimitConfig = {
+    windowMs: 60000, // 1 minute
+    max: 60, // 60 requests per minute
+    progressiveBackoff: true,
+    maxProgressiveDelay: 300000, // 5 minutes max delay
+    progressiveBaseDelay: 1000, // 1 second base delay
+    skipSuccessfulRequests: false,
+    skipFailedRequests: false,
+    message: "Too many Kodiak requests, please try again later.",
+    failOpen: true, // Allow if Redis fails - legacy compatibility
 };

@@ -282,7 +282,7 @@ export * from './types/errors';
 export * from './types/logging';
 
 // Explicitly export error classes for better discoverability
-export {
+/*export {
   AppError,
   ValidationError,
   MissingRequiredFieldError,
@@ -308,10 +308,10 @@ export {
   DataFreshnessMetadata,
   FreshnessAwareResponse,
   DataFreshnessUtils
-} from './types/errors';
+} from './types/errors';*/
 
 // Explicitly export logging types for better discoverability
-export {
+/*export {
   LoggerErrorSeverity,
   LoggerErrorType,
   ErrorInfo,
@@ -330,4 +330,4 @@ export {
   parseStackTrace,
   classifyError,
   createEnhancedErrorInfo
-} from './types/logging';
+} from './types/logging';*/

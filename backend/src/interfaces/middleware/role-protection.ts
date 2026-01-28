@@ -1,7 +1,7 @@
 /** @format */
 
 import { Response, NextFunction } from "express";
-import { UserRole } from "@trade-bot/shared";
+import { UserRole } from "../../../../shared/src";
 import { AuthenticatedRequest } from "./auth";
 
 export function requireRole(role: UserRole) {

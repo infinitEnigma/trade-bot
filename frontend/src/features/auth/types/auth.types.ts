@@ -1,6 +1,6 @@
 /** @format */
 
-import { User } from "@trade-bot/shared";
+import { User } from "../../../../../shared/src";
 
 /**
  * Authentication-related type definitions

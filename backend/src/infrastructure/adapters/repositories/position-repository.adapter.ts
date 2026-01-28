@@ -11,7 +11,7 @@
 import {
     IPositionRepository,
     Position
-} from '@trade-bot/shared';
+} from '../../../shared/src';
 import { query } from '../../../database/pool';
 import { logger } from '../../../core/logging';
 

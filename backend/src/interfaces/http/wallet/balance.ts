@@ -5,7 +5,7 @@ import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
 import { blockchainService } from "../../../infrastructure/external/blockchain.service";
 import logger from "../../../core/logging/logger.service";
 import { RateLimiters } from "../../../infrastructure";
-import { UserLevel, ValidationError, NotFoundError, ExternalServiceError } from "@trade-bot/shared";
+import { UserLevel, ValidationError, NotFoundError, ExternalServiceError } from "../../../shared/src";
 
 const router = Router();
 

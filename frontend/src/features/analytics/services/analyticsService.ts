@@ -2,7 +2,7 @@
 
 import { marketApi } from "../../../infrastructure/api";
 import { chartDataCache } from "../../../infrastructure/cache";
-import { UserLevel } from "@trade-bot/shared";
+import { UserLevel } from "../../../../../shared/src";
 import {
     AnalyticsTimeWindow,
     AnalyticsMetrics,

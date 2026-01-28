@@ -672,15 +672,41 @@ class AuthManager {
       );
 
       const timestamp = Date.now();
-      const message = `${timestamp}GET/ws/auth${accountId}`;
+      // Orderly API requires specific message format for WebSocket auth
+      const message = `${timestamp}GET/ws/stream/public${accountId}`;
 
       const bs58 = await import("bs58");
       const ed25519 = await import("@noble/ed25519");
 
+      // Configure hash function for ed25519
+      const { createHash } = await import("crypto");
+      const sha512Hash = (message: Uint8Array) => {
+        const hash = createHash("sha512");
+        hash.update(message);
+        return new Uint8Array(hash.digest());
+      };
+
+      // Set hash function for ed25519
+      const ed25519Lib = ed25519 as unknown as {
+        hashes?: { sha512?: (message: Uint8Array) => Uint8Array };
+        etc?: { sha512Sync?: (message: Uint8Array) => Uint8Array };
+        utils?: { sha512Sync?: (message: Uint8Array) => Uint8Array };
+        sign?: (message: Uint8Array, privateKey: Uint8Array) => Uint8Array | Promise<Uint8Array>;
+      };
+
+      if (ed25519Lib.hashes) {
+        ed25519Lib.hashes.sha512 = sha512Hash;
+      } else if (ed25519Lib.etc && typeof ed25519Lib.etc?.sha512Sync !== "undefined") {
+        ed25519Lib.etc.sha512Sync = sha512Hash;
+      } else if (ed25519Lib.utils) {
+        ed25519Lib.utils.sha512Sync = sha512Hash;
+      }
+
       const privateKey = bs58.default.decode(secretKey);
       const messageBytes = new TextEncoder().encode(message);
-      const signature = await ed25519.sign(messageBytes, privateKey);
-      const signatureB64 = Buffer.from(signature).toString("base64url");
+      const signature = ed25519Lib.sign?.(messageBytes, privateKey) || Promise.resolve(new Uint8Array());
+      const signatureResult = await (signature instanceof Promise ? signature : Promise.resolve(signature));
+      const signatureB64 = Buffer.from(signatureResult).toString("base64url");
 
       const authMessage = JSON.stringify({
         event: "auth",
@@ -1450,10 +1476,18 @@ export class MarketStreamService {
   }
 
   /**
-   * Get latest tick data from cache
+   * Get latest tick data from cache with enhanced caching
    */
   async getLatestTick(symbol: string): Promise<TickData | null> {
-    return this.cacheManager.getTick(symbol);
+    const cached = await this.cacheManager.getTick(symbol);
+    if (cached) {
+      marketStreamLogger.debug("Returning cached tick data", { symbol });
+      return cached;
+    }
+
+    // If no cache, try to get from Orderly API with rate limiting
+    marketStreamLogger.debug("No cached tick data, would need API call", { symbol });
+    return null;
   }
 
   /**

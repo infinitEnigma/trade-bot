@@ -8,7 +8,7 @@
  * @format
  */
 
-import { IPasswordService } from '@trade-bot/shared';
+import { IPasswordService } from '../../../shared/src';
 import { hashPassword, comparePassword } from '../../../workers/password-worker';
 import { logger } from '../../../core/logging';
 

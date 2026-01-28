@@ -152,7 +152,7 @@ export class KodiakCache<T = unknown> {
         const endpoint = this.extractEndpointFromKey(key);
         const ttlMs = customTtlMs || this.getTtlForEndpoint(endpoint);
 
-        // Check cache size limits
+        // Check cache size limits BEFORE adding new entry
         if (this.cache.size >= this.config.maxEntries) {
             this.evictOldest();
         }
@@ -175,6 +175,8 @@ export class KodiakCache<T = unknown> {
             endpoint,
             ttlMs,
             expiresAt: new Date(entry.expires).toISOString(),
+            cacheSize: this.cache.size,
+            maxEntries: this.config.maxEntries,
         });
     }
 
