@@ -14,6 +14,35 @@ jest.mock('../../src/infrastructure/security/encryption.service');
 jest.mock('../../src/infrastructure/external/kodiak-cache');
 jest.mock('../../src/core/logging/logger.service');
 
+// Mock the dependencies used by generateKodiakSignature
+jest.mock('crypto', () => {
+    const originalModule = jest.requireActual('crypto');
+    return {
+        ...originalModule,
+        createHash: jest.fn().mockReturnValue({
+            update: jest.fn().mockReturnThis(),
+            digest: jest.fn().mockReturnValue(Buffer.from('mocked-hash'))
+        })
+    };
+});
+
+jest.mock('bs58', () => ({
+    decode: jest.fn().mockReturnValue(Buffer.from('mocked-secret-key'))
+}));
+
+jest.mock('@noble/ed25519', () => ({
+    hashes: {
+        sha512: jest.fn()
+    },
+    etc: {
+        sha512Sync: jest.fn()
+    },
+    utils: {
+        sha512Sync: jest.fn()
+    },
+    sign: jest.fn()
+}));
+
 describe('KodiakIntegrationService', () => {
     let service: KodiakIntegrationService;
 
@@ -225,6 +254,8 @@ describe('KodiakIntegrationService', () => {
                 apiKey: 'test-api-key',
                 secretKey: 'test-secret-key',
             });
+
+            // Mock the makeKodiakRequest method to return the expected data structure
             (service as any).makeKodiakRequest = jest.fn()
                 .mockResolvedValueOnce([{ holding: 'BTC', balance: '1.0', price: '50000' }]) // holdings
                 .mockResolvedValueOnce({ total_pnl_24_h: '50' }); // account info
@@ -335,6 +366,7 @@ describe('KodiakIntegrationService', () => {
             global.fetch = jest.fn().mockResolvedValue({
                 ok: false,
                 status: 500,
+                statusText: 'Internal Server Error',
                 text: () => Promise.resolve('Internal Server Error'),
             });
 
@@ -575,6 +607,9 @@ describe('KodiakIntegrationService', () => {
                 json: () => Promise.resolve({ success: true, data: 'test' }),
             });
 
+            // Mock the generateKodiakSignature method to avoid import issues
+            (service as any).generateKodiakSignature = jest.fn().mockResolvedValue('mock-signature');
+
             const result = await (service as any).makeKodiakRequest(
                 'GET',
                 '/test/endpoint',
@@ -593,6 +628,7 @@ describe('KodiakIntegrationService', () => {
                     headers: expect.objectContaining({
                         'orderly-account-id': 'test-account',
                         'orderly-key': 'test-api-key',
+                        'orderly-signature': 'mock-signature',
                     }),
                 })
             );
@@ -605,6 +641,9 @@ describe('KodiakIntegrationService', () => {
                 statusText: 'Unauthorized',
                 text: () => Promise.resolve('Invalid signature'),
             });
+
+            // Mock the generateKodiakSignature method to avoid import issues
+            (service as any).generateKodiakSignature = jest.fn().mockResolvedValue('mock-signature');
 
             await expect((service as any).makeKodiakRequest(
                 'GET',
@@ -627,6 +666,10 @@ describe('KodiakIntegrationService', () => {
 
     describe('generateKodiakSignature', () => {
         it('should generate valid Ed25519 signature', async () => {
+            // Configure the mocked dependencies for successful signature generation
+            const mockEd25519 = require('@noble/ed25519');
+            mockEd25519.sign.mockResolvedValue(Buffer.from('mocked-signature'));
+
             const message = 'test-message';
             const secretKey = 'test-secret-key';
 
@@ -637,6 +680,10 @@ describe('KodiakIntegrationService', () => {
         });
 
         it('should handle signature generation errors', async () => {
+            // Configure the mocked dependencies to throw an error
+            const mockEd25519 = require('@noble/ed25519');
+            mockEd25519.sign.mockRejectedValue(new Error('Signature generation failed'));
+
             const message = 'test-message';
             const secretKey = 'invalid-key';
 

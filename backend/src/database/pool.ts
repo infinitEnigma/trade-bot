@@ -2,7 +2,7 @@
 
 import { Pool, PoolClient } from "pg";
 import { logger } from "../core/logging";
-import { DatabaseError, DatabaseResult } from "../../../shared/src";
+import { DatabaseError, DatabaseResult } from "@trade-bot/shared";
 
 // ✅ Singleton pattern - only one pool instance ever created
 let pool: Pool | null = null;
@@ -583,4 +583,29 @@ export function resetTimeoutConfig(): void {
 }
 
 // Update metrics every 30 seconds
-setInterval(updatePoolMetrics, 30000);
+let metricsInterval: NodeJS.Timeout | null = null;
+
+function startMetricsInterval(): void {
+  if (metricsInterval) return; // Prevent multiple intervals
+
+  metricsInterval = setInterval(updatePoolMetrics, 30000);
+}
+
+function stopMetricsInterval(): void {
+  if (metricsInterval) {
+    clearInterval(metricsInterval);
+    metricsInterval = null;
+  }
+}
+
+// Start metrics interval by default (for production)
+startMetricsInterval();
+
+/**
+ * Cleanup method for test environments
+ * Stops metrics interval and closes pool
+ */
+export async function cleanupForTests(): Promise<void> {
+  stopMetricsInterval();
+  await closePool();
+}

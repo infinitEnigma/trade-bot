@@ -51,31 +51,15 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
       lockAcquired = lockResult === "OK";
 
       if (!lockAcquired) {
-        logger.debug("Token refresh mutex already held, waiting", {
+        logger.debug("Token refresh mutex already held, queuing request", {
           userId,
           mutexKey,
         });
-
-        // Wait a bit and try once more
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        const retryLockResult = await redisService.getClient().set(mutexKey, "1", {
-          NX: true,
-          EX: 30,
-        });
-        lockAcquired = retryLockResult === "OK";
-
-        if (!lockAcquired) {
-          logger.debug("Token refresh mutex still held, queuing request", {
-            userId,
-            mutexKey,
-          });
-          // Return early - another request is already refreshing
-          return {
-            success: false,
-            message: "Token refresh already in progress",
-          };
-        }
+        // Return early - another request is already refreshing
+        return {
+          success: false,
+          message: "Token refresh already in progress",
+        };
       }
     } catch (lockError) {
       logger.warn("Failed to acquire token refresh mutex", {
@@ -243,24 +227,24 @@ export async function authMiddleware(
       // Load complete user data with roles and credentials for complex endpoints
       const userData = await authService.getAuthenticatedUserData(payload.userId);
       if (!userData) {
-        logger.error("Failed to load user data in auth middleware - user not found", {
+        logger.warn("User data not found, using token payload only", {
           userId: payload.userId,
         });
-        res.status(401).json({
-          success: false,
-          code: -1007,
-          message: "Unauthorized - user data not found",
-        });
-        return;
+        // Fall back to token payload for user data
+        req.user = {
+          ...payload,
+          userLevel: payload.userLevel || 'REGISTERED', // Default to REGISTERED if not in token
+          roles: [] // No roles available
+        };
+      } else {
+        const userRoles = userData.roles;
+
+        req.user = {
+          ...payload,
+          userLevel: userData.user.userLevel, // Always use current userLevel from database
+          roles: userRoles
+        };
       }
-
-      const userRoles = userData.roles;
-
-      req.user = {
-        ...payload,
-        userLevel: userData.user.userLevel, // Always use current userLevel from database
-        roles: userRoles
-      };
     }
 
     // Set user context for logging and tracing

@@ -8,9 +8,10 @@ import path from "path";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
+    alias: [
+      { find: "@", replacement: path.resolve(__dirname, "./src") },
+      { find: "@trade-bot/shared", replacement: path.resolve(__dirname, "../shared/dist/index.js") },
+    ],
   },
   build: {
     rollupOptions: {
@@ -18,7 +19,7 @@ export default defineConfig({
         manualChunks: (id) => {
           // Core React libraries (must be first to avoid circular deps)
           if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') ||
-              id.includes('node_modules/scheduler') || id.includes('node_modules/use-sync-external-store')) {
+            id.includes('node_modules/scheduler') || id.includes('node_modules/use-sync-external-store')) {
             return 'vendor';
           }
 
@@ -27,7 +28,7 @@ export default defineConfig({
             return 'router';
           }
           if (id.includes('node_modules/@tanstack/react-query') ||
-              id.includes('node_modules/@tanstack/query-core')) {
+            id.includes('node_modules/@tanstack/query-core')) {
             return 'query';
           }
 
@@ -36,7 +37,7 @@ export default defineConfig({
             return 'wagmi';
           }
           if (id.includes('node_modules/ethers') || id.includes('node_modules/viem') ||
-              id.includes('node_modules/@noble') || id.includes('node_modules/ox')) {
+            id.includes('node_modules/@noble') || id.includes('node_modules/ox')) {
             return 'web3-core';
           }
 
@@ -45,22 +46,22 @@ export default defineConfig({
             return 'charts-lightweight';
           }
           if (id.includes('node_modules/recharts') || id.includes('node_modules/victory-vendor') ||
-              id.includes('node_modules/d3-')) {
+            id.includes('node_modules/d3-')) {
             return 'charts-recharts';
           }
 
           // UI libraries
           if (id.includes('node_modules/@radix-ui') || id.includes('node_modules/framer-motion') ||
-              id.includes('node_modules/motion-')) {
+            id.includes('node_modules/motion-')) {
             return 'ui';
           }
 
           // Utilities and smaller libraries
           if (id.includes('node_modules/axios') || id.includes('node_modules/socket.io') ||
-              id.includes('node_modules/engine.io') || id.includes('node_modules/date-fns') ||
-              id.includes('node_modules/zod') || id.includes('node_modules/sonner') ||
-              id.includes('node_modules/lucide-react') || id.includes('node_modules/class-variance-authority') ||
-              id.includes('node_modules/clsx') || id.includes('node_modules/tailwind-merge')) {
+            id.includes('node_modules/engine.io') || id.includes('node_modules/date-fns') ||
+            id.includes('node_modules/zod') || id.includes('node_modules/sonner') ||
+            id.includes('node_modules/lucide-react') || id.includes('node_modules/class-variance-authority') ||
+            id.includes('node_modules/clsx') || id.includes('node_modules/tailwind-merge')) {
             return 'utils';
           }
 

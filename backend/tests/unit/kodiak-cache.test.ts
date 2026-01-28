@@ -111,19 +111,16 @@ describe('KodiakCache', () => {
         });
 
         it('should evict oldest entries when cache is full', () => {
-            const originalMaxEntries = (cache as any).config.maxEntries;
-            (cache as any).config.maxEntries = 2;
+            // Create a new cache with maxEntries = 2
+            const smallCache = new KodiakCache({ maxEntries: 2 });
 
-            cache.set('key1', 'value1');
-            cache.set('key2', 'value2');
-            cache.set('key3', 'value3'); // Should evict key1
+            smallCache.set('key1', 'value1');
+            smallCache.set('key2', 'value2');
+            smallCache.set('key3', 'value3'); // Should evict key1
 
-            expect((cache as any).cache.has('key1')).toBe(false);
-            expect((cache as any).cache.has('key2')).toBe(true);
-            expect((cache as any).cache.has('key3')).toBe(true);
-
-            // Restore maxEntries
-            (cache as any).config.maxEntries = originalMaxEntries;
+            expect((smallCache as any).cache.has('key1')).toBe(false);
+            expect((smallCache as any).cache.has('key2')).toBe(true);
+            expect((smallCache as any).cache.has('key3')).toBe(true);
         });
     });
 

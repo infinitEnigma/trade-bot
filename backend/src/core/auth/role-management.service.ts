@@ -1,6 +1,6 @@
 /** @format */
 
-import { UserRole } from "../../../../shared/src";
+import { UserRole } from "@trade-bot/shared";
 import { query } from "../../database/pool";
 import { logger } from "../logging";
 

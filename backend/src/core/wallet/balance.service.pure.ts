@@ -21,7 +21,7 @@ import {
     Balance,
     ApiResult,
     BalanceHistory
-} from '../../../shared/src';
+} from '@trade-bot/shared';
 
 export interface BalanceServiceDependencies {
     balanceRepository: IBalanceRepository;

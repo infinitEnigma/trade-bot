@@ -8,7 +8,7 @@ import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth"; //
 import { createErrorResponse, ExternalServiceError, DataFreshnessUtils, FreshnessAwareResponse } from "../../../shared/types/errors";
 import { getCorrelationId } from "../../../shared/utils/context";
 import { ContextAwareLogger } from "../../../core/logging/"; // ✅ Import context-aware logger
-import { RateLimiters } from "../../../infrastructure";
+import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
 import { marketStreamService } from "../../../infrastructure/messaging/market-stream.service";
 import { getCacheConfig, getFullCacheConfig } from "../../../config/cache.config"; // ✅ Import centralized cache config
 import { AxiosError } from "axios";

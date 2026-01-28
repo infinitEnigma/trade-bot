@@ -202,30 +202,40 @@ export class DatabaseSchemaParser {
     private parseColumnDefinitions(columnsDef: string): Record<string, ColumnDefinition> {
         const columns: Record<string, ColumnDefinition> = {};
 
-        // More robust regex to handle complex column definitions
-        // Matches: column_name type [constraints] [,]
-        const columnRegex = /["`]?(\w+)["`]?\s+([^,\n]+?)(?:\s*(?:,|$|\s*--.*$))/gim;
+        // Split by commas to get individual column definitions
+        const columnDefs = columnsDef.split(',');
 
-        let match;
-        let matchCount = 0;
+        for (let i = 0; i < columnDefs.length; i++) {
+            const columnDef = columnDefs[i].trim();
 
-        while ((match = columnRegex.exec(columnsDef)) !== null) {
-            const columnName = match[1];
-            const columnType = match[2].trim();
+            // Skip empty definitions and constraints
+            if (!columnDef || columnDef.startsWith('CONSTRAINT') ||
+                columnDef.startsWith('PRIMARY KEY') || columnDef.startsWith('UNIQUE') ||
+                columnDef.startsWith('CHECK') || columnDef.startsWith('FOREIGN KEY')) {
+                continue;
+            }
 
-            matchCount++;
-            logger.debug("Found column definition", {
-                columnName,
-                columnType,
-                matchCount
-            });
+            // Extract column name and type using a more precise regex
+            const columnMatch = columnDef.match(/^["`]?(\w+)["`]?\s+(.+)$/);
+            if (columnMatch) {
+                const columnName = columnMatch[1];
+                const typeDef = columnMatch[2].trim();
 
-            const columnDef = this.parseColumnType(columnName, columnType);
-            columns[columnName] = columnDef;
+                logger.debug("Found column definition", {
+                    columnName,
+                    typeDef,
+                    index: i
+                });
+
+                const columnDefObj = this.parseColumnType(columnName, typeDef);
+                columns[columnName] = columnDefObj;
+            } else {
+                logger.warn("Failed to parse column definition", { columnDef, index: i });
+            }
         }
 
         logger.debug("Total columns parsed", {
-            totalColumns: matchCount,
+            totalColumns: Object.keys(columns).length,
             columns: Object.keys(columns)
         });
 
@@ -236,38 +246,60 @@ export class DatabaseSchemaParser {
      * Parse individual column type definition
      */
     private parseColumnType(name: string, typeDef: string): ColumnDefinition {
-        const parts = typeDef.split(/\s+/);
-        const type = parts[0].toUpperCase();
+        // Extract just the type part, ignoring constraints
+        // Look for patterns like: TYPE, TYPE(size), TYPE(size,size)
+        const typeMatch = typeDef.match(/^(\w+(?:\(\d+(?:,\s*\d+)?\))?)\s*/i);
+        if (!typeMatch) {
+            logger.warn("Failed to parse column type", { name, typeDef });
+            return {
+                name,
+                type: 'TEXT', // Default fallback
+                notNull: false,
+            };
+        }
+
+        const typePart = typeMatch[1].toUpperCase();
+
+        // Filter out invalid column types that are actually constraint keywords
+        const invalidTypes = ['NOT', 'NULL', 'UNIQUE', 'PRIMARY', 'KEY', 'CHECK', 'FOREIGN', 'REFERENCES', 'CONSTRAINT'];
+        if (invalidTypes.includes(typePart)) {
+            logger.warn("Skipping invalid column type that appears to be a constraint keyword", { name, typePart, typeDef });
+            return {
+                name,
+                type: 'TEXT', // Default fallback
+                notNull: false,
+            };
+        }
 
         const definition: ColumnDefinition = {
             name,
-            type,
+            type: typePart,
             notNull: false,
         };
 
         // Parse type parameters (e.g., VARCHAR(255), DECIMAL(20,8))
-        if (type.includes('(')) {
-            const typeMatch = type.match(/^(\w+)\(([^)]+)\)$/);
-            if (typeMatch) {
-                definition.type = typeMatch[1];
+        if (typePart.includes('(')) {
+            const paramMatch = typePart.match(/^(\w+)\(([^)]+)\)$/);
+            if (paramMatch) {
+                definition.type = paramMatch[1];
 
                 if (definition.type === 'DECIMAL' || definition.type === 'NUMERIC') {
-                    const [precision, scale] = typeMatch[2].split(',').map(Number);
+                    const [precision, scale] = paramMatch[2].split(',').map(Number);
                     definition.precision = precision;
                     definition.scale = scale || 0;
                 } else {
-                    definition.length = parseInt(typeMatch[2]);
+                    definition.length = parseInt(paramMatch[2]);
                 }
             }
         }
 
-        // Check for NOT NULL
-        definition.notNull = parts.includes('NOT') && parts.includes('NULL');
+        // Check for NOT NULL (handle case where NOT NULL might be split)
+        definition.notNull = /NOT\s+NULL/i.test(typeDef);
 
         // Check for DEFAULT
-        const defaultIndex = parts.indexOf('DEFAULT');
-        if (defaultIndex !== -1 && defaultIndex + 1 < parts.length) {
-            definition.defaultValue = parts[defaultIndex + 1];
+        const defaultMatch = typeDef.match(/DEFAULT\s+([^,\s]+)/i);
+        if (defaultMatch) {
+            definition.defaultValue = defaultMatch[1];
         }
 
         return definition;

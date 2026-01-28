@@ -30,14 +30,14 @@
 import { Response, NextFunction } from "express";
 import { redisService } from "../../infrastructure";
 import { AuthenticatedRequest } from "../../interfaces/middleware";
-import { UserLevel } from "../../../shared/src";
+import { UserLevel } from "@trade-bot/shared";
 import { logger } from "../../core/logging";
 
 // Import extracted modules
 import { RateLimitConfig } from "./rate-limiter/rate-limit.types";
 import { memoryRateLimiter } from "./rate-limiter/memory-rate-limiter";
 import { progressiveAuthLimiter } from "./rate-limiter/progressive-auth-limiter";
-//import { redisHealthMonitor } from "./rate-limiter/redis-health-monitor";
+import { redisHealthMonitor } from "./rate-limiter/redis-health-monitor";
 import { RATE_LIMIT_CONFIGS } from "./rate-limiter/rate-limit.config";
 
 // Re-export for backward compatibility
@@ -95,8 +95,8 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
 
     if (userId && config.enableUserBasedLimits && config.userLimits && userLevel) {
       // Use user-based limits for authenticated requests
-      const userLimit = config.userLimits[userLevel as UserLevel];
-      if (userLimit) {
+      const userLimit = config.userLimits[userLevel as keyof typeof config.userLimits];
+      if (userLimit !== undefined) {
         effectiveMaxRequests = userLimit;
         limitType = 'user';
       }

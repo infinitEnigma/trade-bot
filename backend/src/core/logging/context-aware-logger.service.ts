@@ -46,7 +46,7 @@ import {
     parseStackTrace,
     classifyError,
     createEnhancedErrorInfo
-} from "../../../../shared/src";
+} from "@trade-bot/shared";
 
 // Re-export for backward compatibility
 export { SharedErrorCodes, ErrorSeverity, LoggerErrorType, ErrorInfo, StackFrame, PerformanceMetrics, DatabaseMetrics, HttpRequestInfo, UserContextInfo, LogContext, createErrorInfo, createPerformanceMetrics, createDatabaseMetrics, createHttpRequestInfo, createUserContextInfo, parseStackTrace, classifyError, createEnhancedErrorInfo };

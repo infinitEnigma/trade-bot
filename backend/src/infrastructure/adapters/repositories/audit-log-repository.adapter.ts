@@ -11,7 +11,7 @@
 import {
     IAuditLogRepository,
     AuditLogEntry
-} from '../../../shared/src';
+} from '@trade-bot/shared';
 import { query } from '../../../database/pool';
 import { logger } from '../../../core/logging';
 

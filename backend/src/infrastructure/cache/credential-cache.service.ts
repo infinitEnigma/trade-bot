@@ -161,11 +161,33 @@ class CredentialCacheService {
 }
 
 // Start cleanup interval (run every 5 minutes)
-setInterval(
-  () => {
-    credentialCacheService.cleanup();
-  },
-  5 * 60 * 1000
-);
+let cleanupInterval: NodeJS.Timeout | null = null;
+
+function startCleanupInterval(): void {
+  if (cleanupInterval) return; // Prevent multiple intervals
+
+  cleanupInterval = setInterval(
+    () => {
+      credentialCacheService.cleanup();
+    },
+    5 * 60 * 1000
+  );
+}
+
+function stopCleanupInterval(): void {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+  }
+}
 
 export const credentialCacheService = new CredentialCacheService();
+
+// Start cleanup interval by default (for production)
+startCleanupInterval();
+
+// Add cleanup method to the service instance
+(credentialCacheService as any).cleanupForTests = (): void => {
+  stopCleanupInterval();
+  credentialCacheService.clearAll();
+};

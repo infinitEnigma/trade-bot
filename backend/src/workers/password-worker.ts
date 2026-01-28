@@ -432,6 +432,22 @@ class PasswordWorkerPool extends EventEmitter {
         await Promise.all(terminationPromises);
         logger.info('Password worker pool shutdown complete');
     }
+
+    /**
+     * Cleanup method for test environments
+     * Gracefully shuts down the pool and removes process handlers
+     */
+    async cleanupForTests(): Promise<void> {
+        await this.shutdown();
+
+        // Remove process handlers to prevent interference with other tests
+        process.removeListener('SIGTERM', async () => {
+            await this.shutdown();
+        });
+        process.removeListener('SIGINT', async () => {
+            await this.shutdown();
+        });
+    }
 }
 
 // Global singleton instance

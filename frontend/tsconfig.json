@@ -17,7 +17,8 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@trade-bot/shared": ["../shared/dist/index.d.ts"]
     }
   },
   "include": ["src"],

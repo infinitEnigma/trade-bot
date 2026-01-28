@@ -1,7 +1,7 @@
 /** @format */
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { UserLevel, User } from "../../../../../shared/src";
+import { UserLevel, User } from "../../../shared/types";
 import { globalAnalyticsManager } from "../../../shared/services/analytics-manager";
 import { analyticsService } from "../services/analyticsService";
 import { AnalyticsOptions, AnalyticsData } from "../types/analytics.types";

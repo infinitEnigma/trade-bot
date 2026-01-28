@@ -8,7 +8,7 @@
  * Dramatically reduces API calls while maintaining data freshness and user-level limits.
  */
 
-import { UserLevel } from "../../../../shared/src";
+import { UserLevel } from "../../shared/types";
 import { analyticsService } from "../../features/analytics/services/analyticsService";
 import { AnalyticsData, AnalyticsTimeWindow } from "../../features/analytics/types/analytics.types";
 

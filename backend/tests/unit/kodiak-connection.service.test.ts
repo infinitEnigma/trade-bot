@@ -6,7 +6,7 @@ import { selectAuthService } from '../../src/core/service-selector';
 import { kodiakIntegrationService } from '../../src/infrastructure/external/kodiak-integration.service';
 import { encryptionService } from '../../src/infrastructure/security/encryption.service';
 import { logger } from '../../src/core/logging';
-import { UserLevel } from '../../../shared/src';
+import { UserLevel } from '@trade-bot/shared';
 
 // Define missing UserLevel values for testing
 const TestUserLevel = {

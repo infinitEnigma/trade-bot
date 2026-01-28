@@ -11,7 +11,7 @@ import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
 import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
 import { userKodiakService } from "../../../core/user/user-kodiak.service";
 import { createRateLimiter } from "../../../infrastructure/security/rate-limiter.service";
-//import { UserLevel } from "../../../shared/src";
+//import { UserLevel } from "@trade-bot/shared";
 import { kodiakConnectionRateLimit, kodiakSyncedRateLimit, kodiakRateLimit } from "../../../infrastructure/security/rate-limiter/rate-limit.config";
 import logger from "../../../core/logging/logger.service";
 

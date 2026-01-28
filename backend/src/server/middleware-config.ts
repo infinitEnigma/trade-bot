@@ -3,7 +3,7 @@
 import { Express } from "express";
 import { ContextAwareLogger } from "../core/logging/context-aware-logger.service";
 import { AuthenticatedRequest } from "../interfaces/middleware";
-import { UserLevel } from "../../../shared/src";
+import { UserLevel } from "@trade-bot/shared";
 
 // Create context-aware logger instance for middleware operations
 const middlewareLogger = new ContextAwareLogger('middleware-config');

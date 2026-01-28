@@ -153,7 +153,13 @@ export class KodiakCache<T = unknown> {
         const ttlMs = customTtlMs || this.getTtlForEndpoint(endpoint);
 
         // Check cache size limits BEFORE adding new entry
+        // Evict if adding this entry would exceed the limit
         if (this.cache.size >= this.config.maxEntries) {
+            logger.debug("Cache eviction triggered", {
+                currentSize: this.cache.size,
+                maxSize: this.config.maxEntries,
+                keyToBeAdded: key
+            });
             this.evictOldest();
         }
 
@@ -169,14 +175,10 @@ export class KodiakCache<T = unknown> {
         this.cache.set(key, entry);
         this.stats.sets++;
 
-        logger.debug("Cache entry set", {
+        logger.debug("Cache entry added", {
             key,
-            userId,
-            endpoint,
-            ttlMs,
-            expiresAt: new Date(entry.expires).toISOString(),
             cacheSize: this.cache.size,
-            maxEntries: this.config.maxEntries,
+            maxSize: this.config.maxEntries
         });
     }
 
@@ -263,9 +265,19 @@ export class KodiakCache<T = unknown> {
      */
     private evictOldest(): void {
         let oldestKey: string | null = null;
-        let oldestAccess = Date.now();
+        let oldestAccess = Infinity;
+
+        logger.debug("Starting eviction process", {
+            currentSize: this.cache.size,
+            maxSize: this.config.maxEntries
+        });
 
         for (const [key, entry] of this.cache.entries()) {
+            logger.debug("Checking entry for eviction", {
+                key,
+                lastAccessed: entry.lastAccessed,
+                oldestAccess: oldestAccess
+            });
             if (entry.lastAccessed < oldestAccess) {
                 oldestAccess = entry.lastAccessed;
                 oldestKey = key;
@@ -273,12 +285,14 @@ export class KodiakCache<T = unknown> {
         }
 
         if (oldestKey) {
+            logger.debug("Evicting oldest entry", {
+                key: oldestKey,
+                age: Date.now() - oldestAccess
+            });
             this.cache.delete(oldestKey);
             this.stats.evictions++;
-            logger.debug("Cache entry evicted (LRU)", {
-                key: oldestKey,
-                age: Date.now() - oldestAccess,
-            });
+        } else {
+            logger.debug("No entry to evict found");
         }
     }
 

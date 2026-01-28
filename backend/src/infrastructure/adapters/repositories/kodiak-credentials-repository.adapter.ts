@@ -11,7 +11,7 @@
 import {
     IKodiakCredentialsRepository,
     KodiakCredentials
-} from '../../../shared/src';
+} from '@trade-bot/shared';
 import { query } from '../../../database/pool';
 
 /**

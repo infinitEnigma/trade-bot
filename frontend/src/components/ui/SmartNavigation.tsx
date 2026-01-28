@@ -3,7 +3,7 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../features/auth";
-import { UserRole } from "../../../../shared/src";
+import { UserRole } from "../../shared/types";
 import {
   Home,
   Zap,

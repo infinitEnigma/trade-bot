@@ -16,7 +16,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { ErrorProvider, ErrorNotifications } from "./contexts/ErrorContext";
 import { usePageBackground } from "./shared/hooks";
 import { websocketSubscriptionManager } from "./infrastructure/websocket/websocket-manager";
-import { UserRole } from "../../shared/src";
+import { UserRole } from "./shared/types";
 
 // Components
 import { LoadingSpinner } from "./shared/components/ui";

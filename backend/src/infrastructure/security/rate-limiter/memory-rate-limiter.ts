@@ -149,6 +149,14 @@ class MemoryRateLimiter {
         }
         this.clear();
     }
+
+    /**
+     * Cleanup method for test environments
+     * Stops cleanup interval and clears all state
+     */
+    cleanupForTests(): void {
+        this.destroy();
+    }
 }
 
 // Global in-memory rate limiter instance

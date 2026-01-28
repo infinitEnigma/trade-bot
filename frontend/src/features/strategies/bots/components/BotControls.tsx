@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { UserRole } from "../../../../../../shared/src";
+import { UserRole } from "../../../../shared/types";
 import {
   Play,
   Square,

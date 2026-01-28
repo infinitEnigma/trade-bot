@@ -6,7 +6,7 @@ import { selectAuthService } from "../../../core/service-selector";
 import { walletQualificationService } from "../../../core/wallet/wallet-qualification.service";
 import { roleManagementService } from "../../../core/auth/role-management.service";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
-import { UserRole, UserLevel } from "../../../../../shared/src";
+import { UserRole, UserLevel } from "@trade-bot/shared";
 import { createErrorResponse, ValidationError } from "../../../shared/types/errors";
 import { getCorrelationId } from "../../../shared/utils/context";
 import { validators } from "../../middleware/validation";

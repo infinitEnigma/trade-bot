@@ -2,7 +2,7 @@
 
 import { marketApi } from "../../../infrastructure/api";
 import { chartDataCache } from "../../../infrastructure/cache";
-import { UserLevel } from "../../../../../shared/src";
+import { UserLevel } from "../../../shared/types";
 import {
     AnalyticsTimeWindow,
     AnalyticsMetrics,

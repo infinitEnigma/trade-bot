@@ -663,6 +663,23 @@ export class ErrorNotificationService {
     resetThrottleCounters(): void {
         this.errorCounts.clear();
     }
+
+    /**
+     * Cleanup method for test environments
+     * Stops retry processor and clears all state
+     */
+    cleanupForTests(): void {
+        if (this.retryInterval) {
+            clearInterval(this.retryInterval);
+            this.retryInterval = null;
+        }
+
+        this.resetThrottleCounters();
+        this.notificationQueue = [];
+        this.processing = false;
+
+        this.notificationLogger.debug("Error notification service cleaned up for tests");
+    }
 }
 
 // Export singleton instance

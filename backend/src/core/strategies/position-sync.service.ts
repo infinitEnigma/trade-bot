@@ -11,7 +11,7 @@ import { kodiakIntegrationService, KodiakAccountInfo, KodiakPosition } from "../
 import { CACHE_KEYS } from "../../config/cache.config";
 import { cacheInvalidationService } from "../../infrastructure";
 import { positionSyncLogger } from "../logging/context-aware-logger.service";
-//import { IEncryptionService } from "../../../../shared/src/types/infrastructure";
+//import { IEncryptionService } from "@trade-bot/shared/types/infrastructure";
 
 export interface PositionData {
     symbol: string;

@@ -7,7 +7,7 @@ import {
     createErrorResponse,
     getErrorStatusCode,
     isOperationalError
-} from "../../../shared/src";
+} from "@trade-bot/shared";
 import { logger } from "../../core/logging";
 
 /**

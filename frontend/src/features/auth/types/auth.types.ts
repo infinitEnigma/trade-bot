@@ -1,6 +1,6 @@
 /** @format */
 
-import { User } from "../../../../../shared/src";
+import { User } from "../../../shared/types";
 
 /**
  * Authentication-related type definitions

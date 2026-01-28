@@ -18,7 +18,7 @@ import {
     ExternalCredentials,
     OrderStatus,
     OrderSide
-} from '../../../shared/src';
+} from '@trade-bot/shared';
 import { kodiakIntegrationService } from '../../../infrastructure/external/kodiak-integration.service';
 import { logger } from '../../../core/logging';
 import {

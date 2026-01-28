@@ -189,6 +189,7 @@ export class SchemaGenerator {
 
             case 'TIMESTAMP':
             case 'DATE':
+            case 'TIMESTAMP WITH TIME ZONE':
                 return Joi.date();
 
             case 'JSONB':
@@ -199,7 +200,7 @@ export class SchemaGenerator {
 
             default:
                 // Default to string for unknown types
-                logger.warn("Unknown column type, defaulting to string", { type });
+                logger.warn(`Unknown column type "${type}" (length: ${type.length}, upper: "${type.toUpperCase()}", trimmed: "${type.trim()}"), defaulting to string`);
                 return Joi.string();
         }
     }

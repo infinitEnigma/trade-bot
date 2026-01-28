@@ -13,7 +13,7 @@
 
 import {
     ILogger
-} from '../../../shared/src';
+} from '@trade-bot/shared';
 
 // Simplified process manager interface for trading engine
 export interface IProcessManager {

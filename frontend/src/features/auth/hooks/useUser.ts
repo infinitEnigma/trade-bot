@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authApi } from "../../../infrastructure/api/auth";
 import { kodiakApi } from "../../../infrastructure/api/kodiak";
 import { useAuth, updateAuthUser } from "./useAuth";
-import { UserLevel } from "../../../../../shared/src";
+import { UserLevel } from "../../../shared/types";
 
 interface ApiError extends Error {
     response?: {

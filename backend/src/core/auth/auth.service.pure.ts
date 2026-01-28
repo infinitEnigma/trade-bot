@@ -29,7 +29,7 @@ import {
     AuthTokens,
     TokenPayload,
     CacheResult
-} from '../../../shared/src';
+} from '@trade-bot/shared';
 
 export interface AuthServiceDependencies {
     userRepository: IUserRepository;

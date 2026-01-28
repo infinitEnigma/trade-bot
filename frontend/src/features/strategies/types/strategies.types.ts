@@ -1,6 +1,6 @@
 /** @format */
 
-import { Strategy, StrategyType } from "../../../../../shared/src";
+import { Strategy, StrategyType } from "../../../shared/types";
 
 // Strategy Configuration Interfaces
 export interface GridStrategyConfig {

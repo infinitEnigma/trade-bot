@@ -1,6 +1,6 @@
 /** @format */
 
-import { Strategy, StrategyType } from "../../../../../shared/src";
+import { Strategy, StrategyType } from "../../../shared/types";
 import { tradingApi } from "../../../infrastructure/api";
 import { StrategyFormData, BotInstance } from "../types/strategies.types";
 

@@ -186,6 +186,60 @@ export interface KodiakTradingViewHistory {
 export class KodiakIntegrationService {
     private readonly CACHE_TTL = 300; // ⬆️ 5 minutes for volatile data (was 5 seconds)
     private readonly CACHE_TTL_MEDIUM = 600; // ⬆️ 10 minutes for semi-volatile data (was 30 seconds)
+    private readonly REQUEST_TIMEOUT = 30000; // 30 seconds timeout for API requests
+    private readonly HTTP_AGENT_KEEP_ALIVE = false; // Disable keep-alive for test environments
+
+    // Module-level caching for crypto libraries to prevent memory leaks
+    private cryptoModule: typeof import('crypto') | null = null;
+    private bs58Module: typeof import('bs58') | null = null;
+    private ed25519Module: typeof import('@noble/ed25519') | null = null;
+
+    /**
+     * Get crypto modules with caching to prevent memory leaks
+     */
+    private async getCryptoModules(): Promise<{
+        cryptoModule: typeof import('crypto');
+        bs58Module: typeof import('bs58');
+        ed25519Module: typeof import('@noble/ed25519');
+    }> {
+        if (!this.cryptoModule) {
+            this.cryptoModule = await import('crypto');
+            this.bs58Module = await import('bs58');
+            this.ed25519Module = await import('@noble/ed25519');
+        }
+        return {
+            cryptoModule: this.cryptoModule!,
+            bs58Module: this.bs58Module!,
+            ed25519Module: this.ed25519Module!
+        };
+    }
+
+    /**
+     * Create an AbortController with timeout for request cancellation
+     */
+    private createAbortController(timeout: number = this.REQUEST_TIMEOUT): AbortController {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        controller.signal.addEventListener('abort', () => clearTimeout(timeoutId));
+        return controller;
+    }
+
+    /**
+     * Create fetch options with proper timeout and connection management
+     */
+    private createFetchOptions(additionalOptions: RequestInit = {}): RequestInit {
+        const controller = this.createAbortController();
+
+        return {
+            ...additionalOptions,
+            signal: controller.signal,
+            // Disable keep-alive to prevent connection hanging in tests
+            headers: {
+                ...additionalOptions.headers,
+                'Connection': process.env.NODE_ENV === 'test' ? 'close' : 'keep-alive'
+            }
+        };
+    }
 
     /**
      * Get decrypted Kodiak credentials for a user
@@ -421,9 +475,22 @@ export class KodiakIntegrationService {
 
             // Calculate total balance
             const totalBalance = holdings.reduce((sum: number, holding: Record<string, unknown>) => {
-                const holdingBalance = parseFloat((holding as Record<string, unknown>).holding?.toString() || (holding as Record<string, unknown>).balance?.toString() || "0");
-                const price = parseFloat((holding as Record<string, unknown>).price?.toString() || "0");
-                return sum + holdingBalance * price;
+                // Extract balance and price from holding data
+                // holding.holding contains the asset name (e.g., 'BTC')
+                // holding.balance contains the balance amount (e.g., '1.0')
+                // holding.price contains the price (e.g., '50000')
+                const balanceStr = (holding as Record<string, unknown>).balance?.toString() || "0";
+                const priceStr = (holding as Record<string, unknown>).price?.toString() || "0";
+
+                const balance = parseFloat(balanceStr);
+                const price = parseFloat(priceStr);
+
+                // Only add to sum if both values are valid numbers
+                if (!isNaN(balance) && !isNaN(price)) {
+                    return sum + (balance * price);
+                }
+
+                return sum;
             }, 0);
 
             // Map KodiakHolding to KodiakBalance for the account info
@@ -546,13 +613,12 @@ export class KodiakIntegrationService {
             }
 
             const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org";
-            const response = await fetch(`${baseUrl}/v1/public/futures/${symbol}`, {
-                method: "GET",
+            const response = await fetch(`${baseUrl}/v1/public/futures/${symbol}`, this.createFetchOptions({
                 headers: {
                     "Accept": "application/json",
                     "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
                 },
-            });
+            }));
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -602,13 +668,12 @@ export class KodiakIntegrationService {
             }
 
             const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org";
-            const response = await fetch(`${baseUrl}/v1/public/orderbook?symbol=${symbol}`, {
-                method: "GET",
+            const response = await fetch(`${baseUrl}/v1/public/orderbook?symbol=${symbol}`, this.createFetchOptions({
                 headers: {
                     "Accept": "application/json",
                     "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
                 },
-            });
+            }));
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -656,13 +721,12 @@ export class KodiakIntegrationService {
             }
 
             const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org";
-            const response = await fetch(`${baseUrl}/v1/tv/config`, {
-                method: "GET",
+            const response = await fetch(`${baseUrl}/v1/tv/config`, this.createFetchOptions({
                 headers: {
                     "Accept": "application/json",
                     "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
                 },
-            });
+            }));
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -708,13 +772,12 @@ export class KodiakIntegrationService {
             }
 
             const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org";
-            const response = await fetch(`${baseUrl}/v1/tv/symbols?symbol=${symbol}`, {
-                method: "GET",
+            const response = await fetch(`${baseUrl}/v1/tv/symbols?symbol=${symbol}`, this.createFetchOptions({
                 headers: {
                     "Accept": "application/json",
                     "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
                 },
-            });
+            }));
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -768,13 +831,12 @@ export class KodiakIntegrationService {
             }
 
             const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org";
-            const response = await fetch(`${baseUrl}/v1/tv/history?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}`, {
-                method: "GET",
+            const response = await fetch(`${baseUrl}/v1/tv/history?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}`, this.createFetchOptions({
                 headers: {
                     "Accept": "application/json",
                     "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
                 },
-            });
+            }));
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -877,13 +939,12 @@ export class KodiakIntegrationService {
                 baseUrl,
             });
 
-            const response = await fetch(requestUrl, {
-                method: "GET",
+            const response = await fetch(requestUrl, this.createFetchOptions({
                 headers: {
                     "Accept": "application/json",
                     "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
                 },
-            });
+            }));
 
             logger.debug("Kodiak public account API response received", {
                 status: response.status,
@@ -1045,19 +1106,17 @@ export class KodiakIntegrationService {
      */
     private async generateKodiakSignature(message: string, secretKey: string): Promise<string> {
         try {
-            // Configure @noble/ed25519 hash functions BEFORE any usage
-            const { createHash } = await import("crypto");
-            const { default: bs58 } = await import("bs58");
-            const ed25519 = await import("@noble/ed25519");
+            // Get cached crypto modules to prevent memory leaks
+            const { cryptoModule, bs58Module, ed25519Module } = await this.getCryptoModules();
 
             const sha512Hash = (message: Uint8Array) => {
-                const hash = createHash("sha512");
+                const hash = cryptoModule.createHash("sha512");
                 hash.update(message);
                 return new Uint8Array(hash.digest());
             };
 
             // Set hash function - using type assertions for third-party library
-            const ed25519Lib = ed25519 as unknown as {
+            const ed25519Lib = ed25519Module as unknown as {
                 hashes?: { sha512?: (message: Uint8Array) => Uint8Array };
                 etc?: { sha512Sync?: (message: Uint8Array) => Uint8Array };
                 utils?: { sha512Sync?: (message: Uint8Array) => Uint8Array };
@@ -1072,7 +1131,7 @@ export class KodiakIntegrationService {
                 ed25519Lib.utils.sha512Sync = sha512Hash;
             }
 
-            const privateKey = bs58.decode(secretKey);
+            const privateKey = bs58Module.default.decode(secretKey);
             const messageBytes = new TextEncoder().encode(message);
             const signature = ed25519Lib.sign?.(messageBytes, privateKey) || Promise.resolve(new Uint8Array());
             const signatureResult = await (signature instanceof Promise ? signature : Promise.resolve(signature));
