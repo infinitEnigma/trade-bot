@@ -158,8 +158,17 @@ function startCleanupInterval(): void {
       const now = Date.now();
       let cleaned = 0;
 
-      // Use clearAll method which handles the cleanup properly
-      credentialCacheService.clearAll();
+      // Iterate through cache and remove expired entries
+      for (const [userId, cached] of (credentialCacheService as any).cache.entries()) {
+        if (now - cached.cachedAt > cached.ttl) {
+          (credentialCacheService as any).cache.delete(userId);
+          cleaned++;
+        }
+      }
+
+      if (cleaned > 0) {
+        logger.debug("Credential cache cleanup completed", { cleaned });
+      }
     },
     5 * 60 * 1000
   );

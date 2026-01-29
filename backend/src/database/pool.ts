@@ -79,6 +79,13 @@ export function initializePool(): Pool {
     return pool;
   }
 
+  logger.info("Initializing database pool", {
+    host: getRequiredEnv("DB_HOST"),
+    port: getRequiredEnv("DB_PORT"),
+    database: getRequiredEnv("DB_NAME"),
+    user: getRequiredEnv("DB_USER"),
+  });
+
   pool = new Pool({
     host: getRequiredEnv("DB_HOST"),
     port: parseInt(getRequiredEnv("DB_PORT"), 10),
@@ -602,13 +609,18 @@ function stopMetricsInterval(): void {
 // Only start in production environment, not in test environment
 if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
   startMetricsInterval();
+} else {
+  // In test environment, ensure metrics interval is stopped
+  stopMetricsInterval();
 }
 
 /**
  * Cleanup method for test environments
- * Stops metrics interval and closes pool
+ * Stops metrics interval but keeps pool open for test reuse
  */
 export async function cleanupForTests(): Promise<void> {
   stopMetricsInterval();
-  await closePool();
+  // Note: Don't close the pool in test environments to allow test reuse
+  // The pool will be closed when the test process exits
+  logger.debug("Test cleanup completed - pool kept open for test reuse");
 }

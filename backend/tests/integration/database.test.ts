@@ -8,26 +8,8 @@ import logger from '../../src/core/logging/logger.service';
 jest.mock('../../src/core/logging/logger.service');
 
 describe('Database Integration Tests', () => {
-    let originalPool: Pool | null = null;
-
-    beforeAll(async () => {
-        // Store original pool reference
-        try {
-            const poolModule = require('../../src/database/pool');
-            originalPool = poolModule.getPool ? poolModule.getPool() : null;
-        } catch (error) {
-            // Pool might not be initialized yet
-            originalPool = null;
-        }
-    });
-
-    afterAll(async () => {
-        // Restore original pool if it existed
-        if (originalPool) {
-            // Note: In a real implementation, you'd need a way to restore the original pool
-            // This is a limitation of the singleton pattern
-        }
-    });
+    // Database pool is now initialized in test-setup.ts
+    // No need for manual pool management in individual test files
 
     beforeEach(async () => {
         // Reset timeout configuration for each test

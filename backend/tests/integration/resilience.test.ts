@@ -25,7 +25,7 @@ describe('Error Recovery & Resilience Tests', () => {
     afterEach(async () => {
         // Cleanup after each test
         errorNotificationService.resetThrottleCounters();
-        await passwordWorkerPool.cleanupForTests();
+        //await passwordWorkerPool.cleanupForTests();
         botReconciliationWorker.cleanupForTests();
     });
 

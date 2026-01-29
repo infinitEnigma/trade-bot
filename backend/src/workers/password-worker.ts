@@ -5,54 +5,12 @@
  * event loop blocking during computationally expensive bcrypt operations.
  */
 
-//import { Worker, isMainThread, parentPort, workerData } from 'worker_threads';
 import { Worker } from 'worker_threads';
 import { EventEmitter } from 'events';
-//import * as path from 'path';
 import * as os from 'os';
 import logger from '../core/logging/logger.service';
-
-// Worker thread script for password hashing
-const WORKER_SCRIPT = `
-const { parentPort, workerData } = require('worker_threads');
-const bcrypt = require('bcryptjs');
-
-parentPort.on('message', async (message) => {
-  const { id, action, data } = message;
-
-  try {
-    switch (action) {
-      case 'hash': {
-        const { password, rounds } = data;
-        const hash = await bcrypt.hash(password, rounds);
-        parentPort.postMessage({ id, success: true, result: hash });
-        break;
-      }
-
-      case 'compare': {
-        const { password: comparePassword, hash } = data;
-        const isValid = await bcrypt.compare(comparePassword, hash);
-        parentPort.postMessage({ id, success: true, result: isValid });
-        break;
-      }
-
-      default:
-        parentPort.postMessage({
-          id,
-          success: false,
-          error: 'Unknown action: ' + action
-        });
-    }
-  } catch (error) {
-    parentPort.postMessage({
-      id,
-      success: false,
-      error: error.message,
-      stack: error.stack
-    });
-  }
-});
-`;
+import * as bcrypt from 'bcryptjs';
+import * as path from 'path';
 
 /**
  * Worker message interface
@@ -88,6 +46,9 @@ interface HashTask {
     resolve: (result: string) => void;
     reject: (error: Error) => void;
     timeout: NodeJS.Timeout;
+    startTime: number;
+    workerId?: number;
+    retryCount?: number;
 }
 
 interface CompareTask {
@@ -97,6 +58,9 @@ interface CompareTask {
     resolve: (result: boolean) => void;
     reject: (error: Error) => void;
     timeout: NodeJS.Timeout;
+    startTime: number;
+    workerId?: number;
+    retryCount?: number;
 }
 
 type PasswordTask = HashTask | CompareTask;
@@ -111,10 +75,13 @@ class PasswordWorkerPool extends EventEmitter {
     private activeTasks = new Map<string, PasswordTask>();
     private nextTaskId = 0;
     private isShuttingDown = false;
+    private workerHealthCheckInterval: NodeJS.Timeout | null = null;
+    private lastHealthCheck = Date.now();
 
     constructor(private poolSize: number = Math.max(2, Math.floor(os.cpus().length / 2))) {
         super();
         this.initializePool();
+        this.startHealthCheck();
         logger.info('Password worker pool initialized', {
             poolSize,
             availableCpus: os.cpus().length,
@@ -125,8 +92,57 @@ class PasswordWorkerPool extends EventEmitter {
      * Initialize the worker thread pool
      */
     private initializePool(): void {
-        for (let i = 0; i < this.poolSize; i++) {
+        // Enhanced test environment detection for worker pool
+        const isTestEnvironment = this.isTestEnvironment();
+        const poolSize = isTestEnvironment ? Math.max(1, Math.floor(this.poolSize / 2)) : this.poolSize;
+
+        logger.info('Initializing worker pool', {
+            originalPoolSize: this.poolSize,
+            actualPoolSize: poolSize,
+            isTestEnvironment
+        });
+
+        for (let i = 0; i < poolSize; i++) {
             this.createWorker();
+        }
+    }
+
+    /**
+     * Start periodic health checks for worker threads
+     */
+    private startHealthCheck(): void {
+        this.workerHealthCheckInterval = setInterval(() => {
+            this.performHealthCheck();
+        }, 10000); // Check every 10 seconds
+    }
+
+    /**
+     * Perform health check on worker threads
+     */
+    private performHealthCheck(): void {
+        const stats = this.getStats();
+        this.lastHealthCheck = Date.now();
+
+        // Log health status if there are issues
+        if (stats.availableWorkers === 0 && stats.totalWorkers > 0) {
+            logger.warn('All workers busy', { stats });
+        }
+
+        if (stats.queuedTasks > 5) {
+            logger.warn('High task queue', { queuedTasks: stats.queuedTasks });
+        }
+
+        // Check for stuck tasks (tasks running longer than expected)
+        const now = Date.now();
+        for (const [taskId, task] of this.activeTasks) {
+            const duration = now - task.startTime;
+            if (duration > 45000) { // Tasks running longer than 45 seconds
+                logger.warn('Task potentially stuck', {
+                    taskId,
+                    duration,
+                    action: task.action
+                });
+            }
         }
     }
 
@@ -134,8 +150,8 @@ class PasswordWorkerPool extends EventEmitter {
      * Create a new worker thread
      */
     private createWorker(): void {
-        const worker = new Worker(WORKER_SCRIPT, {
-            eval: true,
+        const workerScriptPath = path.join(__dirname, 'password-worker-thread.js');
+        const worker = new Worker(workerScriptPath, {
             workerData: {},
             resourceLimits: {
                 maxOldGenerationSizeMb: 512, // Prevent memory leaks
@@ -148,13 +164,34 @@ class PasswordWorkerPool extends EventEmitter {
         });
 
         worker.on('error', (error) => {
-            logger.error('Password worker error', { error: (error as Error).message });
+            logger.error('Password worker error', {
+                error: (error as Error).message,
+                stack: (error as Error).stack
+            });
             this.handleWorkerError(worker, error as Error);
         });
 
-        worker.on('exit', (code) => {
-            logger.warn('Password worker exited', { code });
+        worker.on('exit', (code, signal) => {
+            logger.warn('Password worker exited', { code, signal });
             this.handleWorkerExit(worker, code);
+        });
+
+        // Handle worker thread uncaught exceptions
+        worker.on('message', (message) => {
+            if (message && typeof message === 'object' && message.type === 'uncaughtException') {
+                this.handleWorkerUncaughtException(worker, new Error(message.error || 'Unknown error'));
+            }
+        });
+
+        worker.on('online', () => {
+            logger.debug('Password worker online', { workerId: worker.threadId });
+        });
+
+        worker.on('messageerror', (error) => {
+            logger.error('Password worker message error', {
+                error: error.message,
+                stack: error.stack
+            });
         });
 
         this.workers.push(worker);
@@ -169,7 +206,11 @@ class PasswordWorkerPool extends EventEmitter {
         const task = this.activeTasks.get(id);
 
         if (!task) {
-            logger.warn('Received message for unknown task', { id });
+            // NEW: Check if we're shutting down before logging unknown task
+            if (!this.isShuttingDown) {
+                logger.warn('Received message for unknown task', { id });
+            }
+
             return;
         }
 
@@ -219,6 +260,41 @@ class PasswordWorkerPool extends EventEmitter {
             // In production, you'd want more sophisticated task tracking
             task.reject(new Error('Worker thread error'));
             this.activeTasks.delete(taskId);
+        }
+
+        // Replace the worker
+        if (!this.isShuttingDown) {
+            this.replaceWorker(worker);
+        }
+    }
+
+    /**
+     * Handle worker thread uncaught exceptions
+     */
+    private handleWorkerUncaughtException(worker: Worker, error: Error): void {
+        logger.error('Password worker uncaught exception', {
+            error: error.message,
+            stack: error.stack,
+        });
+
+        // Terminate the worker immediately
+        try {
+            worker.terminate();
+        } catch (terminateError) {
+            logger.warn('Failed to terminate worker after uncaught exception', {
+                error: terminateError instanceof Error ? terminateError.message : String(terminateError),
+            });
+        }
+
+        // Remove from pools
+        const workerIndex = this.workers.indexOf(worker);
+        if (workerIndex !== -1) {
+            this.workers.splice(workerIndex, 1);
+        }
+
+        const availableIndex = this.availableWorkers.indexOf(worker);
+        if (availableIndex !== -1) {
+            this.availableWorkers.splice(availableIndex, 1);
         }
 
         // Replace the worker
@@ -289,27 +365,148 @@ class PasswordWorkerPool extends EventEmitter {
         // Remove from available workers temporarily
         this.activeTasks.set(task.id, task);
 
-        // Send task to worker
-        worker.postMessage({
-            id: task.id,
-            action: task.action,
-            data: task.data,
-        });
+        // Enhanced test environment detection for timeout
+        const isTestEnvironment = this.isTestEnvironment();
+        const timeoutDuration = isTestEnvironment ? 10000 : 45000; // 10s for tests, 45s for production
 
-        // Set timeout (30 seconds for password operations)
-        task.timeout = setTimeout(() => {
-            logger.warn('Password task timeout', { taskId: task.id });
-            this.activeTasks.delete(task.id);
-            task.reject(new Error('Password operation timeout'));
+        // Send task to worker with enhanced error handling and debug logging
+        try {
+            logger.debug('Sending task to worker', {
+                taskId: task.id,
+                action: task.action,
+                workerId: worker.threadId,
+                queueLength: this.taskQueue.length,
+                availableWorkers: this.availableWorkers.length,
+                isTestEnvironment
+            });
+
+            worker.postMessage({
+                id: task.id,
+                action: task.action,
+                data: task.data,
+            });
+
+            // Set timeout with retry logic (10 seconds for tests, 45 seconds for production)
+            task.timeout = setTimeout(() => {
+                this.handleTaskTimeout(task, worker);
+            }, timeoutDuration);
+        } catch (error) {
+            logger.error('Failed to send task to worker', {
+                taskId: task.id,
+                workerId: worker.threadId,
+                error: error instanceof Error ? error.message : String(error),
+                isTestEnvironment
+            });
 
             // Make worker available again
             if (!this.availableWorkers.includes(worker)) {
                 this.availableWorkers.push(worker);
             }
 
-            // Process next task
+            // Reject task and process next
+            task.reject(new Error('Failed to send task to worker'));
             this.processQueue();
-        }, 30000);
+        }
+    }
+
+    /**
+     * Handle task timeout with retry logic
+     */
+    private async handleTaskTimeout(task: PasswordTask, worker: Worker): Promise<void> {
+        const isTestEnvironment = this.isTestEnvironment();
+        const duration = Date.now() - task.startTime;
+
+        logger.warn('Password task timeout - attempting recovery', {
+            taskId: task.id,
+            action: task.action,
+            duration,
+            isTestEnvironment
+        });
+
+        // Remove from active tasks
+        this.activeTasks.delete(task.id);
+
+        // Check if worker is still responsive
+        const isWorkerResponsive = await this.checkWorkerResponsiveness(worker);
+
+        if (isWorkerResponsive) {
+            // Worker is responsive, make it available again
+            if (!this.availableWorkers.includes(worker)) {
+                this.availableWorkers.push(worker);
+            }
+
+            // Retry the task once (only in production, skip retries in tests for faster failure)
+            if (!task.retryCount && !isTestEnvironment) {
+                task.retryCount = 1;
+                this.taskQueue.unshift(task); // Put task back at front of queue
+                logger.info('Retrying timed-out task', { taskId: task.id, isTestEnvironment });
+            } else {
+                // Max retries reached or in test environment, reject task
+                const errorMessage = isTestEnvironment
+                    ? 'Password operation timeout in test environment (no retries)'
+                    : 'Password operation timeout after retries';
+                task.reject(new Error(errorMessage));
+            }
+        } else {
+            // Worker is not responsive, replace it immediately
+            logger.error('Worker unresponsive, replacing immediately', {
+                workerId: worker.threadId,
+                isTestEnvironment
+            });
+            this.replaceWorker(worker);
+
+            // Retry the task (only in production, skip retries in tests for faster failure)
+            if (!task.retryCount && !isTestEnvironment) {
+                task.retryCount = 1;
+                this.taskQueue.unshift(task); // Put task back at front of queue
+                logger.info('Retrying task with new worker', { taskId: task.id, isTestEnvironment });
+            } else {
+                // Max retries reached or in test environment, reject task
+                const errorMessage = isTestEnvironment
+                    ? 'Password operation timeout - worker unresponsive in test environment'
+                    : 'Password operation timeout - worker unresponsive';
+                task.reject(new Error(errorMessage));
+            }
+        }
+
+        // Process next task
+        this.processQueue();
+    }
+
+    /**
+     * Check if worker is responsive
+     */
+    private async checkWorkerResponsiveness(worker: Worker): Promise<boolean> {
+        const isTestEnvironment = this.isTestEnvironment();
+        const responsivenessTimeout = isTestEnvironment ? 500 : 1000; // 500ms for tests, 1s for production
+
+        return new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+                resolve(false);
+            }, responsivenessTimeout);
+
+            const handleMessage = (message: any) => {
+                if (message && message.type === 'healthCheckResponse') {
+                    clearTimeout(timeout);
+                    worker.off('message', handleMessage);
+                    resolve(true);
+                }
+            };
+
+            worker.on('message', handleMessage);
+
+            // Send health check
+            try {
+                worker.postMessage({
+                    id: `health_${Date.now()}`,
+                    action: 'healthCheck',
+                    data: {}
+                });
+            } catch (error) {
+                clearTimeout(timeout);
+                resolve(false);
+            }
+        });
     }
 
     /**
@@ -324,6 +521,7 @@ class PasswordWorkerPool extends EventEmitter {
                 resolve,
                 reject,
                 timeout: null as unknown as NodeJS.Timeout,
+                startTime: Date.now(),
             };
 
             this.taskQueue.push(task);
@@ -343,6 +541,7 @@ class PasswordWorkerPool extends EventEmitter {
                 resolve,
                 reject,
                 timeout: null as unknown as NodeJS.Timeout,
+                startTime: Date.now(),
             };
 
             this.taskQueue.push(task);
@@ -415,11 +614,23 @@ class PasswordWorkerPool extends EventEmitter {
         logger.info('Shutting down password worker pool');
         this.isShuttingDown = true;
 
+        // Clear health check interval
+        if (this.workerHealthCheckInterval) {
+            clearInterval(this.workerHealthCheckInterval);
+            this.workerHealthCheckInterval = null;
+        }
+
         // Reject all pending tasks
         for (const task of this.taskQueue) {
             task.reject(new Error('Worker pool shutting down'));
         }
         this.taskQueue.length = 0;
+
+        // Clear active tasks
+        for (const [taskId, task] of this.activeTasks) {
+            task.reject(new Error('Worker pool shutting down'));
+        }
+        this.activeTasks.clear();
 
         // Terminate all workers
         const terminationPromises = this.workers.map(worker => {
@@ -434,26 +645,146 @@ class PasswordWorkerPool extends EventEmitter {
     }
 
     /**
+     * Check if we're running in a test environment
+     */
+    private isTestEnvironment(): boolean {
+        return process.env.NODE_ENV === 'test' || !!process.env.JEST_WORKER_ID;
+    }
+
+    /**
      * Cleanup method for test environments
      * Gracefully shuts down the pool and removes process handlers
      */
     async cleanupForTests(): Promise<void> {
-        await this.shutdown();
+        try {
+            //console.log('🧹 Starting password worker pool cleanup for tests...');
 
-        // Remove process handlers to prevent interference with other tests
-        process.removeListener('SIGTERM', async () => {
-            await this.shutdown();
-        });
-        process.removeListener('SIGINT', async () => {
-            await this.shutdown();
-        });
+            // Set shutdown flag immediately
+            this.isShuttingDown = true;
+
+            // Clear health check interval
+            if (this.workerHealthCheckInterval) {
+                clearInterval(this.workerHealthCheckInterval);
+                this.workerHealthCheckInterval = null;
+            }
+
+            // Reject all pending tasks with debug logging
+            //console.log(`📋 Rejecting ${this.taskQueue.length} pending tasks...`);
+            for (const task of this.taskQueue) {
+                try {
+                    task.reject(new Error('Worker pool shutting down during test cleanup'));
+                } catch (error) {
+                    console.warn('Warning: Failed to reject task during cleanup:', error);
+                }
+            }
+            this.taskQueue.length = 0;
+
+            // Clear active tasks with debug logging
+            //console.log(`📋 Clearing ${this.activeTasks.size} active tasks...`);
+            for (const [taskId, task] of this.activeTasks) {
+                try {
+                    task.reject(new Error('Worker pool shutting down during test cleanup'));
+                    clearTimeout(task.timeout);
+                } catch (error) {
+                    console.warn('Warning: Failed to clear active task during cleanup:', error);
+                }
+            }
+            this.activeTasks.clear();
+
+            // Terminate all workers with enhanced error handling
+            console.log(`🔧 Terminating ${this.workers.length} workers...`);
+            const terminationPromises = this.workers.map(async (worker) => {
+                try {
+                    // Send shutdown message to worker first
+                    try {
+                        worker.postMessage({
+                            id: `shutdown_${Date.now()}`,
+                            action: 'shutdown',
+                            data: {}
+                        });
+                    } catch (postError) {
+                        console.warn('Warning: Failed to send shutdown message to worker:', postError);
+                    }
+
+                    // Wait a short time for graceful shutdown
+                    await new Promise(resolve => setTimeout(resolve, 300));
+
+                    // Force terminate if still running
+                    return new Promise<void>((resolve) => {
+                        const exitHandler = () => {
+                            resolve();
+                        };
+                        worker.once('exit', exitHandler);
+
+                        // Set a timeout for termination
+                        const timeout = setTimeout(() => {
+                            console.warn('Warning: Worker termination timeout, forcing exit');
+                            try {
+                                worker.removeAllListeners();
+                                worker.terminate();
+                            } catch (error) {
+                                console.warn('Warning: Failed to force terminate worker:', error);
+                            }
+                            resolve();
+                        }, 1000); // 1 second timeout for worker termination
+
+                        try {
+                            //worker.terminate();
+                            // Clear timeout when worker exits
+                            worker.once('exit', () => {
+                                clearTimeout(timeout);
+                            });
+
+                        } catch (error) {
+                            console.warn('Warning: Failed to terminate worker:', error);
+                            clearTimeout(timeout);
+                            resolve();
+                        }
+                    });
+                } catch (error) {
+                    console.warn('Warning: Error during worker termination:', error);
+                }
+            });
+
+            await Promise.all(terminationPromises);
+
+            // Clear worker arrays
+            this.workers.length = 0;
+            this.availableWorkers.length = 0;
+
+            // Remove process handlers to prevent interference with other tests
+            try {
+                process.removeListener('SIGTERM', async () => {
+                    await this.shutdown();
+                });
+                process.removeListener('SIGINT', async () => {
+                    await this.shutdown();
+                });
+            } catch (error) {
+                console.warn('Warning: Failed to remove process handlers:', error);
+            }
+
+            //console.log('✅ Password worker pool cleanup completed successfully');
+        } catch (error) {
+            //console.error('❌ Password worker pool cleanup failed:', error);
+            // Don't throw here as it might interfere with test results
+        }
     }
 }
 
 // Global singleton instance with lazy initialization
 let _passwordWorkerPool: PasswordWorkerPool | null = null;
+let _testWorkerPool: PasswordWorkerPool | null = null;
 
 function getPasswordWorkerPool(): PasswordWorkerPool {
+    // In test environment, use test-specific pool to avoid state leakage
+    if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
+        if (!_testWorkerPool) {
+            _testWorkerPool = new PasswordWorkerPool();
+        }
+        return _testWorkerPool;
+    }
+
     if (!_passwordWorkerPool) {
         _passwordWorkerPool = new PasswordWorkerPool();
     }

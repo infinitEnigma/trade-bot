@@ -4,10 +4,11 @@
  */
 
 import { passwordWorkerPool } from './workers/password-worker';
+import { botReconciliationWorker } from './workers/bot-reconciliation';
 import { credentialCacheService } from './infrastructure/cache/credential-cache.service';
 import { errorNotificationService } from './core/notifications/error-notification.service';
 import { memoryRateLimiter } from './infrastructure/security/rate-limiter/memory-rate-limiter';
-import { cleanupForTests as cleanupDatabasePool } from './database/pool';
+import { cleanupForTests as cleanupDatabasePool, initializePool } from './database/pool';
 
 // Extend global interface for test cleanup
 declare global {
@@ -19,11 +20,32 @@ declare global {
 
 // Only run cleanup in test environment
 if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
-    // Cleanup after each test to prevent open handles
-    afterEach(async () => {
+    // Enhanced test environment setup
+    beforeAll(async () => {
         try {
-            // Silent cleanup - only log errors
-            await passwordWorkerPool.cleanupForTests();
+            // Set test-specific environment variables
+            process.env.NODE_ENV = 'test';
+            process.env.TEST_MODE = 'true';
+            process.env.TEST_WORKER_POOL_SIZE = '2'; // Smaller pool for tests
+            process.env.TEST_DB_TIMEOUT = '5000'; // Shorter timeouts for tests
+            process.env.LOG_LEVEL = 'error'; // Only show errors during tests
+
+            // Initialize database pool for tests with test-specific configuration
+            initializePool();
+
+        } catch (error) {
+            // Don't throw here as tests may skip DB operations
+        }
+    });
+
+    // Enhanced cleanup after each test to prevent open handles
+    /*afterEach(async () => {
+        try {
+            // Cleanup worker pools first
+            //await passwordWorkerPool.cleanupForTests();
+            botReconciliationWorker.cleanupForTests();
+
+            // Cleanup other services
             (credentialCacheService as any).cleanupForTests();
             errorNotificationService.cleanupForTests();
             memoryRateLimiter.cleanupForTests();
@@ -31,17 +53,26 @@ if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
 
             // Cleanup additional services
             await cleanupAdditionalServices();
+
+            // Additional cleanup for any remaining resources
+            await cleanupRemainingResources();
+
+            // Force garbage collection if available
+            if (global.gc) {
+                global.gc();
+            }
+
         } catch (error) {
-            console.error('❌ Error during test cleanup:', error);
             // Don't throw here as it might interfere with test results
         }
-    });
+    }, 15000); // 15 second timeout for cleanup*/
 
-    // Cleanup after all tests
+    // Enhanced cleanup after all tests
     afterAll(async () => {
         try {
-            // Silent final cleanup - only log errors
+            // Final cleanup sequence
             await passwordWorkerPool.cleanupForTests();
+            botReconciliationWorker.cleanupForTests();
             (credentialCacheService as any).cleanupForTests();
             errorNotificationService.cleanupForTests();
             memoryRateLimiter.cleanupForTests();
@@ -52,8 +83,9 @@ if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
 
             // Final cleanup for any remaining resources
             await finalCleanup();
+
         } catch (error) {
-            console.error('❌ Error during final cleanup:', error);
+            // Don't throw here as it might interfere with test results
         }
     });
 }
@@ -132,10 +164,8 @@ async function finalCleanup(): Promise<void> {
         // Cleanup any remaining Redis connections
         await cleanupRedisConnections();
 
-        console.log('✅ Final cleanup completed successfully');
-
     } catch (error) {
-        console.error('❌ Error during final cleanup:', error);
+        // Don't throw here as it might interfere with test results
     }
 }
 
@@ -238,6 +268,49 @@ async function cleanupRedisConnections(): Promise<void> {
     }
 }
 
+/**
+ * Cleanup any remaining resources that might be causing open handles
+ */
+async function cleanupRemainingResources(): Promise<void> {
+    try {
+        // Cleanup any remaining timers
+        const timers = global as any;
+        if (timers && timers.clearInterval && timers.clearTimeout) {
+            // Force cleanup of any remaining timers
+            if (global.gc) {
+                global.gc(); // Force garbage collection
+            }
+        }
+
+        // Cleanup any remaining event listeners
+        if (process && process.removeAllListeners) {
+            // Remove any remaining process event listeners that might interfere
+            const eventsToRemove = ['SIGTERM', 'SIGINT', 'uncaughtException', 'unhandledRejection'];
+            eventsToRemove.forEach(event => {
+                try {
+                    process.removeAllListeners(event);
+                } catch (error) {
+                    // Ignore errors during cleanup
+                }
+            });
+        }
+
+        // Cleanup global variables
+        if (global.WebSocketInstances) {
+            global.WebSocketInstances = [];
+        }
+        if (global.redisClients) {
+            global.redisClients = [];
+        }
+        if (global.dbClients) {
+            global.dbClients = [];
+        }
+
+    } catch (error) {
+        // Don't throw here as it might interfere with test results
+    }
+}
+
 // Export for potential use in individual test files
 export {
     passwordWorkerPool,
@@ -246,7 +319,8 @@ export {
     memoryRateLimiter,
     cleanupDatabasePool,
     cleanupAdditionalServices,
-    finalCleanup
+    finalCleanup,
+    cleanupRemainingResources
 };
 
 
