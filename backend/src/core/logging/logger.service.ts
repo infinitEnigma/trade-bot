@@ -49,12 +49,16 @@ const logger = winston.createLogger({
   defaultMeta: { service: "trade-bot" },
 });
 
-// ✅ Console transport (development)
+// ✅ Console transport (development and tests)
 if (process.env.NODE_ENV !== "production") {
   winston.addColors(LOG_COLORS);
 
+  // Configure console transport based on environment
+  const consoleLevel = process.env.NODE_ENV === "test" ? "warn" : "debug";
+
   logger.add(
     new winston.transports.Console({
+      level: consoleLevel,
       format: winston.format.combine(
         winston.format.colorize({ all: true }),
         winston.format.printf(

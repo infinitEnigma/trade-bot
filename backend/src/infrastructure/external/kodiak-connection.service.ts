@@ -7,11 +7,14 @@
  */
 
 import { query } from "../../database/pool";
-import { selectAuthService } from "../../core/service-selector"; const authService = selectAuthService();
+import { selectAuthService } from "../../core/service-selector";
 import { kodiakIntegrationService } from "./kodiak-integration.service";
 import { encryptionService } from "../../infrastructure/security";
 import { logger } from "../../core/logging";
 import { UserLevel } from "@trade-bot/shared";
+
+// Get authService when needed to support proper mocking in tests
+const getAuthService = () => selectAuthService();
 
 export interface KodiakConnectionData {
     accountId: string;
@@ -90,7 +93,7 @@ export class KodiakConnectionService {
             await this.updateUserLevel(userId, UserLevel.REGISTERED);
 
             // Invalidate cached user data so frontend gets updated level immediately
-            await authService.invalidateUserDataCache(userId);
+            await getAuthService().invalidateUserDataCache(userId);
 
             // Log successful connection
             await this.logConnectionEvent(userId, connectionData.accountId, true);
@@ -138,7 +141,7 @@ export class KodiakConnectionService {
             await this.updateUserLevel(userId, UserLevel.BASIC);
 
             // Invalidate cached user data so frontend gets updated level immediately
-            await authService.invalidateUserDataCache(userId);
+            await getAuthService().invalidateUserDataCache(userId);
 
             // Log disconnection
             await this.logConnectionEvent(userId, null, false);
@@ -221,13 +224,16 @@ export class KodiakConnectionService {
             };
         }
 
-        if (data.apiKey.length < 20) {
+        // API key format validation (should be ed25519:public_key format)
+        if (!data.apiKey.includes(':') || !data.apiKey.startsWith('ed25519:')) {
             return {
                 valid: false,
                 error: "API key appears to be invalid",
             };
         }
 
+        // Secret key should be a valid base58 string (Orderly format)
+        // Real Orderly secret keys are typically 32-44 characters
         if (data.secretKey.length < 30) {
             return {
                 valid: false,
@@ -313,7 +319,7 @@ export class KodiakConnectionService {
     private async updateUserLevel(userId: string, newLevel: UserLevel): Promise<void> {
         try {
             // Get current user level first
-            const user = await authService.getUserById(userId);
+            const user = await getAuthService().getUserById(userId);
             if (!user) {
                 throw new Error("User not found");
             }
@@ -329,7 +335,7 @@ export class KodiakConnectionService {
                 throw new Error(`Invalid user level transition from ${user.userLevel} to ${newLevel}`);
             }
 
-            await authService.updateUserLevel(userId, newLevel);
+            await getAuthService().updateUserLevel(userId, newLevel);
             logger.info(`User level updated from ${user.userLevel} to ${newLevel}`, { userId });
         } catch (error) {
             logger.error("Failed to update user level", {

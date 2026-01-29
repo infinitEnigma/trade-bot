@@ -8,13 +8,6 @@ import { encryptionService } from '../../src/infrastructure/security/encryption.
 import { logger } from '../../src/core/logging';
 import { UserLevel } from '@trade-bot/shared';
 
-// Define missing UserLevel values for testing
-const TestUserLevel = {
-    ...UserLevel,
-    PREMIUM: 'PREMIUM' as const,
-    ADMIN: 'ADMIN' as const,
-};
-
 // Mock dependencies
 jest.mock('../../src/database/pool');
 jest.mock('../../src/core/service-selector');
@@ -32,9 +25,9 @@ describe('KodiakConnectionService', () => {
 
     describe('connectKodiak', () => {
         const mockConnectionData = {
-            accountId: 'test-account-id',
-            apiKey: 'test-api-key',
-            secretKey: 'test-secret-key',
+            accountId: '0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
+            apiKey: 'ed25519:2pf9vHjZbtLDyTjWNAWJKVXSQRT23CzdGhLrVM6qTfGS',
+            secretKey: '92b3z141HQ66LSsEcp4hEhuoxL1uDi96Lq6DU4vLMcKV',
             walletSignature: 'test-signature',
         };
 
@@ -67,12 +60,16 @@ describe('KodiakConnectionService', () => {
                 expect.stringContaining('INSERT INTO kodiak_credentials'),
                 expect.arrayContaining([
                     'test-user-id',
-                    'test-account-id',
+                    '0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
                     'encrypted-api-key',
                     'encrypted-secret-key',
                     'test-signature',
-                    true, // verified
+                    false, // initially not verified
                 ])
+            );
+            expect(query).toHaveBeenCalledWith(
+                'UPDATE kodiak_credentials SET verified = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
+                [true, 'test-user-id']
             );
 
             // Verify user level update
@@ -113,7 +110,7 @@ describe('KodiakConnectionService', () => {
                 expect.stringContaining('INSERT INTO kodiak_credentials'),
                 expect.arrayContaining([
                     'test-user-id',
-                    'test-account-id',
+                    '0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
                     'encrypted-api-key',
                     'encrypted-secret-key',
                     'test-signature',
@@ -135,7 +132,7 @@ describe('KodiakConnectionService', () => {
             const result = await service.connectKodiak('test-user-id', invalidConnectionData);
 
             expect(result.success).toBe(false);
-            expect(result.message).toBe('Invalid connection data');
+            expect(result.message).toBe('Account ID, API key, and secret key are required');
             expect(result.error).toBe('Account ID, API key, and secret key are required');
             expect(query).not.toHaveBeenCalled();
         });
@@ -164,7 +161,7 @@ describe('KodiakConnectionService', () => {
             expect(result.error).toBe('Internal server error during connection');
             expect(logger.error).toHaveBeenCalledWith('Kodiak connection error', {
                 userId: 'test-user-id',
-                accountId: 'test-account-id',
+                accountId: '0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
                 error: 'Database connection failed',
             });
         });
@@ -226,15 +223,16 @@ describe('KodiakConnectionService', () => {
             });
             (encryptionService.encryptApiKey as jest.Mock).mockReturnValue('encrypted-api-key');
             (encryptionService.encryptSecretKey as jest.Mock).mockReturnValue('encrypted-secret-key');
-            (query as jest.Mock).mockResolvedValue({ rows: [] });
+            (query as jest.Mock)
+                .mockResolvedValueOnce({ rows: [] }) // Initial insert
+                .mockResolvedValueOnce({ rows: [] }); // Wallet address update
 
             const result = await service.connectKodiak('test-user-id', mockConnectionData);
 
             expect(result.success).toBe(true);
-            expect(logger.error).toHaveBeenCalledWith('Failed to fetch and store wallet address', {
+            expect(logger.warn).toHaveBeenCalledWith('Failed to fetch Kodiak public account info for wallet address', {
                 userId: 'test-user-id',
-                accountId: 'test-account-id',
-                error: 'API error',
+                accountId: '0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
             });
         });
     });
@@ -481,8 +479,8 @@ describe('KodiakConnectionService', () => {
         it('should validate valid connection data', () => {
             const result = (service as any).validateConnectionData({
                 accountId: 'test-account-id',
-                apiKey: 'test-api-key',
-                secretKey: 'test-secret-key',
+                apiKey: 'ed25519:test-api-key',
+                secretKey: 'test-secret-key-that-is-long-enough-for-validation',
             });
 
             expect(result).toEqual({ valid: true });
@@ -577,13 +575,12 @@ describe('KodiakConnectionService', () => {
         it('should validate valid level transitions', () => {
             expect((service as any).isValidLevelTransition(UserLevel.BASIC, UserLevel.REGISTERED)).toBe(true);
             expect((service as any).isValidLevelTransition(UserLevel.REGISTERED, UserLevel.VERIFIED)).toBe(true);
-            expect((service as any).isValidLevelTransition(UserLevel.VERIFIED, TestUserLevel.PREMIUM)).toBe(true);
         });
 
         it('should reject invalid level transitions', () => {
             expect((service as any).isValidLevelTransition(UserLevel.REGISTERED, UserLevel.BASIC)).toBe(false);
-            expect((service as any).isValidLevelTransition(TestUserLevel.PREMIUM, UserLevel.VERIFIED)).toBe(false);
-            expect((service as any).isValidLevelTransition(UserLevel.BASIC, TestUserLevel.PREMIUM)).toBe(false);
+            expect((service as any).isValidLevelTransition(UserLevel.VERIFIED, UserLevel.REGISTERED)).toBe(false);
+            expect((service as any).isValidLevelTransition(UserLevel.BASIC, UserLevel.VERIFIED)).toBe(false);
         });
     });
 
@@ -658,7 +655,7 @@ describe('KodiakConnectionService', () => {
 
             expect(logger.error).toHaveBeenCalledWith('Failed to fetch and store wallet address', {
                 userId: 'test-user-id',
-                accountId: 'test-account-id',
+                accountId: '0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
                 error: 'API error',
             });
         });

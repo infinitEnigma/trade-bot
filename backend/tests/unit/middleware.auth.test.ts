@@ -31,6 +31,7 @@ jest.mock('../../src/infrastructure/cache/redis.service', () => ({
   redisService: {
     getClient: jest.fn(() => ({
       set: jest.fn().mockResolvedValue('OK'),
+      del: jest.fn().mockResolvedValue(1),
     })),
     del: jest.fn().mockResolvedValue({ success: true }),
     atomicReadModifyWrite: jest.fn(),
@@ -103,6 +104,7 @@ describe('Auth Middleware', () => {
     const token = jwt.sign(testUser, process.env.JWT_SECRET || 'test-secret');
 
     (req as any).cookies.accessToken = token;
+    (req as any).path = '/api/user/profile'; // Use a non-lightweight endpoint
 
     // Mock successful token validation
     (mockAuthService.validateToken as jest.Mock).mockResolvedValue(testUser);
@@ -121,6 +123,7 @@ describe('Auth Middleware', () => {
     await authMiddleware(req as Request, res as Response, next);
 
     expect(mockAuthService.validateToken).toHaveBeenCalledWith(token);
+    expect(mockAuthService.getAuthenticatedUserData).toHaveBeenCalledWith('test-user-id');
     expect(next).toHaveBeenCalled();
     expect((req as AuthenticatedRequest).user).toEqual({ ...testUser, userLevel: 'REGISTERED', roles: [] });
   });
@@ -131,6 +134,7 @@ describe('Auth Middleware', () => {
 
     req.headers = { authorization: `Bearer ${token}` };
     (req as any).cookies = {}; // No cookie
+    (req as any).path = '/api/user/profile'; // Use a non-lightweight endpoint
 
     // Mock successful token validation
     (mockAuthService.validateToken as jest.Mock).mockResolvedValue(testUser);
@@ -160,6 +164,7 @@ describe('Auth Middleware', () => {
 
     (req as any).cookies.accessToken = 'some-cookie-token';
     req.headers = { authorization: `Bearer ${headerToken}` };
+    (req as any).path = '/api/user/profile'; // Use a non-lightweight endpoint
 
     // Mock successful token validation for header token
     (mockAuthService.validateToken as jest.Mock).mockResolvedValue(headerUser);
@@ -275,6 +280,7 @@ describe('Auth Middleware', () => {
     const token = jwt.sign(testUser, process.env.JWT_SECRET || 'test-secret');
 
     (req as any).cookies.accessToken = token;
+    (req as any).path = '/api/user/profile'; // Use a non-lightweight endpoint
 
     // Mock successful token validation
     (mockAuthService.validateToken as jest.Mock).mockResolvedValue(testUser);
@@ -325,6 +331,27 @@ describe('Auth Middleware', () => {
       user: { id: 'test-user', email: 'test@example.com', userLevel: 'BASIC' },
     });
 
+    // Mock validation of new access token - this should be called after refresh
+    (mockAuthService.validateToken as jest.Mock).mockResolvedValueOnce({
+      userId: 'test-user',
+      email: 'test@example.com',
+      userLevel: 'BASIC'
+    });
+
+    // Mock user data loading for refreshed token
+    (mockAuthService.getAuthenticatedUserData as jest.Mock).mockResolvedValue({
+      user: {
+        id: 'test-user',
+        email: 'test@example.com',
+        userLevel: 'BASIC',
+        roles: [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      roles: [],
+      hasCredentials: false
+    });
+
     // Mock Redis client for mutex
     const mockRedisClient = {
       set: jest.fn().mockResolvedValue('OK'),
@@ -335,6 +362,7 @@ describe('Auth Middleware', () => {
     await authMiddleware(req as Request, res as Response, next);
 
     expect(mockAuthService.refreshToken).toHaveBeenCalledWith('valid-refresh-token');
+    expect(mockAuthService.refreshToken).toHaveBeenCalledTimes(1); // Should only be called once on success
     expect(next).toHaveBeenCalled();
   });
 

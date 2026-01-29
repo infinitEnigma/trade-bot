@@ -14,29 +14,12 @@ if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
     // Cleanup after each test to prevent open handles
     afterEach(async () => {
         try {
-            console.log('🧹 Cleaning up test resources...');
-
-            // Cleanup password worker pool
+            // Silent cleanup - only log errors
             await passwordWorkerPool.cleanupForTests();
-            console.log('✅ Password worker pool cleaned up');
-
-            // Cleanup credential cache service
             (credentialCacheService as any).cleanupForTests();
-            console.log('✅ Credential cache service cleaned up');
-
-            // Cleanup error notification service
             errorNotificationService.cleanupForTests();
-            console.log('✅ Error notification service cleaned up');
-
-            // Cleanup memory rate limiter
             memoryRateLimiter.cleanupForTests();
-            console.log('✅ Memory rate limiter cleaned up');
-
-            // Cleanup database pool
             await cleanupDatabasePool();
-            console.log('✅ Database pool cleaned up');
-
-            console.log('🎉 All test resources cleaned up successfully');
         } catch (error) {
             console.error('❌ Error during test cleanup:', error);
             // Don't throw here as it might interfere with test results
@@ -46,12 +29,8 @@ if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
     // Cleanup after all tests
     afterAll(async () => {
         try {
-            console.log('🧹 Final cleanup after all tests...');
-
-            // Additional cleanup if needed
+            // Silent final cleanup - only log errors
             await cleanupDatabasePool();
-
-            console.log('🎉 Final cleanup completed');
         } catch (error) {
             console.error('❌ Error during final cleanup:', error);
         }
