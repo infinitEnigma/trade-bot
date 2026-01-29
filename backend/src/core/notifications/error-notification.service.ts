@@ -573,6 +573,11 @@ export class ErrorNotificationService {
     private startRetryProcessor(): void {
         if (this.retryInterval) return;
 
+        // Only start retry processor in production environment
+        if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
+            return;
+        }
+
         // Retry failed notifications every 5 minutes
         this.retryInterval = setInterval(async () => {
             await this.retryFailedNotifications();

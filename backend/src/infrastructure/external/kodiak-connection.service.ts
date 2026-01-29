@@ -10,7 +10,7 @@ import { query } from "../../database/pool";
 import { selectAuthService } from "../../core/service-selector";
 import { kodiakIntegrationService } from "./kodiak-integration.service";
 import { encryptionService } from "../../infrastructure/security";
-import { logger } from "../../core/logging";
+import { contextLogger } from "../../core/logging/context-aware-logger.service";
 import { UserLevel } from "@trade-bot/shared";
 
 // Get authService when needed to support proper mocking in tests
@@ -50,7 +50,7 @@ export class KodiakConnectionService {
      */
     async connectKodiak(userId: string, connectionData: KodiakConnectionData): Promise<KodiakConnectionResult> {
         try {
-            logger.info("Starting Kodiak connection process", { userId, accountId: connectionData.accountId });
+            contextLogger.info("Starting Kodiak connection process", { userId, accountId: connectionData.accountId });
 
             // Validate input data
             const validation = this.validateConnectionData(connectionData);
@@ -69,7 +69,7 @@ export class KodiakConnectionService {
             const verificationResult = await this.verifyCredentials(userId, connectionData);
 
             if (!verificationResult.verified) {
-                logger.warn("Kodiak credential verification failed", {
+                contextLogger.warn("Kodiak credential verification failed", {
                     userId,
                     accountId: connectionData.accountId,
                     reason: verificationResult.error,
@@ -98,7 +98,7 @@ export class KodiakConnectionService {
             // Log successful connection
             await this.logConnectionEvent(userId, connectionData.accountId, true);
 
-            logger.info("Kodiak connection successful", {
+            contextLogger.info("Kodiak connection successful", {
                 userId,
                 accountId: connectionData.accountId,
                 verified: true,
@@ -115,10 +115,9 @@ export class KodiakConnectionService {
             };
 
         } catch (error) {
-            logger.error("Kodiak connection error", {
+            contextLogger.error("Kodiak connection error", error instanceof Error ? error : new Error(String(error)), {
                 userId,
                 accountId: connectionData.accountId,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -137,8 +136,8 @@ export class KodiakConnectionService {
             // Remove credentials
             await query("DELETE FROM kodiak_credentials WHERE user_id = $1", [userId]);
 
-            // Downgrade user level back to BASIC
-            await this.updateUserLevel(userId, UserLevel.BASIC);
+            // Downgrade user level back to BASIC (always downgrade on disconnect)
+            await this.updateUserLevelForDisconnect(userId);
 
             // Invalidate cached user data so frontend gets updated level immediately
             await getAuthService().invalidateUserDataCache(userId);
@@ -146,7 +145,7 @@ export class KodiakConnectionService {
             // Log disconnection
             await this.logConnectionEvent(userId, null, false);
 
-            logger.info("Kodiak disconnection successful", { userId });
+            contextLogger.info("Kodiak disconnection successful", { userId });
 
             return {
                 success: true,
@@ -154,9 +153,8 @@ export class KodiakConnectionService {
             };
 
         } catch (error) {
-            logger.error("Kodiak disconnection error", {
+            contextLogger.error("Kodiak disconnection error", error instanceof Error ? error : new Error(String(error)), {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -195,9 +193,8 @@ export class KodiakConnectionService {
             };
 
         } catch (error) {
-            logger.error("Failed to get Kodiak connection status", {
+            contextLogger.error("Failed to get Kodiak connection status", error instanceof Error ? error : new Error(String(error)), {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             // Return disconnected status on error
@@ -300,7 +297,7 @@ export class KodiakConnectionService {
             }
 
         } catch (error) {
-            logger.warn("Credential verification error", {
+            contextLogger.warn("Credential verification error", {
                 userId,
                 accountId: data.accountId,
                 error: error instanceof Error ? error.message : String(error),
@@ -326,7 +323,7 @@ export class KodiakConnectionService {
 
             // Only update if the level is actually changing
             if (user.userLevel === newLevel) {
-                logger.info(`User level already ${newLevel}, no update needed`, { userId });
+                contextLogger.info(`User level already ${newLevel}, no update needed`, { userId });
                 return;
             }
 
@@ -336,12 +333,27 @@ export class KodiakConnectionService {
             }
 
             await getAuthService().updateUserLevel(userId, newLevel);
-            logger.info(`User level updated from ${user.userLevel} to ${newLevel}`, { userId });
+            contextLogger.info(`User level updated from ${user.userLevel} to ${newLevel}`, { userId });
         } catch (error) {
-            logger.error("Failed to update user level", {
+            contextLogger.error("Failed to update user level", error instanceof Error ? error : new Error(String(error)), {
                 userId,
                 newLevel,
-                error: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Update user level for disconnection (always downgrade to BASIC)
+     */
+    private async updateUserLevelForDisconnect(userId: string): Promise<void> {
+        try {
+            // Always downgrade to BASIC on disconnect, regardless of current level
+            await getAuthService().updateUserLevel(userId, UserLevel.BASIC);
+            contextLogger.info("User level downgraded to BASIC after Kodiak disconnection", { userId });
+        } catch (error) {
+            contextLogger.error("Failed to update user level during disconnection", error instanceof Error ? error : new Error(String(error)), {
+                userId,
             });
             throw error;
         }
@@ -361,7 +373,7 @@ export class KodiakConnectionService {
             const accountInfoResult = await kodiakIntegrationService.getPublicAccountInfo(connectionData.accountId, credentials);
 
             if (!accountInfoResult.success || !accountInfoResult.data) {
-                logger.warn("Failed to fetch Kodiak public account info for wallet address", {
+                contextLogger.warn("Failed to fetch Kodiak public account info for wallet address", {
                     userId,
                     accountId: connectionData.accountId,
                 });
@@ -373,7 +385,7 @@ export class KodiakConnectionService {
             const walletAddress = accountInfo.address;
 
             if (!walletAddress) {
-                logger.warn("No wallet address found in Kodiak public account info", {
+                contextLogger.warn("No wallet address found in Kodiak public account info", {
                     userId,
                     accountId: connectionData.accountId,
                     accountInfoKeys: Object.keys(accountInfo),
@@ -383,7 +395,7 @@ export class KodiakConnectionService {
 
             // Validate wallet address format (should be Ethereum address)
             if (!walletAddress.startsWith('0x') || walletAddress.length !== 42) {
-                logger.warn("Invalid wallet address format from Kodiak API", {
+                contextLogger.warn("Invalid wallet address format from Kodiak API", {
                     userId,
                     accountId: connectionData.accountId,
                     walletAddress,
@@ -397,17 +409,16 @@ export class KodiakConnectionService {
                 [walletAddress, userId]
             );
 
-            logger.info("Wallet address fetched and stored from Kodiak public API", {
+            contextLogger.info("Wallet address fetched and stored from Kodiak public API", {
                 userId,
                 accountId: connectionData.accountId,
                 walletAddress,
             });
 
         } catch (error) {
-            logger.error("Failed to fetch and store wallet address", {
+            contextLogger.error("Failed to fetch and store wallet address", error instanceof Error ? error : new Error(String(error)), {
                 userId,
                 accountId: connectionData.accountId,
-                error: error instanceof Error ? error.message : String(error),
             });
             // Don't throw - wallet address is optional for basic functionality
         }
@@ -442,7 +453,7 @@ export class KodiakConnectionService {
                 ]
             );
         } catch (error) {
-            logger.warn("Failed to log Kodiak connection event", {
+            contextLogger.warn("Failed to log Kodiak connection event", {
                 userId,
                 accountId,
                 connected,
@@ -463,9 +474,8 @@ export class KodiakConnectionService {
 
             return result.rows.length > 0;
         } catch (error) {
-            logger.error("Failed to check Kodiak connection status", {
+            contextLogger.error("Failed to check Kodiak connection status", error instanceof Error ? error : new Error(String(error)), {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             return false;
@@ -492,9 +502,7 @@ export class KodiakConnectionService {
             };
 
         } catch (error) {
-            logger.error("Failed to get connection stats", {
-                error: error instanceof Error ? error.message : String(error),
-            });
+            contextLogger.error("Failed to get connection stats", error instanceof Error ? error : new Error(String(error)));
 
             return {
                 totalConnections: 0,
@@ -521,7 +529,7 @@ export class KodiakConnectionService {
             const cleanedCount = result.rowCount || 0;
 
             if (cleanedCount > 0) {
-                logger.info("Cleaned up invalid Kodiak connections", {
+                contextLogger.info("Cleaned up invalid Kodiak connections", {
                     cleanedCount,
                     olderThan: thirtyDaysAgo.toISOString(),
                 });
@@ -530,9 +538,7 @@ export class KodiakConnectionService {
             return { cleaned: cleanedCount };
 
         } catch (error) {
-            logger.error("Failed to cleanup invalid connections", {
-                error: error instanceof Error ? error.message : String(error),
-            });
+            contextLogger.error("Failed to cleanup invalid connections", error instanceof Error ? error : new Error(String(error)));
 
             return { cleaned: 0 };
         }
@@ -569,16 +575,16 @@ export class KodiakConnectionService {
                         }
                     }
                 } catch (error) {
-                    logger.warn("Failed to re-verify connection", {
+                    contextLogger.warn("Failed to re-verify connection", {
                         userId: connection.user_id,
                         accountId: connection.account_id,
-                        error: error instanceof Error ? error.message : String(error),
+                        errorMessage: error instanceof Error ? error.message : String(error),
                     });
                     failed++;
                 }
             }
 
-            logger.info("Connection re-verification completed", {
+            contextLogger.info("Connection re-verification completed", {
                 totalChecked: connections.rows.length,
                 reVerified,
                 failed,
@@ -587,8 +593,10 @@ export class KodiakConnectionService {
             return { reVerified, failed };
 
         } catch (error) {
-            logger.error("Failed to re-verify connections", {
-                error: error instanceof Error ? error.message : String(error),
+            contextLogger.error("Failed to re-verify connections", error instanceof Error ? error : new Error(String(error)), {
+                totalChecked: 0,
+                reVerified: 0,
+                failed: 0,
             });
 
             return { reVerified: 0, failed: 0 };

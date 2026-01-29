@@ -5,7 +5,7 @@ import { query } from '../../src/database/pool';
 import { selectAuthService } from '../../src/core/service-selector';
 import { kodiakIntegrationService } from '../../src/infrastructure/external/kodiak-integration.service';
 import { encryptionService } from '../../src/infrastructure/security/encryption.service';
-import { logger } from '../../src/core/logging';
+import { contextLogger } from '../../src/core/logging/context-aware-logger.service';
 import { UserLevel } from '@trade-bot/shared';
 
 // Mock dependencies
@@ -13,7 +13,48 @@ jest.mock('../../src/database/pool');
 jest.mock('../../src/core/service-selector');
 jest.mock('../../src/infrastructure/external/kodiak-integration.service');
 jest.mock('../../src/infrastructure/security/encryption.service');
-jest.mock('../../src/core/logging');
+
+// Mock both old and new logging systems
+jest.mock('../../src/core/logging', () => ({
+    contextLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    logger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+}));
+
+jest.mock('../../src/core/logging/logger.service', () => ({
+    __esModule: true,
+    default: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+}));
+
+// Mock the context-aware-logger.service directly
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    ContextAwareLogger: jest.fn().mockImplementation(() => ({
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    })),
+    contextLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+}));
 
 describe('KodiakConnectionService', () => {
     let service: KodiakConnectionService;
@@ -159,10 +200,9 @@ describe('KodiakConnectionService', () => {
             expect(result.success).toBe(false);
             expect(result.message).toBe('Failed to connect Kodiak credentials');
             expect(result.error).toBe('Internal server error during connection');
-            expect(logger.error).toHaveBeenCalledWith('Kodiak connection error', {
+            expect(contextLogger.error).toHaveBeenCalledWith('Kodiak connection error', new Error('Database connection failed'), {
                 userId: 'test-user-id',
                 accountId: '0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
-                error: 'Database connection failed',
             });
         });
 
@@ -230,7 +270,7 @@ describe('KodiakConnectionService', () => {
             const result = await service.connectKodiak('test-user-id', mockConnectionData);
 
             expect(result.success).toBe(true);
-            expect(logger.warn).toHaveBeenCalledWith('Failed to fetch Kodiak public account info for wallet address', {
+            expect(contextLogger.warn).toHaveBeenCalledWith('Failed to fetch Kodiak public account info for wallet address', {
                 userId: 'test-user-id',
                 accountId: '0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
             });
@@ -286,9 +326,8 @@ describe('KodiakConnectionService', () => {
             expect(result.success).toBe(false);
             expect(result.message).toBe('Failed to disconnect Kodiak credentials');
             expect(result.error).toBe('Internal server error during disconnection');
-            expect(logger.error).toHaveBeenCalledWith('Kodiak disconnection error', {
+            expect(contextLogger.error).toHaveBeenCalledWith('Kodiak disconnection error', new Error('Database error'), {
                 userId: 'test-user-id',
-                error: 'Database error',
             });
         });
     });
@@ -327,9 +366,8 @@ describe('KodiakConnectionService', () => {
             const result = await service.getConnectionStatus('test-user-id');
 
             expect(result).toEqual({ connected: false });
-            expect(logger.error).toHaveBeenCalledWith('Failed to get Kodiak connection status', {
+            expect(contextLogger.error).toHaveBeenCalledWith('Failed to get Kodiak connection status', new Error('Database error'), {
                 userId: 'test-user-id',
-                error: 'Database error',
             });
         });
     });
@@ -357,9 +395,8 @@ describe('KodiakConnectionService', () => {
             const result = await service.hasVerifiedConnection('test-user-id');
 
             expect(result).toBe(false);
-            expect(logger.error).toHaveBeenCalledWith('Failed to check Kodiak connection status', {
+            expect(contextLogger.error).toHaveBeenCalledWith('Failed to check Kodiak connection status', new Error('Database error'), {
                 userId: 'test-user-id',
-                error: 'Database error',
             });
         });
     });
@@ -390,9 +427,7 @@ describe('KodiakConnectionService', () => {
                 verifiedConnections: 0,
                 pendingConnections: 0,
             });
-            expect(logger.error).toHaveBeenCalledWith('Failed to get connection stats', {
-                error: 'Database error',
-            });
+            expect(contextLogger.error).toHaveBeenCalledWith('Failed to get connection stats', new Error('Database error'));
         });
     });
 
@@ -403,7 +438,7 @@ describe('KodiakConnectionService', () => {
             const result = await service.cleanupInvalidConnections();
 
             expect(result).toEqual({ cleaned: 5 });
-            expect(logger.info).toHaveBeenCalledWith('Cleaned up invalid Kodiak connections', {
+            expect(contextLogger.info).toHaveBeenCalledWith('Cleaned up invalid Kodiak connections', {
                 cleanedCount: 5,
                 olderThan: expect.any(String),
             });
@@ -415,9 +450,7 @@ describe('KodiakConnectionService', () => {
             const result = await service.cleanupInvalidConnections();
 
             expect(result).toEqual({ cleaned: 0 });
-            expect(logger.error).toHaveBeenCalledWith('Failed to cleanup invalid connections', {
-                error: 'Database error',
-            });
+            expect(contextLogger.error).toHaveBeenCalledWith('Failed to cleanup invalid connections', new Error('Database error'));
         });
     });
 
@@ -456,7 +489,7 @@ describe('KodiakConnectionService', () => {
             const result = await service.reverifyConnections();
 
             expect(result).toEqual({ reVerified: 1, failed: 1 });
-            expect(logger.info).toHaveBeenCalledWith('Connection re-verification completed', {
+            expect(contextLogger.info).toHaveBeenCalledWith('Connection re-verification completed', {
                 totalChecked: 2,
                 reVerified: 1,
                 failed: 1,
@@ -464,13 +497,16 @@ describe('KodiakConnectionService', () => {
         });
 
         it('should handle database errors gracefully', async () => {
-            (query as jest.Mock).mockRejectedValue(new Error('Database error'));
+            // Mock the first query call to throw an error
+            (query as jest.Mock).mockRejectedValueOnce(new Error('Database error'));
 
             const result = await service.reverifyConnections();
 
             expect(result).toEqual({ reVerified: 0, failed: 0 });
-            expect(logger.error).toHaveBeenCalledWith('Failed to re-verify connections', {
-                error: 'Database error',
+            expect(contextLogger.error).toHaveBeenCalledWith('Failed to re-verify connections', new Error('Database error'), {
+                totalChecked: 0,
+                reVerified: 0,
+                failed: 0,
             });
         });
     });
@@ -530,7 +566,7 @@ describe('KodiakConnectionService', () => {
                 'test-user-id',
                 UserLevel.REGISTERED
             );
-            expect(logger.info).toHaveBeenCalledWith('User level updated from BASIC to REGISTERED', {
+            expect(contextLogger.info).toHaveBeenCalledWith('User level updated from BASIC to REGISTERED', {
                 userId: 'test-user-id',
             });
         });
@@ -548,7 +584,7 @@ describe('KodiakConnectionService', () => {
             await (service as any).updateUserLevel('test-user-id', UserLevel.REGISTERED);
 
             expect(mockAuthService.updateUserLevel).not.toHaveBeenCalled();
-            expect(logger.info).toHaveBeenCalledWith('User level already REGISTERED, no update needed', {
+            expect(contextLogger.info).toHaveBeenCalledWith('User level already REGISTERED, no update needed', {
                 userId: 'test-user-id',
             });
         });
@@ -607,7 +643,7 @@ describe('KodiakConnectionService', () => {
                 'UPDATE kodiak_credentials SET wallet_address = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
                 ['0x1234567890abcdef1234567890abcdef12345678', 'test-user-id']
             );
-            expect(logger.info).toHaveBeenCalledWith('Wallet address fetched and stored from Kodiak public API', {
+            expect(contextLogger.info).toHaveBeenCalledWith('Wallet address fetched and stored from Kodiak public API', {
                 userId: 'test-user-id',
                 accountId: 'test-account-id',
                 walletAddress: '0x1234567890abcdef1234567890abcdef12345678',
@@ -632,7 +668,7 @@ describe('KodiakConnectionService', () => {
             await (service as any).fetchAndStoreWalletAddress('test-user-id', mockCredentials);
 
             expect(query).not.toHaveBeenCalled();
-            expect(logger.warn).toHaveBeenCalledWith('Invalid wallet address format from Kodiak API', {
+            expect(contextLogger.warn).toHaveBeenCalledWith('Invalid wallet address format from Kodiak API', {
                 userId: 'test-user-id',
                 accountId: 'test-account-id',
                 walletAddress: 'invalid-address',
@@ -653,10 +689,9 @@ describe('KodiakConnectionService', () => {
 
             await (service as any).fetchAndStoreWalletAddress('test-user-id', mockCredentials);
 
-            expect(logger.error).toHaveBeenCalledWith('Failed to fetch and store wallet address', {
+            expect(contextLogger.error).toHaveBeenCalledWith('Failed to fetch and store wallet address', new Error('API error'), {
                 userId: 'test-user-id',
-                accountId: '0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
-                error: 'API error',
+                accountId: 'test-account-id',
             });
         });
     });

@@ -643,6 +643,40 @@ class WebSocketManager {
       },
     };
   }
+
+  /**
+   * Cleanup all intervals and timeouts for test environments
+   */
+  cleanupAllIntervals(): void {
+    // Clear all reconnect intervals
+    this.reconnectIntervals.forEach(timer => clearTimeout(timer));
+    this.reconnectIntervals.clear();
+
+    // Clear all heartbeat intervals
+    this.heartbeatIntervals.forEach(timer => clearInterval(timer));
+    this.heartbeatIntervals.clear();
+
+    // Clear all circuit breaker timeouts
+    this.circuitBreakerTimeouts.forEach(timer => clearTimeout(timer));
+    this.circuitBreakerTimeouts.clear();
+
+    // Clear reconnect attempts
+    this.reconnectAttempts.clear();
+
+    // Clear last failure times
+    this.lastFailureTime.clear();
+
+    // Clear circuit breaker states
+    this.circuitStates.clear();
+
+    // Clear consecutive successes
+    this.consecutiveSuccesses.clear();
+
+    // Clear active backoffs
+    this.activeBackoffs.clear();
+
+    marketStreamLogger.debug("All WebSocket manager intervals and timeouts cleared");
+  }
 }
 
 /**
@@ -1072,6 +1106,13 @@ class MessageHandler {
     } catch (error) {
       marketStreamLogger.error("Handle message error", error as Error, {});
     }
+  }
+
+  /**
+   * Clear processing queue for test environments
+   */
+  clearProcessingQueue(): void {
+    this.processingQueue.clear();
   }
 
   private async handleTickerData(symbol: string, data: { price?: string; lastPrice?: string; volume?: string; bid?: string; ask?: string; change24h?: string }): Promise<void> {
@@ -1537,6 +1578,45 @@ export class MarketStreamService {
       activeHeartbeats: 0, // Simplified
       ...this.subscriptionManager.getStats(),
     };
+  }
+
+  /**
+   * Cleanup method for test environments
+   * Stops all connections, timers, and intervals
+   */
+  cleanupForTests(): void {
+    try {
+      // Disconnect all WebSocket connections
+      this.wsManager.disconnectAll();
+
+      // Clear all subscriptions
+      this.subscriptionManager.clearAll();
+
+      // Clear pending subscriptions
+      const pendingSubscriptions = this.subscriptionManager.getPendingSubscriptions();
+      pendingSubscriptions.forEach(topic => {
+        this.subscriptionManager.clearPendingSubscription(topic);
+      });
+
+      // Clear processing queue
+      this.messageHandler.clearProcessingQueue();
+
+      // Clear any remaining intervals and timeouts in WebSocket manager
+      this.wsManager.cleanupAllIntervals();
+
+      marketStreamLogger.info("Market stream service cleaned up for tests", {
+        pendingSubscriptions: pendingSubscriptions.length,
+        queueCleared: true,
+        intervalsCleared: true,
+      });
+    } catch (error) {
+      // Handle cases where error might be undefined or not an Error instance
+      const errorToLog = error instanceof Error ? error :
+        error ? new Error(String(error)) :
+          new Error("Unknown error during market stream cleanup");
+
+      marketStreamLogger.error("Error during market stream cleanup", errorToLog, {});
+    }
   }
 }
 

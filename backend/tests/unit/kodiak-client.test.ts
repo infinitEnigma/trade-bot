@@ -216,6 +216,7 @@ describe('KodiakClient', () => {
                         'orderly-timestamp': expect.any(String),
                     }),
                     body: undefined,
+                    signal: expect.any(Object),
                 })
             );
         });

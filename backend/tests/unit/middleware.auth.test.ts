@@ -32,9 +32,11 @@ jest.mock('../../src/infrastructure/cache/redis.service', () => ({
     getClient: jest.fn(() => ({
       set: jest.fn().mockResolvedValue('OK'),
       del: jest.fn().mockResolvedValue(1),
+      setNX: jest.fn().mockResolvedValue(true), // For mutex operations
     })),
     del: jest.fn().mockResolvedValue({ success: true }),
     atomicReadModifyWrite: jest.fn(),
+    cleanupForTests: jest.fn(), // Add cleanup method
   },
 }));
 
@@ -316,9 +318,16 @@ describe('Auth Middleware', () => {
 
     (req as any).cookies.accessToken = expiredToken;
     (req as any).cookies.refreshToken = 'valid-refresh-token';
+    (req as any).path = '/api/user/profile'; // Use a non-lightweight endpoint
 
     // Mock token validation to throw TokenExpiredError (triggers refresh)
-    (mockAuthService.validateToken as jest.Mock).mockRejectedValue(new jwt.TokenExpiredError('Token expired', new Date()));
+    (mockAuthService.validateToken as jest.Mock)
+      .mockRejectedValueOnce(new jwt.TokenExpiredError('Token expired', new Date()))
+      .mockResolvedValueOnce({ // After refresh, validation succeeds
+        userId: 'test-user',
+        email: 'test@example.com',
+        userLevel: 'BASIC'
+      });
 
     // Mock successful refresh on first attempt
     (mockAuthService.refreshToken as jest.Mock).mockResolvedValue({
@@ -331,14 +340,14 @@ describe('Auth Middleware', () => {
       user: { id: 'test-user', email: 'test@example.com', userLevel: 'BASIC' },
     });
 
-    // Mock validation of new access token - this should be called after refresh
-    (mockAuthService.validateToken as jest.Mock).mockResolvedValueOnce({
-      userId: 'test-user',
+    // Mock getUserById for the refreshed token validation
+    (mockAuthService.getUserById as jest.Mock).mockResolvedValue({
+      id: 'test-user',
       email: 'test@example.com',
       userLevel: 'BASIC'
     });
 
-    // Mock user data loading for refreshed token
+    // Mock user data loading for refreshed token - this is called after refresh
     (mockAuthService.getAuthenticatedUserData as jest.Mock).mockResolvedValue({
       user: {
         id: 'test-user',
@@ -352,9 +361,11 @@ describe('Auth Middleware', () => {
       hasCredentials: false
     });
 
-    // Mock Redis client for mutex
+    // Mock Redis client for mutex - simulate successful mutex acquisition
     const mockRedisClient = {
       set: jest.fn().mockResolvedValue('OK'),
+      setNX: jest.fn().mockResolvedValue('OK'), // Mutex acquired successfully
+      del: jest.fn().mockResolvedValue(1),
     };
     (redisService.getClient as jest.Mock).mockReturnValue(mockRedisClient);
     (redisService.del as jest.Mock).mockResolvedValue({ success: true });

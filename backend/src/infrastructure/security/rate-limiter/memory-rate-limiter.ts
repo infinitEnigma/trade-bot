@@ -37,13 +37,16 @@ class MemoryRateLimiter {
     private limits = new Map<string, InMemoryRateLimit>();
 
     /** Interval for periodic cleanup of expired entries */
-    private cleanupInterval: NodeJS.Timeout;
+    private cleanupInterval?: NodeJS.Timeout;
 
     constructor() {
-        // Clean up expired entries every 10 seconds (more aggressive for memory efficiency)
-        this.cleanupInterval = setInterval(() => {
-            this.cleanup();
-        }, 10000);
+        // Only start cleanup interval in production environment
+        if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
+            // Clean up expired entries every 10 seconds (more aggressive for memory efficiency)
+            this.cleanupInterval = setInterval(() => {
+                this.cleanup();
+            }, 10000);
+        }
     }
 
     /**

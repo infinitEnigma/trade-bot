@@ -327,4 +327,60 @@ export class WebSocketService implements IWebSocketService {
         // Rough estimate: each connection uses about 50KB of memory
         return this.clients.size * 50 * 1024; // Convert to bytes
     }
+
+    /**
+     * Cleanup method for test environments
+     * Disconnects all clients and clears all state
+     */
+    cleanupForTests(): void {
+        try {
+            if (this.io) {
+                // Disconnect all clients
+                this.io.disconnectSockets(true);
+
+                // Clear all client connections
+                this.clients.clear();
+
+                // Reset metrics
+                this.metrics = {
+                    totalConnections: 0,
+                    activeConnections: 0,
+                    messagesProcessed: 0,
+                    errorsCount: 0,
+                    lastActivity: Date.now(),
+                };
+
+                this.logger.info("WebSocket service cleaned up for tests", {
+                    disconnectedClients: 0,
+                    clearedConnections: 0,
+                });
+            }
+        } catch (error) {
+            this.logger.error("Error during WebSocket cleanup", error as Error, {});
+        }
+    }
+
+    /**
+     * Get comprehensive service statistics for monitoring
+     */
+    getStats(): {
+        metrics: WebSocketMetrics;
+        connections: WebSocketConnection[];
+        serviceHealth: {
+            status: 'healthy' | 'warning' | 'critical';
+            uptime: number;
+            memoryUsage: number;
+        };
+    } {
+        return {
+            metrics: this.getMetrics(),
+            connections: this.getConnections(),
+            serviceHealth: {
+                status: this.getMetrics().healthScore >= 80 ? 'healthy' :
+                    this.getMetrics().healthScore >= 60 ? 'warning' : 'critical',
+                uptime: Date.now() - this.startTime,
+                memoryUsage: this.getMemoryUsage(),
+            },
+        };
+    }
 }

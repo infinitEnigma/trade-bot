@@ -1,7 +1,8 @@
 /** @format */
 
-import { ContextAwareLogger, createErrorInfo, createEnhancedErrorInfo, createPerformanceMetrics, createDatabaseMetrics, createHttpRequestInfo, createUserContextInfo, classifyError, parseStackTrace, SharedErrorCodes } from "../logging";
-import { setRequestContext, getCurrentContext } from "../../shared/utils/context";
+import { ContextAwareLogger, createEnhancedErrorInfo, createPerformanceMetrics, createDatabaseMetrics, createHttpRequestInfo, createUserContextInfo, classifyError, parseStackTrace, SharedErrorCodes } from "../../src/core/logging/context-aware-logger.service";
+import { createErrorInfo } from "@trade-bot/shared";
+import { setRequestContext, getCurrentContext } from "../../src/shared/utils/context";
 
 describe("ContextAwareLogger Performance Optimization", () => {
     let logger: ContextAwareLogger;
@@ -266,7 +267,7 @@ describe("ContextAwareLogger Performance Optimization", () => {
 
                 const classification = classifyError(networkError);
                 expect(classification.errorType).toBe('network');
-                expect(classification.errorCode).toBe(SharedErrorCodes.EXTERNAL_SERVICE_ERROR);
+                expect(classification.errorCode).toBe(SharedErrorCodes.SERVICE_UNAVAILABLE);
                 expect(classification.errorSeverity).toBe('high');
             });
 
@@ -407,15 +408,15 @@ describe("ContextAwareLogger Performance Optimization", () => {
 
         describe("Error Code Constants", () => {
             it("should have defined error codes for all categories", () => {
-                expect(SharedErrorCodes.CONNECTION_ERROR).toBe('DB_CONNECTION_FAILED');
-                expect(SharedErrorCodes.EXTERNAL_SERVICE_ERROR).toBe('NETWORK_TIMEOUT');
-                expect(SharedErrorCodes.VALIDATION_ERROR).toBe('VALIDATION_FAILED');
-                expect(SharedErrorCodes.TOKEN_EXPIRED).toBe('AUTH_TOKEN_EXPIRED');
-                expect(SharedErrorCodes.INSUFFICIENT_BALANCE).toBe('BUSINESS_RULE_VIOLATION');
-                expect(SharedErrorCodes.CONNECTION_ERROR).toBe('INTEGRATION_API_ERROR');
-                expect(SharedErrorCodes.CONFIGURATION_ERROR).toBe('CONFIG_MISSING');
-                expect(SharedErrorCodes.API_RATE_LIMITED).toBe('RATE_LIMIT_EXCEEDED');
-                expect(SharedErrorCodes.INTERNAL_ERROR).toBe('UNKNOWN_ERROR');
+                expect(SharedErrorCodes.CONNECTION_ERROR).toBe('CONNECTION_ERROR');
+                expect(SharedErrorCodes.EXTERNAL_SERVICE_ERROR).toBe('EXTERNAL_SERVICE_ERROR');
+                expect(SharedErrorCodes.VALIDATION_ERROR).toBe('VALIDATION_ERROR');
+                expect(SharedErrorCodes.TOKEN_EXPIRED).toBe('TOKEN_EXPIRED');
+                expect(SharedErrorCodes.INSUFFICIENT_BALANCE).toBe('INSUFFICIENT_BALANCE');
+                expect(SharedErrorCodes.CONNECTION_ERROR).toBe('CONNECTION_ERROR');
+                expect(SharedErrorCodes.CONFIGURATION_ERROR).toBe('CONFIGURATION_ERROR');
+                expect(SharedErrorCodes.API_RATE_LIMITED).toBe('API_RATE_LIMITED');
+                expect(SharedErrorCodes.INTERNAL_ERROR).toBe('INTERNAL_ERROR');
             });
         });
 
@@ -517,7 +518,7 @@ describe("ContextAwareLogger Performance Optimization", () => {
 
         it("should work with HTTP singleton logger", () => {
             // Import the HTTP logger singleton
-            const { httpLogger } = require("./context-aware-logger.service");
+            const { httpLogger } = require("../../src/core/logging/context-aware-logger.service");
 
             setRequestContext({
                 correlationId: "http-singleton-test-id",

@@ -398,6 +398,42 @@ export class AsyncOperationManager {
             finalActiveJobs: this.activeJobs.size,
         });
     }
+
+    /**
+     * Cleanup method for test environments
+     * Cancels all jobs and clears all intervals
+     */
+    cleanupForTests(): void {
+        try {
+            // Cancel all scheduled jobs
+            for (const [jobId, timeout] of this.jobTimeouts) {
+                clearTimeout(timeout);
+                const job = this.jobQueue.get(jobId);
+                if (job) {
+                    job.status = 'cancelled';
+                }
+            }
+            this.jobTimeouts.clear();
+
+            // Clear job queue
+            this.jobQueue.clear();
+
+            // Note: We don't wait for active jobs to complete in tests
+            // as this could cause test timeouts
+            if (this.activeJobs.size > 0) {
+                contextLogger.warn("Active jobs still running during test cleanup", {
+                    activeJobs: this.activeJobs.size,
+                });
+            }
+
+            contextLogger.info("Async operation manager cleaned up for tests", {
+                cancelledJobs: this.jobTimeouts.size,
+                clearedQueue: this.jobQueue.size,
+            });
+        } catch (error) {
+            contextLogger.error("Error during async operation manager cleanup", error as Error, {});
+        }
+    }
 }
 
 // Singleton instance

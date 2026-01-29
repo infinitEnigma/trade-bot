@@ -341,6 +341,30 @@ export class BotReconciliationWorker {
             isRunning: this.isRunning,
         };
     }
+
+    /**
+     * Cleanup method for test environments
+     * Stops all intervals and timers
+     */
+    cleanupForTests(): void {
+        try {
+            if (this.isRunning) {
+                this.stop();
+            }
+
+            // Ensure interval is cleared
+            if (this.reconciliationInterval) {
+                clearInterval(this.reconciliationInterval);
+                this.reconciliationInterval = null;
+            }
+
+            logger.info("Bot reconciliation worker cleaned up for tests");
+        } catch (error) {
+            logger.error("Error during bot reconciliation cleanup", {
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
 }
 
 // Export singleton instance

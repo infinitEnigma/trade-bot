@@ -450,25 +450,60 @@ class PasswordWorkerPool extends EventEmitter {
     }
 }
 
-// Global singleton instance
-export const passwordWorkerPool = new PasswordWorkerPool();
+// Global singleton instance with lazy initialization
+let _passwordWorkerPool: PasswordWorkerPool | null = null;
 
-// Graceful shutdown handling
-process.on('SIGTERM', async () => {
-    await passwordWorkerPool.shutdown();
-});
+function getPasswordWorkerPool(): PasswordWorkerPool {
+    if (!_passwordWorkerPool) {
+        _passwordWorkerPool = new PasswordWorkerPool();
+    }
+    return _passwordWorkerPool;
+}
 
-process.on('SIGINT', async () => {
-    await passwordWorkerPool.shutdown();
-});
+// Graceful shutdown handling - only register if not in test environment
+if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
+    process.on('SIGTERM', async () => {
+        if (_passwordWorkerPool) {
+            await _passwordWorkerPool.shutdown();
+        }
+    });
 
-// Export convenience functions
+    process.on('SIGINT', async () => {
+        if (_passwordWorkerPool) {
+            await _passwordWorkerPool.shutdown();
+        }
+    });
+}
+
+// Export singleton instance with lazy initialization
+export const passwordWorkerPool = {
+    get hashPassword() {
+        return getPasswordWorkerPool().hashPassword.bind(getPasswordWorkerPool());
+    },
+    get comparePassword() {
+        return getPasswordWorkerPool().comparePassword.bind(getPasswordWorkerPool());
+    },
+    get shutdown() {
+        return getPasswordWorkerPool().shutdown.bind(getPasswordWorkerPool());
+    },
+    get cleanupForTests() {
+        return getPasswordWorkerPool().cleanupForTests.bind(getPasswordWorkerPool());
+    },
+    get getStats() {
+        return getPasswordWorkerPool().getStats.bind(getPasswordWorkerPool());
+    },
+    get healthCheck() {
+        return getPasswordWorkerPool().healthCheck.bind(getPasswordWorkerPool());
+    }
+} as PasswordWorkerPool;
+
+// Export convenience functions with lazy initialization
 export const hashPassword = (password: string, rounds: number = 12): Promise<string> => {
-    return passwordWorkerPool.hashPassword(password, rounds);
+    return getPasswordWorkerPool().hashPassword(password, rounds);
 };
 
 export const comparePassword = (password: string, hash: string): Promise<boolean> => {
-    return passwordWorkerPool.comparePassword(password, hash);
+    return getPasswordWorkerPool().comparePassword(password, hash);
 };
 
 export default passwordWorkerPool;

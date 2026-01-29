@@ -599,7 +599,10 @@ function stopMetricsInterval(): void {
 }
 
 // Start metrics interval by default (for production)
-startMetricsInterval();
+// Only start in production environment, not in test environment
+if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
+  startMetricsInterval();
+}
 
 /**
  * Cleanup method for test environments

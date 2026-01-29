@@ -376,6 +376,14 @@ export async function authMiddleware(
             roles: refreshedUserRoles
           };
         }
+
+        // Set user context for logging and tracing
+        setUserContext(newPayload.userId, newPayload.userLevel);
+
+        // Clear failure counter on successful auth
+        const identifier = `ip:${req.ip}`;
+        await progressiveAuthLimiter.recordSuccess(identifier);
+
         next();
       } catch (refreshError) {
         logger.error("Token refresh process failed", {

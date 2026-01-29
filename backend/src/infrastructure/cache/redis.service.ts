@@ -157,6 +157,21 @@ class RedisService {
     }
   }
 
+  /**
+   * Cleanup method for test environments
+   * Disconnects client and clears any retry intervals
+   */
+  cleanupForTests(): void {
+    try {
+      if (this.client.isOpen) {
+        this.disconnect();
+      }
+      logger.info("Redis service cleaned up for tests");
+    } catch (error) {
+      logger.error("Error during Redis cleanup", error as Error, {});
+    }
+  }
+
   public async get(
     key: string
   ): Promise<{ success: boolean; data: string | null; error?: string }> {

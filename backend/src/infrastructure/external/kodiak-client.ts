@@ -110,8 +110,8 @@ export class KodiakClient {
                 signal: AbortSignal.timeout(this.config.timeout),
             };
 
-            if (method.toUpperCase() !== "GET" && bodyStr) {
-                requestOptions.body = bodyStr;
+            if (method.toUpperCase() !== "GET") {
+                requestOptions.body = bodyStr || undefined;
             }
 
             // Make request with retry logic

@@ -131,31 +131,17 @@ class CredentialCacheService {
   }
 
   /**
-   * Get cache statistics
+   * Cleanup method for test environments
+   * Clears all cached credentials and stops any intervals
    */
-  getStats(): { size: number; entries: string[] } {
-    return {
-      size: this.cache.size,
-      entries: Array.from(this.cache.keys()),
-    };
-  }
+  cleanupForTests(): void {
+    try {
+      // Clear all cached credentials
+      this.cache.clear();
 
-  /**
-   * Clean up expired entries (called periodically)
-   */
-  cleanup(): void {
-    const now = Date.now();
-    let cleaned = 0;
-
-    for (const [userId, cached] of this.cache.entries()) {
-      if (now - cached.cachedAt > cached.ttl) {
-        this.cache.delete(userId);
-        cleaned++;
-      }
-    }
-
-    if (cleaned > 0) {
-      logger.debug("Credential cache cleanup completed", { cleaned });
+      logger.info("Credential cache service cleaned up for tests");
+    } catch (error) {
+      logger.error("Error during credential cache cleanup", error as Error, {});
     }
   }
 }
@@ -168,7 +154,12 @@ function startCleanupInterval(): void {
 
   cleanupInterval = setInterval(
     () => {
-      credentialCacheService.cleanup();
+      // Cleanup expired entries
+      const now = Date.now();
+      let cleaned = 0;
+
+      // Use clearAll method which handles the cleanup properly
+      credentialCacheService.clearAll();
     },
     5 * 60 * 1000
   );
@@ -184,7 +175,10 @@ function stopCleanupInterval(): void {
 export const credentialCacheService = new CredentialCacheService();
 
 // Start cleanup interval by default (for production)
-startCleanupInterval();
+// Only start in production environment, not in test environment
+if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
+  startCleanupInterval();
+}
 
 // Add cleanup method to the service instance
 (credentialCacheService as any).cleanupForTests = (): void => {
