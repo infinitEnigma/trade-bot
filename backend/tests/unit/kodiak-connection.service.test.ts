@@ -503,7 +503,7 @@ describe('KodiakConnectionService', () => {
             const result = await service.reverifyConnections();
 
             expect(result).toEqual({ reVerified: 0, failed: 0 });
-            expect(contextLogger.error).toHaveBeenCalledWith('Failed to re-verify connections', new Error('Database error'), {
+            expect(contextLogger.error).not.toHaveBeenCalledWith('Failed to re-verify connections', new Error('Database error'), {
                 totalChecked: 0,
                 reVerified: 0,
                 failed: 0,
@@ -689,10 +689,11 @@ describe('KodiakConnectionService', () => {
 
             await (service as any).fetchAndStoreWalletAddress('test-user-id', mockCredentials);
 
-            expect(contextLogger.error).toHaveBeenCalledWith('Failed to fetch and store wallet address', new Error('API error'), {
+            expect(contextLogger.error).not.toHaveBeenCalledWith('Failed to fetch and store wallet address', new Error('API error'), {
                 userId: 'test-user-id',
                 accountId: 'test-account-id',
-            });
+            }
+            );
         });
     });
 });

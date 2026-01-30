@@ -718,7 +718,7 @@ class PasswordWorkerPool extends EventEmitter {
 
                         // Set a timeout for termination
                         const timeout = setTimeout(() => {
-                            console.warn('Warning: Worker termination timeout, forcing exit');
+                            //console.warn('Warning: Worker termination timeout, forcing exit');
                             try {
                                 worker.removeAllListeners();
                                 worker.terminate();
@@ -726,7 +726,7 @@ class PasswordWorkerPool extends EventEmitter {
                                 console.warn('Warning: Failed to force terminate worker:', error);
                             }
                             resolve();
-                        }, 1000); // 1 second timeout for worker termination
+                        }, 2000); // 2 second timeout for worker termination
 
                         try {
                             //worker.terminate();

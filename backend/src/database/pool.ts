@@ -212,7 +212,7 @@ export async function query<T = unknown>(
 export async function queryWithTimeout<T = unknown>(
   text: string,
   params?: unknown[],
-  timeoutMs: number = 5000
+  timeoutMs: number = 2000
 ): Promise<DatabaseResult<T>> {
   const pool = getPool();
 

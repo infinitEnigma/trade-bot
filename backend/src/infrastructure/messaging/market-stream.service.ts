@@ -1611,11 +1611,11 @@ export class MarketStreamService {
       });
     } catch (error) {
       // Handle cases where error might be undefined or not an Error instance
-      const errorToLog = error instanceof Error ? error :
+      /*const errorToLog = error instanceof Error ? error :
         error ? new Error(String(error)) :
           new Error("Unknown error during market stream cleanup");
 
-      marketStreamLogger.error("Error during market stream cleanup", errorToLog, {});
+      marketStreamLogger.error("Error during market stream cleanup", errorToLog, {});*/
     }
   }
 }

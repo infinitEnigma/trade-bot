@@ -133,7 +133,7 @@ async function cleanupAdditionalServices(): Promise<void> {
             memoryRateLimiter.cleanupForTests();
         }
     } catch (error) {
-        console.error('❌ Error during additional service cleanup:', error);
+        console.warn('❌ Error during additional service cleanup:', error as Error);
     }
 }
 
