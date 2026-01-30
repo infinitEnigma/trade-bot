@@ -2,7 +2,7 @@
 
 import { Router, Response } from "express";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
-import { walletQualificationService } from "../../../core/wallet/wallet-qualification.service";
+import { serviceProvider } from "../../../core/service-provider";
 import logger from "../../../core/logging/logger.service";
 
 const router = Router();
@@ -21,6 +21,7 @@ router.get("/qualification", authMiddleware, async (req: AuthenticatedRequest, r
             });
         }
 
+        const walletQualificationService = serviceProvider.getWalletQualificationService();
         const result = await walletQualificationService.checkAlphaQualification(userId);
 
         res.json({

@@ -8,11 +8,11 @@
 import { Router, Request, Response } from "express";
 import Joi from "joi";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
+import { serviceProvider } from "../../../core/service-provider";
 import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
-import { userKodiakService } from "../../../core/user/user-kodiak.service";
 import { createRateLimiter } from "../../../infrastructure/security/rate-limiter.service";
 //import { UserLevel } from "@trade-bot/shared";
-import { kodiakConnectionRateLimit, kodiakSyncedRateLimit, kodiakRateLimit } from "../../../infrastructure/security/rate-limiter/rate-limit.config";
+import { kodiakConnectionRateLimit, kodiakSyncedRateLimit } from "../../../infrastructure/security/rate-limiter/rate-limit.config";
 import logger from "../../../core/logging/logger.service";
 
 const router = Router();
@@ -43,6 +43,7 @@ router.post("/kodiak/connect", authMiddleware, createRateLimiter("kodiak-connect
         }
 
         const userId = req.user.userId as string;
+        const userKodiakService = serviceProvider.getUserKodiakService();
         const result = await userKodiakService.linkKodiakAccount(userId, value);
 
         if (!result.success) {
@@ -81,6 +82,7 @@ router.delete("/kodiak/disconnect", authMiddleware, async (req: AuthenticatedReq
         }
 
         const userId = req.user.userId as string;
+        const userKodiakService = serviceProvider.getUserKodiakService();
         const result = await userKodiakService.unlinkKodiakAccount(userId);
 
         if (!result.success) {
@@ -118,6 +120,7 @@ router.get("/kodiak/status", createRateLimiter("kodiak-status", kodiakSyncedRate
         }
 
         const userId = req.user.userId;
+        const userKodiakService = serviceProvider.getUserKodiakService();
         const status = await userKodiakService.getKodiakConnectionStatus(userId);
 
         // Prevent caching of user-specific data

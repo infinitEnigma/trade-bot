@@ -258,6 +258,12 @@ export interface DashboardData {
 export * from './types/infrastructure';
 
 // ============================================
+// Role Management Interfaces & Domain Models
+// ============================================
+
+export * from './types/role-management';
+
+// ============================================
 // Repository Interfaces - Data Access Contracts
 // ============================================
 

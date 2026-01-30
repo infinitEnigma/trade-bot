@@ -40,7 +40,7 @@ describe('KodiakClient', () => {
     describe('constructor', () => {
         it('should use default configuration when no config provided', () => {
             const defaultClient = new KodiakClient();
-
+            console.log("started")
             expect(defaultClient).toBeDefined();
         });
 
@@ -142,7 +142,7 @@ describe('KodiakClient', () => {
             };
 
             const result = await client.get('/test/endpoint', credentials);
-
+            console.log("check: timeout", result.success)
             expect(result).toEqual({
                 success: false,
                 error: 'Request failed after 3 attempts: Request timeout',
@@ -238,7 +238,7 @@ describe('KodiakClient', () => {
             const body = { symbol: 'BTC-USDC', quantity: 2 };
 
             const result = await client.put('/test/endpoint', credentials, body);
-
+            console.log("check: PUT", result.success);
             expect(result).toEqual({
                 success: true,
                 data: 'updated',
@@ -367,7 +367,7 @@ describe('KodiakClient', () => {
             };
 
             const result = await client.get('/test/endpoint', credentials);
-
+            console.log("check: msx retries", result.success);
             expect(result).toEqual({
                 success: false,
                 error: 'Request failed after 3 attempts: HTTP 500: Server error',
@@ -446,7 +446,7 @@ describe('KodiakClient', () => {
             };
 
             const result = await client.get('/test/endpoint', credentials);
-
+            console.log("check: request timeout", result.success);
             expect(result).toEqual({
                 success: false,
                 error: expect.stringContaining('Request timeout'),
@@ -640,6 +640,7 @@ describe('KodiakClient', () => {
 
         it('should use default base URL', () => {
             const url = (client as any).buildUrl('/test/endpoint');
+            console.log("check: url", url)
             expect(url).toBe('https://api.orderly.org/test/endpoint');
         });
     });
@@ -733,7 +734,7 @@ describe('KodiakClient', () => {
             const start = Date.now();
             await (client as any).delay(100);
             const end = Date.now();
-
+            console.log("last one - delay execution", end - start)
             expect(end - start).toBeGreaterThanOrEqual(100);
         });
     });

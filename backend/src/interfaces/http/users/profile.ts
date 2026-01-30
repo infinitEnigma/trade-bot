@@ -8,7 +8,7 @@
 import { Router, Response } from "express";
 import Joi from "joi";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
-import { userProfileService } from "../../../core/user/user-profile.service";
+import { serviceProvider } from "../../../core/service-provider";
 import { createErrorResponse } from "../../../shared/types/errors";
 import { getCorrelationId } from "../../../shared/utils/context";
 import logger from "../../../core/logging/logger.service";
@@ -42,6 +42,7 @@ router.get("/profile", authMiddleware, async (req: AuthenticatedRequest, res: Re
         }
 
         const userId = req.user.userId as string;
+        const userProfileService = serviceProvider.getUserProfileService();
         const profile = await userProfileService.getUserProfile(userId);
 
         res.json({
@@ -85,6 +86,7 @@ router.post("/profile/update", authMiddleware, async (req: AuthenticatedRequest,
         }
 
         const userId = req.user.userId as string;
+        const userProfileService = serviceProvider.getUserProfileService();
         const result = await userProfileService.updateUserProfile(userId, value);
 
         if (!result.success) {
@@ -132,6 +134,7 @@ router.post("/verify-wallet", authMiddleware, async (req: AuthenticatedRequest, 
         }
 
         const userId = req.user.userId as string;
+        const userProfileService = serviceProvider.getUserProfileService();
         const result = await userProfileService.verifyWalletOwnership(
             userId,
             value.walletAddress,

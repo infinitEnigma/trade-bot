@@ -23,11 +23,15 @@ import { tradeRepositoryAdapter } from './adapters/repositories/trade-repository
 import { strategyRepositoryAdapter } from './adapters/repositories/strategy-repository.adapter';
 import { kodiakCredentialsRepositoryAdapter } from './adapters/repositories/kodiak-credentials-repository.adapter';
 import { auditLogRepositoryAdapter } from './adapters/repositories/audit-log-repository.adapter';
+import { roleRepositoryAdapter } from './adapters/repositories/role-repository.adapter';
 
 // Pure Services
 import { BalanceService } from '../core/wallet/balance.service.pure';
 import { AuthService } from '../core/auth/auth.service.pure';
 import { PositionService } from '../core/strategies/position.service.pure';
+import { RoleManagementService } from '../core/auth/role-management.service.pure';
+import { RoleQualificationService } from '../core/auth/role-qualification.service';
+import { WalletQualificationService, walletQualificationService } from '../core/wallet/wallet-qualification.service';
 
 /**
  * Dependency Injection Container
@@ -136,6 +140,13 @@ export class DependencyInjectionContainer {
         return auditLogRepositoryAdapter;
     }
 
+    /**
+     * Role Repository - Role management data access
+     */
+    get roleRepository() {
+        return roleRepositoryAdapter;
+    }
+
     // ===========================================
     // PURE BUSINESS SERVICES (Dependency Injection)
     // ===========================================
@@ -176,6 +187,36 @@ export class DependencyInjectionContainer {
             externalApi: this.externalApiService,
             logger: this.loggerService
         });
+    }
+
+    /**
+     * Role Management Service - Pure business logic for role management
+     */
+    get roleManagementService(): RoleManagementService {
+        return new RoleManagementService({
+            roleRepository: this.roleRepository,
+            auditLogger: this.auditLogRepository,
+            cache: this.cacheService,
+            logger: this.loggerService
+        });
+    }
+
+    /**
+     * Role Qualification Service - Pure business logic for role qualification
+     */
+    get roleQualificationService(): RoleQualificationService {
+        return new RoleQualificationService({
+            userRepository: this.userRepository,
+            cache: this.cacheService,
+            logger: this.loggerService
+        });
+    }
+
+    /**
+     * Wallet Qualification Service - Singleton service for wallet qualification
+     */
+    get walletQualificationService(): WalletQualificationService {
+        return walletQualificationService;
     }
 
     // ===========================================

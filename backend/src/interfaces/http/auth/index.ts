@@ -2,9 +2,7 @@
 
 import { Router, Request, Response } from "express";
 //import Joi from "joi";
-import { selectAuthService } from "../../../core/service-selector";
-import { walletQualificationService } from "../../../core/wallet/wallet-qualification.service";
-import { roleManagementService } from "../../../core/auth/role-management.service";
+import { serviceProvider } from "../../../core/service-provider";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
 import { UserRole, UserLevel } from "@trade-bot/shared";
 import { createErrorResponse, ValidationError } from "../../../shared/types/errors";
@@ -15,7 +13,7 @@ import { progressiveAuthLimiter } from "../../../infrastructure/security/rate-li
 import { query } from "../../../database/pool";
 
 // Select service implementation based on feature flags
-const authService = selectAuthService();
+const authService = serviceProvider.getAuthService();
 
 const router = Router();
 
@@ -290,10 +288,12 @@ router.post(
       }
 
       // Check qualification for QUALIFIED_ALPHA role
+      const walletQualificationService = serviceProvider.getWalletQualificationService();
       const result = await walletQualificationService.checkAlphaQualification(userId);
 
       if (result.qualified) {
         // Assign QUALIFIED_ALPHA role
+        const roleManagementService = serviceProvider.getRoleManagementService();
         await roleManagementService.assignRole(
           userId,
           UserRole.QUALIFIED_ALPHA,
@@ -345,6 +345,7 @@ router.get(
         });
       }
 
+      const walletQualificationService = serviceProvider.getWalletQualificationService();
       const config = walletQualificationService.getQualificationConfig();
       res.json({
         success: true,

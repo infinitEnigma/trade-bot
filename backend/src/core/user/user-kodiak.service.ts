@@ -16,13 +16,14 @@
  */
 
 import { userLogger } from "../../core/logging";
-import {
+/*import {
     ErrorInfo,
     createErrorInfo,
     createEnhancedErrorInfo
 } from "../../core/logging";
-import { kodiakConnectionService } from "../../infrastructure/external/kodiak-connection.service";
+import { ICacheService } from "@trade-bot/shared";*/
 import { KodiakConnectionData, KodiakConnectionResult, KodiakConnectionStatus } from "../../infrastructure/external/kodiak-connection.service";
+import { kodiakConnectionService } from "../../infrastructure/external/kodiak-connection.service";
 import { connectionCache } from "../../infrastructure/cache/connection-cache.service";
 
 // Simple in-memory cache for Kodiak status
@@ -53,7 +54,21 @@ export interface KodiakCredentials {
     accountId: string;
 }
 
+export interface UserKodiakServiceDependencies {
+    kodiakConnectionService: {
+        connectKodiak: (userId: string, connectionData: KodiakConnectionData) => Promise<KodiakConnectionResult>;
+        disconnectKodiak: (userId: string) => Promise<{ success: boolean; message: string; error?: string }>;
+        getConnectionStatus: (userId: string) => Promise<KodiakConnectionStatus>;
+    };
+    cache: {
+        getCachedResult: (userId: string, accountId: string) => Promise<any>;
+        setCachedResult: (userId: string, accountId: string, success: boolean, error?: string) => Promise<void>;
+    };
+}
+
 export class UserKodiakService {
+    constructor(private deps: UserKodiakServiceDependencies) { }
+
     /**
      * Link Kodiak account to user
      */
@@ -99,10 +114,10 @@ export class UserKodiakService {
             }
 
             // Delegate to infrastructure service for actual connection
-            const result = await kodiakConnectionService.connectKodiak(userId, connectionData);
+            const result = await this.deps.kodiakConnectionService.connectKodiak(userId, connectionData);
 
             // Cache the result
-            await connectionCache.setCachedResult(
+            await this.deps.cache.setCachedResult(
                 userId,
                 connectionData.accountId,
                 result.success,
@@ -152,7 +167,7 @@ export class UserKodiakService {
             const timer = userLogger.startOperation("unlinkKodiakAccount", { userId });
 
             // Delegate to infrastructure service for actual disconnection
-            const result = await kodiakConnectionService.disconnectKodiak(userId);
+            const result = await this.deps.kodiakConnectionService.disconnectKodiak(userId);
 
             if (result.success) {
                 timer.success();
@@ -200,7 +215,7 @@ export class UserKodiakService {
             }
 
             // Cache miss or expired, fetch from infrastructure service
-            const status = await kodiakConnectionService.getConnectionStatus(userId);
+            const status = await this.deps.kodiakConnectionService.getConnectionStatus(userId);
 
             // Update cache
             statusCache.set(userId, {
@@ -327,4 +342,13 @@ export class UserKodiakService {
     }
 }
 
-export const userKodiakService = new UserKodiakService();
+// Export factory function for creating service instances
+export function createUserKodiakService(deps: UserKodiakServiceDependencies): UserKodiakService {
+    return new UserKodiakService(deps);
+}
+
+// Legacy singleton instance for backward compatibility
+export const userKodiakService = createUserKodiakService({
+    kodiakConnectionService,
+    cache: connectionCache
+});
