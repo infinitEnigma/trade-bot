@@ -8,7 +8,6 @@
  * @format
  */
 
-import { diContainer } from '../infrastructure/dependency-injection.container';
 import { BalanceService } from './wallet/balance.service.pure';
 import { AuthService } from './auth/auth.service.pure';
 import { PositionService } from './strategies/position.service.pure';
@@ -22,10 +21,16 @@ import { PositionService } from './strategies/position.service.pure';
  * Legacy services have been removed.
  */
 export function selectBalanceService(): BalanceService {
-    diContainer.loggerService.info('Using pure BalanceService implementation', {
-        implementation: 'pure',
-        phase: 'post-migration'
-    });
+    // Import diContainer here to avoid circular dependency issues during module loading
+    const { diContainer } = require('../infrastructure/dependency-injection.container');
+
+    // Only log if container is available (avoid issues during testing)
+    if (diContainer && diContainer.loggerService) {
+        diContainer.loggerService.info('Using pure BalanceService implementation', {
+            implementation: 'pure',
+            phase: 'post-migration'
+        });
+    }
     return diContainer.balanceService;
 }
 
@@ -36,10 +41,16 @@ export function selectBalanceService(): BalanceService {
  * Legacy services have been removed.
  */
 export function selectAuthService(): AuthService {
-    diContainer.loggerService.info('Using pure AuthService implementation', {
-        implementation: 'pure',
-        phase: 'post-migration'
-    });
+    // Import diContainer here to avoid circular dependency issues during module loading
+    const { diContainer } = require('../infrastructure/dependency-injection.container');
+
+    // Only log if container is available (avoid issues during testing)
+    if (diContainer && diContainer.loggerService) {
+        diContainer.loggerService.info('Using pure AuthService implementation', {
+            implementation: 'pure',
+            phase: 'post-migration'
+        });
+    }
     return diContainer.authService;
 }
 
@@ -50,19 +61,28 @@ export function selectAuthService(): AuthService {
  * based on USE_PURE_POSITION_SERVICE environment flag.
  */
 export function selectPositionService(): PositionService {
+    // Import diContainer here to avoid circular dependency issues during module loading
+    const { diContainer } = require('../infrastructure/dependency-injection.container');
+
     const usePure = process.env.USE_PURE_POSITION_SERVICE === 'true';
 
     if (usePure) {
-        diContainer.loggerService.info('Using pure PositionService implementation', {
-            featureFlag: 'USE_PURE_POSITION_SERVICE',
-            implementation: 'pure'
-        });
+        // Only log if container is available (avoid issues during testing)
+        if (diContainer && diContainer.loggerService) {
+            diContainer.loggerService.info('Using pure PositionService implementation', {
+                featureFlag: 'USE_PURE_POSITION_SERVICE',
+                implementation: 'pure'
+            });
+        }
         return diContainer.positionService;
     } else {
-        diContainer.loggerService.warn('Position service not yet migrated - using pure implementation only', {
-            featureFlag: 'USE_PURE_POSITION_SERVICE',
-            implementation: 'pure'
-        });
+        // Only log if container is available (avoid issues during testing)
+        if (diContainer && diContainer.loggerService) {
+            diContainer.loggerService.warn('Position service not yet migrated - using pure implementation only', {
+                featureFlag: 'USE_PURE_POSITION_SERVICE',
+                implementation: 'pure'
+            });
+        }
         // Note: Position service only has pure implementation currently
         return diContainer.positionService;
     }
@@ -115,6 +135,9 @@ export function getServiceStatus(): ServiceStatus {
  * Use in case of critical issues during migration.
  */
 export function emergencyRollback(): void {
+    // Import diContainer here to avoid circular dependency issues during module loading
+    const { diContainer } = require('../infrastructure/dependency-injection.container');
+
     diContainer.loggerService.error('EMERGENCY ROLLBACK: Disabling all pure services', {
         action: 'emergency_rollback',
         timestamp: new Date().toISOString()

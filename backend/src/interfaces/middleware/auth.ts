@@ -10,7 +10,7 @@ const authService = selectAuthService();
 import { redisService } from "../../infrastructure/cache/redis.service";
 import { setUserContext } from "../../shared/utils/context";
 //import { roleManagementService } from "../../core/auth/role-management.service";
-import { logger } from "../../core/logging";
+import { authLogger } from "../../core/logging";
 import { progressiveAuthLimiter } from "../../infrastructure/security/rate-limiter.service";
 
 export interface AuthenticatedRequest extends Request {
@@ -32,7 +32,7 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
     const decoded = jwt.decode(refreshToken);
     userId = (decoded as Record<string, unknown>)?.userId as string | undefined;
   } catch (e) {
-    logger.warn("Could not decode refresh token for mutex", {
+    authLogger.warn("Could not decode refresh token for mutex", {
       error: e instanceof Error ? e.message : String(e),
     });
   }
@@ -51,7 +51,7 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
       lockAcquired = lockResult === "OK";
 
       if (!lockAcquired) {
-        logger.debug("Token refresh mutex already held, queuing request", {
+        authLogger.debug("Token refresh mutex already held, queuing request", {
           userId,
           mutexKey,
         });
@@ -62,7 +62,7 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
         };
       }
     } catch (lockError) {
-      logger.warn("Failed to acquire token refresh mutex", {
+      authLogger.warn("Failed to acquire token refresh mutex", {
         error: lockError instanceof Error ? lockError.message : String(lockError),
         userId,
         mutexKey,
@@ -74,7 +74,7 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
   try {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        logger.debug(`Token refresh attempt ${attempt + 1}/${maxRetries}`, {
+        authLogger.debug(`Token refresh attempt ${attempt + 1}/${maxRetries}`, {
           userId,
           lockAcquired,
         });
@@ -82,7 +82,7 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
         const result = await authService.refreshToken(refreshToken);
 
         if (result.success && result.tokens) {
-          logger.info(`Token refresh succeeded on attempt ${attempt + 1}`, {
+          authLogger.info(`Token refresh succeeded on attempt ${attempt + 1}`, {
             userId: result.user?.id,
             lockAcquired,
           });
@@ -91,7 +91,7 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
 
         // If it's a validation error, don't retry
         if (result.message?.includes('invalid') || result.message?.includes('expired') || result.message?.includes('invalidated')) {
-          logger.debug("Token validation error, not retrying", {
+          authLogger.debug("Token validation error, not retrying", {
             message: result.message,
             attempt: attempt + 1,
             userId,
@@ -104,7 +104,7 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
         // Wait before retry with exponential backoff
         if (attempt < maxRetries - 1) {
           const delay = Math.min(100 * Math.pow(2, attempt), 2000); // 100ms, 500ms, 2s max
-          logger.debug(`Waiting ${delay}ms before retry`, {
+          authLogger.debug(`Waiting ${delay}ms before retry`, {
             attempt: attempt + 1,
             userId,
             lockAcquired,
@@ -114,7 +114,7 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
 
       } catch (error) {
         lastError = error;
-        logger.warn(`Token refresh attempt ${attempt + 1} failed`, {
+        authLogger.warn(`Token refresh attempt ${attempt + 1} failed`, {
           error: error instanceof Error ? error.message : String(error),
           userId,
           attempt: attempt + 1,
@@ -130,9 +130,8 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
     }
 
     // All retries failed
-    logger.error("All token refresh attempts failed", {
+    authLogger.error("All token refresh attempts failed", lastError instanceof Error ? lastError : undefined, {
       attempts: maxRetries,
-      lastError: lastError instanceof Error ? lastError.message : String(lastError),
       userId,
       lockAcquired,
     });
@@ -146,12 +145,12 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
     if (lockAcquired && mutexKey) {
       try {
         await redisService.del(mutexKey);
-        logger.debug("Released token refresh mutex", {
+        authLogger.debug("Released token refresh mutex", {
           userId,
           mutexKey,
         });
       } catch (unlockError) {
-        logger.warn("Failed to release token refresh mutex", {
+        authLogger.warn("Failed to release token refresh mutex", {
           error: unlockError instanceof Error ? unlockError.message : String(unlockError),
           userId,
           mutexKey,
@@ -206,7 +205,7 @@ export async function authMiddleware(
       // For lightweight endpoints, just verify user exists without loading full data
       const userExists = await authService.getUserById(payload.userId);
       if (!userExists) {
-        logger.error("User not found for lightweight endpoint", {
+        authLogger.warn("User not found for lightweight endpoint", {
           userId: payload.userId,
           endpoint: req.path,
         });
@@ -227,7 +226,7 @@ export async function authMiddleware(
       // Load complete user data with roles and credentials for complex endpoints
       const userData = await authService.getAuthenticatedUserData(payload.userId);
       if (!userData) {
-        logger.warn("User data not found, using token payload only", {
+        authLogger.warn("User data not found, using token payload only", {
           userId: payload.userId,
         });
         // Fall back to token payload for user data
@@ -256,19 +255,19 @@ export async function authMiddleware(
 
     next();
   } catch (error) {
-    logger.error("Auth middleware error", {
+    authLogger.error("Auth middleware error", error instanceof Error ? error : undefined, {
       error: error instanceof Error ? error.message : String(error),
     });
 
     // Handle token expiration - attempt automatic refresh
     if (error instanceof jwt.TokenExpiredError) {
-      logger.debug("Access token expired, attempting automatic refresh");
+      authLogger.debug("Access token expired, attempting automatic refresh");
 
       try {
         // Get refresh token from httpOnly cookie
         const refreshToken = req.cookies?.refreshToken;
         if (!refreshToken) {
-          logger.debug("No refresh token available");
+          authLogger.debug("No refresh token available");
           res.status(401).json({
             success: false,
             code: -1003,
@@ -280,9 +279,9 @@ export async function authMiddleware(
         // Attempt to refresh the token with exponential backoff retry
         const refreshResult = await retryTokenRefresh(refreshToken, req);
         if (!refreshResult.success || !refreshResult.tokens) {
-          logger.error("Token refresh failed after retries", {
+          authLogger.error("Token refresh failed after retries", undefined, {
             message: refreshResult.message,
-            userId: req.user?.userId,
+            userId: req.user?.userId || 'unknown',
           });
           res.status(401).json({
             success: false,
@@ -292,7 +291,7 @@ export async function authMiddleware(
           return;
         }
 
-        logger.info("Token automatically refreshed", {
+        authLogger.info("Token automatically refreshed", {
           userId: refreshResult.user?.id,
           email: refreshResult.user?.email,
         });
@@ -317,7 +316,7 @@ export async function authMiddleware(
           refreshResult.tokens.accessToken
         );
         if (!newPayload) {
-          logger.error("New access token validation failed after refresh");
+          authLogger.error("New access token validation failed after refresh", new Error("Token validation failed"));
           res.status(500).json({
             success: false,
             code: -1005,
@@ -336,7 +335,7 @@ export async function authMiddleware(
           // For lightweight endpoints, just verify user exists without loading full data
           const userExists = await authService.getUserById(newPayload.userId);
           if (!userExists) {
-            logger.error("Refreshed user not found for lightweight endpoint", {
+            authLogger.error("Refreshed user not found for lightweight endpoint", undefined, {
               userId: newPayload.userId,
               endpoint: req.path,
             });
@@ -357,7 +356,7 @@ export async function authMiddleware(
           // Load complete user data for refreshed token (N+1 optimization)
           const refreshedUserData = await authService.getAuthenticatedUserData(newPayload.userId);
           if (!refreshedUserData) {
-            logger.error("Failed to load refreshed user data - user not found", {
+            authLogger.error("Failed to load refreshed user data - user not found", undefined, {
               userId: newPayload.userId,
             });
             res.status(401).json({
@@ -386,7 +385,7 @@ export async function authMiddleware(
 
         next();
       } catch (refreshError) {
-        logger.error("Token refresh process failed", {
+        authLogger.error("Token refresh process failed", refreshError instanceof Error ? refreshError : undefined, {
           error:
             refreshError instanceof Error
               ? refreshError.message

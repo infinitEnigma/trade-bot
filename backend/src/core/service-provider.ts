@@ -14,7 +14,7 @@
  * @format
  */
 
-import { IServiceFactory, ServiceFactory } from './service-factory';
+import { IServiceFactory, getServiceFactory } from './service-factory';
 import { AuthService } from './auth/auth.service.pure';
 import { BalanceService } from './wallet/balance.service.pure';
 import { PositionService } from './strategies/position.service.pure';
@@ -23,7 +23,7 @@ import { RoleQualificationService } from './auth/role-qualification.service';
 import { WalletQualificationService } from './wallet/wallet-qualification.service';
 import { UserProfileService } from './user/user-profile.service';
 import { UserKodiakService } from './user/user-kodiak.service';
-import { logger } from './logging';
+import { contextLogger } from './logging';
 
 /**
  * Service Provider
@@ -31,14 +31,18 @@ import { logger } from './logging';
  * Singleton provider that gives controllers access to services through
  * a centralized factory. This eliminates the need for direct service imports
  * in controllers, maintaining clean architecture boundaries.
+ * 
+ * Provides both strict and safe methods for service access:
+ * - Strict methods: throw errors if services are unavailable (for critical operations)
+ * - Safe methods: return undefined if services are unavailable (for graceful degradation)
  */
 export class ServiceProvider {
     private static instance: ServiceProvider;
     private factory: IServiceFactory;
 
     private constructor() {
-        this.factory = new ServiceFactory();
-        logger.info('Service Provider initialized', {
+        this.factory = getServiceFactory();
+        contextLogger.info('Service Provider initialized', {
             pattern: 'singleton',
             factory: 'ServiceFactory'
         });
@@ -55,58 +59,146 @@ export class ServiceProvider {
     }
 
     /**
-     * Get Auth Service instance
+     * Get Auth Service instance (strict - throws if unavailable)
      */
     getAuthService(): AuthService {
+        const service = this.factory.getAuthService();
+        if (!service) {
+            throw new Error('Auth Service is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get Auth Service instance (safe - returns undefined if unavailable)
+     */
+    getAuthServiceSafe(): AuthService | undefined {
         return this.factory.getAuthService();
     }
 
     /**
-     * Get Balance Service instance
+     * Get Balance Service instance (strict - throws if unavailable)
      */
     getBalanceService(): BalanceService {
+        const service = this.factory.getBalanceService();
+        if (!service) {
+            throw new Error('Balance Service is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get Balance Service instance (safe - returns undefined if unavailable)
+     */
+    getBalanceServiceSafe(): BalanceService | undefined {
         return this.factory.getBalanceService();
     }
 
     /**
-     * Get Position Service instance
+     * Get Position Service instance (strict - throws if unavailable)
      */
     getPositionService(): PositionService {
+        const service = this.factory.getPositionService();
+        if (!service) {
+            throw new Error('Position Service is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get Position Service instance (safe - returns undefined if unavailable)
+     */
+    getPositionServiceSafe(): PositionService | undefined {
         return this.factory.getPositionService();
     }
 
     /**
-     * Get Role Management Service instance
+     * Get Role Management Service instance (strict - throws if unavailable)
      */
     getRoleManagementService(): RoleManagementService {
+        const service = this.factory.getRoleManagementService();
+        if (!service) {
+            throw new Error('Role Management Service is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get Role Management Service instance (safe - returns undefined if unavailable)
+     */
+    getRoleManagementServiceSafe(): RoleManagementService | undefined {
         return this.factory.getRoleManagementService();
     }
 
     /**
-     * Get Role Qualification Service instance
+     * Get Role Qualification Service instance (strict - throws if unavailable)
      */
     getRoleQualificationService(): RoleQualificationService {
+        const service = this.factory.getRoleQualificationService();
+        if (!service) {
+            throw new Error('Role Qualification Service is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get Role Qualification Service instance (safe - returns undefined if unavailable)
+     */
+    getRoleQualificationServiceSafe(): RoleQualificationService | undefined {
         return this.factory.getRoleQualificationService();
     }
 
     /**
-     * Get Wallet Qualification Service instance
+     * Get Wallet Qualification Service instance (strict - throws if unavailable)
      */
     getWalletQualificationService(): WalletQualificationService {
+        const service = this.factory.getWalletQualificationService();
+        if (!service) {
+            throw new Error('Wallet Qualification Service is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get Wallet Qualification Service instance (safe - returns undefined if unavailable)
+     */
+    getWalletQualificationServiceSafe(): WalletQualificationService | undefined {
         return this.factory.getWalletQualificationService();
     }
 
     /**
-     * Get User Profile Service instance
+     * Get User Profile Service instance (strict - throws if unavailable)
      */
     getUserProfileService(): UserProfileService {
+        const service = this.factory.getUserProfileService();
+        if (!service) {
+            throw new Error('User Profile Service is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get User Profile Service instance (safe - returns undefined if unavailable)
+     */
+    getUserProfileServiceSafe(): UserProfileService | undefined {
         return this.factory.getUserProfileService();
     }
 
     /**
-     * Get User Kodiak Service instance
+     * Get User Kodiak Service instance (strict - throws if unavailable)
      */
     getUserKodiakService(): UserKodiakService {
+        const service = this.factory.getUserKodiakService();
+        if (!service) {
+            throw new Error('User Kodiak Service is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get User Kodiak Service instance (safe - returns undefined if unavailable)
+     */
+    getUserKodiakServiceSafe(): UserKodiakService | undefined {
         return this.factory.getUserKodiakService();
     }
 
@@ -114,14 +206,41 @@ export class ServiceProvider {
      * Get all services for health checks
      */
     getAllServices(): {
-        authService: AuthService;
-        balanceService: BalanceService;
-        positionService: PositionService;
-        roleManagementService: RoleManagementService;
-        userProfileService: UserProfileService;
-        userKodiakService: UserKodiakService;
+        authService: AuthService | undefined;
+        balanceService: BalanceService | undefined;
+        positionService: PositionService | undefined;
+        roleManagementService: RoleManagementService | undefined;
+        userProfileService: UserProfileService | undefined;
+        userKodiakService: UserKodiakService | undefined;
     } {
         return this.factory.getAllServices();
+    }
+
+    /**
+     * Check if a specific service is available
+     */
+    isServiceAvailable(serviceName: string): boolean {
+        const services = this.getAllServices();
+        const service = services[serviceName as keyof typeof services];
+        return service !== undefined;
+    }
+
+    /**
+     * Get list of available services
+     */
+    getAvailableServices(): string[] {
+        return Object.entries(this.getAllServices())
+            .filter(([_, service]) => service !== undefined)
+            .map(([name]) => name);
+    }
+
+    /**
+     * Get list of unavailable services
+     */
+    getUnavailableServices(): string[] {
+        return Object.entries(this.getAllServices())
+            .filter(([_, service]) => service === undefined)
+            .map(([name]) => name);
     }
 
     /**
@@ -151,10 +270,31 @@ export const serviceProvider = ServiceProvider.getInstance();
 /**
  * Convenience functions for accessing services directly
  * These provide easy access to services without needing to import the provider
+ * 
+ * Strict versions (default): throw errors if services are unavailable
+ * Safe versions: return undefined if services are unavailable
  */
 export const getAuthService = () => serviceProvider.getAuthService();
+export const getAuthServiceSafe = () => serviceProvider.getAuthServiceSafe();
+
 export const getBalanceService = () => serviceProvider.getBalanceService();
+export const getBalanceServiceSafe = () => serviceProvider.getBalanceServiceSafe();
+
 export const getPositionService = () => serviceProvider.getPositionService();
+export const getPositionServiceSafe = () => serviceProvider.getPositionServiceSafe();
+
 export const getRoleManagementService = () => serviceProvider.getRoleManagementService();
+export const getRoleManagementServiceSafe = () => serviceProvider.getRoleManagementServiceSafe();
+
 export const getUserProfileService = () => serviceProvider.getUserProfileService();
+export const getUserProfileServiceSafe = () => serviceProvider.getUserProfileServiceSafe();
+
 export const getUserKodiakService = () => serviceProvider.getUserKodiakService();
+export const getUserKodiakServiceSafe = () => serviceProvider.getUserKodiakServiceSafe();
+
+/**
+ * Service availability checking convenience functions
+ */
+export const isServiceAvailable = (serviceName: string) => serviceProvider.isServiceAvailable(serviceName);
+export const getAvailableServices = () => serviceProvider.getAvailableServices();
+export const getUnavailableServices = () => serviceProvider.getUnavailableServices();

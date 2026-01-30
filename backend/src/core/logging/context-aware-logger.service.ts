@@ -23,7 +23,7 @@ import {
     getCurrentContext,
     createChildContext,
     RequestContext,
-} from "../../shared";
+} from "../../shared/utils/context";
 
 // Import from shared logging types
 import {
@@ -96,7 +96,8 @@ export class ContextAwareLogger {
     }
 
     /**
-     * Check if context has changed and update generation counter
+     * Enhanced context caching with improved change detection
+     * Handles recent changes to context structure and metadata
      */
     private checkContextChange(): number {
         const currentContext = getCurrentContext();
@@ -106,12 +107,16 @@ export class ContextAwareLogger {
         // Invalidate cache if:
         // 1. Context reference changed, OR
         // 2. Correlation ID changed, OR
-        // 3. User ID changed
-        // This ensures we catch all meaningful context changes
+        // 3. User ID changed, OR
+        // 4. User level changed, OR
+        // 5. Request ID changed
+        // This ensures we catch all meaningful context changes including recent additions
         const shouldInvalidate =
             currentContext !== this.contextCache.contextRef ||
             currentCorrelationId !== this.contextCache.cachedInfo?.correlationId ||
-            currentUserId !== this.contextCache.cachedInfo?.userId;
+            currentUserId !== this.contextCache.cachedInfo?.userId ||
+            (currentContext?.userLevel !== this.contextCache.cachedInfo?.userLevel) ||
+            (currentContext?.requestId !== this.contextCache.cachedInfo?.requestId);
 
         if (shouldInvalidate) {
             this.contextCache.generation++;
@@ -119,6 +124,7 @@ export class ContextAwareLogger {
         }
         return this.contextCache.generation;
     }
+
 
     /**
      * Get current context information for logging with caching optimization

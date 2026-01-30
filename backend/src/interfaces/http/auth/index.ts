@@ -8,7 +8,7 @@ import { UserRole, UserLevel } from "@trade-bot/shared";
 import { createErrorResponse, ValidationError } from "../../../shared/types/errors";
 import { getCorrelationId } from "../../../shared/utils/context";
 import { validators } from "../../middleware/validation";
-import logger from "../../../core/logging/logger.service";
+import { authLogger } from "../../../core/logging";
 import { progressiveAuthLimiter } from "../../../infrastructure/security/rate-limiter.service";
 import { query } from "../../../database/pool";
 
@@ -34,7 +34,7 @@ router.post(
 
       // Set httpOnly cookies for security
       if (!result.tokens) {
-        logger.error("Registration successful but tokens missing");
+        authLogger.error("Registration successful but tokens missing");
         const internalError = new ValidationError("Registration successful but tokens missing");
         return res.status(internalError.statusCode).json(
           createErrorResponse(internalError, getCorrelationId())
@@ -60,8 +60,7 @@ router.post(
         user: result.user,
       });
     } catch (err) {
-      logger.error("Registration error", {
-        error: (err as Error).message,
+      authLogger.error("Registration error", err instanceof Error ? err : undefined, {
         email: req.body?.email,
       });
       const internalError = new ValidationError("Registration failed");
@@ -77,10 +76,10 @@ router.post(
   "/login",
   validators.login,
   async (req: Request, res: Response) => {
-    logger.info("Login attempt", { email: req.body?.email });
+    authLogger.info("Login attempt", { email: req.body?.email });
     try {
       const result = await authService.login({ email: req.body.email, password: req.body.password });
-      logger.info("Login result", {
+      authLogger.info("Login result", {
         email: req.body.email,
         success: result.success,
         message: result.success ? "success" : result.message,
@@ -98,7 +97,7 @@ router.post(
         );
       }
 
-      logger.info("Login successful", {
+      authLogger.info("Login successful", {
         email: result.user?.email,
         userId: result.user?.id,
       });
@@ -109,7 +108,7 @@ router.post(
 
       // Set httpOnly cookies for security
       if (!result.tokens) {
-        logger.error("Login successful but tokens missing");
+        authLogger.error("Login successful but tokens missing");
         const internalError = new ValidationError("Login successful but tokens missing");
         return res.status(internalError.statusCode).json(
           createErrorResponse(internalError, getCorrelationId())
@@ -135,9 +134,8 @@ router.post(
         user: result.user,
       });
     } catch (err) {
-      logger.error("Login error", {
+      authLogger.error("Login error", err instanceof Error ? err : undefined, {
         email: req.body?.email,
-        error: (err as Error).message,
       });
       const internalError = new ValidationError("Login failed");
       res.status(internalError.statusCode).json(
@@ -164,7 +162,7 @@ router.post(
 
       // Set httpOnly cookies for security
       if (!result.tokens) {
-        logger.error("Token refresh successful but tokens missing");
+        authLogger.error("Token refresh successful but tokens missing");
         const internalError = new ValidationError("Token refresh successful but tokens missing");
         return res.status(internalError.statusCode).json(
           createErrorResponse(internalError, getCorrelationId())
@@ -190,9 +188,7 @@ router.post(
         user: result.user,
       });
     } catch (err) {
-      logger.error("Token refresh error", {
-        error: (err as Error).message,
-      });
+      authLogger.error("Token refresh error", err instanceof Error ? err : undefined);
       const internalError = new ValidationError("Token refresh failed");
       res.status(internalError.statusCode).json(
         createErrorResponse(internalError, getCorrelationId())
@@ -211,7 +207,7 @@ router.post("/logout", async (req: Request, res: Response) => {
     // For now, we rely on token expiration for security
     // This provides basic logout functionality while maintaining security through short token lifetimes
     if (refreshToken) {
-      logger.info("Logout requested - tokens will expire naturally", {
+      authLogger.info("Logout requested - tokens will expire naturally", {
         hasRefreshToken: true,
       });
     }
@@ -242,7 +238,7 @@ router.post("/logout", async (req: Request, res: Response) => {
       sameSite: "strict",
     });
 
-    logger.info("User logged out successfully", {
+    authLogger.info("User logged out successfully", {
       userId: (req as AuthenticatedRequest)?.user?.userId,
     });
 
@@ -251,9 +247,7 @@ router.post("/logout", async (req: Request, res: Response) => {
       message: "Logged out successfully",
     });
   } catch (err) {
-    logger.error("Logout error", {
-      error: (err as Error).message,
-    });
+    authLogger.error("Logout error", err instanceof Error ? err : undefined);
     const internalError = new ValidationError("Logout failed");
     res.status(internalError.statusCode).json(
       createErrorResponse(internalError, getCorrelationId())
@@ -269,7 +263,7 @@ router.post(
     try {
       // Defensive check - user should be set by authMiddleware
       if (!req.user) {
-        logger.warn("Qualification check requested without authenticated user");
+        authLogger.warn("Qualification check requested without authenticated user");
         return res.status(401).json({
           success: false,
           error: "Unauthorized - user not authenticated",
@@ -301,7 +295,7 @@ router.post(
           result.criteria as unknown as JSON
         );
 
-        logger.info("User qualified for QUALIFIED_ALPHA role", {
+        authLogger.info("User qualified for QUALIFIED_ALPHA role", {
           userId,
           qualificationCriteria: result.criteria
         });
@@ -318,9 +312,8 @@ router.post(
       });
 
     } catch (error) {
-      logger.error("Qualification check error", {
+      authLogger.error("Qualification check error", error instanceof Error ? error : undefined, {
         userId: req.user?.userId,
-        error: (error as Error).message
       });
       const internalError = new ValidationError("Qualification check failed");
       res.status(internalError.statusCode).json(
@@ -338,7 +331,7 @@ router.get(
     try {
       // Defensive check - user should be set by authMiddleware
       if (!req.user) {
-        logger.warn("Qualification config requested without authenticated user");
+        authLogger.warn("Qualification config requested without authenticated user");
         return res.status(401).json({
           success: false,
           error: "Unauthorized - user not authenticated",
@@ -352,8 +345,7 @@ router.get(
         config
       });
     } catch (error) {
-      logger.error("Qualification config error", {
-        error: (error as Error).message,
+      authLogger.error("Qualification config error", error instanceof Error ? error : undefined, {
         userId: req.user?.userId
       });
       const internalError = new ValidationError("Failed to get qualification config");
@@ -372,7 +364,7 @@ router.get(
     try {
       // Defensive check - user should be set by authMiddleware
       if (!req.user) {
-        logger.warn("/me endpoint accessed without authenticated user");
+        authLogger.warn("/me endpoint accessed without authenticated user");
         return res.status(401).json({
           success: false,
           error: "Unauthorized - user not authenticated",
@@ -417,7 +409,7 @@ router.get(
         updatedAt: new Date(userRow.updated_at),
       };
 
-      logger.info("Returning user data from /me endpoint", {
+      authLogger.info("Returning user data from /me endpoint", {
         userId: user.id,
         userLevel: user.userLevel,
         email: user.email,
@@ -434,9 +426,8 @@ router.get(
         data: user
       });
     } catch (error) {
-      logger.error("Get me error", {
+      authLogger.error("Get me error", error instanceof Error ? error : undefined, {
         userId: req.user?.userId,
-        error: (error as Error).message
       });
       const internalError = new ValidationError("Failed to get user data");
       res.status(internalError.statusCode).json(
@@ -464,7 +455,7 @@ router.get("/csrf-token", async (req: Request, res: Response) => {
         const isValid = tokensInstance.verify(existingSecret, existingToken);
         if (isValid) {
           token = existingToken;
-          logger.debug("Using existing valid CSRF token");
+          authLogger.debug("Using existing valid CSRF token");
         } else {
           throw new Error("Invalid existing token");
         }
@@ -488,7 +479,7 @@ router.get("/csrf-token", async (req: Request, res: Response) => {
           maxAge: 24 * 60 * 60 * 1000, // 24 hours
         });
 
-        logger.debug("Generated new CSRF token");
+        authLogger.debug("Generated new CSRF token");
       }
     } else {
       // Generate new token
@@ -512,7 +503,7 @@ router.get("/csrf-token", async (req: Request, res: Response) => {
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
       });
 
-      logger.debug("Generated fresh CSRF token");
+      authLogger.debug("Generated fresh CSRF token");
     }
 
     res.json({
@@ -522,9 +513,7 @@ router.get("/csrf-token", async (req: Request, res: Response) => {
     });
 
   } catch (error) {
-    logger.error("CSRF token retrieval error", {
-      error: (error as Error).message,
-    });
+    authLogger.error("CSRF token retrieval error", error instanceof Error ? error : undefined);
     const internalError = new ValidationError("Failed to get CSRF token");
     res.status(internalError.statusCode).json(
       createErrorResponse(internalError, getCorrelationId())

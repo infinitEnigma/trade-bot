@@ -1,7 +1,7 @@
 /** @format */
 
 import { Request, Response, NextFunction } from "express";
-import { logger, httpLogger as contextHttpLogger } from "../../core/logging";
+import { httpLogger as contextHttpLogger } from "../../core/logging";
 import {
   generateCorrelationId,
   runWithContext,
@@ -82,9 +82,7 @@ export function errorLogger(
   res: Response,
   next: NextFunction
 ): void {
-  logger.error("Application error", {
-    error: err.message,
-    stack: err.stack,
+  contextHttpLogger.error("Application error", err, {
     method: req.method,
     url: req.url,
     userAgent: req.get("User-Agent"),

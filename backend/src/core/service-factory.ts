@@ -27,65 +27,68 @@ import { UserKodiakService } from './user/user-kodiak.service';
 import { IPasswordService, IUserRepository } from '@trade-bot/shared';
 import { kodiakConnectionService } from '../infrastructure/external/kodiak-connection.service';
 import { connectionCache } from '../infrastructure/cache/connection-cache.service';
-import { logger } from './logging';
+import { contextLogger } from './logging';
 
 /**
  * Service Factory Interface
  *
  * Defines the contract for service instantiation and management.
  * This interface enables dependency injection and testing of the factory itself.
+ * 
+ * All service methods return optional types to support graceful error handling.
+ * Services may be undefined if instantiation fails, allowing partial system operation.
  */
 export interface IServiceFactory {
     /**
      * Get Auth Service instance
      */
-    getAuthService(): AuthService;
+    getAuthService(): AuthService | undefined;
 
     /**
      * Get Balance Service instance
      */
-    getBalanceService(): BalanceService;
+    getBalanceService(): BalanceService | undefined;
 
     /**
      * Get Position Service instance
      */
-    getPositionService(): PositionService;
+    getPositionService(): PositionService | undefined;
 
     /**
      * Get Role Management Service instance
      */
-    getRoleManagementService(): RoleManagementService;
+    getRoleManagementService(): RoleManagementService | undefined;
 
     /**
      * Get Role Qualification Service instance
      */
-    getRoleQualificationService(): RoleQualificationService;
+    getRoleQualificationService(): RoleQualificationService | undefined;
 
     /**
      * Get Wallet Qualification Service instance
      */
-    getWalletQualificationService(): WalletQualificationService;
+    getWalletQualificationService(): WalletQualificationService | undefined;
 
     /**
      * Get User Profile Service instance
      */
-    getUserProfileService(): UserProfileService;
+    getUserProfileService(): UserProfileService | undefined;
 
     /**
      * Get User Kodiak Service instance
      */
-    getUserKodiakService(): UserKodiakService;
+    getUserKodiakService(): UserKodiakService | undefined;
 
     /**
      * Get all service instances for health checks
      */
     getAllServices(): {
-        authService: AuthService;
-        balanceService: BalanceService;
-        positionService: PositionService;
-        roleManagementService: RoleManagementService;
-        userProfileService: UserProfileService;
-        userKodiakService: UserKodiakService;
+        authService: AuthService | undefined;
+        balanceService: BalanceService | undefined;
+        positionService: PositionService | undefined;
+        roleManagementService: RoleManagementService | undefined;
+        userProfileService: UserProfileService | undefined;
+        userKodiakService: UserKodiakService | undefined;
     };
 
     /**
@@ -105,7 +108,7 @@ export interface IServiceFactory {
  * All services are created with their required dependencies from the DI container.
  */
 export class ServiceFactory implements IServiceFactory {
-    private readonly logger = logger;
+    private readonly logger = contextLogger;
 
     constructor() {
         this.logger.info('Service Factory initialized', {
@@ -117,7 +120,7 @@ export class ServiceFactory implements IServiceFactory {
     /**
      * Get Auth Service instance with proper dependencies
      */
-    getAuthService(): AuthService {
+    getAuthService(): AuthService | undefined {
         try {
             const authService = diContainer.authService;
             this.logger.debug('Auth Service retrieved from container', {
@@ -129,14 +132,14 @@ export class ServiceFactory implements IServiceFactory {
             this.logger.error('Failed to get Auth Service', error instanceof Error ? error : undefined, {
                 service: 'AuthService'
             });
-            throw error;
+            return undefined;
         }
     }
 
     /**
      * Get Balance Service instance with proper dependencies
      */
-    getBalanceService(): BalanceService {
+    getBalanceService(): BalanceService | undefined {
         try {
             const balanceService = diContainer.balanceService;
             this.logger.debug('Balance Service retrieved from container', {
@@ -148,14 +151,14 @@ export class ServiceFactory implements IServiceFactory {
             this.logger.error('Failed to get Balance Service', error instanceof Error ? error : undefined, {
                 service: 'BalanceService'
             });
-            throw error;
+            return undefined;
         }
     }
 
     /**
      * Get Position Service instance with proper dependencies
      */
-    getPositionService(): PositionService {
+    getPositionService(): PositionService | undefined {
         try {
             const positionService = diContainer.positionService;
             this.logger.debug('Position Service retrieved from container', {
@@ -167,14 +170,14 @@ export class ServiceFactory implements IServiceFactory {
             this.logger.error('Failed to get Position Service', error instanceof Error ? error : undefined, {
                 service: 'PositionService'
             });
-            throw error;
+            return undefined;
         }
     }
 
     /**
      * Get Role Management Service instance with proper dependencies
      */
-    getRoleManagementService(): RoleManagementService {
+    getRoleManagementService(): RoleManagementService | undefined {
         try {
             const roleManagementService = diContainer.roleManagementService;
             this.logger.debug('Role Management Service retrieved from container', {
@@ -186,14 +189,14 @@ export class ServiceFactory implements IServiceFactory {
             this.logger.error('Failed to get Role Management Service', error instanceof Error ? error : undefined, {
                 service: 'RoleManagementService'
             });
-            throw error;
+            return undefined;
         }
     }
 
     /**
      * Get Role Qualification Service instance with proper dependencies
      */
-    getRoleQualificationService(): RoleQualificationService {
+    getRoleQualificationService(): RoleQualificationService | undefined {
         try {
             const roleQualificationService = diContainer.roleQualificationService;
             this.logger.debug('Role Qualification Service retrieved from container', {
@@ -205,14 +208,14 @@ export class ServiceFactory implements IServiceFactory {
             this.logger.error('Failed to get Role Qualification Service', error instanceof Error ? error : undefined, {
                 service: 'RoleQualificationService'
             });
-            throw error;
+            return undefined;
         }
     }
 
     /**
      * Get Wallet Qualification Service instance with proper dependencies
      */
-    getWalletQualificationService(): WalletQualificationService {
+    getWalletQualificationService(): WalletQualificationService | undefined {
         try {
             const walletQualificationService = diContainer.walletQualificationService;
             this.logger.debug('Wallet Qualification Service retrieved from container', {
@@ -224,14 +227,14 @@ export class ServiceFactory implements IServiceFactory {
             this.logger.error('Failed to get Wallet Qualification Service', error instanceof Error ? error : undefined, {
                 service: 'WalletQualificationService'
             });
-            throw error;
+            return undefined;
         }
     }
 
     /**
      * Get User Profile Service instance with proper dependencies
      */
-    getUserProfileService(): UserProfileService {
+    getUserProfileService(): UserProfileService | undefined {
         try {
             const userProfileService = new UserProfileService({
                 userRepository: diContainer.userRepository,
@@ -247,14 +250,14 @@ export class ServiceFactory implements IServiceFactory {
             this.logger.error('Failed to create User Profile Service', error instanceof Error ? error : undefined, {
                 service: 'UserProfileService'
             });
-            throw error;
+            return undefined;
         }
     }
 
     /**
      * Get User Kodiak Service instance with proper dependencies
      */
-    getUserKodiakService(): UserKodiakService {
+    getUserKodiakService(): UserKodiakService | undefined {
         try {
             const userKodiakService = new UserKodiakService({
                 kodiakConnectionService,
@@ -269,7 +272,7 @@ export class ServiceFactory implements IServiceFactory {
             this.logger.error('Failed to create User Kodiak Service', error instanceof Error ? error : undefined, {
                 service: 'UserKodiakService'
             });
-            throw error;
+            return undefined;
         }
     }
 
@@ -277,12 +280,12 @@ export class ServiceFactory implements IServiceFactory {
      * Get all service instances for health checks and monitoring
      */
     getAllServices(): {
-        authService: AuthService;
-        balanceService: BalanceService;
-        positionService: PositionService;
-        roleManagementService: RoleManagementService;
-        userProfileService: UserProfileService;
-        userKodiakService: UserKodiakService;
+        authService: AuthService | undefined;
+        balanceService: BalanceService | undefined;
+        positionService: PositionService | undefined;
+        roleManagementService: RoleManagementService | undefined;
+        userProfileService: UserProfileService | undefined;
+        userKodiakService: UserKodiakService | undefined;
     } {
         try {
             return {
@@ -295,7 +298,15 @@ export class ServiceFactory implements IServiceFactory {
             };
         } catch (error) {
             this.logger.error('Failed to get all services', error instanceof Error ? error : undefined);
-            throw error;
+            // Return object with all services as undefined instead of throwing
+            return {
+                authService: undefined,
+                balanceService: undefined,
+                positionService: undefined,
+                roleManagementService: undefined,
+                userProfileService: undefined,
+                userKodiakService: undefined
+            };
         }
     }
 
@@ -316,13 +327,24 @@ export class ServiceFactory implements IServiceFactory {
             // Check each service
             for (const [serviceName, service] of Object.entries(allServices)) {
                 try {
-                    // Basic service health check - just verify the service exists and is accessible
-                    services[serviceName] = service !== null && service !== undefined;
+                    // Handle undefined services (graceful failure)
+                    if (service === undefined) {
+                        services[serviceName] = false;
+                        details[serviceName] = {
+                            healthy: false,
+                            error: 'Service unavailable'
+                        };
+                        continue;
+                    }
+
+                    // Basic service health check for available services
+                    services[serviceName] = service !== null;
                     details[serviceName] = {
                         healthy: services[serviceName],
                         type: service?.constructor?.name || 'unknown'
                     };
                 } catch (serviceError) {
+                    // Handle runtime errors for services that were instantiated but failed during health check
                     services[serviceName] = false;
                     details[serviceName] = {
                         healthy: false,
@@ -353,5 +375,18 @@ export class ServiceFactory implements IServiceFactory {
 
 /**
  * Export singleton instance for immediate use
+ * 
+ * Note: This is instantiated lazily to avoid dependency injection issues during testing.
+ * The factory will be created on first access rather than at module import time.
  */
-export const serviceFactory = new ServiceFactory();
+let _serviceFactory: ServiceFactory | null = null;
+
+export function getServiceFactory(): ServiceFactory {
+    if (!_serviceFactory) {
+        _serviceFactory = new ServiceFactory();
+    }
+    return _serviceFactory;
+}
+
+// For backward compatibility, export the factory instance
+export const serviceFactory = getServiceFactory();

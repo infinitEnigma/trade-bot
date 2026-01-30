@@ -24,7 +24,7 @@
  * @format
  */
 
-import logger from "../../logging/logger.service";
+import { contextLogger } from "../../logging";
 
 export enum CircuitState {
     CLOSED = 'closed',     // Normal operation
@@ -96,7 +96,7 @@ export class CircuitBreaker {
             // Record success
             this.onSuccess();
 
-            logger.debug("Circuit breaker operation succeeded", {
+            contextLogger.debug("Circuit breaker operation succeeded", {
                 state: this.state,
                 context,
             });
@@ -109,7 +109,7 @@ export class CircuitBreaker {
 
             const errorMessage = error instanceof Error ? error.message : String(error);
 
-            logger.warn("Circuit breaker operation failed", {
+            contextLogger.warn("Circuit breaker operation failed", {
                 state: this.state,
                 error: errorMessage,
                 context,
@@ -157,7 +157,7 @@ export class CircuitBreaker {
                 if (now >= this.nextAttemptTime) {
                     this.state = CircuitState.HALF_OPEN;
                     this.successCount = 0; // Reset success counter
-                    logger.info("Circuit breaker entering half-open state");
+                    contextLogger.info("Circuit breaker entering half-open state");
                     return true;
                 }
                 return false;
@@ -185,7 +185,7 @@ export class CircuitBreaker {
                 this.state = CircuitState.CLOSED;
                 this.failureCount = 0;
                 this.successCount = 0;
-                logger.info("Circuit breaker closed - service recovered", {
+                contextLogger.info("Circuit breaker closed - service recovered", {
                     successThreshold: this.config.successThreshold,
                 });
             }
@@ -219,7 +219,7 @@ export class CircuitBreaker {
         this.state = CircuitState.OPEN;
         this.nextAttemptTime = Date.now() + this.config.recoveryTimeout;
 
-        logger.warn("Circuit breaker opened", {
+        contextLogger.warn("Circuit breaker opened", {
             failureThreshold: this.config.failureThreshold,
             recoveryTimeout: this.config.recoveryTimeout,
             nextAttemptIn: this.config.recoveryTimeout / 1000,
@@ -237,7 +237,7 @@ export class CircuitBreaker {
         this.lastSuccessTime = 0;
         this.nextAttemptTime = 0;
 
-        logger.info("Circuit breaker manually reset");
+        contextLogger.info("Circuit breaker manually reset");
     }
 
     /**
@@ -314,7 +314,7 @@ export class CircuitBreaker {
      */
     updateConfig(newConfig: Partial<CircuitBreakerConfig>): void {
         this.config = { ...this.config, ...newConfig };
-        logger.info("Circuit breaker configuration updated", { newConfig });
+        contextLogger.info("Circuit breaker configuration updated", { newConfig });
     }
 
     /**
