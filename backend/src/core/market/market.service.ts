@@ -9,7 +9,6 @@
 
 import logger from "../../core/logging/logger.service";
 import { IKodiakCredentialsRepository } from "@trade-bot/shared";
-import { kodiakCredentialsRepositoryAdapter } from "../../infrastructure/adapters/repositories/kodiak-credentials-repository.adapter";
 
 export interface MarketServiceDependencies {
     kodiakCredentialsRepository: IKodiakCredentialsRepository;
@@ -144,7 +143,3 @@ export function createMarketService(deps: MarketServiceDependencies): MarketServ
     return new MarketService(deps);
 }
 
-// Legacy singleton instance for backward compatibility
-export const marketService = createMarketService({
-    kodiakCredentialsRepository: kodiakCredentialsRepositoryAdapter
-});

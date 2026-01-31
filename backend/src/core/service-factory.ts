@@ -21,10 +21,16 @@ import { BalanceService } from './wallet/balance.service.pure';
 import { PositionService } from './strategies/position.service.pure';
 import { RoleManagementService } from './auth/role-management.service.pure';
 import { RoleQualificationService } from './auth/role-qualification.service';
-import { WalletQualificationService } from './wallet/wallet-qualification.service';
+import { WalletQualificationService } from './wallet/wallet-qualification.service.pure';
 import { UserProfileService } from './user/user-profile.service';
 import { UserKodiakService } from './user/user-kodiak.service';
 import { BotManagementService } from './bots/bot-management.service';
+import { StrategyService } from './strategies/strategy.service';
+import { MarketService } from './market/market.service';
+import { HealthService } from './system/health.service.pure';
+import { PositionValidatorService } from './strategies/position-validator.service.pure';
+import { PositionSyncService } from './strategies/position-sync.service.pure';
+import { EngineManager } from './strategies/engine-manager.service.pure';
 import { IPasswordService, IUserRepository } from '@trade-bot/shared';
 import { kodiakConnectionService } from '../infrastructure/external/kodiak-connection.service';
 import { connectionCache } from '../infrastructure/cache/connection-cache.service';
@@ -86,16 +92,52 @@ export interface IServiceFactory {
     getBotManagementService(): BotManagementService | undefined;
 
     /**
+     * Get Strategy Service instance
+     */
+    getStrategyService(): StrategyService | undefined;
+
+    /**
+     * Get Market Service instance
+     */
+    getMarketService(): MarketService | undefined;
+
+    /**
+     * Get Position Validator Service instance
+     */
+    getPositionValidatorService(): PositionValidatorService | undefined;
+
+    /**
+     * Get Position Sync Service instance
+     */
+    getPositionSyncService(): PositionSyncService | undefined;
+
+    /**
+     * Get Health Service instance
+     */
+    getHealthService(): HealthService | undefined;
+
+    /**
+     * Get Engine Manager instance
+     */
+    getEngineManager(): EngineManager | undefined;
+
+    /**
      * Get all service instances for health checks
      */
     getAllServices(): {
         authService: AuthService | undefined;
         balanceService: BalanceService | undefined;
         positionService: PositionService | undefined;
+        positionValidatorService: PositionValidatorService | undefined;
+        positionSyncService: PositionSyncService | undefined;
         roleManagementService: RoleManagementService | undefined;
         userProfileService: UserProfileService | undefined;
         userKodiakService: UserKodiakService | undefined;
         botManagementService: BotManagementService | undefined;
+        strategyService: StrategyService | undefined;
+        marketService: MarketService | undefined;
+        healthService: HealthService | undefined;
+        engineManager: EngineManager | undefined;
     };
 
     /**
@@ -304,26 +346,152 @@ export class ServiceFactory implements IServiceFactory {
     }
 
     /**
+     * Get Strategy Service instance with proper dependencies
+     */
+    getStrategyService(): StrategyService | undefined {
+        try {
+            const strategyService = diContainer.strategyService;
+            this.logger.debug('Strategy Service retrieved from container', {
+                service: 'StrategyService',
+                implementation: 'pure'
+            });
+            return strategyService;
+        } catch (error) {
+            this.logger.error('Failed to get Strategy Service', error instanceof Error ? error : undefined, {
+                service: 'StrategyService'
+            });
+            return undefined;
+        }
+    }
+
+    /**
+     * Get Market Service instance with proper dependencies
+     */
+    getMarketService(): MarketService | undefined {
+        try {
+            const marketService = diContainer.marketService;
+            this.logger.debug('Market Service retrieved from container', {
+                service: 'MarketService',
+                implementation: 'pure'
+            });
+            return marketService;
+        } catch (error) {
+            this.logger.error('Failed to get Market Service', error instanceof Error ? error : undefined, {
+                service: 'MarketService'
+            });
+            return undefined;
+        }
+    }
+
+    /**
+     * Get Position Validator Service instance with proper dependencies
+     */
+    getPositionValidatorService(): PositionValidatorService | undefined {
+        try {
+            const positionValidatorService = diContainer.positionValidatorService;
+            this.logger.debug('Position Validator Service retrieved from container', {
+                service: 'PositionValidatorService',
+                implementation: 'pure'
+            });
+            return positionValidatorService;
+        } catch (error) {
+            this.logger.error('Failed to get Position Validator Service', error instanceof Error ? error : undefined, {
+                service: 'PositionValidatorService'
+            });
+            return undefined;
+        }
+    }
+
+    /**
+     * Get Position Sync Service instance with proper dependencies
+     */
+    getPositionSyncService(): PositionSyncService | undefined {
+        try {
+            const positionSyncService = diContainer.positionSyncService;
+            this.logger.debug('Position Sync Service retrieved from container', {
+                service: 'PositionSyncService',
+                implementation: 'pure'
+            });
+            return positionSyncService;
+        } catch (error) {
+            this.logger.error('Failed to get Position Sync Service', error instanceof Error ? error : undefined, {
+                service: 'PositionSyncService'
+            });
+            return undefined;
+        }
+    }
+
+    /**
+     * Get Health Service instance with proper dependencies
+     */
+    getHealthService(): HealthService | undefined {
+        try {
+            const healthService = diContainer.healthService;
+            this.logger.debug('Health Service retrieved from container', {
+                service: 'HealthService',
+                implementation: 'pure'
+            });
+            return healthService;
+        } catch (error) {
+            this.logger.error('Failed to get Health Service', error instanceof Error ? error : undefined, {
+                service: 'HealthService'
+            });
+            return undefined;
+        }
+    }
+
+    /**
+     * Get Engine Manager instance with proper dependencies
+     */
+    getEngineManager(): EngineManager | undefined {
+        try {
+            const engineManager = diContainer.engineManager;
+            this.logger.debug('Engine Manager retrieved from container', {
+                service: 'EngineManager',
+                implementation: 'pure'
+            });
+            return engineManager;
+        } catch (error) {
+            this.logger.error('Failed to get Engine Manager', error instanceof Error ? error : undefined, {
+                service: 'EngineManager'
+            });
+            return undefined;
+        }
+    }
+
+    /**
      * Get all service instances for health checks and monitoring
      */
     getAllServices(): {
         authService: AuthService | undefined;
         balanceService: BalanceService | undefined;
         positionService: PositionService | undefined;
+        positionValidatorService: PositionValidatorService | undefined;
+        positionSyncService: PositionSyncService | undefined;
         roleManagementService: RoleManagementService | undefined;
         userProfileService: UserProfileService | undefined;
         userKodiakService: UserKodiakService | undefined;
         botManagementService: BotManagementService | undefined;
+        strategyService: StrategyService | undefined;
+        marketService: MarketService | undefined;
+        healthService: HealthService | undefined;
+        engineManager: EngineManager | undefined;
     } {
         try {
             return {
                 authService: this.getAuthService(),
                 balanceService: this.getBalanceService(),
                 positionService: this.getPositionService(),
+                positionValidatorService: this.getPositionValidatorService(),
+                positionSyncService: this.getPositionSyncService(),
                 roleManagementService: this.getRoleManagementService(),
                 userProfileService: this.getUserProfileService(),
                 userKodiakService: this.getUserKodiakService(),
-                botManagementService: this.getBotManagementService()
+                botManagementService: this.getBotManagementService(),
+                strategyService: this.getStrategyService(),
+                marketService: this.getMarketService(),
+                healthService: this.getHealthService(),
+                engineManager: this.getEngineManager()
             };
         } catch (error) {
             this.logger.error('Failed to get all services', error instanceof Error ? error : undefined);
@@ -332,10 +500,16 @@ export class ServiceFactory implements IServiceFactory {
                 authService: undefined,
                 balanceService: undefined,
                 positionService: undefined,
+                positionValidatorService: undefined,
+                positionSyncService: undefined,
                 roleManagementService: undefined,
                 userProfileService: undefined,
                 userKodiakService: undefined,
-                botManagementService: undefined
+                botManagementService: undefined,
+                strategyService: undefined,
+                marketService: undefined,
+                healthService: undefined,
+                engineManager: undefined
             };
         }
     }

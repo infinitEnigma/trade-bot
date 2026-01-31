@@ -261,6 +261,27 @@ export class UserRepositoryAdapter implements IUserRepository {
     }
 
     /**
+     * Get user's wallet address from credentials
+     */
+    async getWalletAddress(userId: string): Promise<string | null> {
+        try {
+            const result = await query<{ wallet_address: string }>(
+                "SELECT wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
+                [userId]
+            );
+
+            if (result.rows.length === 0) {
+                return null;
+            }
+
+            return result.rows[0].wallet_address;
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            throw new Error(`Failed to get wallet address: ${errorMessage}`);
+        }
+    }
+
+    /**
      * Map database row to User domain object
      */
     private mapRowToUser(row: UserRow): User {

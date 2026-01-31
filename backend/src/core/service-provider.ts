@@ -20,10 +20,16 @@ import { BalanceService } from './wallet/balance.service.pure';
 import { PositionService } from './strategies/position.service.pure';
 import { RoleManagementService } from './auth/role-management.service.pure';
 import { RoleQualificationService } from './auth/role-qualification.service';
-import { WalletQualificationService } from './wallet/wallet-qualification.service';
+import { WalletQualificationService } from './wallet/wallet-qualification.service.pure';
 import { UserProfileService } from './user/user-profile.service';
 import { UserKodiakService } from './user/user-kodiak.service';
 import { BotManagementService } from './bots/bot-management.service';
+import { StrategyService } from './strategies/strategy.service';
+import { MarketService } from './market/market.service';
+import { HealthService } from './system/health.service.pure';
+import { PositionValidatorService } from './strategies/position-validator.service.pure';
+import { PositionSyncService } from './strategies/position-sync.service.pure';
+import { EngineManager } from './strategies/engine-manager.service.pure';
 import { contextLogger } from './logging';
 
 /**
@@ -222,16 +228,130 @@ export class ServiceProvider {
     }
 
     /**
+     * Get Strategy Service instance (strict - throws if unavailable)
+     */
+    getStrategyService(): StrategyService {
+        const service = this.factory.getStrategyService();
+        if (!service) {
+            throw new Error('Strategy Service is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get Strategy Service instance (safe - returns undefined if unavailable)
+     */
+    getStrategyServiceSafe(): StrategyService | undefined {
+        return this.factory.getStrategyService();
+    }
+
+    /**
+     * Get Market Service instance (strict - throws if unavailable)
+     */
+    getMarketService(): MarketService {
+        const service = this.factory.getMarketService();
+        if (!service) {
+            throw new Error('Market Service is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get Market Service instance (safe - returns undefined if unavailable)
+     */
+    getMarketServiceSafe(): MarketService | undefined {
+        return this.factory.getMarketService();
+    }
+
+    /**
+     * Get Position Validator Service instance (strict - throws if unavailable)
+     */
+    getPositionValidatorService(): PositionValidatorService {
+        const service = this.factory.getPositionValidatorService();
+        if (!service) {
+            throw new Error('Position Validator Service is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get Position Validator Service instance (safe - returns undefined if unavailable)
+     */
+    getPositionValidatorServiceSafe(): PositionValidatorService | undefined {
+        return this.factory.getPositionValidatorService();
+    }
+
+    /**
+     * Get Position Sync Service instance (strict - throws if unavailable)
+     */
+    getPositionSyncService(): PositionSyncService {
+        const service = this.factory.getPositionSyncService();
+        if (!service) {
+            throw new Error('Position Sync Service is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get Position Sync Service instance (safe - returns undefined if unavailable)
+     */
+    getPositionSyncServiceSafe(): PositionSyncService | undefined {
+        return this.factory.getPositionSyncService();
+    }
+
+    /**
+     * Get Health Service instance (strict - throws if unavailable)
+     */
+    getHealthService(): HealthService {
+        const service = this.factory.getHealthService();
+        if (!service) {
+            throw new Error('Health Service is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get Health Service instance (safe - returns undefined if unavailable)
+     */
+    getHealthServiceSafe(): HealthService | undefined {
+        return this.factory.getHealthService();
+    }
+
+    /**
+     * Get Engine Manager instance (strict - throws if unavailable)
+     */
+    getEngineManager(): EngineManager {
+        const service = this.factory.getEngineManager();
+        if (!service) {
+            throw new Error('Engine Manager is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get Engine Manager instance (safe - returns undefined if unavailable)
+     */
+    getEngineManagerSafe(): EngineManager | undefined {
+        return this.factory.getEngineManager();
+    }
+
+    /**
      * Get all services for health checks
      */
     getAllServices(): {
         authService: AuthService | undefined;
         balanceService: BalanceService | undefined;
         positionService: PositionService | undefined;
+        positionValidatorService: PositionValidatorService | undefined;
+        positionSyncService: PositionSyncService | undefined;
         roleManagementService: RoleManagementService | undefined;
         userProfileService: UserProfileService | undefined;
         userKodiakService: UserKodiakService | undefined;
         botManagementService: BotManagementService | undefined;
+        strategyService: StrategyService | undefined;
+        marketService: MarketService | undefined;
+        healthService: HealthService | undefined;
+        engineManager: EngineManager | undefined;
     } {
         return this.factory.getAllServices();
     }
@@ -314,6 +434,24 @@ export const getUserKodiakServiceSafe = () => serviceProvider.getUserKodiakServi
 
 export const getBotManagementService = () => serviceProvider.getBotManagementService();
 export const getBotManagementServiceSafe = () => serviceProvider.getBotManagementServiceSafe();
+
+export const getStrategyService = () => serviceProvider.getStrategyService();
+export const getStrategyServiceSafe = () => serviceProvider.getStrategyServiceSafe();
+
+export const getMarketService = () => serviceProvider.getMarketService();
+export const getMarketServiceSafe = () => serviceProvider.getMarketServiceSafe();
+
+export const getPositionValidatorService = () => serviceProvider.getPositionValidatorService();
+export const getPositionValidatorServiceSafe = () => serviceProvider.getPositionValidatorServiceSafe();
+
+export const getPositionSyncService = () => serviceProvider.getPositionSyncService();
+export const getPositionSyncServiceSafe = () => serviceProvider.getPositionSyncServiceSafe();
+
+export const getHealthService = () => serviceProvider.getHealthService();
+export const getHealthServiceSafe = () => serviceProvider.getHealthServiceSafe();
+
+export const getEngineManager = () => serviceProvider.getEngineManager();
+export const getEngineManagerSafe = () => serviceProvider.getEngineManagerSafe();
 
 /**
  * Service availability checking convenience functions

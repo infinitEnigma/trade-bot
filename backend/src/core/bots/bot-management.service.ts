@@ -1,22 +1,30 @@
 /**
- * Bot Management Service
+ * Pure Bot Management Service - Clean Architecture Implementation
  *
- * Handles bot instance operations including creation, starting, stopping, and monitoring.
- * Provides centralized bot management with proper validation and business logic.
+ * Business logic for bot instance operations including creation, starting, stopping, and monitoring.
+ * This service contains pure business logic and depends only on interfaces from shared.
+ *
+ * Dependencies (injected):
+ * - IBotInstanceRepository: Bot instance data access abstraction
+ * - IStrategyRepository: Strategy data access abstraction
+ * - IAuditLogRepository: Audit logging abstraction
+ * - ILogger: Logging abstraction
  *
  * @format
  */
 
-import logger from "../../core/logging/logger.service";
-import { IBotInstanceRepository, IStrategyRepository, IAuditLogRepository } from "@trade-bot/shared";
-import { botInstanceRepositoryAdapter } from "../../infrastructure/adapters/repositories/bot-instance-repository.adapter";
-import { strategyRepositoryAdapter } from "../../infrastructure/adapters/repositories/strategy-repository.adapter";
-import { auditLogRepositoryAdapter } from "../../infrastructure/adapters/repositories/audit-log-repository.adapter";
+import {
+    IBotInstanceRepository,
+    IStrategyRepository,
+    IAuditLogRepository,
+    ILogger
+} from "@trade-bot/shared";
 
 export interface BotManagementServiceDependencies {
     botInstanceRepository: IBotInstanceRepository;
     strategyRepository: IStrategyRepository;
     auditLogRepository: IAuditLogRepository;
+    logger: ILogger;
 }
 
 export class BotManagementService {
@@ -28,10 +36,10 @@ export class BotManagementService {
     async getBotInstances(userId: string): Promise<any[]> {
         try {
             const botInstances = await this.deps.botInstanceRepository.getBotInstances(userId);
-            logger.debug("Bot instances retrieved successfully", { userId, count: botInstances.length });
+            this.deps.logger.debug("Bot instances retrieved successfully", { userId, count: botInstances.length });
             return botInstances;
         } catch (error) {
-            logger.error("Failed to get bot instances", {
+            this.deps.logger.error("Failed to get bot instances", {
                 error: error instanceof Error ? error.message : String(error),
                 userId
             });
@@ -45,10 +53,10 @@ export class BotManagementService {
     async getBotInstance(id: string): Promise<any | null> {
         try {
             const botInstance = await this.deps.botInstanceRepository.getBotInstance(id);
-            logger.debug("Bot instance retrieved successfully", { botId: id });
+            this.deps.logger.debug("Bot instance retrieved successfully", { botId: id });
             return botInstance;
         } catch (error) {
-            logger.error("Failed to get bot instance", {
+            this.deps.logger.error("Failed to get bot instance", {
                 error: error instanceof Error ? error.message : String(error),
                 botId: id
             });
@@ -97,7 +105,7 @@ export class BotManagementService {
                 }
             });
 
-            logger.info("Bot created and started successfully", {
+            this.deps.logger.info("Bot created and started successfully", {
                 botId,
                 strategyId,
                 userId
@@ -105,7 +113,7 @@ export class BotManagementService {
 
             return botInstance;
         } catch (error) {
-            logger.error("Failed to create and start bot", {
+            this.deps.logger.error("Failed to create and start bot", {
                 error: error instanceof Error ? error.message : String(error),
                 userId,
                 strategyId
@@ -142,12 +150,12 @@ export class BotManagementService {
                 }
             });
 
-            logger.info("Bot stopped successfully", {
+            this.deps.logger.info("Bot stopped successfully", {
                 botId,
                 userId
             });
         } catch (error) {
-            logger.error("Failed to stop bot", {
+            this.deps.logger.error("Failed to stop bot", {
                 error: error instanceof Error ? error.message : String(error),
                 userId,
                 botId
@@ -179,10 +187,10 @@ export class BotManagementService {
                 }
             };
 
-            logger.debug("Bot status retrieved successfully", { botId });
+            this.deps.logger.debug("Bot status retrieved successfully", { botId });
             return statusInfo;
         } catch (error) {
-            logger.error("Failed to get bot status", {
+            this.deps.logger.error("Failed to get bot status", {
                 error: error instanceof Error ? error.message : String(error),
                 botId
             });
@@ -209,10 +217,10 @@ export class BotManagementService {
                 worstTrade: 0
             };
 
-            logger.debug("Bot performance retrieved successfully", { botId });
+            this.deps.logger.debug("Bot performance retrieved successfully", { botId });
             return performance;
         } catch (error) {
-            logger.error("Failed to get bot performance", {
+            this.deps.logger.error("Failed to get bot performance", {
                 error: error instanceof Error ? error.message : String(error),
                 botId
             });
@@ -248,12 +256,12 @@ export class BotManagementService {
                 }
             });
 
-            logger.warn("Emergency stop initiated", {
+            this.deps.logger.warn("Emergency stop initiated", {
                 botId,
                 userId
             });
         } catch (error) {
-            logger.error("Failed to initiate emergency stop", {
+            this.deps.logger.error("Failed to initiate emergency stop", {
                 error: error instanceof Error ? error.message : String(error),
                 userId,
                 botId
@@ -274,10 +282,3 @@ export class BotManagementService {
 export function createBotManagementService(deps: BotManagementServiceDependencies): BotManagementService {
     return new BotManagementService(deps);
 }
-
-// Legacy singleton instance for backward compatibility
-export const botManagementService = createBotManagementService({
-    botInstanceRepository: botInstanceRepositoryAdapter,
-    strategyRepository: strategyRepositoryAdapter,
-    auditLogRepository: auditLogRepositoryAdapter
-});

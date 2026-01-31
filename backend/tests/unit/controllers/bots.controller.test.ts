@@ -53,20 +53,19 @@ jest.mock('../../../src/core/strategies/engine-manager.service', () => ({
     },
 }));
 
-jest.mock('../../../src/core/bots/bot-management.service', () => ({
-    botManagementService: {
-        getBotInstances: jest.fn(),
-        getBotInstance: jest.fn(),
-        getBotPerformance: jest.fn(),
-        createAndStartBot: jest.fn(),
-        stopBot: jest.fn(),
-        emergencyStop: jest.fn(),
-    },
-}));
-
-jest.mock('../../../src/core/market/market.service', () => ({
-    marketService: {
-        hasUserKodiakCredentials: jest.fn().mockResolvedValue(true),
+jest.mock('../../../src/core/service-provider', () => ({
+    serviceProvider: {
+        getBotManagementService: jest.fn().mockReturnValue({
+            getBotInstances: jest.fn(),
+            getBotInstance: jest.fn(),
+            getBotPerformance: jest.fn(),
+            createAndStartBot: jest.fn(),
+            stopBot: jest.fn(),
+            emergencyStop: jest.fn(),
+        }),
+        getMarketService: jest.fn().mockReturnValue({
+            hasUserKodiakCredentials: jest.fn().mockResolvedValue(true),
+        }),
     },
 }));
 
@@ -197,8 +196,8 @@ describe('Bots Controller', () => {
                     },
                 ];
 
-                const botManagementService = require('../../../src/core/bots/bot-management.service').botManagementService;
-                botManagementService.getBotInstances.mockResolvedValue(mockBotInstances);
+                const serviceProvider = require('../../../src/core/service-provider').serviceProvider;
+                serviceProvider.getBotManagementService().getBotInstances.mockResolvedValue(mockBotInstances);
 
                 const response = await request(app)
                     .get('/api/bot/management/instances')
@@ -219,7 +218,7 @@ describe('Bots Controller', () => {
                         strategy_config: { symbol: 'PERP_BTC_USDC' },
                     })
                 ]));
-                expect(botManagementService.getBotInstances).toHaveBeenCalledWith('user-123');
+                expect(serviceProvider.getBotManagementService().getBotInstances).toHaveBeenCalledWith('user-123');
             });
         });
 
@@ -246,8 +245,8 @@ describe('Bots Controller', () => {
                     total_pnl: 0,
                 };
 
-                const botManagementService = require('../../../src/core/bots/bot-management.service').botManagementService;
-                botManagementService.createAndStartBot.mockResolvedValue(mockBotInstance);
+                const serviceProvider = require('../../../src/core/service-provider').serviceProvider;
+                serviceProvider.getBotManagementService().createAndStartBot.mockResolvedValue(mockBotInstance);
 
                 // Mock the strategy repository used by bot management service
                 const strategyRepositoryAdapter = require('../../../src/infrastructure/adapters/repositories/strategy-repository.adapter').strategyRepositoryAdapter;
@@ -298,14 +297,14 @@ describe('Bots Controller', () => {
                 expect(response.body.data.botId).toEqual('test-bot-id');
                 expect(response.body.data.strategyId).toEqual('strategy-1');
                 expect(response.body.data.status).toEqual('RUNNING');
-                expect(botManagementService.createAndStartBot).toHaveBeenCalledWith('user-123', 'strategy-1', 1000.50);
+                expect(serviceProvider.getBotManagementService().createAndStartBot).toHaveBeenCalledWith('user-123', 'strategy-1', 1000.50);
             });
         });
 
         describe('POST /api/bot/management/stop', () => {
             it('should stop a running bot instance', async () => {
-                const botManagementService = require('../../../src/core/bots/bot-management.service').botManagementService;
-                botManagementService.stopBot.mockResolvedValue(undefined);
+                const serviceProvider = require('../../../src/core/service-provider').serviceProvider;
+                serviceProvider.getBotManagementService().stopBot.mockResolvedValue(undefined);
 
                 const response = await request(app)
                     .post('/api/bot/management/stop')
@@ -317,7 +316,7 @@ describe('Bots Controller', () => {
                 expect(response.body.success).toBe(true);
                 expect(response.body.data.botId).toEqual('bot-1');
                 expect(response.body.data.status).toEqual('STOPPED');
-                expect(botManagementService.stopBot).toHaveBeenCalledWith('user-123', 'bot-1');
+                expect(serviceProvider.getBotManagementService().stopBot).toHaveBeenCalledWith('user-123', 'bot-1');
             });
         });
 
@@ -334,8 +333,8 @@ describe('Bots Controller', () => {
                     updated_at: new Date(),
                 };
 
-                const botManagementService = require('../../../src/core/bots/bot-management.service').botManagementService;
-                botManagementService.getBotInstance.mockResolvedValue(mockBot);
+                const serviceProvider = require('../../../src/core/service-provider').serviceProvider;
+                serviceProvider.getBotManagementService().getBotInstance.mockResolvedValue(mockBot);
 
                 const response = await request(app)
                     .get('/api/bot/management/status/bot-1')
@@ -346,12 +345,12 @@ describe('Bots Controller', () => {
                     id: 'bot-1',
                     status: 'RUNNING',
                 }));
-                expect(botManagementService.getBotInstance).toHaveBeenCalledWith('bot-1');
+                expect(serviceProvider.getBotManagementService().getBotInstance).toHaveBeenCalledWith('bot-1');
             });
 
             it('should handle bot not found', async () => {
-                const botManagementService = require('../../../src/core/bots/bot-management.service').botManagementService;
-                botManagementService.getBotInstance.mockResolvedValue(null);
+                const serviceProvider = require('../../../src/core/service-provider').serviceProvider;
+                serviceProvider.getBotManagementService().getBotInstance.mockResolvedValue(null);
 
                 const response = await request(app)
                     .get('/api/bot/management/status/nonexistent-bot')
@@ -368,8 +367,8 @@ describe('Bots Controller', () => {
                     total_pnl: 1250.50,
                 };
 
-                const botManagementService = require('../../../src/core/bots/bot-management.service').botManagementService;
-                botManagementService.getBotPerformance.mockResolvedValue(mockPerformance);
+                const serviceProvider = require('../../../src/core/service-provider').serviceProvider;
+                serviceProvider.getBotManagementService().getBotPerformance.mockResolvedValue(mockPerformance);
 
                 const response = await request(app)
                     .get('/api/bot/management/performance/bot-1')
@@ -377,7 +376,7 @@ describe('Bots Controller', () => {
 
                 expect(response.body.success).toBe(true);
                 expect(response.body.data).toEqual(mockPerformance);
-                expect(botManagementService.getBotPerformance).toHaveBeenCalledWith('bot-1');
+                expect(serviceProvider.getBotManagementService().getBotPerformance).toHaveBeenCalledWith('bot-1');
             });
         });
 

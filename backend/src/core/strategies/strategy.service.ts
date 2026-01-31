@@ -1,20 +1,27 @@
 /**
- * Strategy Service
+ * Pure Strategy Service - Clean Architecture Implementation
  *
- * Handles strategy operations including creation, retrieval, updating, and deletion.
- * Provides centralized strategy management with proper validation and business logic.
+ * Business logic for strategy operations including creation, retrieval, updating, and deletion.
+ * This service contains pure business logic and depends only on interfaces from shared.
+ *
+ * Dependencies (injected):
+ * - IStrategyRepository: Strategy data access abstraction
+ * - IBotInstanceRepository: Bot instance data access abstraction
+ * - ILogger: Logging abstraction
  *
  * @format
  */
 
-import logger from "../../core/logging/logger.service";
-import { IStrategyRepository, IBotInstanceRepository } from "@trade-bot/shared";
-import { strategyRepositoryAdapter } from "../../infrastructure/adapters/repositories/strategy-repository.adapter";
-import { botInstanceRepositoryAdapter } from "../../infrastructure/adapters/repositories/bot-instance-repository.adapter";
+import {
+    IStrategyRepository,
+    IBotInstanceRepository,
+    ILogger
+} from "@trade-bot/shared";
 
 export interface StrategyServiceDependencies {
     strategyRepository: IStrategyRepository;
     botInstanceRepository: IBotInstanceRepository;
+    logger: ILogger;
 }
 
 export class StrategyService {
@@ -26,10 +33,10 @@ export class StrategyService {
     async getStrategies(userId: string): Promise<any[]> {
         try {
             const strategies = await this.deps.strategyRepository.getStrategies(userId);
-            logger.debug("Strategies retrieved successfully", { userId, count: strategies.length });
+            this.deps.logger.debug("Strategies retrieved successfully", { userId, count: strategies.length });
             return strategies;
         } catch (error) {
-            logger.error("Failed to get strategies", {
+            this.deps.logger.error("Failed to get strategies", {
                 error: error instanceof Error ? error.message : String(error),
                 userId
             });
@@ -43,10 +50,10 @@ export class StrategyService {
     async getStrategy(id: string): Promise<any | null> {
         try {
             const strategy = await this.deps.strategyRepository.getStrategy(id);
-            logger.debug("Strategy retrieved successfully", { strategyId: id });
+            this.deps.logger.debug("Strategy retrieved successfully", { strategyId: id });
             return strategy;
         } catch (error) {
-            logger.error("Failed to get strategy", {
+            this.deps.logger.error("Failed to get strategy", {
                 error: error instanceof Error ? error.message : String(error),
                 strategyId: id
             });
@@ -63,13 +70,13 @@ export class StrategyService {
                 userId,
                 ...strategyData
             });
-            logger.info("Strategy created successfully", {
+            this.deps.logger.info("Strategy created successfully", {
                 strategyId: strategy.id,
                 userId
             });
             return strategy;
         } catch (error) {
-            logger.error("Failed to create strategy", {
+            this.deps.logger.error("Failed to create strategy", {
                 error: error instanceof Error ? error.message : String(error),
                 userId,
                 strategyData
@@ -85,10 +92,10 @@ export class StrategyService {
         try {
             await this.deps.strategyRepository.updateStrategy(id, updates);
             const updatedStrategy = await this.deps.strategyRepository.getStrategy(id);
-            logger.info("Strategy updated successfully", { strategyId: id });
+            this.deps.logger.info("Strategy updated successfully", { strategyId: id });
             return updatedStrategy;
         } catch (error) {
-            logger.error("Failed to update strategy", {
+            this.deps.logger.error("Failed to update strategy", {
                 error: error instanceof Error ? error.message : String(error),
                 strategyId: id,
                 updates
@@ -111,9 +118,9 @@ export class StrategyService {
 
             // Delete the strategy
             await this.deps.strategyRepository.deleteStrategy(id);
-            logger.info("Strategy deleted successfully", { strategyId: id });
+            this.deps.logger.info("Strategy deleted successfully", { strategyId: id });
         } catch (error) {
-            logger.error("Failed to delete strategy", {
+            this.deps.logger.error("Failed to delete strategy", {
                 error: error instanceof Error ? error.message : String(error),
                 strategyId: id
             });
@@ -127,9 +134,9 @@ export class StrategyService {
     async toggleStrategy(id: string, active: boolean): Promise<void> {
         try {
             await this.deps.strategyRepository.toggleStrategy(id, active);
-            logger.info("Strategy status toggled", { strategyId: id, active });
+            this.deps.logger.info("Strategy status toggled", { strategyId: id, active });
         } catch (error) {
-            logger.error("Failed to toggle strategy", {
+            this.deps.logger.error("Failed to toggle strategy", {
                 error: error instanceof Error ? error.message : String(error),
                 strategyId: id,
                 active
@@ -154,7 +161,7 @@ export class StrategyService {
                 worstTrade: 0
             };
         } catch (error) {
-            logger.error("Failed to get strategy performance", {
+            this.deps.logger.error("Failed to get strategy performance", {
                 error: error instanceof Error ? error.message : String(error),
                 strategyId: id
             });
@@ -167,9 +174,3 @@ export class StrategyService {
 export function createStrategyService(deps: StrategyServiceDependencies): StrategyService {
     return new StrategyService(deps);
 }
-
-// Legacy singleton instance for backward compatibility
-export const strategyService = createStrategyService({
-    strategyRepository: strategyRepositoryAdapter,
-    botInstanceRepository: botInstanceRepositoryAdapter
-});

@@ -8,12 +8,6 @@
 import { userLogger } from "../../core/logging";
 import { selectAuthService } from "../service-selector";
 import { ICacheService, IPasswordService, IUserRepository, IAuditLogRepository } from "@trade-bot/shared";
-import { userRepositoryAdapter } from "../../infrastructure/adapters/repositories/user-repository.adapter";
-import { auditLogRepositoryAdapter } from "../../infrastructure/adapters/repositories/audit-log-repository.adapter";
-import { redisCacheAdapter } from "../../infrastructure/adapters/cache/redis-cache.adapter";
-import { passwordService } from "../../infrastructure/adapters/encryption/password.service.adapter";
-
-const authService = selectAuthService();
 
 export interface ProfileUpdateData {
     email?: string;
@@ -140,6 +134,7 @@ export class UserProfileService {
                 walletAddress
             });
 
+            const authService = selectAuthService();
             const result = await authService.verifyWalletOwnership(
                 userId,
                 walletAddress,
@@ -310,10 +305,3 @@ export function createUserProfileService(deps: UserProfileServiceDependencies): 
     return new UserProfileService(deps);
 }
 
-// Legacy singleton instance for backward compatibility
-export const userProfileService = createUserProfileService({
-    userRepository: userRepositoryAdapter,
-    cache: redisCacheAdapter,
-    passwordService: passwordService,
-    auditLogRepository: auditLogRepositoryAdapter
-});

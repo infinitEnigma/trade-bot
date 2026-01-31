@@ -104,6 +104,21 @@ export interface IExternalApiService {
      * Invalidate cached data for a user
      */
     invalidateUserCache(userId: string): Promise<void>;
+
+    /**
+     * Validate wallet is connected to correct chain
+     */
+    validateWalletChain(walletAddress: string, chainId: number): Promise<boolean>;
+
+    /**
+     * Check NFT ownership
+     */
+    checkNFTOwnership(walletAddress: string, contractAddress: string): Promise<boolean>;
+
+    /**
+     * Check token balance
+     */
+    checkTokenBalance(walletAddress: string, tokenAddress: string, minAmount: bigint): Promise<boolean>;
 }
 
 export interface ApiResult<T = unknown> {

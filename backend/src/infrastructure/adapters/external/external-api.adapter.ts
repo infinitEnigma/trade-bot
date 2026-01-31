@@ -255,6 +255,59 @@ export class ExternalApiAdapter implements IExternalApiService {
     }
 
     /**
+     * Validate wallet is connected to correct chain
+     */
+    async validateWalletChain(walletAddress: string, chainId: number): Promise<boolean> {
+        try {
+            // For now, assume all wallets are on correct chain
+            // In production, this would query the blockchain RPC
+            logger.debug("Wallet chain validation", { walletAddress, requiredChain: chainId });
+            return true; // Placeholder - implement actual chain validation
+        } catch (error) {
+            logger.error("Wallet chain validation failed", { walletAddress, error: (error as Error).message });
+            return false;
+        }
+    }
+
+    /**
+     * Check NFT ownership
+     */
+    async checkNFTOwnership(walletAddress: string, contractAddress: string): Promise<boolean> {
+        try {
+            // Placeholder implementation
+            // In production, this would use ethers.js or web3.js to query NFT contract
+            logger.debug("Checking NFT ownership", { walletAddress, contractAddress });
+            return false; // Placeholder - implement actual NFT checking
+        } catch (error) {
+            logger.error("NFT ownership check failed", {
+                walletAddress,
+                contractAddress,
+                error: (error as Error).message
+            });
+            return false;
+        }
+    }
+
+    /**
+     * Check token balance
+     */
+    async checkTokenBalance(walletAddress: string, tokenAddress: string, minAmount: bigint): Promise<boolean> {
+        try {
+            // Placeholder implementation
+            // In production, this would use ethers.js to query ERC-20 contract
+            logger.debug("Checking token balance", { walletAddress, tokenAddress, minAmount: minAmount.toString() });
+            return false; // Placeholder - implement actual token balance checking
+        } catch (error) {
+            logger.error("Token balance check failed", {
+                walletAddress,
+                tokenAddress,
+                error: (error as Error).message
+            });
+            return false;
+        }
+    }
+
+    /**
      * Convert Kodiak balance format to domain Balance
      */
     private convertKodiakBalanceToDomain(kodiakBalance: KodiakAccountInfo): Balance {

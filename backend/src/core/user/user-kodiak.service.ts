@@ -16,15 +16,8 @@
  */
 
 import { userLogger } from "../../core/logging";
-/*import {
-    ErrorInfo,
-    createErrorInfo,
-    createEnhancedErrorInfo
-} from "../../core/logging";
-import { ICacheService } from "@trade-bot/shared";*/
 import { KodiakConnectionData, KodiakConnectionResult, KodiakConnectionStatus } from "../../infrastructure/external/kodiak-connection.service";
-import { kodiakConnectionService } from "../../infrastructure/external/kodiak-connection.service";
-import { connectionCache } from "../../infrastructure/cache/connection-cache.service";
+import { ICacheService } from "@trade-bot/shared";
 
 // Simple in-memory cache for Kodiak status
 interface KodiakStatusCache {
@@ -89,7 +82,7 @@ export class UserKodiakService {
             });
 
             // Check cache first to avoid duplicate API calls
-            const cachedResult = await connectionCache.getCachedResult(userId, connectionData.accountId);
+            const cachedResult = await this.deps.cache.getCachedResult(userId, connectionData.accountId);
             if (cachedResult) {
                 timer.success({
                     cached: true,
@@ -347,8 +340,3 @@ export function createUserKodiakService(deps: UserKodiakServiceDependencies): Us
     return new UserKodiakService(deps);
 }
 
-// Legacy singleton instance for backward compatibility
-export const userKodiakService = createUserKodiakService({
-    kodiakConnectionService,
-    cache: connectionCache
-});

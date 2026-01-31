@@ -85,8 +85,7 @@ import { withCredentials, SecureCredentials } from "../../../infrastructure/secu
 import { engineManager } from "../../../core/strategies/engine-manager.service";
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service"; // ✅ Rate limiting
 import logger from "../../../core/logging/logger.service";
-import { botManagementService } from "../../../core/bots/bot-management.service";
-import { marketService } from "../../../core/market/market.service";
+import { serviceProvider } from "../../../core/service-provider";
 
 const router = Router();
 
@@ -110,6 +109,7 @@ function getUserId(req: AuthenticatedRequest): string {
  */
 async function hasUserKodiakCredentials(userId: string): Promise<boolean> {
     try {
+        const marketService = serviceProvider.getMarketService();
         const hasCredentials = await marketService.hasUserKodiakCredentials(userId);
         return hasCredentials;
     } catch (error) {
@@ -195,6 +195,7 @@ router.get(
         }
 
         try {
+            const botManagementService = serviceProvider.getBotManagementService();
             const botInstances = await botManagementService.getBotInstances(userId);
 
             res.json({
@@ -353,6 +354,7 @@ router.post(
             await engineManager.ensureEngineRunning();
 
             // Create and start bot using bot management service
+            const botManagementService = serviceProvider.getBotManagementService();
             const botInstance = await botManagementService.createAndStartBot(userId, strategyId, parseFloat(notionalAmount));
 
             // Check if user has verified credentials first
@@ -495,6 +497,7 @@ router.post(
             const { botId } = req.body;
 
             // Stop bot using service
+            const botManagementService = serviceProvider.getBotManagementService();
             await botManagementService.stopBot(userId, botId);
 
             res.json({
@@ -528,6 +531,7 @@ router.get(
             const botId = req.params.botId as string;
 
             // Get bot status from service
+            const botManagementService = serviceProvider.getBotManagementService();
             const botInstance = await botManagementService.getBotInstance(botId);
 
             if (!botInstance || botInstance.userId !== userId) {
@@ -630,6 +634,7 @@ router.get(
             const botId = req.params.botId as string;
 
             // Get bot performance from service
+            const botManagementService = serviceProvider.getBotManagementService();
             const performance = await botManagementService.getBotPerformance(botId);
 
             res.json({
@@ -694,6 +699,7 @@ router.post(
             }
 
             // Initiate emergency stop using service
+            const botManagementService = serviceProvider.getBotManagementService();
             await botManagementService.emergencyStop(botId, userId);
 
             res.json({

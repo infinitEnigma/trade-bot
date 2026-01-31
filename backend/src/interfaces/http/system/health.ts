@@ -1,7 +1,7 @@
 /** @format */
 
 import { Router, Request, Response } from "express";
-import { healthService } from "../../../core/system/health.service";
+import { getHealthService } from "../../../core/service-provider";
 import { getPool, getPoolMetrics } from "../../../database/pool";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { keyManagementService } from "../../../infrastructure/security/key-management.service";
@@ -32,7 +32,7 @@ router.get("/health", (req: Request, res: Response) => {
 // Detailed health check with dependency checks
 router.get("/health/detailed", async (req: Request, res: Response) => {
   try {
-    const health = await healthService.getSystemHealth();
+    const health = await getHealthService().getSystemHealth();
 
     const statusCode = health.status === "healthy" ? 200 : 503; // 503 Service Unavailable
 
@@ -270,8 +270,8 @@ router.get("/health/external", async (req: Request, res: Response) => {
 // Application metrics endpoint
 router.get("/metrics", async (req: Request, res: Response) => {
   try {
-    const metrics = await healthService.getPerformanceMetrics();
-    const info = await healthService.getSystemInfo();
+    const metrics = await getHealthService().getPerformanceMetrics();
+    const info = await getHealthService().getSystemInfo();
 
     const uptime = Math.floor((Date.now() - START_TIME) / 1000);
 

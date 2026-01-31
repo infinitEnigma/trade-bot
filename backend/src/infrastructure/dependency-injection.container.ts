@@ -38,7 +38,13 @@ import { AuthService } from '../core/auth/auth.service.pure';
 import { PositionService } from '../core/strategies/position.service.pure';
 import { RoleManagementService } from '../core/auth/role-management.service.pure';
 import { RoleQualificationService } from '../core/auth/role-qualification.service';
-import { WalletQualificationService, walletQualificationService } from '../core/wallet/wallet-qualification.service';
+import { WalletQualificationService } from '../core/wallet/wallet-qualification.service.pure';
+import { StrategyService } from '../core/strategies/strategy.service';
+import { MarketService } from '../core/market/market.service';
+import { HealthService } from '../core/system/health.service.pure';
+import { PositionValidatorService } from '../core/strategies/position-validator.service.pure';
+import { PositionSyncService } from '../core/strategies/position-sync.service.pure';
+import { EngineManager } from '../core/strategies/engine-manager.service.pure';
 
 /**
  * Dependency Injection Container
@@ -227,10 +233,25 @@ export class DependencyInjectionContainer {
     }
 
     /**
-     * Wallet Qualification Service - Singleton service for wallet qualification
+     * Wallet Qualification Service - Pure business logic for wallet qualification
      */
     get walletQualificationService(): WalletQualificationService {
-        return walletQualificationService;
+        return new WalletQualificationService({
+            userRepository: this.userRepository,
+            externalApi: this.externalApiService,
+            logger: this.loggerService
+        });
+    }
+
+    /**
+     * Strategy Service - Business logic for strategy management operations
+     */
+    get strategyService(): StrategyService {
+        return new StrategyService({
+            strategyRepository: this.strategyRepository,
+            botInstanceRepository: this.botInstanceRepository,
+            logger: this.loggerService
+        });
     }
 
     /**
@@ -240,7 +261,60 @@ export class DependencyInjectionContainer {
         return new BotManagementService({
             botInstanceRepository: this.botInstanceRepository,
             strategyRepository: this.strategyRepository,
-            auditLogRepository: this.auditLogRepository
+            auditLogRepository: this.auditLogRepository,
+            logger: this.loggerService
+        });
+    }
+
+    /**
+     * Market Service - Business logic for market operations
+     */
+    get marketService(): MarketService {
+        return new MarketService({
+            kodiakCredentialsRepository: this.kodiakCredentialsRepository
+        });
+    }
+
+    /**
+     * Position Validator Service - Pure business logic for position validation
+     */
+    get positionValidatorService(): PositionValidatorService {
+        return new PositionValidatorService({
+            userRepository: this.userRepository,
+            positionRepository: this.positionRepository,
+            cache: this.cacheService,
+            externalApi: this.externalApiService,
+            logger: this.loggerService
+        });
+    }
+
+    /**
+     * Position Sync Service - Pure business logic for position synchronization
+     */
+    get positionSyncService(): PositionSyncService {
+        return new PositionSyncService({
+            positionRepository: this.positionRepository,
+            userRepository: this.userRepository,
+            cache: this.cacheService,
+            externalApi: this.externalApiService,
+            logger: this.loggerService
+        });
+    }
+
+    /**
+     * Health Service - Business logic for system health monitoring
+     */
+    get healthService(): HealthService {
+        return new HealthService({});
+    }
+
+    /**
+     * Engine Manager - Pure business logic for engine management
+     */
+    get engineManager(): EngineManager {
+        return new EngineManager({
+            botInstanceRepository: this.botInstanceRepository,
+            logger: this.loggerService
         });
     }
 
@@ -401,7 +475,13 @@ export const getBotInstanceRepository = () => diContainer.botInstanceRepository;
 export const getBalanceService = () => diContainer.balanceService;
 export const getAuthService = () => diContainer.authService;
 export const getPositionService = () => diContainer.positionService;
+export const getStrategyService = () => diContainer.strategyService;
 export const getBotManagementService = () => diContainer.botManagementService;
+export const getMarketService = () => diContainer.marketService;
+export const getHealthService = () => diContainer.healthService;
+export const getPositionValidatorService = () => diContainer.positionValidatorService;
+export const getPositionSyncService = () => diContainer.positionSyncService;
+export const getEngineManager = () => diContainer.engineManager;
 
 // WebSocket Services
 export const getWebSocketService = () => diContainer.webSocketService;

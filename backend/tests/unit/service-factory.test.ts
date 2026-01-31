@@ -56,11 +56,16 @@ describe('Service Factory Interface', () => {
             expect(factory.getAuthService).toBeDefined();
             expect(factory.getBalanceService).toBeDefined();
             expect(factory.getPositionService).toBeDefined();
+            expect(factory.getPositionValidatorService).toBeDefined();
             expect(factory.getRoleManagementService).toBeDefined();
             expect(factory.getRoleQualificationService).toBeDefined();
             expect(factory.getWalletQualificationService).toBeDefined();
             expect(factory.getUserProfileService).toBeDefined();
             expect(factory.getUserKodiakService).toBeDefined();
+            expect(factory.getBotManagementService).toBeDefined();
+            expect(factory.getStrategyService).toBeDefined();
+            expect(factory.getMarketService).toBeDefined();
+            expect(factory.getHealthService).toBeDefined();
             expect(factory.getAllServices).toBeDefined();
             expect(factory.healthCheck).toBeDefined();
         });
@@ -316,20 +321,32 @@ describe('Service Factory Interface', () => {
             const mockAuthService = { authenticate: jest.fn() };
             const mockBalanceService = { getBalance: jest.fn() };
             const mockPositionService = { validatePosition: jest.fn() };
+            const mockPositionValidatorService = { validateUserPosition: jest.fn() };
+            const mockPositionSyncService = { syncPositionsFromExternalAPI: jest.fn() };
             const mockRoleManagementService = { assignRole: jest.fn() };
             const mockUserProfileService = { getUserProfile: jest.fn() };
             const mockUserKodiakService = { linkKodiakAccount: jest.fn() };
             const mockBotManagementService = { manageBots: jest.fn() };
+            const mockStrategyService = { manageStrategies: jest.fn() };
+            const mockMarketService = { getMarketPrices: jest.fn() };
+            const mockHealthService = { getSystemHealth: jest.fn() };
+            const mockEngineManager = { ensureEngineRunning: jest.fn() };
 
             mockDiContainer.authService = mockAuthService;
             mockDiContainer.balanceService = mockBalanceService;
             mockDiContainer.positionService = mockPositionService;
+            mockDiContainer.positionValidatorService = mockPositionValidatorService;
+            mockDiContainer.positionSyncService = mockPositionSyncService;
             mockDiContainer.roleManagementService = mockRoleManagementService;
             mockDiContainer.userRepository = {} as any;
             mockDiContainer.cacheService = {} as any;
             mockDiContainer.passwordService = {} as any;
             mockDiContainer.auditLogRepository = {} as any;
             mockDiContainer.botManagementService = mockBotManagementService;
+            mockDiContainer.strategyService = mockStrategyService;
+            mockDiContainer.marketService = mockMarketService;
+            mockDiContainer.healthService = mockHealthService;
+            mockDiContainer.engineManager = mockEngineManager;
 
             // Set up the mock constructors to return our mock services
             (UserProfileService as jest.MockedClass<typeof UserProfileService>).mockImplementation(
@@ -346,10 +363,16 @@ describe('Service Factory Interface', () => {
                 authService: true,
                 balanceService: true,
                 positionService: true,
+                positionValidatorService: true,
+                positionSyncService: true,
                 roleManagementService: true,
                 userProfileService: true,
                 userKodiakService: true,
-                botManagementService: true
+                botManagementService: true,
+                strategyService: true,
+                marketService: true,
+                healthService: true,
+                engineManager: true
             });
             expect(health.details).toEqual({
                 authService: {
@@ -361,6 +384,14 @@ describe('Service Factory Interface', () => {
                     type: 'Object'
                 },
                 positionService: {
+                    healthy: true,
+                    type: 'Object'
+                },
+                positionValidatorService: {
+                    healthy: true,
+                    type: 'Object'
+                },
+                positionSyncService: {
                     healthy: true,
                     type: 'Object'
                 },
@@ -377,6 +408,22 @@ describe('Service Factory Interface', () => {
                     type: 'Object'
                 },
                 botManagementService: {
+                    healthy: true,
+                    type: 'Object'
+                },
+                strategyService: {
+                    healthy: true,
+                    type: 'Object'
+                },
+                marketService: {
+                    healthy: true,
+                    type: 'Object'
+                },
+                healthService: {
+                    healthy: true,
+                    type: 'Object'
+                },
+                engineManager: {
                     healthy: true,
                     type: 'Object'
                 }
@@ -411,10 +458,16 @@ describe('Service Factory Interface', () => {
                 authService: true,
                 balanceService: true,
                 positionService: false,
+                positionValidatorService: false,
+                positionSyncService: false,
                 roleManagementService: true,
                 userProfileService: false,
                 userKodiakService: true,
-                botManagementService: false
+                botManagementService: false,
+                strategyService: false,
+                marketService: false,
+                healthService: false,
+                engineManager: false
             });
             expect(health.details.positionService).toEqual({
                 healthy: false,
@@ -425,6 +478,26 @@ describe('Service Factory Interface', () => {
                 error: 'Service unavailable'
             });
             expect(health.details.botManagementService).toEqual({
+                healthy: false,
+                error: 'Service unavailable'
+            });
+            expect(health.details.strategyService).toEqual({
+                healthy: false,
+                error: 'Service unavailable'
+            });
+            expect(health.details.marketService).toEqual({
+                healthy: false,
+                error: 'Service unavailable'
+            });
+            expect(health.details.positionValidatorService).toEqual({
+                healthy: false,
+                error: 'Service unavailable'
+            });
+            expect(health.details.positionSyncService).toEqual({
+                healthy: false,
+                error: 'Service unavailable'
+            });
+            expect(health.details.healthService).toEqual({
                 healthy: false,
                 error: 'Service unavailable'
             });

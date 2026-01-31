@@ -66,6 +66,11 @@ export interface IUserRepository {
         roles: string[];
         hasCredentials: boolean;
     } | null>;
+
+    /**
+     * Get user's wallet address from credentials
+     */
+    getWalletAddress(userId: string): Promise<string | null>;
 }
 
 // ===========================================

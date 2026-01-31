@@ -173,6 +173,3 @@ export class HealthService {
 export function createHealthService(deps: HealthServiceDependencies): HealthService {
     return new HealthService(deps);
 }
-
-// Legacy singleton instance for backward compatibility
-export const healthService = createHealthService({});
