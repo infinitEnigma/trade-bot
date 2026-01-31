@@ -24,6 +24,7 @@ import { RoleQualificationService } from './auth/role-qualification.service';
 import { WalletQualificationService } from './wallet/wallet-qualification.service';
 import { UserProfileService } from './user/user-profile.service';
 import { UserKodiakService } from './user/user-kodiak.service';
+import { BotManagementService } from './bots/bot-management.service';
 import { IPasswordService, IUserRepository } from '@trade-bot/shared';
 import { kodiakConnectionService } from '../infrastructure/external/kodiak-connection.service';
 import { connectionCache } from '../infrastructure/cache/connection-cache.service';
@@ -80,6 +81,11 @@ export interface IServiceFactory {
     getUserKodiakService(): UserKodiakService | undefined;
 
     /**
+     * Get Bot Management Service instance
+     */
+    getBotManagementService(): BotManagementService | undefined;
+
+    /**
      * Get all service instances for health checks
      */
     getAllServices(): {
@@ -89,6 +95,7 @@ export interface IServiceFactory {
         roleManagementService: RoleManagementService | undefined;
         userProfileService: UserProfileService | undefined;
         userKodiakService: UserKodiakService | undefined;
+        botManagementService: BotManagementService | undefined;
     };
 
     /**
@@ -239,11 +246,12 @@ export class ServiceFactory implements IServiceFactory {
             const userProfileService = new UserProfileService({
                 userRepository: diContainer.userRepository,
                 cache: diContainer.cacheService,
-                passwordService: diContainer.passwordService
+                passwordService: diContainer.passwordService,
+                auditLogRepository: diContainer.auditLogRepository
             });
             this.logger.debug('User Profile Service created with dependencies', {
                 service: 'UserProfileService',
-                dependencies: ['userRepository', 'cache', 'passwordService']
+                dependencies: ['userRepository', 'cache', 'passwordService', 'auditLogRepository']
             });
             return userProfileService;
         } catch (error) {
@@ -277,6 +285,25 @@ export class ServiceFactory implements IServiceFactory {
     }
 
     /**
+     * Get Bot Management Service instance with proper dependencies
+     */
+    getBotManagementService(): BotManagementService | undefined {
+        try {
+            const botManagementService = diContainer.botManagementService;
+            this.logger.debug('Bot Management Service retrieved from container', {
+                service: 'BotManagementService',
+                implementation: 'pure'
+            });
+            return botManagementService;
+        } catch (error) {
+            this.logger.error('Failed to get Bot Management Service', error instanceof Error ? error : undefined, {
+                service: 'BotManagementService'
+            });
+            return undefined;
+        }
+    }
+
+    /**
      * Get all service instances for health checks and monitoring
      */
     getAllServices(): {
@@ -286,6 +313,7 @@ export class ServiceFactory implements IServiceFactory {
         roleManagementService: RoleManagementService | undefined;
         userProfileService: UserProfileService | undefined;
         userKodiakService: UserKodiakService | undefined;
+        botManagementService: BotManagementService | undefined;
     } {
         try {
             return {
@@ -294,7 +322,8 @@ export class ServiceFactory implements IServiceFactory {
                 positionService: this.getPositionService(),
                 roleManagementService: this.getRoleManagementService(),
                 userProfileService: this.getUserProfileService(),
-                userKodiakService: this.getUserKodiakService()
+                userKodiakService: this.getUserKodiakService(),
+                botManagementService: this.getBotManagementService()
             };
         } catch (error) {
             this.logger.error('Failed to get all services', error instanceof Error ? error : undefined);
@@ -305,7 +334,8 @@ export class ServiceFactory implements IServiceFactory {
                 positionService: undefined,
                 roleManagementService: undefined,
                 userProfileService: undefined,
-                userKodiakService: undefined
+                userKodiakService: undefined,
+                botManagementService: undefined
             };
         }
     }

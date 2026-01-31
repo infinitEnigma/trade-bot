@@ -85,6 +85,8 @@ import { withCredentials, SecureCredentials } from "../../../infrastructure/secu
 import { engineManager } from "../../../core/strategies/engine-manager.service";
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service"; // ✅ Rate limiting
 import logger from "../../../core/logging/logger.service";
+import { botManagementService } from "../../../core/bots/bot-management.service";
+import { marketService } from "../../../core/market/market.service";
 
 const router = Router();
 
@@ -108,11 +110,8 @@ function getUserId(req: AuthenticatedRequest): string {
  */
 async function hasUserKodiakCredentials(userId: string): Promise<boolean> {
     try {
-        const result = await query(
-            "SELECT id FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
-            [userId]
-        );
-        return result.rows.length > 0;
+        const hasCredentials = await marketService.hasUserKodiakCredentials(userId);
+        return hasCredentials;
     } catch (error) {
         logger.error("Failed to check user Kodiak credentials", {
             error: error instanceof Error ? error.message : String(error),
@@ -196,18 +195,11 @@ router.get(
         }
 
         try {
-            const result = await query(
-                `SELECT bi.*, s.name as strategy_name, s.type as strategy_type, s.config as strategy_config
-       FROM bot_instances bi
-       JOIN strategies s ON bi.strategy_id = s.id
-       WHERE bi.user_id = $1
-       ORDER BY bi.created_at DESC`,
-                [userId]
-            );
+            const botInstances = await botManagementService.getBotInstances(userId);
 
             res.json({
                 success: true,
-                data: result.rows,
+                data: botInstances,
                 timestamp: Date.now(),
             });
         } catch (err) {
@@ -360,7 +352,19 @@ router.post(
             // Ensure trading engine is running
             await engineManager.ensureEngineRunning();
 
-            // Verify strategy belongs to user
+            // Create and start bot using bot management service
+            const botInstance = await botManagementService.createAndStartBot(userId, strategyId, parseFloat(notionalAmount));
+
+            // Check if user has verified credentials first
+            const hasCredentials = await hasUserKodiakCredentials(userId);
+            if (!hasCredentials) {
+                const authError = new ValidationError("No verified Kodiak credentials found");
+                return res.status(authError.statusCode).json(
+                    createErrorResponse(authError, getCorrelationId())
+                );
+            }
+
+            // Get strategy details
             const strategyResult = await query<{ id: string; name: string; type: string; config: Record<string, unknown>; user_id: string }>(
                 "SELECT * FROM strategies WHERE id = $1 AND user_id = $2",
                 [strategyId, userId]
@@ -375,55 +379,6 @@ router.post(
 
             const strategy = strategyResult.rows[0];
 
-            // Check if bot can be started (simplified - check if strategy is already running)
-            const existingBot = await query(
-                "SELECT id FROM bot_instances WHERE strategy_id = $1 AND status IN ('RUNNING', 'STARTING')",
-                [strategyId]
-            );
-            if (existingBot.rows.length > 0) {
-                const conflictError = new ConflictError("Bot is already running for this strategy");
-                return res.status(conflictError.statusCode).json(
-                    createErrorResponse(conflictError, getCorrelationId())
-                );
-            }
-
-            // ✅ POSITION VALIDATION: Validate position size before starting bot
-            const { validateUserPosition } =
-                await import("../../../core/strategies/position-validator.service.js");
-            const validation = await validateUserPosition(
-                userId,
-                parseFloat(notionalAmount),
-                (strategy.config as { symbol?: string })?.symbol || "PERP_BTC_USDC"
-            );
-
-            if (!validation.isValid) {
-                const positionError = new ValidationError(validation.reason || "Position size validation failed");
-                const errorResponse = createErrorResponse(positionError, getCorrelationId());
-                (errorResponse as Record<string, unknown>).data = {
-                    requested: notionalAmount,
-                    max_allowed: validation.maxAllowed,
-                    recommended: validation.recommended,
-                };
-                return res.status(positionError.statusCode).json(errorResponse);
-            }
-
-            // Create bot instance
-            const botId = uuidv4();
-            await query(
-                `INSERT INTO bot_instances (id, strategy_id, user_id, status, running_time, total_trades, total_pnl)
-       VALUES ($1, $2, $3, 'RUNNING', 0, 0, 0)`,
-                [botId, strategyId, userId]
-            );
-
-            // Check if user has verified credentials first
-            const hasCredentials = await hasUserKodiakCredentials(userId);
-            if (!hasCredentials) {
-                const authError = new ValidationError("No verified Kodiak credentials found");
-                return res.status(authError.statusCode).json(
-                    createErrorResponse(authError, getCorrelationId())
-                );
-            }
-
             // Log credential access for audit trail
             await query(
                 "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
@@ -432,7 +387,7 @@ router.post(
                     "CREDENTIAL_ACCESS",
                     {
                         action: "bot_start",
-                        botId,
+                        botId: botInstance.id,
                         strategyId,
                         timestamp: new Date().toISOString()
                     },
@@ -450,7 +405,7 @@ router.post(
                 const sessionKey = randomBytes(32).toString('hex');
 
                 // Get encryption service instance
-                const { encryptionService } = await import("../../../infrastructure/security/encryption.service.js");
+                const { encryptionService } = await import("../../../infrastructure/security/encryption.service");
                 const encryptedSessionKey = await encryptionService.encryptWithVersion(sessionKey);
 
                 // Create decrypted credentials object (temporary, will be encrypted immediately)
@@ -479,7 +434,7 @@ router.post(
                 // Emit WebSocket event with encrypted credentials
                 const io = req.app.get("io");
                 io.emit("bot:start", {
-                    botId,
+                    botId: botInstance.id,
                     strategyId,
                     strategy,
                     userId,
@@ -491,7 +446,7 @@ router.post(
             res.json({
                 success: true,
                 data: {
-                    botId,
+                    botId: botInstance.id,
                     strategyId,
                     status: "RUNNING",
                     strategy: {
@@ -506,8 +461,10 @@ router.post(
             logger.error("Start bot error", {
                 ...getContextForLogging(),
                 error: err instanceof Error ? err.message : String(err),
+                stack: err instanceof Error ? err.stack : undefined,
                 userId: req.user?.userId,
             });
+            console.error("Detailed error in start bot endpoint:", err);
             const internalError = new DatabaseError("Failed to start bot");
             res.status(internalError.statusCode).json(
                 createErrorResponse(internalError, getCorrelationId())
@@ -537,43 +494,8 @@ router.post(
             const userId = getUserId(req);
             const { botId } = req.body;
 
-            // Validate bot ownership (simplified)
-            const botResult = await query<{ strategy_id: string; status: string }>(
-                "SELECT strategy_id, status FROM bot_instances WHERE id = $1 AND user_id = $2",
-                [botId, userId]
-            );
-
-            if (botResult.rows.length === 0) {
-                const notFoundError = new NotFoundError("Bot not found");
-                return res.status(notFoundError.statusCode).json(
-                    createErrorResponse(notFoundError, getCorrelationId())
-                );
-            }
-
-            const botData = botResult.rows[0];
-
-            // Check if bot can be stopped (simplified - only running bots can be stopped)
-            if (botData.status !== 'RUNNING') {
-                const conflictError = new ConflictError("Bot is not running");
-                return res.status(conflictError.statusCode).json(
-                    createErrorResponse(conflictError, getCorrelationId())
-                );
-            }
-
-            // Update bot status
-            await query("UPDATE bot_instances SET status = 'STOPPED', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [botId]);
-
-            // Update strategy as inactive
-            await query("UPDATE strategies SET active = false WHERE id = $1", [botData.strategy_id]);
-
-            // Emit WebSocket event to notify bot engine
-            const io = req.app.get("io");
-            io.emit("bot:stop", { botId, strategyId: botData.strategy_id });
-
-            // Check if engine should be stopped (no active bots)
-            setTimeout(async () => {
-                await engineManager.stopEngineIfNoActiveBots();
-            }, 1000); // Small delay to ensure bot is stopped
+            // Stop bot using service
+            await botManagementService.stopBot(userId, botId);
 
             res.json({
                 success: true,
@@ -605,38 +527,18 @@ router.get(
             const userId = getUserId(req);
             const botId = req.params.botId as string;
 
-            // Get bot status from database
-            const botResult = await query<{
-                id: string;
-                user_id: string;
-                strategy_id: string;
-                status: string;
-                last_heartbeat: Date | string | null;
-                last_error: string | null;
-                created_at: Date | string;
-                updated_at: Date | string;
-            }>(
-                "SELECT * FROM bot_instances WHERE id = $1 AND user_id = $2",
-                [botId, userId]
-            );
+            // Get bot status from service
+            const botInstance = await botManagementService.getBotInstance(botId);
 
-            if (botResult.rows.length === 0) {
+            if (!botInstance || botInstance.userId !== userId) {
                 const notFoundError = new NotFoundError("Bot not found");
                 return res.status(notFoundError.statusCode).json(
                     createErrorResponse(notFoundError, getCorrelationId())
                 );
             }
 
-            const bot = botResult.rows[0];
             const statusInfo = {
-                id: bot.id,
-                user_id: bot.user_id,
-                strategy_id: bot.strategy_id,
-                status: bot.status,
-                last_heartbeat: bot.last_heartbeat,
-                last_error: bot.last_error,
-                created_at: bot.created_at,
-                updated_at: bot.updated_at,
+                ...botInstance,
                 statusValidation: {
                     isStale: false, // Simplified
                     lastHeartbeatAge: 0,
@@ -727,27 +629,8 @@ router.get(
             const userId = getUserId(req);
             const botId = req.params.botId as string;
 
-            // Get basic performance from database (simplified)
-            const performanceResult = await query<{ total_trades: number; total_pnl: number }>(
-                "SELECT total_trades, total_pnl FROM bot_instances WHERE id = $1 AND user_id = $2",
-                [botId, userId]
-            );
-
-            if (performanceResult.rows.length === 0) {
-                const notFoundError = new NotFoundError("Bot not found");
-                return res.status(notFoundError.statusCode).json(
-                    createErrorResponse(notFoundError, getCorrelationId())
-                );
-            }
-
-            const performance = {
-                totalTrades: performanceResult.rows[0].total_trades || 0,
-                totalPnL: performanceResult.rows[0].total_pnl || 0,
-                winRate: 0, // Simplified
-                avgTrade: 0, // Simplified
-                bestTrade: 0, // Simplified
-                worstTrade: 0, // Simplified
-            };
+            // Get bot performance from service
+            const performance = await botManagementService.getBotPerformance(botId);
 
             res.json({
                 success: true,
@@ -810,72 +693,8 @@ router.post(
                     .json({ success: false, error: "Bot ID required" });
             }
 
-            // Validate bot ownership (simplified)
-            const botResult = await query<{ strategy_id: string; status: string }>(
-                "SELECT strategy_id, status FROM bot_instances WHERE id = $1 AND user_id = $2",
-                [botId, userId]
-            );
-
-            if (botResult.rows.length === 0) {
-                const notFoundError = new NotFoundError("Bot not found");
-                return res.status(notFoundError.statusCode).json(
-                    createErrorResponse(notFoundError, getCorrelationId())
-                );
-            }
-
-            const botData = botResult.rows[0];
-
-            if (botData.status !== "RUNNING") {
-                return res
-                    .status(400)
-                    .json({ success: false, error: "Bot is not running" });
-            }
-
-            // Update bot status to FORCE_STOPPING
-            await query("UPDATE bot_instances SET status = 'FORCE_STOPPING', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [botId]);
-
-            // Log emergency stop action
-            await query(
-                "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
-                [
-                    userId,
-                    "EMERGENCY_STOP",
-                    { botId, strategyId: botData.strategy_id },
-                ]
-            );
-
-            // Emit WebSocket event to notify bot engine - CANCEL_ALL_ORDERS
-            const io = req.app.get("io");
-            io.emit("bot:emergency-stop", {
-                botId,
-                strategyId: botData.strategy_id,
-                action: "CANCEL_ALL_ORDERS",
-                timestamp: Date.now(),
-            });
-
-            // Set timeout to mark as stopped if bot doesn't respond
-            setTimeout(async () => {
-                try {
-                    const currentBot = await query<{ status: string }>(
-                        "SELECT status FROM bot_instances WHERE id = $1",
-                        [botId]
-                    );
-
-                    if (currentBot.rows[0]?.status === "FORCE_STOPPING") {
-                        await query("UPDATE bot_instances SET status = 'STOPPED', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [botId]);
-
-                        // Update strategy as inactive
-                        await query("UPDATE strategies SET active = false WHERE id = $1", [
-                            botData.strategy_id,
-                        ]);
-                    }
-                } catch (error) {
-                    logger.error("Emergency stop timeout error", {
-                        error: error instanceof Error ? error.message : String(error),
-                        botId,
-                    });
-                }
-            }, 30000); // 30 second timeout
+            // Initiate emergency stop using service
+            await botManagementService.emergencyStop(botId, userId);
 
             res.json({
                 success: true,

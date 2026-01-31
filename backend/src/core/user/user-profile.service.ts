@@ -7,9 +7,9 @@
 
 import { userLogger } from "../../core/logging";
 import { selectAuthService } from "../service-selector";
-import { ICacheService, IPasswordService, IUserRepository } from "@trade-bot/shared";
-import { query } from "../../database/pool";
+import { ICacheService, IPasswordService, IUserRepository, IAuditLogRepository } from "@trade-bot/shared";
 import { userRepositoryAdapter } from "../../infrastructure/adapters/repositories/user-repository.adapter";
+import { auditLogRepositoryAdapter } from "../../infrastructure/adapters/repositories/audit-log-repository.adapter";
 import { redisCacheAdapter } from "../../infrastructure/adapters/cache/redis-cache.adapter";
 import { passwordService } from "../../infrastructure/adapters/encryption/password.service.adapter";
 
@@ -58,6 +58,7 @@ export interface UserProfileServiceDependencies {
     userRepository: IUserRepository;
     cache: ICacheService;
     passwordService: IPasswordService;
+    auditLogRepository: IAuditLogRepository;
 }
 
 export class UserProfileService {
@@ -264,23 +265,15 @@ export class UserProfileService {
         userId: string,
         changes: { email?: string }
     ): Promise<{ email: string; updatedAt: string }> {
-        // For now, we'll need to use direct database query since the repository doesn't have an update method
-        // This is a limitation of the current repository interface
-        const emailToSet = changes.email ? changes.email.toLowerCase() : '';
-        const updateResult = await query<{ id: string; email: string }>(`
-            UPDATE users
-            SET email = $1, updated_at = $2
-            WHERE id = $3
-            RETURNING id, email
-        `, [emailToSet, new Date(), userId]);
+        const updateResult = await this.deps.userRepository.updateProfile(userId, changes);
 
-        if (updateResult.rows.length === 0) {
+        if (!updateResult) {
             throw new Error('User not found');
         }
 
         return {
-            email: updateResult.rows[0].email,
-            updatedAt: new Date().toISOString(),
+            email: updateResult.email,
+            updatedAt: updateResult.updatedAt.toISOString(),
         };
     }
 
@@ -288,10 +281,11 @@ export class UserProfileService {
      * Log profile update for audit trail
      */
     private async logProfileUpdate(userId: string, changes: string[]): Promise<void> {
-        await query(
-            "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
-            [userId, "PROFILE_UPDATED", { changes }]
-        );
+        await this.deps.auditLogRepository.logEvent({
+            userId,
+            action: "PROFILE_UPDATED",
+            details: { changes }
+        });
     }
 
     /**
@@ -320,5 +314,6 @@ export function createUserProfileService(deps: UserProfileServiceDependencies): 
 export const userProfileService = createUserProfileService({
     userRepository: userRepositoryAdapter,
     cache: redisCacheAdapter,
-    passwordService: passwordService
+    passwordService: passwordService,
+    auditLogRepository: auditLogRepositoryAdapter
 });

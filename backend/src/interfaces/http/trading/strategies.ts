@@ -2,12 +2,9 @@
 
 import { Router, Response } from "express";
 import Joi from "joi";
-//import { v4 as uuidv4 } from "uuid";
-//import { selectAuthService } from "../../../core/service-selector";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
-//import { Pool } from "pg";
-import { query } from "../../../database/pool"; // ✅ Import from centralized module
 import logger from "../../../core/logging/logger.service";
+import { strategyService } from "../../../core/strategies/strategy.service";
 
 const router = Router();
 
@@ -38,14 +35,11 @@ router.get(
         throw new Error("User not authenticated");
       }
 
-      const result = await query(
-        "SELECT * FROM strategies WHERE user_id = $1 ORDER BY created_at DESC",
-        [req.user.userId]
-      );
+      const strategies = await strategyService.getStrategies(req.user.userId);
 
       res.json({
         success: true,
-        data: result.rows,
+        data: strategies,
         timestamp: Date.now(),
       });
     } catch (err) {
@@ -78,16 +72,11 @@ router.post(
           .json({ success: false, error: error.details[0].message });
       }
 
-      const result = await query(
-        `INSERT INTO strategies (user_id, name, type, config)
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
-        [req.user.userId, value.name, value.type, JSON.stringify(value.config)]
-      );
+      const strategy = await strategyService.createStrategy(req.user.userId, value);
 
       res.status(201).json({
         success: true,
-        data: result.rows[0],
+        data: strategy,
         timestamp: Date.now(),
       });
     } catch (err) {
@@ -113,12 +102,17 @@ router.get(
         throw new Error("User not authenticated");
       }
 
-      const result = await query(
-        "SELECT * FROM strategies WHERE id = $1 AND user_id = $2",
-        [req.params.id, req.user.userId]
-      );
+      const strategyId = req.params.id as string;
+      const strategy = await strategyService.getStrategy(strategyId);
 
-      if (result.rows.length === 0) {
+      if (!strategy) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Strategy not found" });
+      }
+
+      // Verify user ownership
+      if (strategy.userId !== req.user.userId) {
         return res
           .status(404)
           .json({ success: false, error: "Strategy not found" });
@@ -126,7 +120,7 @@ router.get(
 
       res.json({
         success: true,
-        data: result.rows[0],
+        data: strategy,
         timestamp: Date.now(),
       });
     } catch (err) {
@@ -158,29 +152,26 @@ router.put(
           .json({ success: false, error: error.details[0].message });
       }
 
-      const result = await query(
-        `UPDATE strategies
-       SET name = $1, type = $2, config = $3, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $4 AND user_id = $5
-       RETURNING *`,
-        [
-          value.name,
-          value.type,
-          JSON.stringify(value.config),
-          req.params.id,
-          req.user.userId,
-        ]
-      );
-
-      if (result.rows.length === 0) {
+      const strategyId = req.params.id as string;
+      // Verify strategy exists and belongs to user
+      const existingStrategy = await strategyService.getStrategy(strategyId);
+      if (!existingStrategy) {
         return res
           .status(404)
           .json({ success: false, error: "Strategy not found" });
       }
 
+      if (existingStrategy.userId !== req.user.userId) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Strategy not found" });
+      }
+
+      const updatedStrategy = await strategyService.updateStrategy(strategyId, value);
+
       res.json({
         success: true,
-        data: result.rows[0],
+        data: updatedStrategy,
         timestamp: Date.now(),
       });
     } catch (err) {
@@ -207,28 +198,22 @@ router.delete(
         throw new Error("User not authenticated");
       }
 
-      // Check if strategy exists
-      const existing = await query(
-        "SELECT id FROM strategies WHERE id = $1 AND user_id = $2",
-        [req.params.id, req.user.userId]
-      );
-
-      if (existing.rows.length === 0) {
+      const strategyId = req.params.id as string;
+      // Verify strategy exists and belongs to user
+      const existingStrategy = await strategyService.getStrategy(strategyId);
+      if (!existingStrategy) {
         return res
           .status(404)
           .json({ success: false, error: "Strategy not found" });
       }
 
-      // Delete associated bot instances first
-      await query("DELETE FROM bot_instances WHERE strategy_id = $1", [
-        req.params.id,
-      ]);
+      if (existingStrategy.userId !== req.user.userId) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Strategy not found" });
+      }
 
-      // Delete the strategy
-      await query("DELETE FROM strategies WHERE id = $1 AND user_id = $2", [
-        req.params.id,
-        req.user.userId,
-      ]);
+      await strategyService.deleteStrategy(strategyId);
 
       res.json({
         success: true,
@@ -259,40 +244,27 @@ router.get(
         throw new Error("User not authenticated");
       }
 
-      const strategyResult = await query(
-        "SELECT id FROM strategies WHERE id = $1 AND user_id = $2",
-        [req.params.id, req.user.userId]
-      );
-
-      if (strategyResult.rows.length === 0) {
+      const strategyId = req.params.id as string;
+      // Verify strategy exists and belongs to user
+      const strategyResult = await strategyService.getStrategy(strategyId);
+      if (!strategyResult) {
         return res
           .status(404)
           .json({ success: false, error: "Strategy not found" });
       }
 
-      // Get trade statistics
-      const statsResult = await query(
-        `SELECT
-         COUNT(*) as total_trades,
-         COALESCE(SUM(pnl), 0) as total_pnl,
-         COALESCE(AVG(pnl), 0) as avg_pnl
-       FROM trades
-       WHERE strategy_id = $1`,
-        [req.params.id]
-      );
+      if (strategyResult.userId !== req.user.userId) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Strategy not found" });
+      }
 
-      // Get recent trades
-      const recentTrades = await query(
-        "SELECT * FROM trades WHERE strategy_id = $1 ORDER BY executed_at DESC LIMIT 10",
-        [req.params.id]
-      );
+      // Get strategy performance
+      const performance = await strategyService.getStrategyPerformance(strategyId);
 
       res.json({
         success: true,
-        data: {
-          stats: statsResult.rows[0],
-          recentTrades: recentTrades.rows,
-        },
+        data: performance,
         timestamp: Date.now(),
       });
     } catch (err) {

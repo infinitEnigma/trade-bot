@@ -150,6 +150,54 @@ export class UserRepositoryAdapter implements IUserRepository {
     }
 
     /**
+     * Update user profile information
+     */
+    async updateProfile(id: string, updates: Partial<{ email: string; userLevel: UserLevel }>): Promise<User | null> {
+        try {
+            // Build update query dynamically based on provided fields
+            const updateFields: string[] = [];
+            const updateValues: any[] = [];
+            let valueIndex = 1;
+
+            if (updates.email) {
+                updateFields.push(`email = $${valueIndex}`);
+                updateValues.push(updates.email.toLowerCase());
+                valueIndex++;
+            }
+
+            if (updates.userLevel) {
+                updateFields.push(`user_level = $${valueIndex}`);
+                updateValues.push(updates.userLevel);
+                valueIndex++;
+            }
+
+            updateFields.push(`updated_at = NOW()`);
+            updateValues.push(id); // For the WHERE clause
+
+            const result = await query(
+                `UPDATE users SET ${updateFields.join(', ')} WHERE id = $${valueIndex} RETURNING id, email, user_level, created_at, updated_at`,
+                updateValues
+            );
+
+            if (result.rows.length === 0) {
+                return null;
+            }
+
+            const row = result.rows[0] as UserRow;
+            return this.mapRowToUser(row);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+
+            // Handle unique constraint violation for email
+            if (errorMessage.includes('duplicate key') || errorMessage.includes('unique constraint')) {
+                throw new Error('Email already exists');
+            }
+
+            throw new Error(`Failed to update user profile: ${errorMessage}`);
+        }
+    }
+
+    /**
      * Get authenticated user data with roles and credentials info
      */
     async getAuthenticatedUserData(id: string): Promise<{

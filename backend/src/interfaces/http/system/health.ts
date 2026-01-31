@@ -1,6 +1,7 @@
 /** @format */
 
 import { Router, Request, Response } from "express";
+import { healthService } from "../../../core/system/health.service";
 import { getPool, getPoolMetrics } from "../../../database/pool";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { keyManagementService } from "../../../infrastructure/security/key-management.service";
@@ -30,93 +31,23 @@ router.get("/health", (req: Request, res: Response) => {
 
 // Detailed health check with dependency checks
 router.get("/health/detailed", async (req: Request, res: Response) => {
-  const startTime = Date.now();
-  const checks = {
-    database: false,
-    redis: false,
-    memory: false,
-    responseTime: false,
-  };
-
-  const errors: string[] = [];
-
   try {
-    // Database health check
-    try {
-      const pool = getPool();
-      await pool.query("SELECT 1");
-      checks.database = true;
-      contextLogger.debug("Database health check passed");
-    } catch (dbError) {
-      errors.push(`Database: ${(dbError as Error).message}`);
-      contextLogger.warn("Database health check failed", {
-        error: (dbError as Error).message,
-      });
-    }
+    const health = await healthService.getSystemHealth();
 
-    // Redis health check
-    try {
-      const client = redisService.getClient();
-      await client.ping();
-      checks.redis = true;
-      contextLogger.debug("Redis health check passed");
-    } catch (redisError) {
-      errors.push(`Redis: ${(redisError as Error).message}`);
-      contextLogger.warn("Redis health check failed", {
-        error: (redisError as Error).message,
-      });
-    }
-
-    // Memory health check
-    const memUsage = process.memoryUsage();
-    const memUsageMB = {
-      rss: Math.round(memUsage.rss / 1024 / 1024),
-      heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
-      heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
-      external: Math.round(memUsage.external / 1024 / 1024),
-    };
-
-    // Consider unhealthy if heap usage > 80% or RSS > 500MB
-    if (memUsage.heapUsed / memUsage.heapTotal > 0.8 || memUsageMB.rss > 500) {
-      errors.push(
-        `Memory: High usage - Heap: ${memUsageMB.heapUsed}MB/${memUsageMB.heapTotal}MB, RSS: ${memUsageMB.rss}MB`
-      );
-      contextLogger.warn("Memory health check failed", { memUsageMB });
-    } else {
-      checks.memory = true;
-      contextLogger.debug("Memory health check passed", { memUsageMB });
-    }
-
-    // Response time check
-    const responseTime = Date.now() - startTime;
-    if (responseTime > 5000) {
-      // 5 seconds timeout
-      errors.push(`Response time: ${responseTime}ms (too slow)`);
-      contextLogger.warn("Response time health check failed", { responseTime });
-    } else {
-      checks.responseTime = true;
-      contextLogger.debug("Response time health check passed", { responseTime });
-    }
-
-    const overallHealth = Object.values(checks).every(check => check);
-    const statusCode = overallHealth ? 200 : 503; // 503 Service Unavailable
+    const statusCode = health.status === "healthy" ? 200 : 503; // 503 Service Unavailable
 
     res.status(statusCode).json({
-      status: overallHealth ? "healthy" : "unhealthy",
-      timestamp: new Date().toISOString(),
+      status: health.status,
+      timestamp: health.timestamp.toISOString(),
       uptime: Math.floor((Date.now() - START_TIME) / 1000),
       version: process.env.npm_package_version || "1.0.0",
       environment: process.env.NODE_ENV || "development",
-      checks,
-      memory: memUsageMB,
-      responseTime: `${responseTime}ms`,
-      ...(errors.length > 0 && { errors }),
+      checks: health.checks,
     });
 
     httpLogger.http("Detailed health check completed", {
-      overallHealth,
-      responseTime,
-      errorCount: errors.length,
+      overallHealth: health.status,
+      checks: Object.keys(health.checks),
       userAgent: req.get("User-Agent"),
       ip: req.ip,
     });
@@ -337,36 +268,38 @@ router.get("/health/external", async (req: Request, res: Response) => {
 });
 
 // Application metrics endpoint
-router.get("/metrics", (req: Request, res: Response) => {
-  const memUsage = process.memoryUsage();
-  const uptime = Math.floor((Date.now() - START_TIME) / 1000);
+router.get("/metrics", async (req: Request, res: Response) => {
+  try {
+    const metrics = await healthService.getPerformanceMetrics();
+    const info = await healthService.getSystemInfo();
 
-  res.json({
-    timestamp: new Date().toISOString(),
-    uptime_seconds: uptime,
-    memory: {
-      rss_bytes: memUsage.rss,
-      heap_total_bytes: memUsage.heapTotal,
-      heap_used_bytes: memUsage.heapUsed,
-      external_bytes: memUsage.external,
-      rss_mb: Math.round(memUsage.rss / 1024 / 1024),
-      heap_total_mb: Math.round(memUsage.heapTotal / 1024 / 1024),
-      heap_used_mb: Math.round(memUsage.heapUsed / 1024 / 1024),
-      external_mb: Math.round(memUsage.external / 1024 / 1024),
-    },
-    process: {
-      pid: process.pid,
-      node_version: process.version,
-      platform: process.platform,
-      arch: process.arch,
-    },
-    environment: {
-      node_env: process.env.NODE_ENV || "development",
-      version: process.env.npm_package_version || "1.0.0",
-    },
-  });
+    const uptime = Math.floor((Date.now() - START_TIME) / 1000);
 
-  contextLogger.debug("Metrics endpoint accessed");
+    res.json({
+      timestamp: new Date().toISOString(),
+      uptime_seconds: uptime,
+      ...metrics,
+      process: {
+        pid: process.pid,
+        node_version: process.version,
+        platform: process.platform,
+        arch: process.arch,
+      },
+      environment: {
+        node_env: process.env.NODE_ENV || "development",
+        version: process.env.npm_package_version || "1.0.0",
+      },
+    });
+
+    contextLogger.debug("Metrics endpoint accessed");
+  } catch (error) {
+    contextLogger.error("Metrics endpoint error", { error: (error as Error).message });
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch metrics",
+      message: (error as Error).message,
+    });
+  }
 });
 
 // Readiness probe (Kubernetes style)

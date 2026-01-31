@@ -24,6 +24,10 @@ import { strategyRepositoryAdapter } from './adapters/repositories/strategy-repo
 import { kodiakCredentialsRepositoryAdapter } from './adapters/repositories/kodiak-credentials-repository.adapter';
 import { auditLogRepositoryAdapter } from './adapters/repositories/audit-log-repository.adapter';
 import { roleRepositoryAdapter } from './adapters/repositories/role-repository.adapter';
+import { botInstanceRepositoryAdapter } from './adapters/repositories/bot-instance-repository.adapter';
+
+// Pure Services
+import { BotManagementService } from '../core/bots/bot-management.service';
 
 // Pure Services
 import { BalanceService } from '../core/wallet/balance.service.pure';
@@ -147,6 +151,13 @@ export class DependencyInjectionContainer {
         return roleRepositoryAdapter;
     }
 
+    /**
+     * Bot Instance Repository - Bot instance data management
+     */
+    get botInstanceRepository() {
+        return botInstanceRepositoryAdapter;
+    }
+
     // ===========================================
     // PURE BUSINESS SERVICES (Dependency Injection)
     // ===========================================
@@ -219,6 +230,17 @@ export class DependencyInjectionContainer {
         return walletQualificationService;
     }
 
+    /**
+     * Bot Management Service - Business logic for bot management operations
+     */
+    get botManagementService(): BotManagementService {
+        return new BotManagementService({
+            botInstanceRepository: this.botInstanceRepository,
+            strategyRepository: this.strategyRepository,
+            auditLogRepository: this.auditLogRepository
+        });
+    }
+
     // ===========================================
     // CONTAINER MANAGEMENT
     // ===========================================
@@ -243,7 +265,8 @@ export class DependencyInjectionContainer {
                 services: {
                     balance: 'BalanceService',
                     auth: 'AuthService',
-                    position: 'PositionService'
+                    position: 'PositionService',
+                    botManagement: 'BotManagementService'
                 }
             });
         } catch (error) {
@@ -314,9 +337,9 @@ export class DependencyInjectionContainer {
     } {
         return {
             infrastructureAdapters: 6, // cache, logger, token, password, encryption, externalApi
-            repositoryAdapters: 7, // user, balance, position, trade, strategy, kodiakCredentials, auditLog
-            businessServices: 3, // balance, auth, position
-            totalServices: 16
+            repositoryAdapters: 8, // user, balance, position, trade, strategy, kodiakCredentials, auditLog, botInstance
+            businessServices: 4, // balance, auth, position, botManagement
+            totalServices: 18
         };
     }
 }
@@ -351,8 +374,10 @@ export const getTradeRepository = () => diContainer.tradeRepository;
 export const getStrategyRepository = () => diContainer.strategyRepository;
 export const getKodiakCredentialsRepository = () => diContainer.kodiakCredentialsRepository;
 export const getAuditLogRepository = () => diContainer.auditLogRepository;
+export const getBotInstanceRepository = () => diContainer.botInstanceRepository;
 
 // Business Services
 export const getBalanceService = () => diContainer.balanceService;
 export const getAuthService = () => diContainer.authService;
 export const getPositionService = () => diContainer.positionService;
+export const getBotManagementService = () => diContainer.botManagementService;

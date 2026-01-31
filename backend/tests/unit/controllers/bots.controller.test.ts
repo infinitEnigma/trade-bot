@@ -11,36 +11,30 @@ jest.mock('../../../src/core/logging/logger.service', () => ({
     },
 }));
 
-// Mock the entire bots module
-jest.mock('../../../src/interfaces/http/bots', () => {
-    const express = require('express');
-    const mockBotManagementRoutes = express.Router();
-    const mockBotEngineRoutes = express.Router();
+import request from 'supertest';
+import { Express } from 'express';
 
-    // Create mock routes for testing
-    mockBotManagementRoutes.get('/instances', (req: any, res: any) => res.json({}));
-    mockBotManagementRoutes.post('/start', (req: any, res: any) => res.json({}));
-    mockBotManagementRoutes.post('/stop', (req: any, res: any) => res.json({}));
-    mockBotManagementRoutes.get('/status/:botId', (req: any, res: any) => res.json({}));
-    mockBotManagementRoutes.get('/performance/:botId', (req: any, res: any) => res.json({}));
-    mockBotManagementRoutes.get('/engine/status', (req: any, res: any) => res.json({}));
+// Mock middleware to pass through and set user context
+jest.mock('../../../src/interfaces/middleware/auth', () => ({
+    authMiddleware: jest.fn().mockImplementation((req: any, res: any, next: any) => {
+        req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
+        next();
+    }),
+    AuthenticatedRequest: jest.fn(),
+}));
 
-    mockBotEngineRoutes.post('/heartbeat', (req: any, res: any) => res.json({}));
-    mockBotEngineRoutes.post('/report-trade', (req: any, res: any) => res.json({}));
-    mockBotEngineRoutes.post('/engine-status', (req: any, res: any) => res.json({}));
-    mockBotEngineRoutes.get('/engine/health', (req: any, res: any) => res.json({}));
+jest.mock('../../../src/interfaces/middleware/validation', () => ({
+    validators: {
+        startBot: jest.fn().mockImplementation((req: any, res: any, next: any) => next()),
+        stopBot: jest.fn().mockImplementation((req: any, res: any, next: any) => next()),
+    },
+}));
 
-    return {
-        __esModule: true,
-        botManagementRoutes: mockBotManagementRoutes,
-        botEngineRoutes: mockBotEngineRoutes,
-    };
-});
-
-import { Request, Response } from 'express';
-import { botManagementRoutes, botEngineRoutes } from '../../../src/interfaces/http/bots';
-import { query } from '../../../src/database/pool';
-import { engineManager } from '../../../src/core/strategies/engine-manager.service';
+jest.mock('../../../src/infrastructure/security/rate-limiter.service', () => ({
+    RateLimiters: {
+        botInstances: jest.fn().mockImplementation((req: any, res: any, next: any) => next()),
+    },
+}));
 
 // Mock all other dependencies
 jest.mock('uuid', () => ({
@@ -56,6 +50,42 @@ jest.mock('../../../src/core/strategies/engine-manager.service', () => ({
         ensureEngineRunning: jest.fn().mockResolvedValue(undefined),
         stopEngineIfNoActiveBots: jest.fn().mockResolvedValue(undefined),
         getEngineStatus: jest.fn().mockResolvedValue({ running: true }),
+    },
+}));
+
+jest.mock('../../../src/core/bots/bot-management.service', () => ({
+    botManagementService: {
+        getBotInstances: jest.fn(),
+        getBotInstance: jest.fn(),
+        getBotPerformance: jest.fn(),
+        createAndStartBot: jest.fn(),
+        stopBot: jest.fn(),
+        emergencyStop: jest.fn(),
+    },
+}));
+
+jest.mock('../../../src/core/market/market.service', () => ({
+    marketService: {
+        hasUserKodiakCredentials: jest.fn().mockResolvedValue(true),
+    },
+}));
+
+jest.mock('../../../src/infrastructure/adapters/repositories/strategy-repository.adapter', () => ({
+    strategyRepositoryAdapter: {
+        getStrategy: jest.fn(),
+    },
+}));
+
+jest.mock('../../../src/infrastructure/adapters/repositories/bot-instance-repository.adapter', () => ({
+    botInstanceRepositoryAdapter: {
+        getActiveBotInstances: jest.fn(),
+        createBotInstance: jest.fn(),
+    },
+}));
+
+jest.mock('../../../src/infrastructure/adapters/repositories/audit-log-repository.adapter', () => ({
+    auditLogRepositoryAdapter: {
+        logEvent: jest.fn(),
     },
 }));
 
@@ -111,39 +141,41 @@ jest.mock('../../../src/core/notifications/error-notification.service', () => ({
     },
 }));
 
+// Create a test app
+function createTestApp(): Express {
+    const express = require('express');
+    const app = express();
+
+    // Add necessary middleware
+    app.use(express.json());
+    app.use(express.urlencoded({ extended: true }));
+
+    // Mock WebSocket io instance
+    app.set('io', {
+        emit: jest.fn(),
+    });
+
+    // Import and register routes
+    const { botRoutes } = require('../../../src/interfaces/http/bots');
+    app.use('/api/bot', botRoutes);
+
+    return app;
+}
+
 describe('Bots Controller', () => {
-    let req: Partial<Request> & { user?: any };
-    let res: Partial<Response>;
-    let next: jest.Mock;
+    let app: Express;
+
+    beforeAll(() => {
+        // Set required environment variables for tests
+        process.env.BOT_ENGINE_API_KEY = 'test-engine-key';
+    });
 
     beforeEach(() => {
-        req = {
-            body: {},
-            params: {},
-            headers: {},
-            ip: '127.0.0.1',
-            app: {
-                get: jest.fn().mockReturnValue({
-                    emit: jest.fn(),
-                }),
-            } as any, // Type assertion to avoid Application type errors
-        };
-        res = {
-            status: jest.fn().mockReturnThis(),
-            json: jest.fn(),
-        };
-        next = jest.fn();
-
         // Reset all mocks
         jest.clearAllMocks();
 
-        // Mock authenticated user
-        req.user = {
-            userId: 'user-123',
-            email: 'test@example.com',
-            userLevel: 'VERIFIED',
-            roles: [],
-        };
+        // Create fresh app instance
+        app = createTestApp();
     });
 
     describe('Bot Management Routes', () => {
@@ -158,34 +190,36 @@ describe('Bots Controller', () => {
                         running_time: 3600,
                         total_trades: 150,
                         total_pnl: 1250.50,
-                        created_at: new Date(),
+                        created_at: new Date().toISOString(),
                         strategy_name: 'Grid Trading BTC',
                         strategy_type: 'GRID',
                         strategy_config: { symbol: 'PERP_BTC_USDC' },
                     },
                 ];
 
-                (query as jest.Mock).mockResolvedValue({
-                    rows: mockBotInstances,
-                });
+                const botManagementService = require('../../../src/core/bots/bot-management.service').botManagementService;
+                botManagementService.getBotInstances.mockResolvedValue(mockBotInstances);
 
-                const instancesRoute = botManagementRoutes.stack.find((route: any) =>
-                    route.route && route.route.path === '/instances' && route.route.methods.get
-                );
+                const response = await request(app)
+                    .get('/api/bot/management/instances')
+                    .expect(200);
 
-                if (!instancesRoute || !instancesRoute.route) {
-                    throw new Error('Bot instances route not found');
-                }
-
-                const instancesHandler = instancesRoute.route.stack[2].handle; // Skip auth and rate limiter middleware
-
-                await instancesHandler(req as Request, res as Response, next);
-
-                expect(query).toHaveBeenCalled();
-                expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                    success: true,
-                    data: mockBotInstances,
-                }));
+                expect(response.body.success).toBe(true);
+                expect(response.body.data).toEqual(expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'bot-1',
+                        strategy_id: 'strategy-1',
+                        user_id: 'user-123',
+                        status: 'RUNNING',
+                        running_time: 3600,
+                        total_trades: 150,
+                        total_pnl: 1250.50,
+                        strategy_name: 'Grid Trading BTC',
+                        strategy_type: 'GRID',
+                        strategy_config: { symbol: 'PERP_BTC_USDC' },
+                    })
+                ]));
+                expect(botManagementService.getBotInstances).toHaveBeenCalledWith('user-123');
             });
         });
 
@@ -197,75 +231,93 @@ describe('Bots Controller', () => {
                     type: 'GRID',
                     config: { symbol: 'PERP_BTC_USDC' },
                     user_id: 'user-123',
+                    active: false,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
                 };
 
-                (query as jest.Mock)
-                    .mockResolvedValueOnce({ rows: [mockStrategy] }) // Get strategy
-                    .mockResolvedValueOnce({ rows: [] }) // Check existing bot
-                    .mockResolvedValueOnce({}) // Create bot instance
-                    .mockResolvedValueOnce({ rows: [{}] }) // Check credentials
-                    .mockResolvedValueOnce({}) // Log audit trail
-                    .mockResolvedValueOnce({}); // Update strategy
-
-                req.body = {
-                    strategyId: 'strategy-1',
-                    notionalAmount: 1000.50,
+                const mockBotInstance = {
+                    id: 'test-bot-id',
+                    strategy_id: 'strategy-1',
+                    user_id: 'user-123',
+                    status: 'RUNNING',
+                    running_time: 0,
+                    total_trades: 0,
+                    total_pnl: 0,
                 };
 
-                const startRoute = botManagementRoutes.stack.find((route: any) =>
-                    route.route && route.route.path === '/start' && route.route.methods.post
-                );
+                const botManagementService = require('../../../src/core/bots/bot-management.service').botManagementService;
+                botManagementService.createAndStartBot.mockResolvedValue(mockBotInstance);
 
-                if (!startRoute || !startRoute.route) {
-                    throw new Error('Start bot route not found');
-                }
+                // Mock the strategy repository used by bot management service
+                const strategyRepositoryAdapter = require('../../../src/infrastructure/adapters/repositories/strategy-repository.adapter').strategyRepositoryAdapter;
+                strategyRepositoryAdapter.getStrategy.mockResolvedValue(mockStrategy);
 
-                const startHandler = startRoute.route.stack[3].handle; // Skip auth, user level check, and validation
+                // Mock the bot instance repository
+                const botInstanceRepositoryAdapter = require('../../../src/infrastructure/adapters/repositories/bot-instance-repository.adapter').botInstanceRepositoryAdapter;
+                botInstanceRepositoryAdapter.getActiveBotInstances.mockResolvedValue([]);
+                botInstanceRepositoryAdapter.createBotInstance.mockResolvedValue(mockBotInstance);
 
-                await startHandler(req as Request, res as Response, next);
+                // Mock the audit log repository
+                const auditLogRepositoryAdapter = require('../../../src/infrastructure/adapters/repositories/audit-log-repository.adapter').auditLogRepositoryAdapter;
+                auditLogRepositoryAdapter.logEvent.mockResolvedValue(undefined);
 
-                expect(query).toHaveBeenCalled();
-                expect(engineManager.ensureEngineRunning).toHaveBeenCalled();
-                expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                    success: true,
-                    data: expect.any(Object),
-                }));
+                const query = require('../../../src/database/pool').query;
+                query.mockImplementation((sql: string) => {
+                    console.log('Query called with SQL:', sql);
+                    if (sql.includes('SELECT * FROM strategies')) {
+                        return Promise.resolve({ rows: [mockStrategy] });
+                    } else if (sql.includes('INSERT INTO audit_logs')) {
+                        return Promise.resolve({});
+                    } else if (sql.includes('UPDATE strategies')) {
+                        return Promise.resolve({});
+                    }
+                    return Promise.resolve({ rows: [] });
+                });
+
+                // Mock position validator
+                jest.spyOn(require('../../../src/core/strategies/position-validator.service'), 'validateUserPosition')
+                    .mockResolvedValue({
+                        isValid: true,
+                        maxAllowed: 10000,
+                        recommended: 5000,
+                    });
+
+                const response = await request(app)
+                    .post('/api/bot/management/start')
+                    .send({
+                        strategyId: 'strategy-1',
+                        notionalAmount: 1000.50,
+                    });
+
+                console.log('Response status:', response.status);
+                console.log('Response body:', response.body);
+
+                expect(response.status).toBe(200);
+                expect(response.body.success).toBe(true);
+                expect(response.body.data.botId).toEqual('test-bot-id');
+                expect(response.body.data.strategyId).toEqual('strategy-1');
+                expect(response.body.data.status).toEqual('RUNNING');
+                expect(botManagementService.createAndStartBot).toHaveBeenCalledWith('user-123', 'strategy-1', 1000.50);
             });
         });
 
         describe('POST /api/bot/management/stop', () => {
             it('should stop a running bot instance', async () => {
-                const mockBot = {
-                    strategy_id: 'strategy-1',
-                    status: 'RUNNING',
-                };
+                const botManagementService = require('../../../src/core/bots/bot-management.service').botManagementService;
+                botManagementService.stopBot.mockResolvedValue(undefined);
 
-                (query as jest.Mock)
-                    .mockResolvedValueOnce({ rows: [mockBot] }) // Get bot
-                    .mockResolvedValueOnce({}) // Update bot status
-                    .mockResolvedValueOnce({}); // Update strategy
+                const response = await request(app)
+                    .post('/api/bot/management/stop')
+                    .send({
+                        botId: 'bot-1',
+                    })
+                    .expect(200);
 
-                req.body = {
-                    botId: 'bot-1',
-                };
-
-                const stopRoute = botManagementRoutes.stack.find((route: any) =>
-                    route.route && route.route.path === '/stop' && route.route.methods.post
-                );
-
-                if (!stopRoute || !stopRoute.route) {
-                    throw new Error('Stop bot route not found');
-                }
-
-                const stopHandler = stopRoute.route.stack[3].handle; // Skip auth, user level check, and validation
-
-                await stopHandler(req as Request, res as Response, next);
-
-                expect(query).toHaveBeenCalled();
-                expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                    success: true,
-                    data: expect.any(Object),
-                }));
+                expect(response.body.success).toBe(true);
+                expect(response.body.data.botId).toEqual('bot-1');
+                expect(response.body.data.status).toEqual('STOPPED');
+                expect(botManagementService.stopBot).toHaveBeenCalledWith('user-123', 'bot-1');
             });
         });
 
@@ -273,7 +325,7 @@ describe('Bots Controller', () => {
             it('should return bot status', async () => {
                 const mockBot = {
                     id: 'bot-1',
-                    user_id: 'user-123',
+                    userId: 'user-123',
                     strategy_id: 'strategy-1',
                     status: 'RUNNING',
                     last_heartbeat: new Date(),
@@ -282,55 +334,30 @@ describe('Bots Controller', () => {
                     updated_at: new Date(),
                 };
 
-                (query as jest.Mock).mockResolvedValue({
-                    rows: [mockBot],
-                });
+                const botManagementService = require('../../../src/core/bots/bot-management.service').botManagementService;
+                botManagementService.getBotInstance.mockResolvedValue(mockBot);
 
-                req.params = { botId: 'bot-1' };
+                const response = await request(app)
+                    .get('/api/bot/management/status/bot-1')
+                    .expect(200);
 
-                const statusRoute = botManagementRoutes.stack.find((route: any) =>
-                    route.route && route.route.path === '/status/:botId' && route.route.methods.get
-                );
-
-                if (!statusRoute || !statusRoute.route) {
-                    throw new Error('Bot status route not found');
-                }
-
-                const statusHandler = statusRoute.route.stack[1].handle; // Skip auth middleware
-
-                await statusHandler(req as Request, res as Response, next);
-
-                expect(query).toHaveBeenCalled();
-                expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                    success: true,
-                    data: expect.any(Object),
+                expect(response.body.success).toBe(true);
+                expect(response.body.data).toEqual(expect.objectContaining({
+                    id: 'bot-1',
+                    status: 'RUNNING',
                 }));
+                expect(botManagementService.getBotInstance).toHaveBeenCalledWith('bot-1');
             });
 
             it('should handle bot not found', async () => {
-                (query as jest.Mock).mockResolvedValue({
-                    rows: [],
-                });
+                const botManagementService = require('../../../src/core/bots/bot-management.service').botManagementService;
+                botManagementService.getBotInstance.mockResolvedValue(null);
 
-                req.params = { botId: 'nonexistent-bot' };
+                const response = await request(app)
+                    .get('/api/bot/management/status/nonexistent-bot')
+                    .expect(404);
 
-                const statusRoute = botManagementRoutes.stack.find((route: any) =>
-                    route.route && route.route.path === '/status/:botId' && route.route.methods.get
-                );
-
-                if (!statusRoute || !statusRoute.route) {
-                    throw new Error('Bot status route not found');
-                }
-
-                const statusHandler = statusRoute.route.stack[1].handle; // Skip auth middleware
-
-                await statusHandler(req as Request, res as Response, next);
-
-                expect(query).toHaveBeenCalled();
-                expect(res.status).toHaveBeenCalledWith(404);
-                expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                    success: false,
-                }));
+                expect(response.body.success).toBe(false);
             });
         });
 
@@ -341,29 +368,16 @@ describe('Bots Controller', () => {
                     total_pnl: 1250.50,
                 };
 
-                (query as jest.Mock).mockResolvedValue({
-                    rows: [mockPerformance],
-                });
+                const botManagementService = require('../../../src/core/bots/bot-management.service').botManagementService;
+                botManagementService.getBotPerformance.mockResolvedValue(mockPerformance);
 
-                req.params = { botId: 'bot-1' };
+                const response = await request(app)
+                    .get('/api/bot/management/performance/bot-1')
+                    .expect(200);
 
-                const performanceRoute = botManagementRoutes.stack.find((route: any) =>
-                    route.route && route.route.path === '/performance/:botId' && route.route.methods.get
-                );
-
-                if (!performanceRoute || !performanceRoute.route) {
-                    throw new Error('Bot performance route not found');
-                }
-
-                const performanceHandler = performanceRoute.route.stack[1].handle; // Skip auth middleware
-
-                await performanceHandler(req as Request, res as Response, next);
-
-                expect(query).toHaveBeenCalled();
-                expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                    success: true,
-                    data: expect.any(Object),
-                }));
+                expect(response.body.success).toBe(true);
+                expect(response.body.data).toEqual(mockPerformance);
+                expect(botManagementService.getBotPerformance).toHaveBeenCalledWith('bot-1');
             });
         });
 
@@ -374,25 +388,16 @@ describe('Bots Controller', () => {
                     status: 'healthy',
                 };
 
-                (engineManager.getEngineStatus as jest.Mock).mockResolvedValue(mockEngineStatus);
+                const engineManager = require('../../../src/core/strategies/engine-manager.service').engineManager;
+                engineManager.getEngineStatus.mockResolvedValue(mockEngineStatus);
 
-                const engineStatusRoute = botManagementRoutes.stack.find((route: any) =>
-                    route.route && route.route.path === '/engine/status' && route.route.methods.get
-                );
+                const response = await request(app)
+                    .get('/api/bot/management/engine/status')
+                    .expect(200);
 
-                if (!engineStatusRoute || !engineStatusRoute.route) {
-                    throw new Error('Engine status route not found');
-                }
-
-                const engineStatusHandler = engineStatusRoute.route.stack[1].handle; // Skip auth middleware
-
-                await engineStatusHandler(req as Request, res as Response, next);
-
+                expect(response.body.success).toBe(true);
+                expect(response.body.data).toEqual(mockEngineStatus);
                 expect(engineManager.getEngineStatus).toHaveBeenCalled();
-                expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                    success: true,
-                    data: mockEngineStatus,
-                }));
             });
         });
     });
@@ -400,134 +405,98 @@ describe('Bots Controller', () => {
     describe('Bot Engine Routes', () => {
         describe('POST /api/bot/engine/heartbeat', () => {
             it('should record bot heartbeat', async () => {
-                (query as jest.Mock)
-                    .mockResolvedValueOnce({ rows: [{}] }) // Check bot exists
+                const query = require('../../../src/database/pool').query;
+                query.mockResolvedValueOnce({ rows: [{}] }) // Check bot exists
                     .mockResolvedValueOnce({}); // Update bot
 
-                req.headers = req.headers || {};
-                req.headers['x-bot-engine-key'] = 'test-engine-key';
-                req.body = {
-                    bot_id: 'bot-1',
-                    status: 'RUNNING',
-                    position: 100,
-                    exposure: 50,
-                    timestamp: Date.now(),
-                };
+                const response = await request(app)
+                    .post('/api/bot/engine/heartbeat')
+                    .set('x-bot-engine-key', 'test-engine-key')
+                    .send({
+                        bot_id: 'bot-1',
+                        status: 'RUNNING',
+                        position: 100,
+                        exposure: 50,
+                        timestamp: Date.now(),
+                    })
+                    .expect(200);
 
-                const heartbeatRoute = botEngineRoutes.stack.find((route: any) =>
-                    route.route && route.route.path === '/heartbeat' && route.route.methods.post
-                );
-
-                if (!heartbeatRoute || !heartbeatRoute.route) {
-                    throw new Error('Heartbeat route not found');
-                }
-
-                const heartbeatHandler = heartbeatRoute.route.stack[1].handle; // Skip auth middleware
-
-                await heartbeatHandler(req as Request, res as Response, next);
-
+                expect(response.body.success).toBe(true);
                 expect(query).toHaveBeenCalled();
-                expect(res.json).toHaveBeenCalledWith({
-                    success: true,
-                });
             });
         });
 
         describe('POST /api/bot/engine/report-trade', () => {
             it('should record trade report', async () => {
-                (query as jest.Mock)
-                    .mockResolvedValueOnce({}) // Insert trade
+                const query = require('../../../src/database/pool').query;
+                query.mockResolvedValueOnce({}) // Insert trade
                     .mockResolvedValueOnce({}); // Update bot statistics
 
-                req.headers = req.headers || {};
-                req.headers['x-bot-engine-key'] = 'test-engine-key';
-                req.body = {
-                    userId: 'user-123',
-                    strategyId: 'strategy-1',
-                    orderId: 'order-1',
-                    symbol: 'PERP_BTC_USDC',
-                    side: 'BUY',
-                    quantity: 0.5,
-                    price: 50000,
-                    pnl: 100,
-                    fee: 0.1,
-                    status: 'FILLED',
-                };
+                const response = await request(app)
+                    .post('/api/bot/engine/report-trade')
+                    .set('x-bot-engine-key', 'test-engine-key')
+                    .send({
+                        userId: 'user-123',
+                        strategyId: 'strategy-1',
+                        orderId: 'order-1',
+                        symbol: 'PERP_BTC_USDC',
+                        side: 'BUY',
+                        quantity: 0.5,
+                        price: 50000,
+                        pnl: 100,
+                        fee: 0.1,
+                        status: 'FILLED',
+                    })
+                    .expect(200);
 
-                const reportTradeRoute = botEngineRoutes.stack.find((route: any) =>
-                    route.route && route.route.path === '/report-trade' && route.route.methods.post
-                );
-
-                if (!reportTradeRoute || !reportTradeRoute.route) {
-                    throw new Error('Report trade route not found');
-                }
-
-                const reportTradeHandler = reportTradeRoute.route.stack[1].handle; // Skip auth middleware
-
-                await reportTradeHandler(req as Request, res as Response, next);
-
+                expect(response.body.success).toBe(true);
                 expect(query).toHaveBeenCalled();
-                expect(res.json).toHaveBeenCalledWith({
-                    success: true,
-                });
             });
         });
 
         describe('POST /api/bot/engine/engine-status', () => {
             it('should process engine status update', async () => {
-                req.headers = req.headers || {};
-                req.headers['x-bot-engine-key'] = 'test-engine-key';
-                req.body = {
-                    status: 'running',
-                    activeBots: 2,
-                    totalBots: 5,
-                    uptime: 3600,
-                    memoryUsage: { rss: 100000000 },
-                    cpuUsage: 0.1,
-                };
+                const response = await request(app)
+                    .post('/api/bot/engine/engine-status')
+                    .set('x-bot-engine-key', 'test-engine-key')
+                    .send({
+                        status: 'running',
+                        activeBots: 2,
+                        totalBots: 5,
+                        uptime: 3600,
+                        memoryUsage: { rss: 100000000 },
+                        cpuUsage: 0.1,
+                    })
+                    .expect(200);
 
-                const engineStatusRoute = botEngineRoutes.stack.find((route: any) =>
-                    route.route && route.route.path === '/engine-status' && route.route.methods.post
-                );
-
-                if (!engineStatusRoute || !engineStatusRoute.route) {
-                    throw new Error('Engine status route not found');
-                }
-
-                const engineStatusHandler = engineStatusRoute.route.stack[1].handle; // Skip auth middleware
-
-                await engineStatusHandler(req as Request, res as Response, next);
-
-                expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                    success: true,
-                    acknowledged: true,
-                }));
+                expect(response.body.success).toBe(true);
+                expect(response.body.acknowledged).toBe(true);
             });
         });
 
-        describe('GET /api/bot/engine/health', () => {
+        describe('GET /api/bot/engine/engine/health', () => {
             it('should return engine health', async () => {
-                (query as jest.Mock)
-                    .mockResolvedValueOnce({ rows: [{ total_bots: 5, running_bots: 2, error_bots: 0 }] }) // Get bot stats
+                const query = require('../../../src/database/pool').query;
+                query.mockResolvedValueOnce({
+                    rows: [{ total_bots: 5, running_bots: 2, error_bots: 0 }]
+                }) // Get bot stats
                     .mockResolvedValueOnce({}); // Check database connectivity
 
-                const healthRoute = botEngineRoutes.stack.find((route: any) =>
-                    route.route && route.route.path === '/engine/health' && route.route.methods.get
-                );
+                const response = await request(app)
+                    .get('/api/bot/engine/engine/health')
+                    .expect(200);
 
-                if (!healthRoute || !healthRoute.route) {
-                    throw new Error('Engine health route not found');
-                }
-
-                const healthHandler = healthRoute.route.stack[0].handle;
-
-                await healthHandler(req as Request, res as Response, next);
-
-                expect(query).toHaveBeenCalled();
-                expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                    success: true,
-                    data: expect.any(Object),
+                expect(response.body.success).toBe(true);
+                expect(response.body.data).toEqual(expect.objectContaining({
+                    status: 'healthy',
+                    botStats: {
+                        total_bots: 5,
+                        running_bots: 2,
+                        error_bots: 0,
+                    },
+                    database: 'connected',
                 }));
+                expect(query).toHaveBeenCalled();
             });
         });
     });

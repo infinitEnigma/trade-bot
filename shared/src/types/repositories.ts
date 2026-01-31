@@ -54,6 +54,11 @@ export interface IUserRepository {
     updateUserLevel(id: string, level: UserLevel): Promise<boolean>;
 
     /**
+     * Update user profile information
+     */
+    updateProfile(id: string, updates: Partial<{ email: string; userLevel: UserLevel }>): Promise<User | null>;
+
+    /**
      * Get authenticated user data with roles and credentials info
      */
     getAuthenticatedUserData(id: string): Promise<{
@@ -201,6 +206,47 @@ export interface IKodiakCredentialsRepository {
      * Delete credentials for a user
      */
     deleteCredentials(userId: string): Promise<void>;
+}
+
+// ===========================================
+// BOT INSTANCE REPOSITORY
+// ===========================================
+
+export interface IBotInstanceRepository {
+    /**
+     * Get all bot instances for a user
+     */
+    getBotInstances(userId: string): Promise<any[]>;
+
+    /**
+     * Get bot instance by ID
+     */
+    getBotInstance(id: string): Promise<any | null>;
+
+    /**
+     * Create a new bot instance
+     */
+    createBotInstance(bot: Omit<any, 'id' | 'createdAt' | 'updatedAt'>): Promise<any>;
+
+    /**
+     * Update bot instance status
+     */
+    updateBotStatus(id: string, status: string): Promise<void>;
+
+    /**
+     * Update bot instance performance metrics
+     */
+    updateBotPerformance(id: string, metrics: { runningTime?: number; totalTrades?: number; totalPnL?: number }): Promise<void>;
+
+    /**
+     * Delete bot instance
+     */
+    deleteBotInstance(id: string): Promise<void>;
+
+    /**
+     * Get active bot instances
+     */
+    getActiveBotInstances(): Promise<any[]>;
 }
 
 // ===========================================

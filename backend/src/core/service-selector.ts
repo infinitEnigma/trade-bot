@@ -11,6 +11,7 @@
 import { BalanceService } from './wallet/balance.service.pure';
 import { AuthService } from './auth/auth.service.pure';
 import { PositionService } from './strategies/position.service.pure';
+import { BotManagementService } from './bots/bot-management.service';
 
 // Legacy services have been removed - pure services are now active
 
@@ -91,6 +92,25 @@ export function selectPositionService(): PositionService {
 // Bot status service selector removed - not currently used in application
 
 /**
+ * Bot Management Service Selector
+ *
+ * Returns the BotManagementService implementation.
+ */
+export function selectBotManagementService(): BotManagementService {
+    // Import diContainer here to avoid circular dependency issues during module loading
+    const { diContainer } = require('../infrastructure/dependency-injection.container');
+
+    // Only log if container is available (avoid issues during testing)
+    if (diContainer && diContainer.loggerService) {
+        diContainer.loggerService.info('Using BotManagementService implementation', {
+            implementation: 'pure',
+            phase: 'post-migration'
+        });
+    }
+    return diContainer.botManagementService;
+}
+
+/**
  * Service Status Reporter
  *
  * Returns current service implementation status for monitoring and health checks.
@@ -101,6 +121,7 @@ export interface ServiceStatus {
     position: { implementation: 'pure' | 'legacy'; enabled: boolean };
     botStatus: { implementation: 'pure' | 'legacy'; enabled: boolean };
     trading: { implementation: 'pure' | 'legacy'; enabled: boolean };
+    botManagement: { implementation: 'pure' | 'legacy'; enabled: boolean };
 }
 
 export function getServiceStatus(): ServiceStatus {
@@ -124,6 +145,10 @@ export function getServiceStatus(): ServiceStatus {
         trading: {
             implementation: process.env.USE_PURE_TRADING_SERVICES === 'true' ? 'pure' : 'legacy',
             enabled: process.env.USE_PURE_TRADING_SERVICES === 'true'
+        },
+        botManagement: {
+            implementation: 'pure',
+            enabled: true
         }
     };
 }

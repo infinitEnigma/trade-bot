@@ -23,6 +23,7 @@ import { RoleQualificationService } from './auth/role-qualification.service';
 import { WalletQualificationService } from './wallet/wallet-qualification.service';
 import { UserProfileService } from './user/user-profile.service';
 import { UserKodiakService } from './user/user-kodiak.service';
+import { BotManagementService } from './bots/bot-management.service';
 import { contextLogger } from './logging';
 
 /**
@@ -203,6 +204,24 @@ export class ServiceProvider {
     }
 
     /**
+     * Get Bot Management Service instance (strict - throws if unavailable)
+     */
+    getBotManagementService(): BotManagementService {
+        const service = this.factory.getBotManagementService();
+        if (!service) {
+            throw new Error('Bot Management Service is unavailable');
+        }
+        return service;
+    }
+
+    /**
+     * Get Bot Management Service instance (safe - returns undefined if unavailable)
+     */
+    getBotManagementServiceSafe(): BotManagementService | undefined {
+        return this.factory.getBotManagementService();
+    }
+
+    /**
      * Get all services for health checks
      */
     getAllServices(): {
@@ -212,6 +231,7 @@ export class ServiceProvider {
         roleManagementService: RoleManagementService | undefined;
         userProfileService: UserProfileService | undefined;
         userKodiakService: UserKodiakService | undefined;
+        botManagementService: BotManagementService | undefined;
     } {
         return this.factory.getAllServices();
     }
@@ -291,6 +311,9 @@ export const getUserProfileServiceSafe = () => serviceProvider.getUserProfileSer
 
 export const getUserKodiakService = () => serviceProvider.getUserKodiakService();
 export const getUserKodiakServiceSafe = () => serviceProvider.getUserKodiakServiceSafe();
+
+export const getBotManagementService = () => serviceProvider.getBotManagementService();
+export const getBotManagementServiceSafe = () => serviceProvider.getBotManagementServiceSafe();
 
 /**
  * Service availability checking convenience functions

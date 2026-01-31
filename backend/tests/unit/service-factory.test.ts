@@ -183,13 +183,17 @@ describe('Service Factory Interface', () => {
         test('should instantiate User Profile Service with proper dependencies', () => {
             const mockUserProfileService = { getUserProfile: jest.fn() };
 
+            // Add auditLogRepository to the mock DI container
+            mockDiContainer.auditLogRepository = {} as any;
+
             // Mock the UserProfileService constructor
             (UserProfileService as jest.MockedClass<typeof UserProfileService>).mockImplementation(
                 (deps) => {
                     expect(deps).toEqual({
                         userRepository: mockDiContainer.userRepository,
                         cache: mockDiContainer.cacheService,
-                        passwordService: mockDiContainer.passwordService
+                        passwordService: mockDiContainer.passwordService,
+                        auditLogRepository: mockDiContainer.auditLogRepository
                     });
                     return mockUserProfileService as any;
                 }
@@ -202,7 +206,7 @@ describe('Service Factory Interface', () => {
                 'User Profile Service created with dependencies',
                 expect.objectContaining({
                     service: 'UserProfileService',
-                    dependencies: ['userRepository', 'cache', 'passwordService']
+                    dependencies: ['userRepository', 'cache', 'passwordService', 'auditLogRepository']
                 })
             );
         });
@@ -315,6 +319,7 @@ describe('Service Factory Interface', () => {
             const mockRoleManagementService = { assignRole: jest.fn() };
             const mockUserProfileService = { getUserProfile: jest.fn() };
             const mockUserKodiakService = { linkKodiakAccount: jest.fn() };
+            const mockBotManagementService = { manageBots: jest.fn() };
 
             mockDiContainer.authService = mockAuthService;
             mockDiContainer.balanceService = mockBalanceService;
@@ -323,6 +328,8 @@ describe('Service Factory Interface', () => {
             mockDiContainer.userRepository = {} as any;
             mockDiContainer.cacheService = {} as any;
             mockDiContainer.passwordService = {} as any;
+            mockDiContainer.auditLogRepository = {} as any;
+            mockDiContainer.botManagementService = mockBotManagementService;
 
             // Set up the mock constructors to return our mock services
             (UserProfileService as jest.MockedClass<typeof UserProfileService>).mockImplementation(
@@ -341,7 +348,8 @@ describe('Service Factory Interface', () => {
                 positionService: true,
                 roleManagementService: true,
                 userProfileService: true,
-                userKodiakService: true
+                userKodiakService: true,
+                botManagementService: true
             });
             expect(health.details).toEqual({
                 authService: {
@@ -367,6 +375,10 @@ describe('Service Factory Interface', () => {
                 userKodiakService: {
                     healthy: true,
                     type: 'Object'
+                },
+                botManagementService: {
+                    healthy: true,
+                    type: 'Object'
                 }
             });
         });
@@ -382,6 +394,8 @@ describe('Service Factory Interface', () => {
             mockDiContainer.userRepository = {} as any;
             mockDiContainer.cacheService = {} as any;
             mockDiContainer.passwordService = {} as any;
+            mockDiContainer.auditLogRepository = {} as any;
+            mockDiContainer.botManagementService = undefined as any; // Simulate failure
 
             // Set up the mock constructor to throw an error
             (UserProfileService as jest.MockedClass<typeof UserProfileService>).mockImplementation(
@@ -399,13 +413,18 @@ describe('Service Factory Interface', () => {
                 positionService: false,
                 roleManagementService: true,
                 userProfileService: false,
-                userKodiakService: true
+                userKodiakService: true,
+                botManagementService: false
             });
             expect(health.details.positionService).toEqual({
                 healthy: false,
                 error: 'Service unavailable'
             });
             expect(health.details.userProfileService).toEqual({
+                healthy: false,
+                error: 'Service unavailable'
+            });
+            expect(health.details.botManagementService).toEqual({
                 healthy: false,
                 error: 'Service unavailable'
             });
