@@ -105,6 +105,14 @@ export enum WebSocketEvent {
 }
 
 /**
+ * WebSocket Market Unsubscribe Payload
+ * Type-safe message structure for market unsubscribe event
+ */
+export interface WebSocketMarketUnsubscribePayload {
+    symbol: string;
+}
+
+/**
  * WebSocket Message Payloads
  * Type-safe message structures for different event types
  */
@@ -163,6 +171,7 @@ export interface IMarketStreamService {
     unsubscribe(clientId: string, topic: string): void;
     getLatestTick(symbol: string): Promise<TickData | null>;
     connectToOrderly(symbols: string[]): Promise<void>;
+    setSocketServer(io: Server): void;
 }
 
 export interface IAuthService {
@@ -171,15 +180,16 @@ export interface IAuthService {
 }
 
 export interface ILogger {
-    info(message: string, meta?: Record<string, unknown>): void;
-    error(message: string, error?: Error, meta?: Record<string, unknown>): void;
-    warn(message: string, meta?: Record<string, unknown>): void;
-    debug(message: string, meta?: Record<string, unknown>): void;
+    info(message: string, meta?: unknown): void;
+    error(message: string, meta?: unknown): void;
+    warn(message: string, meta?: unknown): void;
+    debug(message: string, meta?: unknown): void;
+    child(meta: unknown): ILogger;
 }
 
 export interface IRateLimiter {
-    canSubscribe(userId: string): boolean;
-    recordSubscription(userId: string): void;
+    canSubscribe(userId: string): Promise<boolean>;
+    recordSubscription(userId: string): Promise<void>;
 }
 
 // Type imports for external dependencies

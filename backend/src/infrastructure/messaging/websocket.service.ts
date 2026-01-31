@@ -15,6 +15,7 @@ import {
 import { WebSocketAuthMiddleware } from "./websocket/auth";
 import { WebSocketEventHandlers } from "./websocket/handlers";
 import { WebSocketError, WEBSOCKET_CONSTANTS } from "./websocket/types";
+import { webSocketRateLimiter } from "../security/rate-limiter/websocket-rate-limiter.adapter";
 
 /**
  * WebSocket Service
@@ -34,6 +35,7 @@ export class WebSocketService implements IWebSocketService {
         messagesProcessed: 0,
         errorsCount: 0,
         lastActivity: Date.now(),
+        responseTimes: [] as number[],
     };
 
     constructor(
@@ -44,7 +46,7 @@ export class WebSocketService implements IWebSocketService {
         this.authMiddleware = new WebSocketAuthMiddleware(authService, logger);
         this.eventHandlers = new WebSocketEventHandlers(
             marketStreamService,
-            { canSubscribe: () => true, recordSubscription: () => { } }, // Placeholder rate limiter
+            webSocketRateLimiter,
             logger
         );
 
@@ -101,6 +103,11 @@ export class WebSocketService implements IWebSocketService {
             .slice(0, 10)
             .map(([topic, count]) => ({ topic, count }));
 
+        // Calculate average response time
+        const averageResponseTime = this.metrics.responseTimes.length > 0
+            ? Math.round((this.metrics.responseTimes.reduce((sum, time) => sum + time, 0) / this.metrics.responseTimes.length) * 100) / 100
+            : 0;
+
         // Calculate health score (0-100)
         const healthScore = this.calculateHealthScore(activeConnections, messagesPerSecond, errorRate);
 
@@ -111,7 +118,7 @@ export class WebSocketService implements IWebSocketService {
             topSubscriptions,
             healthScore,
             memoryUsage: this.getMemoryUsage(),
-            averageResponseTime: 0, // TODO: Implement response time tracking
+            averageResponseTime,
         };
     }
 
@@ -175,9 +182,10 @@ export class WebSocketService implements IWebSocketService {
                     });
                 } else {
                     const errorObj = error instanceof Error ? error : new Error(String(error));
-                    this.logger.error("Unexpected authentication error", errorObj, {
+                    this.logger.error("Unexpected authentication error", {
                         socketId: socket.id,
                         ip: socket.handshake.address,
+                        error: errorObj,
                     });
                 }
 
@@ -204,32 +212,110 @@ export class WebSocketService implements IWebSocketService {
                 activeConnections: this.clients.size,
             });
 
+            // Initialize market stream service when a VERIFIED user connects
+            if (client.userLevel === "VERIFIED") {
+                this.marketStreamService.setSocketServer(this.io!);
+                this.logger.debug("Market stream service initialized for verified user", {
+                    userId: client.userId,
+                });
+            }
+
             // Set up event handlers
             socket.on("subscribe", (room: string) => {
+                const startTime = Date.now();
                 this.metrics.messagesProcessed++;
-                this.eventHandlers.handleSubscribe(socket, room).catch(error => {
-                    const errorObj = error instanceof Error ? error : new Error(String(error));
-                    this.logger.error("Subscribe handler error", errorObj, { socketId: socket.id });
-                    this.metrics.errorsCount++;
-                });
+                this.eventHandlers.handleSubscribe(socket, room)
+                    .then(() => {
+                        this.metrics.responseTimes.push(Date.now() - startTime);
+                        // Keep only last 1000 response times for memory efficiency
+                        if (this.metrics.responseTimes.length > 1000) {
+                            this.metrics.responseTimes.shift();
+                        }
+                    })
+                    .catch(error => {
+                        const errorObj = error instanceof Error ? error : new Error(String(error));
+                        this.logger.error("Subscribe handler error", {
+                            socketId: socket.id,
+                            error: errorObj,
+                        });
+                        this.metrics.errorsCount++;
+                        this.metrics.responseTimes.push(Date.now() - startTime);
+                        if (this.metrics.responseTimes.length > 1000) {
+                            this.metrics.responseTimes.shift();
+                        }
+                    });
             });
 
             socket.on("unsubscribe", (room: string) => {
+                const startTime = Date.now();
                 this.metrics.messagesProcessed++;
-                this.eventHandlers.handleUnsubscribe(socket, room).catch(error => {
-                    const errorObj = error instanceof Error ? error : new Error(String(error));
-                    this.logger.error("Unsubscribe handler error", errorObj, { socketId: socket.id });
-                    this.metrics.errorsCount++;
-                });
+                this.eventHandlers.handleUnsubscribe(socket, room)
+                    .then(() => {
+                        this.metrics.responseTimes.push(Date.now() - startTime);
+                        if (this.metrics.responseTimes.length > 1000) {
+                            this.metrics.responseTimes.shift();
+                        }
+                    })
+                    .catch(error => {
+                        const errorObj = error instanceof Error ? error : new Error(String(error));
+                        this.logger.error("Unsubscribe handler error", {
+                            socketId: socket.id,
+                            error: errorObj,
+                        });
+                        this.metrics.errorsCount++;
+                        this.metrics.responseTimes.push(Date.now() - startTime);
+                        if (this.metrics.responseTimes.length > 1000) {
+                            this.metrics.responseTimes.shift();
+                        }
+                    });
             });
 
             socket.on("subscribe_market", (symbol: string) => {
+                const startTime = Date.now();
                 this.metrics.messagesProcessed++;
-                this.eventHandlers.handleMarketSubscribe(socket, symbol).catch(error => {
-                    const errorObj = error instanceof Error ? error : new Error(String(error));
-                    this.logger.error("Market subscribe handler error", errorObj, { socketId: socket.id });
-                    this.metrics.errorsCount++;
-                });
+                this.eventHandlers.handleMarketSubscribe(socket, symbol)
+                    .then(() => {
+                        this.metrics.responseTimes.push(Date.now() - startTime);
+                        if (this.metrics.responseTimes.length > 1000) {
+                            this.metrics.responseTimes.shift();
+                        }
+                    })
+                    .catch(error => {
+                        const errorObj = error instanceof Error ? error : new Error(String(error));
+                        this.logger.error("Market subscribe handler error", {
+                            socketId: socket.id,
+                            error: errorObj,
+                        });
+                        this.metrics.errorsCount++;
+                        this.metrics.responseTimes.push(Date.now() - startTime);
+                        if (this.metrics.responseTimes.length > 1000) {
+                            this.metrics.responseTimes.shift();
+                        }
+                    });
+            });
+
+            socket.on("unsubscribe_market", (symbol: string) => {
+                const startTime = Date.now();
+                this.metrics.messagesProcessed++;
+                this.eventHandlers.handleMarketUnsubscribe(socket, symbol)
+                    .then(() => {
+                        this.metrics.responseTimes.push(Date.now() - startTime);
+                        if (this.metrics.responseTimes.length > 1000) {
+                            this.metrics.responseTimes.shift();
+                        }
+                    })
+                    .catch(error => {
+                        const errorObj = error instanceof Error ? error : new Error(String(error));
+                        this.logger.error("Market unsubscribe handler error", {
+                            socketId: socket.id,
+                            error: errorObj,
+                        });
+                        this.metrics.errorsCount++;
+                        this.metrics.responseTimes.push(Date.now() - startTime);
+                        if (this.metrics.responseTimes.length > 1000) {
+                            this.metrics.responseTimes.shift();
+                        }
+                    });
             });
 
             socket.on("disconnect", () => {
@@ -249,9 +335,10 @@ export class WebSocketService implements IWebSocketService {
 
         this.io.on("connection_error", (error) => {
             const errorObj = error instanceof Error ? error : new Error(String(error));
-            this.logger.error("WebSocket connection error", errorObj, {
+            this.logger.error("WebSocket connection error", {
                 message: error instanceof Error ? error.message : String(error),
                 context: (error as { context?: unknown })?.context,
+                error: errorObj,
             });
             this.metrics.errorsCount++;
         });
@@ -348,6 +435,7 @@ export class WebSocketService implements IWebSocketService {
                     messagesProcessed: 0,
                     errorsCount: 0,
                     lastActivity: Date.now(),
+                    responseTimes: [],
                 };
 
                 this.logger.info("WebSocket service cleaned up for tests", {
@@ -356,7 +444,12 @@ export class WebSocketService implements IWebSocketService {
                 });
             }
         } catch (error) {
-            this.logger.error("Error during WebSocket cleanup", error as Error, {});
+            const errorObj = error instanceof Error ? error : new Error(String(error));
+            this.logger.error("Error during WebSocket cleanup", {
+                message: error instanceof Error ? error.message : String(error),
+                context: (error as { context?: unknown })?.context,
+                error: errorObj,
+            });
         }
     }
 

@@ -217,8 +217,9 @@ export async function queryWithTimeout<T = unknown>(
   const pool = getPool();
 
   // Create a promise that rejects after timeout
+  let timeoutId: NodeJS.Timeout | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
+    timeoutId = setTimeout(() => {
       reject(new Error(`Query timeout after ${timeoutMs}ms: ${text.substring(0, 100)}...`));
     }, timeoutMs);
   });
@@ -227,11 +228,17 @@ export async function queryWithTimeout<T = unknown>(
   try {
     const queryPromise = pool.query(text, params);
     const result = await Promise.race([queryPromise, timeoutPromise]);
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId); // Clear timeout when query completes successfully
+    }
     return {
       rows: result.rows,
       rowCount: result.rowCount || 0,
     };
   } catch (error) {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId); // Clear timeout when query fails or times out
+    }
     if (error instanceof Error && error.message.includes('Query timeout')) {
       logger.error("Database query timeout", {
         query: text.substring(0, 200),

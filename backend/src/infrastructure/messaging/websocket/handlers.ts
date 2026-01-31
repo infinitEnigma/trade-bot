@@ -31,7 +31,7 @@ export class WebSocketEventHandlers {
             });
 
             // Rate limiting check
-            if (!this.checkRateLimit(client.userId, "subscribe")) {
+            if (!(await this.checkRateLimit(client.userId, "subscribe"))) {
                 throw new WebSocketError(
                     "Rate limit exceeded",
                     WebSocketErrorCode.RATE_LIMIT_EXCEEDED,
@@ -97,11 +97,12 @@ export class WebSocketEventHandlers {
                 });
             } else {
                 const errorObj = error instanceof Error ? error : new Error(String(error));
-                this.logger.error("Unexpected subscription error", errorObj, {
+                this.logger.error("Unexpected subscription error", {
                     socketId: socket.id,
                     userId: client.userId,
                     room,
                     correlationId,
+                    error: errorObj,
                 });
 
                 socket.emit("error", {
@@ -129,6 +130,26 @@ export class WebSocketEventHandlers {
                 correlationId,
             });
 
+            // Validate room name
+            if (!WebSocketUtils.isValidTopic(room)) {
+                throw new WebSocketError(
+                    "Invalid subscription topic",
+                    WebSocketErrorCode.INVALID_SUBSCRIPTION,
+                    400,
+                    { room, correlationId }
+                );
+            }
+
+            // Check if client is actually subscribed
+            if (!client.subscriptions.has(room)) {
+                throw new WebSocketError(
+                    "Not subscribed to this topic",
+                    WebSocketErrorCode.INVALID_SUBSCRIPTION,
+                    400,
+                    { room, correlationId }
+                );
+            }
+
             // Leave room
             socket.leave(room);
             client.subscriptions.delete(room);
@@ -143,20 +164,39 @@ export class WebSocketEventHandlers {
             });
 
         } catch (error) {
-            const errorObj = error instanceof Error ? error : new Error(String(error));
-            this.logger.error("Unsubscribe error", errorObj, {
-                socketId: socket.id,
-                userId: client.userId,
-                room,
-                correlationId,
-            });
+            if (error instanceof WebSocketError) {
+                this.logger.warn("Unsubscribe failed", {
+                    socketId: socket.id,
+                    userId: client.userId,
+                    room,
+                    error: error.message,
+                    code: error.code,
+                    correlationId,
+                });
 
-            socket.emit("error", {
-                event: "unsubscribe",
-                error: "Unsubscribe failed",
-                code: WebSocketErrorCode.INTERNAL_ERROR,
-                correlationId,
-            });
+                socket.emit("error", {
+                    event: "unsubscribe",
+                    error: error.message,
+                    code: error.code,
+                    correlationId,
+                });
+            } else {
+                const errorObj = error instanceof Error ? error : new Error(String(error));
+                this.logger.error("Unexpected unsubscribe error", {
+                    socketId: socket.id,
+                    userId: client.userId,
+                    room,
+                    correlationId,
+                    error: errorObj,
+                });
+
+                socket.emit("error", {
+                    event: "unsubscribe",
+                    error: "Unsubscribe failed",
+                    code: WebSocketErrorCode.INTERNAL_ERROR,
+                    correlationId,
+                });
+            }
         }
     }
 
@@ -176,7 +216,7 @@ export class WebSocketEventHandlers {
             });
 
             // Rate limiting check (market subscriptions cost more)
-            if (!this.checkRateLimit(client.userId, "subscribe_market")) {
+            if (!(await this.checkRateLimit(client.userId, "subscribe_market"))) {
                 throw new WebSocketError(
                     "Rate limit exceeded for market subscription",
                     WebSocketErrorCode.RATE_LIMIT_EXCEEDED,
@@ -282,16 +322,105 @@ export class WebSocketEventHandlers {
                 });
             } else {
                 const errorObj = error instanceof Error ? error : new Error(String(error));
-                this.logger.error("Unexpected market subscription error", errorObj, {
+                this.logger.error("Unexpected market subscription error", {
                     socketId: socket.id,
                     userId: client.userId,
                     symbol,
                     correlationId,
+                    error: errorObj,
                 });
 
                 socket.emit("error", {
                     event: "subscribe_market",
                     error: "Market subscription failed",
+                    code: WebSocketErrorCode.INTERNAL_ERROR,
+                    correlationId,
+                });
+            }
+        }
+    }
+
+    /**
+     * Handle market data unsubscription
+     */
+    async handleMarketUnsubscribe(socket: Socket, symbol: string): Promise<void> {
+        const client = (socket as unknown as { client: WebSocketClient }).client;
+        const correlationId = WebSocketUtils.generateCorrelationId();
+
+        try {
+            this.logger.debug("Processing market unsubscribe request", {
+                socketId: socket.id,
+                userId: client.userId,
+                symbol,
+                correlationId,
+            });
+
+            // Validate symbol format
+            if (!WebSocketUtils.isValidSymbol(symbol)) {
+                throw new WebSocketError(
+                    "Invalid market symbol format",
+                    WebSocketErrorCode.INVALID_SUBSCRIPTION,
+                    400,
+                    { symbol, expectedFormat: "PERP_SYMBOL_USDC", correlationId }
+                );
+            }
+
+            const room = `market:${symbol}`;
+
+            // Check if client is actually subscribed
+            if (!client.subscriptions.has(room)) {
+                throw new WebSocketError(
+                    "Not subscribed to this market data",
+                    WebSocketErrorCode.INVALID_SUBSCRIPTION,
+                    400,
+                    { symbol, correlationId }
+                );
+            }
+
+            // Leave market room
+            socket.leave(room);
+            client.subscriptions.delete(room);
+            client.lastActivity = new Date();
+
+            this.logger.info("Client unsubscribed from market data", {
+                socketId: socket.id,
+                userId: client.userId,
+                symbol,
+                room,
+                remainingSubscriptions: client.subscriptions.size,
+                correlationId,
+            });
+
+        } catch (error) {
+            if (error instanceof WebSocketError) {
+                this.logger.warn("Market unsubscribe failed", {
+                    socketId: socket.id,
+                    userId: client.userId,
+                    symbol,
+                    error: error.message,
+                    code: error.code,
+                    correlationId,
+                });
+
+                socket.emit("error", {
+                    event: "unsubscribe_market",
+                    error: error.message,
+                    code: error.code,
+                    correlationId,
+                });
+            } else {
+                const errorObj = error instanceof Error ? error : new Error(String(error));
+                this.logger.error("Unexpected market unsubscribe error", {
+                    socketId: socket.id,
+                    userId: client.userId,
+                    symbol,
+                    correlationId,
+                    error: errorObj,
+                });
+
+                socket.emit("error", {
+                    event: "unsubscribe_market",
+                    error: "Market unsubscribe failed",
                     code: WebSocketErrorCode.INTERNAL_ERROR,
                     correlationId,
                 });
@@ -321,9 +450,10 @@ export class WebSocketEventHandlers {
 
         } catch (error) {
             const errorObj = error instanceof Error ? error : new Error(String(error));
-            this.logger.error("Disconnect handling error", errorObj, {
+            this.logger.error("Disconnect handling error", {
                 socketId: socket.id,
                 correlationId,
+                error: errorObj,
             });
         }
     }
@@ -331,10 +461,10 @@ export class WebSocketEventHandlers {
     /**
      * Check rate limiting for user actions
      */
-    private checkRateLimit(userId: string, action: string): boolean {
+    private async checkRateLimit(userId: string, action: string): Promise<boolean> {
         try {
             const _cost = WebSocketUtils.calculateRateLimitCost(action);
-            return this.rateLimiter.canSubscribe(userId); // Simplified - in real implementation would track tokens
+            return await this.rateLimiter.canSubscribe(userId); // Simplified - in real implementation would track tokens
         } catch (error) {
             this.logger.warn("Rate limit check failed", {
                 userId,

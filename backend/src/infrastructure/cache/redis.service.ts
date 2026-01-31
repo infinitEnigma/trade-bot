@@ -264,6 +264,20 @@ class RedisService {
     }
   }
 
+  public async ttl(
+    key: string
+  ): Promise<{ success: boolean; ttl: number; error?: string }> {
+    try {
+      const result = await this.client.ttl(key);
+      return { success: true, ttl: result };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Redis TTL error", { key, error: errorMessage });
+      return { success: false, ttl: -1, error: errorMessage };
+    }
+  }
+
   /**
    * Check if Redis is currently healthy
    */

@@ -108,10 +108,11 @@ export class WebSocketAuthMiddleware {
 
             // Wrap unexpected errors
             const errorObj = error instanceof Error ? error : new Error(String(error));
-            this.logger.error("WebSocket authentication failed", errorObj, {
+            this.logger.error("WebSocket authentication failed", {
                 socketId: socket.id,
                 ipAddress,
                 correlationId,
+                error: errorObj,
             });
 
             throw new WebSocketError(

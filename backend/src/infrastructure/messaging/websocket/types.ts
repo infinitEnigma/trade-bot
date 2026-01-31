@@ -154,35 +154,35 @@ export interface InternalMetrics {
 export const WEBSOCKET_CONSTANTS = {
     /** Rate limiting */
     RATE_LIMIT: {
-        TOKENS_PER_WINDOW: 100,
-        WINDOW_MS: 60000, // 1 minute
-        REFILL_RATE: 10, // tokens per second
+        TOKENS_PER_WINDOW: parseInt(process.env.WEBSOCKET_RATE_LIMIT_TOKENS_PER_WINDOW || "100"),
+        WINDOW_MS: parseInt(process.env.WEBSOCKET_RATE_LIMIT_WINDOW_MS || "60000"), // 1 minute
+        REFILL_RATE: parseInt(process.env.WEBSOCKET_RATE_LIMIT_REFILL_RATE || "10"), // tokens per second
     },
 
     /** Connection limits */
     CONNECTIONS: {
-        MAX_PER_USER: 5,
-        MAX_TOTAL: 1000,
-        TIMEOUT_MS: 30000,
+        MAX_PER_USER: parseInt(process.env.WEBSOCKET_CONNECTIONS_MAX_PER_USER || "5"),
+        MAX_TOTAL: parseInt(process.env.WEBSOCKET_CONNECTIONS_MAX_TOTAL || "1000"),
+        TIMEOUT_MS: parseInt(process.env.WEBSOCKET_CONNECTIONS_TIMEOUT_MS || "30000"),
     },
 
     /** Subscriptions */
     SUBSCRIPTIONS: {
-        MAX_PER_USER: 50,
-        CLEANUP_INTERVAL_MS: 300000, // 5 minutes
+        MAX_PER_USER: parseInt(process.env.WEBSOCKET_SUBSCRIPTIONS_MAX_PER_USER || "50"),
+        CLEANUP_INTERVAL_MS: parseInt(process.env.WEBSOCKET_SUBSCRIPTIONS_CLEANUP_INTERVAL_MS || "300000"), // 5 minutes
     },
 
     /** Health monitoring */
     HEALTH: {
-        CHECK_INTERVAL_MS: 30000,
-        METRICS_RETENTION_MS: 3600000, // 1 hour
+        CHECK_INTERVAL_MS: parseInt(process.env.WEBSOCKET_HEALTH_CHECK_INTERVAL_MS || "30000"),
+        METRICS_RETENTION_MS: parseInt(process.env.WEBSOCKET_HEALTH_METRICS_RETENTION_MS || "3600000"), // 1 hour
     },
 
     /** Message processing */
     MESSAGES: {
-        MAX_BATCH_SIZE: 100,
-        PROCESSING_TIMEOUT_MS: 5000,
-        QUEUE_SIZE_WARNING: 1000,
+        MAX_BATCH_SIZE: parseInt(process.env.WEBSOCKET_MESSAGES_MAX_BATCH_SIZE || "100"),
+        PROCESSING_TIMEOUT_MS: parseInt(process.env.WEBSOCKET_MESSAGES_PROCESSING_TIMEOUT_MS || "5000"),
+        QUEUE_SIZE_WARNING: parseInt(process.env.WEBSOCKET_MESSAGES_QUEUE_SIZE_WARNING || "1000"),
     },
 } as const;
 

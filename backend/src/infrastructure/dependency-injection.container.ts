@@ -28,6 +28,9 @@ import { botInstanceRepositoryAdapter } from './adapters/repositories/bot-instan
 
 // Pure Services
 import { BotManagementService } from '../core/bots/bot-management.service';
+import { WebSocketService } from '../infrastructure/messaging/websocket.service';
+import { MarketStreamService, marketStreamService } from '../infrastructure/messaging/market-stream.service';
+import { WebSocketRateLimiter, webSocketRateLimiter } from '../infrastructure/security/rate-limiter/websocket-rate-limiter.adapter';
 
 // Pure Services
 import { BalanceService } from '../core/wallet/balance.service.pure';
@@ -241,6 +244,24 @@ export class DependencyInjectionContainer {
         });
     }
 
+    /**
+     * WebSocket Rate Limiter - Rate limiting for WebSocket operations
+     */
+    get webSocketRateLimiter(): WebSocketRateLimiter {
+        return webSocketRateLimiter;
+    }
+
+    /**
+     * WebSocket Service - Real-time communication management
+     */
+    get webSocketService(): WebSocketService {
+        return new WebSocketService(
+            marketStreamService,
+            this.authService,
+            this.loggerService
+        );
+    }
+
     // ===========================================
     // CONTAINER MANAGEMENT
     // ===========================================
@@ -381,3 +402,7 @@ export const getBalanceService = () => diContainer.balanceService;
 export const getAuthService = () => diContainer.authService;
 export const getPositionService = () => diContainer.positionService;
 export const getBotManagementService = () => diContainer.botManagementService;
+
+// WebSocket Services
+export const getWebSocketService = () => diContainer.webSocketService;
+export const getWebSocketRateLimiter = () => diContainer.webSocketRateLimiter;
