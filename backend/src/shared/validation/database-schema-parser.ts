@@ -434,7 +434,7 @@ export class DatabaseSchemaParser {
                 if (!createsTable) {
                     logger.debug("ALTER TABLE references table not yet parsed (may be created in later migration)", {
                         tableName,
-                        statement: statement.substring(0, 100) + "..."
+                        statement: `${statement.substring(0, 100)}...`
                     });
                 }
                 return;
@@ -504,7 +504,7 @@ export class DatabaseSchemaParser {
             });
 
             if (nonCommentLines.length > 0) {
-                statements.push(trimmed + ';'); // Add back the semicolon
+                statements.push(`${trimmed};`); // Add back the semicolon
             }
         }
 

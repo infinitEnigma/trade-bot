@@ -179,8 +179,6 @@ export class KodiakRequestQueue {
                         waitTimeMs: waitTime,
                         queueSize: this.queue.length,
                     });
-
-                    await new Promise(resolve => setTimeout(resolve, waitTime));
                 }
 
                 // Remove from queue and process
@@ -201,7 +199,7 @@ export class KodiakRequestQueue {
                 try {
                     // Process the request
                     await nextRequest.next(nextRequest.req, nextRequest.res);
-                    
+
                     // Check if response indicates rate limiting
                     if (nextRequest.res.statusCode === 429) {
                         logger.warn("Rate limit hit, implementing exponential backoff", {
@@ -209,17 +207,17 @@ export class KodiakRequestQueue {
                             userId: nextRequest.userId,
                             endpoint: nextRequest.endpoint,
                         });
-                        
+
                         // Implement exponential backoff by increasing interval
                         this.config.minIntervalMs = Math.min(
-                            this.config.minIntervalMs * 1.5, 
+                            this.config.minIntervalMs * 1.5,
                             10000 // Cap at 10 seconds
                         );
                     } else {
                         // Reset interval if successful
                         this.config.minIntervalMs = 4000; // Reset to base interval
                     }
-                    
+
                 } catch (error) {
                     logger.error("Error processing queued Kodiak request", {
                         requestId: nextRequest.id,
