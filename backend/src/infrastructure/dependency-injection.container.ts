@@ -271,7 +271,8 @@ export class DependencyInjectionContainer {
      */
     get marketService(): MarketService {
         return new MarketService({
-            kodiakCredentialsRepository: this.kodiakCredentialsRepository
+            kodiakCredentialsRepository: this.kodiakCredentialsRepository,
+            logger: this.loggerService
         });
     }
 
@@ -305,7 +306,10 @@ export class DependencyInjectionContainer {
      * Health Service - Business logic for system health monitoring
      */
     get healthService(): HealthService {
-        return new HealthService({});
+        return new HealthService({
+            logger: this.loggerService,
+            cacheService: this.cacheService
+        });
     }
 
     /**

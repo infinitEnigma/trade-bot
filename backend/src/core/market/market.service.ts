@@ -7,11 +7,11 @@
  * @format
  */
 
-import logger from "../../core/logging/logger.service";
-import { IKodiakCredentialsRepository } from "@trade-bot/shared";
+import { IKodiakCredentialsRepository, ILogger } from "@trade-bot/shared";
 
 export interface MarketServiceDependencies {
     kodiakCredentialsRepository: IKodiakCredentialsRepository;
+    logger: ILogger;
 }
 
 export class MarketService {
@@ -25,7 +25,7 @@ export class MarketService {
             const credentials = await this.deps.kodiakCredentialsRepository.getCredentials(userId);
             return !!credentials && credentials.verified;
         } catch (error) {
-            logger.error("Failed to check user Kodiak credentials", {
+            this.deps.logger.error("Failed to check user Kodiak credentials", {
                 error: error instanceof Error ? error.message : String(error),
                 userId
             });
@@ -51,14 +51,14 @@ export class MarketService {
                 ? mockPrices.filter(p => symbols.includes(p.symbol))
                 : mockPrices;
 
-            logger.debug("Market prices retrieved successfully", {
+            this.deps.logger.debug("Market prices retrieved successfully", {
                 count: filteredPrices.length,
                 symbols
             });
 
             return filteredPrices;
         } catch (error) {
-            logger.error("Failed to get market prices", {
+            this.deps.logger.error("Failed to get market prices", {
                 error: error instanceof Error ? error.message : String(error),
                 symbols
             });
@@ -80,13 +80,13 @@ export class MarketService {
                 { symbol: 'DOT/USDT', base: 'DOT', quote: 'USDT', status: 'ACTIVE' }
             ];
 
-            logger.debug("Trading pairs retrieved successfully", {
+            this.deps.logger.debug("Trading pairs retrieved successfully", {
                 count: tradingPairs.length
             });
 
             return tradingPairs;
         } catch (error) {
-            logger.error("Failed to get trading pairs", {
+            this.deps.logger.error("Failed to get trading pairs", {
                 error: error instanceof Error ? error.message : String(error)
             });
             throw new Error("Failed to get trading pairs");
@@ -121,7 +121,7 @@ export class MarketService {
                 asks: asks.sort((a, b) => a.price - b.price)
             };
 
-            logger.debug("Market depth retrieved successfully", {
+            this.deps.logger.debug("Market depth retrieved successfully", {
                 symbol,
                 bidCount: marketDepth.bids.length,
                 askCount: marketDepth.asks.length
@@ -129,7 +129,7 @@ export class MarketService {
 
             return marketDepth;
         } catch (error) {
-            logger.error("Failed to get market depth", {
+            this.deps.logger.error("Failed to get market depth", {
                 error: error instanceof Error ? error.message : String(error),
                 symbol
             });
@@ -142,4 +142,5 @@ export class MarketService {
 export function createMarketService(deps: MarketServiceDependencies): MarketService {
     return new MarketService(deps);
 }
+
 
