@@ -43,5 +43,16 @@ export type { CacheResult } from './cache-manager';
 export { RedisMetrics } from './metrics';
 export type { CacheStats, TransactionStats, ConflictStats } from './metrics';
 
+export { RedisStreamOperations } from './streams';
+export type { StreamMessage, StreamReadOptions } from './streams';
+export {
+    ENGINE_COMMANDS_STREAM,
+    ENGINE_EVENTS_STREAM,
+    ENGINE_COMMANDS_CONSUMER_GROUP,
+    ENGINE_EVENTS_CONSUMER_GROUP,
+    BACKEND_CONSUMER_NAME,
+    ENGINE_CONSUMER_NAME,
+} from './streams';
+
 // Legacy export for backward compatibility
 export { redisService } from '../redis.service';

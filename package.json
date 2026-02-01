@@ -48,6 +48,7 @@
     "format:check:shared": "cd shared && npm run format:check"
   },
   "devDependencies": {
+    "@types/redis": "^4.0.10",
     "concurrently": "^9.2.1",
     "prettier": "^3.4.2"
   },

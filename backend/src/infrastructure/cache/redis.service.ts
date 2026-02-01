@@ -95,6 +95,7 @@ import { RedisTransactions, TransactionOptions } from "./redis/transactions";
 import { RedisAtomicOperations } from "./redis/atomic-operations";
 import { RedisCacheManager } from "./redis/cache-manager";
 import { RedisMetrics } from "./redis/metrics";
+import { RedisStreamOperations } from "./redis/streams";
 
 class RedisService {
   // Legacy client for backward compatibility
@@ -107,6 +108,7 @@ class RedisService {
   private atomicOps: RedisAtomicOperations;
   private cacheManager: RedisCacheManager;
   private metrics: RedisMetrics;
+  private streamOperations: RedisStreamOperations;
 
   private static instance: RedisService;
 
@@ -131,6 +133,7 @@ class RedisService {
     this.atomicOps = new RedisAtomicOperations(this.connectionManager, this.transactions);
     this.cacheManager = new RedisCacheManager(this.connectionManager, this.transactions);
     this.metrics = new RedisMetrics(this.connectionManager);
+    this.streamOperations = new RedisStreamOperations(this.connectionManager);
 
     logger.info("Redis service initialized with enterprise architecture");
   }
@@ -292,6 +295,13 @@ class RedisService {
 
   public getClient(): RedisClientType {
     return this.client;
+  }
+
+  /**
+   * Get stream operations instance
+   */
+  public get streamOps(): RedisStreamOperations {
+    return this.streamOperations;
   }
 
   /**

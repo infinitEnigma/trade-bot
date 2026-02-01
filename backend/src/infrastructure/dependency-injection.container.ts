@@ -15,6 +15,9 @@ import { passwordAdapter } from './adapters/password/password.adapter';
 import { encryptionAdapter } from './adapters/encryption/encryption.adapter';
 import { externalApiAdapter } from './adapters/external/external-api.adapter';
 
+// Redis Services
+import { redisService } from './cache/redis.service';
+
 // Repository Adapters
 import { userRepositoryAdapter } from './adapters/repositories/user-repository.adapter';
 import { balanceRepositoryAdapter } from './adapters/repositories/balance-repository.adapter';
@@ -45,6 +48,8 @@ import { HealthService } from '../core/system/health.service.pure';
 import { PositionValidatorService } from '../core/strategies/position-validator.service.pure';
 import { PositionSyncService } from '../core/strategies/position-sync.service.pure';
 import { EngineManager } from '../core/strategies/engine-manager.service.pure';
+import { UserProfileService } from '../core/user/user-profile.service';
+import { UserKodiakService } from '../core/user/user-kodiak.service';
 
 /**
  * Dependency Injection Container
@@ -313,12 +318,56 @@ export class DependencyInjectionContainer {
     }
 
     /**
+     * User Profile Service - Pure business logic for user profile management
+     */
+    get userProfileService(): UserProfileService {
+        return new UserProfileService({
+            userRepository: this.userRepository,
+            cache: this.cacheService,
+            passwordService: this.passwordService,
+            auditLogRepository: this.auditLogRepository
+        });
+    }
+
+    /**
+     * User Kodiak Service - Pure business logic for user Kodiak integration
+     */
+    get userKodiakService(): UserKodiakService {
+        return new UserKodiakService({
+            kodiakConnectionService: {
+                connectKodiak: async (userId: string, connectionData: any) => {
+                    // TODO: Implement actual Kodiak connection service
+                    return { success: false, message: "Not implemented" };
+                },
+                disconnectKodiak: async (userId: string) => {
+                    // TODO: Implement actual Kodiak disconnection service
+                    return { success: false, message: "Not implemented" };
+                },
+                getConnectionStatus: async (userId: string) => {
+                    // TODO: Implement actual Kodiak connection status check
+                    return { connected: false };
+                }
+            },
+            cache: {
+                getCachedResult: async (userId: string, accountId: string) => {
+                    // TODO: Implement actual cache service
+                    return null;
+                },
+                setCachedResult: async (userId: string, accountId: string, success: boolean, error?: string) => {
+                    // TODO: Implement actual cache service
+                }
+            }
+        });
+    }
+
+    /**
      * Engine Manager - Pure business logic for engine management
      */
     get engineManager(): EngineManager {
         return new EngineManager({
             botInstanceRepository: this.botInstanceRepository,
-            logger: this.loggerService
+            logger: this.loggerService,
+            redisStreamOperations: this.redisStreamOperations
         });
     }
 
@@ -338,6 +387,13 @@ export class DependencyInjectionContainer {
             this.authService,
             this.loggerService
         );
+    }
+
+    /**
+     * Redis Stream Operations - For engine-backend communication
+     */
+    get redisStreamOperations() {
+        return redisService.streamOps;
     }
 
     // ===========================================
@@ -486,7 +542,13 @@ export const getHealthService = () => diContainer.healthService;
 export const getPositionValidatorService = () => diContainer.positionValidatorService;
 export const getPositionSyncService = () => diContainer.positionSyncService;
 export const getEngineManager = () => diContainer.engineManager;
+export const getUserProfileService = () => diContainer.userProfileService;
+export const getUserKodiakService = () => diContainer.userKodiakService;
+export const getRoleManagementService = () => diContainer.roleManagementService;
 
 // WebSocket Services
 export const getWebSocketService = () => diContainer.webSocketService;
 export const getWebSocketRateLimiter = () => diContainer.webSocketRateLimiter;
+
+// Redis Stream Operations
+export const getRedisStreamOperations = () => diContainer.redisStreamOperations;

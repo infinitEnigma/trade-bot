@@ -287,6 +287,12 @@ export * from './types/errors';
 
 export * from './types/logging';
 
+// ============================================
+// Engine Integration Contract
+// ============================================
+
+export * from './types/engine-contract';
+
 // Explicitly export error classes for better discoverability
 /*export {
   AppError,

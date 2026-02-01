@@ -16,8 +16,8 @@
  */
 
 // Export user-related services
-export { userProfileService } from './user-profile.service';
-export { userKodiakService } from './user-kodiak.service';
+export { UserProfileService } from './user-profile.service';
+export { UserKodiakService } from './user-kodiak.service';
 
 // Export types
 export type { UserProfile, UserSettings } from './user-profile.service';
