@@ -5,13 +5,30 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: [
       { find: "@", replacement: path.resolve(__dirname, "./src") },
       { find: "@trade-bot/shared", replacement: path.resolve(__dirname, "../shared/dist/index.js") },
     ],
+  },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      exclude: [
+        'node_modules/',
+        'dist/',
+        'src/test/',
+        'src/vite-env.d.ts'
+      ]
+    },
+    clearMocks: true,
+    mockReset: true
   },
   build: {
     rollupOptions: {
@@ -98,4 +115,4 @@ export default defineConfig({
       },
     },
   },*/
-});
+}));

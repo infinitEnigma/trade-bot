@@ -41,3 +41,8 @@ docs/
 # Log files
 logs/
 backend/logs/
+
+# Test coverage
+backend/coverage/
+frontend/coverage/
+engine/coverage/

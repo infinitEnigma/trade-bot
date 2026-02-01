@@ -162,14 +162,14 @@ export class Strategy {
     private isValidConfig(): boolean {
         const config = this.config;
 
-        if (config.leverage && config.leverage <= 0) return false;
-        if (config.orderQuantity && config.orderQuantity <= 0) return false;
+        if (config.leverage !== undefined && (config.leverage <= 0 || typeof config.leverage !== 'number')) return false;
+        if (config.orderQuantity !== undefined && (config.orderQuantity <= 0 || typeof config.orderQuantity !== 'number')) return false;
 
         switch (this.type) {
             case StrategyType.GRID:
-                return !!(config.gridSize && config.gridRange);
+                return !!(config.gridSize && config.gridRange && config.gridSize > 0 && config.gridRange > 0);
             case StrategyType.TREND_FOLLOWING:
-                return !!(config.entryThreshold && config.exitThreshold);
+                return !!(config.entryThreshold && config.exitThreshold && Math.abs(config.entryThreshold) > 0 && Math.abs(config.exitThreshold) > 0);
             case StrategyType.ARBITRAGE:
                 return true;
             default:

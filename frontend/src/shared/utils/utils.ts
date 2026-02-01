@@ -8,7 +8,15 @@ import { twMerge } from "tailwind-merge";
  * This ensures proper handling of conditional classes and eliminates conflicts
  */
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+  // Dedupe classes before merging
+  const dedupedInputs = new Set(inputs.flatMap(input => {
+    if (typeof input === "string") {
+      return input.split(" ").filter(Boolean);
+    }
+    return [];
+  }));
+
+  return twMerge(clsx(Array.from(dedupedInputs)));
 }
 
 /**
@@ -68,7 +76,7 @@ export function shortenAddress(
   address: string,
   options: { startLength?: number; endLength?: number } = {}
 ): string {
-  const { startLength = 6, endLength = 4 } = options;
+  const { startLength = 7, endLength = 4 } = options;
   if (!address) return "";
   return `${address.slice(0, startLength)}...${address.slice(-endLength)}`;
 }
@@ -115,9 +123,15 @@ export function truncateText(
  * Generates a random ID
  */
 export function generateId(length: number = 8): string {
-  return Math.random()
-    .toString(36)
-    .substring(2, 2 + length);
+  let id = "";
+  const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const charsLength = characters.length;
+
+  for (let i = 0; i < length; i++) {
+    id += characters.charAt(Math.floor(Math.random() * charsLength));
+  }
+
+  return id;
 }
 
 /**

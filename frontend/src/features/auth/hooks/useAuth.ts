@@ -47,6 +47,10 @@ const useAuthStore = create<AuthStore>()(
                 } catch (error) {
                     console.error("Login error:", error);
                     toast.error(error instanceof Error ? error.message : "Login failed");
+                    set({
+                        user: null,
+                        isAuthenticated: false,
+                    });
                     throw error;
                 } finally {
                     set({ isLoading: false });
@@ -74,6 +78,10 @@ const useAuthStore = create<AuthStore>()(
                 } catch (error) {
                     console.error("Registration error:", error);
                     toast.error(error instanceof Error ? error.message : "Registration failed");
+                    set({
+                        user: null,
+                        isAuthenticated: false,
+                    });
                     throw error;
                 } finally {
                     set({ isLoading: false });
