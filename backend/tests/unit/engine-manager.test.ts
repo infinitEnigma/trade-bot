@@ -6,7 +6,7 @@ describe('EngineManager', () => {
     let engineManager: EngineManager;
     let mockStreamOperations: Partial<RedisStreamOperations>;
 
-    beforeAll(() => {
+    beforeEach(() => {
         // Create mock Redis stream operations
         mockStreamOperations = {
             publish: jest.fn().mockResolvedValue({ success: true }),
@@ -31,6 +31,11 @@ describe('EngineManager', () => {
             } as any,
             redisStreamOperations: mockStreamOperations as any
         });
+    });
+
+    afterEach(() => {
+        // Clean up the event listener loop
+        (engineManager as any).stopListeningForEvents();
     });
 
     describe('EngineManager initialization', () => {

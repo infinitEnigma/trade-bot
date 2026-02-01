@@ -21,7 +21,7 @@ const useAuthStore = create<AuthStore>()(
                     set({ isLoading: true });
                     const response = await authService.login(email, password);
 
-                    if (response.success && response.user) {
+                    if (response.success && response.data?.user) {
                         // Login successful - now fetch complete user profile for accurate data
                         const profileResponse = await authService.getProfile();
 
@@ -35,7 +35,7 @@ const useAuthStore = create<AuthStore>()(
                         } else {
                             // Fallback to login response if profile fetch fails
                             set({
-                                user: response.user as AuthUser,
+                                user: response.data.user as AuthUser,
                                 isAuthenticated: true,
                                 isLoading: false,
                             });
@@ -60,9 +60,9 @@ const useAuthStore = create<AuthStore>()(
 
                     if (response.success) {
                         // Set user directly from register response
-                        if (response.user) {
+                        if (response.data?.user) {
                             set({
-                                user: response.user as AuthUser,
+                                user: response.data.user as AuthUser,
                                 isAuthenticated: true,
                                 isLoading: false,
                             });

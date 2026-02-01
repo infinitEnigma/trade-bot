@@ -657,8 +657,6 @@ class PasswordWorkerPool extends EventEmitter {
      */
     async cleanupForTests(): Promise<void> {
         try {
-            //console.log('🧹 Starting password worker pool cleanup for tests...');
-
             // Set shutdown flag immediately
             this.isShuttingDown = true;
 
@@ -668,8 +666,7 @@ class PasswordWorkerPool extends EventEmitter {
                 this.workerHealthCheckInterval = null;
             }
 
-            // Reject all pending tasks with debug logging
-            //console.log(`📋 Rejecting ${this.taskQueue.length} pending tasks...`);
+            // Reject all pending tasks
             for (const task of this.taskQueue) {
                 try {
                     task.reject(new Error('Worker pool shutting down during test cleanup'));
@@ -679,8 +676,7 @@ class PasswordWorkerPool extends EventEmitter {
             }
             this.taskQueue.length = 0;
 
-            // Clear active tasks with debug logging
-            //console.log(`📋 Clearing ${this.activeTasks.size} active tasks...`);
+            // Clear active tasks
             for (const [taskId, task] of this.activeTasks) {
                 try {
                     task.reject(new Error('Worker pool shutting down during test cleanup'));
@@ -691,59 +687,36 @@ class PasswordWorkerPool extends EventEmitter {
             }
             this.activeTasks.clear();
 
-            // Terminate all workers with enhanced error handling
+            // Terminate all workers with simple, reliable logic
             console.log(`🔧 Terminating ${this.workers.length} workers...`);
-            const terminationPromises = this.workers.map(async (worker) => {
-                try {
-                    // Send shutdown message to worker first
+            const terminationPromises = this.workers.map(worker => {
+                return new Promise<void>((resolve) => {
+                    // Set a hard timeout to ensure we don't get stuck
+                    const timeout = setTimeout(() => {
+                        worker.removeAllListeners();
+                        resolve();
+                    }, 1000); // 1 second timeout
+
+                    // Listen for worker exit
+                    worker.once('exit', () => {
+                        clearTimeout(timeout);
+                        resolve();
+                    });
+
+                    // Try to terminate the worker
                     try {
-                        worker.postMessage({
-                            id: `shutdown_${Date.now()}`,
-                            action: 'shutdown',
-                            data: {}
-                        });
-                    } catch (postError) {
-                        console.warn('Warning: Failed to send shutdown message to worker:', postError);
-                    }
-
-                    // Wait a short time for graceful shutdown
-                    await new Promise(resolve => setTimeout(resolve, 300));
-
-                    // Force terminate if still running
-                    return new Promise<void>((resolve) => {
-                        const exitHandler = () => {
-                            resolve();
-                        };
-                        worker.once('exit', exitHandler);
-
-                        // Set a timeout for termination
-                        const timeout = setTimeout(() => {
-                            //console.warn('Warning: Worker termination timeout, forcing exit');
-                            try {
-                                worker.removeAllListeners();
-                                worker.terminate();
-                            } catch (error) {
-                                console.warn('Warning: Failed to force terminate worker:', error);
-                            }
-                            resolve();
-                        }, 2000); // 2 second timeout for worker termination
-
-                        try {
-                            //worker.terminate();
-                            // Clear timeout when worker exits
-                            worker.once('exit', () => {
-                                clearTimeout(timeout);
-                            });
-
-                        } catch (error) {
-                            console.warn('Warning: Failed to terminate worker:', error);
+                        worker.terminate().then(() => {
                             clearTimeout(timeout);
                             resolve();
-                        }
-                    });
-                } catch (error) {
-                    console.warn('Warning: Error during worker termination:', error);
-                }
+                        }).catch(() => {
+                            clearTimeout(timeout);
+                            resolve();
+                        });
+                    } catch (error) {
+                        clearTimeout(timeout);
+                        resolve();
+                    }
+                });
             });
 
             await Promise.all(terminationPromises);
@@ -764,10 +737,8 @@ class PasswordWorkerPool extends EventEmitter {
                 console.warn('Warning: Failed to remove process handlers:', error);
             }
 
-            //console.log('✅ Password worker pool cleanup completed successfully');
         } catch (error) {
-            //console.error('❌ Password worker pool cleanup failed:', error);
-            // Don't throw here as it might interfere with test results
+            console.warn('Warning: Password worker pool cleanup failed:', error);
         }
     }
 }

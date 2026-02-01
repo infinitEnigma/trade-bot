@@ -86,7 +86,12 @@ export class RedisStreamOperations {
                 );
 
                 if (!result) {
-                    return { success: true, messages: [] };
+                    console.log("stream: ", stream)
+                    logger.warn("Failed to read from consumer group", {
+                        stream,
+                        consumerGroup: options.consumerGroup
+                    });
+                    return { success: false, messages: [] };
                 }
 
                 const messages = result.flatMap(group =>
@@ -114,7 +119,8 @@ export class RedisStreamOperations {
                 );
 
                 if (!result) {
-                    return { success: true, messages: [] };
+                    logger.warn("Failed to read from stream", stream)
+                    return { success: false, messages: [] };
                 }
 
                 const messages = result.flatMap(group =>
@@ -159,10 +165,10 @@ export class RedisStreamOperations {
     /**
      * Create a consumer group
      */
-    async createConsumerGroup(stream: string, consumerGroup: string): Promise<{ success: boolean; error?: string }> {
+    async createConsumerGroup(stream: string, consumerGroup: string, startId: string = "0"): Promise<{ success: boolean; error?: string }> {
         try {
             const client = this.connectionManager.getClient();
-            await client.xGroupCreate(stream, consumerGroup, "$", { MKSTREAM: true });
+            await client.xGroupCreate(stream, consumerGroup, startId); // , { MKSTREAM: true });
             logger.info("Consumer group created", { stream, consumerGroup });
             return { success: true };
         } catch (error) {
@@ -184,11 +190,25 @@ export class RedisStreamOperations {
             const client = this.connectionManager.getClient();
 
             // Get current length before trim
-            const infoBefore = await client.xInfoStream(stream);
-            const lengthBefore = infoBefore.length;
+            let lengthBefore;
+            try {
+                const infoBefore = await client.xInfoStream(stream);
+                lengthBefore = infoBefore.length;
+            } catch (error) {
+                // If stream doesn't exist, there's nothing to trim
+                if ((error as Error).message.includes("no such key")) {
+                    return { success: true, trimmedCount: 0 };
+                }
+                throw error;
+            }
 
             // Trim the stream
-            await client.xTrim(stream, 'MAXLEN', approximate ? '~' + maxLength : maxLength);
+            if (approximate) {
+                await client.xTrim(stream, 'MAXLEN', maxLength);
+            } else {
+                // Use Redis syntax: XTRIM stream MAXLEN = maxLength
+                await client.xTrim(stream, 'MAXLEN', approximate ? '=' + maxLength : maxLength);
+            }
 
             // Get current length after trim
             const infoAfter = await client.xInfoStream(stream);

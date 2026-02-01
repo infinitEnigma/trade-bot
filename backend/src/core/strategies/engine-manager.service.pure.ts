@@ -253,13 +253,21 @@ export class EngineManager {
     }
 
     /**
+     * Stop listening for engine events
+     */
+    stopListeningForEvents(): void {
+        this.isListening = false;
+        this.deps.logger.info('Stopped listening for engine events');
+    }
+
+    /**
      * Event listener loop
      */
     private async listenForEventsLoop(): Promise<void> {
         while (this.isListening) {
             try {
                 const result = await this.streamOperations.read('engine:events', {
-                    block: 5000, // Block for 5 seconds
+                    block: 1000, // Reduced block time for faster shutdown
                     count: 10,
                     consumerGroup: 'backend-group',
                     consumerName: 'backend-consumer',

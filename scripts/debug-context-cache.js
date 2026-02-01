@@ -1,5 +1,5 @@
-const { ContextAwareLogger } = require('./src/core/logging/context-aware-logger.service');
-const { setRequestContext } = require('./src/shared/utils/context');
+const { ContextAwareLogger } = require('../backend/src/core/logging/context-aware-logger.service');
+const { setRequestContext } = require('../backend/src/shared/utils/context');
 
 async function debugContextCache() {
     console.log('=== Context Cache Debug ===');

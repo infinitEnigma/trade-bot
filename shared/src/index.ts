@@ -293,6 +293,12 @@ export * from './types/logging';
 
 export * from './types/engine-contract';
 
+// ============================================
+// Frontend-Backend Integration Contract
+// ============================================
+
+export * from './types/frontend-backend-contract';
+
 // Explicitly export error classes for better discoverability
 /*export {
   AppError,

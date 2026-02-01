@@ -53,7 +53,19 @@ class HttpClient {
 
     private setupResponseInterceptors() {
         this.client.interceptors.response.use(
-            response => response,
+            response => {
+                // Ensure all responses follow ApiResponse format
+                if (response.data && typeof response.data === 'object') {
+                    // If response doesn't have success field, wrap it in ApiResponse format
+                    if (!('success' in response.data)) {
+                        response.data = {
+                            success: true,
+                            data: response.data
+                        };
+                    }
+                }
+                return response;
+            },
             async error => {
                 // Handle 429 (Too Many Requests) - Rate limiting
                 if (error.response?.status === 429) {

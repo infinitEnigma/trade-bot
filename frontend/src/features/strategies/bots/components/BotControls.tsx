@@ -103,11 +103,11 @@ const QualificationCheckButton: React.FC = () => {
     setIsChecking(true);
     try {
       const response = await authApi.checkQualification();
-      if (response.success && response.qualified) {
+      if (response.success && response.data?.qualified) {
         OperationToasts.qualificationSuccess();
         window.location.reload(); // Refresh to update UI
       } else {
-        OperationToasts.qualificationFailed(response.reasons?.[0] || "Qualification check failed");
+        OperationToasts.qualificationFailed(response.data?.reasons?.[0] || "Qualification check failed");
       }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error
