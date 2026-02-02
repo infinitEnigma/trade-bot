@@ -51,13 +51,18 @@ export class AuditLoggerAdapter implements IAuditLogger {
         if (events.length === 0) return;
 
         try {
-            const values = events.map(event => {
-                const detailsJson = JSON.stringify(event.details);
-                return `('${event.userId}', '${event.action}', '${detailsJson}')`;
-            }).join(', ');
+            // Use parameterized query for batch insertion to prevent SQL injection
+            const placeholders = events.map((_, index) =>
+                `($${index * 3 + 1}, $${index * 3 + 2}, $${index * 3 + 3})`
+            ).join(', ');
+
+            const values: unknown[] = events.reduce((acc: unknown[], event) => {
+                return [...acc, event.userId, event.action, JSON.stringify(event.details)];
+            }, []);
 
             await query(
-                `INSERT INTO audit_logs (user_id, action, details) VALUES ${values}`
+                `INSERT INTO audit_logs (user_id, action, details) VALUES ${placeholders}`,
+                values
             );
 
             logger.debug("Batch audit events logged", {

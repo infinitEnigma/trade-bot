@@ -176,7 +176,7 @@ export class RoleManagementService implements IRoleManagementService {
                 userId,
                 error: error instanceof Error ? error.message : String(error)
             });
-            return [];
+            throw error;
         }
     }
 
