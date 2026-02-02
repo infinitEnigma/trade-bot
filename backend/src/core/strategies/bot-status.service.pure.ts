@@ -438,11 +438,11 @@ export class BotStatusService {
     private canTransitionToStatus(currentStatus: string, newStatus: string): boolean {
         const validTransitions: Record<string, string[]> = {
             'STOPPED': ['STARTING'],
-            'STARTING': ['RUNNING', 'ERROR'],
-            'RUNNING': ['PAUSED', 'ERROR', 'FORCE_STOPPING'],
+            'STARTING': ['RUNNING', 'ERROR', 'STOPPED'],
+            'RUNNING': ['PAUSED', 'ERROR', 'FORCE_STOPPING', 'STOPPED'],
             'PAUSED': ['RUNNING', 'STOPPED'],
-            'RECOVERING': ['RUNNING', 'ERROR'],
-            'ERROR': ['RECOVERING'],
+            'RECOVERING': ['RUNNING', 'ERROR', 'STOPPED'],
+            'ERROR': ['RECOVERING', 'STOPPED'],
             'FORCE_STOPPING': ['STOPPED'],
         };
 
