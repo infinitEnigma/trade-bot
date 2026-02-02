@@ -221,8 +221,8 @@ export class RedisStreamOperations {
             return {
                 success: true,
                 length: info.length,
-                firstId: info.firstEntry?.id,
-                lastId: info.lastEntry?.id,
+                firstId: info['first-entry']?.id,
+                lastId: info['last-entry']?.id,
             };
         } catch (error) {
             const errorMessage = (error as Error).message;

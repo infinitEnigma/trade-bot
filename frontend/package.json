@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
-    "build": "tsc && npx vite build",
+    "build": "tsc -p tsconfig.build.json && npx vite build",
     "preview": "vite preview",
     "test": "vitest",
     "lint": "eslint src --ext .ts,.tsx,.js,.jsx",
