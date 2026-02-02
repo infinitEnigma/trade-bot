@@ -426,6 +426,12 @@ export const getPositionServiceSafe = () => serviceProvider.getPositionServiceSa
 export const getRoleManagementService = () => serviceProvider.getRoleManagementService();
 export const getRoleManagementServiceSafe = () => serviceProvider.getRoleManagementServiceSafe();
 
+export const getRoleQualificationService = () => serviceProvider.getRoleQualificationService();
+export const getRoleQualificationServiceSafe = () => serviceProvider.getRoleQualificationServiceSafe();
+
+export const getWalletQualificationService = () => serviceProvider.getWalletQualificationService();
+export const getWalletQualificationServiceSafe = () => serviceProvider.getWalletQualificationServiceSafe();
+
 export const getUserProfileService = () => serviceProvider.getUserProfileService();
 export const getUserProfileServiceSafe = () => serviceProvider.getUserProfileServiceSafe();
 

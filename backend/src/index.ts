@@ -60,8 +60,8 @@ import { logger } from "./core/logging";
 // Application start time for uptime tracking
 const START_TIME = Date.now();
 
-// Required environment variables for application startup
-const REQUIRED_ENV_VARS = [
+// Environment validation module
+export const REQUIRED_ENV_VARS = [
     "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", // PostgreSQL
     "REDIS_URL", // Redis cache
     "JWT_SECRET", "JWT_REFRESH_SECRET", // Authentication
@@ -75,7 +75,7 @@ const REQUIRED_ENV_VARS = [
  * Validates all required environment variables are present
  * Performs security checks for production deployments
  */
-function validateEnvironment(): void {
+export function validateEnvironment(): void {
     const missing = REQUIRED_ENV_VARS.filter(key => !process.env[key]);
 
     if (missing.length > 0) {
@@ -363,48 +363,90 @@ webSocketService.initialize(io);
 // ===========================================
 // ⚙️ 9. SERVER LIFECYCLE MANAGEMENT
 // ===========================================
-// Starts the HTTP/WebSocket server and initializes services
-// Configures service dependencies and startup logging
+// Exports server control functions instead of automatically starting
+// Allows for explicit server start/stop in tests and applications
 // ===========================================
 
 const PORT = process.env.PORT || 3000;
 
-httpServer.listen(PORT, () => {
-    logger.info(`🚀 Server running on port ${PORT}`);
-    logger.info("🌐 WebSocket server ready");
-    logger.info(`🏭 Environment: ${process.env.NODE_ENV || "development"}`);
+/**
+ * Starts the HTTP and WebSocket server
+ * @returns A promise that resolves when the server is ready
+ */
+export const startServer = (): Promise<typeof httpServer> => {
+    return new Promise((resolve) => {
+        httpServer.listen(PORT, () => {
+            logger.info(`🚀 Server running on port ${PORT}`);
+            logger.info("🌐 WebSocket server ready");
+            logger.info(`🏭 Environment: ${process.env.NODE_ENV || "development"}`);
 
-    // ✅ START BOT RECONCILIATION WORKER (after database is ready)
-    // TEMPORARILY DISABLED - POSSIBLE KODIAK RATE LIMITING ISSUE
-    logger.info("Bot reconciliation worker temporarily disabled for production stability");
-    /*
-    botReconciliationWorker.start().catch((error) => {
-        logger.error("Failed to start bot reconciliation worker", {
-            error: error instanceof Error ? error.message : String(error),
+            // ✅ START BOT RECONCILIATION WORKER (after database is ready)
+            // TEMPORARILY DISABLED - POSSIBLE KODIAK RATE LIMITING ISSUE
+            logger.info("Bot reconciliation worker temporarily disabled for production stability");
+            /*
+            botReconciliationWorker.start().catch((error) => {
+                logger.error("Failed to start bot reconciliation worker", {
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            });
+            */
+
+            // 🚫 DEFERRED: Market stream service - only initialize when VERIFIED users connect
+            // marketStreamService.setSocketServer(io);
+            logger.info(
+                "📡 Market stream service deferred - initializes only for VERIFIED users"
+            );
+
+            // 🚫 DEFERRED: Bot status service - only initialize when VERIFIED users with bots connect
+            // botStatusService.initializeBackgroundProcesses()
+            logger.info(
+                "🤖 Bot status service deferred - initializes only for VERIFIED users with active bots"
+            );
+
+            // 🚫 TEMPORARILY DISABLED: Worker shutdown handlers
+            // Dynamic import causing issues with ts-node-dev ES modules
+            // Will re-enable once core functionality is stable
+            logger.info("Worker shutdown handlers temporarily disabled for stability", {
+                reason: "Dynamic ES module import issues with ts-node-dev",
+                status: "Core functionality remains fully operational",
+            });
+
+            resolve(httpServer);
         });
     });
-    */
+};
 
-    // 🚫 DEFERRED: Market stream service - only initialize when VERIFIED users connect
-    // marketStreamService.setSocketServer(io);
-    logger.info(
-        "📡 Market stream service deferred - initializes only for VERIFIED users"
-    );
+/**
+ * Stops the HTTP and WebSocket server gracefully
+ * @returns A promise that resolves when the server is stopped
+ */
+export const stopServer = (...args: any[]): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        // Check if server is actually running before trying to close
+        // This prevents errors in test environments where server might not have been started
+        try {
+            const serverListeners = httpServer.listeners('listening');
+            if (serverListeners.length === 0) {
+                logger.info("Server was not running - skipping close");
+                resolve();
+                return;
+            }
 
-    // 🚫 DEFERRED: Bot status service - only initialize when VERIFIED users with bots connect
-    // botStatusService.initializeBackgroundProcesses()
-    logger.info(
-        "🤖 Bot status service deferred - initializes only for VERIFIED users with active bots"
-    );
-
-    // 🚫 TEMPORARILY DISABLED: Worker shutdown handlers
-    // Dynamic import causing issues with ts-node-dev ES modules
-    // Will re-enable once core functionality is stable
-    logger.info("Worker shutdown handlers temporarily disabled for stability", {
-        reason: "Dynamic ES module import issues with ts-node-dev",
-        status: "Core functionality remains fully operational",
+            httpServer.close((err) => {
+                if (err) {
+                    logger.error("Error closing HTTP server", { error: err.message });
+                    reject(err);
+                } else {
+                    logger.info("HTTP server closed - no longer accepting connections");
+                    resolve();
+                }
+            });
+        } catch (error) {
+            logger.error("Error stopping server", { error: (error as Error).message });
+            resolve(); // Resolve instead of reject to allow test to continue
+        }
     });
-});
+};
 
 // ===========================================
 // 🛑 10. GRACEFUL SHUTDOWN HANDLING
@@ -435,21 +477,22 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
                     shutdownDuration: Date.now() - shutdownStart,
                 }
             );
-            // eslint-disable-next-line no-process-exit
-            process.exit(1);
+
+            // Don't call process.exit() in test environment to avoid test failure
+            if (process.env.NODE_ENV === "test") {
+                shutdownCompleted = true;
+                throw new Error("Graceful shutdown timed out");
+            } else {
+                // eslint-disable-next-line no-process-exit
+                process.exit(1);
+            }
         }
     }, 30000);
 
     try {
         // Phase 1: Stop accepting new connections
         logger.info("Phase 1: Stopping new connections");
-        httpServer.close(err => {
-            if (err) {
-                logger.error("Error closing HTTP server", { error: err.message });
-            } else {
-                logger.info("HTTP server closed - no longer accepting connections");
-            }
-        });
+        await stopServer();
 
         // Phase 2: Close external service connections
         logger.info("Phase 2: Closing external connections");
@@ -496,8 +539,12 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
 
         shutdownCompleted = true;
         clearTimeout(shutdownTimeout);
-        // eslint-disable-next-line no-process-exit
-        process.exit(0);
+
+        // Don't call process.exit() in test environment to avoid test failure
+        if (process.env.NODE_ENV !== "test") {
+            // eslint-disable-next-line no-process-exit
+            process.exit(0);
+        }
     } catch (error) {
         logger.error("Critical error during graceful shutdown", {
             error: error instanceof Error ? error.message : String(error),
@@ -505,8 +552,14 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
         });
         shutdownCompleted = true;
         clearTimeout(shutdownTimeout);
-        // eslint-disable-next-line no-process-exit
-        process.exit(1);
+
+        // Don't call process.exit() in test environment to avoid test failure
+        if (process.env.NODE_ENV === "test") {
+            throw error;
+        } else {
+            // eslint-disable-next-line no-process-exit
+            process.exit(1);
+        }
     }
 };
 
@@ -530,5 +583,16 @@ process.on("unhandledRejection", (reason, _promise) => {
     });
     gracefulShutdown("unhandledRejection");
 });
+
+// Auto-start server only when directly run (not imported as module)
+if (require.main === module) {
+    startServer().catch(error => {
+        logger.error("Failed to start server", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        // eslint-disable-next-line no-process-exit
+        process.exit(1);
+    });
+}
 
 export { app, io };
