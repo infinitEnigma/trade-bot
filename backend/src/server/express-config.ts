@@ -219,11 +219,11 @@ export class ExpressConfig {
      */
     private static async configureLogging(app: Express): Promise<void> {
         // Request context middleware (must be first)
-        const { contextMiddleware } = await import("../interfaces/middleware/context.js");
+        const { contextMiddleware } = await import("../interfaces/middleware/context");
         app.use(contextMiddleware);
 
         // HTTP request logging middleware
-        const { httpLogger } = await import("../interfaces/middleware/logger.js");
+        const { httpLogger } = await import("../interfaces/middleware/logger");
         app.use(httpLogger);
 
         this.expressLogger.debug("Logging and monitoring middleware configured", {
