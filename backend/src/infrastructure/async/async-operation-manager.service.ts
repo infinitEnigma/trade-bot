@@ -248,21 +248,21 @@ export class AsyncOperationManager {
      * Cancel a background job
      */
     cancelJob(jobId: string): boolean {
-        // Check if job is queued
-        const queuedJob = this.jobQueue.get(jobId);
-        if (queuedJob) {
-            this.jobQueue.delete(jobId);
-            contextLogger.info("Cancelled queued job", { jobId, jobName: queuedJob.name });
-            return true;
-        }
-
-        // Check if job is scheduled
+        // Check if job is scheduled (has timeout)
         const timeout = this.jobTimeouts.get(jobId);
         if (timeout) {
             clearTimeout(timeout);
             this.jobTimeouts.delete(jobId);
             this.jobQueue.delete(jobId);
             contextLogger.info("Cancelled scheduled job", { jobId });
+            return true;
+        }
+
+        // Check if job is queued
+        const queuedJob = this.jobQueue.get(jobId);
+        if (queuedJob) {
+            this.jobQueue.delete(jobId);
+            contextLogger.info("Cancelled queued job", { jobId, jobName: queuedJob.name });
             return true;
         }
 
@@ -449,6 +449,12 @@ export function getAsyncOperationManager(): AsyncOperationManager {
     return asyncOperationManager;
 }
 
+/**
+ * Test-only: Reset the singleton instance (for testing purposes)
+ */
+export function resetAsyncOperationManager(): void {
+    asyncOperationManager = new AsyncOperationManager();
+}
 // Default export (remove duplicate declaration)
 
 /**
