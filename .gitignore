@@ -46,3 +46,6 @@ backend/logs/
 backend/coverage/
 frontend/coverage/
 engine/coverage/
+
+# Debug files
+backend/debug/

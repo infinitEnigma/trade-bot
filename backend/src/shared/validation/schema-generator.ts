@@ -73,7 +73,15 @@ export class SchemaGenerator {
         const columnSchemas: Record<string, Joi.Schema> = {};
 
         for (const [columnName, columnDef] of Object.entries(tableDef.columns)) {
-            const joiSchema = this.generateColumnSchema(columnName, columnDef, tableDef, fullSchema);
+            // Fix: Copy column definition to avoid modifying original
+            const columnDefCopy = { ...columnDef };
+
+            // Fix: Apply table-level check constraints to column definition
+            if (tableDef.checkConstraints[columnName]) {
+                columnDefCopy.checkConstraint = tableDef.checkConstraints[columnName];
+            }
+
+            const joiSchema = this.generateColumnSchema(columnName, columnDefCopy, tableDef, fullSchema);
             if (joiSchema) {
                 columnSchemas[columnName] = joiSchema;
             }
@@ -167,18 +175,36 @@ export class SchemaGenerator {
             case 'NUMERIC': {
                 let numberSchema = Joi.number();
                 if (precision !== undefined) {
-                    numberSchema = numberSchema.precision(precision);
                     if (scale !== undefined && scale > 0) {
-                        // For decimal places, we validate the string representation
-                        // since Joi doesn't have built-in decimal scale validation
+                        // For decimal places, create strict validation for both number and string
                         const decimalRegex = new RegExp(`^\\d+(\\.\\d{1,${scale}})?$`);
+
+                        // For numbers, we need to check scale by converting to string
+                        const numberWithScaleSchema = Joi.number()
+                            .precision(precision)
+                            .custom((value, helpers) => {
+                                const valueStr = value.toString();
+                                const decimalPart = valueStr.includes('.') ? valueStr.split('.')[1] : '';
+                                if (decimalPart.length > scale) {
+                                    return helpers.error('number.precision', {
+                                        limit: scale,
+                                        value: value,
+                                        label: helpers.state.path ? helpers.state.path.join('.') : 'value'
+                                    });
+                                }
+                                return value;
+                            });
+
                         const decimalSchema = Joi.alternatives().try(
-                            Joi.number().precision(precision),
+                            numberWithScaleSchema,
                             Joi.string().pattern(decimalRegex).messages({
                                 'string.pattern.base': `Must have at most ${scale} decimal places`,
                             })
                         );
                         return decimalSchema;
+                    } else {
+                        // No scale specified, just precision
+                        return numberSchema.precision(precision);
                     }
                 }
                 return numberSchema;

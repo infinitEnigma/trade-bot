@@ -195,11 +195,12 @@ export function getTTLForKey(key: string): number {
     // Market data
     if (key.startsWith('tick:')) return config.MARKET_TICK;
     if (key.startsWith('markprice:')) return config.MARKET_MARK_PRICE;
-    if (key.startsWith('kline:') && key.includes('1m')) return config.MARKET_KLINES_SHORT;
-    if (key.startsWith('kline:') && key.includes('5m')) return config.MARKET_KLINES_SHORT;
-    if (key.startsWith('kline:') && key.includes('15m')) return config.MARKET_KLINES_MEDIUM;
-    if (key.startsWith('kline:') && key.includes('30m')) return config.MARKET_KLINES_MEDIUM;
+    // Match longer intervals first to avoid overlapping matches
     if (key.startsWith('kline:') && key.includes('1h')) return config.MARKET_KLINES_LONG;
+    if (key.startsWith('kline:') && key.includes('30m')) return config.MARKET_KLINES_MEDIUM;
+    if (key.startsWith('kline:') && key.includes('15m')) return config.MARKET_KLINES_MEDIUM;
+    if (key.startsWith('kline:') && key.includes('5m')) return config.MARKET_KLINES_SHORT;
+    if (key.startsWith('kline:') && key.includes('1m')) return config.MARKET_KLINES_SHORT;
     if (key.startsWith('futures:')) return config.MARKET_FUTURES;
     if (key.startsWith('tv:config')) return config.MARKET_TRADINGVIEW_CONFIG;
 

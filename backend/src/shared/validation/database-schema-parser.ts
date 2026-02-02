@@ -152,7 +152,7 @@ export class DatabaseSchemaParser {
     private parseCreateTableStatement(statement: string): TableDefinition | null {
         try {
             // Match CREATE TABLE [IF NOT EXISTS] table_name (columns...)
-            const createTableRegex = /CREATE TABLE(?:\s+IF NOT EXISTS)?\s+["`]?(\w+)["`]?\s*\(([\s\S]*?)\);?/i;
+            const createTableRegex = /CREATE TABLE(?:\s+IF NOT EXISTS)?\s+["`]?(\w+)["`]?\s*\((.*)\);?/is;
             const match = statement.match(createTableRegex);
 
             if (!match) {
@@ -163,7 +163,7 @@ export class DatabaseSchemaParser {
             }
 
             const tableName = match[1];
-            const columnsDefinition = match[2];
+            const columnsDefinition = match[2].trim();
 
             logger.debug("Parsing CREATE TABLE", {
                 tableName,
@@ -202,11 +202,33 @@ export class DatabaseSchemaParser {
     private parseColumnDefinitions(columnsDef: string): Record<string, ColumnDefinition> {
         const columns: Record<string, ColumnDefinition> = {};
 
-        // Split by commas to get individual column definitions
-        const columnDefs = columnsDef.split(',');
+        // Fix: Handle column definitions with parentheses in type (like DECIMAL(10, 2))
+        // We need to split by commas only when they're not inside parentheses
+        const columnDefs = [];
+        let openParens = 0;
+        let currentDef = '';
+
+        for (let i = 0; i < columnsDef.length; i++) {
+            const char = columnsDef[i];
+
+            if (char === '(') openParens++;
+            if (char === ')') openParens--;
+
+            if (char === ',' && openParens === 0) {
+                columnDefs.push(currentDef.trim());
+                currentDef = '';
+            } else {
+                currentDef += char;
+            }
+        }
+
+        // Add the last definition
+        if (currentDef.trim()) {
+            columnDefs.push(currentDef.trim());
+        }
 
         for (let i = 0; i < columnDefs.length; i++) {
-            const columnDef = columnDefs[i].trim();
+            const columnDef = columnDefs[i];
 
             // Skip empty definitions and constraints
             if (!columnDef || columnDef.startsWith('CONSTRAINT') ||
@@ -228,6 +250,12 @@ export class DatabaseSchemaParser {
                 });
 
                 const columnDefObj = this.parseColumnType(columnName, typeDef);
+
+                // Fix: PRIMARY KEY implies NOT NULL
+                if (typeDef.includes('PRIMARY KEY')) {
+                    columnDefObj.notNull = true;
+                }
+
                 columns[columnName] = columnDefObj;
             } else {
                 logger.warn("Failed to parse column definition", { columnDef, index: i });
@@ -246,9 +274,12 @@ export class DatabaseSchemaParser {
      * Parse individual column type definition
      */
     private parseColumnType(name: string, typeDef: string): ColumnDefinition {
+        // Trim and clean up the type definition
+        const cleanTypeDef = typeDef.trim().replace(/\s+/g, ' ');
+
         // Extract just the type part, ignoring constraints
         // Look for patterns like: TYPE, TYPE(size), TYPE(size,size)
-        const typeMatch = typeDef.match(/^(\w+(?:\(\d+(?:,\s*\d+)?\))?)\s*/i);
+        const typeMatch = cleanTypeDef.match(/^(\w+(?:\(\d+(?:,\s*\d+)?\))?)\s*/i);
         if (!typeMatch) {
             logger.warn("Failed to parse column type", { name, typeDef });
             return {
@@ -277,27 +308,37 @@ export class DatabaseSchemaParser {
             notNull: false,
         };
 
-        // Parse type parameters (e.g., VARCHAR(255), DECIMAL(20,8))
+        // Parse type parameters (e.g., VARCHAR(255), DECIMAL(20, 8))
         if (typePart.includes('(')) {
             const paramMatch = typePart.match(/^(\w+)\(([^)]+)\)$/);
             if (paramMatch) {
                 definition.type = paramMatch[1];
+                const params = paramMatch[2].trim();
 
                 if (definition.type === 'DECIMAL' || definition.type === 'NUMERIC') {
-                    const [precision, scale] = paramMatch[2].split(',').map(Number);
-                    definition.precision = precision;
-                    definition.scale = scale || 0;
+                    const [precisionStr, scaleStr] = params.split(',').map(p => p.trim());
+                    const precision = parseInt(precisionStr);
+                    const scale = scaleStr ? parseInt(scaleStr) : 0;
+                    if (!isNaN(precision)) {
+                        definition.precision = precision;
+                        if (!isNaN(scale)) {
+                            definition.scale = scale;
+                        }
+                    }
                 } else {
-                    definition.length = parseInt(paramMatch[2]);
+                    const length = parseInt(params);
+                    if (!isNaN(length)) {
+                        definition.length = length;
+                    }
                 }
             }
         }
 
         // Check for NOT NULL (handle case where NOT NULL might be split)
-        definition.notNull = /NOT\s+NULL/i.test(typeDef);
+        definition.notNull = /NOT\s+NULL/i.test(cleanTypeDef);
 
         // Check for DEFAULT
-        const defaultMatch = typeDef.match(/DEFAULT\s+([^,\s]+)/i);
+        const defaultMatch = cleanTypeDef.match(/DEFAULT\s+([^,\s]+)/i);
         if (defaultMatch) {
             definition.defaultValue = defaultMatch[1];
         }
@@ -328,11 +369,28 @@ export class DatabaseSchemaParser {
             constraints.unique[constraintName] = columns;
         }
 
-        // Extract CHECK constraints
-        const checkRegex = /CHECK\s*\(([^)]+)\)/gi;
+        // Extract CHECK constraints with better parentheses matching
+        const checkRegex = /CHECK\s*\(([\s\S]*?)\)/gi;
         let checkMatch;
         while ((checkMatch = checkRegex.exec(columnsDef)) !== null) {
-            const expression = checkMatch[1];
+            let expression = checkMatch[1].trim();
+
+            // Fix: Ensure we have matching parentheses for the check expression
+            if (expression && expression.split('(').length !== expression.split(')').length) {
+                // Find the matching closing parenthesis
+                let openParens = 1;
+                let endPos = checkMatch.index + checkMatch[0].length;
+                while (endPos < columnsDef.length && openParens > 0) {
+                    if (columnsDef[endPos] === '(') openParens++;
+                    if (columnsDef[endPos] === ')') openParens--;
+                    endPos++;
+                }
+
+                if (openParens === 0) {
+                    expression = columnsDef.substring(checkMatch.index + 7, endPos - 1).trim();
+                }
+            }
+
             const checkConstraint = this.parseCheckConstraint(expression);
             if (checkConstraint) {
                 // Try to associate with column if possible
@@ -414,35 +472,40 @@ export class DatabaseSchemaParser {
      */
     private parseAlterTableStatement(statement: string, schema: DatabaseSchema): void {
         try {
-            // Match ALTER TABLE table_name ADD CONSTRAINT...
-            const alterRegex = /ALTER TABLE\s+["`]?(\w+)["`]?\s+(.+);?/i;
-            const match = statement.match(alterRegex);
+            // If there are multiple statements, split them first
+            const statements = this.splitSqlStatements(statement);
 
-            if (!match) {
-                return;
-            }
+            for (const singleStatement of statements) {
+                // Match ALTER TABLE table_name ADD CONSTRAINT...
+                const alterRegex = /ALTER TABLE\s+["`]?(\w+)["`]?\s+(.+);?/i;
+                const match = singleStatement.match(alterRegex);
 
-            const tableName = match[1];
-            const alterClause = match[2];
-
-            // Only log warning if table doesn't exist and it's not a migration that will create it later
-            if (!schema.tables[tableName]) {
-                // Check if this is a migration that creates the table later
-                const createsTable = alterClause.includes('CREATE TABLE') ||
-                    alterClause.includes('IF NOT EXISTS');
-
-                if (!createsTable) {
-                    logger.debug("ALTER TABLE references table not yet parsed (may be created in later migration)", {
-                        tableName,
-                        statement: `${statement.substring(0, 100)}...`
-                    });
+                if (!match) {
+                    continue;
                 }
-                return;
-            }
 
-            // Handle ADD COLUMN
-            if (alterClause.includes('ADD COLUMN')) {
-                this.handleAddColumnStatement(tableName, alterClause, schema);
+                const tableName = match[1];
+                const alterClause = match[2];
+
+                // Only log warning if table doesn't exist and it's not a migration that will create it later
+                if (!schema.tables[tableName]) {
+                    // Check if this is a migration that creates the table later
+                    const createsTable = alterClause.includes('CREATE TABLE') ||
+                        alterClause.includes('IF NOT EXISTS');
+
+                    if (!createsTable) {
+                        logger.debug("ALTER TABLE references table not yet parsed (may be created in later migration)", {
+                            tableName,
+                            statement: `${singleStatement.substring(0, 100)}...`
+                        });
+                    }
+                    continue;
+                }
+
+                // Handle ADD COLUMN
+                if (alterClause.includes('ADD COLUMN')) {
+                    this.handleAddColumnStatement(tableName, alterClause, schema);
+                }
             }
         } catch (error) {
             logger.warn("Failed to parse ALTER TABLE statement", {

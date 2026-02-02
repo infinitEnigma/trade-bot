@@ -17,10 +17,6 @@ describe('Database Integration Tests', () => {
         jest.clearAllMocks();
     });
 
-    afterEach(async () => {
-        await cleanupForTests();
-    });
-
     describe('Connection Pool Management', () => {
         it('should handle connection limits gracefully', async () => {
             // Test that pool doesn't exceed max connections

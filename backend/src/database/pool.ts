@@ -623,11 +623,15 @@ if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
 
 /**
  * Cleanup method for test environments
- * Stops metrics interval but keeps pool open for test reuse
+ * Closes the pool and stops metrics interval to prevent open handles
  */
 export async function cleanupForTests(): Promise<void> {
   stopMetricsInterval();
-  // Note: Don't close the pool in test environments to allow test reuse
-  // The pool will be closed when the test process exits
-  logger.debug("Test cleanup completed - pool kept open for test reuse");
+  // Close the pool in test environments to prevent open handles
+  if (pool) {
+    logger.debug("Closing database pool for test cleanup");
+    await pool.end();
+    pool = null;
+  }
+  logger.debug("Test cleanup completed - pool closed");
 }
