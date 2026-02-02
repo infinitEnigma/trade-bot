@@ -22,11 +22,7 @@ import {
 // Bot-specific trade interface extending the base Trade type
 export interface BotTrade extends Trade {
     botId: string;
-    pnl: number;
-    fee: number;
     timestamp: number;
-    quantity: number;
-    price: number;
 }
 
 // Bot performance repository interface (to be implemented)
@@ -37,7 +33,7 @@ export interface IBotPerformanceRepository {
         side: 'BUY' | 'SELL';
         quantity: number;
         price: number;
-        pnl: number;
+        pnl?: number;
         fee: number;
         timestamp: number;
     }): Promise<boolean>;
@@ -104,7 +100,7 @@ export class BotPerformanceService {
         side: 'BUY' | 'SELL';
         quantity: number;
         price: number;
-        pnl: number;
+        pnl?: number;
         fee: number;
         timestamp: number;
     }): Promise<void> {
@@ -366,9 +362,9 @@ export class BotPerformanceService {
     } {
         const totalTrades = trades.length;
         const totalVolume = trades.reduce((sum, trade) => sum + (trade.quantity * trade.price), 0);
-        const totalPnl = trades.reduce((sum, trade) => sum + trade.pnl, 0);
+        const totalPnl = trades.reduce((sum, trade) => sum + (trade.pnl || 0), 0);
 
-        const winningTrades = trades.filter(trade => trade.pnl > 0);
+        const winningTrades = trades.filter(trade => (trade.pnl || 0) > 0);
         const winRate = totalTrades > 0 ? (winningTrades.length / totalTrades) * 100 : 0;
         const averageTrade = totalTrades > 0 ? totalPnl / totalTrades : 0;
 
@@ -399,7 +395,7 @@ export class BotPerformanceService {
 
         for (const trade of trades) {
             const day = new Date(trade.timestamp).toISOString().split('T')[0];
-            dailyPnL.set(day, (dailyPnL.get(day) || 0) + trade.pnl);
+            dailyPnL.set(day, (dailyPnL.get(day) || 0) + (trade.pnl || 0));
         }
 
         return Array.from(dailyPnL.values());
@@ -438,12 +434,12 @@ export class BotPerformanceService {
         // Sort trades by timestamp
         const sortedTrades = [...trades].sort((a, b) => a.timestamp - b.timestamp);
 
-        let peak = sortedTrades[0].pnl;
+        let peak = sortedTrades[0].pnl || 0;
         let maxDrawdown = 0;
-        let runningTotal = sortedTrades[0].pnl;
+        let runningTotal = sortedTrades[0].pnl || 0;
 
         for (let i = 1; i < sortedTrades.length; i++) {
-            runningTotal += sortedTrades[i].pnl;
+            runningTotal += sortedTrades[i].pnl || 0;
             if (runningTotal > peak) {
                 peak = runningTotal;
             }
@@ -503,7 +499,7 @@ export class BotPerformanceService {
         side: 'BUY' | 'SELL';
         quantity: number;
         price: number;
-        pnl: number;
+        pnl?: number;
         fee: number;
         timestamp: number;
     }): void {
