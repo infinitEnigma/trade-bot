@@ -4,6 +4,9 @@ import WebSocket from "ws";
 import logger from "../../../core/logging/logger.service";
 import { query } from "../../../database/pool";
 import { BaseWebSocketMessage } from "./types";
+import { encryptionService } from "../../security/encryption.service";
+import bs58 from "bs58";
+import * as ed25519 from "@noble/ed25519";
 
 /**
  * Handles WebSocket authentication with external services
@@ -29,8 +32,6 @@ export class AuthManager {
         throw new Error("No credentials found for WebSocket authentication");
       }
 
-      const { encryptionService } =
-        await import("../../security/encryption.service.js");
       const apiKey = encryptionService.decryptApiKey(
         credsResult.rows[0].api_key_encrypted
       );
@@ -43,10 +44,7 @@ export class AuthManager {
       const message = `${timestamp}GET/ws/auth${accountId}`;
 
       // Sign the message using Ed25519
-      const bs58 = await import("bs58");
-      const ed25519 = await import("@noble/ed25519");
-
-      const privateKey = bs58.default.decode(secretKey);
+      const privateKey = bs58.decode(secretKey);
       const messageBytes = new TextEncoder().encode(message);
       const signature = await ed25519.sign(messageBytes, privateKey);
       const signatureB64 = Buffer.from(signature).toString("base64url");
