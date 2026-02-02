@@ -158,65 +158,49 @@ export class RedisCacheAdapter implements ICacheService {
      * Get multiple values by keys
      */
     async mget<T>(keys: string[]): Promise<CacheResult<Record<string, T>>> {
-        try {
-            // Redis doesn't have a built-in mget with JSON parsing
-            // Implement by making individual get calls
-            const results: Record<string, T> = {};
+        // Redis doesn't have a built-in mget with JSON parsing
+        // Implement by making individual get calls
+        const results: Record<string, T> = {};
 
-            for (const key of keys) {
-                const result = await this.get<T>(key);
-                if (result.success && result.data !== undefined) {
-                    results[key] = result.data;
-                }
+        for (const key of keys) {
+            const result = await this.get<T>(key);
+            if (result.success && result.data !== undefined) {
+                results[key] = result.data;
             }
-
-            return {
-                success: true,
-                data: results
-            };
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            return {
-                success: false,
-                error: `Cache mget failed: ${errorMessage}`
-            };
         }
+
+        return {
+            success: true,
+            data: results
+        };
     }
 
     /**
      * Set multiple values
      */
     async mset<T>(keyValues: Record<string, T>, ttlSeconds?: number): Promise<CacheResult<boolean>> {
-        try {
-            // Use Redis multi-set operation if available, otherwise individual sets
-            const operations = Object.entries(keyValues).map(([key, value]) =>
-                this.set(key, value, ttlSeconds)
-            );
+        // Use Redis multi-set operation if available, otherwise individual sets
+        const operations = Object.entries(keyValues).map(([key, value]) =>
+            this.set(key, value, ttlSeconds)
+        );
 
-            const results = await Promise.all(operations);
-            const allSuccessful = results.every(result => result.success);
+        const results = await Promise.all(operations);
+        const allSuccessful = results.every(result => result.success);
 
-            if (allSuccessful) {
-                return {
-                    success: true,
-                    data: true
-                };
-            } else {
-                const errors = results
-                    .filter(result => !result.success)
-                    .map(result => result.error)
-                    .join('; ');
+        if (allSuccessful) {
+            return {
+                success: true,
+                data: true
+            };
+        } else {
+            const errors = results
+                .filter(result => !result.success)
+                .map(result => result.error)
+                .join('; ');
 
-                return {
-                    success: false,
-                    error: `Some cache sets failed: ${errors}`
-                };
-            }
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
             return {
                 success: false,
-                error: `Cache mset failed: ${errorMessage}`
+                error: `Some cache sets failed: ${errors}`
             };
         }
     }
