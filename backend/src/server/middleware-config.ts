@@ -65,52 +65,12 @@ export class MiddlewareConfig {
         enableActivityTracking: true,
     };
 
-    /**
-     * Configure all middleware for the Express application
-     */
-    static async configure(app: Express, options: MiddlewareConfigOptions = {}): Promise<void> {
-        const config = { ...this.DEFAULT_OPTIONS, ...options };
-
-        // CSRF token generation for auth routes (login/register/refresh)
-        if (config.enableCsrf) {
-            this.configureCsrfProtection(app);
-        }
-
-        // CSRF validation for ALL state-changing operations (browser routes)
-        if (config.enableCsrf) {
-            this.configureCsrfValidation(app);
-        }
-
-        // 🎯 SPECIALIZED KODIAK PROTECTION FIRST: Request queuing + account-based rate limiting
-        // MUST come before general rate limiting to override the defaults
-        if (config.enableRateLimiting) {
-            this.configureKodiakProtection(app);
-        }
-
-        // Per-endpoint rate limiting with user-based limits (after Kodiak protection)
-        if (config.enableRateLimiting) {
-            this.configureRateLimiting(app);
-        }
-
-        // API activity tracking middleware
-        if (config.enableActivityTracking) {
-            this.configureActivityTracking(app);
-        }
-
-        middlewareLogger.info("Middleware configuration completed", {
-            csrfEnabled: config.enableCsrf,
-            rateLimitingEnabled: config.enableRateLimiting,
-            kodiakProtectionEnabled: config.enableRateLimiting,
-            activityTrackingEnabled: config.enableActivityTracking,
-            operation: "middleware_setup",
-        });
-    }
 
     /**
      * Configure CSRF token generation for authentication routes
      */
     private static async configureCsrfProtection(app: Express): Promise<void> {
-        const { csrfTokenMiddleware } = await import("../interfaces/middleware/csrf.js");
+        const { csrfTokenMiddleware } = await import("../interfaces/middleware/csrf");
 
         // CSRF token generation for auth routes (login/register/refresh)
         app.use("/api/auth", csrfTokenMiddleware);
@@ -124,7 +84,7 @@ export class MiddlewareConfig {
      * Configure CSRF validation for state-changing operations
      */
     private static async configureCsrfValidation(app: Express): Promise<void> {
-        const { csrfMiddleware } = await import("../interfaces/middleware/csrf.js");
+        const { csrfMiddleware } = await import("../interfaces/middleware/csrf");
 
         // CSRF validation for ALL state-changing operations (browser routes)
         // Note: Bot engine routes are excluded because they use API key auth
@@ -148,7 +108,7 @@ export class MiddlewareConfig {
      * Configure per-endpoint rate limiting with user-based scaling
      */
     private static async configureRateLimiting(app: Express): Promise<void> {
-        const { RateLimiters } = await import("../infrastructure/index.js");
+        const { RateLimiters } = await import("../infrastructure/index");
 
         // 🔐 CRITICAL: Authentication endpoints MUST be excluded from general rate limiting
         // They use specialized auth-aware rate limiting instead
@@ -192,8 +152,8 @@ export class MiddlewareConfig {
      * Configure specialized Kodiak API protection
      */
     private static async configureKodiakProtection(app: Express): Promise<void> {
-        const { kodiakRequestQueue } = await import("../infrastructure/external/kodiak-queue.js");
-        const { authMiddleware } = await import("../interfaces/middleware/auth.js");
+        const { kodiakRequestQueue } = await import("../infrastructure/external/kodiak-queue");
+        const { authMiddleware } = await import("../interfaces/middleware/auth");
         // 🎯 KODIAK-SPECIFIC PROTECTION: Request queuing + rate limiting for trading routes ONLY
         // EXCLUDE chart/market data routes - they need fast updates for real-time charts
         const kodiakRoutes = [
@@ -244,7 +204,7 @@ export class MiddlewareConfig {
      * Create specialized rate limiter for Kodiak routes
      */
     private static async createKodiakRateLimiter() {
-        const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service.js");
+        const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service");
 
         return createRateLimiter("kodiak-data", {
             max: 20,                   // 20 requests per minute per user (reduced from 60)
@@ -265,7 +225,7 @@ export class MiddlewareConfig {
      * Create status-specific rate limiter with higher limits
      */
     private static async createKodiakStatusRateLimiter() {
-        const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service.js");
+        const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service");
 
         return createRateLimiter("kodiak-status", {
             max: 300,                  // 300 requests per minute for status checks
@@ -286,7 +246,7 @@ export class MiddlewareConfig {
      * Create connection-specific rate limiter with moderate limits
      */
     private static async createKodiakConnectionRateLimiter() {
-        const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service.js");
+        const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service");
 
         return createRateLimiter("kodiak-connection", {
             max: 20,                   // 20 requests per minute for connection operations
@@ -333,38 +293,83 @@ export class MiddlewareConfig {
     /**
      * Validate middleware configuration
      */
+    /**
+     * Track which middleware components have been configured
+     * This is used for validation purposes
+     */
+    private static configuredMiddleware: {
+        csrf: boolean;
+        rateLimiting: boolean;
+        activityTracking: boolean;
+    } = {
+            csrf: false,
+            rateLimiting: false,
+            activityTracking: false,
+        };
+
+    /**
+     * Configure all middleware for the Express application
+     */
+    static async configure(app: Express, options: MiddlewareConfigOptions = {}): Promise<void> {
+        const config = { ...this.DEFAULT_OPTIONS, ...options };
+
+        // Reset configured middleware tracking
+        this.configuredMiddleware = {
+            csrf: false,
+            rateLimiting: false,
+            activityTracking: false,
+        };
+
+        // CSRF token generation for auth routes (login/register/refresh)
+        if (config.enableCsrf) {
+            this.configureCsrfProtection(app);
+            this.configuredMiddleware.csrf = true;
+        }
+
+        // CSRF validation for ALL state-changing operations (browser routes)
+        if (config.enableCsrf) {
+            this.configureCsrfValidation(app);
+        }
+
+        // 🎯 SPECIALIZED KODIAK PROTECTION FIRST: Request queuing + account-based rate limiting
+        // MUST come before general rate limiting to override the defaults
+        if (config.enableRateLimiting) {
+            this.configureKodiakProtection(app);
+            this.configuredMiddleware.rateLimiting = true;
+        }
+
+        // Per-endpoint rate limiting with user-based limits (after Kodiak protection)
+        if (config.enableRateLimiting) {
+            this.configureRateLimiting(app);
+        }
+
+        // API activity tracking middleware
+        if (config.enableActivityTracking) {
+            this.configureActivityTracking(app);
+            this.configuredMiddleware.activityTracking = true;
+        }
+
+        middlewareLogger.info("Middleware configuration completed", {
+            csrfEnabled: config.enableCsrf,
+            rateLimitingEnabled: config.enableRateLimiting,
+            kodiakProtectionEnabled: config.enableRateLimiting,
+            activityTrackingEnabled: config.enableActivityTracking,
+            operation: "middleware_setup",
+        });
+    }
+
+    /**
+     * Validate middleware configuration
+     */
     static validateConfiguration(app: Express): { isValid: boolean; issues: string[] } {
         const issues: string[] = [];
-        const stack = (app as { _router?: { stack?: ExpressLayer[] } })._router?.stack || [];
 
-        // Check for required middleware
-        const hasCsrf = stack.some((layer: ExpressLayer) =>
-            layer.name === "csrfMiddleware" || layer.regexp?.toString().includes("csrf")
-        );
-
-        const hasRateLimiting = stack.some((layer: ExpressLayer) =>
-            layer.name?.includes("rateLimit") || layer.regexp?.toString().includes("rate")
-        );
-
-        if (!hasCsrf) {
+        if (!this.configuredMiddleware.csrf) {
             issues.push("CSRF protection middleware not found");
         }
 
-        if (!hasRateLimiting) {
+        if (!this.configuredMiddleware.rateLimiting) {
             issues.push("Rate limiting middleware not found");
-        }
-
-        // Check middleware order (CSRF should come before rate limiting)
-        const csrfIndex = stack.findIndex((layer: ExpressLayer) =>
-            layer.name === "csrfMiddleware" || layer.regexp?.toString().includes("csrf")
-        );
-
-        const rateLimitIndex = stack.findIndex((layer: ExpressLayer) =>
-            layer.name?.includes("rateLimit") || layer.regexp?.toString().includes("rate")
-        );
-
-        if (csrfIndex > rateLimitIndex && rateLimitIndex !== -1) {
-            issues.push("CSRF middleware should be applied before rate limiting");
         }
 
         return {

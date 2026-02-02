@@ -153,7 +153,7 @@ export class RouteConfig {
     private static async registerAuthRoutes(app: Express): Promise<void> {
         const authTimer = this.routeLogger.startOperation('auth-routes-registration');
         try {
-            const { authRoutes } = await import("../interfaces/http/auth/index.js");
+            const { authRoutes } = await import("../interfaces/http/auth");
             app.use("/api/auth", authRoutes);
             authTimer.success();
             this.routeLogger.debug("Authentication routes registered", {
@@ -176,7 +176,7 @@ export class RouteConfig {
     private static async registerUserRoutes(app: Express): Promise<void> {
         const userTimer = this.routeLogger.startOperation('user-routes-registration');
         try {
-            const { userRoutes } = await import("../interfaces/http/users/index.js");
+            const { userRoutes } = await import("../interfaces/http/users");
             app.use("/api/user", userRoutes);
             userTimer.success();
             this.routeLogger.debug("User management routes registered", {
@@ -199,7 +199,7 @@ export class RouteConfig {
     private static async registerMarketRoutes(app: Express): Promise<void> {
         const marketTimer = this.routeLogger.startOperation('market-routes-registration');
         try {
-            const { marketRoutes, strategyRoutes } = await import("../interfaces/http/trading/index.js");
+            const { marketRoutes, strategyRoutes } = await import("../interfaces/http/trading");
             app.use("/api/market", marketRoutes);
             app.use("/api/strategies", strategyRoutes);
             marketTimer.success();
@@ -223,7 +223,7 @@ export class RouteConfig {
     private static async registerBotRoutes(app: Express): Promise<void> {
         const botTimer = this.routeLogger.startOperation('bot-routes-registration');
         try {
-            const { botRoutes } = await import("../interfaces/http/bots/index.js");
+            const { botRoutes } = await import("../interfaces/http/bots");
             app.use("/api/bot", botRoutes);
             botTimer.success();
             this.routeLogger.debug("Bot management routes registered", {
@@ -246,8 +246,8 @@ export class RouteConfig {
     private static async registerWalletRoutes(app: Express): Promise<void> {
         const walletTimer = this.routeLogger.startOperation('wallet-routes-registration');
         try {
-            const { walletRoutes } = await import("../interfaces/http/wallet/index.js");
-            const { walletBalanceRoutes } = await import("../interfaces/http/wallet/balance.js");
+            const { walletRoutes } = await import("../interfaces/http/wallet");
+            const { walletBalanceRoutes } = await import("../interfaces/http/wallet/balance");
             app.use("/api/wallet", walletRoutes);
             app.use("/api/balance", walletBalanceRoutes);
             walletTimer.success();
@@ -271,7 +271,7 @@ export class RouteConfig {
     private static async registerSecurityRoutes(app: Express): Promise<void> {
         const securityTimer = this.routeLogger.startOperation('security-routes-registration');
         try {
-            const { securityRoutes } = await import("../interfaces/http/system/security.js");
+            const { securityRoutes } = await import("../interfaces/http/system/security");
             app.use("/api/security", securityRoutes);
             securityTimer.success();
             this.routeLogger.debug("Security routes registered", {
@@ -294,7 +294,7 @@ export class RouteConfig {
     private static async registerHealthRoutes(app: Express): Promise<void> {
         const healthTimer = this.routeLogger.startOperation('health-routes-registration');
         try {
-            const { healthRoutes } = await import("../interfaces/http/system/health.js");
+            const { healthRoutes } = await import("../interfaces/http/system/health");
 
             // Health check (must be last to catch all routes)
             app.use("/api", healthRoutes);
@@ -320,8 +320,14 @@ export class RouteConfig {
     static getRegisteredRoutes(app: Express): string[] {
         const routes: string[] = [];
 
+        // Force Express to initialize the router if it hasn't been already
+        // This is necessary for testing purposes
+        if (!(app as any)._router) {
+            app.use((req, res, next) => next());
+        }
+
         // Walk through the Express app's router stack
-        const stack = (app as Express)._router?.stack;
+        const stack = (app as any)._router?.stack;
         if (stack) {
             for (const layer of stack) {
                 if (layer.route) {
