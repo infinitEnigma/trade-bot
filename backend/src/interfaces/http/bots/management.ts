@@ -82,10 +82,9 @@ import {
 import { getCorrelationId, getContextForLogging } from "../../../shared/utils/context";
 import { validators } from "../../middleware/validation";
 import { withCredentials, SecureCredentials } from "../../../infrastructure/security/encryption.service"; // ✅ Secure credential handling
-import { engineManager } from "../../../core/strategies/engine-manager.service";
+import { serviceProvider } from "../../../core/service-provider";
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service"; // ✅ Rate limiting
 import logger from "../../../core/logging/logger.service";
-import { serviceProvider } from "../../../core/service-provider";
 
 const router = Router();
 
@@ -351,7 +350,7 @@ router.post(
             const { strategyId, notionalAmount } = req.body;
 
             // Ensure trading engine is running
-            await engineManager.ensureEngineRunning();
+            await serviceProvider.getEngineManager().ensureEngineRunning();
 
             // Create and start bot using bot management service
             const botManagementService = serviceProvider.getBotManagementService();
@@ -663,7 +662,7 @@ router.get(
     async (req: AuthenticatedRequest, res: Response) => {
         try {
             const _userId = getUserId(req);
-            const status = await engineManager.getEngineStatus();
+            const status = await serviceProvider.getEngineManager().getEngineStatus();
 
             res.json({
                 success: true,

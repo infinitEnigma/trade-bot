@@ -45,12 +45,12 @@ jest.mock('../../../src/database/pool', () => ({
     query: jest.fn(),
 }));
 
-jest.mock('../../../src/core/strategies/engine-manager.service', () => ({
-    engineManager: {
+jest.mock('../../../src/core/strategies/engine-manager.service.pure', () => ({
+    EngineManager: jest.fn().mockImplementation(() => ({
         ensureEngineRunning: jest.fn().mockResolvedValue(undefined),
         stopEngineIfNoActiveBots: jest.fn().mockResolvedValue(undefined),
         getEngineStatus: jest.fn().mockResolvedValue({ running: true }),
-    },
+    })),
 }));
 
 jest.mock('../../../src/core/service-provider', () => ({
@@ -65,6 +65,11 @@ jest.mock('../../../src/core/service-provider', () => ({
         }),
         getMarketService: jest.fn().mockReturnValue({
             hasUserKodiakCredentials: jest.fn().mockResolvedValue(true),
+        }),
+        getEngineManager: jest.fn().mockReturnValue({
+            ensureEngineRunning: jest.fn().mockResolvedValue(undefined),
+            stopEngineIfNoActiveBots: jest.fn().mockResolvedValue(undefined),
+            getEngineStatus: jest.fn().mockResolvedValue({ running: true }),
         }),
     },
 }));
@@ -149,9 +154,10 @@ function createTestApp(): Express {
     app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
 
-    // Mock WebSocket io instance
+    // Mock WebSocket io instance with 'to' method
     app.set('io', {
         emit: jest.fn(),
+        to: jest.fn().mockReturnThis(),
     });
 
     // Import and register routes
@@ -275,7 +281,7 @@ describe('Bots Controller', () => {
                 });
 
                 // Mock position validator
-                jest.spyOn(require('../../../src/core/strategies/position-validator.service'), 'validateUserPosition')
+                jest.spyOn(require('../../../src/core/strategies/position-validator.service.pure'), 'PositionValidatorService')
                     .mockResolvedValue({
                         isValid: true,
                         maxAllowed: 10000,
@@ -387,7 +393,7 @@ describe('Bots Controller', () => {
                     status: 'healthy',
                 };
 
-                const engineManager = require('../../../src/core/strategies/engine-manager.service').engineManager;
+                const engineManager = require('../../../src/core/service-provider').serviceProvider.getEngineManager();
                 engineManager.getEngineStatus.mockResolvedValue(mockEngineStatus);
 
                 const response = await request(app)
@@ -431,7 +437,14 @@ describe('Bots Controller', () => {
                 query.mockResolvedValueOnce({}) // Insert trade
                     .mockResolvedValueOnce({}); // Update bot statistics
 
-                const response = await request(app)
+                // Create a new app with properly mocked io
+                const testApp = createTestApp();
+                testApp.set('io', {
+                    to: jest.fn().mockReturnThis(),
+                    emit: jest.fn(),
+                });
+
+                const response = await request(testApp)
                     .post('/api/bot/engine/report-trade')
                     .set('x-bot-engine-key', 'test-engine-key')
                     .send({

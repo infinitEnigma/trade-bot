@@ -10,7 +10,7 @@ import { serviceProvider } from '../../../src/core/service-provider';
 import { AuthService } from '../../../src/core/auth/auth.service.pure';
 import { UserProfileService } from '../../../src/core/user/user-profile.service';
 import { UserKodiakService } from '../../../src/core/user/user-kodiak.service';
-import { WalletQualificationService } from '../../../src/core/wallet/wallet-qualification.service';
+import { WalletQualificationService } from '../../../src/core/wallet/wallet-qualification.service.pure';
 
 // Mock dependencies
 jest.mock('../../../src/core/service-provider');

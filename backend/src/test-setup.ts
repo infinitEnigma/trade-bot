@@ -15,7 +15,7 @@ declare global {
     var WebSocketInstances: any[];
     var redisClients: any[];
     var dbClients: any[];
-    // Note: 'io' is already declared as Socket.IO Server in other files, so we don't redeclare it here
+    var io: any; // Declare io for test purposes
 }
 
 // Only run cleanup in test environment

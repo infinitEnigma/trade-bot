@@ -8,7 +8,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { query } from "../../../database/pool";
 // Bot services have been removed - using direct database operations instead
-import { engineManager } from "../../../core/strategies/engine-manager.service";
+import { serviceProvider } from "../../../core/service-provider";
 import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../../../core/notifications/error-notification.service";
 import logger from "../../../core/logging/logger.service";
 
@@ -196,7 +196,7 @@ router.post("/report-trade", botEngineAuth, async (req: Request, res: Response) 
         // Performance cache invalidation removed - bot services not implemented
 
         // Emit WebSocket event to notify frontend
-        const io = global.io;
+        const io = req.app.get("io");
         if (io) {
             io.to(`user:${userId}`).emit("trade:executed", {
                 userId,
@@ -308,7 +308,7 @@ router.post("/engine-status", botEngineAuth, async (req: Request, res: Response)
         if (activeBots === 0 && status === 'running') {
             setTimeout(async () => {
                 try {
-                    await engineManager.stopEngineIfNoActiveBots();
+                    await serviceProvider.getEngineManager().stopEngineIfNoActiveBots();
                 } catch (error) {
                     logger.error("Failed to check engine stop condition", {
                         error: (error as Error).message,

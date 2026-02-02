@@ -17,9 +17,9 @@
  */
 
 // Export trading-related services
-export { engineManager } from './engine-manager.service';
-export { positionSyncService } from './position-sync.service';
-export { positionValidatorService } from './position-validator.service';
+export { EngineManager } from './engine-manager.service.pure';
+export { PositionSyncService } from './position-sync.service.pure';
+export { PositionValidatorService } from './position-validator.service.pure';
 
 // Export engine sub-services
 export * from './engine/index';
