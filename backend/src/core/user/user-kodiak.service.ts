@@ -26,7 +26,6 @@ interface KodiakStatusCache {
 }
 
 const STATUS_CACHE_TTL = 10000; // 10 seconds cache
-const statusCache = new Map<string, KodiakStatusCache>();
 
 export interface KodiakUserConfig {
     userId: string;
@@ -60,7 +59,11 @@ export interface UserKodiakServiceDependencies {
 }
 
 export class UserKodiakService {
-    constructor(private deps: UserKodiakServiceDependencies) { }
+    private statusCache: Map<string, KodiakStatusCache>;
+
+    constructor(private deps: UserKodiakServiceDependencies) {
+        this.statusCache = new Map<string, KodiakStatusCache>();
+    }
 
     /**
      * Link Kodiak account to user
@@ -193,7 +196,7 @@ export class UserKodiakService {
             const timer = userLogger.startOperation("getKodiakConnectionStatus", { userId });
 
             // Check cache first
-            const cached = statusCache.get(userId);
+            const cached = this.statusCache.get(userId);
             const now = Date.now();
 
             if (cached && (now - cached.timestamp) < STATUS_CACHE_TTL) {
@@ -211,7 +214,7 @@ export class UserKodiakService {
             const status = await this.deps.kodiakConnectionService.getConnectionStatus(userId);
 
             // Update cache
-            statusCache.set(userId, {
+            this.statusCache.set(userId, {
                 status,
                 timestamp: now
             });
@@ -228,8 +231,8 @@ export class UserKodiakService {
             userLogger.error("Failed to get Kodiak connection status", error instanceof Error ? error : undefined, {
                 userId
             });
-            // Return disconnected status on error
-            return { connected: false };
+            // Re-throw the error instead of returning a default status
+            throw error;
         }
     }
 
