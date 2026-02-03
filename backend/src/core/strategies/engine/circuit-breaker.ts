@@ -359,7 +359,7 @@ export class CircuitBreaker {
             failureRate = (stats.failures / (totalTime / 1000)) * 60; // failures per minute
             averageTimeBetweenFailures = totalTime / stats.failures / 1000; // seconds
 
-            if (stats.failures > stats.successes) {
+            if (stats.failures > 0 || stats.successes > 0) {
                 uptimePercentage = (stats.successes / (stats.failures + stats.successes)) * 100;
             }
         }
