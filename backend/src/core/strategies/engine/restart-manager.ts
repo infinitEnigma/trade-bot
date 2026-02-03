@@ -180,7 +180,7 @@ export class RestartManager {
     /**
      * Perform the actual restart (placeholder - implemented by caller)
      */
-    private async performRestart(): Promise<void> {
+    protected async performRestart(): Promise<void> {
         // This is a placeholder - the actual restart logic is implemented
         // by the caller (ProcessSupervisor or EngineManager)
         // This allows the RestartManager to focus on policy and timing
@@ -254,7 +254,7 @@ export class RestartManager {
     /**
      * Calculate backoff delay using exponential backoff with jitter
      */
-    private calculateBackoffDelay(attemptNumber: number): number {
+    protected calculateBackoffDelay(attemptNumber: number): number {
         if (this.config.policy === RestartPolicy.IMMEDIATE) {
             return 0;
         }
