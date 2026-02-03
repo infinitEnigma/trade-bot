@@ -444,4 +444,142 @@ describe('BotStatusService', () => {
             expect(mockLogger.error).toHaveBeenCalled();
         });
     });
+
+    describe('legacy format handling', () => {
+        it('should return legacy format when LEGACY_TRADING_API is true', async () => {
+            const originalEnv = process.env.LEGACY_TRADING_API;
+            process.env.LEGACY_TRADING_API = 'true';
+
+            const mockStatus: BotWithValidation = {
+                ...mockBot,
+                statusValidation: {
+                    isStale: false,
+                    lastHeartbeatAge: 10000,
+                    engineHealth: {
+                        running: true,
+                        lastHealthCheck: Date.now(),
+                        status: 'healthy',
+                    },
+                },
+            };
+
+            (mockCache.get as jest.Mock).mockResolvedValue({
+                success: true,
+                data: mockStatus,
+            });
+
+            const result = await service.getBotStatusInfo(mockBotId, mockUserId);
+
+            expect(result).toEqual(expect.objectContaining({
+                id: mockBotId,
+                user_id: mockUserId,
+                statusValidation: expect.anything(),
+            }));
+            expect(result?.statusValidation).toEqual(expect.anything());
+
+            process.env.LEGACY_TRADING_API = originalEnv;
+        });
+
+        it('should return default format when LEGACY_TRADING_API is false', async () => {
+            const originalEnv = process.env.LEGACY_TRADING_API;
+            process.env.LEGACY_TRADING_API = 'false';
+
+            const mockStatus: BotWithValidation = {
+                ...mockBot,
+                statusValidation: {
+                    isStale: false,
+                    lastHeartbeatAge: 10000,
+                    engineHealth: {
+                        running: true,
+                        lastHealthCheck: Date.now(),
+                        status: 'healthy',
+                    },
+                },
+            };
+
+            (mockCache.get as jest.Mock).mockResolvedValue({
+                success: true,
+                data: mockStatus,
+            });
+
+            const result = await service.getBotStatusInfo(mockBotId, mockUserId);
+
+            expect(result).toEqual(expect.objectContaining({
+                id: mockBotId,
+                user_id: mockUserId,
+                statusValidation: expect.anything(),
+            }));
+
+            process.env.LEGACY_TRADING_API = originalEnv;
+        });
+    });
+
+    describe('cache invalidation', () => {
+        it('should handle cache invalidation failure gracefully', async () => {
+            (mockCache.delete as jest.Mock).mockResolvedValue({
+                success: false,
+                error: 'Cache delete failed'
+            });
+
+            const runningBot = { ...mockBot, status: 'RUNNING' };
+            (mockBotRepository.findById as jest.Mock).mockResolvedValue(runningBot);
+            (mockBotRepository.updateStatus as jest.Mock).mockResolvedValue(true);
+            (mockAuditLogger.logEvent as jest.Mock).mockResolvedValue(undefined);
+
+            const result = await service.stopBot(mockBotId, mockUserId);
+
+            expect(result.success).toBe(true);
+            expect(mockLogger.warn).toHaveBeenCalled();
+        });
+    });
+
+    describe('edge cases', () => {
+        it('should handle bot with null last_heartbeat', async () => {
+            const botWithNullHeartbeat = {
+                ...mockBot,
+                status: 'RUNNING',
+                last_heartbeat: null,
+            };
+
+            (mockCache.get as jest.Mock).mockResolvedValue({ success: false });
+            (mockBotRepository.findById as jest.Mock).mockResolvedValue(botWithNullHeartbeat);
+            (mockBotRepository.updateStatus as jest.Mock).mockResolvedValue(true);
+            (mockCache.setex as jest.Mock).mockResolvedValue({ success: true });
+
+            const result = await service.getBotStatusInfo(mockBotId, mockUserId);
+
+            expect(result).not.toBeNull();
+            expect(result?.status).toBe('ERROR');
+        });
+
+        it('should handle audit logger failure gracefully', async () => {
+            (mockAuditLogger.logEvent as jest.Mock).mockRejectedValue(new Error('Audit log failed'));
+            (mockBotRepository.findById as jest.Mock).mockResolvedValue(mockBot);
+            (mockBotRepository.updateStatus as jest.Mock).mockResolvedValue(true);
+
+            const result = await service.startBot(mockBotId, mockUserId);
+
+            expect(result.success).toBe(true);
+            expect(mockLogger.warn).toHaveBeenCalled();
+        });
+
+        it('should recover from error state when heartbeat is received', async () => {
+            const recentlyRecoveredBot = {
+                ...mockBot,
+                status: 'ERROR',
+                last_heartbeat: new Date().toISOString(),
+                last_error: 'Bot heartbeat timeout - status validation',
+            };
+
+            (mockCache.get as jest.Mock).mockResolvedValue({ success: false });
+            (mockBotRepository.findById as jest.Mock).mockResolvedValue(recentlyRecoveredBot);
+            (mockBotRepository.updateStatus as jest.Mock).mockResolvedValue(true);
+            (mockCache.setex as jest.Mock).mockResolvedValue({ success: true });
+
+            const result = await service.getBotStatusInfo(mockBotId, mockUserId);
+
+            expect(result).not.toBeNull();
+            expect(result?.status).toBe('RUNNING');
+        });
+    });
 });

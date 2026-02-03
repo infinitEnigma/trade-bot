@@ -186,8 +186,8 @@ export class PositionSyncService {
         const position = new Position(
             positionData.symbol,
             'LONG', // Default side
-            parseFloat(String(positionData.quantity || positionData.positionAmt || "0")),
-            parseFloat(String(positionData.entryPrice || "0")),
+            parseFloat(String(positionData.positionQty || positionData.quantity || positionData.positionAmt || "0")),
+            parseFloat(String(positionData.averageOpenPrice || positionData.entryPrice || "0")),
             parseFloat(String(positionData.markPrice || "0")),
             1, // Default leverage
             0.1, // Default margin ratio

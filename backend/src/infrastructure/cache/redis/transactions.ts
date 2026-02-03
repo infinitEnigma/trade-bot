@@ -69,7 +69,7 @@ export class RedisTransactions {
     private transactionRecoveryManager: TransactionRecoveryManager;
 
     constructor(private connectionManager: RedisConnectionManager) {
-        this.transactionRecoveryManager = new TransactionRecoveryManager();
+        this.transactionRecoveryManager = new TransactionRecoveryManager(this.connectionManager);
     }
 
     /**
@@ -114,6 +114,8 @@ export class RedisTransactions {
  * @format
  */
 class TransactionRecoveryManager {
+    constructor(private connectionManager: RedisConnectionManager) { }
+
     private conflictHistory = new Map<string, ConflictStats>();
     private circuitBreakerFailures = 0;
     private circuitBreakerState: 'closed' | 'open' | 'half_open' = 'closed';
@@ -270,7 +272,7 @@ class TransactionRecoveryManager {
         watchKeys: string[],
         operation: (multi: unknown) => Promise<T>
     ): Promise<{ success: boolean; data?: T; aborted?: boolean }> {
-        const client = redisService.getClient();
+        const client = this.connectionManager.getClient();
 
         try {
             // Watch keys for changes
