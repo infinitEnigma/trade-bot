@@ -325,5 +325,68 @@ describe('PositionSyncService', () => {
             expect(result.errors).toEqual([]);
             expect(mockLogger.info).toHaveBeenCalled();
         });
+
+        it('should handle errors in batch sync', async () => {
+            const testError = new Error('Batch sync failed');
+            (mockLogger.info as jest.Mock).mockImplementation(() => {
+                throw testError;
+            });
+
+            const result = await service.syncAllUserPositions();
+
+            expect(result.totalUsers).toEqual(0);
+            expect(result.successfulSyncs).toEqual(0);
+            expect(result.errors.length).toBeGreaterThan(0);
+            expect(mockLogger.error).toHaveBeenCalled();
+        });
+    });
+
+    describe('storePositionInDatabase', () => {
+        it('should update existing positions in database', async () => {
+            const existingPosition = new Position(mockSymbol, 'LONG', 0.1, 50000, 51000, 10, 0.01, 45000);
+            (mockPositionRepository.getPosition as jest.Mock).mockResolvedValue(existingPosition);
+            (mockPositionRepository.updatePosition as jest.Mock).mockResolvedValue(true);
+
+            // Call the sync method to trigger position storage
+            (mockExternalApi.getPositions as jest.Mock).mockResolvedValue({
+                success: true,
+                data: [mockPositions[0]],
+            });
+            (mockExternalApi.getAccountInfo as jest.Mock).mockResolvedValue({
+                success: true,
+                data: { totalBalance: 10000 },
+            });
+
+            await service.syncPositionsFromExternalAPI(mockUserId);
+
+            expect(mockPositionRepository.getPosition).toHaveBeenCalledWith(mockUserId, mockSymbol);
+            expect(mockPositionRepository.updatePosition).toHaveBeenCalled();
+        });
+    });
+
+    describe('storeAccountInfoInDatabase', () => {
+        it('should store account information when available', async () => {
+            (mockExternalApi.getPositions as jest.Mock).mockResolvedValue({
+                success: true,
+                data: [mockPositions[0]],
+            });
+            (mockExternalApi.getAccountInfo as jest.Mock).mockResolvedValue({
+                success: true,
+                data: { totalBalance: 10000 },
+            });
+            (mockPositionRepository.getPosition as jest.Mock).mockResolvedValue(null);
+            (mockPositionRepository.updatePosition as jest.Mock).mockResolvedValue(true);
+
+            await service.syncPositionsFromExternalAPI(mockUserId);
+
+            expect(mockExternalApi.getAccountInfo).toHaveBeenCalledWith(mockUserId);
+            expect(mockLogger.debug).toHaveBeenCalledWith(
+                "Account info stored in database",
+                expect.objectContaining({
+                    userId: mockUserId,
+                    balance: 10000,
+                })
+            );
+        });
     });
 });

@@ -157,6 +157,13 @@ export class StrategiesEngineService {
         try {
             this.deps.logger.debug('Checking if engine should be stopped due to no active bots');
 
+            // Check if engine is running first
+            const status = await this.deps.processManager.getStatus();
+            if (!status.running) {
+                this.deps.logger.debug('Strategies engine already stopped');
+                return;
+            }
+
             // Note: This would need integration with bot status service
             // For now, assume we have a way to check active bot count
             const activeBotCount = await this.getActiveBotCount();

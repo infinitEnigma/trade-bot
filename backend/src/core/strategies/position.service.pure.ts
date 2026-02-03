@@ -92,7 +92,7 @@ export class PositionService {
         const positions = await this.deps.positionRepository.getPositions(userId);
 
         // 3. Validate and convert to domain objects
-        const domainPositions = positions.map(this.validateAndConvertPosition).filter(Boolean) as Position[];
+        const domainPositions = positions.map(pos => this.validateAndConvertPosition(pos)).filter(Boolean) as Position[];
 
         // 4. Cache the result
         const cacheResult = await this.deps.cache.setex(cacheKey, this.CACHE_TTL, domainPositions);
