@@ -158,7 +158,10 @@ export class ProcessSupervisor {
             // Handle state transitions
             if (newState !== this.state) {
                 await this.handleStateTransition(this.state, newState, health);
-                this.state = newState;
+                // Only update state to newState if handleStateTransition didn't change it to something else (like RECOVERING)
+                if (this.state === newState || this.state === ProcessState.STOPPED) {
+                    this.state = newState;
+                }
                 this.lastStateChange = Date.now();
             }
 
