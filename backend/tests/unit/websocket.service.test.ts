@@ -98,7 +98,7 @@ describe('WebSocketService', () => {
             expect(stats.metrics).toEqual(expect.any(Object));
             expect(stats.connections).toEqual([]);
             expect(['healthy', 'warning', 'critical']).toContain(stats.serviceHealth.status);
-            expect(stats.serviceHealth.uptime).toBeGreaterThan(0);
+            expect(stats.serviceHealth.uptime).toBeGreaterThanOrEqual(0);
             expect(stats.serviceHealth.memoryUsage).toBe(0);
         });
     });

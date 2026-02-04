@@ -15,7 +15,7 @@
 import { IUserRepository, IExternalApiService, ILogger } from '@trade-bot/shared';
 
 // Qualification criteria configuration
-const ALPHA_QUALIFICATION_CONFIG = {
+export const ALPHA_QUALIFICATION_CONFIG = {
     chainId: 8453, // Base chain ID
     requirements: [
         // NFT ownership requirement
