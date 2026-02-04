@@ -574,10 +574,12 @@ class RedisService {
       async (multi) => {
         // Get current value
         const currentResult = await this.client.get(key);
+
         const currentValue = currentResult ? JSON.parse(currentResult) : null;
+        const serializedCurrentValue = JSON.stringify(currentValue);
 
         // Check if current value matches expected
-        if (JSON.stringify(currentValue) !== serializedExpectedValue) {
+        if (serializedCurrentValue !== serializedExpectedValue) {
           return { updated: false }; // Condition not met
         }
 
@@ -589,7 +591,9 @@ class RedisService {
     );
 
     if (result.success) {
-      return { success: true, updated: (result.result as { updated: boolean })?.updated || false };
+      // Check if the transaction actually updated the value
+      const updated = (result.result as { updated: boolean })?.updated || false;
+      return { success: true, updated };
     } else {
       return { success: false, updated: false, error: result.error };
     }
