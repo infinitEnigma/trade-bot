@@ -389,6 +389,16 @@ export class WebSocketManager {
     this.heartbeatIntervals.forEach(timer => clearInterval(timer));
     this.heartbeatIntervals.clear();
 
+    // Clear processing interval
+    if (this.processingInterval) {
+      clearInterval(this.processingInterval);
+      this.processingInterval = null;
+    }
+
+    // Clear health check intervals
+    this.healthCheckIntervals.forEach(timer => clearInterval(timer));
+    this.healthCheckIntervals.clear();
+
     // Clear circuit breaker state
     this.reconnectAttempts.clear();
     this.circuitStates.clear();
@@ -397,6 +407,16 @@ export class WebSocketManager {
     this.circuitBreakerTimeouts.clear();
 
     logger.info("All WebSocket connections and circuit breaker state cleared");
+  }
+
+  /**
+   * Cleanup method for tests to clear all timers and state
+   */
+  cleanupForTests(): void {
+    this.disconnectAll();
+    this.messageQueue = [];
+    this.backpressureStates.clear();
+    this.recoveryStates.clear();
   }
 
   // ===============================
