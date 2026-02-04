@@ -14,7 +14,7 @@ import {
     BalanceHistory
 } from '@trade-bot/shared';
 import { logger } from '../../../core/logging';
-//import { query } from '../../../database/pool';
+import { query } from '../../../database/pool';
 
 /**
  * Balance Repository Adapter
@@ -24,14 +24,37 @@ import { logger } from '../../../core/logging';
  */
 export class BalanceRepositoryAdapter implements IBalanceRepository {
 
+    // Allow injection of query function for testing
+    constructor(private readonly queryFn = query) { }
+
     /**
      * Get user's current balance
      */
-    async getBalance(_userId: string): Promise<Balance> {
+    async getBalance(userId: string): Promise<Balance> {
         try {
-            // For now, return a zero balance since balance tracking might be external
-            // In a full implementation, this would query balance tables
-            return Balance.zero('USD');
+            const result = await this.queryFn('SELECT * FROM balances WHERE user_id = $1', [userId]);
+            const typedResult = result as {
+                rows: Array<{
+                    total: string;
+                    available: string;
+                    locked: string;
+                    currency: string;
+                    last_updated: string;
+                }>
+            };
+
+            if (typedResult.rows.length === 0) {
+                return Balance.zero('USD');
+            }
+
+            const row = typedResult.rows[0];
+            return new Balance(
+                parseFloat(row.total),
+                parseFloat(row.available),
+                parseFloat(row.locked),
+                row.currency,
+                new Date(row.last_updated)
+            );
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to get balance: ${errorMessage}`);
@@ -43,8 +66,10 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
      */
     async updateBalance(userId: string, balance: Balance): Promise<void> {
         try {
-            // For now, this is a no-op since balance tracking might be external
-            // In a full implementation, this would update balance tables
+            await this.queryFn(
+                'UPDATE balances SET total = $1, available = $2, locked = $3, currency = $4, last_updated = NOW() WHERE user_id = $5',
+                [balance.total, balance.available, balance.locked, balance.currency, userId]
+            );
             logger.info(`Balance update for user ${userId}: ${balance.total} ${balance.currency}`);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -55,11 +80,42 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
     /**
      * Get balance history for a user
      */
-    async getBalanceHistory(_userId: string, _limit: number = 50): Promise<BalanceHistory[]> {
+    async getBalanceHistory(userId: string, limit: number = 50): Promise<BalanceHistory[]> {
         try {
-            // For now, return empty array since balance history might be external
-            // In a full implementation, this would query balance history tables
-            return [];
+            const result = await this.queryFn(
+                'SELECT * FROM balance_history WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2',
+                [userId, limit]
+            );
+
+            const typedResult = result as {
+                rows: Array<{
+                    id: string;
+                    user_id: string;
+                    total: string;
+                    available: string;
+                    locked: string;
+                    currency: string;
+                    last_updated: string;
+                    change_reason: string;
+                    change_amount: string;
+                    created_at: string;
+                }>
+            };
+
+            return typedResult.rows.map(row => ({
+                id: row.id,
+                userId: row.user_id,
+                balance: new Balance(
+                    parseFloat(row.total),
+                    parseFloat(row.available),
+                    parseFloat(row.locked),
+                    row.currency,
+                    new Date(row.last_updated)
+                ),
+                changeReason: row.change_reason,
+                changeAmount: parseFloat(row.change_amount),
+                timestamp: new Date(row.created_at)
+            }));
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to get balance history: ${errorMessage}`);
