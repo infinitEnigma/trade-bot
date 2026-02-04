@@ -296,7 +296,7 @@ router.post("/rotate-keys", adminMiddleware, async (req: AuthenticatedRequest, r
             userLevel: req.user.userLevel,
         });
 
-        const { encryptionService } = await import("../../../infrastructure/security/encryption.service.js");
+        const { encryptionService } = await import("../../../infrastructure");
 
         const needsRotation = await encryptionService.isKeyRotationNeeded();
 

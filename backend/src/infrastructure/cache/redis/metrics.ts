@@ -21,7 +21,6 @@ export interface CacheStats {
     connected: boolean;
     dbSize?: number;
     memoryUsage?: number;
-    hitRate?: number;
     uptime?: number;
     error?: string;
 }
@@ -87,7 +86,7 @@ export class RedisMetrics {
 
         // Check if recent (last 5 minutes)
         const now = Date.now();
-        if (now - this.conflictStats.lastConflictTime < 5 * 60 * 1000) {
+        if (this.conflictStats.lastConflictTime === 0 || now - this.conflictStats.lastConflictTime < 5 * 60 * 1000) {
             this.conflictStats.recentConflicts++;
         }
 
