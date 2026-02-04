@@ -160,6 +160,7 @@ export class RedisCacheManager {
             return { success: false, error: 'Cache miss or data not found' };
         } catch (error) {
             const errorMessage = (error as Error).message;
+            logger.error("Cache getWithVersion error", { key, versionKey, error: errorMessage });
             return { success: false, error: errorMessage };
         }
     }

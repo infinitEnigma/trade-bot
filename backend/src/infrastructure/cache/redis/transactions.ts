@@ -37,7 +37,7 @@ export interface SmartRetryResult<T> {
 /**
  * Intelligent retry strategies for Redis transactions
  */
-enum RetryStrategy {
+export enum RetryStrategy {
     IMMEDIATE_RETRY = 'immediate',     // Critical ops: 10ms, 20ms, 30ms
     EXPONENTIAL_BACKOFF = 'backoff',   // Standard ops: 100ms → 30s
     CIRCUIT_BREAKER = 'circuit',       // High conflict: extended delays
