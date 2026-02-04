@@ -121,6 +121,9 @@ export class JwtTokenAdapter implements ITokenService {
      */
     hashTokenForStorage(token: string): string {
         try {
+            if (!token || token.trim() === '') {
+                throw new Error('Token cannot be empty');
+            }
             return createHash('sha256')
                 .update(token)
                 .digest('hex')
