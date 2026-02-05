@@ -432,7 +432,8 @@ export class WebSocketEventHandlers {
      * Handle client disconnection
      */
     async handleDisconnect(socket: Socket): Promise<void> {
-        const client = (socket as unknown as { client: WebSocketClient }).client;
+        const socketWithClient = socket as unknown as { client?: WebSocketClient };
+        const client = socketWithClient.client;
         const correlationId = WebSocketUtils.generateCorrelationId();
 
         try {
@@ -440,8 +441,8 @@ export class WebSocketEventHandlers {
                 socketId: socket.id,
                 userId: client?.userId,
                 userLevel: client?.userLevel,
-                subscriptionsCount: client?.subscriptions.size || 0,
-                connectedDuration: client ? Date.now() - client.connectedAt.getTime() : 0,
+                subscriptionsCount: client ? client.subscriptions.size : 0,
+                connectedDuration: client && client.connectedAt ? Date.now() - client.connectedAt.getTime() : 0,
                 correlationId,
             });
 
