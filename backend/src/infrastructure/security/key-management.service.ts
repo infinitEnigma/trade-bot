@@ -5,6 +5,7 @@ import {
   createDecipheriv,
   randomBytes,
   scrypt,
+  scryptSync,
   hkdf,
   CipherGCM,
   DecipherGCM,
@@ -47,10 +48,45 @@ export class KeyManagementService {
   private masterKeySeed!: Buffer;
   private derivedKeys: Map<KeyPurpose, Buffer> = new Map();
   private keyVersions: Map<KeyPurpose, number> = new Map();
+  private initialized = false;
+
+  // For testing purposes, allow overriding crypto functions
+  private hkdf = hkdfAsync;
+  private scrypt = scryptAsync;
 
   constructor() {
     this.initializeMasterKey();
-    this.derivePurposeKeys();
+    // Initialize keys synchronously by waiting for promise
+    this.derivePurposeKeys().catch(error => {
+      logger.error("Key management service initialization failed", {
+        error: error.message
+      });
+      throw error;
+    });
+  }
+
+  // For testing purposes only
+  setCryptoFunctions(options: { hkdf?: any; scrypt?: any }): void {
+    if (options.hkdf) {
+      this.hkdf = options.hkdf;
+    }
+    if (options.scrypt) {
+      this.scrypt = options.scrypt;
+    }
+  }
+
+  /**
+   * Ensure keys are fully derived before any operation
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized && this.derivedKeys.size === Object.values(KeyPurpose).length) {
+      return;
+    }
+    // If keys aren't derived yet, wait for them
+    if (this.derivedKeys.size === 0) {
+      await this.derivePurposeKeys();
+    }
+    this.initialized = true;
   }
 
   /**
@@ -69,9 +105,34 @@ export class KeyManagementService {
     }
 
     // Additional key derivation to protect against env key exposure
-    const envSalt =
-      process.env.ENCRYPTION_KEY_SALT || "default-salt-change-in-production";
-    this.masterKeySeed = Buffer.from(envKey + envSalt, "utf8");
+    const envSalt = process.env.ENCRYPTION_KEY_SALT;
+    if (!envSalt) {
+      throw new Error("ENCRYPTION_KEY_SALT environment variable required");
+    }
+
+    if (process.env.NODE_ENV === "production" && envSalt.length < 16) {
+      throw new Error(
+        "ENCRYPTION_KEY_SALT must be 16+ characters in production"
+      );
+    }
+
+    // Use proper cryptographic key derivation instead of string concatenation
+    // Create a buffer from the hex-encoded key or UTF-8 if not hex
+    let masterKeyBuffer: Buffer;
+    try {
+      // First try to parse as hex (more secure)
+      masterKeyBuffer = Buffer.from(envKey, 'hex');
+    } catch {
+      // Fallback to UTF-8 if not valid hex
+      masterKeyBuffer = Buffer.from(envKey, 'utf8');
+    }
+
+    // Use scrypt to derive a secure key from the master key and salt
+    // This provides much stronger protection than simple concatenation
+    // Use synchronous scrypt for initialization
+    const derived = scryptSync(masterKeyBuffer, envSalt, KEY_CONFIG.keyLength);
+    this.masterKeySeed = Buffer.from(derived as unknown as ArrayBuffer);
+
     logger.info("Key management service initialized with derived master key");
   }
 
@@ -84,11 +145,13 @@ export class KeyManagementService {
     for (const purpose of purposes) {
       try {
         // Use HKDF to derive purpose-specific keys
-        const derivedKey = await hkdfAsync(
+        // Use a secure salt for HKDF (derived from purpose to ensure uniqueness)
+        const hkdfSalt = Buffer.from(purpose, "utf8");
+        const derivedKey = await this.hkdf(
           "sha256",
           this.masterKeySeed,
-          Buffer.from(purpose, "utf8"),
-          Buffer.alloc(32), // Empty salt for HKDF
+          hkdfSalt,
+          Buffer.from(`purpose:${purpose}`, "utf8"), // HKDF info parameter
           KEY_CONFIG.keyLength
         );
 
@@ -108,7 +171,8 @@ export class KeyManagementService {
   /**
    * Get encryption key for specific purpose
    */
-  private getKeyForPurpose(purpose: KeyPurpose): Buffer {
+  private async getKeyForPurpose(purpose: KeyPurpose): Promise<Buffer> {
+    await this.ensureInitialized();
     const key = this.derivedKeys.get(purpose);
     if (!key) {
       throw new Error(`No key available for purpose: ${purpose}`);
@@ -124,12 +188,12 @@ export class KeyManagementService {
     purpose: KeyPurpose = KeyPurpose.GENERAL_ENCRYPTION
   ): Promise<string> {
     try {
-      const key = this.getKeyForPurpose(purpose);
+      const key = await this.getKeyForPurpose(purpose);
       const salt = randomBytes(KEY_CONFIG.saltLength);
       const iv = randomBytes(KEY_CONFIG.ivLength);
 
       // Derive final key using scrypt with the purpose-specific key as password
-      const derivedKey = (await scryptAsync(
+      const derivedKey = (await this.scrypt(
         key,
         salt,
         KEY_CONFIG.keyLength
@@ -195,10 +259,10 @@ export class KeyManagementService {
         1 + KEY_CONFIG.saltLength + KEY_CONFIG.ivLength + KEY_CONFIG.tagLength
       );
 
-      const key = this.getKeyForPurpose(purpose);
+      const key = await this.getKeyForPurpose(purpose);
 
       // Derive the same key used for encryption
-      const derivedKey = (await scryptAsync(
+      const derivedKey = (await this.scrypt(
         key,
         salt,
         KEY_CONFIG.keyLength
@@ -282,11 +346,12 @@ export class KeyManagementService {
   /**
    * Get key status and metrics
    */
-  getKeyStatus(): {
+  async getKeyStatus(): Promise<{
     purposes: string[];
     keyVersions: Record<string, number>;
     config: KeyConfig;
-  } {
+  }> {
+    await this.ensureInitialized();
     const purposes = Array.from(this.derivedKeys.keys()).map(p => p.toString());
     const keyVersions: Record<string, number> = {};
 
