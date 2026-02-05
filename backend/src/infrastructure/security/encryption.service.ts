@@ -149,41 +149,11 @@ export class SecureCredentials {
 }
 
 /**
- * ===========================================
- * 🔄 SECURE CREDENTIALS CONTEXT MANAGER
- * ===========================================
- *
- * Provides a context manager pattern for secure credential handling.
- * Automatically decrypts, uses, and destroys credentials.
- *
- * USAGE:
- * ```typescript
- * const result = await withCredentials(userId, async (creds) => {
- *   return await makeApiCall(creds.get('apiKey'), creds.get('secretKey'));
- * });
- * ```
- */
-export async function withCredentials<T>(
-  userId: string,
-  callback: (creds: SecureCredentials) => Promise<T>
-): Promise<T> {
-  // Decrypt user credentials
-  const credentials = await decryptUserCredentials(userId);
-  const secureCreds = SecureCredentials.create(credentials);
-
-  try {
-    return await callback(secureCreds);
-  } finally {
-    secureCreds.destroy(); // Guaranteed cleanup
-  }
-}
-
-/**
  * Decrypt user Kodiak credentials (internal helper)
  */
-async function decryptUserCredentials(userId: string): Promise<{ [key: string]: string }> {
+async function decryptUserCredentials(userId: string, queryFunction: typeof query = query): Promise<{ [key: string]: string }> {
   try {
-    const result = await query<{
+    const result = await queryFunction<{
       account_id: string;
       api_key_encrypted: string;
       secret_key_encrypted: string;
@@ -198,7 +168,7 @@ async function decryptUserCredentials(userId: string): Promise<{ [key: string]: 
     }
 
     const row = result.rows[0];
-    const encryptionService = new EncryptionService();
+    const encryptionService = new EncryptionService(queryFunction);
 
     // Decrypt using version-aware decryption
     const _encryptionVersion = row.encryption_version || 1;
@@ -217,6 +187,37 @@ async function decryptUserCredentials(userId: string): Promise<{ [key: string]: 
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;
+  }
+}
+
+/**
+ * ===========================================
+ * 🔄 SECURE CREDENTIALS CONTEXT MANAGER
+ * ===========================================
+ *
+ * Provides a context manager pattern for secure credential handling.
+ * Automatically decrypts, uses, and destroys credentials.
+ *
+ * USAGE:
+ * ```typescript
+ * const result = await withCredentials(userId, async (creds) => {
+ *   return await makeApiCall(creds.get('apiKey'), creds.get('secretKey'));
+ * });
+ * ```
+ */
+export async function withCredentials<T>(
+  userId: string,
+  callback: (creds: SecureCredentials) => Promise<T>,
+  queryFunction: typeof query = query
+): Promise<T> {
+  // Decrypt user credentials
+  const credentials = await decryptUserCredentials(userId, queryFunction);
+  const secureCreds = SecureCredentials.create(credentials);
+
+  try {
+    return await callback(secureCreds);
+  } finally {
+    secureCreds.destroy(); // Guaranteed cleanup
   }
 }
 
@@ -253,8 +254,9 @@ function _scryptSync(
 
 export class EncryptionService {
   private masterKey: string;
+  private queryFn: typeof query;
 
-  constructor() {
+  constructor(queryFunction: typeof query = query) {
     // NO DEFAULTS - Fail fast if not configured
     const key = process.env.ENCRYPTION_MASTER_KEY;
     if (!key) {
@@ -269,6 +271,7 @@ export class EncryptionService {
     }
 
     this.masterKey = key;
+    this.queryFn = queryFunction;
   }
 
   encrypt(plaintext: string): string {
@@ -408,7 +411,7 @@ export class EncryptionService {
    */
   async isKeyRotationNeeded(): Promise<boolean> {
     try {
-      const result = await query<{
+      const result = await this.queryFn<{
         created_at: Date;
       }>(
         "SELECT created_at FROM encryption_keys ORDER BY version DESC LIMIT 1"
@@ -445,7 +448,7 @@ export class EncryptionService {
       // Store new key in database (encrypted with master key)
       const encryptedNewKey = await this.encryptWithVersion(newKey);
 
-      await query(
+      await this.queryFn(
         "INSERT INTO encryption_keys (version, encrypted_key, created_at) VALUES ($1, $2, NOW())",
         [CURRENT_KEY_VERSION, encryptedNewKey]
       );
@@ -479,7 +482,7 @@ export class EncryptionService {
       logger.info("Starting migration to versioned encryption");
 
       // Get all credentials that need migration
-      const credentials = await query<{
+      const credentials = await this.queryFn<{
         id: string;
         api_key_encrypted: string;
         secret_key_encrypted: string;
@@ -503,7 +506,7 @@ export class EncryptionService {
           const newSecretKeyEncrypted = await this.encryptWithVersion(secretKey);
 
           // Update database
-          await query(
+          await this.queryFn(
             "UPDATE kodiak_credentials SET api_key_encrypted = $1, secret_key_encrypted = $2, encryption_version = $3 WHERE id = $4",
             [newApiKeyEncrypted, newSecretKeyEncrypted, CURRENT_KEY_VERSION, cred.id]
           );
