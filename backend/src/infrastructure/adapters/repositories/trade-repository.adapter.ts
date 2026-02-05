@@ -33,6 +33,7 @@ export class TradeRepositoryAdapter implements ITradeRepository {
             const result = await query<TradeRow>(
                 `SELECT
                     id,
+                    user_id,
                     strategy_id,
                     order_id,
                     symbol,
@@ -64,6 +65,7 @@ export class TradeRepositoryAdapter implements ITradeRepository {
             const result = await query<TradeRow>(
                 `SELECT
                     id,
+                    user_id,
                     strategy_id,
                     order_id,
                     symbol,
@@ -107,7 +109,7 @@ export class TradeRepositoryAdapter implements ITradeRepository {
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
                 RETURNING id, executed_at`,
                 [
-                    'unknown', // userId not in Trade type
+                    trade.userId,
                     trade.strategyId,
                     trade.orderId,
                     trade.symbol,
@@ -127,7 +129,7 @@ export class TradeRepositoryAdapter implements ITradeRepository {
             // Return plain object matching Trade interface
             return {
                 id: row.id,
-                userId: 'unknown',
+                userId: trade.userId,
                 strategyId: trade.strategyId,
                 orderId: trade.orderId,
                 symbol: trade.symbol,
@@ -161,20 +163,49 @@ export class TradeRepositoryAdapter implements ITradeRepository {
     /**
      * Map database row to Trade interface object
      */
-    private mapRowToTrade(row: TradeRow): Trade | null {
+    private mapRowToTrade(row: TradeRow & { user_id?: string }): Trade | null {
         try {
+            // Validate required fields
+            if (!row.id || !row.order_id || !row.symbol || !row.side || !row.quantity || !row.price || !row.fee || !row.executed_at) {
+                logger.warn('Invalid trade row - missing required fields');
+                return null;
+            }
+
+            // Validate numeric fields
+            const quantity = parseFloat(row.quantity);
+            const price = parseFloat(row.price);
+            const fee = parseFloat(row.fee);
+            const pnl = row.pnl ? parseFloat(row.pnl) : undefined;
+
+            if (isNaN(quantity) || isNaN(price) || isNaN(fee) || (row.pnl && isNaN(pnl!))) {
+                logger.warn('Invalid trade row - numeric fields contain non-numeric values');
+                return null;
+            }
+
+            // Validate side is valid
+            if (!['BUY', 'SELL'].includes(row.side)) {
+                logger.warn(`Invalid trade side: ${row.side}`);
+                return null;
+            }
+
+            // Validate positive values
+            if (quantity <= 0 || price <= 0 || fee < 0) {
+                logger.warn('Invalid trade row - negative or zero values');
+                return null;
+            }
+
             // Return plain object matching Trade interface
             return {
                 id: row.id,
-                userId: 'unknown', // userId not stored in trades table
+                userId: row.user_id || 'unknown',
                 strategyId: row.strategy_id,
                 orderId: row.order_id,
                 symbol: row.symbol,
                 side: row.side,
-                quantity: parseFloat(row.quantity || '0'),
-                price: parseFloat(row.price || '0'),
-                fee: parseFloat(row.fee || '0'),
-                pnl: row.pnl ? parseFloat(row.pnl) : undefined,
+                quantity: quantity,
+                price: price,
+                fee: fee,
+                pnl: pnl,
                 status: OrderStatus.FILLED,
                 executedAt: new Date(row.executed_at)
             };
