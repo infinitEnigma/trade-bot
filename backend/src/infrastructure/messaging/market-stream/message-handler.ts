@@ -146,6 +146,7 @@ export class MessageHandler {
         topic,
         error: (error as Error).message,
       });
+      throw error; // Re-throw to propagate to outer catch
     }
   }
 
@@ -179,6 +180,7 @@ export class MessageHandler {
         symbol,
         error: (error as Error).message,
       });
+      throw error; // Re-throw to propagate to outer catch
     }
   }
 
@@ -239,6 +241,7 @@ export class MessageHandler {
         topic: message.topic ?? "unknown",
         error: (error as Error).message,
       });
+      throw error; // Re-throw to propagate to outer catch
     }
   }
 
@@ -275,6 +278,7 @@ export class MessageHandler {
         topic: message.topic ?? "unknown",
         error: (error as Error).message,
       });
+      throw error; // Re-throw to propagate to outer catch
     }
   }
 
