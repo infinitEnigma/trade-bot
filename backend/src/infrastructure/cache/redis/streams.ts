@@ -86,7 +86,6 @@ export class RedisStreamOperations {
                 );
 
                 if (!result) {
-                    console.log("stream: ", stream)
                     logger.warn("Failed to read from consumer group", {
                         stream,
                         consumerGroup: options.consumerGroup
@@ -207,7 +206,7 @@ export class RedisStreamOperations {
                 await client.xTrim(stream, 'MAXLEN', maxLength);
             } else {
                 // Use Redis syntax: XTRIM stream MAXLEN = maxLength
-                await client.xTrim(stream, 'MAXLEN', approximate ? '=' + maxLength : maxLength);
+                await client.xTrim(stream, 'MAXLEN', '=' + maxLength);
             }
 
             // Get current length after trim
