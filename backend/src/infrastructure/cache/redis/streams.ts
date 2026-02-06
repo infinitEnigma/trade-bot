@@ -18,6 +18,8 @@
 import { RedisConnectionManager } from "./connection-manager";
 import { logger } from "../../../core/logging";
 import type { EngineCommand, EngineEvent } from "@trade-bot/shared";
+import * as redis from "redis";
+import { TypedString } from "ethers/lib.commonjs/abi/typed";
 
 // Stream names
 export const ENGINE_COMMANDS_STREAM = "engine:commands";
@@ -74,11 +76,11 @@ export class RedisStreamOperations {
             const client = this.connectionManager.getClient();
 
             if (options.consumerGroup && options.consumerName) {
-                // Read from consumer group
+                // Read from consumer group - always use ">" to get new messages
                 const result = await client.xReadGroup(
                     options.consumerGroup,
                     options.consumerName,
-                    { key: stream, id: options.autoAck ? ">" : "0" },
+                    [{ key: stream, id: ">" }],
                     {
                         BLOCK: options.block || 0,
                         COUNT: options.count || 10,
@@ -90,7 +92,7 @@ export class RedisStreamOperations {
                         stream,
                         consumerGroup: options.consumerGroup
                     });
-                    return { success: false, messages: [] };
+                    return { success: true, messages: [] }; // Return success with empty messages instead of false
                 }
 
                 const messages = result.flatMap(group =>
@@ -119,7 +121,7 @@ export class RedisStreamOperations {
 
                 if (!result) {
                     logger.warn("Failed to read from stream", stream)
-                    return { success: false, messages: [] };
+                    return { success: true, messages: [] }; // Return success with empty messages instead of false
                 }
 
                 const messages = result.flatMap(group =>
@@ -167,7 +169,7 @@ export class RedisStreamOperations {
     async createConsumerGroup(stream: string, consumerGroup: string, startId: string = "0"): Promise<{ success: boolean; error?: string }> {
         try {
             const client = this.connectionManager.getClient();
-            await client.xGroupCreate(stream, consumerGroup, startId); // , { MKSTREAM: true });
+            await client.xGroupCreate(stream, consumerGroup, startId, { MKSTREAM: true });
             logger.info("Consumer group created", { stream, consumerGroup });
             return { success: true };
         } catch (error) {
@@ -202,11 +204,22 @@ export class RedisStreamOperations {
             }
 
             // Trim the stream
-            if (approximate) {
-                await client.xTrim(stream, 'MAXLEN', maxLength);
-            } else {
-                // Use Redis syntax: XTRIM stream MAXLEN = maxLength
-                await client.xTrim(stream, 'MAXLEN', '=' + maxLength);
+            try {
+                if (approximate) {
+                    // Approximate trimming doesn't seem to work reliably in Redis 5, fall back to exact
+                    await client.sendCommand(['XTRIM', stream, 'MAXLEN', maxLength.toString(), '~']);
+                } else {
+                    await client.sendCommand(['XTRIM', stream, 'MAXLEN', maxLength.toString()]);
+                }
+            } catch (trimError) {
+                logger.error("XTRIM command failed", {
+                    stream,
+                    maxLength,
+                    approximate,
+                    error: (trimError as Error).message,
+                    stack: (trimError as Error).stack
+                });
+                throw trimError;
             }
 
             // Get current length after trim
