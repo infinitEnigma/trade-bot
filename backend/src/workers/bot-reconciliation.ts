@@ -6,7 +6,7 @@
  * Ensures consistency between internal state and external exchange data.
  */
 
-import { logger } from "../core/logging";
+import { ContextAwareLogger } from "../core/logging";
 import { query } from "../database/pool";
 
 /**
@@ -60,15 +60,22 @@ interface QueryResult<T> {
  * - Handle failed trade recoveries
  */
 export class BotReconciliationWorker {
+    private logger: ContextAwareLogger;
     private isRunning = false;
     private reconciliationInterval: NodeJS.Timeout | null = null;
+    private testMode: boolean | undefined = false;
+
+    constructor(contextLogger: ContextAwareLogger, testMode?: boolean) {
+        this.logger = contextLogger;
+        this.testMode = testMode; // || this.isTestEnvironment();
+    }
 
     /**
      * Start the reconciliation worker
      */
     async start(): Promise<void> {
         if (this.isRunning) {
-            logger.warn("Bot reconciliation worker is already running");
+            this.logger.warn("Bot reconciliation worker is already running");
             return;
         }
 
@@ -76,12 +83,11 @@ export class BotReconciliationWorker {
 
         // Enhanced test environment detection
         const isTestEnvironment = this.isTestEnvironment();
-
-        logger.info("Starting bot reconciliation worker", { isTestEnvironment });
+        this.logger.info("Starting bot reconciliation worker", { isTestEnvironment });
 
         // In test environment, just set up minimal functionality without actual reconciliation
         if (isTestEnvironment) {
-            logger.debug("Bot reconciliation worker started in test mode");
+            this.logger.debug("Bot reconciliation worker started in test mode");
             return;
         }
 
@@ -95,7 +101,7 @@ export class BotReconciliationWorker {
                 )
             ]);
         } catch (error) {
-            logger.warn("Initial reconciliation timed out or failed, continuing with scheduled reconciliation", {
+            this.logger.warn("Initial reconciliation timed out or failed, continuing with scheduled reconciliation", {
                 error: error instanceof Error ? error.message : String(error),
                 isTestEnvironment
             });
@@ -115,14 +121,13 @@ export class BotReconciliationWorker {
                     )
                 ]);
             } catch (error) {
-                logger.error("Error in scheduled reconciliation", {
-                    error: error instanceof Error ? error.message : String(error),
+                this.logger.error("Error in scheduled reconciliation", error instanceof Error ? error : undefined, {
                     isTestEnvironment
                 });
             }
         }, intervalMs);
 
-        logger.info("Bot reconciliation worker started successfully", { isTestEnvironment });
+        this.logger.info("Bot reconciliation worker started successfully", { isTestEnvironment });
     }
 
     /**
@@ -130,18 +135,18 @@ export class BotReconciliationWorker {
      */
     async stop(): Promise<void> {
         if (!this.isRunning) {
-            logger.warn("Bot reconciliation worker is not running");
+            this.logger.warn("Bot reconciliation worker is not running");
             return;
         }
 
         this.isRunning = false;
-
+        const isTestEnvironment = this.isTestEnvironment();
         if (this.reconciliationInterval) {
             clearInterval(this.reconciliationInterval);
             this.reconciliationInterval = null;
         }
 
-        logger.info("Bot reconciliation worker stopped");
+        this.logger.info("Bot reconciliation worker stopped");
     }
 
     /**
@@ -152,17 +157,17 @@ export class BotReconciliationWorker {
         const isTestEnvironment = this.isTestEnvironment();
 
         try {
-            logger.info("Starting bot reconciliation cycle", { isTestEnvironment });
+            this.logger.info("Starting bot reconciliation cycle", { isTestEnvironment });
 
             // Get all active bots
             const activeBots = await this.getActiveBots();
 
             if (activeBots.length === 0) {
-                logger.info("No active bots to reconcile", { isTestEnvironment });
+                this.logger.info("No active bots to reconcile", { isTestEnvironment });
                 return;
             }
 
-            logger.info("Reconciling active bots", {
+            this.logger.info("Reconciling active bots", {
                 count: activeBots.length,
                 isTestEnvironment
             });
@@ -179,25 +184,23 @@ export class BotReconciliationWorker {
                         )
                     ]);
                 } catch (error) {
-                    logger.error("Failed to reconcile bot", {
+                    this.logger.error("Failed to reconcile bot", error instanceof Error ? error : undefined, {
                         botId: bot.id,
                         userId: bot.user_id,
-                        error: error instanceof Error ? error.message : String(error),
                         isTestEnvironment
                     });
                 }
             }
 
             const duration = Date.now() - startTime;
-            logger.info("Bot reconciliation cycle completed", {
+            this.logger.info("Bot reconciliation cycle completed", {
                 duration: `${duration}ms`,
                 botsProcessed: activeBots.length,
                 isTestEnvironment
             });
 
         } catch (error) {
-            logger.error("Bot reconciliation cycle failed", {
-                error: error instanceof Error ? error.message : String(error),
+            this.logger.error("Bot reconciliation cycle failed", error instanceof Error ? error : undefined, {
                 duration: Date.now() - startTime,
                 isTestEnvironment
             });
@@ -208,6 +211,7 @@ export class BotReconciliationWorker {
      * Get all active bots that need reconciliation
      */
     private async getActiveBots(): Promise<BotData[]> {
+
         try {
             // Check if we're in test environment and skip database operations completely
             if (this.isTestEnvironment()) {
@@ -216,7 +220,7 @@ export class BotReconciliationWorker {
 
             // Add timeout protection for database query
             const queryTimeout = 10000; // 10s timeout for database query
-            const queryPromise = query<BotData>(`
+            const queryResult = query<BotData>(`
         SELECT
           bi.id,
           bi.user_id,
@@ -234,17 +238,14 @@ export class BotReconciliationWorker {
         AND s.active = true
       `);
 
-            const result = await Promise.race([
-                queryPromise,
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Database query timeout')), queryTimeout)
-                )
-            ]);
+
+            const result = await queryResult;
+
 
             return (result as QueryResult<BotQueryResult>).rows;
         } catch (error) {
-            logger.error("Failed to get active bots", {
-                error: error instanceof Error ? error.message : String(error),
+
+            this.logger.error("Failed to get active bots", error instanceof Error ? error : undefined, {
                 isTestEnvironment: this.isTestEnvironment()
             });
             return [];
@@ -257,7 +258,7 @@ export class BotReconciliationWorker {
     private async reconcileBot(bot: BotData): Promise<void> {
         const isTestEnvironment = this.isTestEnvironment();
 
-        logger.debug("Reconciling bot", {
+        this.logger.debug("Reconciling bot", {
             botId: bot.id,
             userId: bot.user_id,
             strategyName: bot.strategy_name,
@@ -267,7 +268,7 @@ export class BotReconciliationWorker {
         try {
             // Skip all reconciliation work in test environment
             if (isTestEnvironment) {
-                logger.debug("Skipping bot reconciliation in test environment", {
+                this.logger.debug("Skipping bot reconciliation in test environment", {
                     botId: bot.id,
                     userId: bot.user_id,
                     isTestEnvironment
@@ -279,7 +280,7 @@ export class BotReconciliationWorker {
             const hasCredentials = await this.checkUserHasCredentials(bot.user_id);
 
             if (!hasCredentials) {
-                logger.warn("Bot reconciliation skipped - user has no Kodiak credentials", {
+                this.logger.warn("Bot reconciliation skipped - user has no Kodiak credentials", {
                     botId: bot.id,
                     userId: bot.user_id,
                 });
@@ -313,17 +314,16 @@ export class BotReconciliationWorker {
                 )
             ]);
 
-            logger.debug("Bot reconciliation completed", {
+            this.logger.debug("Bot reconciliation completed", {
                 botId: bot.id,
                 userId: bot.user_id,
                 isTestEnvironment
             });
 
         } catch (error) {
-            logger.error("Bot reconciliation failed", {
+            this.logger.error("Bot reconciliation failed", error instanceof Error ? error : undefined, {
                 botId: bot.id,
                 userId: bot.user_id,
-                error: error instanceof Error ? error.message : String(error),
                 isTestEnvironment
             });
 
@@ -358,9 +358,8 @@ export class BotReconciliationWorker {
 
             return (result as QueryResult<{ verified: boolean }>).rows.length > 0;
         } catch (error) {
-            logger.error("Failed to check user credentials", {
+            this.logger.error("Failed to check user credentials", error instanceof Error ? error : undefined, {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
                 isTestEnvironment: this.isTestEnvironment()
             });
             return false;
@@ -373,7 +372,7 @@ export class BotReconciliationWorker {
     private async syncUserPositions(userId: string): Promise<void> {
         // This would typically call Kodiak API to get current positions
         // and update the local database
-        logger.debug("Position sync placeholder", { userId });
+        this.logger.debug("Position sync placeholder", { userId });
 
         // TODO: Implement actual position synchronization
         // - Fetch positions from Kodiak API
@@ -387,7 +386,7 @@ export class BotReconciliationWorker {
      */
     private async validateRecentTrades(userId: string, botId: string): Promise<void> {
         // This would validate that trades recorded locally match exchange data
-        logger.debug("Trade validation placeholder", { userId, botId });
+        this.logger.debug("Trade validation placeholder", { userId, botId });
 
         // TODO: Implement trade validation
         // - Get recent trades from local DB
@@ -402,9 +401,9 @@ export class BotReconciliationWorker {
     private async updateBotStatistics(botId: string): Promise<void> {
         try {
             // Skip statistics update in test environment
-            if (this.isTestEnvironment()) {
-                return;
-            }
+            //if (this.isTestEnvironment()) {
+            //    return;
+            //}
 
             // Add timeout protection for statistics query
             const statsQueryTimeout = 5000; // 5s timeout for statistics query
@@ -458,9 +457,8 @@ export class BotReconciliationWorker {
             }
 
         } catch (error) {
-            logger.error("Failed to update bot statistics", {
+            this.logger.error("Failed to update bot statistics", error instanceof Error ? error : undefined, {
                 botId,
-                error: error instanceof Error ? error.message : String(error),
                 isTestEnvironment: this.isTestEnvironment()
             });
         }
@@ -472,9 +470,10 @@ export class BotReconciliationWorker {
     private async markBotAsError(botId: string, errorMessage: string): Promise<void> {
         try {
             // Skip error marking in test environment
-            if (this.isTestEnvironment()) {
+            /*if (this.isTestEnvironment()) {
+                console.log("mark bot env: test")
                 return;
-            }
+            }*/
 
             // Add timeout protection for error marking
             const updateTimeout = 3000; // 3s timeout for error marking
@@ -494,11 +493,10 @@ export class BotReconciliationWorker {
                 )
             ]);
 
-            logger.warn("Marked bot as error", { botId, errorMessage });
+            this.logger.warn("Marked bot as error", { botId, errorMessage });
         } catch (error) {
-            logger.error("Failed to mark bot as error", {
+            this.logger.error("Failed to mark bot as error", error instanceof Error ? error : undefined, {
                 botId,
-                error: error instanceof Error ? error.message : String(error),
                 isTestEnvironment: this.isTestEnvironment()
             });
         }
@@ -507,8 +505,12 @@ export class BotReconciliationWorker {
     /**
      * Check if we're running in a test environment
      */
-    private isTestEnvironment(): boolean {
-        return process.env.NODE_ENV === 'test' || !!process.env.JEST_WORKER_ID;
+    protected isTestEnvironment(): boolean {
+
+        // Default to environment detection
+        this.testMode = process.env.NODE_ENV === 'test' || !!process.env.JEST_WORKER_ID;
+
+        return this.testMode;
     }
 
     /**
@@ -544,5 +546,7 @@ export class BotReconciliationWorker {
     }
 }
 
+import { contextLogger } from "../core/logging";
+
 // Export singleton instance
-export const botReconciliationWorker = new BotReconciliationWorker();
+export const botReconciliationWorker = new BotReconciliationWorker(contextLogger);

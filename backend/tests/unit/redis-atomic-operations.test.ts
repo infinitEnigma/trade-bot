@@ -70,6 +70,28 @@ describe('RedisAtomicOperations', () => {
             expect(mockTransactions.watchMultiExec).toHaveBeenCalled();
         });
 
+        it('should perform atomic increment successfully with expiry', async () => {
+            const mockKey = 'test-key';
+            const mockIncrement = 5;
+            const mockFinalValue = 10;
+            const mockTtlMs = 60000;
+
+            // Mock transaction success
+            mockTransactions.watchMultiExec.mockResolvedValue({
+                success: true,
+                result: mockIncrement
+            });
+
+            // Mock get final value
+            (mockConnectionManager.getClient().get as jest.Mock).mockResolvedValue(mockFinalValue.toString());
+
+            const result = await atomicOperations.atomicIncrementWithExpiry(mockKey, mockIncrement, mockTtlMs);
+
+            expect(result.success).toBe(true);
+            expect(result.data).toBe(mockFinalValue);
+            expect(mockTransactions.watchMultiExec).toHaveBeenCalled();
+        });
+
         it('should handle atomic increment failure', async () => {
             const mockKey = 'test-key';
             const mockError = 'Transaction failed';
@@ -83,6 +105,77 @@ describe('RedisAtomicOperations', () => {
 
             expect(result.success).toBe(false);
             expect(result.error).toBe(mockError);
+        });
+    });
+
+    describe('atomic operations with specific scenarios', () => {
+        it('should handle conditional update when value is null', async () => {
+            const mockKey = 'test-key';
+            const mockNewValue = { foo: 'bar' };
+            const mockExpectedValue = null;
+
+            mockTransactions.watchMultiExec.mockResolvedValue({
+                success: true,
+                result: { updated: true }
+            });
+
+            // Mock getting current value (null)
+            (mockConnectionManager.getClient().get as jest.Mock).mockResolvedValue(null);
+
+            const result = await atomicOperations.atomicConditionalUpdate(mockKey, mockNewValue, mockExpectedValue);
+
+            expect(result.success).toBe(true);
+            expect(result.data).toBe(true);
+        });
+
+        it('should handle balance transfer with zero initial balances', async () => {
+            const mockFromKey = 'account:1';
+            const mockToKey = 'account:2';
+            const mockAmount = 100;
+
+            mockTransactions.watchMultiExec.mockResolvedValue({
+                success: true,
+                result: {
+                    transferred: true,
+                    fromBalance: -100,
+                    toBalance: 100
+                }
+            });
+
+            // Mock getting current balances (both 0)
+            (mockConnectionManager.getClient().get as jest.Mock)
+                .mockResolvedValueOnce(null) // from balance
+                .mockResolvedValueOnce(null); // to balance
+
+            const result = await atomicOperations.atomicBalanceTransfer(mockFromKey, mockToKey, mockAmount, false);
+
+            expect(result.success).toBe(true);
+            expect(result.data?.transferred).toBe(true);
+            expect(result.data?.fromBalance).toBe(-100);
+            expect(result.data?.toBalance).toBe(100);
+        });
+
+        it('should handle versioned update without expected version', async () => {
+            const mockDataKey = 'data:1';
+            const mockNewData = { foo: 'bar' };
+
+            mockTransactions.watchMultiExec.mockResolvedValue({
+                success: true,
+                result: {
+                    updated: true,
+                    newVersion: 1
+                }
+            });
+
+            // Mock getting current version (not set)
+            (mockConnectionManager.getClient().get as jest.Mock)
+                .mockResolvedValueOnce(null);
+
+            const result = await atomicOperations.atomicVersionedUpdate(mockDataKey, mockNewData);
+
+            expect(result.success).toBe(true);
+            expect(result.data?.updated).toBe(true);
+            expect(result.data?.newVersion).toBe(1);
         });
     });
 
@@ -139,6 +232,62 @@ describe('RedisAtomicOperations', () => {
 
             expect(result.success).toBe(false);
             expect(result.error).toBe(mockError);
+        });
+    });
+
+    describe('atomicCompositeUpdate operations', () => {
+        it('should handle composite update with set operation', async () => {
+            const mockUpdates: Array<{ key: string; value: unknown; operation?: 'set' | 'incr' | 'decr' }> = [{
+                key: 'test:key',
+                value: { foo: 'bar' },
+                operation: 'set'
+            }];
+
+            mockTransactions.watchMultiExec.mockResolvedValue({
+                success: true,
+                result: mockUpdates
+            });
+
+            const result = await atomicOperations.atomicCompositeUpdate(mockUpdates);
+
+            expect(result.success).toBe(true);
+            expect(result.data).toEqual(mockUpdates);
+        });
+
+        it('should handle composite update with incr operation', async () => {
+            const mockUpdates: Array<{ key: string; value: unknown; operation?: 'set' | 'incr' | 'decr' }> = [{
+                key: 'test:key',
+                value: 5,
+                operation: 'incr'
+            }];
+
+            mockTransactions.watchMultiExec.mockResolvedValue({
+                success: true,
+                result: mockUpdates
+            });
+
+            const result = await atomicOperations.atomicCompositeUpdate(mockUpdates);
+
+            expect(result.success).toBe(true);
+            expect(result.data).toEqual(mockUpdates);
+        });
+
+        it('should handle composite update with decr operation', async () => {
+            const mockUpdates: Array<{ key: string; value: unknown; operation?: 'set' | 'incr' | 'decr' }> = [{
+                key: 'test:key',
+                value: 3,
+                operation: 'decr'
+            }];
+
+            mockTransactions.watchMultiExec.mockResolvedValue({
+                success: true,
+                result: mockUpdates
+            });
+
+            const result = await atomicOperations.atomicCompositeUpdate(mockUpdates);
+
+            expect(result.success).toBe(true);
+            expect(result.data).toEqual(mockUpdates);
         });
     });
 
@@ -328,6 +477,28 @@ describe('RedisAtomicOperations', () => {
             expect(mockModifier).toHaveBeenCalledWith(null);
         });
 
+        it('should handle read-modify-write with invalid JSON', async () => {
+            const mockKey = 'test-key';
+            const mockNewValue = { count: 1 };
+            const mockModifier = jest.fn().mockReturnValue(mockNewValue);
+
+            // Make the watchMultiExec mock call the actual operation
+            mockTransactions.watchMultiExec.mockImplementation(async (_, operation) => {
+                const result = await operation({ set: jest.fn() }); // Pass mock multi object with set method
+                return { success: true, result };
+            });
+
+            // Mock getting invalid JSON value
+            (mockConnectionManager.getClient().get as jest.Mock)
+                .mockResolvedValue('invalid-json');
+
+            const result = await atomicOperations.atomicReadModifyWrite(mockKey, mockModifier);
+
+            expect(result.success).toBe(true);
+            expect(result.data).toEqual(mockNewValue);
+            expect(mockModifier).toHaveBeenCalledWith(null);
+        });
+
         it('should handle read-modify-write failure', async () => {
             const mockKey = 'test-key';
             const mockError = 'Transaction failed';
@@ -370,6 +541,32 @@ describe('RedisAtomicOperations', () => {
             expect(mockUpdateFunction).toHaveBeenCalledWith(mockCurrentData);
         });
 
+        it('should handle optimistic update with version key', async () => {
+            const mockKey = 'test-key';
+            const mockVersionKey = 'test-key:version';
+            const mockCurrentData = { count: 5 };
+            const mockNewData = { count: 6 };
+            const mockUpdateFunction = jest.fn().mockReturnValue(mockNewData);
+
+            // Make the watchMultiExec mock call the actual operation
+            mockTransactions.watchMultiExec.mockImplementation(async (_, operation) => {
+                const result = await operation({ set: jest.fn() }); // Pass mock multi object with set method
+                return { success: true, result: { newData: mockNewData, version: 2 } };
+            });
+
+            // Mock getting current data and version
+            (mockConnectionManager.getClient().get as jest.Mock)
+                .mockResolvedValueOnce(JSON.stringify(mockCurrentData))
+                .mockResolvedValueOnce('1');
+
+            const result = await atomicOperations.atomicOptimisticUpdate(mockKey, mockUpdateFunction, 3, mockVersionKey);
+
+            expect(result.success).toBe(true);
+            expect(result.data?.newData).toEqual(mockNewData);
+            expect(result.data?.version).toBe(2);
+            expect(mockUpdateFunction).toHaveBeenCalledWith(mockCurrentData);
+        });
+
         it('should handle optimistic update with max retries exceeded', async () => {
             const mockKey = 'test-key';
             const mockError = 'Max retries exceeded';
@@ -380,6 +577,18 @@ describe('RedisAtomicOperations', () => {
             });
 
             const result = await atomicOperations.atomicOptimisticUpdate(mockKey, jest.fn(), 2);
+
+            expect(result.success).toBe(false);
+            expect(result.error).toBe(mockError);
+        });
+
+        it('should handle optimistic update with exception', async () => {
+            const mockKey = 'test-key';
+            const mockError = 'Network error';
+
+            mockTransactions.watchMultiExec.mockRejectedValue(new Error(mockError));
+
+            const result = await atomicOperations.atomicOptimisticUpdate(mockKey, jest.fn());
 
             expect(result.success).toBe(false);
             expect(result.error).toBe(mockError);

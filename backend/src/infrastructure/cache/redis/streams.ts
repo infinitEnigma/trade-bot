@@ -206,7 +206,6 @@ export class RedisStreamOperations {
             // Trim the stream
             try {
                 if (approximate) {
-                    // Approximate trimming doesn't seem to work reliably in Redis 5, fall back to exact
                     await client.sendCommand(['XTRIM', stream, 'MAXLEN', maxLength.toString(), '~']);
                 } else {
                     await client.sendCommand(['XTRIM', stream, 'MAXLEN', maxLength.toString()]);

@@ -241,22 +241,131 @@ describe('Service Factory Interface', () => {
                 })
             );
         });
+
+        test('should instantiate Bot Management Service with proper dependencies', () => {
+            const mockBotManagementService = { manageBots: jest.fn() };
+            mockDiContainer.botManagementService = mockBotManagementService;
+
+            const service = factory.getBotManagementService();
+
+            expect(service).toBe(mockBotManagementService);
+            expect(mockLogger.debug).toHaveBeenCalledWith(
+                'Bot Management Service retrieved from container',
+                expect.objectContaining({
+                    service: 'BotManagementService',
+                    implementation: 'pure'
+                })
+            );
+        });
+
+        test('should instantiate Strategy Service with proper dependencies', () => {
+            const mockStrategyService = { manageStrategies: jest.fn() };
+            mockDiContainer.strategyService = mockStrategyService;
+
+            const service = factory.getStrategyService();
+
+            expect(service).toBe(mockStrategyService);
+            expect(mockLogger.debug).toHaveBeenCalledWith(
+                'Strategy Service retrieved from container',
+                expect.objectContaining({
+                    service: 'StrategyService',
+                    implementation: 'pure'
+                })
+            );
+        });
+
+        test('should instantiate Market Service with proper dependencies', () => {
+            const mockMarketService = { getMarketPrices: jest.fn() };
+            mockDiContainer.marketService = mockMarketService;
+
+            const service = factory.getMarketService();
+
+            expect(service).toBe(mockMarketService);
+            expect(mockLogger.debug).toHaveBeenCalledWith(
+                'Market Service retrieved from container',
+                expect.objectContaining({
+                    service: 'MarketService',
+                    implementation: 'pure'
+                })
+            );
+        });
+
+        test('should instantiate Position Validator Service with proper dependencies', () => {
+            const mockPositionValidatorService = { validateUserPosition: jest.fn() };
+            mockDiContainer.positionValidatorService = mockPositionValidatorService;
+
+            const service = factory.getPositionValidatorService();
+
+            expect(service).toBe(mockPositionValidatorService);
+            expect(mockLogger.debug).toHaveBeenCalledWith(
+                'Position Validator Service retrieved from container',
+                expect.objectContaining({
+                    service: 'PositionValidatorService',
+                    implementation: 'pure'
+                })
+            );
+        });
+
+        test('should instantiate Position Sync Service with proper dependencies', () => {
+            const mockPositionSyncService = { syncPositionsFromExternalAPI: jest.fn() };
+            mockDiContainer.positionSyncService = mockPositionSyncService;
+
+            const service = factory.getPositionSyncService();
+
+            expect(service).toBe(mockPositionSyncService);
+            expect(mockLogger.debug).toHaveBeenCalledWith(
+                'Position Sync Service retrieved from container',
+                expect.objectContaining({
+                    service: 'PositionSyncService',
+                    implementation: 'pure'
+                })
+            );
+        });
+
+        test('should instantiate Health Service with proper dependencies', () => {
+            const mockHealthService = { getSystemHealth: jest.fn() };
+            mockDiContainer.healthService = mockHealthService;
+
+            const service = factory.getHealthService();
+
+            expect(service).toBe(mockHealthService);
+            expect(mockLogger.debug).toHaveBeenCalledWith(
+                'Health Service retrieved from container',
+                expect.objectContaining({
+                    service: 'HealthService',
+                    implementation: 'pure'
+                })
+            );
+        });
+
+        test('should instantiate Engine Manager with proper dependencies', () => {
+            const mockEngineManager = { ensureEngineRunning: jest.fn() };
+            mockDiContainer.engineManager = mockEngineManager;
+
+            const service = factory.getEngineManager();
+
+            expect(service).toBe(mockEngineManager);
+            expect(mockLogger.debug).toHaveBeenCalledWith(
+                'Engine Manager retrieved from container',
+                expect.objectContaining({
+                    service: 'EngineManager',
+                    implementation: 'pure'
+                })
+            );
+        });
     });
 
     describe('Error Handling', () => {
-        test('should handle service instantiation errors gracefully', async () => {
-            // Mock the diContainer to throw an error when accessing authService
+        test('should handle Auth Service instantiation errors', () => {
             Object.defineProperty(mockDiContainer, 'authService', {
                 get() {
-                    throw new Error('Service instantiation failed');
+                    throw new Error('Auth Service instantiation failed');
                 },
                 configurable: true
             });
 
-            // Mock the logger.error to capture the error
             mockLogger.error = jest.fn();
 
-            // Service factory should return undefined instead of throwing
             const service = factory.getAuthService();
 
             expect(service).toBeUndefined();
@@ -265,6 +374,72 @@ describe('Service Factory Interface', () => {
                 expect.any(Error),
                 expect.objectContaining({
                     service: 'AuthService'
+                })
+            );
+        });
+
+        test('should handle Balance Service instantiation errors', () => {
+            Object.defineProperty(mockDiContainer, 'balanceService', {
+                get() {
+                    throw new Error('Balance Service instantiation failed');
+                },
+                configurable: true
+            });
+
+            mockLogger.error = jest.fn();
+
+            const service = factory.getBalanceService();
+
+            expect(service).toBeUndefined();
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                'Failed to get Balance Service',
+                expect.any(Error),
+                expect.objectContaining({
+                    service: 'BalanceService'
+                })
+            );
+        });
+
+        test('should handle Position Service instantiation errors', () => {
+            Object.defineProperty(mockDiContainer, 'positionService', {
+                get() {
+                    throw new Error('Position Service instantiation failed');
+                },
+                configurable: true
+            });
+
+            mockLogger.error = jest.fn();
+
+            const service = factory.getPositionService();
+
+            expect(service).toBeUndefined();
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                'Failed to get Position Service',
+                expect.any(Error),
+                expect.objectContaining({
+                    service: 'PositionService'
+                })
+            );
+        });
+
+        test('should handle Role Management Service instantiation errors', () => {
+            Object.defineProperty(mockDiContainer, 'roleManagementService', {
+                get() {
+                    throw new Error('Role Management Service instantiation failed');
+                },
+                configurable: true
+            });
+
+            mockLogger.error = jest.fn();
+
+            const service = factory.getRoleManagementService();
+
+            expect(service).toBeUndefined();
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                'Failed to get Role Management Service',
+                expect.any(Error),
+                expect.objectContaining({
+                    service: 'RoleManagementService'
                 })
             );
         });
@@ -313,6 +488,239 @@ describe('Service Factory Interface', () => {
                     service: 'UserKodiakService'
                 })
             );
+        });
+
+        test('should handle Bot Management Service instantiation errors', () => {
+            Object.defineProperty(mockDiContainer, 'botManagementService', {
+                get() {
+                    throw new Error('Bot Management Service instantiation failed');
+                },
+                configurable: true
+            });
+
+            mockLogger.error = jest.fn();
+
+            const service = factory.getBotManagementService();
+
+            expect(service).toBeUndefined();
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                'Failed to get Bot Management Service',
+                expect.any(Error),
+                expect.objectContaining({
+                    service: 'BotManagementService'
+                })
+            );
+        });
+
+        test('should handle Strategy Service instantiation errors', () => {
+            Object.defineProperty(mockDiContainer, 'strategyService', {
+                get() {
+                    throw new Error('Strategy Service instantiation failed');
+                },
+                configurable: true
+            });
+
+            mockLogger.error = jest.fn();
+
+            const service = factory.getStrategyService();
+
+            expect(service).toBeUndefined();
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                'Failed to get Strategy Service',
+                expect.any(Error),
+                expect.objectContaining({
+                    service: 'StrategyService'
+                })
+            );
+        });
+
+        test('should handle Market Service instantiation errors', () => {
+            Object.defineProperty(mockDiContainer, 'marketService', {
+                get() {
+                    throw new Error('Market Service instantiation failed');
+                },
+                configurable: true
+            });
+
+            mockLogger.error = jest.fn();
+
+            const service = factory.getMarketService();
+
+            expect(service).toBeUndefined();
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                'Failed to get Market Service',
+                expect.any(Error),
+                expect.objectContaining({
+                    service: 'MarketService'
+                })
+            );
+        });
+
+        test('should handle Position Validator Service instantiation errors', () => {
+            Object.defineProperty(mockDiContainer, 'positionValidatorService', {
+                get() {
+                    throw new Error('Position Validator Service instantiation failed');
+                },
+                configurable: true
+            });
+
+            mockLogger.error = jest.fn();
+
+            const service = factory.getPositionValidatorService();
+
+            expect(service).toBeUndefined();
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                'Failed to get Position Validator Service',
+                expect.any(Error),
+                expect.objectContaining({
+                    service: 'PositionValidatorService'
+                })
+            );
+        });
+
+        test('should handle Position Sync Service instantiation errors', () => {
+            Object.defineProperty(mockDiContainer, 'positionSyncService', {
+                get() {
+                    throw new Error('Position Sync Service instantiation failed');
+                },
+                configurable: true
+            });
+
+            mockLogger.error = jest.fn();
+
+            const service = factory.getPositionSyncService();
+
+            expect(service).toBeUndefined();
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                'Failed to get Position Sync Service',
+                expect.any(Error),
+                expect.objectContaining({
+                    service: 'PositionSyncService'
+                })
+            );
+        });
+
+        test('should handle Health Service instantiation errors', () => {
+            Object.defineProperty(mockDiContainer, 'healthService', {
+                get() {
+                    throw new Error('Health Service instantiation failed');
+                },
+                configurable: true
+            });
+
+            mockLogger.error = jest.fn();
+
+            const service = factory.getHealthService();
+
+            expect(service).toBeUndefined();
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                'Failed to get Health Service',
+                expect.any(Error),
+                expect.objectContaining({
+                    service: 'HealthService'
+                })
+            );
+        });
+
+        test('should handle Role Qualification Service instantiation errors', () => {
+            Object.defineProperty(mockDiContainer, 'roleQualificationService', {
+                get() {
+                    throw new Error('Role Qualification Service instantiation failed');
+                },
+                configurable: true
+            });
+
+            mockLogger.error = jest.fn();
+
+            const service = factory.getRoleQualificationService();
+
+            expect(service).toBeUndefined();
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                'Failed to get Role Qualification Service',
+                expect.any(Error),
+                expect.objectContaining({
+                    service: 'RoleQualificationService'
+                })
+            );
+        });
+
+        test('should handle Wallet Qualification Service instantiation errors', () => {
+            Object.defineProperty(mockDiContainer, 'walletQualificationService', {
+                get() {
+                    throw new Error('Wallet Qualification Service instantiation failed');
+                },
+                configurable: true
+            });
+
+            mockLogger.error = jest.fn();
+
+            const service = factory.getWalletQualificationService();
+
+            expect(service).toBeUndefined();
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                'Failed to get Wallet Qualification Service',
+                expect.any(Error),
+                expect.objectContaining({
+                    service: 'WalletQualificationService'
+                })
+            );
+        });
+
+        test('should handle Engine Manager instantiation errors', () => {
+            Object.defineProperty(mockDiContainer, 'engineManager', {
+                get() {
+                    throw new Error('Engine Manager instantiation failed');
+                },
+                configurable: true
+            });
+
+            mockLogger.error = jest.fn();
+
+            const service = factory.getEngineManager();
+
+            expect(service).toBeUndefined();
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                'Failed to get Engine Manager',
+                expect.any(Error),
+                expect.objectContaining({
+                    service: 'EngineManager'
+                })
+            );
+        });
+
+        test('should handle getAllServices method failure', () => {
+            mockLogger.error = jest.fn();
+
+            // Mock one specific service method to throw an error
+            const originalGetAuthService = factory.getAuthService;
+            factory.getAuthService = jest.fn().mockImplementation(() => {
+                throw new Error('Auth service failed');
+            });
+
+            const allServices = factory.getAllServices();
+
+            expect(allServices).toEqual({
+                authService: undefined,
+                balanceService: undefined,
+                positionService: undefined,
+                positionValidatorService: undefined,
+                positionSyncService: undefined,
+                roleManagementService: undefined,
+                userProfileService: undefined,
+                userKodiakService: undefined,
+                botManagementService: undefined,
+                strategyService: undefined,
+                marketService: undefined,
+                healthService: undefined,
+                engineManager: undefined
+            });
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                'Failed to get all services',
+                expect.any(Error)
+            );
+
+            // Restore original method
+            factory.getAuthService = originalGetAuthService;
         });
     });
 
@@ -521,6 +929,43 @@ describe('Service Factory Interface', () => {
             // Restore original method
             factory.getAllServices = originalGetAllServices;
         });
+
+        test('should handle service health check errors', async () => {
+            const failingService = {
+                constructor: {
+                    get name() {
+                        throw new Error('Service health check failed');
+                    }
+                }
+            };
+
+            mockDiContainer.authService = failingService;
+            mockDiContainer.balanceService = {};
+            mockDiContainer.positionService = {};
+            mockDiContainer.positionValidatorService = {};
+            mockDiContainer.positionSyncService = {};
+            mockDiContainer.roleManagementService = {};
+            mockDiContainer.roleQualificationService = {};
+            mockDiContainer.walletQualificationService = {};
+            mockDiContainer.botManagementService = {};
+            mockDiContainer.strategyService = {};
+            mockDiContainer.marketService = {};
+            mockDiContainer.healthService = {};
+            mockDiContainer.engineManager = {};
+            mockDiContainer.userRepository = {};
+            mockDiContainer.cacheService = {};
+            mockDiContainer.passwordService = {};
+            mockDiContainer.auditLogRepository = {};
+
+            const health = await factory.healthCheck();
+
+            expect(health.healthy).toBe(false);
+            expect(health.services.authService).toBe(false);
+            expect(health.details.authService).toEqual({
+                healthy: false,
+                error: 'Service health check failed'
+            });
+        });
     });
 
     describe('Service Caching', () => {
@@ -557,6 +1002,31 @@ describe('Service Factory Interface', () => {
                     pattern: 'factory'
                 })
             );
+        });
+    });
+
+    describe('Singleton Pattern', () => {
+        test('should return singleton instance from getServiceFactory', () => {
+            // Import getServiceFactory dynamically to reset module state
+            const { getServiceFactory } = require('../../src/core/service-factory');
+            const instance1 = getServiceFactory();
+            const instance2 = getServiceFactory();
+
+            expect(instance1).toBe(instance2);
+            expect(instance1).toBeInstanceOf(ServiceFactory);
+        });
+
+        test('should export singleton instance', () => {
+            const { serviceFactory } = require('../../src/core/service-factory');
+
+            expect(serviceFactory).toBeDefined();
+            expect(serviceFactory).toBeInstanceOf(ServiceFactory);
+        });
+
+        test('getServiceFactory and exported instance should be the same', () => {
+            const { getServiceFactory, serviceFactory } = require('../../src/core/service-factory');
+
+            expect(getServiceFactory()).toBe(serviceFactory);
         });
     });
 });

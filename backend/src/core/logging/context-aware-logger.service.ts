@@ -136,6 +136,7 @@ export class ContextAwareLogger {
         if (this.contextCache.cachedInfo && this.contextCache.generation === currentGeneration) {
             return {
                 ...this.contextCache.cachedInfo,
+                ...this.additionalMeta,
                 ...additionalMeta
             };
         }
@@ -149,6 +150,7 @@ export class ContextAwareLogger {
             correlationId,
             userId,
             component: this.componentName,
+            ...this.additionalMeta,
             ...additionalMeta,
         };
 
@@ -223,6 +225,9 @@ export class ContextAwareLogger {
     child(operationName: string, additionalMeta?: Record<string, unknown>): ContextAwareLogger {
         const childLogger = new ContextAwareLogger(`${this.componentName}:${operationName}`);
 
+        // Store additional metadata in child logger
+        childLogger.additionalMeta = additionalMeta || {};
+
         // Create child context if we have a current context
         const currentContext = getCurrentContext();
         if (currentContext) {
@@ -230,9 +235,6 @@ export class ContextAwareLogger {
             // Copy user information to child context
             childContext.userId = currentContext.userId;
             childContext.userLevel = currentContext.userLevel;
-
-            // Store additional metadata in child logger
-            childLogger.additionalMeta = additionalMeta || {};
         }
 
         return childLogger;

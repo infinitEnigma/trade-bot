@@ -542,4 +542,199 @@ describe("ContextAwareLogger Performance Optimization", () => {
             expect(true).toBe(true);
         });
     });
+
+    describe("Child Logger Functionality", () => {
+        it("should create child loggers with correct component names", () => {
+            const childLogger = logger.child("sub-operation");
+            expect(childLogger).toBeInstanceOf(ContextAwareLogger);
+
+            // Check if child logger has correct component name
+            const childComponentName = (childLogger as any).componentName;
+            expect(childComponentName).toBe("test-component:sub-operation");
+        });
+
+        it("should pass additional metadata to child loggers", () => {
+            const childLogger = logger.child("sub-operation", { parent: "test-component" });
+            expect(childLogger).toBeInstanceOf(ContextAwareLogger);
+
+            expect((childLogger as any).additionalMeta).toEqual({ parent: "test-component" });
+        });
+
+        it("should create child context when current context exists", () => {
+            setRequestContext({
+                correlationId: "parent-correlation-id",
+                userId: "parent-user",
+                userLevel: "VERIFIED",
+                requestId: "parent-request",
+                startTime: Date.now(),
+            });
+
+            const childLogger = logger.child("sub-operation", { operationType: "async" });
+            expect(childLogger).toBeInstanceOf(ContextAwareLogger);
+        });
+    });
+
+    describe("Performance Logging", () => {
+        it("should log performance metrics with success status", () => {
+            setRequestContext({
+                correlationId: "perf-test-id",
+                userId: "perf-user",
+                userLevel: "VERIFIED",
+                requestId: "perf-request",
+                startTime: Date.now(),
+            });
+
+            const logSpy = jest.spyOn(logger as any, "log");
+
+            logger.performance("test-operation", 125, true, { custom: "value" });
+
+            expect(logSpy).toHaveBeenCalledWith(
+                "debug",
+                "Operation completed: test-operation",
+                expect.objectContaining({
+                    operation: "test-operation",
+                    duration: 125,
+                    success: true,
+                    performance: true,
+                    custom: "value"
+                })
+            );
+        });
+
+        it("should log performance metrics with failure status", () => {
+            setRequestContext({
+                correlationId: "perf-test-id",
+                userId: "perf-user",
+                userLevel: "VERIFIED",
+                requestId: "perf-request",
+                startTime: Date.now(),
+            });
+
+            const logSpy = jest.spyOn(logger as any, "log");
+
+            logger.performance("test-operation", 1500, false, { retry: 3 });
+
+            expect(logSpy).toHaveBeenCalledWith(
+                "warn",
+                "Operation failed: test-operation",
+                expect.objectContaining({
+                    operation: "test-operation",
+                    duration: 1500,
+                    success: false,
+                    performance: true,
+                    retry: 3
+                })
+            );
+        });
+    });
+
+    describe("Generic Log Method", () => {
+        it("should handle all log levels correctly", () => {
+            setRequestContext({
+                correlationId: "generic-log-id",
+                userId: "generic-log-user",
+                userLevel: "VERIFIED",
+                requestId: "generic-log-request",
+                startTime: Date.now(),
+            });
+
+            // Spy on logger methods
+            const loggerModule = require("../../src/core/logging");
+            const infoSpy = jest.spyOn(loggerModule.logger, "info").mockImplementation(jest.fn());
+            const errorSpy = jest.spyOn(loggerModule.logger, "error").mockImplementation(jest.fn());
+            const warnSpy = jest.spyOn(loggerModule.logger, "warn").mockImplementation(jest.fn());
+            const debugSpy = jest.spyOn(loggerModule.logger, "debug").mockImplementation(jest.fn());
+            const httpSpy = jest.spyOn(loggerModule.logger, "http").mockImplementation(jest.fn());
+
+            // Test all log levels
+            const logMethod = (logger as any).log;
+            logMethod.call(logger, "info", "Info message");
+            expect(infoSpy).toHaveBeenCalled();
+
+            logMethod.call(logger, "error", "Error message");
+            expect(errorSpy).toHaveBeenCalled();
+
+            logMethod.call(logger, "warn", "Warning message");
+            expect(warnSpy).toHaveBeenCalled();
+
+            logMethod.call(logger, "debug", "Debug message");
+            expect(debugSpy).toHaveBeenCalled();
+
+            logMethod.call(logger, "http", "HTTP message");
+            expect(httpSpy).toHaveBeenCalled();
+
+            // Test default level
+            logMethod.call(logger, "unknown", "Unknown level message");
+            expect(debugSpy).toHaveBeenCalled();
+
+            infoSpy.mockRestore();
+            errorSpy.mockRestore();
+            warnSpy.mockRestore();
+            debugSpy.mockRestore();
+            httpSpy.mockRestore();
+        });
+    });
+
+    describe("Operation Timer", () => {
+        it("should create timer and measure elapsed time", () => {
+            const timer = logger.startOperation("test-operation", { custom: "value" });
+            expect(timer).toBeInstanceOf(Object);
+            expect(typeof timer.success).toBe("function");
+            expect(typeof timer.failure).toBe("function");
+            expect(typeof timer.getElapsed).toBe("function");
+
+            // Should measure elapsed time
+            expect(timer.getElapsed()).toBeGreaterThanOrEqual(0);
+        });
+
+        it("should log operation start and success", () => {
+            const debugSpy = jest.spyOn(logger, "debug");
+            const performanceSpy = jest.spyOn(logger, "performance");
+
+            const timer = logger.startOperation("test-operation", { custom: "value" });
+            expect(debugSpy).toHaveBeenCalledWith(
+                expect.stringContaining("Starting operation"),
+                expect.objectContaining({
+                    operation: "test-operation",
+                    operationType: "start"
+                })
+            );
+
+            timer.success({ result: "success" });
+            expect(performanceSpy).toHaveBeenCalledWith(
+                "test-operation",
+                expect.any(Number),
+                true,
+                expect.objectContaining({
+                    custom: "value",
+                    result: "success"
+                })
+            );
+        });
+
+        it("should log operation failure with error", () => {
+            const performanceSpy = jest.spyOn(logger, "performance");
+            const errorSpy = jest.spyOn(logger, "error");
+
+            const timer = logger.startOperation("test-operation");
+            const testError = new Error("Test failure");
+
+            timer.failure(testError, { errorCode: "TEST_ERROR" });
+
+            expect(performanceSpy).toHaveBeenCalledWith(
+                "test-operation",
+                expect.any(Number),
+                false,
+                expect.objectContaining({
+                    errorCode: "TEST_ERROR"
+                })
+            );
+
+            expect(errorSpy).toHaveBeenCalledWith(
+                expect.stringContaining("Operation failed"),
+                testError,
+                expect.any(Object)
+            );
+        });
+    });
 });

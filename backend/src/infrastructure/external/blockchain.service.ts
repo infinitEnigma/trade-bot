@@ -226,7 +226,7 @@ export class BlockchainService {
      */
     async getUserWalletAddress(userId: string): Promise<string | null> {
         try {
-            const { query } = await import("../../database/pool.js");
+            const { query } = await import("../../database/pool");
 
             const result = await query<{
                 wallet_address: string;
