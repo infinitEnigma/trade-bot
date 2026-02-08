@@ -5,7 +5,7 @@ import { Router, Request, Response } from "express";
 import { serviceProvider } from "../../../core/service-provider";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
 import { UserRole, UserLevel } from "@trade-bot/shared";
-import { createErrorResponse, ValidationError } from "../../../shared/types/errors";
+import { createErrorResponse, ValidationError } from "@trade-bot/shared";
 import { getCorrelationId } from "../../../shared/utils/context";
 import { validators } from "../../middleware/validation";
 import { authLogger } from "../../../core/logging";

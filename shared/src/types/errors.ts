@@ -79,6 +79,7 @@ export interface ErrorContext {
     available?: number;
     requested?: number;
     maxAllowed?: number;
+    configurationKey?: string;
 }
 
 /**
@@ -111,7 +112,7 @@ export class AppError extends Error {
     /**
      * Convert to user-friendly response
      */
-    toResponse(correlationId?: string) {
+    toResponse(correlationId?: string): Record<string, unknown> {
         return {
             success: false,
             error: this.getUserMessage(),
@@ -133,7 +134,7 @@ export class AppError extends Error {
     /**
      * Get additional response data
      */
-    protected getAdditionalData(): Record<string, number | undefined> {
+    protected getAdditionalData(): Record<string, unknown> {
         return {};
     }
 }

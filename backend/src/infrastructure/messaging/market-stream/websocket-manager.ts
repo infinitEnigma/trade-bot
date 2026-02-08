@@ -417,6 +417,16 @@ export class WebSocketManager {
     this.messageQueue = [];
     this.backpressureStates.clear();
     this.recoveryStates.clear();
+
+    // Ensure all possible timers are cleared
+    // This fixes the open handles issue in Jest tests
+    if (this.processingInterval) {
+      clearInterval(this.processingInterval);
+      this.processingInterval = null;
+    }
+
+    this.healthCheckIntervals.forEach(timer => clearInterval(timer));
+    this.healthCheckIntervals.clear();
   }
 
   // ===============================

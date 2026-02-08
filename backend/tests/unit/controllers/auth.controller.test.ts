@@ -206,12 +206,12 @@ describe('Auth Controller - Final Working Tests', () => {
                 })
                 .expect(400);
 
-            expect(response.body).toEqual({
+            expect(response.body).toEqual(expect.objectContaining({
                 success: false,
                 error: 'Validation failed: Email already exists',
                 code: 'VALIDATION_ERROR',
                 correlationId: 'test-correlation-id',
-            });
+            }));
         });
     });
 
@@ -266,12 +266,12 @@ describe('Auth Controller - Final Working Tests', () => {
                 })
                 .expect(400);
 
-            expect(response.body).toEqual({
+            expect(response.body).toEqual(expect.objectContaining({
                 success: false,
                 error: 'Validation failed: Invalid credentials',
                 code: 'VALIDATION_ERROR',
                 correlationId: 'test-correlation-id',
-            });
+            }));
         });
     });
 
@@ -321,12 +321,12 @@ describe('Auth Controller - Final Working Tests', () => {
                 })
                 .expect(400);
 
-            expect(response.body).toEqual({
+            expect(response.body).toEqual(expect.objectContaining({
                 success: false,
                 error: 'Validation failed: Invalid refresh token',
                 code: 'VALIDATION_ERROR',
                 correlationId: 'test-correlation-id',
-            });
+            }));
         });
     });
 

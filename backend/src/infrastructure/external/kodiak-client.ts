@@ -225,7 +225,7 @@ export class KodiakClient {
 
             const privateKey = bs58.decode(secretKey);
             const messageBytes = new TextEncoder().encode(message);
-            const signature = await ed25519.sign(messageBytes, privateKey);
+            const signature = await ed25519.signAsync(messageBytes, privateKey);
 
             return Buffer.from(signature).toString("base64url");
         } catch (error) {

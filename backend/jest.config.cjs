@@ -12,7 +12,7 @@ module.exports = {
     '^.+\\.(ts|tsx)$': 'ts-jest',
   },
   transformIgnorePatterns: [
-    '/node_modules/(?!(shared|uuid)/)',
+    '/node_modules/(?!(shared|uuid|@noble|bs58)/)',
   ],
   collectCoverageFrom: [
     'src/**/*.(ts|tsx)',

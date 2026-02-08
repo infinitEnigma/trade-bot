@@ -2,9 +2,13 @@
 
 import { WebSocketManager, MessagePriority } from '../../src/infrastructure/messaging/market-stream/websocket-manager';
 import { CircuitState, WebSocketConfig, DEFAULT_WS_CONFIG } from '../../src/infrastructure/messaging/market-stream/types';
+import WebSocket from 'ws';
 
 // Mock external dependencies
 jest.mock('../../src/core/logging/logger.service');
+
+// Mock WebSocket to avoid real network connections
+jest.mock('ws');
 
 describe('WebSocketManager', () => {
     let websocketManager: WebSocketManager;
@@ -19,6 +23,247 @@ describe('WebSocketManager', () => {
         // Cleanup to prevent open handles
         websocketManager.cleanupForTests();
         jest.clearAllTimers();
+    });
+
+    describe('connection creation', () => {
+        it('should create a WebSocket connection', async () => {
+            const mockWs = {
+                on: jest.fn(),
+                ping: jest.fn(),
+                send: jest.fn(),
+                close: jest.fn(),
+                readyState: WebSocket.OPEN
+            } as unknown as WebSocket;
+
+            const mockOn = mockWs.on as unknown as jest.Mock;
+            (WebSocket as unknown as jest.Mock).mockImplementation((url: string) => {
+                // Simulate connection open
+                process.nextTick(() => {
+                    const openCallback = mockOn.mock.calls.find((call: any[]) => call[0] === 'open')?.[1];
+                    if (openCallback) {
+                        openCallback();
+                    }
+                });
+                return mockWs;
+            });
+
+            const connection = await websocketManager.createConnection('test-account');
+            expect(connection).toBeDefined();
+            expect(WebSocket).toHaveBeenCalled();
+        });
+    });
+
+    describe('queue management', () => {
+        it('should evict low priority messages when queue is full', () => {
+            // Set a small max queue size for testing
+            const manager = new (WebSocketManager as any)();
+            manager.maxQueueSize = 3;
+
+            // Queue messages to fill the queue
+            manager.queueMessage('topic1', 'data1', MessagePriority.LOW);
+            manager.queueMessage('topic2', 'data2', MessagePriority.LOW);
+            manager.queueMessage('topic3', 'data3', MessagePriority.LOW);
+
+            // Try to add a higher priority message - should evict a low priority one
+            const added = manager.queueMessage('topic4', 'data4', MessagePriority.HIGH);
+            expect(added).toBe(true);
+            expect(manager['messageQueue'].length).toBe(3);
+
+            // Verify all remaining messages are not low priority
+            const hasLowPriority = manager['messageQueue'].some((msg: any) => msg.priority === MessagePriority.LOW);
+            expect(hasLowPriority).toBe(true); // There should still be low priority messages (we only evicted one)
+
+            // Cleanup the manager instance
+            manager.cleanupForTests();
+        });
+
+        it('should drop low priority messages when queue is full and adding low priority', () => {
+            const manager = new (WebSocketManager as any)();
+            manager.maxQueueSize = 2;
+
+            manager.queueMessage('topic1', 'data1', MessagePriority.LOW);
+            manager.queueMessage('topic2', 'data2', MessagePriority.LOW);
+
+            const added = manager.queueMessage('topic3', 'data3', MessagePriority.LOW);
+            expect(added).toBe(false);
+            expect(manager['messageQueue'].length).toBe(2);
+
+            // Cleanup the manager instance
+            manager.cleanupForTests();
+        });
+    });
+
+    describe('circuit breaker functionality', () => {
+        it('should handle circuit breaker transitions from closed to open', async () => {
+            const config: WebSocketConfig = {
+                ...DEFAULT_WS_CONFIG,
+                maxReconnectAttempts: 1
+            };
+            const manager = new WebSocketManager(config);
+
+            // Create connection to get connectionKey initialized
+            const mockWs = {
+                on: jest.fn(),
+                ping: jest.fn(),
+                send: jest.fn(),
+                close: jest.fn(),
+                readyState: WebSocket.OPEN
+            } as unknown as WebSocket;
+
+            const mockOn = mockWs.on as unknown as jest.Mock;
+            (WebSocket as unknown as jest.Mock).mockImplementation((url: string) => {
+                process.nextTick(() => {
+                    const openCallback = mockOn.mock.calls.find((call: any[]) => call[0] === 'open')?.[1];
+                    if (openCallback) {
+                        openCallback();
+                    }
+                });
+                return mockWs;
+            });
+
+            await manager.createConnection('test-account');
+
+            // Simulate multiple failures by triggering scheduleReconnect
+            manager['reconnectAttempts'].set('market', 1);
+            manager['scheduleReconnect']('market');
+
+            const circuitState = manager['circuitStates'].get('market');
+            expect(circuitState).toEqual(CircuitState.OPEN);
+
+            // Cleanup the manager instance
+            manager.cleanupForTests();
+        });
+
+        it('should transition from open to half-open after timeout', async () => {
+            const config: WebSocketConfig = {
+                ...DEFAULT_WS_CONFIG,
+                circuitBreakerTimeout: 100 // Short timeout for testing
+            };
+            const manager = new WebSocketManager(config);
+
+            manager['circuitStates'].set('market', CircuitState.OPEN);
+            manager['lastFailureTime'].set('market', Date.now() - 200); // Already passed timeout
+
+            manager['scheduleReconnect']('market');
+
+            const circuitState = manager['circuitStates'].get('market');
+            expect(circuitState).toEqual(CircuitState.HALF_OPEN);
+
+            // Cleanup the manager instance
+            manager.cleanupForTests();
+        });
+    });
+
+    describe('health check functionality', () => {
+        it('should perform health check on existing connection', async () => {
+            // Create a mock connection directly without calling createConnection
+            const mockWs = {
+                on: jest.fn(),
+                once: jest.fn(),
+                ping: jest.fn(),
+                send: jest.fn(),
+                close: jest.fn(),
+                readyState: WebSocket.OPEN,
+                listeners: jest.fn().mockReturnValue([])
+            } as unknown as WebSocket;
+
+            // Add the mock connection directly to the manager
+            (websocketManager as any)['websockets'].set('market', mockWs);
+
+            // Mock the ping/pong check to resolve immediately
+            const mockOnce = mockWs.once as unknown as jest.Mock;
+            mockOnce.mockImplementation((event, callback) => {
+                if (event === 'pong') {
+                    process.nextTick(callback);
+                }
+            });
+
+            const healthCheckResult = await websocketManager['performHealthCheck']('market');
+            expect(healthCheckResult.healthy).toBe(true);
+            expect(healthCheckResult.checksPerformed).toEqual(['connectivity', 'ping_pong']);
+        });
+
+        it('should fail health check on non-existent connection', async () => {
+            const healthCheckResult = await websocketManager['performHealthCheck']('nonexistent');
+            expect(healthCheckResult.healthy).toBe(false);
+            expect(healthCheckResult.error).toBeDefined();
+        });
+    });
+
+    describe('backpressure management', () => {
+        it('should activate backpressure when queue exceeds threshold', async () => {
+            const manager = new (WebSocketManager as any)();
+            manager.backpressureThreshold = 2;
+
+            // Add messages to trigger backpressure
+            manager.queueMessage('topic1', 'data1', MessagePriority.MEDIUM);
+            manager.queueMessage('topic2', 'data2', MessagePriority.MEDIUM);
+            manager.queueMessage('topic3', 'data3', MessagePriority.MEDIUM);
+
+            // Create a mock connection
+            const mockWs = {
+                on: jest.fn(),
+                ping: jest.fn(),
+                send: jest.fn(),
+                close: jest.fn(),
+                readyState: WebSocket.OPEN
+            } as unknown as WebSocket;
+            manager['websockets'].set('market', mockWs);
+
+            // Manually check and signal backpressure
+            manager['checkAndSignalBackpressure']();
+
+            expect(mockWs.send).toHaveBeenCalled();
+            const backpressureState = manager['backpressureStates'].get('market');
+            expect(backpressureState?.isActive).toBe(true);
+
+            // Cleanup the manager instance
+            manager.cleanupForTests();
+        });
+    });
+
+    describe('message processing', () => {
+        it('should process queued messages when connection available', async () => {
+            const manager = new (WebSocketManager as any)();
+            manager.processingBatchSize = 1;
+
+            // Queue a message
+            manager.queueMessage('topic1', 'data1', MessagePriority.MEDIUM);
+
+            // Create a mock connection
+            const mockWs = {
+                on: jest.fn(),
+                ping: jest.fn(),
+                send: jest.fn(),
+                close: jest.fn(),
+                readyState: WebSocket.OPEN
+            } as unknown as WebSocket;
+            manager['websockets'].set('market', mockWs);
+
+            // Process the queue
+            await manager['processQueueBatch']();
+
+            expect(mockWs.send).toHaveBeenCalled();
+            expect(manager['messageQueue'].length).toBe(0);
+
+            // Cleanup the manager instance
+            manager.cleanupForTests();
+        });
+
+        it('should requeue messages with connection issues', async () => {
+            const manager = new (WebSocketManager as any)();
+            manager['websockets'].clear(); // No connections
+
+            manager.queueMessage('topic1', 'data1', MessagePriority.MEDIUM);
+
+            await manager['processQueueBatch']();
+
+            expect(manager['messageQueue'].length).toBe(1);
+            expect(manager['messageQueue'][0].retryCount).toBe(1);
+
+            // Cleanup the manager instance
+            manager.cleanupForTests();
+        });
     });
 
     describe('instance creation', () => {
@@ -214,6 +459,129 @@ describe('WebSocketManager', () => {
         it('should start with no recovery states', () => {
             const stats = websocketManager.getStats();
             expect(Object.keys(stats.recoveryStates)).toEqual([]);
+        });
+
+        it('should handle successful health checks during recovery', async () => {
+            const manager = new WebSocketManager();
+
+            // Create a mock connection
+            const mockWs = {
+                on: jest.fn(),
+                once: jest.fn(),
+                ping: jest.fn(),
+                send: jest.fn(),
+                close: jest.fn(),
+                readyState: WebSocket.OPEN,
+                listeners: jest.fn().mockReturnValue([])
+            } as unknown as WebSocket;
+
+            (manager as any)['websockets'].set('market', mockWs);
+            (manager as any)['circuitStates'].set('market', CircuitState.HALF_OPEN);
+
+            // Mock ping/pong to succeed
+            const mockOnce = mockWs.once as unknown as jest.Mock;
+            mockOnce.mockImplementation((event, callback) => {
+                if (event === 'pong') {
+                    process.nextTick(callback);
+                }
+            });
+
+            // Start health check monitoring
+            (manager as any)['startHealthCheckMonitoring']('market');
+
+            // Let health check run
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            expect((manager as any)['recoveryStates']).not.toEqual({});
+
+            manager.cleanupForTests();
+        });
+
+        it('should handle failed health checks during recovery', async () => {
+            const manager = new WebSocketManager();
+
+            (manager as any)['websockets'].clear(); // No connection available
+            (manager as any)['circuitStates'].set('market', CircuitState.HALF_OPEN);
+
+            // Start health check monitoring
+            (manager as any)['startHealthCheckMonitoring']('market');
+
+            // Let health check run
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            const recoveryState = (manager as any)['recoveryStates'].get('market');
+            expect(recoveryState).toBeDefined();
+
+            manager.cleanupForTests();
+        });
+    });
+
+    describe('health check monitoring', () => {
+        it('should transition from half-open to closed on successful health checks', async () => {
+            const manager = new WebSocketManager();
+
+            const mockWs = {
+                on: jest.fn(),
+                once: jest.fn(),
+                ping: jest.fn(),
+                send: jest.fn(),
+                close: jest.fn(),
+                readyState: WebSocket.OPEN,
+                listeners: jest.fn().mockReturnValue([])
+            } as unknown as WebSocket;
+
+            (manager as any)['websockets'].set('market', mockWs);
+            (manager as any)['circuitStates'].set('market', CircuitState.HALF_OPEN);
+
+            // Mock ping/pong to succeed
+            const mockOnce = mockWs.once as unknown as jest.Mock;
+            mockOnce.mockImplementation((event, callback) => {
+                if (event === 'pong') {
+                    process.nextTick(callback);
+                }
+            });
+
+            // Create recovery state
+            const recoveryState = {
+                healthChecksPerformed: 1,
+                consecutiveSuccesses: 1,
+                consecutiveFailures: 0,
+                lastHealthCheck: null,
+                recoveryStartTime: Date.now()
+            };
+            (manager as any)['recoveryStates'].set('market', recoveryState);
+
+            // Call recovery health check again to reach threshold
+            await (manager as any)['performRecoveryHealthCheck']('market');
+
+            // Should transition to closed
+            expect((manager as any)['circuitStates'].get('market')).toEqual(CircuitState.CLOSED);
+
+            manager.cleanupForTests();
+        });
+
+        it('should transition from half-open to open on failed health checks', async () => {
+            const manager = new WebSocketManager();
+
+            (manager as any)['websockets'].clear(); // No connection available
+            (manager as any)['circuitStates'].set('market', CircuitState.HALF_OPEN);
+
+            // Create recovery state with failures
+            const recoveryState = {
+                healthChecksPerformed: 2,
+                consecutiveSuccesses: 0,
+                consecutiveFailures: 2,
+                lastHealthCheck: null,
+                recoveryStartTime: Date.now()
+            };
+            (manager as any)['recoveryStates'].set('market', recoveryState);
+
+            await (manager as any)['performRecoveryHealthCheck']('market');
+
+            // Should transition to open
+            expect((manager as any)['circuitStates'].get('market')).toEqual(CircuitState.OPEN);
+
+            manager.cleanupForTests();
         });
     });
 

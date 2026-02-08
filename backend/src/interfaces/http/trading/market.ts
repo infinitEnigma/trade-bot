@@ -5,7 +5,7 @@ import { kodiakIntegrationService, KodiakMarketTicker } from "../../../infrastru
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { query } from "../../../database/pool"; // ✅ Import from centralized module
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth"; // ✅ Import centralized auth
-import { createErrorResponse, ExternalServiceError, DataFreshnessUtils, FreshnessAwareResponse } from "../../../shared/types/errors";
+import { createErrorResponse, ExternalServiceError, DataFreshnessUtils, FreshnessAwareResponse } from "@trade-bot/shared";
 import { getCorrelationId } from "../../../shared/utils/context";
 import { ContextAwareLogger } from "../../../core/logging/"; // ✅ Import context-aware logger
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";

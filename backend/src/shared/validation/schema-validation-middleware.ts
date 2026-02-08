@@ -18,7 +18,7 @@
 
 import { Request, Response, NextFunction } from "express";
 import Joi from "joi";
-import { createErrorResponse, ValidationError } from "../../shared/types/errors";
+import { createErrorResponse, ValidationError } from "@trade-bot/shared";
 import { getCorrelationId } from "../../shared/utils/context";
 import { DatabaseSchemaParser, DatabaseSchema } from "../../shared/validation/database-schema-parser";
 import { SchemaGenerator } from "../../shared/validation/schema-generator";

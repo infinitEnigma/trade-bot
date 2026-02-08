@@ -9,7 +9,7 @@ import { Router, Response } from "express";
 import Joi from "joi";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
 import { serviceProvider } from "../../../core/service-provider";
-import { createErrorResponse } from "../../../shared/types/errors";
+import { createErrorResponse } from "@trade-bot/shared";
 import { getCorrelationId } from "../../../shared/utils/context";
 import logger from "../../../core/logging/logger.service";
 

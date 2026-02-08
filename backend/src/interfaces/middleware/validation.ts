@@ -2,7 +2,7 @@
 
 import { Request, Response, NextFunction } from "express";
 import Joi from "joi";
-import { createErrorResponse, ValidationError } from "../../shared/types/errors";
+import { createErrorResponse, ValidationError } from "@trade-bot/shared";
 import { getCorrelationId } from "../../shared/utils/context";
 import { logger } from "../../core/logging";
 

@@ -24,7 +24,7 @@
 import axios, { AxiosInstance } from "axios";
 import { OrderRequest, OrderResponse } from "../types/strategy";
 import { createHash } from "crypto";
-import * as ed25519 from "@noble/ed25519";
+import { getPublicKeyAsync, signAsync } from "@noble/ed25519";
 import { logger } from "../utils/logger";
 
 interface OrderlyPosition {
@@ -109,7 +109,7 @@ export class OrderlyClient {
       const hash = createHash("sha256").update(messageBytes).digest();
 
       // Sign the hash using Ed25519
-      const signature = await ed25519.sign(hash, privateKeyBytes);
+      const signature = await signAsync(hash, privateKeyBytes);
 
       // Return base64url-encoded signature
       return Buffer.from(signature).toString("base64url");

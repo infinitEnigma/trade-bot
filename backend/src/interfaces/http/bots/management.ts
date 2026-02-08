@@ -78,7 +78,7 @@ import {
     ConflictError,
     AuthenticationError,
     createErrorResponse,
-} from "../../../shared/types/errors";
+} from "@trade-bot/shared";
 import { getCorrelationId, getContextForLogging } from "../../../shared/utils/context";
 import { validators } from "../../middleware/validation";
 import { withCredentials, SecureCredentials } from "../../../infrastructure/security/encryption.service"; // ✅ Secure credential handling

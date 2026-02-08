@@ -1133,7 +1133,7 @@ export class KodiakIntegrationService {
 
             const privateKey = bs58Module.default.decode(secretKey);
             const messageBytes = new TextEncoder().encode(message);
-            const signature = ed25519Lib.sign?.(messageBytes, privateKey) || Promise.resolve(new Uint8Array());
+            const signature = await ed25519Lib.sign?.(messageBytes, privateKey) || Promise.resolve(new Uint8Array());
             const signatureResult = await (signature instanceof Promise ? signature : Promise.resolve(signature));
 
             return Buffer.from(signatureResult).toString("base64url");
