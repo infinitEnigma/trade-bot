@@ -1350,19 +1350,16 @@ class SubscriptionManager {
 }
 
 export class MarketStreamService {
-  private wsManager: WebSocketManager;
-  private authManager: AuthManager;
-  private cacheManager: CacheManager;
-  private messageHandler: MessageHandler;
-  private subscriptionManager: SubscriptionManager;
+  private wsManager: WebSocketManager | null = null;
+  private authManager: AuthManager | null = null;
+  private cacheManager: CacheManager | null = null;
+  private messageHandler: MessageHandler | null = null;
+  private subscriptionManager: SubscriptionManager | null = null;
   private io: Server | null = null;
+  private initialized = false;
 
   constructor() {
-    this.wsManager = new WebSocketManager();
-    this.authManager = new AuthManager();
-    this.cacheManager = new CacheManager();
-    this.messageHandler = new MessageHandler(this.cacheManager);
-    this.subscriptionManager = new SubscriptionManager();
+    // Defer initialization of heavy components until needed
   }
 
   /**
@@ -1370,8 +1367,30 @@ export class MarketStreamService {
    */
   setSocketServer(io: Server): void {
     this.io = io;
-    this.messageHandler.setSocketServer(io);
-    marketStreamLogger.info("Market stream service initialized with Socket.io");
+    // If service is already initialized, pass socket server to message handler
+    if (this.initialized && this.messageHandler) {
+      this.messageHandler.setSocketServer(this.io);
+    }
+  }
+
+  /**
+   * Initialize all components only when first used
+   */
+  private initialize(): void {
+    if (!this.initialized) {
+      this.initialized = true;
+      this.wsManager = new WebSocketManager();
+      this.authManager = new AuthManager();
+      this.cacheManager = new CacheManager();
+      this.messageHandler = new MessageHandler(this.cacheManager);
+      this.subscriptionManager = new SubscriptionManager();
+
+      if (this.io && this.messageHandler) {
+        this.messageHandler.setSocketServer(this.io);
+      }
+
+      marketStreamLogger.info("Market stream service initialized with Socket.io");
+    }
   }
 
   /**
@@ -1379,6 +1398,9 @@ export class MarketStreamService {
    * Uses: wss://ws-evm.orderly.org/ws/stream/public
    */
   async connectToOrderly(symbols: string[]): Promise<void> {
+    // Initialize components only when first connection is requested
+    this.initialize();
+
     marketStreamLogger.info("connectToOrderly called with symbols", { symbols });
 
     try {
@@ -1394,16 +1416,16 @@ export class MarketStreamService {
       }
 
       const accountId = accountResult.rows[0].account_id;
-      const ws = await this.wsManager.createConnection(accountId);
+      const ws = await this.wsManager!.createConnection(accountId);
 
       // Authenticate the connection
-      await this.authManager.authenticate(ws, accountId);
+      await this.authManager!.authenticate(ws, accountId);
 
       // Set up message handling with backpressure queue
       ws.on("message", (data: WebSocket.Data) => {
         try {
           const message = JSON.parse(data.toString()) as WebSocketMessage;
-          const queued = this.messageHandler.enqueueMessage(message);
+          const queued = this.messageHandler!.enqueueMessage(message);
           if (!queued) {
             marketStreamLogger.warn("Message dropped due to queue overflow", {
               topic: message.topic,
@@ -1417,7 +1439,7 @@ export class MarketStreamService {
       // Queue subscriptions for these symbols
       symbols.forEach(symbol => {
         const topic = `${symbol}@kline_1m`;
-        this.subscriptionManager.addPendingSubscription(topic);
+        this.subscriptionManager!.addPendingSubscription(topic);
         marketStreamLogger.info("Added topic to pending subscriptions", { symbol, topic });
       });
 
@@ -1432,13 +1454,18 @@ export class MarketStreamService {
    * Send all pending subscriptions
    */
   private sendPendingSubscriptions(): void {
-    const ws = this.wsManager.getConnection();
-    if (!ws || !this.wsManager.isConnected()) {
+    if (!this.initialized) {
+      marketStreamLogger.warn("Cannot send subscriptions - MarketStreamService not initialized");
+      return;
+    }
+
+    const ws = this.wsManager!.getConnection();
+    if (!ws || !this.wsManager!.isConnected()) {
       marketStreamLogger.warn("Cannot send subscriptions - WebSocket not connected");
       return;
     }
 
-    const topics = this.subscriptionManager.getPendingSubscriptions();
+    const topics = this.subscriptionManager!.getPendingSubscriptions();
     marketStreamLogger.info("Sending pending subscriptions", {
       count: topics.length,
       topics,
@@ -1446,7 +1473,7 @@ export class MarketStreamService {
 
     topics.forEach(topic => {
       this.subscribeToTopic(ws, topic);
-      this.subscriptionManager.clearPendingSubscription(topic);
+      this.subscriptionManager!.clearPendingSubscription(topic);
     });
   }
 
@@ -1484,8 +1511,9 @@ export class MarketStreamService {
    * @deprecated Use subscribe() instead for better resource management
    */
   connectToKline(symbol: string, interval: string): void {
+    this.initialize();
     const topic = `${symbol}@kline_${interval}`;
-    this.subscriptionManager.subscribe("legacy-client", topic);
+    this.subscriptionManager!.subscribe("legacy-client", topic);
   }
 
   /**
@@ -1494,8 +1522,9 @@ export class MarketStreamService {
    * @deprecated Use subscribe() instead for better resource management
    */
   connectToMarkPrice(symbol: string): void {
+    this.initialize();
     const topic = `${symbol}@markprice`;
-    this.subscriptionManager.subscribe("legacy-client", topic);
+    this.subscriptionManager!.subscribe("legacy-client", topic);
   }
 
   /**
@@ -1506,21 +1535,27 @@ export class MarketStreamService {
     topic: string,
     _options: { priority?: "high" | "medium" | "low" } = {}
   ): void {
-    this.subscriptionManager.subscribe(clientId, topic);
+    this.initialize();
+    this.subscriptionManager!.subscribe(clientId, topic);
   }
 
   /**
    * Unsubscribe from market data with reference counting
    */
   unsubscribe(clientId: string, topic: string): void {
-    this.subscriptionManager.unsubscribe(clientId, topic);
+    if (!this.initialized) {
+      marketStreamLogger.warn("Cannot unsubscribe - MarketStreamService not initialized");
+      return;
+    }
+    this.subscriptionManager!.unsubscribe(clientId, topic);
   }
 
   /**
    * Get latest tick data from cache with enhanced caching
    */
   async getLatestTick(symbol: string): Promise<TickData | null> {
-    const cached = await this.cacheManager.getTick(symbol);
+    this.initialize();
+    const cached = await this.cacheManager!.getTick(symbol);
     if (cached) {
       marketStreamLogger.debug("Returning cached tick data", { symbol });
       return cached;
@@ -1539,22 +1574,28 @@ export class MarketStreamService {
     interval: string,
     limit: number = 300
   ): Promise<KlineData[]> {
-    return this.cacheManager.getKlines(symbol, interval, limit);
+    this.initialize();
+    return this.cacheManager!.getKlines(symbol, interval, limit);
   }
 
   /**
    * Get latest mark price data from cache
    */
   async getLatestMarkPrice(symbol: string): Promise<{ symbol: string; price: number; timestamp: number } | null> {
-    return this.cacheManager.getMarkPrice(symbol);
+    this.initialize();
+    return this.cacheManager!.getMarkPrice(symbol);
   }
 
   /**
    * Disconnect all connections (shutdown)
    */
   disconnectAll(): void {
-    this.wsManager.disconnectAll();
-    this.subscriptionManager.clearAll();
+    if (!this.initialized) {
+      marketStreamLogger.warn("Cannot disconnect - MarketStreamService not initialized");
+      return;
+    }
+    this.wsManager!.disconnectAll();
+    this.subscriptionManager!.clearAll();
     marketStreamLogger.info("Market stream service disconnected");
   }
 
@@ -1569,14 +1610,29 @@ export class MarketStreamService {
     activeSubscriptions: number;
     totalReferences: number;
     topics: string[];
+    initialized: boolean;
   } {
+    if (!this.initialized) {
+      return {
+        connected: 0,
+        websockets: [],
+        pendingSubscriptions: 0,
+        activeHeartbeats: 0,
+        activeSubscriptions: 0,
+        totalReferences: 0,
+        topics: [],
+        initialized: false,
+      };
+    }
+
     return {
-      connected: this.wsManager.isConnected() ? 1 : 0,
-      websockets: this.wsManager.isConnected() ? ["market"] : [],
+      connected: this.wsManager!.isConnected() ? 1 : 0,
+      websockets: this.wsManager!.isConnected() ? ["market"] : [],
       pendingSubscriptions:
-        this.subscriptionManager.getPendingSubscriptions().length,
+        this.subscriptionManager!.getPendingSubscriptions().length,
       activeHeartbeats: 0, // Simplified
-      ...this.subscriptionManager.getStats(),
+      ...this.subscriptionManager!.getStats(),
+      initialized: this.initialized,
     };
   }
 
@@ -1586,29 +1642,34 @@ export class MarketStreamService {
    */
   cleanupForTests(): void {
     try {
-      // Disconnect all WebSocket connections
-      this.wsManager.disconnectAll();
+      // Check if service was initialized before accessing properties
+      if (this.initialized) {
+        // Disconnect all WebSocket connections
+        this.wsManager!.disconnectAll();
 
-      // Clear all subscriptions
-      this.subscriptionManager.clearAll();
+        // Clear all subscriptions
+        this.subscriptionManager!.clearAll();
 
-      // Clear pending subscriptions
-      const pendingSubscriptions = this.subscriptionManager.getPendingSubscriptions();
-      pendingSubscriptions.forEach(topic => {
-        this.subscriptionManager.clearPendingSubscription(topic);
-      });
+        // Clear pending subscriptions
+        const pendingSubscriptions = this.subscriptionManager!.getPendingSubscriptions();
+        pendingSubscriptions.forEach(topic => {
+          this.subscriptionManager!.clearPendingSubscription(topic);
+        });
 
-      // Clear processing queue
-      this.messageHandler.clearProcessingQueue();
+        // Clear processing queue
+        this.messageHandler!.clearProcessingQueue();
 
-      // Clear any remaining intervals and timeouts in WebSocket manager
-      this.wsManager.cleanupAllIntervals();
+        // Clear any remaining intervals and timeouts in WebSocket manager
+        this.wsManager!.cleanupAllIntervals();
 
-      marketStreamLogger.info("Market stream service cleaned up for tests", {
-        pendingSubscriptions: pendingSubscriptions.length,
-        queueCleared: true,
-        intervalsCleared: true,
-      });
+        marketStreamLogger.info("Market stream service cleaned up for tests", {
+          pendingSubscriptions: pendingSubscriptions.length,
+          queueCleared: true,
+          intervalsCleared: true,
+        });
+      } else {
+        marketStreamLogger.debug("Market stream service not initialized, skipping cleanup");
+      }
     } catch (error) {
       // Handle cases where error might be undefined or not an Error instance
       /*const errorToLog = error instanceof Error ? error :

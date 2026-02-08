@@ -79,17 +79,25 @@ export class BotReconciliationWorker {
             return;
         }
 
-        this.isRunning = true;
-
         // Enhanced test environment detection
         const isTestEnvironment = this.isTestEnvironment();
-        this.logger.info("Starting bot reconciliation worker", { isTestEnvironment });
 
-        // In test environment, just set up minimal functionality without actual reconciliation
+        // In test environment, skip active bots check and start immediately
         if (isTestEnvironment) {
+            this.isRunning = true;
             this.logger.debug("Bot reconciliation worker started in test mode");
             return;
         }
+
+        // Check if there are any active bots before starting (production only)
+        const activeBots = await this.getActiveBots();
+        if (activeBots.length === 0) {
+            this.logger.info("Bot reconciliation worker not started - no active bots to reconcile");
+            return;
+        }
+
+        this.isRunning = true;
+        this.logger.info("Starting bot reconciliation worker", { isTestEnvironment, activeBotsCount: activeBots.length });
 
         // Production mode - run initial reconciliation with enhanced timeout protection
         try {
@@ -112,6 +120,14 @@ export class BotReconciliationWorker {
 
         this.reconciliationInterval = setInterval(async () => {
             try {
+                // Check if there are still active bots before each reconciliation
+                const currentActiveBots = await this.getActiveBots();
+                if (currentActiveBots.length === 0) {
+                    this.logger.info("No more active bots, stopping reconciliation worker");
+                    this.stop();
+                    return;
+                }
+
                 // Add additional timeout protection for scheduled reconciliation
                 const reconciliationTimeout = 45000; // 45s for production (increased from 30s)
                 await Promise.race([
@@ -127,7 +143,7 @@ export class BotReconciliationWorker {
             }
         }, intervalMs);
 
-        this.logger.info("Bot reconciliation worker started successfully", { isTestEnvironment });
+        this.logger.info("Bot reconciliation worker started successfully", { isTestEnvironment, activeBotsCount: activeBots.length });
     }
 
     /**
@@ -157,19 +173,18 @@ export class BotReconciliationWorker {
         const isTestEnvironment = this.isTestEnvironment();
 
         try {
-            this.logger.info("Starting bot reconciliation cycle", { isTestEnvironment });
+            this.logger.info("Starting bot reconciliation cycle");
 
             // Get all active bots
             const activeBots = await this.getActiveBots();
 
             if (activeBots.length === 0) {
-                this.logger.info("No active bots to reconcile", { isTestEnvironment });
+                this.logger.info("No active bots to reconcile");
                 return;
             }
 
             this.logger.info("Reconciling active bots", {
-                count: activeBots.length,
-                isTestEnvironment
+                count: activeBots.length
             });
 
             // Process each active bot with timeout protection
@@ -186,8 +201,7 @@ export class BotReconciliationWorker {
                 } catch (error) {
                     this.logger.error("Failed to reconcile bot", error instanceof Error ? error : undefined, {
                         botId: bot.id,
-                        userId: bot.user_id,
-                        isTestEnvironment
+                        userId: bot.user_id
                     });
                 }
             }
@@ -195,14 +209,12 @@ export class BotReconciliationWorker {
             const duration = Date.now() - startTime;
             this.logger.info("Bot reconciliation cycle completed", {
                 duration: `${duration}ms`,
-                botsProcessed: activeBots.length,
-                isTestEnvironment
+                botsProcessed: activeBots.length
             });
 
         } catch (error) {
             this.logger.error("Bot reconciliation cycle failed", error instanceof Error ? error : undefined, {
-                duration: Date.now() - startTime,
-                isTestEnvironment
+                duration: Date.now() - startTime
             });
         }
     }
@@ -211,7 +223,6 @@ export class BotReconciliationWorker {
      * Get all active bots that need reconciliation
      */
     private async getActiveBots(): Promise<BotData[]> {
-
         try {
             // Check if we're in test environment and skip database operations completely
             if (this.isTestEnvironment()) {
@@ -238,16 +249,11 @@ export class BotReconciliationWorker {
         AND s.active = true
       `);
 
-
             const result = await queryResult;
-
 
             return (result as QueryResult<BotQueryResult>).rows;
         } catch (error) {
-
-            this.logger.error("Failed to get active bots", error instanceof Error ? error : undefined, {
-                isTestEnvironment: this.isTestEnvironment()
-            });
+            this.logger.error("Failed to get active bots", error instanceof Error ? error : undefined);
             return [];
         }
     }
@@ -261,8 +267,7 @@ export class BotReconciliationWorker {
         this.logger.debug("Reconciling bot", {
             botId: bot.id,
             userId: bot.user_id,
-            strategyName: bot.strategy_name,
-            isTestEnvironment
+            strategyName: bot.strategy_name
         });
 
         try {
@@ -270,8 +275,7 @@ export class BotReconciliationWorker {
             if (isTestEnvironment) {
                 this.logger.debug("Skipping bot reconciliation in test environment", {
                     botId: bot.id,
-                    userId: bot.user_id,
-                    isTestEnvironment
+                    userId: bot.user_id
                 });
                 return;
             }
@@ -316,15 +320,13 @@ export class BotReconciliationWorker {
 
             this.logger.debug("Bot reconciliation completed", {
                 botId: bot.id,
-                userId: bot.user_id,
-                isTestEnvironment
+                userId: bot.user_id
             });
 
         } catch (error) {
             this.logger.error("Bot reconciliation failed", error instanceof Error ? error : undefined, {
                 botId: bot.id,
-                userId: bot.user_id,
-                isTestEnvironment
+                userId: bot.user_id
             });
 
             // Mark bot as having errors if reconciliation consistently fails
@@ -359,8 +361,7 @@ export class BotReconciliationWorker {
             return (result as QueryResult<{ verified: boolean }>).rows.length > 0;
         } catch (error) {
             this.logger.error("Failed to check user credentials", error instanceof Error ? error : undefined, {
-                userId,
-                isTestEnvironment: this.isTestEnvironment()
+                userId
             });
             return false;
         }
@@ -401,9 +402,9 @@ export class BotReconciliationWorker {
     private async updateBotStatistics(botId: string): Promise<void> {
         try {
             // Skip statistics update in test environment
-            //if (this.isTestEnvironment()) {
-            //    return;
-            //}
+            if (this.isTestEnvironment()) {
+                return;
+            }
 
             // Add timeout protection for statistics query
             const statsQueryTimeout = 5000; // 5s timeout for statistics query
@@ -458,8 +459,7 @@ export class BotReconciliationWorker {
 
         } catch (error) {
             this.logger.error("Failed to update bot statistics", error instanceof Error ? error : undefined, {
-                botId,
-                isTestEnvironment: this.isTestEnvironment()
+                botId
             });
         }
     }
@@ -470,10 +470,9 @@ export class BotReconciliationWorker {
     private async markBotAsError(botId: string, errorMessage: string): Promise<void> {
         try {
             // Skip error marking in test environment
-            /*if (this.isTestEnvironment()) {
-                console.log("mark bot env: test")
+            if (this.isTestEnvironment()) {
                 return;
-            }*/
+            }
 
             // Add timeout protection for error marking
             const updateTimeout = 3000; // 3s timeout for error marking
@@ -496,8 +495,7 @@ export class BotReconciliationWorker {
             this.logger.warn("Marked bot as error", { botId, errorMessage });
         } catch (error) {
             this.logger.error("Failed to mark bot as error", error instanceof Error ? error : undefined, {
-                botId,
-                isTestEnvironment: this.isTestEnvironment()
+                botId
             });
         }
     }
@@ -506,11 +504,13 @@ export class BotReconciliationWorker {
      * Check if we're running in a test environment
      */
     protected isTestEnvironment(): boolean {
+        // If testMode is explicitly set, use that
+        if (this.testMode !== undefined) {
+            return this.testMode;
+        }
 
         // Default to environment detection
-        this.testMode = process.env.NODE_ENV === 'test' || !!process.env.JEST_WORKER_ID;
-
-        return this.testMode;
+        return process.env.NODE_ENV === 'test' || !!process.env.JEST_WORKER_ID;
     }
 
     /**

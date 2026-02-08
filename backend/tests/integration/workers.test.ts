@@ -53,30 +53,30 @@ describe('Background Workers Integration Tests', () => {
                 const testPassword = 'test-password-123';
 
                 const startTime = Date.now();
-                console.log("should hash passwords without blocking event loop", startTime);
+                //console.log("should hash passwords without blocking event loop", startTime);
                 const hash = await hashPassword(testPassword);
                 const duration = Date.now() - startTime;
-                console.log("should hash passwords without blocking event loop", duration);
+                //console.log("should hash passwords without blocking event loop", duration);
                 // Password hashing should complete in reasonable time
                 expect(duration).toBeLessThan(5000); // Should complete within 5 seconds
                 expect(hash).toBeDefined();
                 expect(typeof hash).toBe('string');
                 expect(hash.length).toBeGreaterThan(50); // bcrypt hashes are typically 60 chars
-                console.log("should hash passwords without blocking event loop", hash);
+                //console.log("should hash passwords without blocking event loop", hash);
             } catch { }
 
         }, 5000);
 
         it('should compare passwords correctly', async () => {
-            console.log("should compare passwords correctly");
+            //console.log("should compare passwords correctly");
             try {
                 const testPassword = 'test-password-456';
 
                 const startTime = Date.now();
-                console.log("should compare passwords correctly", testPassword, startTime);
+                //console.log("should compare passwords correctly", testPassword, startTime);
                 const hash = await hashPassword(testPassword);
                 const duration = Date.now() - startTime;
-                console.log("should compare passwords correctly", duration);
+                //console.log("should compare passwords correctly", duration);
                 expect(duration).toBeLessThan(3000); // Should complete within 5 seconds
                 // Test correct password
                 expect(hash).toBeDefined();
@@ -89,15 +89,15 @@ describe('Background Workers Integration Tests', () => {
                 const isInvalid = await comparePassword('wrong-password', hash);
                 expect(isInvalid).toBeDefined();
                 expect(isInvalid).toBe(false);
-                console.log("should compare passwords correctly", isValid);
+                //console.log("should compare passwords correctly", isValid);
             } catch (error) {
-                console.warn("password compare error", error)
+                logger.warn("password compare error", error)
             }
         }, 10000); // 8 second timeout for password operations
 
         it('should handle multiple concurrent password operations', async () => {
             const passwords = ['pass1', 'pass2', 'pass3', 'pass4', 'pass5'];
-            console.log("should handle multiple concurrent password operations", passwords);
+            //console.log("should handle multiple concurrent password operations", passwords);
             // Hash all passwords concurrently
             const startTime = Date.now();
             const hashes = await Promise.all(
@@ -132,7 +132,7 @@ describe('Background Workers Integration Tests', () => {
         it('should handle worker thread failures gracefully', async () => {
             // This test verifies that the worker pool can handle worker failures
             const testPassword = 'test-password-789';
-            console.log("should handle worker thread failures gracefully", testPassword);
+            //console.log("should handle worker thread failures gracefully", testPassword);
             try {
                 const hash = await hashPassword(testPassword);
                 expect(hash).toBeDefined();
@@ -153,7 +153,7 @@ describe('Background Workers Integration Tests', () => {
 
         it('should provide pool statistics', async () => {
             const stats = passwordWorkerPool.getStats();
-            console.log("should provide pool statistics", stats.poolSize);
+            //console.log("should provide pool statistics", stats.poolSize);
             expect(stats).toHaveProperty('poolSize');
             expect(stats).toHaveProperty('availableWorkers');
             expect(stats).toHaveProperty('activeTasks');
@@ -169,7 +169,7 @@ describe('Background Workers Integration Tests', () => {
 
         it('should handle pool health checks', async () => {
             const health = await passwordWorkerPool.healthCheck();
-            console.log("should handle pool health checks", health.healthy);
+            //console.log("should handle pool health checks", health.healthy);
             expect(health).toHaveProperty('healthy');
             expect(health).toHaveProperty('stats');
             expect(health).toHaveProperty('errors');
@@ -184,7 +184,7 @@ describe('Background Workers Integration Tests', () => {
 
         it('should handle password operations with different round counts', async () => {
             const testPassword = 'test-password-rounds';
-            console.log("should handle password operations with different round counts", testPassword);
+            //console.log("should handle password operations with different round counts", testPassword);
             // Test with default rounds (12)
             const hash1 = await hashPassword(testPassword);
             expect(await comparePassword(testPassword, hash1)).toBe(true);
@@ -226,7 +226,7 @@ describe('Background Workers Integration Tests', () => {
         it('should start and stop worker gracefully', async () => {
             // Start the worker
             await botReconciliationWorker.start();
-            console.log("Bot Reconciliation Worker");
+            //console.log("Bot Reconciliation Worker");
             const status = botReconciliationWorker.getStatus();
             expect(status.isRunning).toBe(true);
 
@@ -240,7 +240,7 @@ describe('Background Workers Integration Tests', () => {
         it('should handle reconciliation without active bots', async () => {
             // Start worker
             await botReconciliationWorker.start();
-            console.log('should handle reconciliation without active bots')
+            //console.log('should handle reconciliation without active bots')
             // Wait a moment for initial reconciliation
             await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -254,7 +254,7 @@ describe('Background Workers Integration Tests', () => {
         it('should handle reconciliation errors gracefully', async () => {
             // Start worker
             await botReconciliationWorker.start();
-            console.log('should handle reconciliation errors gracefully')
+            //console.log('should handle reconciliation errors gracefully')
             // The worker should handle errors internally without crashing
             // This test verifies that the worker continues running despite errors
 
@@ -267,7 +267,7 @@ describe('Background Workers Integration Tests', () => {
 
         it('should provide worker status information', () => {
             const status = botReconciliationWorker.getStatus();
-            console.log('should provide worker status information', status.isRunning)
+            //console.log('should provide worker status information', status.isRunning)
             expect(status).toHaveProperty('isRunning');
             expect(typeof status.isRunning).toBe('boolean');
 
@@ -280,7 +280,7 @@ describe('Background Workers Integration Tests', () => {
         it('should handle concurrent reconciliation cycles', async () => {
             // Start worker
             await botReconciliationWorker.start();
-            console.log('should handle concurrent reconciliation cycles')
+            //console.log('should handle concurrent reconciliation cycles')
             // Trigger multiple reconciliation cycles
             const reconciliationPromises = Array(3).fill(null).map(async (_, index) => {
                 // Wait a bit between cycles
@@ -301,7 +301,7 @@ describe('Background Workers Integration Tests', () => {
 
         it('should handle worker cleanup properly', async () => {
             // Start worker
-            console.log('should handle worker cleanup properly')
+            //console.log('should handle worker cleanup properly')
             await botReconciliationWorker.start();
             expect(botReconciliationWorker.getStatus().isRunning).toBe(true);
 
@@ -319,7 +319,7 @@ describe('Background Workers Integration Tests', () => {
             // Test that password worker can operate independently
             // (Bot reconciliation worker is mocked/simplified in test environment)
             const passwordHash = await hashPassword('test-shutdown');
-            console.log('should handle graceful shutdown of all workers', passwordHash)
+            //console.log('should handle graceful shutdown of all workers', passwordHash)
             expect(passwordHash).toBeDefined();
             expect(typeof passwordHash).toBe('string');
             expect(passwordHash.length).toBeGreaterThan(50);
@@ -331,7 +331,7 @@ describe('Background Workers Integration Tests', () => {
 
         it('should handle worker lifecycle without interfering with each other', async () => {
             // Test that starting/stopping one worker doesn't affect the other
-            console.log('should handle worker lifecycle without interfering with each other')
+            //console.log('should handle worker lifecycle without interfering with each other')
             // Start bot worker
             await botReconciliationWorker.start();
             expect(botReconciliationWorker.getStatus().isRunning).toBe(true);
@@ -360,7 +360,7 @@ describe('Background Workers Integration Tests', () => {
         it('should handle resource cleanup on test completion', async () => {
             // This test verifies that cleanup methods work properly
             // and don't leave resources hanging
-            console.log('should handle resource cleanup on test completion')
+            //console.log('should handle resource cleanup on test completion')
             // Start workers
             await botReconciliationWorker.start();
             const hash = await hashPassword('test-cleanup');
@@ -386,7 +386,7 @@ describe('Background Workers Integration Tests', () => {
         it('should recover from password worker failures', async () => {
             // Test that the worker pool can recover from failures
             const testPassword = 'test-recovery';
-            console.log('should recover from password worker failures', testPassword)
+            //console.log('should recover from password worker failures', testPassword)
             try {
                 // Perform multiple operations to test stability with timeout protection
                 const operations = Array(5).fill(null).map(async (_, index) => {
@@ -404,7 +404,7 @@ describe('Background Workers Integration Tests', () => {
                 results.forEach(isValid => {
                     expect(isValid).toBe(true);
                 });
-                console.log('should handle high load on password worker pool', results.toString())
+                //console.log('should handle high load on password worker pool', results.toString())
             } catch (error) {
                 // If there's an error, it should be handled gracefully
                 logger.warn('Password worker recovery test handled gracefully', {
@@ -416,7 +416,7 @@ describe('Background Workers Integration Tests', () => {
         it('should handle bot reconciliation failures without crashing', async () => {
             // Start worker
             await botReconciliationWorker.start();
-            console.log('should handle bot reconciliation failures without crashing')
+            //console.log('should handle bot reconciliation failures without crashing')
             try {
                 // The worker should handle internal errors gracefully
                 // This test verifies that the worker continues running
@@ -430,7 +430,7 @@ describe('Background Workers Integration Tests', () => {
 
                 const finalStatus = botReconciliationWorker.getStatus();
                 expect(finalStatus.isRunning).toBe(true);
-                console.log('should handle bot reconciliation failures without crashing', finalStatus)
+                //console.log('should handle bot reconciliation failures without crashing', finalStatus)
             } finally {
                 // Always stop the worker
                 await botReconciliationWorker.stop();
@@ -443,7 +443,7 @@ describe('Background Workers Integration Tests', () => {
             const passwords = Array(concurrentOperations).fill(null).map((_, index) =>
                 `high-load-password-${index}`
             );
-            console.log('should handle high load on password worker pool - passwords', passwords.toString())
+            //console.log('should handle high load on password worker pool - passwords', passwords.toString())
             const startTime = Date.now();
 
             try {
@@ -455,10 +455,10 @@ describe('Background Workers Integration Tests', () => {
                     expect(hash.length).toBeGreaterThan(50);
                     return hash;
                 });
-                console.log('should handle high load on password worker pool - hashPromises', hashPromises.toString())
+                //console.log('should handle high load on password worker pool - hashPromises', hashPromises.toString())
                 const hashes = await Promise.all(hashPromises);
                 expect(hashes).toBeDefined();
-                console.log('should handle high load on password worker pool - hashes', hashes.toString())
+                //console.log('should handle high load on password worker pool - hashes', hashes.toString())
                 // Compare all passwords concurrently with timeout protection
                 const comparePromises = passwords.map((password, index) =>
                     comparePassword(password, hashes[index])

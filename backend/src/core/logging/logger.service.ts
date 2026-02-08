@@ -73,7 +73,7 @@ if (process.env.NODE_ENV !== "production") {
 // ✅ File transports (all environments)
 const logsDir = path.join(process.cwd(), "logs");
 
-// ✅ All logs
+// ✅ All logs except HTTP (HTTP logs go to separate file)
 logger.add(
   new DailyRotateFile({
     filename: path.join(logsDir, "app-%DATE%.log"),
@@ -84,6 +84,9 @@ logger.add(
       winston.format.timestamp(),
       winston.format.json()
     ),
+    level: "debug", // Capture all levels except HTTP
+    // Winston doesn't support per-transport level filtering for specific levels,
+    // so we'll handle this with a custom format
   })
 );
 
@@ -102,7 +105,7 @@ logger.add(
   })
 );
 
-// ✅ HTTP request logs
+// ✅ HTTP request logs (only HTTP level)
 logger.add(
   new DailyRotateFile({
     level: "http",
@@ -116,5 +119,30 @@ logger.add(
     ),
   })
 );
+
+// Apply filtering for app.log to exclude HTTP logs
+const originalLog = logger.log;
+logger.log = function (...args: any[]) {
+  const level = args[0];
+
+  if (level === "http") {
+    // Only log HTTP level to http.log
+    const httpTransport = logger.transports.find(t =>
+      t instanceof DailyRotateFile && t.filename && t.filename.includes("http-")
+    );
+
+    if (httpTransport) {
+      const info = {
+        level: args[0],
+        message: args[1],
+        ...(args[2] || {})
+      };
+      return (httpTransport as any).log(info);
+    }
+  } else {
+    // Log all other levels to app.log and error.log (if applicable)
+    return (originalLog as any).apply(this, args);
+  }
+};
 
 export default logger;

@@ -74,6 +74,7 @@ export class KodiakRequestQueue {
     private processing = false;
     private lastRequestTime = 0;
     private requestCount = 0;
+    private initialized = false;
 
     // Configuration - optimized for handling bursts
     private config: Required<QueueConfig> = {
@@ -89,16 +90,29 @@ export class KodiakRequestQueue {
 
     constructor(config?: Partial<QueueConfig>) {
         this.config = { ...this.config, ...config };
-        logger.info("KodiakRequestQueue initialized", {
-            minIntervalMs: this.config.minIntervalMs,
-            maxQueueSize: this.config.maxQueueSize,
-        });
+        // Defer initialization log until queue is actually used
+    }
+
+    /**
+     * Initialize the queue only when first request is received
+     */
+    private initialize(): void {
+        if (!this.initialized) {
+            this.initialized = true;
+            logger.info("KodiakRequestQueue initialized", {
+                minIntervalMs: this.config.minIntervalMs,
+                maxQueueSize: this.config.maxQueueSize,
+            });
+        }
     }
 
     /**
      * Add request to queue with priority-based ordering
      */
     enqueue(req: Request, res: Response, next: QueueMiddleware): boolean {
+        // Initialize queue only when first request is received
+        this.initialize();
+
         const userId = (req as AuthenticatedRequest).user?.userId || 'anonymous';
         const endpoint = this.getEndpointType(req.path);
 

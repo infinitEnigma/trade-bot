@@ -22,6 +22,12 @@ describe('MarketStreamService', () => {
         jest.clearAllTimers();
     });
 
+    const initializeMarketStreamService = (): void => {
+        if (!marketStreamService.getStatus().initialized) {
+            marketStreamService.subscribe('test-client', 'BTC-PERP@kline_1m');
+        }
+    };
+
     describe('instance creation', () => {
         it('should create an instance of MarketStreamService', () => {
             expect(marketStreamService).toBeInstanceOf(MarketStreamService);
@@ -39,6 +45,7 @@ describe('MarketStreamService', () => {
             expect(status.websockets).toEqual([]);
             expect(status.pendingSubscriptions).toBe(0);
             expect(status.activeSubscriptions).toBe(0);
+            expect(status.initialized).toBe(false);
         });
 
         it('should return empty tick data when no data available', async () => {
@@ -236,6 +243,9 @@ describe('MarketStreamService', () => {
 
     describe('message handling', () => {
         it('should handle authentication success response', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // Mock socket server
             const mockEmit = jest.fn();
             const mockIo = { emit: mockEmit };
@@ -255,6 +265,9 @@ describe('MarketStreamService', () => {
         });
 
         it('should handle authentication failure response', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // Mock socket server
             const mockEmit = jest.fn();
             const mockIo = { emit: mockEmit };
@@ -275,6 +288,9 @@ describe('MarketStreamService', () => {
         });
 
         it('should handle subscription success response', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // Mock socket server
             const mockEmit = jest.fn();
             const mockIo = { emit: mockEmit };
@@ -295,6 +311,9 @@ describe('MarketStreamService', () => {
         });
 
         it('should handle subscription failure response', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // Mock socket server
             const mockEmit = jest.fn();
             const mockIo = { emit: mockEmit };
@@ -315,6 +334,9 @@ describe('MarketStreamService', () => {
         });
 
         it('should handle unrecognized message type', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // Mock socket server
             const mockEmit = jest.fn();
             const mockIo = { emit: mockEmit };
@@ -335,6 +357,9 @@ describe('MarketStreamService', () => {
 
     describe('processing queue', () => {
         it('should handle message backpressure', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // Mock socket server
             const mockIo = { emit: jest.fn() };
             marketStreamService.setSocketServer(mockIo as any);
@@ -365,6 +390,9 @@ describe('MarketStreamService', () => {
         });
 
         it('should clear processing queue', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // @ts-ignore - Accessing private property for testing
             const clearSpy = jest.spyOn(marketStreamService['messageHandler']['processingQueue'], 'clear');
 
@@ -403,6 +431,9 @@ describe('MarketStreamService', () => {
 
     describe('connection management', () => {
         it('should handle connection limits', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // @ts-ignore - Accessing private property for testing
             const createConnectionSpy = jest.spyOn(marketStreamService['wsManager'], 'createConnection');
 
@@ -424,6 +455,9 @@ describe('MarketStreamService', () => {
 
     describe('connection health', () => {
         it('should update connection health metrics', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // @ts-ignore - Accessing private property for testing
             const updateHealthSpy = jest.spyOn(marketStreamService['wsManager'], 'updateConnectionHealth');
 
@@ -498,6 +532,9 @@ describe('MarketStreamService', () => {
 
     describe('message handling', () => {
         it('should handle ticker messages and update cache', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // Mock the cache manager
             const mockCacheTick = jest.fn().mockResolvedValue(undefined);
             // @ts-ignore - Accessing private property for testing
@@ -530,6 +567,9 @@ describe('MarketStreamService', () => {
         });
 
         it('should handle kline messages and update cache', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // Mock the cache manager
             const mockGetKlines = jest.fn().mockResolvedValue([]);
             const mockCacheKlines = jest.fn().mockResolvedValue(undefined);
@@ -567,6 +607,9 @@ describe('MarketStreamService', () => {
         });
 
         it('should handle mark price messages and update cache', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // Mock the cache manager
             const mockCacheMarkPrice = jest.fn().mockResolvedValue(undefined);
             // @ts-ignore - Accessing private property for testing
@@ -595,6 +638,9 @@ describe('MarketStreamService', () => {
         });
 
         it('should handle invalid ticker data without symbol', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // Mock the cache manager
             const mockCacheTick = jest.fn().mockResolvedValue(undefined);
             // @ts-ignore - Accessing private property for testing
@@ -627,6 +673,9 @@ describe('MarketStreamService', () => {
         });
 
         it('should handle invalid mark price data without symbol', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // Mock the cache manager
             const mockCacheMarkPrice = jest.fn().mockResolvedValue(undefined);
             // @ts-ignore - Accessing private property for testing
@@ -655,6 +704,9 @@ describe('MarketStreamService', () => {
         });
 
         it('should handle invalid kline data without symbol', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // Mock the cache manager
             const mockGetKlines = jest.fn().mockResolvedValue([]);
             const mockCacheKlines = jest.fn().mockResolvedValue(undefined);
@@ -706,6 +758,9 @@ describe('MarketStreamService', () => {
 
     describe('circuit breaker functionality', () => {
         it('should track consecutive successes for circuit breaker', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // @ts-ignore - Accessing private property for testing
             const handleMessageSpy = jest.spyOn(marketStreamService['wsManager'], 'handleMessageForCircuitBreaker');
 
@@ -716,6 +771,9 @@ describe('MarketStreamService', () => {
         });
 
         it('should calculate overall health score', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // @ts-ignore - Accessing private property for testing
             const calculateHealthSpy = jest.spyOn(marketStreamService['wsManager'], 'calculateOverallHealth');
 
@@ -738,6 +796,9 @@ describe('MarketStreamService', () => {
 
     describe('emergency management', () => {
         it('should handle emergency mode connections', () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // @ts-ignore - Accessing private property for testing
             const addEmergencyConnectionSpy = jest.spyOn(marketStreamService['wsManager']['emergencyConnections'], 'add');
 
@@ -750,6 +811,9 @@ describe('MarketStreamService', () => {
 
     describe('health check operations', () => {
         it('should perform half-open health check', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // @ts-ignore - Accessing private property for testing
             const performHealthCheckSpy = jest.spyOn(marketStreamService['wsManager'], 'performHalfOpenHealthCheck');
 
@@ -763,6 +827,9 @@ describe('MarketStreamService', () => {
 
     describe('processing queue statistics', () => {
         it('should track queue statistics', async () => {
+            // Initialize the service first
+            initializeMarketStreamService();
+
             // @ts-ignore - Accessing private property for testing
             const getStatsSpy = jest.spyOn(marketStreamService['messageHandler']['processingQueue'], 'getStats');
 
