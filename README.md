@@ -80,7 +80,7 @@ Trade Bot implements a **production-grade domain-driven design** with clean arch
 │  └──────────────┘  └──────────────┘  └──────────┘  │
 │                                                    │
 ├────────────────────────────────────────────────────┤
-│         🏗️ DOMAIN-DRIVEN BACKEND ARCHITECTURE       │
+│         🏗️ DOMAIN-DRIVEN BACKEND ARCHITECTURE      │
 ├────────────────────────────────────────────────────┤
 │                                                    │
 │  ┌─────────────────────────────────────────────┐   │

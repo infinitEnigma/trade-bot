@@ -671,7 +671,7 @@ class PasswordWorkerPool extends EventEmitter {
                 try {
                     task.reject(new Error('Worker pool shutting down during test cleanup'));
                 } catch (error) {
-                    console.warn('Warning: Failed to reject task during cleanup:', error);
+                    logger.warn('Warning: Failed to reject task during cleanup:', error);
                 }
             }
             this.taskQueue.length = 0;
@@ -682,13 +682,13 @@ class PasswordWorkerPool extends EventEmitter {
                     task.reject(new Error('Worker pool shutting down during test cleanup'));
                     clearTimeout(task.timeout);
                 } catch (error) {
-                    console.warn('Warning: Failed to clear active task during cleanup:', error);
+                    logger.warn('Warning: Failed to clear active task during cleanup:', error);
                 }
             }
             this.activeTasks.clear();
 
             // Terminate all workers with simple, reliable logic
-            console.log(`🔧 Terminating ${this.workers.length} workers...`);
+            console.info(`🔧 Terminating ${this.workers.length} workers...`);
             const terminationPromises = this.workers.map(worker => {
                 return new Promise<void>((resolve) => {
                     // Set a hard timeout to ensure we don't get stuck
@@ -734,11 +734,11 @@ class PasswordWorkerPool extends EventEmitter {
                     await this.shutdown();
                 });
             } catch (error) {
-                console.warn('Warning: Failed to remove process handlers:', error);
+                logger.warn('Warning: Failed to remove process handlers:', error);
             }
 
         } catch (error) {
-            console.warn('Warning: Password worker pool cleanup failed:', error);
+            logger.warn('Warning: Password worker pool cleanup failed:', error);
         }
     }
 }

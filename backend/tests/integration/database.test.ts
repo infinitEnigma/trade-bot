@@ -1,6 +1,12 @@
 /** @format */
 
-import { query, queryWithTimeout, queryWithAutoTimeout, QueryTimeout, getPoolMetrics, updateTimeoutConfig, getTimeoutConfig, getTimeoutStats, resetTimeoutConfig, cleanupForTests, transaction } from '../../src/database/pool';
+import {
+    query, queryWithTimeout, queryWithAutoTimeout, QueryTimeout,
+    getPoolMetrics, updateTimeoutConfig, getTimeoutConfig, getTimeoutStats,
+    resetTimeoutConfig, cleanupForTests, transaction,
+    queryFast, queryMedium, querySlow, queryComplex, queryReport,
+    getClientWithTimeout
+} from '../../src/database/pool';
 import { Pool, PoolClient } from 'pg';
 import logger from '../../src/core/logging/logger.service';
 

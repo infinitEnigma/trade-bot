@@ -1,7 +1,7 @@
 /** @format */
 
 import { Pool, PoolClient } from "pg";
-import { logger } from "../core/logging";
+import { databaseLogger } from "../core/logging";
 import { DatabaseError, DatabaseResult } from "@trade-bot/shared";
 
 // ✅ Singleton pattern - only one pool instance ever created
@@ -75,11 +75,11 @@ let currentTimeoutConfig = { ...DEFAULT_TIMEOUT_CONFIG };
  */
 export function initializePool(): Pool {
   if (pool) {
-    logger.warn("Pool already initialized, returning existing instance");
+    databaseLogger.warn("Pool already initialized, returning existing instance");
     return pool;
   }
 
-  logger.info("Initializing database pool", {
+  databaseLogger.info("Initializing database pool", {
     host: getRequiredEnv("DB_HOST"),
     port: getRequiredEnv("DB_PORT"),
     database: getRequiredEnv("DB_NAME"),
@@ -107,7 +107,7 @@ export function initializePool(): Pool {
 
   // ✅ Error event handler
   pool.on("error", err => {
-    logger.error("Unexpected error on idle client", { error: err.message });
+    databaseLogger.error("Unexpected error on idle client", err);
     throw new DatabaseError("Database connection pool error", {
       service: "postgresql",
       operation: "pool_error_handler",
@@ -124,17 +124,15 @@ export function initializePool(): Pool {
       await client.query(`SET statement_timeout = ${currentTimeoutConfig.default}`);
       await client.query(`SET lock_timeout = 10000`); // 10 seconds for locks
 
-      logger.debug("Database connection timeouts configured", {
+      databaseLogger.debug("Database connection timeouts configured", {
         statementTimeout: currentTimeoutConfig.default,
         lockTimeout: 10000,
       });
     } catch (error) {
-      logger.error("Failed to set connection timeouts", {
-        error: (error as Error).message,
-      });
+      databaseLogger.error("Failed to set connection timeouts", error as Error);
     }
 
-    logger.info("New database connection established", {
+    databaseLogger.info("New database connection established", {
       totalConnections: poolMetrics.totalConnections,
     });
   });
@@ -145,12 +143,12 @@ export function initializePool(): Pool {
       0,
       poolMetrics.totalConnections - 1
     );
-    logger.debug("Database connection removed from pool", {
+    databaseLogger.debug("Database connection removed from pool", {
       totalConnections: poolMetrics.totalConnections,
     });
   });
 
-  logger.info("Database pool initialized");
+  databaseLogger.info("Database pool initialized");
   return pool;
 }
 
@@ -185,10 +183,10 @@ export async function closePool(): Promise<void> {
     return;
   }
 
-  logger.info("Closing database pool...");
+  databaseLogger.info("Closing database pool...");
   await pool.end();
   pool = null;
-  logger.info("Database pool closed");
+  databaseLogger.info("Database pool closed");
 }
 
 /**
@@ -240,7 +238,7 @@ export async function queryWithTimeout<T = unknown>(
       clearTimeout(timeoutId); // Clear timeout when query fails or times out
     }
     if (error instanceof Error && error.message.includes('Query timeout')) {
-      logger.error("Database query timeout", {
+      databaseLogger.error("Database query timeout", error, {
         query: text.substring(0, 200),
         timeoutMs,
         paramsCount: params?.length || 0,
@@ -285,7 +283,7 @@ export async function getClientWithMetrics(): Promise<PoolClient> {
       // Log waits > 10ms
       poolMetrics.connectionWaitTimes.push(waitTime);
       poolMetrics.totalWaits++;
-      logger.debug("Connection wait time", { waitTimeMs: waitTime });
+      databaseLogger.debug("Connection wait time", { waitTimeMs: waitTime });
     }
 
     const clientId = `${Date.now()}-${Math.random()}`;
@@ -299,7 +297,7 @@ export async function getClientWithMetrics(): Promise<PoolClient> {
       if (checkoutTime) {
         const duration = Date.now() - checkoutTime;
         poolMetrics.connectionCheckoutTimes.delete(clientId);
-        logger.debug("Connection checkout duration", { durationMs: duration });
+        databaseLogger.debug("Connection checkout duration", { durationMs: duration });
       }
       originalRelease();
     };
@@ -341,9 +339,9 @@ function updatePoolMetrics(): void {
         poolMetrics.connectionWaitTimes.slice(-100);
     }
   } catch (error) {
-    logger.warn("Failed to update pool metrics", {
-      error: (error as Error).message,
-    });
+    databaseLogger.error("Failed to update pool metrics",
+      error as Error
+    );
   }
 }
 
@@ -403,7 +401,7 @@ export function getPoolMetrics(): {
   if (utilizationPercent > 95) {
     issues.push(`Pool utilization is ${utilizationPercent}% (critical - ${activeConnections}/${poolMetrics.totalConnections} connections)`);
     status = "critical";
-    logger.error("CRITICAL: Database connection pool nearly exhausted", {
+    databaseLogger.warn("CRITICAL: Database connection pool nearly exhausted", {
       utilizationPercent,
       activeConnections,
       totalConnections: poolMetrics.totalConnections,
@@ -412,7 +410,7 @@ export function getPoolMetrics(): {
   } else if (utilizationPercent > 80) {
     issues.push(`Pool utilization is ${utilizationPercent}% (warning - ${activeConnections}/${poolMetrics.totalConnections} connections)`);
     status = "warning";
-    logger.warn("WARNING: Database connection pool usage high", {
+    databaseLogger.warn("WARNING: Database connection pool usage high", {
       utilizationPercent,
       activeConnections,
       totalConnections: poolMetrics.totalConnections,
@@ -473,7 +471,7 @@ export async function queryWithAutoTimeout<T = unknown>(
   const category = options?.category || 'default';
   const timeoutMs = options?.customTimeout || currentTimeoutConfig[category];
 
-  logger.debug("Executing query with auto timeout", {
+  databaseLogger.debug("Executing query with auto timeout", {
     category,
     timeoutMs,
     queryLength: text.length,
@@ -514,9 +512,9 @@ export async function getClientWithTimeout(timeoutMs: number = currentTimeoutCon
   try {
     // Set custom timeout for this client session
     await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
-    logger.debug("Client timeout configured", { timeoutMs });
+    databaseLogger.debug("Client timeout configured", { timeoutMs });
   } catch (error) {
-    logger.warn("Failed to set client timeout, using pool default", {
+    databaseLogger.warn("Failed to set client timeout, using pool default", {
       timeoutMs,
       error: (error as Error).message,
     });
@@ -531,7 +529,7 @@ export async function getClientWithTimeout(timeoutMs: number = currentTimeoutCon
 export function updateTimeoutConfig(newConfig: Partial<QueryTimeoutConfig>): void {
   currentTimeoutConfig = { ...currentTimeoutConfig, ...newConfig };
 
-  logger.info("Database timeout configuration updated", {
+  databaseLogger.info("Database timeout configuration updated", {
     newConfig: currentTimeoutConfig,
   });
 
@@ -593,7 +591,7 @@ export function getTimeoutStats(): {
  */
 export function resetTimeoutConfig(): void {
   currentTimeoutConfig = { ...DEFAULT_TIMEOUT_CONFIG };
-  logger.info("Database timeout configuration reset to defaults");
+  databaseLogger.info("Database timeout configuration reset to defaults");
 }
 
 // Update metrics every 30 seconds
@@ -629,9 +627,9 @@ export async function cleanupForTests(): Promise<void> {
   stopMetricsInterval();
   // Close the pool in test environments to prevent open handles
   if (pool) {
-    logger.debug("Closing database pool for test cleanup");
+    databaseLogger.debug("Closing database pool for test cleanup");
     await pool.end();
     pool = null;
   }
-  logger.debug("Test cleanup completed - pool closed");
+  databaseLogger.debug("Test cleanup completed - pool closed");
 }

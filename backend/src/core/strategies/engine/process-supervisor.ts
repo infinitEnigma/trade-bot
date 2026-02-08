@@ -372,7 +372,7 @@ export class ProcessSupervisor {
     private async notifyProcessFailure(reason: string, health: EngineHealth): Promise<void> {
         try {
             // Import notification service dynamically to avoid circular imports
-            const { errorNotificationService } = await import("../../notifications/error-notification.service.js");
+            const { errorNotificationService } = await import("../../notifications/error-notification.service");
 
             await errorNotificationService.notifyError(
                 new Error(`Engine process failure: ${reason}`),
@@ -402,7 +402,7 @@ export class ProcessSupervisor {
      */
     private async notifyProcessRecovery(): Promise<void> {
         try {
-            const { errorNotificationService } = await import("../../notifications/error-notification.service.js");
+            const { errorNotificationService } = await import("../../notifications/error-notification.service");
 
             await errorNotificationService.notifyError(
                 new Error("Engine process recovered successfully"),
@@ -431,7 +431,7 @@ export class ProcessSupervisor {
      */
     private async notifyPermanentFailure(reason: string): Promise<void> {
         try {
-            const { errorNotificationService } = await import("../../notifications/error-notification.service.js");
+            const { errorNotificationService } = await import("../../notifications/error-notification.service");
 
             await errorNotificationService.notifyError(
                 new Error(`Engine permanent failure: ${reason}`),
@@ -461,7 +461,7 @@ export class ProcessSupervisor {
      */
     private async notifySupervisionFailure(error: unknown): Promise<void> {
         try {
-            const { errorNotificationService } = await import("../../notifications/error-notification.service.js");
+            const { errorNotificationService } = await import("../../notifications/error-notification.service");
 
             await errorNotificationService.notifyError(
                 new Error(`Supervision system failure: ${error}`),

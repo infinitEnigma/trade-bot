@@ -9,6 +9,7 @@ import { credentialCacheService } from './infrastructure/cache/credential-cache.
 import { errorNotificationService } from './core/notifications/error-notification.service';
 import { memoryRateLimiter } from './infrastructure/security/rate-limiter/memory-rate-limiter';
 import { cleanupForTests as cleanupDatabasePool, initializePool } from './database/pool';
+import { logger } from './core/logging';
 
 // Extend global interface for test cleanup
 declare global {
@@ -133,7 +134,7 @@ async function cleanupAdditionalServices(): Promise<void> {
             memoryRateLimiter.cleanupForTests();
         }
     } catch (error) {
-        console.warn('❌ Error during additional service cleanup:', error as Error);
+        logger.warn('❌ Error during additional service cleanup:', error as Error);
     }
 }
 
@@ -201,7 +202,7 @@ async function cleanupWebSocketConnections(): Promise<void> {
         }
 
     } catch (error) {
-        console.error('❌ Error cleaning up WebSocket connections:', error);
+        logger.error('❌ Error cleaning up WebSocket connections:', error);
     }
 }
 

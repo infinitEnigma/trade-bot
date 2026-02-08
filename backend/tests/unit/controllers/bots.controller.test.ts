@@ -269,7 +269,7 @@ describe('Bots Controller', () => {
 
                 const query = require('../../../src/database/pool').query;
                 query.mockImplementation((sql: string) => {
-                    console.log('Query called with SQL:', sql);
+                    //console.log('Query called with SQL:', sql);
                     if (sql.includes('SELECT * FROM strategies')) {
                         return Promise.resolve({ rows: [mockStrategy] });
                     } else if (sql.includes('INSERT INTO audit_logs')) {
@@ -295,8 +295,8 @@ describe('Bots Controller', () => {
                         notionalAmount: 1000.50,
                     });
 
-                console.log('Response status:', response.status);
-                console.log('Response body:', response.body);
+                //console.log('Response status:', response.status);
+                //console.log('Response body:', response.body);
 
                 expect(response.status).toBe(200);
                 expect(response.body.success).toBe(true);
