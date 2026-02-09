@@ -2,7 +2,7 @@
 
 import { Response, NextFunction } from "express";
 import { UserRole } from "@trade-bot/shared";
-import { AuthenticatedRequest } from "./auth";
+import { AuthenticatedRequest } from "./auth.middleware";
 
 export function requireRole(role: UserRole) {
     return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {

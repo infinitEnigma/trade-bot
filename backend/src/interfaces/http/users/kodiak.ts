@@ -7,7 +7,7 @@
 
 import { Router, Request, Response } from "express";
 import Joi from "joi";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
+import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
 import { serviceProvider } from "../../../core/service-provider";
 import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
 import { createRateLimiter } from "../../../infrastructure/security/rate-limiter.service";

@@ -6,7 +6,7 @@
  */
 
 import { Router, Response } from "express";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
+import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
 import { databaseSecurityService } from "../../../infrastructure/security/database-security.service";
 import logger from "../../../core/logging/logger.service";
 

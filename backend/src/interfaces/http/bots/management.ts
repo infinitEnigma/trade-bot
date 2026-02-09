@@ -69,7 +69,7 @@
 import { Router, Response, NextFunction } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { randomBytes, createCipheriv } from "crypto";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
+import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
 import { query } from "../../../database/pool";
 import {
     ValidationError,
@@ -80,7 +80,7 @@ import {
     createErrorResponse,
 } from "@trade-bot/shared";
 import { getCorrelationId, getContextForLogging } from "../../../shared/utils/context";
-import { validators } from "../../middleware/validation";
+import { validators } from "../../middleware/validation.middleware";
 import { withCredentials, SecureCredentials } from "../../../infrastructure/security/encryption.service"; // ✅ Secure credential handling
 import { serviceProvider } from "../../../core/service-provider";
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service"; // ✅ Rate limiting

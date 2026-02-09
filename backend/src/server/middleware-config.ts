@@ -67,15 +67,15 @@ export class MiddlewareConfig {
 
 
     /**
-     * Configure CSRF token generation for authentication routes
+     * Configure CSRF token generation for all API routes
      */
     private static async configureCsrfProtection(app: Express): Promise<void> {
-        const { csrfTokenMiddleware } = await import("../interfaces/middleware/csrf");
+        const { csrfTokenMiddleware } = await import("../interfaces/middleware/csrf.middleware");
 
-        // CSRF token generation for auth routes (login/register/refresh)
-        app.use("/api/auth", csrfTokenMiddleware);
+        // CSRF token generation for all API routes
+        app.use("/api", csrfTokenMiddleware);
 
-        middlewareLogger.debug("CSRF token generation configured for auth routes", {
+        middlewareLogger.debug("CSRF token generation configured for all API routes", {
             operation: "csrf_token_setup",
         });
     }
@@ -84,7 +84,7 @@ export class MiddlewareConfig {
      * Configure CSRF validation for state-changing operations
      */
     private static async configureCsrfValidation(app: Express): Promise<void> {
-        const { csrfMiddleware } = await import("../interfaces/middleware/csrf");
+        const { csrfMiddleware } = await import("../interfaces/middleware/csrf.middleware");
 
         // CSRF validation for ALL state-changing operations (browser routes)
         // Note: Bot engine routes are excluded because they use API key auth
@@ -123,7 +123,7 @@ export class MiddlewareConfig {
         // 👤 User management endpoints (moderate limits)
         // EXCLUDE /api/user/kodiak/* routes - they use specialized protection
         app.use("/api/user", (req, res, next) => {
-            if (req.path.startsWith('/api/user/kodiak/')) {
+            if (req.path.startsWith('/kodiak/')) {
                 return next(); // Skip general rate limiting for Kodiak routes
             }
             RateLimiters.public(req, res, next);
@@ -153,7 +153,7 @@ export class MiddlewareConfig {
      */
     private static async configureKodiakProtection(app: Express): Promise<void> {
         const { kodiakRequestQueue } = await import("../infrastructure/external/kodiak-queue");
-        const { authMiddleware } = await import("../interfaces/middleware/auth");
+        const { authMiddleware } = await import("../interfaces/middleware/auth.middleware");
         // 🎯 KODIAK-SPECIFIC PROTECTION: Request queuing + rate limiting for trading routes ONLY
         // EXCLUDE chart/market data routes - they need fast updates for real-time charts
         const kodiakRoutes = [

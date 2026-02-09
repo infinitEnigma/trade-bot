@@ -286,7 +286,7 @@ export interface BalanceHistory {
 
 export interface AuditLogEntry {
     id: string;
-    userId: string;
+    userId: string | null;
     action: string;
     details: Record<string, unknown>;
     timestamp: Date;

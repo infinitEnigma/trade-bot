@@ -1,7 +1,6 @@
 /** @format */
 
 import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
 import { selectAuthService } from "../../core/service-selector";
 import { AuthResult, LegacyAuthResult } from "../../core/auth/auth.service.pure";
 import { jwtTokenAdapter } from "../../infrastructure/adapters/token/jwt-token.adapter";
@@ -29,8 +28,8 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
 
   // Extract userId from the token for mutex key
   try {
-    const decoded = jwt.decode(refreshToken);
-    userId = (decoded as Record<string, unknown>)?.userId as string | undefined;
+    const decoded = jwtTokenAdapter.decodeTokenUnsafe(refreshToken);
+    userId = decoded?.userId;
   } catch (e) {
     authLogger.warn("Could not decode refresh token for mutex", {
       error: e instanceof Error ? e.message : String(e),
@@ -166,6 +165,14 @@ export async function authMiddleware(
   next: NextFunction
 ): Promise<void> {
   try {
+    // Detailed logging for debugging
+    authLogger.debug("Auth middleware request details", {
+      path: req.path,
+      method: req.method,
+      headers: Object.keys(req.headers).filter(k => ['authorization', 'cookie', 'user-agent'].includes(k)),
+      cookies: req.cookies ? Object.keys(req.cookies) : 'no cookies',
+    });
+
     // Get token from Authorization header or httpOnly cookie
     const authHeader = req.headers["authorization"];
     let token = authHeader && authHeader.split(" ")[1];
@@ -175,13 +182,156 @@ export async function authMiddleware(
       token = req.cookies?.accessToken;
     }
 
+    authLogger.debug("Token extraction result", {
+      tokenFromHeader: !!authHeader,
+      tokenFromCookie: !!req.cookies?.accessToken,
+      tokenPresent: !!token,
+    });
+
     if (!token) {
-      res.status(401).json({
-        success: false,
-        code: -1001,
-        message: "Unauthorized - no token provided",
-      });
-      return;
+      // Check if refreshToken is available and attempt to refresh
+      const refreshToken = req.cookies?.refreshToken;
+      if (refreshToken) {
+        authLogger.debug("Access token missing, attempting refresh with refresh token", {
+          path: req.path,
+          method: req.method,
+        });
+
+        try {
+          const refreshResult = await retryTokenRefresh(refreshToken, req);
+          if (!refreshResult.success || !refreshResult.tokens) {
+            authLogger.error("Token refresh failed after retries", undefined, {
+              message: refreshResult.message,
+              userId: req.user?.userId || 'unknown',
+            });
+            res.status(401).json({
+              success: false,
+              code: -1004,
+              message: "Unauthorized - token refresh failed after multiple attempts",
+            });
+            return;
+          }
+
+          authLogger.info("Token automatically refreshed", {
+            userId: refreshResult.user?.id,
+            email: refreshResult.user?.email,
+          });
+
+          // Set new httpOnly cookies
+          res.cookie("accessToken", refreshResult.tokens.accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict",
+            maxAge: 4 * 60 * 60 * 1000, // 4 hours
+          });
+
+          res.cookie("refreshToken", refreshResult.tokens.refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict",
+            maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+          });
+
+          // Verify the new access token and set user on request
+          const newPayload = await authService.validateToken(
+            refreshResult.tokens.accessToken
+          );
+          if (!newPayload) {
+            authLogger.error("New access token validation failed after refresh", new Error("Token validation failed"));
+            res.status(500).json({
+              success: false,
+              code: -1005,
+              message: "Token refresh succeeded but validation failed",
+            });
+            return;
+          }
+
+          // Check if this is a lightweight endpoint for refreshed token too
+          const isLightweightEndpointRefresh = req.path.startsWith('/api/user/kodiak/status') ||
+            req.path.startsWith('/api/user/kodiak/trades') ||
+            req.path.startsWith('/api/user/kodiak/positions') ||
+            req.path.startsWith('/api/user/kodiak/balance');
+
+          if (isLightweightEndpointRefresh) {
+            // For lightweight endpoints, just verify user exists without loading full data
+            const userExists = await authService.getUserById(newPayload.userId);
+            if (!userExists) {
+              authLogger.error("Refreshed user not found for lightweight endpoint", undefined, {
+                userId: newPayload.userId,
+                endpoint: req.path,
+              });
+              res.status(401).json({
+                success: false,
+                code: -1008,
+                message: "Unauthorized - refreshed user not found",
+              });
+              return;
+            }
+
+            req.user = {
+              ...newPayload,
+              userLevel: userExists.userLevel,
+              roles: [] // Lightweight endpoints don't need roles
+            };
+          } else {
+            // Load complete user data for refreshed token (N+1 optimization)
+            const refreshedUserData = await authService.getAuthenticatedUserData(newPayload.userId);
+            if (!refreshedUserData) {
+              authLogger.error("Failed to load refreshed user data - user not found", undefined, {
+                userId: newPayload.userId,
+              });
+              res.status(401).json({
+                success: false,
+                code: -1008,
+                message: "Unauthorized - refreshed user data not found",
+              });
+              return;
+            }
+
+            const refreshedUserRoles = refreshedUserData.roles;
+
+            req.user = {
+              ...newPayload,
+              userLevel: refreshedUserData.user.userLevel, // Always use current userLevel from database
+              roles: refreshedUserRoles
+            };
+          }
+
+          // Set user context for logging and tracing
+          setUserContext(newPayload.userId, newPayload.userLevel);
+
+          // Clear failure counter on successful auth
+          const identifier = `ip:${req.ip}`;
+          await progressiveAuthLimiter.recordSuccess(identifier);
+
+          next();
+          return;
+        } catch (refreshError) {
+          authLogger.error("Token refresh process failed", refreshError instanceof Error ? refreshError : undefined, {
+            error:
+              refreshError instanceof Error
+                ? refreshError.message
+                : String(refreshError),
+          });
+          res.status(401).json({
+            success: false,
+            code: -1006,
+            message: "Unauthorized - token refresh error",
+          });
+          return;
+        }
+      } else {
+        authLogger.warn("Unauthorized - no token provided", {
+          path: req.path,
+          method: req.method,
+        });
+        res.status(401).json({
+          success: false,
+          code: -1001,
+          message: "Unauthorized - no token provided",
+        });
+        return;
+      }
     }
 
     // Verify token
@@ -260,7 +410,8 @@ export async function authMiddleware(
     });
 
     // Handle token expiration - attempt automatic refresh
-    if (error instanceof jwt.TokenExpiredError) {
+    // Check if token is expired by trying to verify it again with the adapter
+    if (error instanceof Error && (error.message.includes('jwt expired') || error.name === 'TokenExpiredError')) {
       authLogger.debug("Access token expired, attempting automatic refresh");
 
       try {

@@ -7,7 +7,7 @@
 
 import { Router, Response } from "express";
 import Joi from "joi";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
+import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
 import { serviceProvider } from "../../../core/service-provider";
 import { createErrorResponse } from "@trade-bot/shared";
 import { getCorrelationId } from "../../../shared/utils/context";

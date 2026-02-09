@@ -51,7 +51,7 @@ export interface IAuditLogger {
 }
 
 export interface AuditEvent {
-    userId: string;
+    userId: string | null;
     action: string;
     details: Record<string, unknown>;
 }

@@ -1,7 +1,7 @@
 /** @format */
 
 import { Router, Response } from "express";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
+import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
 import { blockchainService } from "../../../infrastructure/external/blockchain.service";
 import logger from "../../../core/logging/logger.service";
 import { RateLimiters } from "../../../infrastructure";

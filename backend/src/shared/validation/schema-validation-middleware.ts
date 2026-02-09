@@ -589,4 +589,4 @@ export const validators = {
 };
 
 // Export legacy functions for backward compatibility
-export { validateRequest } from '../../interfaces/middleware/validation';
+export { validateRequest } from '../../interfaces/middleware/validation.middleware';

@@ -2,7 +2,7 @@
 
 import { Router, Response } from "express";
 import Joi from "joi";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
+import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
 import logger from "../../../core/logging/logger.service";
 import { diContainer } from "../../../infrastructure/dependency-injection.container";
 

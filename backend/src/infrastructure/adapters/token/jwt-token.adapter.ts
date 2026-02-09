@@ -102,12 +102,16 @@ export class JwtTokenAdapter implements ITokenService {
             }
 
             // Check if user still exists in database (handles database resets)
-            const userExists = await authService.getUserById(payload.userId);
-            if (!userExists) {
+            const user = await authService.getUserById(payload.userId);
+            if (!user) {
                 return null; // User doesn't exist anymore (e.g., after DB reset)
             }
 
-            return payload;
+            // Update payload with current user level from database (not from token)
+            return {
+                ...payload,
+                userLevel: user.userLevel, // Use current database value, not token's stored value
+            };
         } catch (_error) {
             return null;
         }

@@ -3,11 +3,11 @@
 import { Router, Request, Response } from "express";
 //import Joi from "joi";
 import { serviceProvider } from "../../../core/service-provider";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth";
+import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
 import { UserRole, UserLevel } from "@trade-bot/shared";
 import { createErrorResponse, ValidationError } from "@trade-bot/shared";
 import { getCorrelationId } from "../../../shared/utils/context";
-import { validators } from "../../middleware/validation";
+import { validators } from "../../middleware/validation.middleware";
 import { authLogger } from "../../../core/logging";
 import { progressiveAuthLimiter } from "../../../infrastructure/security/rate-limiter.service";
 import { query } from "../../../database/pool";
@@ -57,7 +57,7 @@ router.post(
 
       res.status(201).json({
         success: true,
-        user: result.user,
+        data: { user: result.user },
       });
     } catch (err) {
       authLogger.error("Registration error", err instanceof Error ? err : undefined, {
@@ -131,7 +131,7 @@ router.post(
 
       res.json({
         success: true,
-        user: result.user,
+        data: { user: result.user },
       });
     } catch (err) {
       authLogger.error("Login error", err instanceof Error ? err : undefined, {
@@ -185,7 +185,7 @@ router.post(
 
       res.json({
         success: true,
-        user: result.user,
+        data: { user: result.user },
       });
     } catch (err) {
       authLogger.error("Token refresh error", err instanceof Error ? err : undefined);

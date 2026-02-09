@@ -11,17 +11,12 @@ import { selectAuthService } from "../../core/service-selector";
 import { kodiakIntegrationService } from "./kodiak-integration.service";
 import { encryptionService } from "../../infrastructure/security";
 import { contextLogger } from "../../core/logging/context-aware-logger.service";
-import { UserLevel } from "@trade-bot/shared";
+import { UserLevel, KodiakConnectionRequest } from "@trade-bot/shared";
 
 // Get authService when needed to support proper mocking in tests
 const getAuthService = () => selectAuthService();
 
-export interface KodiakConnectionData {
-    accountId: string;
-    apiKey: string;
-    secretKey: string;
-    walletSignature?: string;
-}
+export type KodiakConnectionData = KodiakConnectionRequest;
 
 export interface KodiakConnectionResult {
     success: boolean;
@@ -29,7 +24,7 @@ export interface KodiakConnectionResult {
     data?: {
         accountId: string;
         verified: boolean;
-        userLevel?: string;
+        userLevel?: UserLevel;
     };
     error?: string;
 }
@@ -110,7 +105,7 @@ export class KodiakConnectionService {
                 data: {
                     accountId: connectionData.accountId,
                     verified: true,
-                    userLevel: "REGISTERED", // Return the actual level that was set
+                    userLevel: UserLevel.REGISTERED, // Return the actual level that was set
                 },
             };
 

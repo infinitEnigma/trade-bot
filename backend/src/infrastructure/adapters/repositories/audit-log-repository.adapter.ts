@@ -48,7 +48,7 @@ interface SecurityEventDetails {
 
 interface AuditLogLegacy {
     id: string;
-    userId: string;
+    userId: string | null;
     eventType: string;
     eventData: Record<string, unknown>;
     ipAddress?: string;
@@ -58,7 +58,7 @@ interface AuditLogLegacy {
 
 interface SecurityEventLegacy {
     id: string;
-    userId: string;
+    userId: string | null;
     eventType: string;
     eventData: Record<string, unknown>;
     ipAddress?: string;

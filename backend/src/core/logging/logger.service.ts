@@ -2,7 +2,6 @@
 
 import winston from "winston";
 import DailyRotateFile from "winston-daily-rotate-file";
-//import * as winston from "winston";
 import path from "path";
 import { getContextForLogging } from "../../shared/utils/context";
 
@@ -73,6 +72,14 @@ if (process.env.NODE_ENV !== "production") {
 // ✅ File transports (all environments)
 const logsDir = path.join(process.cwd(), "logs");
 
+// Filter to exclude HTTP logs from app.log
+const excludeHttpLogs = winston.format((info) => {
+  if (info.level === "http") {
+    return false; // Skip HTTP logs for this transport
+  }
+  return info;
+});
+
 // ✅ All logs except HTTP (HTTP logs go to separate file)
 logger.add(
   new DailyRotateFile({
@@ -81,14 +88,21 @@ logger.add(
     maxSize: "20m",
     maxFiles: "14d",
     format: winston.format.combine(
+      excludeHttpLogs(),
       winston.format.timestamp(),
       winston.format.json()
     ),
-    level: "debug", // Capture all levels except HTTP
-    // Winston doesn't support per-transport level filtering for specific levels,
-    // so we'll handle this with a custom format
+    level: "debug", // Capture all levels except HTTP (filtered out)
   })
 );
+
+// Filter to exclude HTTP logs from error.log
+const excludeHttpErrors = winston.format((info) => {
+  if (info.level === "http") {
+    return false; // Skip HTTP logs for this transport
+  }
+  return info;
+});
 
 // ✅ Error logs only
 logger.add(
@@ -99,50 +113,35 @@ logger.add(
     maxSize: "20m",
     maxFiles: "30d",
     format: winston.format.combine(
+      excludeHttpErrors(),
       winston.format.timestamp(),
       winston.format.json()
     ),
   })
 );
 
+// Filter to include only HTTP logs
+const includeOnlyHttpLogs = winston.format((info) => {
+  if (info.level === "http") {
+    return info; // Only include HTTP logs for this transport
+  }
+  return false;
+});
+
 // ✅ HTTP request logs (only HTTP level)
 logger.add(
   new DailyRotateFile({
-    level: "http",
     filename: path.join(logsDir, "http-%DATE%.log"),
     datePattern: "YYYY-MM-DD",
     maxSize: "20m",
     maxFiles: "7d",
     format: winston.format.combine(
+      includeOnlyHttpLogs(),
       winston.format.timestamp(),
       winston.format.json()
     ),
+    level: "http", // Process HTTP logs
   })
 );
-
-// Apply filtering for app.log to exclude HTTP logs
-const originalLog = logger.log;
-logger.log = function (...args: any[]) {
-  const level = args[0];
-
-  if (level === "http") {
-    // Only log HTTP level to http.log
-    const httpTransport = logger.transports.find(t =>
-      t instanceof DailyRotateFile && t.filename && t.filename.includes("http-")
-    );
-
-    if (httpTransport) {
-      const info = {
-        level: args[0],
-        message: args[1],
-        ...(args[2] || {})
-      };
-      return (httpTransport as any).log(info);
-    }
-  } else {
-    // Log all other levels to app.log and error.log (if applicable)
-    return (originalLog as any).apply(this, args);
-  }
-};
 
 export default logger;

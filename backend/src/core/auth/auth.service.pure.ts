@@ -619,7 +619,7 @@ export class AuthService {
         if (this.deps.auditLogger) {
             try {
                 await this.deps.auditLogger.logEvent({
-                    userId: (details.userId as string) || 'system',
+                    userId: (details.userId as string) || null, // Allow null instead of 'system'
                     action,
                     details,
                     ipAddress: undefined,

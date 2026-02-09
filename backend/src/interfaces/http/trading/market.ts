@@ -4,7 +4,7 @@ import { Router, Request, Response } from "express";
 import { kodiakIntegrationService, KodiakMarketTicker } from "../../../infrastructure/external/kodiak-integration.service";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { query } from "../../../database/pool"; // ✅ Import from centralized module
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth"; // ✅ Import centralized auth
+import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware"; // ✅ Import centralized auth
 import { createErrorResponse, ExternalServiceError, DataFreshnessUtils, FreshnessAwareResponse } from "@trade-bot/shared";
 import { getCorrelationId } from "../../../shared/utils/context";
 import { ContextAwareLogger } from "../../../core/logging/"; // ✅ Import context-aware logger

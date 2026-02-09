@@ -332,7 +332,7 @@ let routeRegistrationPromise: Promise<void>;
 // Provides consistent error formatting across all endpoints
 // ===========================================
 
-import { handleErrors } from "./interfaces/middleware/error-handler";
+import { handleErrors } from "./interfaces/middleware/error-handler.middleware";
 
 app.use(handleErrors);
 

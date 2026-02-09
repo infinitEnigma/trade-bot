@@ -497,7 +497,7 @@ export class BotStatusService {
         if (this.deps.auditLogger) {
             try {
                 await this.deps.auditLogger.logEvent({
-                    userId: details.userId || 'system',
+                    userId: details.userId || null, // Allow null instead of 'system'
                     action,
                     details
                 });

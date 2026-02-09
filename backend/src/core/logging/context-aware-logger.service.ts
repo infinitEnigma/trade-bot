@@ -141,23 +141,25 @@ export class ContextAwareLogger {
             };
         }
 
-        // Compute fresh context info
+        // Compute fresh context info with null checks
         const correlationId = getCorrelationId();
         const userId = getCurrentUserId();
         const context = getCurrentContext();
 
         const contextInfo: LogContext = {
-            correlationId,
-            userId,
+            correlationId: correlationId || 'unknown',
+            userId: userId || 'unknown',
             component: this.componentName,
             ...this.additionalMeta,
-            ...additionalMeta,
+            ...(additionalMeta || {})
         };
 
         if (context) {
             contextInfo.userLevel = context.userLevel;
             contextInfo.requestId = context.requestId;
-            contextInfo.operationDuration = Date.now() - context.startTime;
+            if (context.startTime && typeof context.startTime === 'number') {
+                contextInfo.operationDuration = Date.now() - context.startTime;
+            }
         }
 
         // Cache the result for future calls

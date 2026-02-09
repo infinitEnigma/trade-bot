@@ -17,7 +17,7 @@
 
 import { userLogger } from "../../core/logging";
 import { KodiakConnectionData, KodiakConnectionResult, KodiakConnectionStatus } from "../../infrastructure/external/kodiak-connection.service";
-import { ICacheService } from "@trade-bot/shared";
+import { ICacheService, UserLevel, KodiakCredentials, KodiakConnectionRequest } from "@trade-bot/shared";
 
 // Simple in-memory cache for Kodiak status
 interface KodiakStatusCache {
@@ -27,6 +27,7 @@ interface KodiakStatusCache {
 
 const STATUS_CACHE_TTL = 10000; // 10 seconds cache
 
+export { KodiakCredentials };
 export interface KodiakUserConfig {
     userId: string;
     kodiakAccountId: string;
@@ -40,15 +41,9 @@ export interface KodiakUserConfig {
     updatedAt: Date;
 }
 
-export interface KodiakCredentials {
-    apiKey: string;
-    secretKey: string;
-    accountId: string;
-}
-
 export interface UserKodiakServiceDependencies {
     kodiakConnectionService: {
-        connectKodiak: (userId: string, connectionData: KodiakConnectionData) => Promise<KodiakConnectionResult>;
+        connectKodiak: (userId: string, connectionData: KodiakConnectionRequest) => Promise<KodiakConnectionResult>;
         disconnectKodiak: (userId: string) => Promise<{ success: boolean; message: string; error?: string }>;
         getConnectionStatus: (userId: string) => Promise<KodiakConnectionStatus>;
     };
@@ -104,7 +99,8 @@ export class UserKodiakService {
                     error: cachedResult.error,
                     data: cachedResult.success ? {
                         accountId: connectionData.accountId,
-                        verified: true
+                        verified: true,
+                        userLevel: UserLevel.REGISTERED // Include userLevel when returning cached result
                     } : undefined
                 };
             }
