@@ -4,13 +4,17 @@ import request from 'supertest';
 import { Express } from 'express';
 
 // Mock blockchain service
-jest.mock('../../../src/infrastructure/external/blockchain.service', () => ({
-    blockchainService: {
+jest.mock('../../../src/infrastructure/external/blockchain.service', () => {
+    const mockBlockchainService = {
         getUserWalletAddress: jest.fn(),
         getNativeBalance: jest.fn(),
         invalidateUserCache: jest.fn(),
-    },
-}));
+    };
+
+    return {
+        createBlockchainService: jest.fn().mockReturnValue(mockBlockchainService),
+    };
+});
 
 // Mock rate limiters
 jest.mock('../../../src/infrastructure', () => ({
@@ -37,7 +41,7 @@ jest.mock('../../../src/core/logging/logger.service', () => ({
 }));
 
 // Get the mock blockchain service
-const mockBlockchainService = require('../../../src/infrastructure/external/blockchain.service').blockchainService;
+const mockBlockchainService = require('../../../src/infrastructure/external/blockchain.service').createBlockchainService();
 
 // Create a test app
 function createTestApp(): Express {

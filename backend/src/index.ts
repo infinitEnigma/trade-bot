@@ -56,6 +56,14 @@ import { Server } from "socket.io";
 
 // Import logger first before any other code
 import { contextLogger as logger } from "./core/logging";
+import { setRequestContext, generateCorrelationId, generateRequestId } from "./shared/utils/context";
+
+// Set default context for application initialization
+setRequestContext({
+    correlationId: generateCorrelationId(),
+    startTime: Date.now(),
+    requestId: generateRequestId(),
+});
 
 // Application start time for uptime tracking
 const START_TIME = Date.now();

@@ -311,5 +311,9 @@ export class BlockchainService {
     }
 }
 
-// Export singleton instance with default configuration
-export const blockchainService = new BlockchainService();
+// Export the class for on-demand instantiation
+// Note: Do NOT export a singleton instance to avoid unnecessary initialization
+// Export a factory function instead for on-demand creation
+export function createBlockchainService(config: Partial<BlockchainServiceConfig> = {}): BlockchainService {
+    return new BlockchainService(config);
+}

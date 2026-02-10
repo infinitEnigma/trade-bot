@@ -396,10 +396,10 @@ export const useCurrentPrice = (symbol: string) => {
       // For premium users, check freshness metadata
       const data = query.state.data;
       if (data?.freshness?.recommendedPollInterval) {
-        return Math.max(data.freshness.recommendedPollInterval, 1000); // Min 1 seconds
+        return Math.max(data.freshness.recommendedPollInterval, 3000); // Min 3 seconds
       }
 
-      return 2000; // Default 2 seconds for premium users (was 10 seconds)
+      return 5000; // Default 5 seconds for premium users
     },
     refetchIntervalInBackground: false,
   });

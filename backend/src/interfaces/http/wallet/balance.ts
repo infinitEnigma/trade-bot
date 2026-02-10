@@ -2,7 +2,10 @@
 
 import { Router, Response } from "express";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
-import { blockchainService } from "../../../infrastructure/external/blockchain.service";
+import { createBlockchainService } from "../../../infrastructure/external/blockchain.service";
+
+// Create blockchain service instance on demand
+const getBlockchainService = () => createBlockchainService();
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import { RateLimiters } from "../../../infrastructure";
 import { UserLevel, ValidationError, NotFoundError, ExternalServiceError } from "@trade-bot/shared";
@@ -43,7 +46,7 @@ router.get(
       }
 
       // Get user's wallet address from database
-      const walletAddress = await blockchainService.getUserWalletAddress(userId);
+      const walletAddress = await getBlockchainService().getUserWalletAddress(userId);
 
       if (!walletAddress) {
         logger.debug("No wallet address found for user", {
@@ -57,7 +60,7 @@ router.get(
       }
 
       // VERIFIED users get real wallet balance data from blockchain
-      const balance = await blockchainService.getNativeBalance(walletAddress);
+      const balance = await getBlockchainService().getNativeBalance(walletAddress);
 
       res.json({
         success: true,
@@ -136,7 +139,7 @@ router.post(
       const userId = req.user.userId;
 
       // Get user's wallet address
-      const walletAddress = await blockchainService.getUserWalletAddress(userId);
+      const walletAddress = await getBlockchainService().getUserWalletAddress(userId);
 
       if (!walletAddress) {
         logger.debug("No wallet address found for refresh", { userId });
@@ -147,9 +150,9 @@ router.post(
       }
 
       // ✅ Invalidate cache to force fresh fetch
-      await blockchainService.invalidateUserCache(userId, walletAddress);
+      await getBlockchainService().invalidateUserCache(userId, walletAddress);
 
-      const balance = await blockchainService.getNativeBalance(walletAddress);
+      const balance = await getBlockchainService().getNativeBalance(walletAddress);
 
       logger.info("Wallet balance manually refreshed", { userId });
 

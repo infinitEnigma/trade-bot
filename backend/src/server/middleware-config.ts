@@ -207,16 +207,16 @@ export class MiddlewareConfig {
         const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service");
 
         return createRateLimiter("kodiak-data", {
-            max: 20,                   // 20 requests per minute per user (reduced from 60)
+            max: 60,                   // 60 requests per minute per user (1 req/sec)
             windowMs: 60000,          // 1 minute window
-            message: "Kodiak data synchronized with Orderly rate limits",
-            progressiveBackoff: true,   // Add delays for frequent requests
-            failOpen: false,          // Protect Orderly API - fail closed
+            message: "Kodiak data rate limit exceeded",
+            progressiveBackoff: false,  // No progressive backoff for market data
+            failOpen: true,           // Allow if rate limiting fails - prioritize UX
             enableUserBasedLimits: true,
             userLimits: {
-                [UserLevel.BASIC]: 1,             // Basic users: 1 req/min
-                [UserLevel.REGISTERED]: 10,        // Registered users: 10 req/min
-                [UserLevel.VERIFIED]: 20,          // Verified users: 20 req/min (reduced from 60)
+                [UserLevel.BASIC]: 30,            // Basic users: 30 req/min (0.5 req/sec)
+                [UserLevel.REGISTERED]: 45,       // Registered users: 45 req/min (0.75 req/sec)
+                [UserLevel.VERIFIED]: 60,         // Verified users: 60 req/min (1 req/sec)
             },
         });
     }

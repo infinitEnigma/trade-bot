@@ -200,15 +200,26 @@ export async function authMiddleware(
         try {
           const refreshResult = await retryTokenRefresh(refreshToken, req);
           if (!refreshResult.success || !refreshResult.tokens) {
-            authLogger.error("Token refresh failed after retries", undefined, {
-              message: refreshResult.message,
-              userId: req.user?.userId || 'unknown',
-            });
-            res.status(401).json({
-              success: false,
-              code: -1004,
-              message: "Unauthorized - token refresh failed after multiple attempts",
-            });
+            if (refreshResult.message === "Token refresh already in progress") {
+              authLogger.debug("Token refresh already in progress", {
+                userId: req.user?.userId || 'unknown',
+              });
+              res.status(401).json({
+                success: false,
+                code: -1004,
+                message: "Token refresh already in progress",
+              });
+            } else {
+              authLogger.error("Token refresh failed after retries", undefined, {
+                message: refreshResult.message,
+                userId: req.user?.userId || 'unknown',
+              });
+              res.status(401).json({
+                success: false,
+                code: -1004,
+                message: "Unauthorized - token refresh failed after multiple attempts",
+              });
+            }
             return;
           }
 
@@ -430,15 +441,26 @@ export async function authMiddleware(
         // Attempt to refresh the token with exponential backoff retry
         const refreshResult = await retryTokenRefresh(refreshToken, req);
         if (!refreshResult.success || !refreshResult.tokens) {
-          authLogger.error("Token refresh failed after retries", undefined, {
-            message: refreshResult.message,
-            userId: req.user?.userId || 'unknown',
-          });
-          res.status(401).json({
-            success: false,
-            code: -1004,
-            message: "Unauthorized - token refresh failed after multiple attempts",
-          });
+          if (refreshResult.message === "Token refresh already in progress") {
+            authLogger.debug("Token refresh already in progress", {
+              userId: req.user?.userId || 'unknown',
+            });
+            res.status(401).json({
+              success: false,
+              code: -1004,
+              message: "Token refresh already in progress",
+            });
+          } else {
+            authLogger.error("Token refresh failed after retries", undefined, {
+              message: refreshResult.message,
+              userId: req.user?.userId || 'unknown',
+            });
+            res.status(401).json({
+              success: false,
+              code: -1004,
+              message: "Unauthorized - token refresh failed after multiple attempts",
+            });
+          }
           return;
         }
 

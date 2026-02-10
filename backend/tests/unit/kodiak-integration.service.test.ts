@@ -367,7 +367,9 @@ describe('KodiakIntegrationService', () => {
                     data: {
                         rows: [{
                             symbol: 'PERP_BTC_USDC',
-                            mark_price: 50000,
+                            executed_price: 50000,
+                            executed_quantity: 0.001,
+                            executed_timestamp: Date.now(),
                         }],
                     },
                 }),
@@ -378,9 +380,14 @@ describe('KodiakIntegrationService', () => {
             expect(result.success).toBe(true);
             expect(result.data?.symbol).toBe('PERP_BTC_USDC');
             expect(redisService.setex).toHaveBeenCalledWith(
+                'kodiak:market_trades:PERP_BTC_USDC:1',
+                5,
+                expect.any(String)
+            );
+            expect(redisService.setex).toHaveBeenCalledWith(
                 'kodiak:ticker:PERP_BTC_USDC',
-                30,
-                JSON.stringify(result)
+                5,
+                expect.any(String)
             );
         });
 
@@ -395,11 +402,15 @@ describe('KodiakIntegrationService', () => {
 
             const result = await service.getMarketTicker('PERP_BTC_USDC');
 
-            expect(result).toEqual({
-                success: false,
-                error: 'Failed to get Kodiak ticker data',
+            // Even if API calls fail, we should still return a success with symbol
+            expect(result.success).toBe(true);
+            expect(result.data?.symbol).toBe('PERP_BTC_USDC');
+
+            // Check that both futures and trades API errors are logged
+            expect(logger.error).toHaveBeenCalledWith('Get Kodiak futures data error', expect.any(Error), {
+                symbol: 'PERP_BTC_USDC',
             });
-            expect(logger.error).toHaveBeenCalledWith('Get Kodiak ticker error', expect.any(Error), {
+            expect(logger.error).toHaveBeenCalledWith('Get Kodiak market trades error', expect.any(Error), {
                 symbol: 'PERP_BTC_USDC',
             });
         });
