@@ -10,7 +10,7 @@
 
 import { IBotInstanceRepository } from '@trade-bot/shared';
 import { query } from '../../../database/pool';
-import logger from '../../../core/logging/logger.service';
+import { tradingLogger as logger } from '../../../core/logging/context-aware-logger.service';
 
 /**
  * Bot Instance Repository Adapter
@@ -36,7 +36,7 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
             return result.rows;
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error(`Failed to get bot instances: ${errorMessage}`);
+            logger.error('Failed to get bot instances', error as Error);
             throw new Error(`Failed to get bot instances: ${errorMessage}`);
         }
     }
@@ -60,7 +60,7 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
             return result.rows[0];
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error(`Failed to get bot instance: ${errorMessage}`);
+            logger.error('Failed to get bot instance', error as Error);
             throw new Error(`Failed to get bot instance: ${errorMessage}`);
         }
     }
@@ -91,7 +91,7 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
             return result.rows[0];
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error(`Failed to create bot instance: ${errorMessage}`);
+            logger.error('Failed to create bot instance', error as Error);
             throw new Error(`Failed to create bot instance: ${errorMessage}`);
         }
     }
@@ -107,7 +107,7 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
             );
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error(`Failed to update bot status: ${errorMessage}`);
+            logger.error('Failed to update bot status', error as Error);
             throw new Error(`Failed to update bot status: ${errorMessage}`);
         }
     }
@@ -153,7 +153,7 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
             );
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error(`Failed to update bot performance: ${errorMessage}`);
+            logger.error('Failed to update bot performance', error as Error);
             throw new Error(`Failed to update bot performance: ${errorMessage}`);
         }
     }
@@ -166,7 +166,7 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
             await query('DELETE FROM bot_instances WHERE id = $1', [id]);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error(`Failed to delete bot instance: ${errorMessage}`);
+            logger.error('Failed to delete bot instance', error as Error);
             throw new Error(`Failed to delete bot instance: ${errorMessage}`);
         }
     }
@@ -184,7 +184,7 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
             return result.rows;
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error(`Failed to get active bot instances: ${errorMessage}`);
+            logger.error('Failed to get active bot instances', error as Error);
             throw new Error(`Failed to get active bot instances: ${errorMessage}`);
         }
     }

@@ -1,13 +1,38 @@
 /** @format */
 
 import { BlockchainService, BlockchainBalance, TokenBalance } from '../../src/infrastructure/external/blockchain.service';
-import logger from '../../src/core/logging/logger.service';
+import { integrationLogger as logger } from '../../src/core/logging/context-aware-logger.service';
 import { redisService } from '../../src/infrastructure/cache/redis.service';
 import { ethers } from 'ethers';
 
 // Mock dependencies - only mock what we need
-jest.mock('../../src/core/logging/logger.service');
-jest.mock('../../src/infrastructure/cache/redis.service');
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    integrationLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    redisLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    cacheLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    }
+}));
+jest.mock('../../src/infrastructure/cache/redis.service', () => ({
+    redisService: {
+        get: jest.fn(),
+        setex: jest.fn(),
+        del: jest.fn(),
+    }
+}));
 
 // Mock the database pool module
 jest.mock('../../src/database/pool', () => ({
@@ -256,8 +281,9 @@ describe('BlockchainService', () => {
             expect(result.error).toEqual(mockError.message);
             expect(logger.error).toHaveBeenCalledWith(
                 'Blockchain service health check failed',
+                expect.any(Error),
                 expect.objectContaining({
-                    error: mockError.message
+                    chainId: mockConfig.chainId
                 })
             );
         });
@@ -292,7 +318,7 @@ describe('BlockchainService', () => {
 
             // Should not throw error
             await expect(blockchainService.invalidateUserCache(userId, walletAddress)).resolves.not.toThrow();
-            expect(logger.warn).toHaveBeenCalled();
+            expect(logger.error).toHaveBeenCalled();
         });
     });
 

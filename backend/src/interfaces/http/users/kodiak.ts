@@ -13,7 +13,7 @@ import { kodiakIntegrationService } from "../../../infrastructure/external/kodia
 import { createRateLimiter } from "../../../infrastructure/security/rate-limiter.service";
 //import { UserLevel } from "@trade-bot/shared";
 import { kodiakConnectionRateLimit, kodiakSyncedRateLimit } from "../../../infrastructure/security/rate-limiter/rate-limit.config";
-import logger from "../../../core/logging/logger.service";
+import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 const router = Router();
 
@@ -61,8 +61,7 @@ router.post("/kodiak/connect", authMiddleware, createRateLimiter("kodiak-connect
         });
 
     } catch (error) {
-        logger.error("Kodiak connect error", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Kodiak connect error", error as Error, {
             userId: req.user?.userId,
         });
 
@@ -99,8 +98,7 @@ router.delete("/kodiak/disconnect", authMiddleware, async (req: AuthenticatedReq
         });
 
     } catch (error) {
-        logger.error("Kodiak disconnect error", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Kodiak disconnect error", error as Error, {
             userId: req.user?.userId,
         });
 
@@ -134,8 +132,7 @@ router.get("/kodiak/status", createRateLimiter("kodiak-status", kodiakSyncedRate
         });
 
     } catch (error) {
-        logger.error("Get Kodiak status error", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Get Kodiak status error", error as Error, {
             userId: req.user?.userId,
         });
 
@@ -170,8 +167,7 @@ router.get("/kodiak/positions", authMiddleware, async (req: AuthenticatedRequest
         });
 
     } catch (error) {
-        logger.error("Get Kodiak positions error", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Get Kodiak positions error", error as Error, {
             userId: req.user?.userId,
         });
 
@@ -207,8 +203,7 @@ router.get("/kodiak/trades", authMiddleware, async (req: AuthenticatedRequest, r
         });
 
     } catch (error) {
-        logger.error("Get Kodiak trades error", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Get Kodiak trades error", error as Error, {
             userId: req.user?.userId,
         });
 
@@ -243,8 +238,7 @@ router.get("/kodiak/balance", authMiddleware, async (req: AuthenticatedRequest, 
         });
 
     } catch (error) {
-        logger.error("Get Kodiak balance error", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Get Kodiak balance error", error as Error, {
             userId: req.user?.userId,
         });
 
@@ -279,8 +273,7 @@ router.get("/kodiak/account-info", authMiddleware, async (req: AuthenticatedRequ
         });
 
     } catch (error) {
-        logger.error("Get Kodiak account info error", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Get Kodiak account info error", error as Error, {
             userId: req.user?.userId,
         });
 
@@ -309,9 +302,7 @@ router.get("/public/kodiak/availability", async (req: Request, res: Response) =>
             },
         });
     } catch (error) {
-        logger.error("Kodiak availability check error", {
-            error: error instanceof Error ? error.message : String(error),
-        });
+        logger.error("Kodiak availability check error", error as Error);
 
         res.json({
             success: true,

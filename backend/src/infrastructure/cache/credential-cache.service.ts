@@ -1,7 +1,7 @@
 /** @format */
 
 import { encryptionService } from "../security/encryption.service";
-import logger from "../../core/logging/logger.service";
+import { cacheLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 interface CachedCredentials {
   apiKey: string;
@@ -76,9 +76,8 @@ class CredentialCacheService {
 
       return { apiKey, secretKey, accountId };
     } catch (error) {
-      logger.error("Failed to cache credentials", {
+      logger.error("Failed to cache credentials", error as Error, {
         userId,
-        error: (error as Error).message,
       });
       throw error;
     }

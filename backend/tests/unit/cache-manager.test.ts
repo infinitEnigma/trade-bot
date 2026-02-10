@@ -2,10 +2,38 @@
 
 import { CacheManager } from '../../src/infrastructure/messaging/market-stream/cache-manager';
 import { TickData, KlineData, MarkPriceData } from '../../src/infrastructure/messaging/market-stream/types';
+import { marketStreamLogger } from '../../src/core/logging/context-aware-logger.service';
 
 // Mock dependencies
-jest.mock('../../src/core/logging/logger.service');
-jest.mock('../../src/infrastructure/cache/redis.service');
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    marketStreamLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    redisLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    cacheLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    }
+}));
+jest.mock('../../src/infrastructure/cache/redis.service', () => ({
+    redisService: {
+        get: jest.fn(),
+        setex: jest.fn(),
+        del: jest.fn(),
+        atomicCacheUpdate: jest.fn(),
+        isHealthy: jest.fn(),
+    }
+}));
 jest.mock('../../src/infrastructure/cache/cache-invalidation.service');
 jest.mock('../../src/config/cache.config');
 
@@ -76,22 +104,18 @@ describe('CacheManager', () => {
             const mockAtomicCacheUpdate = jest.fn().mockResolvedValue({ success: false, error: 'Redis connection error' });
             require('../../src/infrastructure/cache/redis.service').redisService.atomicCacheUpdate = mockAtomicCacheUpdate;
 
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             await cacheManager.cacheTick(mockSymbol, mockTickData);
 
-            expect(mockLogger.warn).toHaveBeenCalled();
+            expect(marketStreamLogger.warn).toHaveBeenCalled();
         });
 
         it('should handle cacheTick exception', async () => {
             const mockAtomicCacheUpdate = jest.fn().mockRejectedValue(new Error('Unexpected error'));
             require('../../src/infrastructure/cache/redis.service').redisService.atomicCacheUpdate = mockAtomicCacheUpdate;
 
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             await cacheManager.cacheTick(mockSymbol, mockTickData);
 
-            expect(mockLogger.error).toHaveBeenCalled();
+            expect(marketStreamLogger.error).toHaveBeenCalled();
         });
     });
 
@@ -122,24 +146,20 @@ describe('CacheManager', () => {
             const mockGet = jest.fn().mockResolvedValue({ success: false, error: 'Redis connection error' });
             require('../../src/infrastructure/cache/redis.service').redisService.get = mockGet;
 
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             const result = await cacheManager.getTick(mockSymbol);
 
             expect(result).toBeNull();
-            expect(mockLogger.warn).toHaveBeenCalled();
+            expect(marketStreamLogger.warn).toHaveBeenCalled();
         });
 
         it('should handle getTick exception', async () => {
             const mockGet = jest.fn().mockRejectedValue(new Error('Unexpected error'));
             require('../../src/infrastructure/cache/redis.service').redisService.get = mockGet;
 
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             const result = await cacheManager.getTick(mockSymbol);
 
             expect(result).toBeNull();
-            expect(mockLogger.error).toHaveBeenCalled();
+            expect(marketStreamLogger.error).toHaveBeenCalled();
         });
     });
 
@@ -210,22 +230,18 @@ describe('CacheManager', () => {
             const mockAtomicCacheUpdate = jest.fn().mockResolvedValue({ success: false, error: 'Redis connection error' });
             require('../../src/infrastructure/cache/redis.service').redisService.atomicCacheUpdate = mockAtomicCacheUpdate;
 
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             await cacheManager.cacheKlines(mockSymbol, '1m', [mockKlineData]);
 
-            expect(mockLogger.warn).toHaveBeenCalled();
+            expect(marketStreamLogger.warn).toHaveBeenCalled();
         });
 
         it('should handle cacheKlines exception', async () => {
             const mockAtomicCacheUpdate = jest.fn().mockRejectedValue(new Error('Unexpected error'));
             require('../../src/infrastructure/cache/redis.service').redisService.atomicCacheUpdate = mockAtomicCacheUpdate;
 
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             await cacheManager.cacheKlines(mockSymbol, '1m', [mockKlineData]);
 
-            expect(mockLogger.error).toHaveBeenCalled();
+            expect(marketStreamLogger.error).toHaveBeenCalled();
         });
     });
 
@@ -256,24 +272,20 @@ describe('CacheManager', () => {
             const mockGet = jest.fn().mockResolvedValue({ success: false, error: 'Redis connection error' });
             require('../../src/infrastructure/cache/redis.service').redisService.get = mockGet;
 
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             const result = await cacheManager.getKlines(mockSymbol, '1m');
 
             expect(result).toEqual([]);
-            expect(mockLogger.warn).toHaveBeenCalled();
+            expect(marketStreamLogger.warn).toHaveBeenCalled();
         });
 
         it('should handle getKlines exception', async () => {
             const mockGet = jest.fn().mockRejectedValue(new Error('Unexpected error'));
             require('../../src/infrastructure/cache/redis.service').redisService.get = mockGet;
 
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             const result = await cacheManager.getKlines(mockSymbol, '1m');
 
             expect(result).toEqual([]);
-            expect(mockLogger.error).toHaveBeenCalled();
+            expect(marketStreamLogger.error).toHaveBeenCalled();
         });
     });
 
@@ -291,22 +303,18 @@ describe('CacheManager', () => {
             const mockAtomicCacheUpdate = jest.fn().mockResolvedValue({ success: false, error: 'Redis connection error' });
             require('../../src/infrastructure/cache/redis.service').redisService.atomicCacheUpdate = mockAtomicCacheUpdate;
 
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             await cacheManager.cacheMarkPrice(mockSymbol, mockMarkPriceData);
 
-            expect(mockLogger.warn).toHaveBeenCalled();
+            expect(marketStreamLogger.warn).toHaveBeenCalled();
         });
 
         it('should handle cacheMarkPrice exception', async () => {
             const mockAtomicCacheUpdate = jest.fn().mockRejectedValue(new Error('Unexpected error'));
             require('../../src/infrastructure/cache/redis.service').redisService.atomicCacheUpdate = mockAtomicCacheUpdate;
 
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             await cacheManager.cacheMarkPrice(mockSymbol, mockMarkPriceData);
 
-            expect(mockLogger.error).toHaveBeenCalled();
+            expect(marketStreamLogger.error).toHaveBeenCalled();
         });
     });
 
@@ -337,24 +345,20 @@ describe('CacheManager', () => {
             const mockGet = jest.fn().mockResolvedValue({ success: false, error: 'Redis connection error' });
             require('../../src/infrastructure/cache/redis.service').redisService.get = mockGet;
 
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             const result = await cacheManager.getMarkPrice(mockSymbol);
 
             expect(result).toBeNull();
-            expect(mockLogger.warn).toHaveBeenCalled();
+            expect(marketStreamLogger.warn).toHaveBeenCalled();
         });
 
         it('should handle getMarkPrice exception', async () => {
             const mockGet = jest.fn().mockRejectedValue(new Error('Unexpected error'));
             require('../../src/infrastructure/cache/redis.service').redisService.get = mockGet;
 
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             const result = await cacheManager.getMarkPrice(mockSymbol);
 
             expect(result).toBeNull();
-            expect(mockLogger.error).toHaveBeenCalled();
+            expect(marketStreamLogger.error).toHaveBeenCalled();
         });
     });
 
@@ -375,35 +379,30 @@ describe('CacheManager', () => {
             const mockInvalidateWithBroadcast = jest.fn().mockRejectedValue(new Error('Unexpected error'));
             require('../../src/infrastructure/cache/cache-invalidation.service').cacheInvalidationService.invalidateWithBroadcast = mockInvalidateWithBroadcast;
 
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             await cacheManager.invalidateSymbolData(mockSymbol);
 
-            expect(mockLogger.error).toHaveBeenCalled();
+            expect(marketStreamLogger.error).toHaveBeenCalled();
         });
     });
 
     describe('clearAll', () => {
         it('should clear all cached data', async () => {
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             await cacheManager.clearAll();
 
-            expect(mockLogger.info).toHaveBeenCalled();
+            expect(marketStreamLogger.info).toHaveBeenCalled();
         });
 
         it('should handle clearAll exception', async () => {
-            const mockLogger = require('../../src/core/logging/logger.service').default;
             // Mock console.log to throw an error
-            const originalInfo = mockLogger.info;
-            mockLogger.info = jest.fn().mockImplementation(() => {
+            const originalInfo = marketStreamLogger.info;
+            marketStreamLogger.info = jest.fn().mockImplementation(() => {
                 throw new Error('Unexpected error');
             });
 
             await cacheManager.clearAll();
 
-            expect(mockLogger.error).toHaveBeenCalled();
-            mockLogger.info = originalInfo;
+            expect(marketStreamLogger.error).toHaveBeenCalled();
+            marketStreamLogger.info = originalInfo;
         });
     });
 
@@ -423,13 +422,11 @@ describe('CacheManager', () => {
             const mockIsHealthy = jest.fn().mockRejectedValue(new Error('Unexpected error'));
             require('../../src/infrastructure/cache/redis.service').redisService.isHealthy = mockIsHealthy;
 
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             const result = await cacheManager.getStats();
 
             expect(result.redisConnected).toBe(false);
             expect(result.cacheKeys).toEqual([]);
-            expect(mockLogger.error).toHaveBeenCalled();
+            expect(marketStreamLogger.error).toHaveBeenCalled();
         });
     });
 });

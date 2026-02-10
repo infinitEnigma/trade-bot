@@ -20,7 +20,7 @@ jest.mock('../../../src/infrastructure', () => ({
 }));
 
 // Mock auth middleware to set user context for protected routes
-jest.mock('../../../src/interfaces/middleware/auth', () => ({
+jest.mock('../../../src/interfaces/middleware/auth.middleware', () => ({
     authMiddleware: jest.fn().mockImplementation((req: any, res: any, next: any) => {
         req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
         next();
@@ -53,7 +53,7 @@ function createTestApp(): Express {
     app.use('/api/balance', walletBalanceRoutes);
 
     // Add error handling middleware
-    const { handleErrors } = require('../../../src/interfaces/middleware/error-handler');
+    const { handleErrors } = require('../../../src/interfaces/middleware/error-handler.middleware');
     app.use(handleErrors);
 
     return app;
@@ -65,7 +65,7 @@ describe('Balance Controller Tests', () => {
 
     beforeAll(() => {
         // Save original auth middleware
-        originalAuthMiddleware = require('../../../src/interfaces/middleware/auth').authMiddleware;
+        originalAuthMiddleware = require('../../../src/interfaces/middleware/auth.middleware').authMiddleware;
     });
 
     beforeEach(() => {
@@ -73,7 +73,7 @@ describe('Balance Controller Tests', () => {
         jest.clearAllMocks();
 
         // Restore original auth middleware
-        jest.spyOn(require('../../../src/interfaces/middleware/auth'), 'authMiddleware').mockImplementation(originalAuthMiddleware);
+        jest.spyOn(require('../../../src/interfaces/middleware/auth.middleware'), 'authMiddleware').mockImplementation(originalAuthMiddleware);
 
         // Create fresh app instance
         app = createTestApp();
@@ -82,7 +82,7 @@ describe('Balance Controller Tests', () => {
     describe('GET /api/balance/current', () => {
         it('should return null balance for BASIC user', async () => {
             // Temporarily override auth middleware to set user as BASIC
-            jest.spyOn(require('../../../src/interfaces/middleware/auth'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
+            jest.spyOn(require('../../../src/interfaces/middleware/auth.middleware'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
                 req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'BASIC', roles: [] };
                 next();
             });
@@ -103,7 +103,7 @@ describe('Balance Controller Tests', () => {
 
         it('should return current balance for VERIFIED user with connected wallet', async () => {
             // Ensure we're using VERIFIED user
-            jest.spyOn(require('../../../src/interfaces/middleware/auth'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
+            jest.spyOn(require('../../../src/interfaces/middleware/auth.middleware'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
                 req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
                 next();
             });
@@ -131,7 +131,7 @@ describe('Balance Controller Tests', () => {
 
         it('should throw validation error when wallet is not connected for VERIFIED user', async () => {
             // Ensure we're using VERIFIED user
-            jest.spyOn(require('../../../src/interfaces/middleware/auth'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
+            jest.spyOn(require('../../../src/interfaces/middleware/auth.middleware'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
                 req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
                 next();
             });
@@ -150,7 +150,7 @@ describe('Balance Controller Tests', () => {
 
         it('should throw external service error when blockchain service fails', async () => {
             // Ensure we're using VERIFIED user
-            jest.spyOn(require('../../../src/interfaces/middleware/auth'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
+            jest.spyOn(require('../../../src/interfaces/middleware/auth.middleware'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
                 req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
                 next();
             });
@@ -171,7 +171,7 @@ describe('Balance Controller Tests', () => {
 
         it('should throw validation error for Kodiak account errors', async () => {
             // Ensure we're using VERIFIED user
-            jest.spyOn(require('../../../src/interfaces/middleware/auth'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
+            jest.spyOn(require('../../../src/interfaces/middleware/auth.middleware'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
                 req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
                 next();
             });
@@ -192,7 +192,7 @@ describe('Balance Controller Tests', () => {
 
         it('should throw validation error for Kodiak credentials errors', async () => {
             // Ensure we're using VERIFIED user
-            jest.spyOn(require('../../../src/interfaces/middleware/auth'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
+            jest.spyOn(require('../../../src/interfaces/middleware/auth.middleware'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
                 req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
                 next();
             });
@@ -213,7 +213,7 @@ describe('Balance Controller Tests', () => {
 
         it('should throw not found error for unexpected failures', async () => {
             // Ensure we're using VERIFIED user
-            jest.spyOn(require('../../../src/interfaces/middleware/auth'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
+            jest.spyOn(require('../../../src/interfaces/middleware/auth.middleware'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
                 req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
                 next();
             });
@@ -234,7 +234,7 @@ describe('Balance Controller Tests', () => {
 
         it('should throw validation error for non-VERIFIED (REGISTERED) users', async () => {
             // Temporarily override auth middleware to set user as REGISTERED
-            jest.spyOn(require('../../../src/interfaces/middleware/auth'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
+            jest.spyOn(require('../../../src/interfaces/middleware/auth.middleware'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
                 req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'REGISTERED', roles: [] };
                 next();
             });
@@ -255,7 +255,7 @@ describe('Balance Controller Tests', () => {
 
         it('should handle unauthenticated user scenario', async () => {
             // Temporarily override auth middleware to not set user
-            jest.spyOn(require('../../../src/interfaces/middleware/auth'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
+            jest.spyOn(require('../../../src/interfaces/middleware/auth.middleware'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
                 req.user = null;
                 next();
             });
@@ -274,7 +274,7 @@ describe('Balance Controller Tests', () => {
     describe('POST /api/balance/refresh', () => {
         it('should refresh balance successfully for user with connected wallet', async () => {
             // Ensure we're using VERIFIED user
-            jest.spyOn(require('../../../src/interfaces/middleware/auth'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
+            jest.spyOn(require('../../../src/interfaces/middleware/auth.middleware'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
                 req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
                 next();
             });
@@ -304,7 +304,7 @@ describe('Balance Controller Tests', () => {
 
         it('should return validation error when wallet is not connected', async () => {
             // Ensure we're using VERIFIED user
-            jest.spyOn(require('../../../src/interfaces/middleware/auth'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
+            jest.spyOn(require('../../../src/interfaces/middleware/auth.middleware'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
                 req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
                 next();
             });
@@ -323,7 +323,7 @@ describe('Balance Controller Tests', () => {
 
         it('should handle refresh failure and return error', async () => {
             // Ensure we're using VERIFIED user
-            jest.spyOn(require('../../../src/interfaces/middleware/auth'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
+            jest.spyOn(require('../../../src/interfaces/middleware/auth.middleware'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
                 req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
                 next();
             });

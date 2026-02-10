@@ -1,6 +1,6 @@
 /** @format */
 
-import logger from "../../../core/logging/logger.service";
+import { marketStreamLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import {
   SubscriptionStats,
   SubscriptionConfig,

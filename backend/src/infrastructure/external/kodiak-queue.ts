@@ -1,7 +1,7 @@
 /** @format */
 
 import { Request, Response } from "express";
-import { logger } from "../../core/logging";
+import { integrationLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 /**
  * ===========================================
@@ -233,10 +233,9 @@ export class KodiakRequestQueue {
                     }
 
                 } catch (error) {
-                    logger.error("Error processing queued Kodiak request", {
+                    logger.error("Error processing queued Kodiak request", error as Error, {
                         requestId: nextRequest.id,
                         userId: nextRequest.userId,
-                        error: (error as Error).message,
                     });
                 }
             }

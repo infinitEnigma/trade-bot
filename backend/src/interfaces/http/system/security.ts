@@ -8,7 +8,7 @@
 import { Router, Response } from "express";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
 import { databaseSecurityService } from "../../../infrastructure/security/database-security.service";
-import logger from "../../../core/logging/logger.service";
+import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 const router = Router();
 
@@ -44,8 +44,7 @@ router.get("/assessment", adminMiddleware, async (req: AuthenticatedRequest, res
         });
 
     } catch (error) {
-        logger.error("Security assessment failed", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Security assessment failed", error as Error, {
             userId: req.user?.userId,
         });
 
@@ -79,8 +78,7 @@ router.get("/metrics", adminMiddleware, async (req: AuthenticatedRequest, res: R
         });
 
     } catch (error) {
-        logger.error("Security metrics retrieval failed", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Security metrics retrieval failed", error as Error, {
             userId: req.user?.userId,
         });
 
@@ -120,8 +118,7 @@ router.get("/audit-report", adminMiddleware, async (req: AuthenticatedRequest, r
         res.send(report);
 
     } catch (error) {
-        logger.error("Security audit report generation failed", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Security audit report generation failed", error as Error, {
             userId: req.user?.userId,
         });
 
@@ -156,8 +153,7 @@ router.get("/migration-plan", adminMiddleware, async (req: AuthenticatedRequest,
         });
 
     } catch (error) {
-        logger.error("Migration plan generation failed", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Migration plan generation failed", error as Error, {
             userId: req.user?.userId,
         });
 
@@ -215,8 +211,7 @@ router.post("/migrate-table", adminMiddleware, async (req: AuthenticatedRequest,
         });
 
     } catch (error) {
-        logger.error("Table encryption migration failed", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Table encryption migration failed", error as Error, {
             userId: req.user?.userId,
             tableName: req.body.tableName,
         });
@@ -264,8 +259,7 @@ router.post("/enable-encryption", adminMiddleware, async (req: AuthenticatedRequ
         });
 
     } catch (error) {
-        logger.error("Database encryption enable failed", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Database encryption enable failed", error as Error, {
             userId: req.user?.userId,
         });
 
@@ -317,8 +311,7 @@ router.post("/rotate-keys", adminMiddleware, async (req: AuthenticatedRequest, r
         });
 
     } catch (error) {
-        logger.error("Encryption key rotation failed", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Encryption key rotation failed", error as Error, {
             userId: req.user?.userId,
         });
 

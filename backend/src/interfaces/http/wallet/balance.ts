@@ -3,7 +3,7 @@
 import { Router, Response } from "express";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
 import { blockchainService } from "../../../infrastructure/external/blockchain.service";
-import logger from "../../../core/logging/logger.service";
+import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import { RateLimiters } from "../../../infrastructure";
 import { UserLevel, ValidationError, NotFoundError, ExternalServiceError } from "@trade-bot/shared";
 
@@ -69,10 +69,9 @@ router.get(
       // Log differently based on user level
       if (userLevel === UserLevel.VERIFIED) {
         // Only log as error for VERIFIED users (unexpected failures)
-        logger.error("Wallet balance fetch failed for VERIFIED user", {
+        logger.error("Wallet balance fetch failed for VERIFIED user", error as Error, {
           userId,
           userLevel,
-          error: errorMessage,
         });
 
         // Throw structured errors for VERIFIED users
@@ -159,9 +158,8 @@ router.post(
         data: balance,
       });
     } catch (error) {
-      logger.error("Refresh wallet balance error", {
+      logger.error("Refresh wallet balance error", error as Error, {
         userId: (req as AuthenticatedRequest).user?.userId,
-        error: (error as Error).message,
       });
 
       res.status(500).json({

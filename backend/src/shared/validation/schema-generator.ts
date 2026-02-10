@@ -23,7 +23,7 @@ import {
     CheckConstraint,
     ForeignKeyDefinition,
 } from "../validation/database-schema-parser";
-import logger from "../../core/logging/logger.service";
+import { validationLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 /**
  * Validation result interface
@@ -55,9 +55,8 @@ export class SchemaGenerator {
             // Strict mode: reject unknown fields to match database constraints
             return joiSchema.unknown(false);
         } catch (error) {
-            logger.error("Failed to generate Joi schema", {
+            logger.error("Failed to generate Joi schema", error as Error, {
                 tableName,
-                error: (error as Error).message,
             });
             return null;
         }
@@ -138,9 +137,8 @@ export class SchemaGenerator {
 
             return schema;
         } catch (error) {
-            logger.warn("Failed to generate column schema", {
+            logger.error("Failed to generate column schema", error as Error, {
                 columnName,
-                error: (error as Error).message,
             });
             return null;
         }
@@ -261,9 +259,8 @@ export class SchemaGenerator {
                 const regex = new RegExp(constraint.pattern);
                 return (schema as Joi.StringSchema).pattern(regex);
             } catch (error) {
-                logger.warn("Invalid regex pattern in CHECK constraint", {
+                logger.error("Invalid regex pattern in CHECK constraint", error as Error, {
                     pattern: constraint.pattern,
-                    error: (error as Error).message,
                 });
             }
         }

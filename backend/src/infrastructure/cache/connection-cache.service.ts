@@ -22,7 +22,7 @@
  */
 
 import { redisService } from "./redis.service";
-import logger from "../../core/logging/logger.service";
+import { cacheLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 export interface ConnectionCacheEntry {
     userId: string;
@@ -117,10 +117,9 @@ export class ConnectionCacheService {
             this.stats.misses++;
             return null;
         } catch (error) {
-            logger.error("Failed to get connection cache", {
+            logger.error("Failed to get connection cache", error as Error, {
                 userId,
                 accountId,
-                error: error instanceof Error ? error.message : String(error),
             });
             this.stats.misses++;
             return null;
@@ -169,11 +168,10 @@ export class ConnectionCacheService {
             });
 
         } catch (error) {
-            logger.error("Failed to set connection cache", {
+            logger.error("Failed to set connection cache", error as Error, {
                 userId,
                 accountId,
                 success,
-                error: error instanceof Error ? error.message : String(error),
             });
         }
     }
@@ -200,9 +198,8 @@ export class ConnectionCacheService {
 
             return cleared;
         } catch (error) {
-            logger.error("Failed to invalidate user connection cache", {
+            logger.error("Failed to invalidate user connection cache", error as Error, {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
             return 0;
         }
@@ -253,9 +250,8 @@ export class ConnectionCacheService {
                 evictedCount: toRemove.length,
             });
         } catch (error) {
-            logger.error("Failed to evict oldest user cache entries", {
+            logger.error("Failed to evict oldest user cache entries", error as Error, {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
         }
     }

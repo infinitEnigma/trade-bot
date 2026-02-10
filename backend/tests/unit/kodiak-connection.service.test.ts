@@ -13,6 +13,13 @@ jest.mock('../../src/database/pool');
 jest.mock('../../src/core/service-selector');
 jest.mock('../../src/infrastructure/external/kodiak-integration.service');
 jest.mock('../../src/infrastructure/security/encryption.service');
+jest.mock('../../src/infrastructure/cache/redis.service', () => ({
+    redisService: {
+        get: jest.fn(),
+        setex: jest.fn(),
+        del: jest.fn(),
+    }
+}));
 
 // Mock both old and new logging systems
 jest.mock('../../src/core/logging', () => ({
@@ -49,6 +56,24 @@ jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
         debug: jest.fn(),
     })),
     contextLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    securityLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    redisLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    cacheLogger: {
         info: jest.fn(),
         warn: jest.fn(),
         error: jest.fn(),

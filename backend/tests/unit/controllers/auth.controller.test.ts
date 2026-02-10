@@ -104,7 +104,7 @@ jest.mock('../../../src/shared/utils/context', () => ({
 }));
 
 // Mock validation middleware to pass through
-jest.mock('../../../src/interfaces/middleware/validation', () => ({
+jest.mock('../../../src/interfaces/middleware/validation.middleware', () => ({
     validateRequest: jest.fn().mockImplementation(() => (req: any, res: any, next: any) => next()),
     validators: {
         register: jest.fn().mockImplementation((req: any, res: any, next: any) => next()),
@@ -114,7 +114,7 @@ jest.mock('../../../src/interfaces/middleware/validation', () => ({
 }));
 
 // Mock auth middleware to set user context for protected routes
-jest.mock('../../../src/interfaces/middleware/auth', () => ({
+jest.mock('../../../src/interfaces/middleware/auth.middleware', () => ({
     authMiddleware: jest.fn().mockImplementation((req: any, res: any, next: any) => {
         req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
         next();
@@ -186,7 +186,7 @@ describe('Auth Controller - Final Working Tests', () => {
 
             expect(response.body).toEqual({
                 success: true,
-                user: testUser,
+                data: { user: testUser },
             });
 
             expect(mockAuthService.register).toHaveBeenCalledWith('test@example.com', 'Password123!');
@@ -243,7 +243,7 @@ describe('Auth Controller - Final Working Tests', () => {
 
             expect(response.body).toEqual({
                 success: true,
-                user: testUser,
+                data: { user: testUser },
             });
 
             expect(mockAuthService.login).toHaveBeenCalledWith({
@@ -302,7 +302,7 @@ describe('Auth Controller - Final Working Tests', () => {
 
             expect(response.body).toEqual({
                 success: true,
-                user: testUser,
+                data: { user: testUser },
             });
 
             expect(mockAuthService.refreshToken).toHaveBeenCalledWith('valid-refresh-token-jwt-format');
@@ -373,8 +373,8 @@ describe('Auth Controller - Final Working Tests', () => {
 
         it('should reject qualification check for non-VERIFIED user', async () => {
             // Temporarily override the auth middleware to set user as non-VERIFIED
-            const originalAuthMiddleware = require('../../../src/interfaces/middleware/auth').authMiddleware;
-            jest.spyOn(require('../../../src/interfaces/middleware/auth'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
+            const originalAuthMiddleware = require('../../../src/interfaces/middleware/auth.middleware').authMiddleware;
+            jest.spyOn(require('../../../src/interfaces/middleware/auth.middleware'), 'authMiddleware').mockImplementation((req: any, res: any, next: any) => {
                 req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'REGISTERED', roles: [] };
                 next();
             });

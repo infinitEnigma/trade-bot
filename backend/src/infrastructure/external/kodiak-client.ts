@@ -5,7 +5,7 @@
  * request/response processing, and authentication. No business logic here.
  */
 
-import logger from "../../core/logging/logger.service";
+import { integrationLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 export interface KodiakCredentials {
     accountId: string;
@@ -164,11 +164,10 @@ export class KodiakClient {
             }
 
             // All retries failed
-            logger.error("Kodiak API request failed after retries", {
+            logger.error("Kodiak API request failed after retries", lastError as Error, {
                 method,
                 url,
                 attempts: this.config.retryAttempts,
-                lastError: lastError?.message,
             });
 
             return {
@@ -179,10 +178,9 @@ export class KodiakClient {
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
 
-            logger.error("Kodiak API request error", {
+            logger.error("Kodiak API request error", err, {
                 method,
                 url,
-                error: err.message,
             });
 
             return {
@@ -229,9 +227,7 @@ export class KodiakClient {
 
             return Buffer.from(signature).toString("base64url");
         } catch (error) {
-            logger.error("Failed to generate Kodiak signature", {
-                error: error instanceof Error ? error.message : String(error),
-            });
+            logger.error("Failed to generate Kodiak signature", error as Error);
             throw error;
         }
     }
@@ -326,7 +322,7 @@ export class KodiakClient {
             }
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
-            logger.warn("Kodiak API connectivity test error", {
+            logger.error("Kodiak API connectivity test error", error as Error, {
                 accountId: credentials.accountId,
                 error: err.message,
             });

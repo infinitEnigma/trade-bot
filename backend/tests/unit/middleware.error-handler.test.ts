@@ -1,12 +1,12 @@
 /** @format */
 
-import { ErrorHandlerMiddleware, createErrorHandler, ErrorHandlerUtils } from "../../src/interfaces/middleware/error-handler";
+import { ErrorHandlerMiddleware, createErrorHandler, ErrorHandlerUtils } from "../../src/interfaces/middleware/error-handler.middleware";
 import { AppError, SharedErrorCodes } from "@trade-bot/shared";
-import { logger } from "../../src/core/logging";
+import { securityLogger as logger } from "../../src/core/logging/context-aware-logger.service";
 
 // Mock the dependencies
-jest.mock("../../src/core/logging", () => ({
-    logger: {
+jest.mock("../../src/core/logging/context-aware-logger.service", () => ({
+    securityLogger: {
         error: jest.fn(),
         warn: jest.fn(),
     },
@@ -179,7 +179,7 @@ describe("ErrorHandlerMiddleware", () => {
                 expect.anything(),
                 error,
                 expect.objectContaining({
-                    stack: expect.anything(),
+                    stack: expect.anything()
                 })
             );
         });
@@ -236,6 +236,7 @@ describe("ErrorHandlerMiddleware", () => {
 
             expect(logger.error).toHaveBeenCalledWith(
                 "Error transformer failed",
+                expect.anything(),
                 expect.anything()
             );
         });
@@ -254,6 +255,7 @@ describe("ErrorHandlerMiddleware", () => {
 
             expect(logger.error).toHaveBeenCalledWith(
                 "Error transformer failed",
+                expect.anything(),
                 expect.anything()
             );
         });

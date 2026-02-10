@@ -1,6 +1,6 @@
 /** @format */
 
-import { contextMiddleware } from "../../src/interfaces/middleware/context";
+import { contextMiddleware } from "../../src/interfaces/middleware/context.middleware";
 import {
     setRequestContext,
     generateCorrelationId,

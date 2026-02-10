@@ -1,6 +1,6 @@
 /** @format */
 
-import { logger } from "../../core/logging";
+import { cacheLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 /**
  * ===========================================

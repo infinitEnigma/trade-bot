@@ -1,7 +1,7 @@
 /** @format */
 
 import WebSocket from "ws";
-import logger from "../../../core/logging/logger.service";
+import { marketStreamLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import { query } from "../../../database/pool";
 import { BaseWebSocketMessage } from "./types";
 import { encryptionService } from "../../security/encryption.service";
@@ -64,10 +64,7 @@ export class AuthManager {
       ws.send(authMessage);
       logger.info("WebSocket authentication message sent", { accountId });
     } catch (error) {
-      logger.error("Failed to send WebSocket authentication", {
-        error: (error as Error).message,
-        accountId,
-      });
+      logger.error("Failed to send WebSocket authentication", error as Error, { accountId });
       throw error;
     }
   }
@@ -85,7 +82,7 @@ export class AuthManager {
           logger.info("WebSocket authentication successful");
           return true;
         } else {
-          logger.error("WebSocket authentication failed", { message });
+          logger.error("WebSocket authentication failed", undefined, { message });
           return false;
         }
       }
@@ -93,9 +90,7 @@ export class AuthManager {
       // Not an auth response
       return true;
     } catch (error) {
-      logger.error("Error validating auth response", {
-        error: (error as Error).message,
-      });
+      logger.error("Error validating auth response", error as Error);
       return false;
     }
   }
@@ -115,10 +110,7 @@ export class AuthManager {
       const count = parseInt(result.rows[0].count);
       return count > 0;
     } catch (error) {
-      logger.error("Error checking credentials", {
-        error: (error as Error).message,
-        accountId,
-      });
+      logger.error("Error checking credentials", error as Error, { accountId });
       return false;
     }
   }
@@ -142,9 +134,7 @@ export class AuthManager {
 
       return result.rows[0].account_id;
     } catch (error) {
-      logger.error("Error getting account ID", {
-        error: (error as Error).message,
-      });
+      logger.error("Error getting account ID", error as Error);
       return null;
     }
   }

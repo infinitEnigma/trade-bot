@@ -3,8 +3,8 @@
 import { KeyManagementService, KeyPurpose, keyManagementService } from '../../src/infrastructure/security/key-management.service';
 
 // Mock dependencies
-jest.mock('../../src/core/logging', () => ({
-    logger: {
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    securityLogger: {
         debug: jest.fn(),
         error: jest.fn(),
         warn: jest.fn(),

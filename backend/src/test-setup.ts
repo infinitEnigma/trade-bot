@@ -9,7 +9,7 @@ import { credentialCacheService } from './infrastructure/cache/credential-cache.
 import { errorNotificationService } from './core/notifications/error-notification.service';
 import { memoryRateLimiter } from './infrastructure/security/rate-limiter/memory-rate-limiter';
 import { cleanupForTests as cleanupDatabasePool, initializePool } from './database/pool';
-import { logger } from './core/logging';
+import { testsLogger as logger } from './core/logging/context-aware-logger.service';
 
 // Extend global interface for test cleanup
 declare global {
@@ -134,7 +134,7 @@ async function cleanupAdditionalServices(): Promise<void> {
             memoryRateLimiter.cleanupForTests();
         }
     } catch (error) {
-        logger.warn('❌ Error during additional service cleanup:', error as Error);
+        logger.error('❌ Error during additional service cleanup:', error as Error);
     }
 }
 
@@ -202,7 +202,7 @@ async function cleanupWebSocketConnections(): Promise<void> {
         }
 
     } catch (error) {
-        logger.error('❌ Error cleaning up WebSocket connections:', error);
+        logger.error('❌ Error cleaning up WebSocket connections:', error as Error);
     }
 }
 
@@ -219,7 +219,7 @@ async function cleanupDatabaseConnections(): Promise<void> {
         // Note: We can't directly access the pool instance here, but the cleanupForTests should handle it
 
     } catch (error) {
-        console.error('❌ Error cleaning up database connections:', error);
+        logger.error('❌ Error cleaning up database connections:', error as Error);
     }
 }
 
@@ -265,7 +265,7 @@ async function cleanupRedisConnections(): Promise<void> {
         }
 
     } catch (error) {
-        console.error('❌ Error cleaning up Redis connections:', error);
+        logger.error('❌ Error cleaning up Redis connections:', error as Error);
     }
 }
 

@@ -1,6 +1,6 @@
 /** @format */
 
-import { requireRole, requireAnyRole, hasRole, hasAnyRole } from "../../src/interfaces/middleware/role-protection";
+import { requireRole, requireAnyRole, hasRole, hasAnyRole } from "../../src/interfaces/middleware/role-protection.middleware";
 import { UserRole } from "@trade-bot/shared";
 
 describe("Role Protection Middleware", () => {

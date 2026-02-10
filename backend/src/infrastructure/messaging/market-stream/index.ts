@@ -2,7 +2,7 @@
 
 import WebSocket from "ws";
 import { Server } from "socket.io";
-import logger from "../../../core/logging/logger.service";
+import { marketStreamLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 import { TickData, KlineData, MarketStreamStatus, MarkPriceData } from "./types";
 import { WebSocketManager } from "./websocket-manager";
@@ -67,9 +67,7 @@ export class MarketStreamService {
           const message = JSON.parse(data.toString());
           this.messageHandler.handleMessage(message);
         } catch (error) {
-          logger.error("Failed to parse WebSocket message", {
-            error: (error as Error).message,
-          });
+          logger.error("Failed to parse WebSocket message", error as Error);
         }
       });
 
@@ -83,9 +81,7 @@ export class MarketStreamService {
       // Send pending subscriptions
       this.sendPendingSubscriptions();
     } catch (error) {
-      logger.error("Failed to connect to Orderly", {
-        error: (error as Error).message,
-      });
+      logger.error("Failed to connect to Orderly", error as Error);
     }
   }
 
@@ -133,10 +129,7 @@ export class MarketStreamService {
       ws.send(message);
       logger.info("Subscription message sent to Orderly", { topic });
     } catch (error) {
-      logger.error("Failed to send subscription", {
-        topic,
-        error: (error as Error).message,
-      });
+      logger.error("Failed to send subscription", error as Error, { topic });
     }
   }
 

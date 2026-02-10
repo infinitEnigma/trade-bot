@@ -2,11 +2,30 @@
 
 import { ConnectionCacheService, connectionCache, ConnectionCacheEntry } from '../../src/infrastructure/cache/connection-cache.service';
 import { redisService } from '../../src/infrastructure/cache/redis.service';
-import logger from '../../src/core/logging/logger.service';
+import { cacheLogger as logger } from '../../src/core/logging/context-aware-logger.service';
 
 // Mock dependencies
 jest.mock('../../src/infrastructure/cache/redis.service');
-jest.mock('../../src/core/logging/logger.service');
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    cacheLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    redisLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    integrationLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    }
+}));
 
 describe('ConnectionCacheService', () => {
     let service: ConnectionCacheService;

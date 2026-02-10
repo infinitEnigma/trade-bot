@@ -22,7 +22,7 @@ import { createErrorResponse, ValidationError } from "@trade-bot/shared";
 import { getCorrelationId } from "../../shared/utils/context";
 import { DatabaseSchemaParser, DatabaseSchema } from "../../shared/validation/database-schema-parser";
 import { SchemaGenerator } from "../../shared/validation/schema-generator";
-import logger from "../../core/logging/logger.service";
+import { validationLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 /**
  * Error response with validation details
@@ -99,9 +99,7 @@ export class SchemaValidationMiddleware {
 
         // Initialize schema on construction
         this.initializeSchema().catch(error => {
-            logger.error("Failed to initialize schema validation middleware", {
-                error: (error as Error).message,
-            });
+            logger.error("Failed to initialize schema validation middleware", error as Error);
         });
     }
 
@@ -126,9 +124,7 @@ export class SchemaValidationMiddleware {
                 totalTables: Object.keys(this.dbSchema.tables).length,
             });
         } catch (error) {
-            logger.error("Schema validation middleware initialization failed", {
-                error: (error as Error).message,
-            });
+            logger.error("Schema validation middleware initialization failed", error as Error);
             throw error;
         }
     }
@@ -155,7 +151,7 @@ export class SchemaValidationMiddleware {
                 // Get the validation schema
                 const joiSchema = this.schemaCache.get(table);
                 if (!joiSchema) {
-                    logger.error("No validation schema found for table", { table });
+                    logger.warn("No validation schema found for table", { table });
                     return next(); // Skip validation if schema not available
                 }
 
@@ -252,9 +248,8 @@ export class SchemaValidationMiddleware {
 
                 next();
             } catch (error) {
-                logger.error('Schema validation middleware error', {
+                logger.error('Schema validation middleware error', error as Error, {
                     table,
-                    error: (error as Error).message,
                     source,
                     correlationId: getCorrelationId(),
                 });
@@ -301,7 +296,7 @@ export class SchemaValidationMiddleware {
                         });
                     }
                 } catch (error) {
-                    logger.warn("Foreign key validation query failed", {
+                    logger.error("Foreign key validation query failed", error as Error, {
                         table: fkDef.referencedTable,
                         column: fkDef.referencedColumn,
                         value: foreignValue,
@@ -331,11 +326,10 @@ export class SchemaValidationMiddleware {
             const result = await query(`SELECT 1 FROM ${table} WHERE ${column} = $1 LIMIT 1`, [value]);
             return result.rows.length > 0;
         } catch (error) {
-            logger.error("Foreign key existence check failed", {
+            logger.error("Foreign key existence check failed", error as Error, {
                 table,
                 column,
                 value,
-                error: (error as Error).message,
             });
             throw error;
         }

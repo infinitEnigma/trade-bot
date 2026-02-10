@@ -10,7 +10,7 @@ import { query } from "../../../database/pool";
 // Bot services have been removed - using direct database operations instead
 import { serviceProvider } from "../../../core/service-provider";
 import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../../../core/notifications/error-notification.service";
-import logger from "../../../core/logging/logger.service";
+import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 /**
  * Engine health status interface
@@ -118,8 +118,7 @@ router.post("/heartbeat", botEngineAuth, async (req: Request, res: Response) => 
         res.json({ success: true });
     } catch (error) {
         const err = error as Error;
-        logger.error("Heartbeat error", {
-            error: err.message,
+        logger.error("Heartbeat error", err, {
             botId: req.body?.bot_id,
         });
 
@@ -228,8 +227,7 @@ router.post("/report-trade", botEngineAuth, async (req: Request, res: Response) 
         res.json({ success: true });
     } catch (error) {
         const err = error as Error;
-        logger.error("Report trade error", {
-            error: err.message,
+        logger.error("Report trade error", err, {
             tradeData: {
                 userId: req.body?.userId,
                 strategyId: req.body?.strategyId,
@@ -310,9 +308,7 @@ router.post("/engine-status", botEngineAuth, async (req: Request, res: Response)
                 try {
                     await serviceProvider.getEngineManager().stopEngineIfNoActiveBots();
                 } catch (error) {
-                    logger.error("Failed to check engine stop condition", {
-                        error: (error as Error).message,
-                    });
+                    logger.error("Failed to check engine stop condition", error as Error);
                 }
             }, 5000); // 5 second delay to allow for race conditions
         }
@@ -324,8 +320,7 @@ router.post("/engine-status", botEngineAuth, async (req: Request, res: Response)
         });
     } catch (error) {
         const err = error as Error;
-        logger.error("Engine status update error", {
-            error: err.message,
+        logger.error("Engine status update error", err, {
             statusData: req.body,
         });
 
@@ -355,9 +350,8 @@ router.post("/bot-error", botEngineAuth, async (req: Request, res: Response) => 
             [error, botId]
         );
 
-        logger.error("Bot error reported by engine", {
+        logger.error("Bot error reported by engine", new Error(error), {
             botId,
-            error,
         });
 
         res.json({
@@ -367,8 +361,7 @@ router.post("/bot-error", botEngineAuth, async (req: Request, res: Response) => 
         });
     } catch (err) {
         const error = err as Error;
-        logger.error("Bot error reporting failed", {
-            error: error.message,
+        logger.error("Bot error reporting failed", error, {
             botId: req.body?.botId,
         });
 
@@ -409,8 +402,7 @@ router.post("/bot-recovery", botEngineAuth, async (req: Request, res: Response) 
         });
     } catch (error) {
         const err = error as Error;
-        logger.error("Bot recovery reporting failed", {
-            error: err.message,
+        logger.error("Bot recovery reporting failed", err, {
             botId: req.body?.botId,
         });
 
@@ -461,9 +453,7 @@ router.get("/engine/health", async (req: Request, res: Response) => {
         });
     } catch (error) {
         const err = error as Error;
-        logger.error("Engine health check error", {
-            error: err.message,
-        });
+        logger.error("Engine health check error", err);
 
         res.status(500).json({
             success: false,

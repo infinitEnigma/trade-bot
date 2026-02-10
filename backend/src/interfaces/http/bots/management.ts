@@ -84,7 +84,7 @@ import { validators } from "../../middleware/validation.middleware";
 import { withCredentials, SecureCredentials } from "../../../infrastructure/security/encryption.service"; // ✅ Secure credential handling
 import { serviceProvider } from "../../../core/service-provider";
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service"; // ✅ Rate limiting
-import logger from "../../../core/logging/logger.service";
+import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 const router = Router();
 
@@ -94,7 +94,7 @@ const router = Router();
 function getUserId(req: AuthenticatedRequest): string {
     const userId = req.user?.userId;
     if (!userId) {
-        logger.error("Unauthorized access attempt - user not authenticated", {
+        logger.warn("Unauthorized access attempt - user not authenticated", {
             ...getContextForLogging(),
             userId: "unauthenticated",
         });
@@ -112,8 +112,7 @@ async function hasUserKodiakCredentials(userId: string): Promise<boolean> {
         const hasCredentials = await marketService.hasUserKodiakCredentials(userId);
         return hasCredentials;
     } catch (error) {
-        logger.error("Failed to check user Kodiak credentials", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Failed to check user Kodiak credentials", error as Error, {
             userId,
         });
         return false;
@@ -183,7 +182,7 @@ router.get(
     async (req: AuthenticatedRequest, res: Response) => {
         const userId = req.user?.userId;
         if (!userId) {
-            logger.error("Unauthorized access attempt - user not authenticated", {
+            logger.warn("Unauthorized access attempt - user not authenticated", {
                 ...getContextForLogging(),
                 userId: "unauthenticated",
             });
@@ -203,8 +202,7 @@ router.get(
                 timestamp: Date.now(),
             });
         } catch (err) {
-            logger.error("Get bot instances error", {
-                error: err instanceof Error ? err.message : String(err),
+            logger.error("Get bot instances error", err as Error, {
                 userId,
             });
             const dbError = new DatabaseError("Failed to get bot instances");
@@ -459,10 +457,8 @@ router.post(
                 timestamp: Date.now(),
             });
         } catch (err) {
-            logger.error("Start bot error", {
+            logger.error("Start bot error", err as Error, {
                 ...getContextForLogging(),
-                error: err instanceof Error ? err.message : String(err),
-                stack: err instanceof Error ? err.stack : undefined,
                 userId: req.user?.userId,
             });
             console.error("Detailed error in start bot endpoint:", err);
@@ -508,8 +504,7 @@ router.post(
                 timestamp: Date.now(),
             });
         } catch (err) {
-            logger.error("Stop bot error", {
-                error: err instanceof Error ? err.message : String(err),
+            logger.error("Stop bot error", err as Error, {
                 userId: req.user?.userId,
             });
             const dbError = new DatabaseError("Failed to stop bot");
@@ -559,8 +554,7 @@ router.get(
                 timestamp: Date.now(),
             });
         } catch (err) {
-            logger.error("Get bot status error", {
-                error: err instanceof Error ? err.message : String(err),
+            logger.error("Get bot status error", err as Error, {
                 userId: req.user?.userId,
                 botId: req.params.botId,
             });
@@ -610,8 +604,7 @@ router.post(
                 timestamp: Date.now(),
             });
         } catch (err) {
-            logger.error("Bot status sync error", {
-                error: err instanceof Error ? err.message : String(err),
+            logger.error("Bot status sync error", err as Error, {
                 userId: req.user?.userId,
                 botId: req.body?.botId,
             });
@@ -642,8 +635,7 @@ router.get(
                 timestamp: Date.now(),
             });
         } catch (err) {
-            logger.error("Get bot performance error", {
-                error: err instanceof Error ? err.message : String(err),
+            logger.error("Get bot performance error", err as Error, {
                 userId: req.user?.userId,
                 botId: req.params.botId,
             });
@@ -670,8 +662,7 @@ router.get(
                 timestamp: Date.now(),
             });
         } catch (err) {
-            logger.error("Get engine status error", {
-                error: err instanceof Error ? err.message : String(err),
+            logger.error("Get engine status error", err as Error, {
                 userId: req.user?.userId,
             });
             const dbError = new DatabaseError("Failed to get engine status");
@@ -711,8 +702,7 @@ router.post(
                 timestamp: Date.now(),
             });
         } catch (err) {
-            logger.error("Emergency stop error", {
-                error: err instanceof Error ? err.message : String(err),
+            logger.error("Emergency stop error", err as Error, {
                 userId: req.user?.userId,
             });
             res

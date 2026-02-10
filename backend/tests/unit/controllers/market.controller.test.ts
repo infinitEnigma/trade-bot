@@ -34,7 +34,7 @@ jest.mock('../../../src/database/pool', () => ({
     query: jest.fn(),
 }));
 
-jest.mock('../../../src/interfaces/middleware/auth', () => ({
+jest.mock('../../../src/interfaces/middleware/auth.middleware', () => ({
     authMiddleware: jest.fn().mockImplementation((req: any, res: any, next: any) => {
         req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
         next();

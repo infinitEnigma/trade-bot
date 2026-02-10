@@ -1,7 +1,7 @@
 /** @format */
 
 import { Server } from "socket.io";
-import logger from "../../../core/logging/logger.service";
+import { marketStreamLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import {
   TickData,
   KlineData,
@@ -77,8 +77,7 @@ export class MessageHandler {
       logger.debug("Unhandled WebSocket message", { message });
     } catch (error) {
       const err = error as Error;
-      logger.error("Message handler error", {
-        error: err.message,
+      logger.error("Message handler error", err, {
         messageType: message?.event || message?.method,
         topic: message?.topic,
       });
@@ -105,7 +104,7 @@ export class MessageHandler {
     if (isSuccess) {
       logger.info("WebSocket authentication successful");
     } else {
-      logger.error("WebSocket authentication failed", { message });
+      logger.error("WebSocket authentication failed", undefined, { message });
     }
   }
 
@@ -119,7 +118,7 @@ export class MessageHandler {
     if (isSuccess) {
       logger.info("WebSocket subscription successful", { topic });
     } else {
-      logger.error("WebSocket subscription failed", { topic, message });
+      logger.error("WebSocket subscription failed", undefined, { topic, message });
     }
   }
 
@@ -142,10 +141,7 @@ export class MessageHandler {
         logger.debug("Unknown market data topic", { topic });
       }
     } catch (error) {
-      logger.error("Error processing market data", {
-        topic,
-        error: (error as Error).message,
-      });
+      logger.error("Error processing market data", error as Error, { topic });
       throw error; // Re-throw to propagate to outer catch
     }
   }
@@ -176,10 +172,7 @@ export class MessageHandler {
         price: tickData.price,
       });
     } catch (error) {
-      logger.error("Error handling ticker data", {
-        symbol,
-        error: (error as Error).message,
-      });
+      logger.error("Error handling ticker data", error as Error, { symbol });
       throw error; // Re-throw to propagate to outer catch
     }
   }
@@ -237,9 +230,8 @@ export class MessageHandler {
         candleCount: updatedKlines.length,
       });
     } catch (error) {
-      logger.error("Error handling kline data", {
+      logger.error("Error handling kline data", error as Error, {
         topic: message.topic ?? "unknown",
-        error: (error as Error).message,
       });
       throw error; // Re-throw to propagate to outer catch
     }
@@ -274,9 +266,8 @@ export class MessageHandler {
         price: priceData.price,
       });
     } catch (error) {
-      logger.error("Error handling mark price data", {
+      logger.error("Error handling mark price data", error as Error, {
         topic: message.topic ?? "unknown",
-        error: (error as Error).message,
       });
       throw error; // Re-throw to propagate to outer catch
     }

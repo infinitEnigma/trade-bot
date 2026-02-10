@@ -23,7 +23,7 @@
  */
 
 import { createClient, RedisClientType } from "redis";
-import logger from "../../core/logging/logger.service";
+import { redisLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 // Export cache types
 export interface CacheConfig {
@@ -119,7 +119,7 @@ class RedisService {
     });
 
     this.client.on("error", err => {
-      logger.error("Redis Client Error", { error: err.message });
+      logger.error("Redis Client Error", err);
     });
 
     this.client.on("connect", () => {
@@ -171,7 +171,7 @@ class RedisService {
       }
       logger.info("Redis service cleaned up for tests");
     } catch (error) {
-      logger.error("Error during Redis cleanup", error as Error, {});
+      logger.error("Error during Redis cleanup", error as Error);
     }
   }
 
@@ -184,7 +184,7 @@ class RedisService {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      logger.error("Redis GET error", { key, error: errorMessage });
+      logger.error("Redis GET error", error as Error, { key });
       return { success: false, data: null, error: errorMessage };
     }
   }
@@ -199,7 +199,7 @@ class RedisService {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      logger.error("Redis SET error", { key, error: errorMessage });
+      logger.error("Redis SET error", error as Error, { key });
       return { success: false, error: errorMessage };
     }
   }
@@ -219,7 +219,7 @@ class RedisService {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      logger.error("Redis SETEX error", { key, ttl, error: errorMessage });
+      logger.error("Redis SETEX error", error as Error, { key, ttl });
       // Fallback to individual commands
       try {
         await this.client.set(key, value);
@@ -231,10 +231,9 @@ class RedisService {
           fallbackError instanceof Error
             ? fallbackError.message
             : String(fallbackError);
-        logger.error("Redis SETEX fallback error", {
+        logger.error("Redis SETEX fallback error", fallbackError as Error, {
           key,
           ttl,
-          error: fallbackErrorMessage,
         });
         return { success: false, error: fallbackErrorMessage };
       }
@@ -248,7 +247,7 @@ class RedisService {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      logger.error("Redis DEL error", { key, error: errorMessage });
+      logger.error("Redis DEL error", error as Error, { key });
       return { success: false, error: errorMessage };
     }
   }
@@ -262,7 +261,7 @@ class RedisService {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      logger.error("Redis EXISTS error", { key, error: errorMessage });
+      logger.error("Redis EXISTS error", error as Error, { key });
       return { success: false, data: false, error: errorMessage };
     }
   }
@@ -276,7 +275,7 @@ class RedisService {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      logger.error("Redis TTL error", { key, error: errorMessage });
+      logger.error("Redis TTL error", error as Error, { key });
       return { success: false, ttl: -1, error: errorMessage };
     }
   }
@@ -1309,7 +1308,7 @@ class TransactionRecoveryManager {
 
     // For high priority transactions, could trigger alerts or alternative handling
     if (context.priority === 'critical') {
-      logger.error("Critical transaction failed after max retries", {
+      logger.warn("Critical transaction failed after max retries", {
         keySignature,
         context: context.context
       });

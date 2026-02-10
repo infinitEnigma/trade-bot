@@ -2,7 +2,7 @@
 
 import { Request, Response, NextFunction } from "express";
 import Tokens from "csrf";
-import { logger } from "../../core/logging";
+import { securityLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 // Initialize CSRF tokens
 const tokens = new Tokens();
@@ -88,8 +88,7 @@ export function csrfMiddleware(req: CSRFRequest, res: Response, next: NextFuncti
 
         next();
     } catch (error) {
-        logger.error("CSRF middleware error", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("CSRF middleware error", error as Error, {
             method: req.method,
             path: req.path,
         });
@@ -134,9 +133,7 @@ export function csrfTokenMiddleware(req: CSRFRequest, res: Response, next: NextF
 
         next();
     } catch (error) {
-        logger.error("CSRF token generation error", {
-            error: error instanceof Error ? error.message : String(error),
-        });
+        logger.error("CSRF token generation error", error as Error);
         res.status(500).json({
             success: false,
             code: -2004,

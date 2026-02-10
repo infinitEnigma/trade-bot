@@ -8,7 +8,7 @@
 import { Server } from "socket.io";
 import { redisService } from "./redis.service";
 import { CACHE_EVENTS, CacheEvent, CacheInvalidationEvent, CacheRefreshEvent, CacheClearEvent, CACHE_KEYS } from "../../config/cache.config";
-import logger from "../../core/logging/logger.service";
+import { cacheLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 // Export types for infrastructure index
 export interface InvalidationRule {

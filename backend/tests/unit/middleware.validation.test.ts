@@ -1,6 +1,6 @@
 /** @format */
 
-import { validateRequest, commonSchemas, validators } from "../../src/interfaces/middleware/validation";
+import { validateRequest, commonSchemas, validators } from "../../src/interfaces/middleware/validation.middleware";
 import Joi from "joi";
 
 describe("Validation Middleware", () => {

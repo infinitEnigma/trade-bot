@@ -4,7 +4,7 @@ import { Router } from "express";
 import { botManagementRoutes } from "./management";
 import { botEngineRoutes } from "./engine";
 import { botReconciliationWorker } from "../../../workers/bot-reconciliation";
-import logger from "../../../core/logging/logger.service";
+import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 const router = Router();
 

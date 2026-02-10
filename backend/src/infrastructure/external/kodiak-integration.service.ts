@@ -9,7 +9,7 @@ import { query } from "../../database/pool";
 import { redisService } from "../cache/redis.service";
 import { encryptionService } from "../security/encryption.service";
 import { kodiakCache } from "../external/kodiak-cache";
-import logger from "../../core/logging/logger.service";
+import { integrationLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 export interface KodiakCredentials {
     accountId: string;
@@ -270,9 +270,8 @@ export class KodiakIntegrationService {
                 apiKey = encryptionService.decryptApiKey(row.api_key_encrypted);
                 secretKey = encryptionService.decryptSecretKey(row.secret_key_encrypted);
             } catch (error) {
-                logger.warn("Failed to decrypt Kodiak credentials with regular method, trying versioned", {
+                logger.error("Failed to decrypt Kodiak credentials with regular method, trying versioned", error as Error, {
                     userId,
-                    error: error instanceof Error ? error.message : String(error),
                 });
 
                 // Try versioned decryption (for older data)
@@ -280,9 +279,8 @@ export class KodiakIntegrationService {
                     apiKey = await encryptionService.decryptWithVersion(row.api_key_encrypted);
                     secretKey = await encryptionService.decryptWithVersion(row.secret_key_encrypted);
                 } catch (versionError) {
-                    logger.warn("Failed to decrypt with versioned method, assuming plain text", {
+                    logger.error("Failed to decrypt with versioned method, assuming plain text", versionError as Error, {
                         userId,
-                        error: versionError instanceof Error ? versionError.message : String(versionError),
                     });
 
                     // Assume plain text (for backward compatibility)
@@ -297,9 +295,8 @@ export class KodiakIntegrationService {
                 secretKey,
             };
         } catch (error) {
-            logger.error("Failed to get Kodiak credentials", {
+            logger.error("Failed to get Kodiak credentials", error as Error, {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
             return null;
         }
@@ -356,9 +353,8 @@ export class KodiakIntegrationService {
 
             return result;
         } catch (error) {
-            logger.error("Get Kodiak positions error", {
+            logger.error("Get Kodiak positions error", error as Error, {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -420,9 +416,8 @@ export class KodiakIntegrationService {
 
             return result;
         } catch (error) {
-            logger.error("Get Kodiak trades error", {
+            logger.error("Get Kodiak trades error", error as Error, {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -530,9 +525,8 @@ export class KodiakIntegrationService {
 
             return result;
         } catch (error) {
-            logger.error("Get Kodiak balance error", {
+            logger.error("Get Kodiak balance error", error as Error, {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -587,9 +581,8 @@ export class KodiakIntegrationService {
 
             return result;
         } catch (error) {
-            logger.error("Get Kodiak account info error", {
+            logger.error("Get Kodiak account info error", error as Error, {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -642,9 +635,8 @@ export class KodiakIntegrationService {
             logger.debug("Kodiak ticker data retrieved and cached", { symbol });
             return result;
         } catch (error) {
-            logger.error("Get Kodiak ticker error", {
+            logger.error("Get Kodiak ticker error", error as Error, {
                 symbol,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -695,9 +687,8 @@ export class KodiakIntegrationService {
             logger.debug("Kodiak orderbook data retrieved and cached", { symbol });
             return result;
         } catch (error) {
-            logger.error("Get Kodiak orderbook error", {
+            logger.error("Get Kodiak orderbook error", error as Error, {
                 symbol,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -747,9 +738,7 @@ export class KodiakIntegrationService {
             logger.debug("Kodiak TradingView config retrieved and cached");
             return result;
         } catch (error) {
-            logger.error("Get Kodiak TradingView config error", {
-                error: error instanceof Error ? error.message : String(error),
-            });
+            logger.error("Get Kodiak TradingView config error", error as Error);
 
             return {
                 success: false,
@@ -798,9 +787,8 @@ export class KodiakIntegrationService {
             logger.debug("Kodiak TradingView symbols retrieved and cached", { symbol });
             return result;
         } catch (error) {
-            logger.error("Get Kodiak TradingView symbols error", {
+            logger.error("Get Kodiak TradingView symbols error", error as Error, {
                 symbol,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -857,10 +845,9 @@ export class KodiakIntegrationService {
             logger.debug("Kodiak TradingView history retrieved and cached", { symbol, resolution });
             return result;
         } catch (error) {
-            logger.error("Get Kodiak TradingView history error", {
+            logger.error("Get Kodiak TradingView history error", error as Error, {
                 symbol,
                 resolution,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -923,9 +910,8 @@ export class KodiakIntegrationService {
 
                     return result;
                 } catch (authError) {
-                    logger.warn("Authenticated request failed, trying public request", {
+                    logger.error("Authenticated request failed, trying public request", authError as Error, {
                         accountId,
-                        error: authError instanceof Error ? authError.message : String(authError),
                     });
                 }
             }
@@ -955,7 +941,7 @@ export class KodiakIntegrationService {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                logger.error("Kodiak public account API error response", {
+                logger.error("Kodiak public account API error response", undefined, {
                     status: response.status,
                     statusText: response.statusText,
                     error: errorText,
@@ -996,9 +982,8 @@ export class KodiakIntegrationService {
 
             return result;
         } catch (error) {
-            logger.error("Get Kodiak account info error", {
+            logger.error("Get Kodiak account info error", error as Error, {
                 accountId,
-                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -1021,9 +1006,8 @@ export class KodiakIntegrationService {
                 entriesCleared: clearedEntries,
             });
         } catch (error) {
-            logger.warn("Failed to invalidate Kodiak cache", {
+            logger.error("Failed to invalidate Kodiak cache", error as Error, {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
         }
     }
@@ -1080,7 +1064,7 @@ export class KodiakIntegrationService {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                logger.error("Kodiak API error response", {
+                logger.warn("Kodiak API error response", {
                     status: response.status,
                     statusText: response.statusText,
                     error: errorText,
@@ -1091,11 +1075,10 @@ export class KodiakIntegrationService {
             const responseData = await response.json();
             return responseData as T;
         } catch (error) {
-            logger.error("Kodiak API request failed", {
+            logger.error("Kodiak API request failed", error as Error, {
                 method,
                 path,
                 accountId: credentials.accountId,
-                error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
@@ -1138,9 +1121,7 @@ export class KodiakIntegrationService {
 
             return Buffer.from(signatureResult).toString("base64url");
         } catch (error) {
-            logger.error("Failed to generate Kodiak signature", {
-                error: error instanceof Error ? error.message : String(error),
-            });
+            logger.error("Failed to generate Kodiak signature", error as Error);
             throw error;
         }
     }
@@ -1159,9 +1140,8 @@ export class KodiakIntegrationService {
             return { success: true };
 
         } catch (error) {
-            logger.warn("Kodiak API connectivity test error", {
+            logger.error("Kodiak API connectivity test error", error as Error, {
                 accountId: credentials.accountId,
-                error: error instanceof Error ? error.message : String(error),
             });
             return {
                 success: false,

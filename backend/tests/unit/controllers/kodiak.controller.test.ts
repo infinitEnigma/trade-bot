@@ -15,7 +15,7 @@ import request from 'supertest';
 import { Express } from 'express';
 
 // Mock middleware to pass through and set user context
-jest.mock('../../../src/interfaces/middleware/auth', () => ({
+jest.mock('../../../src/interfaces/middleware/auth.middleware', () => ({
     authMiddleware: jest.fn().mockImplementation((req: any, res: any, next: any) => {
         req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
         next();
@@ -80,7 +80,7 @@ describe('Kodiak Controller', () => {
         describe('POST /api/user/kodiak/connect', () => {
             it('should handle unauthenticated user', async () => {
                 // Temporarily override authMiddleware to not set req.user
-                jest.doMock('../../../src/interfaces/middleware/auth', () => ({
+                jest.doMock('../../../src/interfaces/middleware/auth.middleware', () => ({
                     authMiddleware: jest.fn().mockImplementation((req: any, res: any, next: any) => {
                         req.user = null;
                         next();

@@ -1,9 +1,9 @@
 /** @format */
 
 import { Pool } from "pg";
-import { logger } from "../core/logging";
-import { DatabaseSchemaParser } from "../shared/validation/database-schema-parser";
-import { SchemaGenerator } from "../shared/validation/schema-generator";
+import { databaseLogger as logger } from "../core/logging/context-aware-logger.service";
+//import { DatabaseSchemaParser } from "../shared/validation/database-schema-parser";
+//import { SchemaGenerator } from "../shared/validation/schema-generator";
 import { getSchemaValidationMiddleware } from "../shared/validation/schema-validation-middleware";
 
 // PostgreSQL connection pool
@@ -41,9 +41,7 @@ async function initializeSchemaValidation() {
     });
 
   } catch (error) {
-    logger.error("Schema validation middleware initialization failed", {
-      error: error instanceof Error ? error.message : String(error),
-    });
+    logger.error("Schema validation middleware initialization failed", error as Error);
     throw error;
   } finally {
     await pool.end();
@@ -53,8 +51,6 @@ async function initializeSchemaValidation() {
 // Only initialize schema validation, not run migrations
 // Migrations are handled by scripts/run-migrations.js
 initializeSchemaValidation().catch(error => {
-  logger.error("Failed to initialize schema validation", {
-    error: error instanceof Error ? error.message : String(error),
-  });
+  logger.error("Failed to initialize schema validation", error as Error);
   process.exitCode = 1;
 });

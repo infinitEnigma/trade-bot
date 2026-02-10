@@ -1,6 +1,6 @@
 /** @format */
 
-import { csrfMiddleware, csrfTokenMiddleware, getCsrfToken, CSRFRequest } from '../../src/interfaces/middleware/csrf';
+import { csrfMiddleware, csrfTokenMiddleware, getCsrfToken, CSRFRequest } from '../../src/interfaces/middleware/csrf.middleware';
 import { Request, Response, NextFunction } from 'express';
 import Tokens from 'csrf';
 

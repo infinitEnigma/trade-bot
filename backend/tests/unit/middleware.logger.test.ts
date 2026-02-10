@@ -1,6 +1,6 @@
 /** @format */
 
-import { httpLogger, errorLogger } from "../../src/interfaces/middleware/logger";
+import { httpLogger, errorLogger } from "../../src/interfaces/middleware/logger.middleware";
 import { httpLogger as contextHttpLogger } from "../../src/core/logging";
 
 // Mock the dependencies

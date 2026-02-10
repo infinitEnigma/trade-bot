@@ -2,12 +2,31 @@
 
 import { CacheInvalidationService, cacheInvalidationService } from '../../src/infrastructure/cache/cache-invalidation.service';
 import { redisService } from '../../src/infrastructure/cache/redis.service';
-import logger from '../../src/core/logging/logger.service';
+import { cacheLogger as logger } from '../../src/core/logging/context-aware-logger.service';
 import { CACHE_EVENTS, CACHE_KEYS } from '../../src/config/cache.config';
 
 // Mock dependencies
 jest.mock('../../src/infrastructure/cache/redis.service');
-jest.mock('../../src/core/logging/logger.service');
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    cacheLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    redisLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    integrationLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    }
+}));
 
 describe('CacheInvalidationService', () => {
     let service: CacheInvalidationService;

@@ -22,7 +22,7 @@
  */
 
 import axios from "axios";
-import logger from "../../logging/logger.service";
+import { logger } from "../../logging";
 import { ProcessSpawner } from "./process-spawner";
 
 export interface EngineHealth {

@@ -222,7 +222,7 @@ describe('JwtTokenAdapter', () => {
             const mockToken = 'valid-token';
             const mockPayload = { userId: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED };
             const mockAuthService = {
-                getUserById: jest.fn().mockResolvedValue({ id: '123', email: 'test@example.com' })
+                getUserById: jest.fn().mockResolvedValue({ id: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED })
             };
 
             (jwt.verify as jest.Mock).mockReturnValue(mockPayload);

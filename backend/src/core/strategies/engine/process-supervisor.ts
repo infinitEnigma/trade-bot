@@ -30,7 +30,7 @@
  * @format
  */
 
-import logger from "../../logging/logger.service";
+import { logger } from "../../logging";
 import { ProcessSpawner } from "./process-spawner";
 import { HealthMonitor, EngineHealth } from "./health-monitor";
 import { RestartManager } from "./restart-manager";

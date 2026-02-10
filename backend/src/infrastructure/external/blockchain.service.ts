@@ -7,7 +7,7 @@
  */
 
 import { ethers } from "ethers";
-import logger from "../../core/logging/logger.service";
+import { integrationLogger as logger } from "../../core/logging/context-aware-logger.service";
 import { redisService } from "../cache/redis.service";
 
 export interface BlockchainBalance {
@@ -59,8 +59,7 @@ export class BlockchainService {
 
         // Log provider errors for debugging
         this.provider.on("error", (error) => {
-            logger.error("Blockchain provider error", {
-                error: error.message,
+            logger.error("Blockchain provider error", error, {
                 chainId: this.config.chainId,
                 chainName: this.config.chainName,
             });
@@ -131,10 +130,9 @@ export class BlockchainService {
 
             return result;
         } catch (error) {
-            logger.error("Failed to get blockchain balance", {
+            logger.error("Failed to get blockchain balance", error as Error, {
                 walletAddress,
                 chainId: this.config.chainId,
-                error: error instanceof Error ? error.message : String(error),
             });
             throw new Error(`Failed to get balance for ${walletAddress}: ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -211,11 +209,10 @@ export class BlockchainService {
 
             return result;
         } catch (error) {
-            logger.error("Failed to get token balance", {
+            logger.error("Failed to get token balance", error as Error, {
                 walletAddress,
                 tokenAddress,
                 chainId: this.config.chainId,
-                error: error instanceof Error ? error.message : String(error),
             });
             throw new Error(`Failed to get token balance for ${walletAddress}: ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -258,9 +255,8 @@ export class BlockchainService {
 
             return walletAddress;
         } catch (error) {
-            logger.error("Failed to get user wallet address", {
+            logger.error("Failed to get user wallet address", error as Error, {
                 userId,
-                error: error instanceof Error ? error.message : String(error),
             });
             throw new Error(`Failed to get wallet address for user ${userId}: ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -286,10 +282,9 @@ export class BlockchainService {
                 chainId: this.config.chainId,
             });
         } catch (error) {
-            logger.warn("Failed to invalidate blockchain cache", {
+            logger.error("Failed to invalidate blockchain cache", error as Error, {
                 userId,
                 walletAddress,
-                error: error instanceof Error ? error.message : String(error),
             });
         }
     }
@@ -308,8 +303,7 @@ export class BlockchainService {
             return { healthy: true };
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error("Blockchain service health check failed", {
-                error: errorMessage,
+            logger.error("Blockchain service health check failed", new Error(errorMessage), {
                 chainId: this.config.chainId,
             });
             return { healthy: false, error: errorMessage };

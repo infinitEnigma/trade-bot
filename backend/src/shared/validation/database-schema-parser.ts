@@ -18,7 +18,7 @@
 
 import fs from "fs/promises";
 import path from "path";
-import { logger } from "../../core/logging";
+import { validationLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 export interface ColumnDefinition {
     name: string;
@@ -91,9 +91,7 @@ export class DatabaseSchemaParser {
 
             return schema;
         } catch (error) {
-            logger.error("Failed to parse database schema", {
-                error: (error as Error).message,
-            });
+            logger.error("Failed to parse database schema", error as Error);
             throw error;
         }
     }
@@ -110,9 +108,8 @@ export class DatabaseSchemaParser {
 
             return sqlFiles.map(file => path.join(this.migrationDir, file));
         } catch (error) {
-            logger.error("Failed to read migration directory", {
+            logger.error("Failed to read migration directory", error as Error, {
                 directory: this.migrationDir,
-                error: (error as Error).message,
             });
             throw error;
         }
@@ -188,9 +185,8 @@ export class DatabaseSchemaParser {
                 foreignKeys: constraints.foreignKeys,
             };
         } catch (error) {
-            logger.warn("Failed to parse CREATE TABLE statement", {
+            logger.error("Failed to parse CREATE TABLE statement", error as Error, {
                 statement: statement.substring(0, 100),
-                error: (error as Error).message,
             });
             return null;
         }
@@ -538,10 +534,9 @@ export class DatabaseSchemaParser {
                 });
             }
         } catch (error) {
-            logger.warn("Failed to handle ADD COLUMN statement", {
+            logger.error("Failed to handle ADD COLUMN statement", error as Error, {
                 tableName,
                 alterClause,
-                error: (error as Error).message,
             });
         }
     }

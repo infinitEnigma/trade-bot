@@ -8,7 +8,7 @@
 import { Router } from "express";
 import { userProfileRoutes } from "./profile";
 import { userKodiakRoutes } from "./kodiak";
-import logger from "../../../core/logging/logger.service";
+import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 const router = Router();
 

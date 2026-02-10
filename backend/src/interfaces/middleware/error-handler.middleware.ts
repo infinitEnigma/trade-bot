@@ -8,7 +8,7 @@ import {
     getErrorStatusCode,
     isOperationalError
 } from "@trade-bot/shared";
-import { logger } from "../../core/logging";
+import { securityLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 /**
  * ===========================================
@@ -84,9 +84,8 @@ export class ErrorHandlerMiddleware {
             try {
                 processedError = transformer(processedError);
             } catch (transformError) {
-                logger.error("Error transformer failed", {
+                logger.error("Error transformer failed", transformError as Error, {
                     originalError: processedError.message,
-                    transformerError: transformError instanceof Error ? transformError.message : String(transformError),
                 });
             }
         }
@@ -108,9 +107,7 @@ export class ErrorHandlerMiddleware {
             try {
                 finalResponse = transformer(finalResponse, processedError);
             } catch (transformError) {
-                logger.error("Response transformer failed", {
-                    transformerError: transformError instanceof Error ? transformError.message : String(transformError),
-                });
+                logger.error("Response transformer failed", transformError as Error);
             }
         }
 
@@ -163,7 +160,6 @@ export class ErrorHandlerMiddleware {
         const logData = {
             error: error.message,
             name: error.name,
-            correlationId,
             method: req.method,
             url: req.url,
             userAgent: req.get('User-Agent'),

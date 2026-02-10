@@ -3,7 +3,7 @@
 import { Router, Response } from "express";
 import Joi from "joi";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
-import logger from "../../../core/logging/logger.service";
+import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import { diContainer } from "../../../infrastructure/dependency-injection.container";
 
 const router = Router();
@@ -43,8 +43,7 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Get strategies error", {
-        error: err instanceof Error ? err.message : String(err),
+      logger.error("Get strategies error", err as Error, {
         userId: req.user?.userId,
       });
       res
@@ -80,8 +79,7 @@ router.post(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Create strategy error", {
-        error: err instanceof Error ? err.message : String(err),
+      logger.error("Create strategy error", err as Error, {
         userId: req.user?.userId,
       });
       res
@@ -124,8 +122,7 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Get strategy error", {
-        error: err instanceof Error ? err.message : String(err),
+      logger.error("Get strategy error", err as Error, {
         userId: req.user?.userId,
         strategyId: req.params.id,
       });
@@ -175,8 +172,7 @@ router.put(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Update strategy error", {
-        error: err instanceof Error ? err.message : String(err),
+      logger.error("Update strategy error", err as Error, {
         userId: req.user?.userId,
         strategyId: req.params.id,
       });
@@ -221,8 +217,7 @@ router.delete(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Delete strategy error", {
-        error: err instanceof Error ? err.message : String(err),
+      logger.error("Delete strategy error", err as Error, {
         userId: req.user?.userId,
         strategyId: req.params.id,
       });
@@ -268,8 +263,7 @@ router.get(
         timestamp: Date.now(),
       });
     } catch (err) {
-      logger.error("Get performance error", {
-        error: err instanceof Error ? err.message : String(err),
+      logger.error("Get performance error", err as Error, {
         userId: req.user?.userId,
         strategyId: req.params.id,
       });

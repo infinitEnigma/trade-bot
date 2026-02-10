@@ -4,7 +4,20 @@ import { getSchemaValidationMiddleware } from '../../src/shared/validation/schem
 
 // Mock dependencies to avoid actual database connection
 jest.mock('../../src/shared/validation/schema-validation-middleware');
-jest.mock('../../src/core/logging');
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    databaseLogger: {
+        debug: jest.fn(),
+        error: jest.fn(),
+        warn: jest.fn(),
+        info: jest.fn()
+    },
+    validationLogger: {
+        debug: jest.fn(),
+        error: jest.fn(),
+        warn: jest.fn(),
+        info: jest.fn()
+    }
+}));
 
 describe('Database Migrate Tests', () => {
     beforeEach(() => {
@@ -30,7 +43,7 @@ describe('Database Migrate Tests', () => {
 
             // Import modules dynamically and apply mock
             const { getSchemaValidationMiddleware: dynamicSchemaMiddleware } = await import('../../src/shared/validation/schema-validation-middleware');
-            const { logger } = await import('../../src/core/logging');
+            const { databaseLogger: logger } = await import('../../src/core/logging/context-aware-logger.service');
 
             const dynamicSchemaMiddlewareMock = dynamicSchemaMiddleware as unknown as jest.Mock;
             dynamicSchemaMiddlewareMock.mockReturnValue(mockMiddleware);
@@ -58,7 +71,7 @@ describe('Database Migrate Tests', () => {
             };
 
             const { getSchemaValidationMiddleware: dynamicSchemaMiddleware } = await import('../../src/shared/validation/schema-validation-middleware');
-            const { logger } = await import('../../src/core/logging');
+            const { databaseLogger: logger } = await import('../../src/core/logging/context-aware-logger.service');
 
             const dynamicSchemaMiddlewareMock = dynamicSchemaMiddleware as unknown as jest.Mock;
             dynamicSchemaMiddlewareMock.mockReturnValue(mockMiddleware);
@@ -86,7 +99,7 @@ describe('Database Migrate Tests', () => {
             };
 
             const { getSchemaValidationMiddleware: dynamicSchemaMiddleware } = await import('../../src/shared/validation/schema-validation-middleware');
-            const { logger } = await import('../../src/core/logging');
+            const { databaseLogger: logger } = await import('../../src/core/logging/context-aware-logger.service');
 
             const dynamicSchemaMiddlewareMock = dynamicSchemaMiddleware as unknown as jest.Mock;
             dynamicSchemaMiddlewareMock.mockReturnValue(mockMiddleware);
@@ -112,7 +125,7 @@ describe('Database Migrate Tests', () => {
             const testError = new Error('Failed to initialize schema validation');
 
             const { getSchemaValidationMiddleware: dynamicSchemaMiddleware } = await import('../../src/shared/validation/schema-validation-middleware');
-            const { logger } = await import('../../src/core/logging');
+            const { databaseLogger: logger } = await import('../../src/core/logging/context-aware-logger.service');
 
             const dynamicSchemaMiddlewareMock = dynamicSchemaMiddleware as unknown as jest.Mock;
             dynamicSchemaMiddlewareMock.mockImplementation(() => {
@@ -127,9 +140,7 @@ describe('Database Migrate Tests', () => {
             expect(errorSpy).toHaveBeenCalled();
             expect(errorSpy).toHaveBeenCalledWith(
                 'Schema validation middleware initialization failed',
-                expect.objectContaining({
-                    error: testError.message
-                })
+                testError
             );
             exitSpy.mockRestore();
             infoSpy.mockRestore();
@@ -150,7 +161,7 @@ describe('Database Migrate Tests', () => {
             };
 
             const { getSchemaValidationMiddleware: dynamicSchemaMiddleware } = await import('../../src/shared/validation/schema-validation-middleware');
-            const { logger } = await import('../../src/core/logging');
+            const { databaseLogger: logger } = await import('../../src/core/logging/context-aware-logger.service');
 
             const dynamicSchemaMiddlewareMock = dynamicSchemaMiddleware as unknown as jest.Mock;
             dynamicSchemaMiddlewareMock.mockReturnValue(mockMiddleware);

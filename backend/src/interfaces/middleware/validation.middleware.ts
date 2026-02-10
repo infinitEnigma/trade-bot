@@ -4,7 +4,7 @@ import { Request, Response, NextFunction } from "express";
 import Joi from "joi";
 import { createErrorResponse, ValidationError } from "@trade-bot/shared";
 import { getCorrelationId } from "../../shared/utils/context";
-import { logger } from "../../core/logging";
+import { validationLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 export interface ValidationOptions {
     // Where to validate data from
@@ -64,7 +64,6 @@ export function validateRequest(schema: Joi.ObjectSchema, options: ValidationOpt
                         message: detail.message,
                         value: detail.context?.value,
                     })),
-                    correlationId: getCorrelationId(),
                 });
 
                 // Create structured validation error
@@ -99,10 +98,8 @@ export function validateRequest(schema: Joi.ObjectSchema, options: ValidationOpt
 
             next();
         } catch (err) {
-            logger.error('Validation middleware error', {
-                error: (err as Error).message,
+            logger.error('Validation middleware error', err as Error, {
                 source,
-                correlationId: getCorrelationId(),
             });
 
             const internalError = new ValidationError('Request validation failed');

@@ -11,7 +11,7 @@ import {
   DecipherGCM,
 } from "crypto";
 import { promisify } from "util";
-import { logger } from "../../core/logging";
+import { securityLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 const scryptAsync = promisify(scrypt);
 const hkdfAsync = promisify(hkdf);
@@ -58,9 +58,7 @@ export class KeyManagementService {
     this.initializeMasterKey();
     // Initialize keys synchronously by waiting for promise
     this.derivePurposeKeys().catch(error => {
-      logger.error("Key management service initialization failed", {
-        error: error.message
-      });
+      logger.error("Key management service initialization failed", error);
       throw error;
     });
   }
@@ -160,9 +158,7 @@ export class KeyManagementService {
 
         logger.debug(`Derived key for purpose: ${purpose}`);
       } catch (error) {
-        logger.error(`Failed to derive key for purpose ${purpose}`, {
-          error: (error as Error).message,
-        });
+        logger.error(`Failed to derive key for purpose ${purpose}`, error as Error);
         throw error;
       }
     }
@@ -223,9 +219,7 @@ export class KeyManagementService {
 
       return resultBuffer.toString("base64");
     } catch (error) {
-      logger.error(`Encryption failed for purpose ${purpose}`, {
-        error: (error as Error).message,
-      });
+      logger.error(`Encryption failed for purpose ${purpose}`, error as Error);
       throw error;
     }
   }
@@ -280,9 +274,7 @@ export class KeyManagementService {
 
       return decrypted;
     } catch (error) {
-      logger.error(`Decryption failed for purpose ${purpose}`, {
-        error: (error as Error).message,
-      });
+      logger.error(`Decryption failed for purpose ${purpose}`, error as Error);
       throw error;
     }
   }
@@ -377,9 +369,7 @@ export class KeyManagementService {
       const decrypted = await this.decrypt(encrypted);
       return decrypted === testData;
     } catch (error) {
-      logger.error("Encryption validation failed", {
-        error: (error as Error).message,
-      });
+      logger.error("Encryption validation failed", error as Error);
       return false;
     }
   }

@@ -22,7 +22,7 @@ jest.mock('../../../src/infrastructure', () => ({
     },
 }));
 
-jest.mock('../../../src/interfaces/middleware/auth', () => ({
+jest.mock('../../../src/interfaces/middleware/auth.middleware', () => ({
     authMiddleware: jest.fn((req, res, next) => {
         // Mock user for authenticated requests
         req.user = {
@@ -82,7 +82,7 @@ describe('Security Controller', () => {
     describe('Unauthenticated requests', () => {
         // Override the auth middleware to not set user
         beforeEach(() => {
-            const auth = require('../../../src/interfaces/middleware/auth');
+            const auth = require('../../../src/interfaces/middleware/auth.middleware');
             auth.authMiddleware.mockImplementation((req: any, res: any, next: any) => {
                 req.user = undefined;
                 next();
@@ -91,7 +91,7 @@ describe('Security Controller', () => {
 
         afterEach(() => {
             // Restore the original auth middleware
-            const auth = require('../../../src/interfaces/middleware/auth');
+            const auth = require('../../../src/interfaces/middleware/auth.middleware');
             auth.authMiddleware.mockImplementation((req: any, res: any, next: any) => {
                 req.user = {
                     userId: 'test-user-123',

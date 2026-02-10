@@ -15,7 +15,7 @@ import request from 'supertest';
 import { Express } from 'express';
 
 // Mock middleware to pass through and set user context
-jest.mock('../../../src/interfaces/middleware/auth', () => ({
+jest.mock('../../../src/interfaces/middleware/auth.middleware', () => ({
     authMiddleware: jest.fn().mockImplementation((req: any, res: any, next: any) => {
         req.user = { userId: 'user-123', email: 'test@example.com', userLevel: 'VERIFIED', roles: [] };
         next();
@@ -23,7 +23,7 @@ jest.mock('../../../src/interfaces/middleware/auth', () => ({
     AuthenticatedRequest: jest.fn(),
 }));
 
-jest.mock('../../../src/interfaces/middleware/validation', () => ({
+jest.mock('../../../src/interfaces/middleware/validation.middleware', () => ({
     validators: {
         startBot: jest.fn().mockImplementation((req: any, res: any, next: any) => next()),
         stopBot: jest.fn().mockImplementation((req: any, res: any, next: any) => next()),

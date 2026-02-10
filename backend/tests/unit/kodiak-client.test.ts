@@ -1,10 +1,30 @@
 /** @format */
 
 import { KodiakClient } from '../../src/infrastructure/external/kodiak-client';
-import logger from '../../src/core/logging/logger.service';
+import { integrationLogger as logger } from '../../src/core/logging/context-aware-logger.service';
+import { error } from 'node:console';
 
 // Mock dependencies
-jest.mock('../../src/core/logging/logger.service');
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    integrationLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    redisLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    cacheLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    }
+}));
 
 // Mock fetch globally for all tests
 beforeAll(() => {
@@ -420,10 +440,9 @@ describe('KodiakClient', () => {
                 success: false,
                 error: 'Request error: Signature error',
             });
-            expect(logger.error).toHaveBeenCalledWith('Kodiak API request error', {
+            expect(logger.error).toHaveBeenCalledWith('Kodiak API request error', expect.any(Error), {
                 method: 'GET',
                 url: 'https://api.orderly.org/test/endpoint',
-                error: 'Signature error',
             });
         });
     });
@@ -592,7 +611,7 @@ describe('KodiakClient', () => {
             });
             expect(logger.warn).toHaveBeenCalledWith('Kodiak API connectivity test failed', {
                 accountId: 'test-account',
-                error: 'Invalid API key',
+                error: 'Invalid API key'
             });
         });
 
@@ -612,9 +631,10 @@ describe('KodiakClient', () => {
                 success: false,
                 error: 'Request failed after 3 attempts: Network error',
             });
-            expect(logger.warn).toHaveBeenCalledWith('Kodiak API connectivity test failed', {
-                accountId: 'test-account',
-                error: 'Request failed after 3 attempts: Network error',
+            expect(logger.error).toHaveBeenCalledWith('Kodiak API request failed after retries', expect.any(Error), {
+                method: 'GET',
+                url: 'https://api.orderly.org/client/info',
+                attempts: 3,
             });
         });
     });

@@ -1,9 +1,17 @@
 /** @format */
 
 import { AuthManager } from '../../src/infrastructure/messaging/market-stream/auth-manager';
+import { marketStreamLogger } from '../../src/core/logging/context-aware-logger.service';
 
 // Mock dependencies
-jest.mock('../../src/core/logging/logger.service');
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    marketStreamLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    }
+}));
 jest.mock('../../src/database/pool');
 jest.mock('../../src/infrastructure/security/encryption.service');
 
@@ -173,8 +181,6 @@ describe('AuthManager', () => {
         });
 
         it('should handle errors in validateAuthResponse method', () => {
-            const mockLogger = require('../../src/core/logging/logger.service').default;
-
             // Create an object that will throw when properties are accessed
             const errorMessage = new Proxy({}, {
                 get: () => {
@@ -184,7 +190,7 @@ describe('AuthManager', () => {
 
             const result = authManager.validateAuthResponse(errorMessage as any);
             expect(result).toBe(false);
-            expect(mockLogger.error).toHaveBeenCalled();
+            expect(marketStreamLogger.error).toHaveBeenCalled();
         });
     });
 

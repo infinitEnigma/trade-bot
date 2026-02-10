@@ -8,7 +8,7 @@
 import { Worker } from 'worker_threads';
 import { EventEmitter } from 'events';
 import * as os from 'os';
-import logger from '../core/logging/logger.service';
+import { logger } from '../core/logging';
 import * as bcrypt from 'bcryptjs';
 import * as path from 'path';
 

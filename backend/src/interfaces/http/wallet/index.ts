@@ -3,7 +3,7 @@
 import { Router, Response } from "express";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
 import { serviceProvider } from "../../../core/service-provider";
-import logger from "../../../core/logging/logger.service";
+import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 const router = Router();
 
@@ -31,8 +31,7 @@ router.get("/qualification", authMiddleware, async (req: AuthenticatedRequest, r
             data: result
         });
     } catch (error) {
-        logger.error("Wallet qualification check error", {
-            error: error instanceof Error ? error.message : String(error),
+        logger.error("Wallet qualification check error", error as Error, {
             userId: req.user?.userId,
         });
 

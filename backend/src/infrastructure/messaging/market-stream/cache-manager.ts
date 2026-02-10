@@ -3,7 +3,7 @@
 import { redisService } from "../../cache/redis.service";
 import { getCacheConfig, CACHE_KEYS } from "../../../config/cache.config";
 import { cacheInvalidationService } from "../../cache/cache-invalidation.service";
-import logger from "../../../core/logging/logger.service";
+import { marketStreamLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import { TickData, KlineData, MarkPriceData } from "./types";
 
 /**
@@ -34,10 +34,7 @@ export class CacheManager {
         logger.debug("Tick cached", { symbol, price: data.price, version: result.version });
       }
     } catch (error) {
-      logger.error("Error caching tick data", {
-        symbol,
-        error: (error as Error).message,
-      });
+      logger.error("Error caching tick data", error as Error, { symbol });
     }
   }
 
@@ -64,10 +61,7 @@ export class CacheManager {
 
       return null;
     } catch (error) {
-      logger.error("Error reading tick cache", {
-        symbol,
-        error: (error as Error).message,
-      });
+      logger.error("Error reading tick cache", error as Error, { symbol });
       return null;
     }
   }
@@ -117,11 +111,7 @@ export class CacheManager {
         });
       }
     } catch (error) {
-      logger.error("Error caching kline data", {
-        symbol,
-        interval,
-        error: (error as Error).message,
-      });
+      logger.error("Error caching kline data", error as Error, { symbol, interval });
     }
   }
 
@@ -159,11 +149,7 @@ export class CacheManager {
 
       return [];
     } catch (error) {
-      logger.error("Error reading kline cache", {
-        symbol,
-        interval,
-        error: (error as Error).message,
-      });
+      logger.error("Error reading kline cache", error as Error, { symbol, interval });
       return [];
     }
   }
@@ -191,10 +177,7 @@ export class CacheManager {
         logger.debug("Mark price cached", { symbol, price: data.price, version: result.version });
       }
     } catch (error) {
-      logger.error("Error caching mark price data", {
-        symbol,
-        error: (error as Error).message,
-      });
+      logger.error("Error caching mark price data", error as Error, { symbol });
     }
   }
 
@@ -224,10 +207,7 @@ export class CacheManager {
 
       return null;
     } catch (error) {
-      logger.error("Error reading mark price cache", {
-        symbol,
-        error: (error as Error).message,
-      });
+      logger.error("Error reading mark price cache", error as Error, { symbol });
       return null;
     }
   }
@@ -254,10 +234,7 @@ export class CacheManager {
         });
       }
     } catch (error) {
-      logger.error("Error invalidating symbol data", {
-        symbol,
-        error: (error as Error).message,
-      });
+      logger.error("Error invalidating symbol data", error as Error, { symbol });
     }
   }
 
@@ -284,9 +261,7 @@ export class CacheManager {
       // For now, this is a placeholder
       logger.info("Market data cache cleared");
     } catch (error) {
-      logger.error("Error clearing market data cache", {
-        error: (error as Error).message,
-      });
+      logger.error("Error clearing market data cache", error as Error);
     }
   }
 
@@ -307,9 +282,7 @@ export class CacheManager {
         cacheKeys,
       };
     } catch (error) {
-      logger.error("Error getting cache stats", {
-        error: (error as Error).message,
-      });
+      logger.error("Error getting cache stats", error as Error);
       return {
         redisConnected: false,
         cacheKeys: [],

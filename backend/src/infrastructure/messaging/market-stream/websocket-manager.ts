@@ -1,7 +1,7 @@
 /** @format */
 
 import WebSocket from "ws";
-import logger from "../../../core/logging/logger.service";
+import { marketStreamLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import { CircuitState, WebSocketConfig, DEFAULT_WS_CONFIG } from "./types";
 
 /**
@@ -158,10 +158,7 @@ export class WebSocketManager {
       });
 
       ws.on("error", (error: Error) => {
-        logger.error("WebSocket connection error", {
-          connectionKey,
-          error: error.message,
-        });
+        logger.error("WebSocket connection error", error, { connectionKey });
         reject(error);
       });
 
@@ -279,7 +276,7 @@ export class WebSocketManager {
 
     // Check if we've exceeded maximum retry attempts
     if (attempts >= this.config.maxReconnectAttempts) {
-      logger.error(
+      logger.warn(
         "Maximum reconnection attempts exceeded, opening circuit breaker",
         {
           connectionKey,
@@ -372,10 +369,7 @@ export class WebSocketManager {
           ws.close();
         }
       } catch (error) {
-        logger.warn("Error closing WebSocket", {
-          connectionKey,
-          error: (error as Error).message,
-        });
+        logger.error("Error closing WebSocket", error as Error, { connectionKey });
       }
     });
 
@@ -540,7 +534,6 @@ export class WebSocketManager {
       logger.warn("Failed to send message immediately, queuing", {
         connectionKey,
         topic,
-        error: (error as Error).message,
       });
       return this.queueMessage(topic, data, priority, clientId);
     }
@@ -591,8 +584,7 @@ export class WebSocketManager {
       }
 
     } catch (error) {
-      logger.error("Error processing message batch", {
-        error: (error as Error).message,
+      logger.error("Error processing message batch", error as Error, {
         queueDepth: this.messageQueue.length,
       });
     } finally {
@@ -633,7 +625,7 @@ export class WebSocketManager {
 
       const ws = this.getConnection(availableConnection);
       if (!ws) {
-        logger.error("Available connection not found", {
+        logger.error("Available connection not found", undefined, {
           messageId: message.id,
           topic: message.topic,
         });
@@ -658,10 +650,9 @@ export class WebSocketManager {
       });
 
     } catch (error) {
-      logger.error("Failed to process queued message", {
+      logger.error("Failed to process queued message", error as Error, {
         messageId: message.id,
         topic: message.topic,
-        error: (error as Error).message,
         retryCount: message.retryCount,
       });
 
@@ -719,9 +710,8 @@ export class WebSocketManager {
           });
 
         } catch (error) {
-          logger.error("Failed to send backpressure signal", {
+          logger.error("Failed to send backpressure signal", error as Error, {
             connectionKey,
-            error: (error as Error).message,
           });
         }
       });
@@ -764,9 +754,8 @@ export class WebSocketManager {
           });
 
         } catch (error) {
-          logger.error("Failed to send backpressure resume signal", {
+          logger.error("Failed to send backpressure resume signal", error as Error, {
             connectionKey,
-            error: (error as Error).message,
           });
         }
       });
@@ -790,7 +779,7 @@ export class WebSocketManager {
     }
 
     // If no low priority messages found, log warning
-    logger.error("Queue full but no low priority messages to evict", {
+    logger.warn("Queue full but no low priority messages to evict", {
       queueDepth: this.messageQueue.length,
       maxQueueSize: this.maxQueueSize,
     });

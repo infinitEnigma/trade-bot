@@ -385,6 +385,9 @@ export const integrationLogger = new ContextAwareLogger('integration');
 // Default instance
 export const contextLogger = new ContextAwareLogger('application');
 
+// Test instance
+export const testsLogger = new ContextAwareLogger('tests');
+
 // Re-export ErrorCodes from shared for backward compatibility
 //export { SharedErrorCodes };
 export type ErrorCodes = typeof SharedErrorCodes[keyof typeof SharedErrorCodes];

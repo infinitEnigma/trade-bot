@@ -5,14 +5,39 @@ import { query } from '../../src/database/pool';
 import { redisService } from '../../src/infrastructure/cache/redis.service';
 import { encryptionService } from '../../src/infrastructure/security/encryption.service';
 import { kodiakCache } from '../../src/infrastructure/external/kodiak-cache';
-import logger from '../../src/core/logging/logger.service';
+import { integrationLogger as logger } from '../../src/core/logging/context-aware-logger.service';
 
 // Mock dependencies
 jest.mock('../../src/database/pool');
-jest.mock('../../src/infrastructure/cache/redis.service');
+jest.mock('../../src/infrastructure/cache/redis.service', () => ({
+    redisService: {
+        get: jest.fn(),
+        setex: jest.fn(),
+        del: jest.fn(),
+    }
+}));
 jest.mock('../../src/infrastructure/security/encryption.service');
 jest.mock('../../src/infrastructure/external/kodiak-cache');
-jest.mock('../../src/core/logging/logger.service');
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    integrationLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    redisLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
+    cacheLogger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+    }
+}));
 
 // Mock the dependencies used by generateKodiakSignature
 jest.mock('crypto', () => {
@@ -114,9 +139,8 @@ describe('KodiakIntegrationService', () => {
             const result = await service.getUserCredentials('test-user-id');
 
             expect(result).toBeNull();
-            expect(logger.error).toHaveBeenCalledWith('Failed to get Kodiak credentials', {
+            expect(logger.error).toHaveBeenCalledWith('Failed to get Kodiak credentials', expect.any(Error), {
                 userId: 'test-user-id',
-                error: 'Database error',
             });
         });
     });
@@ -183,9 +207,8 @@ describe('KodiakIntegrationService', () => {
                 success: false,
                 error: 'Failed to get Kodiak positions',
             });
-            expect(logger.error).toHaveBeenCalledWith('Get Kodiak positions error', {
+            expect(logger.error).toHaveBeenCalledWith('Get Kodiak positions error', expect.any(Error), {
                 userId: 'test-user-id',
-                error: 'API error',
             });
         });
     });
@@ -376,9 +399,8 @@ describe('KodiakIntegrationService', () => {
                 success: false,
                 error: 'Failed to get Kodiak ticker data',
             });
-            expect(logger.error).toHaveBeenCalledWith('Get Kodiak ticker error', {
+            expect(logger.error).toHaveBeenCalledWith('Get Kodiak ticker error', expect.any(Error), {
                 symbol: 'PERP_BTC_USDC',
-                error: 'Kodiak API error: 500 Internal Server Error - Internal Server Error',
             });
         });
     });
@@ -593,9 +615,8 @@ describe('KodiakIntegrationService', () => {
                 success: false,
                 error: 'Invalid credentials',
             });
-            expect(logger.warn).toHaveBeenCalledWith('Kodiak API connectivity test error', {
+            expect(logger.error).toHaveBeenCalledWith('Kodiak API connectivity test error', expect.any(Error), {
                 accountId: 'test-account',
-                error: 'Invalid credentials',
             });
         });
     });
@@ -655,11 +676,10 @@ describe('KodiakIntegrationService', () => {
                 }
             )).rejects.toThrow('Kodiak API error: 401 Unauthorized - Invalid signature');
 
-            expect(logger.error).toHaveBeenCalledWith('Kodiak API request failed', {
+            expect(logger.error).toHaveBeenCalledWith('Kodiak API request failed', expect.any(Error), {
                 method: 'GET',
                 path: '/test/endpoint',
                 accountId: 'test-account',
-                error: 'Kodiak API error: 401 Unauthorized - Invalid signature',
             });
         });
     });
@@ -689,9 +709,7 @@ describe('KodiakIntegrationService', () => {
 
             await expect((service as any).generateKodiakSignature(message, secretKey)).rejects.toThrow();
 
-            expect(logger.error).toHaveBeenCalledWith('Failed to generate Kodiak signature', {
-                error: expect.any(String),
-            });
+            expect(logger.error).toHaveBeenCalledWith('Failed to generate Kodiak signature', expect.any(Error));
         });
     });
 });

@@ -11,7 +11,7 @@ import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.midd
 import { serviceProvider } from "../../../core/service-provider";
 import { createErrorResponse } from "@trade-bot/shared";
 import { getCorrelationId } from "../../../shared/utils/context";
-import logger from "../../../core/logging/logger.service";
+import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 const router = Router();
 
@@ -56,7 +56,7 @@ router.get("/profile", authMiddleware, async (req: AuthenticatedRequest, res: Re
             correlationId: getCorrelationId(),
         });
     } catch (error) {
-        logger.error("Get profile error", {
+        logger.error("Get profile error", error as Error, {
             ...createErrorResponse(error instanceof Error ? error : new Error(String(error)), getCorrelationId()),
             userId: req.user?.userId,
         });
@@ -104,7 +104,7 @@ router.post("/profile/update", authMiddleware, async (req: AuthenticatedRequest,
         });
 
     } catch (error) {
-        logger.error("Profile update error", {
+        logger.error("Profile update error", error as Error, {
             ...createErrorResponse(error instanceof Error ? error : new Error(String(error)), getCorrelationId()),
             userId: req.user?.userId,
         });
@@ -155,7 +155,7 @@ router.post("/verify-wallet", authMiddleware, async (req: AuthenticatedRequest, 
         });
 
     } catch (error) {
-        logger.error("Wallet verification error", {
+        logger.error("Wallet verification error", error as Error, {
             ...createErrorResponse(error instanceof Error ? error : new Error(String(error)), getCorrelationId()),
             userId: req.user?.userId,
         });
