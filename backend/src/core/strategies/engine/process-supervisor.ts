@@ -30,7 +30,7 @@
  * @format
  */
 
-import { logger } from "../../logging";
+import { performanceLogger as logger } from "../../logging/context-aware-logger.service";
 import { ProcessSpawner } from "./process-spawner";
 import { HealthMonitor, EngineHealth } from "./health-monitor";
 import { RestartManager } from "./restart-manager";
@@ -174,7 +174,7 @@ export class ProcessSupervisor {
             });
 
         } catch (error) {
-            logger.error("Supervision cycle failed", {
+            logger.error("Supervision cycle failed", error as Error, {
                 error: error instanceof Error ? error.message : String(error),
                 state: this.state,
                 cycle: this.supervisionCycles,
@@ -258,7 +258,7 @@ export class ProcessSupervisor {
      * Handle process crash
      */
     private async handleProcessCrash(health: EngineHealth): Promise<void> {
-        logger.error("Process crash detected", {
+        logger.warn("Process crash detected", {
             state: this.state,
             healthIssues: health.issues,
         });
@@ -274,7 +274,7 @@ export class ProcessSupervisor {
                 this.state = ProcessState.RECOVERING;
                 logger.info("Process restart initiated after crash");
             } else {
-                logger.error("Process restart failed after crash", {
+                logger.warn("Process restart failed after crash", {
                     error: restartResult.error,
                     nextRetryIn: restartResult.nextRetryIn,
                 });
@@ -335,7 +335,7 @@ export class ProcessSupervisor {
      * Handle permanent failure
      */
     private async handlePermanentFailure(reason: string): Promise<void> {
-        logger.error("Permanent process failure", {
+        logger.warn("Permanent process failure", {
             reason,
             state: this.state,
             totalRestarts: this.restartManager.getRestartStatistics().totalAttempts,
@@ -354,7 +354,7 @@ export class ProcessSupervisor {
      * Handle supervision system failure
      */
     private async handleSupervisionFailure(error: unknown): Promise<void> {
-        logger.error("Supervision system failure", {
+        logger.warn("Supervision system failure", {
             error: error instanceof Error ? error.message : String(error),
             state: this.state,
             cycles: this.supervisionCycles,
@@ -391,7 +391,7 @@ export class ProcessSupervisor {
                 `Process entered ${this.state} state with health score ${health.healthScore}`
             );
         } catch (error) {
-            logger.error("Failed to notify about process failure", {
+            logger.error("Failed to notify about process failure", error as Error, {
                 error: error instanceof Error ? error.message : String(error),
             });
         }
@@ -420,7 +420,7 @@ export class ProcessSupervisor {
                 `Process recovered and is now ${this.state}`
             );
         } catch (error) {
-            logger.error("Failed to notify about process recovery", {
+            logger.error("Failed to notify about process recovery", error as Error, {
                 error: error instanceof Error ? error.message : String(error),
             });
         }
@@ -450,7 +450,7 @@ export class ProcessSupervisor {
                 'Engine has failed permanently - manual intervention required'
             );
         } catch (error) {
-            logger.error("Failed to notify about permanent failure", {
+            logger.error("Failed to notify about permanent failure", error as Error, {
                 error: error instanceof Error ? error.message : String(error),
             });
         }
@@ -479,7 +479,7 @@ export class ProcessSupervisor {
                 'Process supervision system has failed - critical system issue'
             );
         } catch (notifyError) {
-            logger.error("Failed to notify about supervision failure", {
+            logger.error("Failed to notify about supervision failure", notifyError as Error, {
                 originalError: error instanceof Error ? error.message : String(error),
                 notifyError: notifyError instanceof Error ? notifyError.message : String(notifyError),
             });
@@ -556,7 +556,7 @@ export class ProcessSupervisor {
             await this.processSpawner.kill('SIGKILL', this.config.emergencyShutdownTimeout);
             await this.notifyProcessFailure(reason, await this.healthMonitor.performMultiLayerHealthCheck());
         } catch (error) {
-            logger.error("Emergency stop failed", {
+            logger.error("Emergency stop failed", error as Error, {
                 error: error instanceof Error ? error.message : String(error),
                 reason,
             });
@@ -588,7 +588,7 @@ export class ProcessSupervisor {
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error("Manual restart failed", { error: errorMessage, reason });
+            logger.error("Manual restart failed", error as Error, { error: errorMessage, reason });
 
             this.state = ProcessState.CRASHED;
             return { success: false, error: errorMessage };

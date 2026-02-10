@@ -18,7 +18,7 @@
 import { spawn, ChildProcess } from "child_process";
 import path from "path";
 import axios from "axios";
-import { logger } from "../../logging";
+import { performanceLogger as logger } from "../../logging/context-aware-logger.service";
 
 export interface ProcessConfig {
     command: string;
@@ -85,7 +85,7 @@ export class ProcessSpawner {
 
                 // Handle process events
                 this.engineProcess.on("error", () => {
-                    logger.error("Engine process spawn error", { error: "Process spawn failed" });
+                    logger.warn("Engine process spawn error", { error: "Process spawn failed" });
                     this.engineProcess = null;
                     reject(new Error("Process spawn failed"));
                 });
@@ -107,8 +107,8 @@ export class ProcessSpawner {
                     }
                 }, 3000);
 
-            } catch {
-                logger.error("Failed to spawn engine process", {
+            } catch (error) {
+                logger.error("Failed to spawn engine process", error as Error, {
                     error: "Process spawning failed",
                 });
                 this.engineProcess = null;
@@ -146,9 +146,9 @@ export class ProcessSpawner {
                     logger.info("Engine readiness check passed", { attempt });
                     return;
                 }
-            } catch {
+            } catch (error) {
                 // Engine not ready yet, continue waiting
-                logger.debug(`Engine not ready, attempt ${attempt}/${finalConfig.maxAttempts}`);
+                logger.error(`Engine not ready, attempt ${attempt}/${finalConfig.maxAttempts}`, error as Error);
             }
 
             // Wait before next attempt

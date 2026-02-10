@@ -7,7 +7,7 @@ import {
     UserRoleAssignment
 } from '@trade-bot/shared';
 import { query } from '../../../database/pool';
-import { logger } from '../../../core/logging';
+import { databaseLogger as logger } from '../../../core/logging/context-aware-logger.service';
 
 /**
  * Role Repository Adapter - Clean Architecture Implementation
@@ -50,7 +50,7 @@ export class RoleRepositoryAdapter implements IRoleRepository {
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error("Failed to assign role", {
+            logger.error("Failed to assign role", error as Error, {
                 userId,
                 role,
                 grantedBy,
@@ -82,7 +82,7 @@ export class RoleRepositoryAdapter implements IRoleRepository {
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error("Failed to remove role", {
+            logger.error("Failed to remove role", error as Error, {
                 userId,
                 role,
                 error: errorMessage
@@ -104,7 +104,7 @@ export class RoleRepositoryAdapter implements IRoleRepository {
             return result.rows.length > 0;
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error("Failed to check user role", {
+            logger.error("Failed to check user role", error as Error, {
                 userId,
                 role,
                 error: errorMessage
@@ -126,7 +126,7 @@ export class RoleRepositoryAdapter implements IRoleRepository {
             return result.rows.map(row => row.role);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error("Failed to get user roles", {
+            logger.error("Failed to get user roles", error as Error, {
                 userId,
                 error: errorMessage
             });
@@ -171,7 +171,7 @@ export class RoleRepositoryAdapter implements IRoleRepository {
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error("Failed to get role details", {
+            logger.error("Failed to get role details", error as Error, {
                 userId,
                 role,
                 error: errorMessage
@@ -218,7 +218,7 @@ export class RoleRepositoryAdapter implements IRoleRepository {
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error("Failed to get users with role", {
+            logger.error("Failed to get users with role", error as Error, {
                 role,
                 error: errorMessage
             });

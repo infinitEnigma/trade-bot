@@ -31,7 +31,7 @@ import { Response, NextFunction } from "express";
 import { redisService } from "../../infrastructure";
 import { AuthenticatedRequest } from "../../interfaces/middleware";
 import { UserLevel } from "@trade-bot/shared";
-import { logger } from "../../core/logging";
+import { securityLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 // Import extracted modules
 import { RateLimitConfig } from "./rate-limiter/rate-limit.types";
@@ -39,6 +39,7 @@ import { memoryRateLimiter } from "./rate-limiter/memory-rate-limiter";
 import { progressiveAuthLimiter } from "./rate-limiter/progressive-auth-limiter";
 import { redisHealthMonitor } from "./rate-limiter/redis-health-monitor";
 import { RATE_LIMIT_CONFIGS } from "./rate-limiter/rate-limit.config";
+import { error } from "node:console";
 
 // Re-export for backward compatibility
 export { progressiveAuthLimiter };
@@ -172,8 +173,8 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
             resetTime = memoryResult.resetTime;
           }
         } catch (redisError) {
-          logger.warn(
-            "Redis rate limiting failed, switching to in-memory fallback",
+          logger.error(
+            "Redis rate limiting failed, switching to in-memory fallback", redisError as Error,
             {
               endpoint,
               limitType,
@@ -281,7 +282,7 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
       next();
     } catch (error) {
       // Final fallback - if both Redis and in-memory fail
-      logger.error("Rate limiter completely failed", {
+      logger.error("Rate limiter completely failed", error as Error, {
         endpoint,
         limitType,
         identifier: userId || req.ip,
@@ -297,7 +298,7 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
         });
         next();
       } else {
-        logger.error("Rate limiter failed closed (blocking request)", {
+        logger.warn("Rate limiter failed closed (blocking request)", {
           endpoint,
           limitType,
           identifier: userId || req.ip,

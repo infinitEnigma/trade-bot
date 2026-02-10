@@ -18,7 +18,7 @@
 import "dotenv/config";
 import { createCipheriv, createDecipheriv, randomBytes, scrypt, scryptSync as cryptoScryptSync } from "crypto";
 import { promisify } from "util";
-import { logger } from "../../core/logging";
+import { securityLogger as logger } from "../../core/logging/context-aware-logger.service";
 import { query } from "../../database/pool";
 
 /**
@@ -182,7 +182,7 @@ async function decryptUserCredentials(userId: string, queryFunction: typeof quer
       secretKey,
     };
   } catch (error) {
-    logger.error("Failed to decrypt user credentials", {
+    logger.error("Failed to decrypt user credentials", error as Error, {
       userId,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -428,7 +428,7 @@ export class EncryptionService {
 
       return monthsSinceRotation >= KEY_ROTATION_INTERVAL_MONTHS;
     } catch (error) {
-      logger.warn("Failed to check key rotation status", {
+      logger.error("Failed to check key rotation status", error as Error, {
         error: (error as Error).message,
       });
       return false;
@@ -467,7 +467,7 @@ export class EncryptionService {
       // 3. Schedule old key deletion after grace period
 
     } catch (error) {
-      logger.error("Encryption key rotation failed", {
+      logger.error("Encryption key rotation failed", error as Error, {
         error: (error as Error).message,
       });
       throw error;
@@ -515,7 +515,7 @@ export class EncryptionService {
             credentialId: cred.id,
           });
         } catch (error) {
-          logger.error("Failed to migrate credential", {
+          logger.error("Failed to migrate credential", error as Error, {
             credentialId: cred.id,
             error: (error as Error).message,
           });
@@ -524,7 +524,7 @@ export class EncryptionService {
 
       logger.info("Versioned encryption migration completed");
     } catch (error) {
-      logger.error("Versioned encryption migration failed", {
+      logger.error("Versioned encryption migration failed", error as Error, {
         error: (error as Error).message,
       });
       throw error;

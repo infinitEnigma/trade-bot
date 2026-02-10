@@ -13,7 +13,7 @@ import {
     Position
 } from '@trade-bot/shared';
 import { query } from '../../../database/pool';
-import { logger } from '../../../core/logging';
+import { databaseLogger as logger } from '../../../core/logging/context-aware-logger.service';
 
 /**
  * Position Repository Adapter
@@ -139,7 +139,7 @@ export class PositionRepositoryAdapter implements IPositionRepository {
                 row.liquidationPrice ? parseFloat(row.liquidationPrice) : undefined
             );
         } catch (error) {
-            logger.warn(`Failed to map position row to domain object: ${error}`);
+            logger.error(`Failed to map position row to domain object: ${error}`, error as Error);
             return null;
         }
     }

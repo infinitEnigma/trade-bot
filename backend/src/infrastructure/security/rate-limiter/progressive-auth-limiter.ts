@@ -11,7 +11,7 @@
  */
 
 import { redisService } from "../../../infrastructure";
-import { logger } from "../../../core/logging";
+import { securityLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 /**
  * Progressive authentication limiter with exponential backoff.
@@ -74,7 +74,7 @@ class ProgressiveAuthLimiter {
 
             return { delayMs, totalFailures };
         } catch (error) {
-            logger.error("Error recording auth failure", {
+            logger.error("Error recording auth failure", error as Error, {
                 identifier,
                 error: error instanceof Error ? error.message : String(error),
             });
@@ -94,7 +94,7 @@ class ProgressiveAuthLimiter {
             await redisService.del(key);
             logger.debug("Reset authentication failure counter", { identifier });
         } catch (error) {
-            logger.warn("Failed to reset auth failure counter", {
+            logger.error("Failed to reset auth failure counter", error as Error, {
                 identifier,
                 error: error instanceof Error ? error.message : String(error),
             });
@@ -117,7 +117,7 @@ class ProgressiveAuthLimiter {
 
             return { totalFailures, delayMs };
         } catch (error) {
-            logger.warn("Failed to get auth failure info", {
+            logger.error("Failed to get auth failure info", error as Error, {
                 identifier,
                 error: error instanceof Error ? error.message : String(error),
             });

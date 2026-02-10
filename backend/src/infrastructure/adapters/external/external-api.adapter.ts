@@ -20,7 +20,7 @@ import {
     OrderSide
 } from '@trade-bot/shared';
 import { kodiakIntegrationService } from '../../../infrastructure/external/kodiak-integration.service';
-import { logger } from '../../../core/logging';
+import { integrationLogger as logger } from '../../../core/logging/context-aware-logger.service';
 import {
     KodiakBalance,
     KodiakPosition,
@@ -255,7 +255,7 @@ export class ExternalApiAdapter implements IExternalApiService {
             await kodiakIntegrationService.invalidateUserCache(userId);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.warn(`Cache invalidation failed: ${errorMessage}`);
+            logger.error(`Cache invalidation failed: ${errorMessage}`, error as Error);
             // Don't throw - cache invalidation failures shouldn't break business logic
         }
     }
@@ -270,7 +270,7 @@ export class ExternalApiAdapter implements IExternalApiService {
             logger.debug("Wallet chain validation", { walletAddress, requiredChain: chainId });
             return true; // Placeholder - implement actual chain validation
         } catch (error) {
-            logger.error("Wallet chain validation failed", { walletAddress, error: (error as Error).message });
+            logger.error("Wallet chain validation failed", error as Error, { walletAddress, error: (error as Error).message });
             return false;
         }
     }
@@ -285,7 +285,7 @@ export class ExternalApiAdapter implements IExternalApiService {
             logger.debug("Checking NFT ownership", { walletAddress, contractAddress });
             return false; // Placeholder - implement actual NFT checking
         } catch (error) {
-            logger.error("NFT ownership check failed", {
+            logger.error("NFT ownership check failed", error as Error, {
                 walletAddress,
                 contractAddress,
                 error: (error as Error).message
@@ -304,7 +304,7 @@ export class ExternalApiAdapter implements IExternalApiService {
             logger.debug("Checking token balance", { walletAddress, tokenAddress, minAmount: minAmount.toString() });
             return false; // Placeholder - implement actual token balance checking
         } catch (error) {
-            logger.error("Token balance check failed", {
+            logger.error("Token balance check failed", error as Error, {
                 walletAddress,
                 tokenAddress,
                 error: (error as Error).message

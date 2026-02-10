@@ -9,7 +9,7 @@
  * @format
  */
 
-import { logger } from "../../../core/logging";
+import { securityLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import { RateLimitResult, RateLimiterStats } from "./rate-limit.types";
 
 /**

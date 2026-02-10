@@ -16,7 +16,7 @@
  */
 
 import { createClient, RedisClientType } from "redis";
-import { logger } from "../../../core/logging";
+import { redisLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 export interface ConnectionConfig {
     url?: string;
@@ -66,7 +66,7 @@ export class RedisConnectionManager {
             this.health.ready = false;
             this.health.lastError = error.message;
 
-            logger.error("Redis client error", {
+            logger.warn("Redis client error", {
                 error: error.message,
                 url: this.config.url,
             });
@@ -126,7 +126,7 @@ export class RedisConnectionManager {
             } catch (error) {
                 lastError = error as Error;
 
-                logger.warn("Redis connection attempt failed", {
+                logger.error("Redis connection attempt failed", error as Error, {
                     attempt,
                     maxRetries: this.config.maxRetries,
                     error: lastError.message,
@@ -156,7 +156,7 @@ export class RedisConnectionManager {
             await this.client.disconnect();
             logger.info("Redis client disconnected");
         } catch (error) {
-            logger.error("Error disconnecting Redis client", {
+            logger.error("Error disconnecting Redis client", error as Error, {
                 error: (error as Error).message,
             });
             throw error;
@@ -173,7 +173,7 @@ export class RedisConnectionManager {
 
             logger.debug("Redis database selected", { database });
         } catch (error) {
-            logger.error("Failed to select Redis database", {
+            logger.error("Failed to select Redis database", error as Error, {
                 database,
                 error: (error as Error).message,
             });
@@ -228,7 +228,7 @@ export class RedisConnectionManager {
         try {
             await this.disconnect();
         } catch (error) {
-            logger.warn("Error during disconnect before reconnect", {
+            logger.error("Error during disconnect before reconnect", error as Error, {
                 error: (error as Error).message,
             });
         }

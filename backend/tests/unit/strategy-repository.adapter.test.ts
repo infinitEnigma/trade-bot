@@ -2,12 +2,12 @@
 
 import { StrategyRepositoryAdapter, strategyRepositoryAdapter } from '../../src/infrastructure/adapters/repositories/strategy-repository.adapter';
 import { Strategy, StrategyType, StrategyConfig } from '@trade-bot/shared';
-import { logger } from '../../src/core/logging';
+import { databaseLogger as logger } from '../../src/core/logging/context-aware-logger.service';
 import { query } from '../../src/database/pool';
 
 // Mock dependencies
-jest.mock('../../src/core/logging', () => ({
-    logger: {
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    databaseLogger: {
         info: jest.fn(),
         warn: jest.fn(),
         error: jest.fn()
@@ -114,7 +114,7 @@ describe('StrategyRepositoryAdapter', () => {
             const strategies = await adapter.getStrategies(userId);
 
             expect(strategies).toEqual([]);
-            expect(logger.warn).toHaveBeenCalled();
+            expect(logger.error).toHaveBeenCalled();
         });
 
         it('should throw error when query fails', async () => {
@@ -183,7 +183,7 @@ describe('StrategyRepositoryAdapter', () => {
             const strategy = await adapter.getStrategy(strategyId);
 
             expect(strategy).toBeNull();
-            expect(logger.warn).toHaveBeenCalled();
+            expect(logger.error).toHaveBeenCalled();
         });
 
         it('should throw error when query fails', async () => {

@@ -2,15 +2,15 @@
 
 import { AuditLogRepositoryAdapter, auditLogRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/audit-log-repository.adapter";
 import { query } from "../../src/database/pool";
-import { logger } from "../../src/core/logging";
+import { databaseLogger as logger } from "../../src/core/logging/context-aware-logger.service";
 
 // Mock dependencies
 jest.mock("../../src/database/pool", () => ({
     query: jest.fn()
 }));
 
-jest.mock("../../src/core/logging", () => ({
-    logger: {
+jest.mock("../../src/core/logging/context-aware-logger.service", () => ({
+    databaseLogger: {
         error: jest.fn()
     }
 }));
@@ -61,7 +61,7 @@ describe("AuditLogRepositoryAdapter", () => {
 
             await expect(adapter.logEvent(mockEvent)).resolves.not.toThrow();
 
-            expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("Failed to log audit event"));
+            expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("Failed to log audit event"), expect.any(Error));
         });
     });
 

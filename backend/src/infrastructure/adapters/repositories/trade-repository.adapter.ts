@@ -15,7 +15,7 @@ import {
     OrderSide
 } from '@trade-bot/shared';
 import { query } from '../../../database/pool';
-import { logger } from '../../../core/logging';
+import { databaseLogger as logger } from '../../../core/logging/context-aware-logger.service';
 
 /**
  * Trade Repository Adapter
@@ -53,6 +53,7 @@ export class TradeRepositoryAdapter implements ITradeRepository {
             return result.rows.map(row => this.mapRowToTrade(row)).filter(Boolean) as Trade[];
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
+            logger.error('Failed to get trades', error as Error);
             throw new Error(`Failed to get trades: ${errorMessage}`);
         }
     }
@@ -210,7 +211,7 @@ export class TradeRepositoryAdapter implements ITradeRepository {
                 executedAt: new Date(row.executed_at)
             };
         } catch (error) {
-            logger.warn(`Failed to map trade row to domain object: ${error}`);
+            logger.error(`Failed to map trade row to domain object: ${error}`, error as Error);
             return null;
         }
     }

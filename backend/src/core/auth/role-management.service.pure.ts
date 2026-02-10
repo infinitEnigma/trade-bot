@@ -10,7 +10,6 @@ import {
     IRoleQualificationService
 } from '@trade-bot/shared';
 import { IRoleRepository, IAuditLogger, ICacheService, ILogger } from '@trade-bot/shared';
-import { logger } from '../logging';
 
 /**
  * Pure Role Management Service - Clean Architecture Implementation

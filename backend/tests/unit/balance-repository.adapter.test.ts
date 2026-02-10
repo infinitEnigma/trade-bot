@@ -2,12 +2,12 @@
 
 import { BalanceRepositoryAdapter, balanceRepositoryAdapter } from '../../src/infrastructure/adapters/repositories/balance-repository.adapter';
 import { Balance } from '@trade-bot/shared';
-import { logger } from '../../src/core/logging';
+import { databaseLogger as logger } from '../../src/core/logging/context-aware-logger.service';
 import { query } from '../../src/database/pool';
 
 // Mock dependencies
-jest.mock('../../src/core/logging', () => ({
-    logger: {
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    databaseLogger: {
         info: jest.fn(),
         error: jest.fn()
     }

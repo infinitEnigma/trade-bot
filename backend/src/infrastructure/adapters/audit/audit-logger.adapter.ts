@@ -5,7 +5,7 @@ import {
     AuditEvent
 } from '@trade-bot/shared';
 import { query } from '../../../database/pool';
-import { logger } from '../../../core/logging';
+import { securityLogger as logger } from '../../../core/logging/context-aware-logger.service';
 
 /**
  * Audit Logger Adapter - Clean Architecture Implementation
@@ -35,7 +35,7 @@ export class AuditLoggerAdapter implements IAuditLogger {
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error("Failed to log audit event", {
+            logger.error("Failed to log audit event", error as Error, {
                 userId: event.userId,
                 action: event.action,
                 error: errorMessage
@@ -71,7 +71,7 @@ export class AuditLoggerAdapter implements IAuditLogger {
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error("Failed to log batch audit events", {
+            logger.error("Failed to log batch audit events", error as Error, {
                 count: events.length,
                 error: errorMessage
             });
@@ -114,7 +114,7 @@ export class AuditLoggerAdapter implements IAuditLogger {
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error("Failed to get user audit events", {
+            logger.error("Failed to get user audit events", error as Error, {
                 userId,
                 error: errorMessage
             });
@@ -157,7 +157,7 @@ export class AuditLoggerAdapter implements IAuditLogger {
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error("Failed to get audit events by action", {
+            logger.error("Failed to get audit events by action", error as Error, {
                 action,
                 error: errorMessage
             });

@@ -8,8 +8,8 @@
 import { Worker } from 'worker_threads';
 import { EventEmitter } from 'events';
 import * as os from 'os';
-import { logger } from '../core/logging';
-import * as bcrypt from 'bcryptjs';
+import { securityLogger as logger } from '../core/logging/context-aware-logger.service';
+//import * as bcrypt from 'bcryptjs';
 import * as path from 'path';
 
 /**
@@ -164,7 +164,7 @@ class PasswordWorkerPool extends EventEmitter {
         });
 
         worker.on('error', (error) => {
-            logger.error('Password worker error', {
+            logger.warn('Password worker error', {
                 error: (error as Error).message,
                 stack: (error as Error).stack
             });
@@ -188,7 +188,7 @@ class PasswordWorkerPool extends EventEmitter {
         });
 
         worker.on('messageerror', (error) => {
-            logger.error('Password worker message error', {
+            logger.error('Password worker message error', error as Error, {
                 error: error.message,
                 stack: error.stack
             });
@@ -243,7 +243,7 @@ class PasswordWorkerPool extends EventEmitter {
      * Handle worker thread errors
      */
     private handleWorkerError(worker: Worker, error: Error): void {
-        logger.error('Password worker thread error', {
+        logger.error('Password worker thread error', error as Error, {
             error: error.message,
             stack: error.stack,
         });
@@ -272,7 +272,7 @@ class PasswordWorkerPool extends EventEmitter {
      * Handle worker thread uncaught exceptions
      */
     private handleWorkerUncaughtException(worker: Worker, error: Error): void {
-        logger.error('Password worker uncaught exception', {
+        logger.warn('Password worker uncaught exception', {
             error: error.message,
             stack: error.stack,
         });
@@ -281,7 +281,7 @@ class PasswordWorkerPool extends EventEmitter {
         try {
             worker.terminate();
         } catch (terminateError) {
-            logger.warn('Failed to terminate worker after uncaught exception', {
+            logger.error('Failed to terminate worker after uncaught exception', terminateError as Error, {
                 error: terminateError instanceof Error ? terminateError.message : String(terminateError),
             });
         }
@@ -334,7 +334,7 @@ class PasswordWorkerPool extends EventEmitter {
         try {
             oldWorker.terminate();
         } catch (error) {
-            logger.warn('Error terminating failed worker', {
+            logger.error('Error terminating failed worker', error as Error, {
                 error: error instanceof Error ? error.message : String(error),
             });
         }
@@ -391,7 +391,7 @@ class PasswordWorkerPool extends EventEmitter {
                 this.handleTaskTimeout(task, worker);
             }, timeoutDuration);
         } catch (error) {
-            logger.error('Failed to send task to worker', {
+            logger.error('Failed to send task to worker', error as Error, {
                 taskId: task.id,
                 workerId: worker.threadId,
                 error: error instanceof Error ? error.message : String(error),
@@ -449,7 +449,7 @@ class PasswordWorkerPool extends EventEmitter {
             }
         } else {
             // Worker is not responsive, replace it immediately
-            logger.error('Worker unresponsive, replacing immediately', {
+            logger.warn('Worker unresponsive, replacing immediately', {
                 workerId: worker.threadId,
                 isTestEnvironment
             });
@@ -671,7 +671,7 @@ class PasswordWorkerPool extends EventEmitter {
                 try {
                     task.reject(new Error('Worker pool shutting down during test cleanup'));
                 } catch (error) {
-                    logger.warn('Warning: Failed to reject task during cleanup:', error);
+                    logger.error('Warning: Failed to reject task during cleanup:', error as Error);
                 }
             }
             this.taskQueue.length = 0;
@@ -682,7 +682,7 @@ class PasswordWorkerPool extends EventEmitter {
                     task.reject(new Error('Worker pool shutting down during test cleanup'));
                     clearTimeout(task.timeout);
                 } catch (error) {
-                    logger.warn('Warning: Failed to clear active task during cleanup:', error);
+                    logger.error('Warning: Failed to clear active task during cleanup:', error as Error);
                 }
             }
             this.activeTasks.clear();
@@ -734,11 +734,11 @@ class PasswordWorkerPool extends EventEmitter {
                     await this.shutdown();
                 });
             } catch (error) {
-                logger.warn('Warning: Failed to remove process handlers:', error);
+                logger.error('Warning: Failed to remove process handlers:', error as Error);
             }
 
         } catch (error) {
-            logger.warn('Warning: Password worker pool cleanup failed:', error);
+            logger.error('Warning: Password worker pool cleanup failed:', error as Error);
         }
     }
 }

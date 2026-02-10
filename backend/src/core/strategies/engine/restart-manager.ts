@@ -21,7 +21,7 @@
  * @format
  */
 
-import { logger } from "../../logging";
+import { performanceLogger as logger } from "../../logging/context-aware-logger.service";
 
 export enum RestartPolicy {
     IMMEDIATE = 'immediate',         // Restart immediately on failure
@@ -162,7 +162,7 @@ export class RestartManager {
             };
 
         } catch (error) {
-            logger.error("Intelligent restart failed", {
+            logger.error("Intelligent restart failed", error as Error, {
                 attemptNumber,
                 error: error instanceof Error ? error.message : String(error),
             });

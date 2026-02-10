@@ -22,7 +22,7 @@
  */
 
 import axios from "axios";
-import { logger } from "../../logging";
+import { performanceLogger as logger } from "../../logging/context-aware-logger.service";
 import { ProcessSpawner } from "./process-spawner";
 
 export interface EngineHealth {
@@ -180,7 +180,7 @@ export class HealthMonitor {
             this.storeHealthCheck(health);
 
         } catch (error) {
-            logger.error("Health check failed", {
+            logger.error("Health check failed", error as Error, {
                 error: error instanceof Error ? error.message : String(error),
             });
             health.overallHealthy = false;
@@ -210,7 +210,7 @@ export class HealthMonitor {
             );
             return response.data?.status === 'healthy';
         } catch (error) {
-            logger.debug("HTTP health check failed", {
+            logger.error("HTTP health check failed", error as Error, {
                 error: error instanceof Error ? error.message : String(error),
             });
             return false;

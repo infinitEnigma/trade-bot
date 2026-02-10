@@ -16,7 +16,7 @@
  */
 
 import { RedisConnectionManager } from "./connection-manager";
-import { logger } from "../../../core/logging";
+import { redisLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 export interface RedisResult<T = string | null> {
     success: boolean;
@@ -38,7 +38,7 @@ export class RedisOperations {
             return { success: true, data };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Redis GET error", { key, error: errorMessage });
+            logger.error("Redis GET error", error as Error, { key, error: errorMessage });
             return { success: false, error: errorMessage };
         }
     }
@@ -54,7 +54,7 @@ export class RedisOperations {
             return { success: true };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Redis SET error", { key, error: errorMessage });
+            logger.error("Redis SET error", error as Error, { key, error: errorMessage });
             return { success: false, error: errorMessage };
         }
     }
@@ -75,7 +75,7 @@ export class RedisOperations {
             return { success: true };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Redis SETEX error", { key, ttl, error: errorMessage });
+            logger.error("Redis SETEX error", error as Error, { key, ttl, error: errorMessage });
 
             // Fallback to individual commands
             try {
@@ -86,7 +86,7 @@ export class RedisOperations {
                 return { success: true };
             } catch (fallbackError) {
                 const fallbackErrorMessage = (fallbackError as Error).message;
-                logger.error("Redis SETEX fallback error", {
+                logger.error("Redis SETEX fallback error", fallbackError as Error, {
                     key,
                     ttl,
                     error: fallbackErrorMessage,
@@ -109,7 +109,7 @@ export class RedisOperations {
         } catch (error) {
             const errorMessage = (error as Error).message;
             const keyStr = Array.isArray(key) ? key.join(',') : key;
-            logger.error("Redis DEL error", { keys: keyStr, error: errorMessage });
+            logger.error("Redis DEL error", error as Error, { keys: keyStr, error: errorMessage });
             return { success: false, error: errorMessage, data: 0 };
         }
     }
@@ -126,7 +126,7 @@ export class RedisOperations {
             return { success: true, data: exists };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Redis EXISTS error", { key, error: errorMessage });
+            logger.error("Redis EXISTS error", error as Error, { key, error: errorMessage });
             return { success: false, error: errorMessage, data: false };
         }
     }
@@ -143,7 +143,7 @@ export class RedisOperations {
             return { success: true, data: results };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Redis MGET error", { keys: keys.join(','), error: errorMessage });
+            logger.error("Redis MGET error", error as Error, { keys: keys.join(','), error: errorMessage });
             return { success: false, error: errorMessage };
         }
     }
@@ -160,7 +160,7 @@ export class RedisOperations {
         } catch (error) {
             const errorMessage = (error as Error).message;
             const keys = Object.keys(keyValues).join(',');
-            logger.error("Redis MSET error", { keys, error: errorMessage });
+            logger.error("Redis MSET error", error as Error, { keys, error: errorMessage });
             return { success: false, error: errorMessage };
         }
     }
@@ -176,7 +176,7 @@ export class RedisOperations {
             return { success: true, data: newValue };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Redis INCR error", { key, error: errorMessage });
+            logger.error("Redis INCR error", error as Error, { key, error: errorMessage });
             return { success: false, error: errorMessage, data: 0 };
         }
     }
@@ -192,7 +192,7 @@ export class RedisOperations {
             return { success: true, data: newValue };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Redis INCRBY error", { key, increment, error: errorMessage });
+            logger.error("Redis INCRBY error", error as Error, { key, increment, error: errorMessage });
             return { success: false, error: errorMessage, data: 0 };
         }
     }
@@ -208,7 +208,7 @@ export class RedisOperations {
             return { success: true, data: newValue };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Redis DECRBY error", { key, decrement, error: errorMessage });
+            logger.error("Redis DECRBY error", error as Error, { key, decrement, error: errorMessage });
             return { success: false, error: errorMessage, data: 0 };
         }
     }
@@ -225,7 +225,7 @@ export class RedisOperations {
             return { success: true, data: success };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Redis EXPIRE error", { key, ttlSeconds, error: errorMessage });
+            logger.error("Redis EXPIRE error", error as Error, { key, ttlSeconds, error: errorMessage });
             return { success: false, error: errorMessage, data: false };
         }
     }
@@ -242,7 +242,7 @@ export class RedisOperations {
             return { success: true, data: success };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Redis PEXPIRE error", { key, ttlMs, error: errorMessage });
+            logger.error("Redis PEXPIRE error", error as Error, { key, ttlMs, error: errorMessage });
             return { success: false, error: errorMessage, data: false };
         }
     }
@@ -258,7 +258,7 @@ export class RedisOperations {
             return { success: true, data: ttl };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Redis TTL error", { key, error: errorMessage });
+            logger.error("Redis TTL error", error as Error, { key, error: errorMessage });
             return { success: false, error: errorMessage, data: -1 };
         }
     }
@@ -274,7 +274,7 @@ export class RedisOperations {
             return { success: true, data: keys };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Redis KEYS error", { pattern, error: errorMessage });
+            logger.error("Redis KEYS error", error as Error, { pattern, error: errorMessage });
             return { success: false, error: errorMessage };
         }
     }

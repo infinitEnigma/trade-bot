@@ -16,10 +16,10 @@
  */
 
 import { RedisConnectionManager } from "./connection-manager";
-import { logger } from "../../../core/logging";
+import { redisLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import type { EngineCommand, EngineEvent } from "@trade-bot/shared";
-import * as redis from "redis";
-import { TypedString } from "ethers/lib.commonjs/abi/typed";
+//import * as redis from "redis";
+//import { TypedString } from "ethers/lib.commonjs/abi/typed";
 
 // Stream names
 export const ENGINE_COMMANDS_STREAM = "engine:commands";
@@ -63,7 +63,7 @@ export class RedisStreamOperations {
             return { success: true, id };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Stream publish error", { stream, type: message.type, error: errorMessage });
+            logger.error("Stream publish error", error as Error, { stream, type: message.type, error: errorMessage });
             return { success: false, error: errorMessage };
         }
     }
@@ -120,7 +120,7 @@ export class RedisStreamOperations {
                 );
 
                 if (!result) {
-                    logger.warn("Failed to read from stream", stream)
+                    logger.warn("Failed to read from stream", { stream })
                     return { success: true, messages: [] }; // Return success with empty messages instead of false
                 }
 
@@ -140,7 +140,7 @@ export class RedisStreamOperations {
             }
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Stream read error", { stream, error: errorMessage });
+            logger.error("Stream read error", error as Error, { stream, error: errorMessage });
             return { success: false, error: errorMessage };
         }
     }
@@ -158,7 +158,7 @@ export class RedisStreamOperations {
             return { success: true, count };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Stream acknowledge error", { stream, consumerGroup, error: errorMessage });
+            logger.error("Stream acknowledge error", error as Error, { stream, consumerGroup, error: errorMessage });
             return { success: false, error: errorMessage };
         }
     }
@@ -175,10 +175,10 @@ export class RedisStreamOperations {
         } catch (error) {
             const errorMessage = (error as Error).message;
             if (errorMessage.includes("BUSYGROUP")) {
-                logger.debug("Consumer group already exists", { stream, consumerGroup });
+                logger.error("Consumer group already exists", error as Error, { stream, consumerGroup });
                 return { success: true };
             }
-            logger.error("Consumer group creation error", { stream, consumerGroup, error: errorMessage });
+            logger.error("Consumer group creation error", error as Error, { stream, consumerGroup, error: errorMessage });
             return { success: false, error: errorMessage };
         }
     }
@@ -211,7 +211,7 @@ export class RedisStreamOperations {
                     await client.sendCommand(['XTRIM', stream, 'MAXLEN', maxLength.toString()]);
                 }
             } catch (trimError) {
-                logger.error("XTRIM command failed", {
+                logger.error("XTRIM command failed", trimError as Error, {
                     stream,
                     maxLength,
                     approximate,
@@ -230,7 +230,7 @@ export class RedisStreamOperations {
             return { success: true, trimmedCount };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Stream trim error", { stream, maxLength, error: errorMessage });
+            logger.error("Stream trim error", error as Error, { stream, maxLength, error: errorMessage });
             return { success: false, error: errorMessage };
         }
     }
@@ -251,7 +251,7 @@ export class RedisStreamOperations {
             };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Stream info error", { stream, error: errorMessage });
+            logger.error("Stream info error", error as Error, { stream, error: errorMessage });
             return { success: false, error: errorMessage };
         }
     }
@@ -268,7 +268,7 @@ export class RedisStreamOperations {
             return { success: true, deletedCount };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Stream delete error", { stream, messageId, error: errorMessage });
+            logger.error("Stream delete error", error as Error, { stream, messageId, error: errorMessage });
             return { success: false, error: errorMessage };
         }
     }

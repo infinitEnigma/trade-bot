@@ -2,12 +2,12 @@
 
 import { TradeRepositoryAdapter, tradeRepositoryAdapter } from '../../src/infrastructure/adapters/repositories/trade-repository.adapter';
 import { Trade, OrderStatus, OrderSide } from '@trade-bot/shared';
-import { logger } from '../../src/core/logging';
+import { databaseLogger as logger } from '../../src/core/logging/context-aware-logger.service';
 import { query } from '../../src/database/pool';
 
 // Mock dependencies
-jest.mock('../../src/core/logging', () => ({
-    logger: {
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    databaseLogger: {
         info: jest.fn(),
         warn: jest.fn(),
         error: jest.fn()

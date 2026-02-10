@@ -5,7 +5,7 @@
  * jitter, and circuit breaker patterns to improve system resilience.
  */
 
-import { logger } from "../core/logging";
+import { securityLogger as logger } from "../core/logging/context-aware-logger.service";
 import { getContextForLogging } from "../shared/utils/context";
 import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../core/notifications/error-notification.service";
 
@@ -69,7 +69,7 @@ export class RetryService {
 
                 if (!isRetryable || attempt === finalConfig.maxAttempts) {
                     // Not retryable or max attempts reached
-                    logger.error(`${operationName} failed after ${attempt} attempts`, {
+                    logger.error(`${operationName} failed after ${attempt} attempts`, error as Error, {
                         ...getContextForLogging(),
                         operation: operationName,
                         attempts: attempt,

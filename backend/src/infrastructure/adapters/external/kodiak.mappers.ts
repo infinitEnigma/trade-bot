@@ -5,7 +5,7 @@ import {
     KodiakTrade,
     KodiakAccountInfo,
 } from '../../external/kodiak-integration.service';
-import { logger } from '../../../core/logging';
+import { integrationLogger as logger } from '../../../core/logging/context-aware-logger.service';
 
 /**
  * Convert Kodiak balance format to domain Balance
@@ -18,8 +18,8 @@ export function mapKodiakBalanceToDomain(kodiakBalance: KodiakAccountInfo): Bala
 
         // For simplicity, assume all balance is available (locked amounts would need separate tracking)
         return Balance.fromTotal(totalBalance, 'USD');
-    } catch (_error) {
-        logger.warn('Failed to convert Kodiak balance to domain format, using zero balance');
+    } catch (error) {
+        logger.error('Failed to convert Kodiak balance to domain format, using zero balance', error as Error);
         return Balance.zero('USD');
     }
 }
@@ -50,7 +50,7 @@ export function mapKodiakPositionToDomain(kodiakPosition: KodiakPosition): Posit
             leverage
         );
     } catch (error) {
-        logger.warn(`Failed to convert Kodiak position to domain format: ${error}`);
+        logger.error(`Failed to convert Kodiak position to domain format: ${error}`, error as Error);
         return null;
     }
 }
@@ -89,7 +89,7 @@ export function mapKodiakTradeToDomain(kodiakTrade: KodiakTrade): Trade | null {
             executedAt
         };
     } catch (error) {
-        logger.warn(`Failed to convert Kodiak trade to domain format: ${error}`);
+        logger.error(`Failed to convert Kodiak trade to domain format: ${error}`, error as Error);
         return null;
     }
 }
@@ -107,8 +107,8 @@ export function mapKodiakAccountInfoToDomain(kodiakAccountInfo: KodiakAccountInf
             accountType: kodiakAccountInfo.accountType || 'UNKNOWN',
             balances: kodiakAccountInfo.balances || []
         };
-    } catch (_error) {
-        logger.warn('Failed to convert Kodiak account info to domain format');
+    } catch (error) {
+        logger.error('Failed to convert Kodiak account info to domain format', error as Error);
         return {
             totalBalance: '0',
             totalPnl24H: '0',

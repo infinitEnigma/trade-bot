@@ -13,7 +13,7 @@ import {
     Balance,
     BalanceHistory
 } from '@trade-bot/shared';
-import { logger } from '../../../core/logging';
+import { databaseLogger as logger } from '../../../core/logging/context-aware-logger.service';
 import { query } from '../../../database/pool';
 
 /**
@@ -57,6 +57,7 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
             );
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
+            logger.error('Failed to get balance', error as Error);
             throw new Error(`Failed to get balance: ${errorMessage}`);
         }
     }
@@ -73,6 +74,7 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
             logger.info(`Balance update for user ${userId}: ${balance.total} ${balance.currency}`);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
+            logger.error('Failed to update balance', error as Error);
             throw new Error(`Failed to update balance: ${errorMessage}`);
         }
     }
@@ -118,6 +120,7 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
             }));
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
+            logger.error('Failed to get balance history', error as Error);
             throw new Error(`Failed to get balance history: ${errorMessage}`);
         }
     }

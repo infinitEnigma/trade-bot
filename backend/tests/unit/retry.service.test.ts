@@ -1,11 +1,11 @@
 /** @format */
 
 import { RetryService, retryService, withRetry, RETRY_CONFIGS, RETRY_CONDITIONS, RetryResult } from '../../src/infrastructure/retry.service';
-import { logger } from '../../src/core/logging';
+import { securityLogger as logger } from '../../src/core/logging/context-aware-logger.service';
 import { errorNotificationService } from '../../src/core/notifications/error-notification.service';
 
 // Mock dependencies
-jest.mock('../../src/core/logging');
+jest.mock('../../src/core/logging/context-aware-logger.service');
 jest.mock('../../src/core/notifications/error-notification.service');
 
 describe('RetryService', () => {

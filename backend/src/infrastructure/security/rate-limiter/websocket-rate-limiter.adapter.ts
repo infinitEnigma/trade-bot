@@ -3,7 +3,7 @@
 import { IRateLimiter } from "../../../interfaces/websocket";
 import { redisService } from "../../cache";
 import { memoryRateLimiter } from "./memory-rate-limiter";
-import { logger } from "../../../core/logging";
+import { securityLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import { WEBSOCKET_CONSTANTS } from "../../messaging/websocket/types";
 
 /**

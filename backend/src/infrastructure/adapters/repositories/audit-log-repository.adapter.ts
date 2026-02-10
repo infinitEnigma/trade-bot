@@ -13,7 +13,7 @@ import {
     AuditLogEntry
 } from '@trade-bot/shared';
 import { query } from '../../../database/pool';
-import { logger } from '../../../core/logging';
+import { databaseLogger as logger } from '../../../core/logging/context-aware-logger.service';
 
 /**
  * Database row interfaces for audit log data
@@ -84,7 +84,7 @@ export class AuditLogRepositoryAdapter implements IAuditLogRepository {
             );
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error(`Failed to log audit event: ${errorMessage}`);
+            logger.error(`Failed to log audit event: ${errorMessage}`, error as Error);
             // Don't throw - audit logging failures shouldn't break business logic
         }
     }

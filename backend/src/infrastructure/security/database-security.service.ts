@@ -8,7 +8,7 @@
 import { query } from "../../database/pool";
 import { encryptionService } from "../security";
 import { redisService } from "../cache";
-import { logger } from "../../core/logging";
+import { securityLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 export interface SecurityAssessment {
     databaseEncryption: {
@@ -173,7 +173,7 @@ export class DatabaseSecurityService {
                 recommendations,
             };
         } catch (error) {
-            logger.error("Failed to assess encryption status", { error });
+            logger.error("Failed to assess encryption status", error as Error);
 
             return {
                 enabled: false,
@@ -262,7 +262,7 @@ export class DatabaseSecurityService {
                 recommendations,
             };
         } catch (error) {
-            logger.error("Failed to assess sensitive data protection", { error });
+            logger.error("Failed to assess sensitive data protection", error as Error);
 
             return {
                 encryptedFields: [],
@@ -354,7 +354,7 @@ export class DatabaseSecurityService {
                 recommendations,
             };
         } catch (error) {
-            logger.error("Failed to assess audit logging", { error });
+            logger.error("Failed to assess audit logging", error as Error);
 
             return {
                 enabled: false,
@@ -416,7 +416,7 @@ export class DatabaseSecurityService {
                 recommendations,
             };
         } catch (error) {
-            logger.error("Failed to assess access controls", { error });
+            logger.error("Failed to assess access controls", error as Error);
 
             return {
                 rowLevelSecurity: false,
@@ -517,7 +517,7 @@ export class DatabaseSecurityService {
                 } catch (rowError) {
                     const error = `Failed to migrate row ${row.id as string | number}: ${rowError}`;
                     errors.push(error);
-                    logger.error("Row migration failed", { tableName, rowId: row.id as string | number, error: rowError });
+                    logger.error("Row migration failed", rowError as Error, { tableName, rowId: row.id as string | number, error: rowError });
                 }
             }
 
@@ -533,7 +533,7 @@ export class DatabaseSecurityService {
                 errors,
             };
         } catch (error) {
-            logger.error("Encryption migration failed", { tableName, error });
+            logger.error("Encryption migration failed", error as Error, { tableName, error });
 
             return {
                 success: false,
@@ -587,7 +587,7 @@ export class DatabaseSecurityService {
                 requiresRestart: true,
             };
         } catch (error) {
-            logger.error("Failed to enable database encryption", { error });
+            logger.error("Failed to enable database encryption", error as Error);
 
             return {
                 success: false,
@@ -649,7 +649,7 @@ export class DatabaseSecurityService {
                 securityScore,
             };
         } catch (error) {
-            logger.error("Failed to get security metrics", { error });
+            logger.error("Failed to get security metrics", error as Error);
 
             return {
                 encryptedRecords: 0,

@@ -7,7 +7,6 @@ import {
     UserLevel
 } from '@trade-bot/shared';
 import { IUserRepository, ICacheService, ILogger, User } from '@trade-bot/shared';
-import { logger } from '../logging';
 
 /**
  * Role Qualification Service - Clean Architecture Implementation

@@ -6,11 +6,11 @@ import {
     mapKodiakTradeToDomain,
     mapKodiakAccountInfoToDomain
 } from '../../src/infrastructure/adapters/external/kodiak.mappers';
-import { logger } from '../../src/core/logging';
+import { integrationLogger as logger } from '../../src/core/logging/context-aware-logger.service';
 
 // Mock dependencies
-jest.mock('../../src/core/logging', () => ({
-    logger: {
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    integrationLogger: {
         warn: jest.fn(),
         error: jest.fn(),
         info: jest.fn(),
@@ -109,7 +109,7 @@ describe('Kodiak Mappers', () => {
                 available: 0,
                 currency: 'USD'
             }));
-            expect(logger.warn).toHaveBeenCalled();
+            expect(logger.error).toHaveBeenCalled();
         });
     });
 
@@ -185,7 +185,7 @@ describe('Kodiak Mappers', () => {
             const result = mapKodiakPositionToDomain(mockKodiakPosition as any);
 
             expect(result).toBeNull();
-            expect(logger.warn).toHaveBeenCalled();
+            expect(logger.error).toHaveBeenCalled();
         });
     });
 
@@ -258,7 +258,7 @@ describe('Kodiak Mappers', () => {
             const result = mapKodiakTradeToDomain(mockKodiakTrade as any);
 
             expect(result).toBeNull();
-            expect(logger.warn).toHaveBeenCalled();
+            expect(logger.error).toHaveBeenCalled();
         });
     });
 
@@ -313,7 +313,7 @@ describe('Kodiak Mappers', () => {
                 accountType: 'UNKNOWN',
                 balances: []
             }));
-            expect(logger.warn).toHaveBeenCalled();
+            expect(logger.error).toHaveBeenCalled();
         });
     });
 });

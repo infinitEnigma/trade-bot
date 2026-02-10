@@ -16,7 +16,7 @@
  */
 
 import { RedisConnectionManager } from "./connection-manager";
-import { logger } from "../../../core/logging";
+import { redisLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 export interface TransactionOptions {
     context?: string;        // Context for logging and analytics
@@ -484,7 +484,7 @@ class TransactionRecoveryManager {
 
         // For high priority transactions, could trigger alerts or alternative handling
         if (_context.priority === 'critical') {
-            logger.error("Critical transaction failed after max retries", {
+            logger.warn("Critical transaction failed after max retries", {
                 keySignature,
                 context: _context.context
             });

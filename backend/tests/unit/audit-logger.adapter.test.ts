@@ -2,15 +2,15 @@
 
 import { AuditLoggerAdapter } from '../../src/infrastructure/adapters/audit/audit-logger.adapter';
 import { query } from '../../src/database/pool';
-import { logger } from '../../src/core/logging';
+import { securityLogger as logger } from '../../src/core/logging/context-aware-logger.service';
 
 // Mock dependencies
 jest.mock('../../src/database/pool', () => ({
     query: jest.fn().mockResolvedValue({})
 }));
 
-jest.mock('../../src/core/logging', () => ({
-    logger: {
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    securityLogger: {
         debug: jest.fn(),
         error: jest.fn()
     }
@@ -65,7 +65,7 @@ describe('AuditLoggerAdapter', () => {
             await auditLogger.logEvent(mockEvent);
 
             expect(logger.error).toHaveBeenCalledWith(
-                'Failed to log audit event',
+                'Failed to log audit event', expect.any(Error),
                 expect.objectContaining({
                     userId: mockEvent.userId,
                     action: mockEvent.action,
@@ -136,7 +136,7 @@ describe('AuditLoggerAdapter', () => {
             await auditLogger.logEvents(mockEvents);
 
             expect(logger.error).toHaveBeenCalledWith(
-                'Failed to log batch audit events',
+                'Failed to log batch audit events', expect.any(Error),
                 expect.objectContaining({
                     count: mockEvents.length,
                     error: mockError.message
@@ -210,7 +210,7 @@ describe('AuditLoggerAdapter', () => {
 
             expect(events).toEqual([]);
             expect(logger.error).toHaveBeenCalledWith(
-                'Failed to get user audit events',
+                'Failed to get user audit events', expect.any(Error),
                 expect.objectContaining({
                     userId: mockUserId,
                     error: 'Database error'
@@ -303,7 +303,7 @@ describe('AuditLoggerAdapter', () => {
 
             expect(events).toEqual([]);
             expect(logger.error).toHaveBeenCalledWith(
-                'Failed to get audit events by action',
+                'Failed to get audit events by action', expect.any(Error),
                 expect.objectContaining({
                     action: mockAction,
                     error: 'Database connection failed'

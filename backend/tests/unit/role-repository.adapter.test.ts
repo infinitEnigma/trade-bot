@@ -2,12 +2,12 @@
 
 import { RoleRepositoryAdapter, roleRepositoryAdapter } from '../../src/infrastructure/adapters/repositories/role-repository.adapter';
 import { UserRole, RoleDetails, UserRoleAssignment } from '@trade-bot/shared';
-import { logger } from '../../src/core/logging';
+import { databaseLogger as logger } from '../../src/core/logging/context-aware-logger.service';
 import { query } from '../../src/database/pool';
 
 // Mock dependencies
-jest.mock('../../src/core/logging', () => ({
-    logger: {
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    databaseLogger: {
         info: jest.fn(),
         debug: jest.fn(),
         error: jest.fn()

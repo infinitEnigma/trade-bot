@@ -15,7 +15,7 @@ import {
     StrategyType
 } from '@trade-bot/shared';
 import { query } from '../../../database/pool';
-import { logger } from '../../../core/logging';
+import { databaseLogger as logger } from '../../../core/logging/context-aware-logger.service';
 
 /**
  * Strategy Repository Adapter
@@ -158,7 +158,7 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
                 updatedAt: new Date(row.updated_at)
             };
         } catch (error) {
-            logger.warn(`Failed to map strategy row to domain object: ${error}`);
+            logger.error(`Failed to map strategy row to domain object: ${error}`, error as Error);
             return null;
         }
     }

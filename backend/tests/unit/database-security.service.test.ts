@@ -4,7 +4,7 @@ import { DatabaseSecurityService } from '../../src/infrastructure/security/datab
 import { query } from '../../src/database/pool';
 import { encryptionService } from '../../src/infrastructure/security/encryption.service';
 import { redisService } from '../../src/infrastructure/cache';
-import { logger } from '../../src/core/logging';
+import { securityLogger as logger, securityLogger } from '../../src/core/logging/context-aware-logger.service';
 
 // Mock dependencies
 jest.mock('../../src/database/pool', () => ({
@@ -23,8 +23,20 @@ jest.mock('../../src/infrastructure/cache', () => ({
     }
 }));
 
-jest.mock('../../src/core/logging', () => ({
-    logger: {
+jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
+    securityLogger: {
+        info: jest.fn(),
+        error: jest.fn(),
+        warn: jest.fn(),
+        debug: jest.fn()
+    },
+    redisLogger: {
+        info: jest.fn(),
+        error: jest.fn(),
+        warn: jest.fn(),
+        debug: jest.fn()
+    },
+    cacheLogger: {
         info: jest.fn(),
         error: jest.fn(),
         warn: jest.fn(),
