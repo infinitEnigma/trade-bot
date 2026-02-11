@@ -515,17 +515,18 @@ class RedisService {
       try {
         const multi = this.client.multi();
 
-        // Increment the counter
-        multi.incrBy(key, increment);
-
         // Set expiry if this is the first increment (TTL doesn't exist)
         if (ttlMs) {
-          // Use Lua script to set expiry only if key didn't exist before
+          // Use Lua script to handle both increment and expiry properly
           multi.eval(`
             local count = redis.call('INCRBY', KEYS[1], ARGV[1])
-            if count == tonumber(ARGV[1]) then
+            local ttl = redis.call('PTTL', KEYS[1])
+            
+            -- Set expiry if this is the first increment or TTL is negative (key exists but no TTL)
+            if count == tonumber(ARGV[1]) or ttl < 0 then
               redis.call('PEXPIRE', KEYS[1], ARGV[2])
             end
+            
             return count
           `, {
             keys: [key],

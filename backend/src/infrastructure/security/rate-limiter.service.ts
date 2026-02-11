@@ -45,13 +45,6 @@ import { error } from "node:console";
 export { progressiveAuthLimiter };
 
 
-
-
-
-
-
-
-
 /**
  * ===========================================
  * ⚡ CORE RATE LIMITER - Main Middleware Function
@@ -116,27 +109,44 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
       let usedFallback = false;
       let progressiveDelay = 0;
 
-      // Check progressive backoff for authentication endpoints
-      if (config.progressiveBackoff && endpoint === 'auth') {
-        const failureInfo = await progressiveAuthLimiter.getFailureInfo(identifier);
-        progressiveDelay = failureInfo.delayMs;
+      // Check progressive backoff for all endpoints that have it enabled
+      if (config.progressiveBackoff) {
+        // For auth endpoints, use the progressiveAuthLimiter which tracks failure count
+        if (endpoint === 'auth') {
+          const failureInfo = await progressiveAuthLimiter.getFailureInfo(identifier);
+          progressiveDelay = failureInfo.delayMs;
 
-        if (progressiveDelay > 0) {
-          logger.info("Applying progressive backoff delay", {
-            endpoint,
-            identifier,
-            progressiveDelay,
-            totalFailures: failureInfo.totalFailures,
-          });
+          if (progressiveDelay > 0) {
+            logger.info("Applying progressive backoff delay", {
+              endpoint,
+              identifier,
+              progressiveDelay,
+              totalFailures: failureInfo.totalFailures,
+            });
 
-          // CRITICAL: Block the request if in progressive backoff
-          return res.status(429).json({
-            success: false,
-            error: "Too many failed login attempts. Please try again later.",
-            retryAfter: Math.ceil(progressiveDelay / 1000),
-            limitType: 'progressive',
-            progressiveDelay: Math.ceil(progressiveDelay / 1000),
-          });
+            return res.status(429).json({
+              success: false,
+              error: "Too many failed login attempts. Please try again later.",
+              retryAfter: Math.ceil(progressiveDelay / 1000),
+              limitType: 'progressive',
+              progressiveDelay: Math.ceil(progressiveDelay / 1000),
+            });
+          }
+        } else {
+          // For other endpoints, calculate progressive delay based on rate limit exceedance
+          const exceedCountKey = `ratelimit:${endpoint}:${identifier}:exceedCount`;
+          const exceedCountResult = await redisService.get(exceedCountKey);
+          const exceedCount = exceedCountResult.data ? parseInt(exceedCountResult.data) : 0;
+
+          if (exceedCount > 0 && config.progressiveBaseDelay) {
+            // Calculate progressive delay: baseDelay * (2 ^ (exceedCount - 1))
+            progressiveDelay = config.progressiveBaseDelay * Math.pow(2, exceedCount - 1);
+
+            // Cap the delay at maxProgressiveDelay if specified
+            if (config.maxProgressiveDelay && progressiveDelay > config.maxProgressiveDelay) {
+              progressiveDelay = config.maxProgressiveDelay;
+            }
+          }
         }
       }
 
@@ -253,6 +263,23 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
         if (config.progressiveBackoff && endpoint === 'auth') {
           const failureInfo = await progressiveAuthLimiter.recordFailure(identifier);
           progressiveDelay = failureInfo.delayMs;
+        } else if (config.progressiveBackoff) {
+          // For other endpoints, increment exceed count for progressive delay calculation
+          const exceedCountKey = `ratelimit:${endpoint}:${identifier}:exceedCount`;
+          const exceedCountResult = await redisService.get(exceedCountKey);
+          const exceedCount = exceedCountResult.data ? parseInt(exceedCountResult.data) : 0;
+          const newExceedCount = exceedCount + 1;
+
+          await redisService.setex(exceedCountKey, config.windowMs / 1000, newExceedCount.toString());
+
+          // Recalculate progressive delay with new exceed count
+          if (config.progressiveBaseDelay) {
+            progressiveDelay = config.progressiveBaseDelay * Math.pow(2, newExceedCount - 1);
+
+            if (config.maxProgressiveDelay && progressiveDelay > config.maxProgressiveDelay) {
+              progressiveDelay = config.maxProgressiveDelay;
+            }
+          }
         }
 
         logger.warn("Rate limit exceeded", {
@@ -269,6 +296,11 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
           method: req.method,
           userAgent: req.get('User-Agent'),
         });
+
+        // Apply progressive delay if configured
+        if (progressiveDelay > 0) {
+          await new Promise(resolve => setTimeout(resolve, progressiveDelay));
+        }
 
         return res.status(429).json({
           success: false,

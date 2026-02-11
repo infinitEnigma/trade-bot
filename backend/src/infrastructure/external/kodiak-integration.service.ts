@@ -99,26 +99,6 @@ export interface KodiakHoldingsResponse {
 }
 
 /**
- * Market Trade Data from Kodiak API
- */
-export interface KodiakMarketTrade {
-    symbol: string;
-    side: string;
-    executed_price: number;
-    executed_quantity: number;
-    executed_timestamp: number;
-    [key: string]: unknown; // Allow for additional properties from API
-}
-
-/**
- * Market Trades Response from Kodiak API
- */
-export interface KodiakMarketTradesResponse {
-    rows: KodiakMarketTrade[];
-    [key: string]: unknown; // Allow for additional properties from API
-}
-
-/**
  * Market Ticker Data from Kodiak API
  */
 export interface KodiakMarketTicker {
@@ -292,6 +272,7 @@ export class KodiakIntegrationService {
             } catch (error) {
                 logger.error("Failed to decrypt Kodiak credentials with regular method, trying versioned", error as Error, {
                     userId,
+                    error: error instanceof Error ? error.message : String(error),
                 });
 
                 // Try versioned decryption (for older data)
@@ -301,6 +282,7 @@ export class KodiakIntegrationService {
                 } catch (versionError) {
                     logger.error("Failed to decrypt with versioned method, assuming plain text", versionError as Error, {
                         userId,
+                        error: versionError instanceof Error ? versionError.message : String(versionError),
                     });
 
                     // Assume plain text (for backward compatibility)
@@ -317,6 +299,7 @@ export class KodiakIntegrationService {
         } catch (error) {
             logger.error("Failed to get Kodiak credentials", error as Error, {
                 userId,
+                error: error instanceof Error ? error.message : String(error),
             });
             return null;
         }
@@ -375,6 +358,7 @@ export class KodiakIntegrationService {
         } catch (error) {
             logger.error("Get Kodiak positions error", error as Error, {
                 userId,
+                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -438,6 +422,7 @@ export class KodiakIntegrationService {
         } catch (error) {
             logger.error("Get Kodiak trades error", error as Error, {
                 userId,
+                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -547,6 +532,7 @@ export class KodiakIntegrationService {
         } catch (error) {
             logger.error("Get Kodiak balance error", error as Error, {
                 userId,
+                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -603,6 +589,7 @@ export class KodiakIntegrationService {
         } catch (error) {
             logger.error("Get Kodiak account info error", error as Error, {
                 userId,
+                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -613,65 +600,15 @@ export class KodiakIntegrationService {
     }
 
     /**
-     * Get market trades data from Kodiak API (returns latest executed price)
+     * Get market ticker data from Kodiak API
      */
-    async getMarketTrades(symbol: string = "PERP_BTC_USDC", limit: number = 1): Promise<KodiakApiResponse<KodiakMarketTradesResponse>> {
+    async getMarketTicker(symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<KodiakMarketTicker>> {
         try {
-            const cacheKey = `kodiak:market_trades:${symbol}:${limit}`;
+            const cacheKey = `kodiak:ticker:${symbol}`;
             const cacheResult = await redisService.get(cacheKey);
 
             if (cacheResult.success && cacheResult.data) {
-                logger.debug("Returning cached Kodiak market trades data", { symbol });
-                return JSON.parse(cacheResult.data);
-            }
-
-            const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org";
-            const response = await fetch(`${baseUrl}/v1/public/market_trades?symbol=${symbol}&limit=${limit}`, this.createFetchOptions({
-                headers: {
-                    "Accept": "application/json",
-                    "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
-                },
-            }));
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`);
-            }
-
-            const responseData = await response.json() as { data: KodiakMarketTradesResponse };
-
-            const result: KodiakApiResponse<KodiakMarketTradesResponse> = {
-                success: true,
-                data: responseData.data,
-            };
-
-            // Cache for 5 seconds (since trades happen frequently)
-            await redisService.setex(cacheKey, 5, JSON.stringify(result));
-
-            logger.debug("Kodiak market trades data retrieved and cached", { symbol });
-            return result;
-        } catch (error) {
-            logger.error("Get Kodiak market trades error", error as Error, {
-                symbol,
-            });
-
-            return {
-                success: false,
-                error: "Failed to get Kodiak market trades data",
-            };
-        }
-    }
-
-    /**
-     * Get futures data from Kodiak API
-     */
-    async getFuturesData(symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<KodiakMarketTicker>> {
-        try {
-            const cacheKey = `kodiak:futures:${symbol}`;
-            const cacheResult = await redisService.get(cacheKey);
-
-            if (cacheResult.success && cacheResult.data) {
-                logger.debug("Returning cached Kodiak futures data", { symbol });
+                logger.debug("Returning cached Kodiak ticker data", { cacheKey, "cachedata": JSON.parse(cacheResult.data) });
                 return JSON.parse(cacheResult.data);
             }
 
@@ -688,99 +625,26 @@ export class KodiakIntegrationService {
                 throw new Error(`Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`);
             }
 
-            const responseData = await response.json() as { data: { rows: KodiakMarketTicker[] } };
-
-            if (!responseData.data?.rows || responseData.data.rows.length === 0) {
-                throw new Error("No futures data available");
-            }
-
-            const futuresData = responseData.data.rows[0];
-
-            const result: KodiakApiResponse<KodiakMarketTicker> = {
-                success: true,
-                data: futuresData,
-            };
-
-            // Cache for 30 seconds (futures data is less volatile)
-            await redisService.setex(cacheKey, 30, JSON.stringify(result));
-
-            logger.debug("Kodiak futures data retrieved and cached", { symbol });
-            return result;
-        } catch (error) {
-            logger.error("Get Kodiak futures data error", error as Error, {
-                symbol,
-            });
-
-            return {
-                success: false,
-                error: "Failed to get Kodiak futures data",
-            };
-        }
-    }
-
-    /**
-     * Get market ticker data from Kodiak API (combines futures data and market trades for latest price)
-     */
-    async getMarketTicker(symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<KodiakMarketTicker>> {
-        try {
-            const cacheKey = `kodiak:ticker:${symbol}`;
-            const cacheResult = await redisService.get(cacheKey);
-
-            if (cacheResult.success && cacheResult.data) {
-                logger.debug("Returning cached Kodiak ticker data", { symbol });
-                return JSON.parse(cacheResult.data);
-            }
-
-            // Fetch data from both sources in parallel
-            const [futuresResponse, tradesResponse] = await Promise.allSettled([
-                this.getFuturesData(symbol),
-                this.getMarketTrades(symbol, 1),
-            ]);
-
-            let tickerData: KodiakMarketTicker = { symbol };
-
-            // Process futures data (if available)
-            if (futuresResponse.status === 'fulfilled' && futuresResponse.value.success && futuresResponse.value.data) {
-                const futuresData = futuresResponse.value.data;
-                tickerData = {
-                    ...tickerData,
-                    index_price: futuresData.index_price,
-                    mark_price: futuresData.mark_price,
-                    sum_unitary_funding: futuresData.sum_unitary_funding,
-                    est_funding_rate: futuresData.est_funding_rate,
-                    last_funding_rate: futuresData.last_funding_rate,
-                    next_funding_time: futuresData.next_funding_time,
-                    open_interest: futuresData.open_interest,
-                    '24h_open': futuresData['24h_open'],
-                    '24h_close': futuresData['24h_close'],
-                    '24h_high': futuresData['24h_high'],
-                    '24h_low': futuresData['24h_low'],
-                    '24h_amount': futuresData['24h_amount'],
-                    '24h_volume': futuresData['24h_volume'],
-                };
-            }
-
-            // Process market trades data (if available and more recent)
-            if (tradesResponse.status === 'fulfilled' && tradesResponse.value.success && tradesResponse.value.data?.rows && tradesResponse.value.data.rows.length > 0) {
-                const latestTrade = tradesResponse.value.data.rows[0];
-                // Always use the latest executed price from market trades if available
-                tickerData.mark_price = latestTrade.executed_price;
-                tickerData.index_price = latestTrade.executed_price; // Fallback to trade price if index price not available
-            }
+            const responseData = await response.json();
+            // Extract ticker data from response, handling different response formats
+            const tickerData = (responseData as { data?: { rows?: KodiakMarketTicker[] } }).data?.rows?.[0] ||
+                (responseData as { data?: KodiakMarketTicker }).data ||
+                (responseData as KodiakMarketTicker);
 
             const result: KodiakApiResponse<KodiakMarketTicker> = {
                 success: true,
                 data: tickerData,
             };
 
-            // Cache for 5 seconds (to match market trades cache)
-            await redisService.setex(cacheKey, 5, JSON.stringify(result));
+            // Cache for 30 seconds
+            await redisService.setex(cacheKey, 30, JSON.stringify(result));
 
             logger.debug("Kodiak ticker data retrieved and cached", { symbol });
             return result;
         } catch (error) {
             logger.error("Get Kodiak ticker error", error as Error, {
                 symbol,
+                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -833,6 +697,7 @@ export class KodiakIntegrationService {
         } catch (error) {
             logger.error("Get Kodiak orderbook error", error as Error, {
                 symbol,
+                error: error instanceof Error ? error.message : String(error),
             });
 
             return {
@@ -882,7 +747,9 @@ export class KodiakIntegrationService {
             logger.debug("Kodiak TradingView config retrieved and cached");
             return result;
         } catch (error) {
-            logger.error("Get Kodiak TradingView config error", error as Error);
+            logger.error("Get Kodiak TradingView config error", error as Error, {
+                error: error instanceof Error ? error.message : String(error),
+            });
 
             return {
                 success: false,

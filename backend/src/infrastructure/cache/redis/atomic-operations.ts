@@ -109,17 +109,20 @@ export class RedisAtomicOperations {
         const result = await this.transactions.watchMultiExec(
             [key],
             async (multi: unknown) => {
-                // Increment the counter
-                (multi as { incrBy: (key: string, increment: number) => void }).incrBy(key, increment);
+                // Check if key exists and get TTL
+                const ttlResult = await this.connectionManager.getClient().pTTL(key);
 
-                // Set expiry if this is the first increment (TTL doesn't exist before)
                 if (ttlMs) {
-                    // Use Lua script to set expiry only if key didn't exist
+                    // Use Lua script to handle both increment and expiry properly
                     (multi as { eval: (script: string, config: { keys: string[]; arguments: string[] }) => void }).eval(`
                         local count = redis.call('INCRBY', KEYS[1], ARGV[1])
-                        if count == tonumber(ARGV[1]) then
+                        local ttl = redis.call('PTTL', KEYS[1])
+                        
+                        -- Set expiry if this is the first increment or TTL is negative (key exists but no TTL)
+                        if count == tonumber(ARGV[1]) or ttl < 0 then
                             redis.call('PEXPIRE', KEYS[1], ARGV[2])
                         end
+                        
                         return count
                     `, {
                         keys: [key],

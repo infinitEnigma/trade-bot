@@ -514,7 +514,7 @@ export async function getClientWithTimeout(timeoutMs: number = currentTimeoutCon
     await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
     databaseLogger.debug("Client timeout configured", { timeoutMs });
   } catch (error) {
-    databaseLogger.warn("Failed to set client timeout, using pool default", {
+    databaseLogger.error("Failed to set client timeout, using pool default", error as Error, {
       timeoutMs,
       error: (error as Error).message,
     });

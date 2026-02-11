@@ -158,8 +158,9 @@ export class MiddlewareConfig {
         // EXCLUDE chart/market data routes - they need fast updates for real-time charts
         const kodiakRoutes = [
             "/api/user/kodiak/connect",      // ✅ Connection endpoint - needs protection
-            "/api/user/kodiak/positions",    // ✅ Trading data - needs protection
-            "/api/user/kodiak/trades",       // ✅ Trading data - needs protection
+            //"/api/user/verification",
+            //"/api/user/kodiak/positions",    // ✅ Trading data - needs protection
+            //"/api/user/kodiak/trades",       // ✅ Trading data - needs protection
             "/api/user/kodiak/balance",      // ✅ Trading data - needs protection
             "/api/user/kodiak/account-info", // ✅ Trading data - needs protection            
             "/api/balance/current"           // ✅ Trading data - needs protection
@@ -249,16 +250,16 @@ export class MiddlewareConfig {
         const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service");
 
         return createRateLimiter("kodiak-connection", {
-            max: 20,                   // 20 requests per minute for connection operations
+            max: 30,                   // 60 requests per minute for connection operations
             windowMs: 60000,          // 1 minute window
             message: "Kodiak connection rate limit exceeded",
-            progressiveBackoff: false,
-            failOpen: true,           // Allow if rate limiting fails - connection should work
+            progressiveBackoff: true,
+            failOpen: false,           // Allow if rate limiting fails - connection should work
             enableUserBasedLimits: true,
             userLimits: {
                 [UserLevel.BASIC]: 2,             // Basic users: 2 req/min
-                [UserLevel.REGISTERED]: 10,        // Registered users: 10 req/min
-                [UserLevel.VERIFIED]: 20,          // Verified users: 20 req/min
+                [UserLevel.REGISTERED]: 15,        // Registered users: 20 req/min
+                [UserLevel.VERIFIED]: 30,          // Verified users: 60 req/min
             },
         });
     }
@@ -331,16 +332,14 @@ export class MiddlewareConfig {
             this.configureCsrfValidation(app);
         }
 
-        // 🎯 SPECIALIZED KODIAK PROTECTION FIRST: Request queuing + account-based rate limiting
-        // MUST come before general rate limiting to override the defaults
         if (config.enableRateLimiting) {
-            this.configureKodiakProtection(app);
             this.configuredMiddleware.rateLimiting = true;
         }
 
         // Per-endpoint rate limiting with user-based limits (after Kodiak protection)
         if (config.enableRateLimiting) {
             this.configureRateLimiting(app);
+            this.configureKodiakProtection(app);
         }
 
         // API activity tracking middleware

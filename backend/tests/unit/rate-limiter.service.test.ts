@@ -19,6 +19,8 @@ jest.mock('../../src/infrastructure', () => ({
     redisService: {
         isHealthy: jest.fn(),
         atomicIncrementWithExpiry: jest.fn(),
+        get: jest.fn().mockResolvedValue({ success: true, data: null }),
+        setex: jest.fn().mockResolvedValue({ success: true }),
     },
 }));
 
@@ -103,6 +105,8 @@ describe('RateLimiterService', () => {
             const req = { method: 'GET', ip: '192.168.1.1' } as unknown as Request;
             const res = {
                 set: jest.fn(),
+                status: jest.fn().mockReturnThis(),
+                json: jest.fn(),
             } as unknown as Response;
             const next = jest.fn();
 
@@ -161,6 +165,8 @@ describe('RateLimiterService', () => {
             const req = { method: 'GET', ip: '192.168.1.1' } as unknown as Request;
             const res = {
                 set: jest.fn(),
+                status: jest.fn().mockReturnThis(),
+                json: jest.fn(),
             } as unknown as Response;
             const next = jest.fn();
 
@@ -184,6 +190,8 @@ describe('RateLimiterService', () => {
             const req = { method: 'GET', ip: '192.168.1.1' } as unknown as Request;
             const res = {
                 set: jest.fn(),
+                status: jest.fn().mockReturnThis(),
+                json: jest.fn(),
             } as unknown as Response;
             const next = jest.fn();
 

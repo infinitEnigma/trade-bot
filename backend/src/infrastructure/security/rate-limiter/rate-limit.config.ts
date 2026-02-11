@@ -39,7 +39,7 @@ const ENVIRONMENT_MULTIPLIERS = {
  */
 const USER_TIER_RATIOS = {
     [UserLevel.BASIC]: 1,       // Baseline limits
-    [UserLevel.REGISTERED]: 1.5, // 50% more than basic
+    [UserLevel.REGISTERED]: 2.5, // 50% more than basic
     [UserLevel.VERIFIED]: 5,   // 2.5x more than basic
 } as const;
 
@@ -63,7 +63,7 @@ const BASE_RATE_LIMITS = {
     // Market data - permissive for real-time charts
     market: {
         windowMs: 60 * 1000, // 1 minute
-        max: 10000, // ⬆️ 100,000 requests per minute (very permissive for charts)
+        max: 1000, // 1000 requests per minute
     },
 
     // Trading endpoints - strict, user-based, fail-closed
@@ -105,7 +105,7 @@ const BASE_RATE_LIMITS = {
     // Kodiak data endpoints - trading data with user-based limits
     kodiakData: {
         windowMs: 60000, // 1 minute
-        max: 60, // 60 requests per minute (1 req/sec for trading data)
+        max: 600, // 60 requests per minute (1 req/sec for trading data)
     },
 } as const;
 
@@ -187,8 +187,11 @@ export const RATE_LIMIT_CONFIGS = {
      * Allows high traffic for public-facing features
      */
     public: createRateLimitConfig(BASE_RATE_LIMITS.public, {
-        failOpen: true, // Allow requests if Redis fails - public data should be available
-        customMessage: "Too many requests to this endpoint",
+        progressiveBackoff: true, // Disabled to prevent false lockouts from persistent Redis counters
+        maxProgressiveDelay: 5 * 60 * 1000, // 5 minutes max delay
+        progressiveBaseDelay: 1000, // 1 second base delay
+        failOpen: false, // Allow requests if Redis fails - public data should be available
+        customMessage: "Too many requests to this endpoint: public",
     }),
 
     /**
@@ -196,6 +199,9 @@ export const RATE_LIMIT_CONFIGS = {
      * Higher limits for premium users, fail-closed for data integrity
      */
     market: createRateLimitConfig(BASE_RATE_LIMITS.market, {
+        progressiveBackoff: true, // Disabled to prevent false lockouts from persistent Redis counters
+        maxProgressiveDelay: 5 * 60 * 1000, // 5 minutes max delay
+        progressiveBaseDelay: 2000, // 1 second base delay
         enableUserBasedLimits: true,
         failOpen: false, // Block if rate limiting fails - financial data integrity
         customMessage: "Market data rate limit exceeded",
@@ -206,6 +212,9 @@ export const RATE_LIMIT_CONFIGS = {
      * Critical financial operations require strict rate limiting
      */
     trading: createRateLimitConfig(BASE_RATE_LIMITS.trading, {
+        progressiveBackoff: true, // Disabled to prevent false lockouts from persistent Redis counters
+        maxProgressiveDelay: 5 * 60 * 1000, // 5 minutes max delay
+        progressiveBaseDelay: 1000, // 1 second base delay
         enableUserBasedLimits: true,
         failOpen: false, // Critical security - block if rate limiting fails
         customMessage: "Trading rate limit exceeded",
@@ -216,6 +225,9 @@ export const RATE_LIMIT_CONFIGS = {
      * Financial data with appropriate user tier differentiation
      */
     balance: createRateLimitConfig(BASE_RATE_LIMITS.balance, {
+        progressiveBackoff: true, // Disabled to prevent false lockouts from persistent Redis counters
+        maxProgressiveDelay: 5 * 60 * 1000, // 5 minutes max delay
+        progressiveBaseDelay: 1000, // 1 second base delay
         enableUserBasedLimits: true,
         failOpen: false, // Financial data - block if rate limiting fails
         customMessage: "Balance refresh rate limit exceeded",
@@ -226,8 +238,11 @@ export const RATE_LIMIT_CONFIGS = {
      * Real-time data should be available even during Redis issues
      */
     websocket: createRateLimitConfig(BASE_RATE_LIMITS.websocket, {
+        progressiveBackoff: true, // Disabled to prevent false lockouts from persistent Redis counters
+        maxProgressiveDelay: 5 * 60 * 1000, // 5 minutes max delay
+        progressiveBaseDelay: 1000, // 1 second base delay
         enableUserBasedLimits: true,
-        failOpen: true, // Real-time data - allow if Redis fails
+        failOpen: false, // Real-time data - allow if Redis fails
         customMessage: "WebSocket subscription rate limit exceeded",
     }),
 
@@ -236,6 +251,9 @@ export const RATE_LIMIT_CONFIGS = {
      * Bot operations with appropriate user tier controls
      */
     botInstances: createRateLimitConfig(BASE_RATE_LIMITS.botInstances, {
+        progressiveBackoff: true, // Disabled to prevent false lockouts from persistent Redis counters
+        maxProgressiveDelay: 5 * 60 * 1000, // 5 minutes max delay
+        progressiveBaseDelay: 1000, // 1 second base delay
         enableUserBasedLimits: true,
         failOpen: false, // Bot data - block if rate limiting fails
         customMessage: "Bot instances rate limit exceeded",
@@ -246,8 +264,11 @@ export const RATE_LIMIT_CONFIGS = {
      * System status checks should always be available
      */
     kodiakStatus: createRateLimitConfig(BASE_RATE_LIMITS.kodiakStatus, {
+        progressiveBackoff: true, // Disabled to prevent false lockouts from persistent Redis counters
+        maxProgressiveDelay: 5 * 60 * 1000, // 5 minutes max delay
+        progressiveBaseDelay: 1000, // 1 second base delay
         enableUserBasedLimits: true,
-        failOpen: true, // Allow if Redis fails - just DB queries
+        failOpen: false, // Allow if Redis fails - just DB queries
         customMessage: "Kodiak status rate limit exceeded",
     }),
 
@@ -256,7 +277,11 @@ export const RATE_LIMIT_CONFIGS = {
      * Prevents 400 errors while allowing reasonable request frequency
      */
     kodiakConnection: createRateLimitConfig(BASE_RATE_LIMITS.kodiakApi, {
-        failOpen: true, // Allow requests if rate limiting fails - prioritize UX
+        progressiveBackoff: true, // Disabled to prevent false lockouts from persistent Redis counters
+        maxProgressiveDelay: 5 * 60 * 1000, // 5 minutes max delay
+        progressiveBaseDelay: 1000, // 1 second base delay
+        enableUserBasedLimits: true,
+        failOpen: false, // Allow requests if rate limiting fails - prioritize UX
         customMessage: "Kodiak connection rate limit exceeded",
     }),
 
@@ -265,7 +290,11 @@ export const RATE_LIMIT_CONFIGS = {
      * Prevents 400 errors while allowing reasonable request frequency
      */
     kodiakApi: createRateLimitConfig(BASE_RATE_LIMITS.kodiakApi, {
-        failOpen: true, // ⬆️ Allow requests if rate limiting fails - prioritize UX
+        progressiveBackoff: true, // Disabled to prevent false lockouts from persistent Redis counters
+        maxProgressiveDelay: 5 * 60 * 1000, // 5 minutes max delay
+        progressiveBaseDelay: 1000, // 1 second base delay
+        enableUserBasedLimits: true,
+        failOpen: false, // ⬆️ Allow requests if rate limiting fails - prioritize UX
         customMessage: "Kodiak API rate limit exceeded",
     }),
 } as const;
@@ -296,7 +325,7 @@ export const RateLimitConfigUtils = {
  */
 export const kodiakConnectionRateLimit: RateLimitConfig = {
     windowMs: 60000, // 1 minute
-    max: 60, // ⬆️ 60 connection attempts per minute (1 per second)
+    max: 600, // ⬆️ 60 connection attempts per minute (1 per second)
     progressiveBackoff: false, // Disabled to prevent false lockouts
     maxProgressiveDelay: 300000, // 5 minutes max delay (if enabled)
     progressiveBaseDelay: 1000, // 1 second base delay (if enabled)
@@ -314,7 +343,7 @@ export const kodiakSyncedRateLimit: RateLimitConfig = {
     windowMs: 60000, // 1 minute
     max: 20, // Reduced from 60 to 20 for status checks
     progressiveBackoff: true,
-    maxProgressiveDelay: 300000, // 5 minutes max delay
+    maxProgressiveDelay: 120000, // 2 minutes max delay
     progressiveBaseDelay: 1000, // 1 second base delay
     skipSuccessfulRequests: false,
     skipFailedRequests: false,
@@ -327,9 +356,9 @@ export const kodiakSyncedRateLimit: RateLimitConfig = {
  */
 export const kodiakRateLimit: RateLimitConfig = {
     windowMs: 60000, // 1 minute
-    max: 60, // 60 requests per minute
+    max: 600, // 60 requests per minute
     progressiveBackoff: true,
-    maxProgressiveDelay: 300000, // 5 minutes max delay
+    maxProgressiveDelay: 120000, // 2 minutes max delay
     progressiveBaseDelay: 1000, // 1 second base delay
     skipSuccessfulRequests: false,
     skipFailedRequests: false,

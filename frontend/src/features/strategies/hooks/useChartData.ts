@@ -376,7 +376,7 @@ export const useCurrentPrice = (symbol: string) => {
       }
     },
     enabled: !!symbol,
-    staleTime: userLevel === 'BASIC' ? 10000 : 1000, // Basic: 2min, Premium: 1min (was 15sec)
+    staleTime: userLevel === 'BASIC' ? 10000 : 1000, // Basic: 10 sec, Premium: 10 sec (match cache TTL)
     gcTime: 1 * 10 * 1000, // 10 seconds cache
     retry: (failureCount, error) => {
       // Don't retry on 403/503 (auth/data unavailable errors)
@@ -396,10 +396,10 @@ export const useCurrentPrice = (symbol: string) => {
       // For premium users, check freshness metadata
       const data = query.state.data;
       if (data?.freshness?.recommendedPollInterval) {
-        return Math.max(data.freshness.recommendedPollInterval, 3000); // Min 3 seconds
+        return Math.max(data.freshness.recommendedPollInterval, 2000); // Min 2 seconds to match cache TTL
       }
 
-      return 5000; // Default 5 seconds for premium users
+      return 3000; // Default 3 seconds for all users to avoid rate limiting
     },
     refetchIntervalInBackground: false,
   });

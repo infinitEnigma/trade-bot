@@ -26,7 +26,7 @@ const WS_BASE =
 // GET /api/market/ticker
 router.get(
   "/ticker",
-  //RateLimiters.market,
+  RateLimiters.market,
   async (req: Request, res: Response) => {
     try {
       const symbol = (req.query.symbol as string) || "PERP_BTC_USDC";
@@ -47,7 +47,7 @@ router.get(
           error: "Market data temporarily unavailable. Please try again later.",
           symbol,
           timestamp: Date.now(),
-          retryAfter: 30, // Suggest retry after 30 seconds
+          retryAfter: 60, // Suggest retry after 30 seconds
         });
       }
 
@@ -93,7 +93,7 @@ router.get(
         error: "Market data temporarily unavailable. Please try again later.",
         symbol: (req.query.symbol as string) || "PERP_BTC_USDC",
         timestamp: Date.now(),
-        retryAfter: 30, // Suggest retry after 30 seconds
+        retryAfter: 60, // Suggest retry after 30 seconds
       });
     }
   }
@@ -336,6 +336,8 @@ router.get(
 router.get(
   "/markprice/:symbol",
   RateLimiters.market,
+  RateLimiters.kodiakApi,
+  authMiddleware,
   async (req: Request, res: Response) => {
     try {
       const { symbol } = req.params;
