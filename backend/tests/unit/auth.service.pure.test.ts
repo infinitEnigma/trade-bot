@@ -49,6 +49,9 @@ describe('AuthService', () => {
                 logEvent: jest.fn(),
                 getUserLogs: jest.fn(),
             },
+            signatureVerificationService: {
+                verifySignature: jest.fn(),
+            },
         };
     };
 
@@ -713,15 +716,118 @@ describe('AuthService', () => {
             const authService = new AuthService(deps);
 
             const testUserId = 'user-123';
-            const testWalletAddress = '0x1234...';
-            const testSignature = 'signature';
-            const testMessage = 'message';
+            const testWalletAddress = '0x742d35Cc6634C0532925a3b88650D7A3e5554A0';
+            const testSignature = '0x1234...'; // This is just a placeholder
+            const testMessage = 'Please sign this message to verify your wallet ownership';
+
+            // Mock signature verification
+            (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(true);
+
+            // Mock getting the stored wallet address
+            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(testWalletAddress);
+
+            // Mock updating user level
+            (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(true);
+            (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
 
             const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
 
             expect(result.success).toBe(true);
-            expect(result.message).toEqual('Wallet ownership verified');
+            expect(result.message).toEqual('Wallet ownership verified. Your account has been upgraded to VERIFIED level.');
             expect(deps.logger.info).toHaveBeenCalled();
+            expect(deps.userRepository.getWalletAddress).toHaveBeenCalledWith(testUserId);
+            expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(testUserId, UserLevel.VERIFIED);
+        });
+
+        it('should fail verification when signature does not match wallet address', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            const testUserId = 'user-123';
+            const testWalletAddress = '0x742d35Cc6634C0532925a3b88650D7A3e5554A0';
+            const testSignature = '0x1234...';
+            const testMessage = 'Please sign this message to verify your wallet ownership';
+
+            // Mock signature verification failing
+            (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(false);
+
+            // Mock getting the stored wallet address
+            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(testWalletAddress);
+
+            const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
+
+            expect(result.success).toBe(false);
+            expect(result.message).toEqual('Signature does not match the provided wallet address');
+            expect(deps.logger.warn).toHaveBeenCalled();
+        });
+
+        it('should fail verification when no verified Kodiak credentials are found', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            const testUserId = 'user-123';
+            const testWalletAddress = '0x742d35Cc6634C0532925a3b88650D7A3e5554A0';
+            const testSignature = '0x1234...';
+            const testMessage = 'Please sign this message to verify your wallet ownership';
+
+            // Mock signature verification
+            (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(true);
+
+            // Mock getting the stored wallet address - return null (no credentials)
+            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(null);
+
+            const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
+
+            expect(result.success).toBe(false);
+            expect(result.message).toEqual('No verified Kodiak credentials found. Please connect your Kodiak account first.');
+            expect(deps.logger.warn).toHaveBeenCalled();
+        });
+
+        it('should fail verification when wallet address does not match Kodiak credentials', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            const testUserId = 'user-123';
+            const testWalletAddress = '0x742d35Cc6634C0532925a3b88650D7A3e5554A0';
+            const testSignature = '0x1234...';
+            const testMessage = 'Please sign this message to verify your wallet ownership';
+
+            // Mock signature verification
+            (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(true);
+
+            // Mock getting the stored wallet address - return different address
+            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue('0x9876...');
+
+            const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
+
+            expect(result.success).toBe(false);
+            expect(result.message).toEqual('Wallet address does not match the address associated with your Kodiak account');
+            expect(deps.logger.warn).toHaveBeenCalled();
+        });
+
+        it('should fail verification when user level update fails', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            const testUserId = 'user-123';
+            const testWalletAddress = '0x742d35Cc6634C0532925a3b88650D7A3e5554A0';
+            const testSignature = '0x1234...';
+            const testMessage = 'Please sign this message to verify your wallet ownership';
+
+            // Mock signature verification
+            (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(true);
+
+            // Mock getting the stored wallet address
+            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(testWalletAddress);
+
+            // Mock user level update failing
+            (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(false);
+
+            const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
+
+            expect(result.success).toBe(false);
+            expect(result.message).toEqual('Wallet verification succeeded but failed to update user level');
+            expect(deps.logger.error).toHaveBeenCalled();
         });
 
         it('should handle wallet verification errors', async () => {
@@ -733,8 +839,9 @@ describe('AuthService', () => {
             const testSignature = 'signature';
             const testMessage = 'message';
 
-            (deps.logger.info as jest.Mock).mockImplementation(() => {
-                throw new Error('Wallet verification failed');
+            // Mock signature verification throwing an error
+            (deps.signatureVerificationService.verifySignature as jest.Mock).mockImplementation(() => {
+                throw new Error('Signature verification failed');
             });
 
             const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);

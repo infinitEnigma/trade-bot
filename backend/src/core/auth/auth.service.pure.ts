@@ -22,6 +22,7 @@ import {
     IPasswordService,
     ILogger,
     IAuditLogRepository,
+    ISignatureVerificationService,
     User,
     UserLevel,
     UserRegistration,
@@ -38,6 +39,7 @@ export interface AuthServiceDependencies {
     passwordService: IPasswordService;
     logger: ILogger;
     auditLogger?: IAuditLogRepository;
+    signatureVerificationService: ISignatureVerificationService;
 }
 
 /**
@@ -461,22 +463,83 @@ export class AuthService {
     async verifyWalletOwnership(
         userId: string,
         walletAddress: string,
-        _signature: string,
-        _message: string
+        signature: string,
+        message: string
     ): Promise<{ success: boolean; message: string }> {
         try {
-            // This is a placeholder implementation
-            // In a real implementation, this would verify the signature against the message
-            // and check if the wallet address matches the user's verified wallets
             this.deps.logger.info('Wallet ownership verification requested', {
                 userId,
                 walletAddress
             });
 
-            // For now, return success - this should be implemented based on your wallet verification logic
+            // Verify the signature matches the wallet address using the signature verification service
+            const signatureValid = await this.deps.signatureVerificationService.verifySignature(
+                walletAddress,
+                signature,
+                message
+            );
+
+            if (!signatureValid) {
+                this.deps.logger.warn('Wallet signature verification failed - address mismatch', {
+                    userId,
+                    providedAddress: walletAddress
+                });
+                return {
+                    success: false,
+                    message: 'Signature does not match the provided wallet address'
+                };
+            }
+
+            // Get the stored wallet address from user's verified Kodiak credentials
+            const storedWalletAddress = await this.deps.userRepository.getWalletAddress(userId);
+
+            if (!storedWalletAddress) {
+                this.deps.logger.warn('Wallet verification failed - no verified Kodiak credentials found', {
+                    userId
+                });
+                return {
+                    success: false,
+                    message: 'No verified Kodiak credentials found. Please connect your Kodiak account first.'
+                };
+            }
+
+            // Compare with stored wallet address
+            const normalizedProvided = walletAddress.toLowerCase().trim();
+            const normalizedStored = storedWalletAddress.toLowerCase().trim();
+
+            if (normalizedProvided !== normalizedStored) {
+                this.deps.logger.warn('Wallet verification failed - address does not match Kodiak credentials', {
+                    userId,
+                    providedAddress: walletAddress,
+                    storedAddress: storedWalletAddress
+                });
+                return {
+                    success: false,
+                    message: 'Wallet address does not match the address associated with your Kodiak account'
+                };
+            }
+
+            // Update user level to VERIFIED
+            const success = await this.updateUserLevel(userId, UserLevel.VERIFIED);
+
+            if (!success) {
+                this.deps.logger.error('Failed to update user level to VERIFIED', {
+                    userId
+                });
+                return {
+                    success: false,
+                    message: 'Wallet verification succeeded but failed to update user level'
+                };
+            }
+
+            this.deps.logger.info('Wallet ownership verified and user level updated to VERIFIED', {
+                userId,
+                walletAddress
+            });
+
             return {
                 success: true,
-                message: 'Wallet ownership verified'
+                message: 'Wallet ownership verified. Your account has been upgraded to VERIFIED level.'
             };
         } catch (error) {
             this.deps.logger.error('Wallet ownership verification failed', {

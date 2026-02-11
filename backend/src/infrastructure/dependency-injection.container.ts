@@ -14,6 +14,7 @@ import { jwtTokenAdapter } from './adapters/token/jwt-token.adapter';
 import { passwordAdapter } from './adapters/password/password.adapter';
 import { encryptionAdapter } from './adapters/encryption/encryption.adapter';
 import { externalApiAdapter } from './adapters/external/external-api.adapter';
+import { signatureVerificationServiceAdapter } from './adapters/security/signature-verification.adapter';
 
 // Redis Services
 import { redisService } from './cache/redis.service';
@@ -189,6 +190,13 @@ export class DependencyInjectionContainer {
     }
 
     /**
+     * Signature Verification Service - Ethereum wallet signature verification
+     */
+    get signatureVerificationService() {
+        return signatureVerificationServiceAdapter;
+    }
+
+    /**
      * Auth Service - Pure business logic for authentication
      */
     get authService(): AuthService {
@@ -198,7 +206,8 @@ export class DependencyInjectionContainer {
             tokenService: this.tokenService,
             passwordService: this.passwordService,
             logger: this.loggerService,
-            auditLogger: this.auditLogRepository
+            auditLogger: this.auditLogRepository,
+            signatureVerificationService: this.signatureVerificationService
         });
     }
 

@@ -398,6 +398,21 @@ export interface IBotStatusService {
 }
 
 // ===========================================
+// SIGNATURE VERIFICATION INFRASTRUCTURE
+// ===========================================
+
+export interface ISignatureVerificationService {
+    /**
+     * Verify that a signature is valid for the given wallet address and message
+     * @param walletAddress - The wallet address that should have signed the message
+     * @param signature - The signature to verify
+     * @param message - The message that was signed
+     * @returns Promise<boolean> - True if the signature is valid, false otherwise
+     */
+    verifySignature(walletAddress: string, signature: string, message: string): Promise<boolean>;
+}
+
+// ===========================================
 // BOT PERFORMANCE TRACKING INFRASTRUCTURE
 // ===========================================
 

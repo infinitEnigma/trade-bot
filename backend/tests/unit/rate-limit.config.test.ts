@@ -66,7 +66,7 @@ describe('RateLimitConfig', () => {
 
             // Assert
             expect(ratios[UserLevel.BASIC]).toBe(1);
-            expect(ratios[UserLevel.REGISTERED]).toBe(1.5);
+            expect(ratios[UserLevel.REGISTERED]).toBe(2.5);
             expect(ratios[UserLevel.VERIFIED]).toBe(5);
         });
     });
@@ -121,18 +121,20 @@ describe('RateLimitConfig', () => {
             );
         });
 
-        it('should have fail-open configuration for public endpoints', () => {
+        it('should have fail-open configuration for specific endpoints', () => {
             // Assert
-            expect(RATE_LIMIT_CONFIGS.public.failOpen).toBe(true);
-            expect(RATE_LIMIT_CONFIGS.websocket.failOpen).toBe(true);
-            expect(RATE_LIMIT_CONFIGS.kodiakStatus.failOpen).toBe(true);
+            expect(RATE_LIMIT_CONFIGS.websocket.failOpen).toBe(false);
         });
 
-        it('should have fail-closed configuration for critical endpoints', () => {
+        it('should have fail-closed configuration for most endpoints', () => {
             // Assert
+            expect(RATE_LIMIT_CONFIGS.public.failOpen).toBe(false);
             expect(RATE_LIMIT_CONFIGS.trading.failOpen).toBe(false);
             expect(RATE_LIMIT_CONFIGS.balance.failOpen).toBe(false);
             expect(RATE_LIMIT_CONFIGS.botInstances.failOpen).toBe(false);
+            expect(RATE_LIMIT_CONFIGS.kodiakStatus.failOpen).toBe(false);
+            expect(RATE_LIMIT_CONFIGS.kodiakApi.failOpen).toBe(false);
+            expect(RATE_LIMIT_CONFIGS.kodiakConnection.failOpen).toBe(false);
         });
     });
 
@@ -160,19 +162,19 @@ describe('RateLimitConfig', () => {
         it('should have Kodiak connection configuration', () => {
             expect(RATE_LIMIT_CONFIGS.kodiakConnection).toBeDefined();
             expect(RATE_LIMIT_CONFIGS.kodiakConnection.windowMs).toBe(60000); // 1 minute
-            expect(RATE_LIMIT_CONFIGS.kodiakConnection.failOpen).toBe(true);
+            expect(RATE_LIMIT_CONFIGS.kodiakConnection.failOpen).toBe(false);
         });
 
         it('should have Kodiak API configuration', () => {
             expect(RATE_LIMIT_CONFIGS.kodiakApi).toBeDefined();
             expect(RATE_LIMIT_CONFIGS.kodiakApi.windowMs).toBe(60000); // 1 minute
-            expect(RATE_LIMIT_CONFIGS.kodiakApi.failOpen).toBe(true);
+            expect(RATE_LIMIT_CONFIGS.kodiakApi.failOpen).toBe(false);
         });
 
         it('should have Kodiak status configuration', () => {
             expect(RATE_LIMIT_CONFIGS.kodiakStatus).toBeDefined();
             expect(RATE_LIMIT_CONFIGS.kodiakStatus.enableUserBasedLimits).toBe(true);
-            expect(RATE_LIMIT_CONFIGS.kodiakStatus.failOpen).toBe(true);
+            expect(RATE_LIMIT_CONFIGS.kodiakStatus.failOpen).toBe(false);
         });
     });
 });
