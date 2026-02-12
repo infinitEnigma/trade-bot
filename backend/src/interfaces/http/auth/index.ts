@@ -115,6 +115,36 @@ router.post(
         );
       }
 
+      // Check if user is VERIFIED and automatically check admin qualification
+      if (result.user?.userLevel === UserLevel.VERIFIED) {
+        try {
+          const roleQualificationService = serviceProvider.getRoleQualificationService();
+          const adminQualification = await roleQualificationService.checkQualification(
+            result.user.id,
+            UserRole.SYSTEM_ADMIN
+          );
+
+          if (adminQualification.qualified) {
+            const roleManagementService = serviceProvider.getRoleManagementService();
+            await roleManagementService.assignRole(
+              result.user.id,
+              UserRole.SYSTEM_ADMIN,
+              'system',
+              adminQualification.criteria as unknown as JSON
+            );
+
+            authLogger.info("User automatically qualified for SYSTEM_ADMIN role on login", {
+              userId: result.user.id,
+            });
+          }
+        } catch (error) {
+          authLogger.warn("Failed to automatically check admin qualification on login", {
+            userId: result.user?.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
       res.cookie("accessToken", result.tokens.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -430,6 +460,71 @@ router.get(
         userId: req.user?.userId,
       });
       const internalError = new ValidationError("Failed to get user data");
+      res.status(internalError.statusCode).json(
+        createErrorResponse(internalError, getCorrelationId())
+      );
+    }
+  }
+);
+
+// POST /api/auth/check-admin-qualification
+router.post(
+  "/check-admin-qualification",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      // Defensive check - user should be set by authMiddleware
+      if (!req.user) {
+        authLogger.warn("Admin qualification check requested without authenticated user");
+        return res.status(401).json({
+          success: false,
+          error: "Unauthorized - user not authenticated",
+        });
+      }
+
+      const userId = req.user.userId;
+      const userLevel = req.user.userLevel;
+
+      // Only VERIFIED users can check admin qualifications
+      if (userLevel !== UserLevel.VERIFIED) {
+        const authError = new ValidationError("Must be VERIFIED to check admin qualifications");
+        return res.status(authError.statusCode).json(
+          createErrorResponse(authError, getCorrelationId())
+        );
+      }
+
+      // Check qualification for SYSTEM_ADMIN role
+      const roleQualificationService = serviceProvider.getRoleQualificationService();
+      const result = await roleQualificationService.checkQualification(userId, UserRole.SYSTEM_ADMIN);
+
+      if (result.qualified) {
+        // Assign SYSTEM_ADMIN role
+        const roleManagementService = serviceProvider.getRoleManagementService();
+        await roleManagementService.assignRole(
+          userId,
+          UserRole.SYSTEM_ADMIN,
+          'system',
+          result.criteria as unknown as JSON
+        );
+
+        authLogger.info("User qualified for SYSTEM_ADMIN role", {
+          userId,
+          qualificationCriteria: result.criteria
+        });
+      }
+
+      res.json({
+        success: true,
+        qualified: result.qualified,
+        criteria: result.criteria,
+        reason: result.reason
+      });
+
+    } catch (error) {
+      authLogger.error("Admin qualification check error", error instanceof Error ? error : undefined, {
+        userId: req.user?.userId,
+      });
+      const internalError = new ValidationError("Admin qualification check failed");
       res.status(internalError.statusCode).json(
         createErrorResponse(internalError, getCorrelationId())
       );

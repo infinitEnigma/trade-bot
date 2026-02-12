@@ -8,7 +8,7 @@
  */
 
 import { ISignatureVerificationService } from '@trade-bot/shared';
-
+import { securityLogger as logger } from '../../../core/logging/context-aware-logger.service';
 /**
  * Signature Verification Service Adapter
  *
@@ -36,7 +36,7 @@ export class SignatureVerificationServiceAdapter implements ISignatureVerificati
             return normalizedRecovered === normalizedWalletAddress;
         } catch (error) {
             // If verification fails for any reason (invalid signature, malformed address, etc.), return false
-            console.error('Signature verification failed:', error);
+            logger.error('Signature verification failed:', error as Error);
             return false;
         }
     }
