@@ -3,6 +3,7 @@
 // UserRole enum for frontend use
 export enum UserRole {
     QUALIFIED_ALPHA = "QUALIFIED_ALPHA",
+    SYSTEM_ADMIN = "SYSTEM_ADMIN",
 }
 
 // UserLevel enum for frontend use

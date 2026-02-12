@@ -9,9 +9,20 @@ import { UserLevel } from "../../../shared/types";
 // Mock the auth service
 vi.mock("../services/authService");
 
+// Mock checkAdminQualification to return not qualified by default
+(authService.checkAdminQualification as vi.Mock).mockResolvedValue({
+    success: true,
+    data: { isQualified: false }
+});
+
 describe("useAuth hook", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // Reset the checkAdminQualification mock
+        (authService.checkAdminQualification as vi.Mock).mockResolvedValue({
+            success: true,
+            data: { isQualified: false }
+        });
     });
 
     describe("initial state", () => {

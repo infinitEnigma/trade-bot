@@ -26,6 +26,20 @@ const useAuthStore = create<AuthStore>()(
                         const profileResponse = await authService.getProfile();
 
                         if (profileResponse.success && profileResponse.data) {
+                            // Check if user is verified and needs admin qualification check
+                            if (profileResponse.data.userLevel === 'VERIFIED') {
+                                try {
+                                    const adminQualificationResponse = await authService.checkAdminQualification();
+                                    if (adminQualificationResponse.success && adminQualificationResponse.data?.isQualified) {
+                                        // Add SYSTEM_ADMIN role to user if qualified
+                                        profileResponse.data.roles = [...(profileResponse.data.roles || []), 'SYSTEM_ADMIN'];
+                                    }
+                                } catch (adminError) {
+                                    console.error("Admin qualification check failed:", adminError);
+                                    // Continue login even if admin check fails
+                                }
+                            }
+
                             // Use complete user data from /api/auth/me for accurate user level
                             set({
                                 user: profileResponse.data as AuthUser,
@@ -133,6 +147,21 @@ const useAuthStore = create<AuthStore>()(
 
                     if (response.success && response.data) {
                         console.log("🔄 AUTH: Auth check successful, user:", response.data.userLevel);
+
+                        // Check if user is verified and needs admin qualification check
+                        if (response.data.userLevel === 'VERIFIED') {
+                            try {
+                                const adminQualificationResponse = await authService.checkAdminQualification();
+                                if (adminQualificationResponse.success && adminQualificationResponse.data?.isQualified) {
+                                    // Add SYSTEM_ADMIN role to user if qualified
+                                    response.data.roles = [...(response.data.roles || []), 'SYSTEM_ADMIN'];
+                                }
+                            } catch (adminError) {
+                                console.error("Admin qualification check failed:", adminError);
+                                // Continue login even if admin check fails
+                            }
+                        }
+
                         set({
                             user: response.data as AuthUser,
                             isAuthenticated: true,

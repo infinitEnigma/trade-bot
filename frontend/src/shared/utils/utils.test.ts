@@ -121,10 +121,10 @@ describe("utils.ts", () => {
     describe("sleep function", () => {
         it("should sleep for specified duration", async () => {
             const start = Date.now();
-            await sleep(10);
+            await sleep(100);
             const end = Date.now();
 
-            expect(end - start).toBeGreaterThanOrEqual(10);
+            expect(end - start).toBeGreaterThanOrEqual(100);
         });
     });
 
@@ -154,7 +154,7 @@ describe("utils.ts", () => {
     describe("copyToClipboard function", () => {
         it("should copy text to clipboard using navigator.clipboard", async () => {
             // Mock navigator.clipboard
-            const writeText = vi.fn().mockResolvedValue();
+            const writeText = vi.fn().mockResolvedValue("test text");
             Object.assign(navigator, {
                 clipboard: { writeText },
             });

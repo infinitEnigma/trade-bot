@@ -31,6 +31,7 @@ const Strategies = React.lazy(() => import("./features/strategies/pages/Strategi
 const Settings = React.lazy(() => import("./features/settings/pages/Settings"));
 const Analytics = React.lazy(() => import("./features/analytics/pages/Analytics"));
 const Profile = React.lazy(() => import("./features/auth/pages/Profile"));
+const AdminDashboard = React.lazy(() => import("./features/admin/pages/AdminDashboard"));
 
 // Protected Route Component
 const ProtectedRoute = ({
@@ -232,6 +233,22 @@ const AnimatedRoutes = () => {
                     transition={pageTransition}
                   >
                     <Settings />
+                  </motion.div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute requireRole={UserRole.SYSTEM_ADMIN}>
+                  <motion.div
+                    initial="initial"
+                    animate="in"
+                    exit="out"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                  >
+                    <AdminDashboard />
                   </motion.div>
                 </ProtectedRoute>
               }

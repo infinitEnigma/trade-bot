@@ -82,6 +82,19 @@ export class AuthService {
             throw error;
         }
     }
+
+    /**
+     * Check admin qualification
+     */
+    async checkAdminQualification() {
+        try {
+            const response = await authApi.checkAdminQualification();
+            return response;
+        } catch (error) {
+            console.error("Auth service checkAdminQualification error:", error);
+            throw error;
+        }
+    }
 }
 
 export const authService = AuthService.getInstance();

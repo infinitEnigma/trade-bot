@@ -52,4 +52,12 @@ export const authApi = {
         const response = await httpClient.getClient().get("/api/user/profile");
         return response.data;
     },
+
+    /**
+     * Check admin qualification
+     */
+    async checkAdminQualification(): Promise<ApiResponse<any>> {
+        const response = await httpClient.getClient().post("/api/auth/check-admin-qualification");
+        return response.data;
+    },
 };

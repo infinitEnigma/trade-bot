@@ -9,7 +9,8 @@ import {
   Zap,
   BarChart3,
   Settings,
-  Lock
+  Lock,
+  Shield
 } from "lucide-react";
 
 interface NavItemProps {
@@ -94,9 +95,17 @@ export const SmartNavigation: React.FC = () => {
       path: '/analytics',
       label: 'Analytics',
       icon: <BarChart3 className="w-4 h-4" />,
-      available: user?.roles?.includes(UserRole.QUALIFIED_ALPHA) || false,
+      available: user?.userLevel === 'VERIFIED' && user?.roles?.includes(UserRole.QUALIFIED_ALPHA) || false,
       requires: 'QUALIFIED_ALPHA',
       description: 'Advanced trading analytics and insights'
+    },
+    {
+      path: '/admin',
+      label: 'Admin',
+      icon: <Shield className="w-4 h-4" />,
+      available: user?.userLevel === 'VERIFIED' && user?.roles?.includes(UserRole.SYSTEM_ADMIN) || false,
+      requires: 'SYSTEM_ADMIN',
+      description: 'System administration and monitoring'
     },
     {
       path: '/settings',
