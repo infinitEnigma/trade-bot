@@ -4,6 +4,26 @@ import { RoleQualificationService, createRoleQualificationService, RoleQualifica
 import { UserRole, UserLevel } from '@trade-bot/shared';
 
 describe('RoleQualificationService', () => {
+    // Save original environment variables for cleanup
+    const originalEnv = { ...process.env };
+
+    beforeEach(() => {
+        // Set required environment variables for tests
+        process.env.ADMIN_CONTRACT_ADDRESS = '0x5a30c392714a9a9a8177c7998d9d59c3dd120917';
+        process.env.ADMIN_TOKEN_ID = '1695';
+        process.env.ETHERSCAN_API_KEY = 'test-api-key';
+        process.env.ADMIN_CHAIN_ID = '8094';
+    });
+
+    afterEach(() => {
+        // Restore original environment variables
+        process.env = { ...originalEnv };
+        // Clear fetch mock only if it was mocked
+        if (global.fetch && (global.fetch as any).mockRestore) {
+            (global.fetch as jest.Mock).mockRestore();
+        }
+    });
+
     // Create mock dependencies for the RoleQualificationService
     const createMockDependencies = (): RoleQualificationServiceDependencies => {
         return {
@@ -337,6 +357,168 @@ describe('RoleQualificationService', () => {
         });
     });
 
+    describe('System Admin Role Qualification', () => {
+        it('should not qualify if user level is not verified', async () => {
+            const deps = createMockDependencies();
+            const roleQualificationService = new RoleQualificationService(deps);
+
+            const testUserId = 'user-123';
+            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+                id: testUserId,
+                userLevel: UserLevel.BASIC,
+                createdAt: new Date()
+            });
+
+            const result = await roleQualificationService.checkQualification(testUserId, UserRole.SYSTEM_ADMIN);
+
+            expect(result.qualified).toBe(false);
+            expect(result.reason).toEqual('User must be verified');
+            expect(result.criteria).toEqual(expect.objectContaining({
+                currentLevel: UserLevel.BASIC,
+                requiredLevel: UserLevel.VERIFIED
+            }));
+        });
+
+        it('should not qualify if user has no wallet address', async () => {
+            const deps = createMockDependencies();
+            const roleQualificationService = new RoleQualificationService(deps);
+
+            const testUserId = 'user-123';
+            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+                id: testUserId,
+                userLevel: UserLevel.VERIFIED,
+                createdAt: new Date()
+            });
+            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(null);
+
+            const result = await roleQualificationService.checkQualification(testUserId, UserRole.SYSTEM_ADMIN);
+
+            expect(result.qualified).toBe(false);
+            expect(result.reason).toEqual('User does not have admin token');
+            expect(result.criteria).toEqual(expect.objectContaining({
+                hasAdminToken: false
+            }));
+        });
+
+        it('should not qualify if user does not have admin token', async () => {
+            const deps = createMockDependencies();
+            const roleQualificationService = new RoleQualificationService(deps);
+
+            const testUserId = 'user-123';
+            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+                id: testUserId,
+                userLevel: UserLevel.VERIFIED,
+                createdAt: new Date()
+            });
+            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue('0x1234...');
+
+            // Mock checkWalletForAdminToken to return false
+            const checkWalletForAdminTokenSpy = jest.spyOn(
+                RoleQualificationService.prototype as any,
+                'checkWalletForAdminToken'
+            ).mockResolvedValue(false);
+
+            const result = await roleQualificationService.checkQualification(testUserId, UserRole.SYSTEM_ADMIN);
+
+            expect(result.qualified).toBe(false);
+            expect(result.reason).toEqual('User does not have admin token');
+            expect(result.criteria).toEqual(expect.objectContaining({
+                hasAdminToken: false
+            }));
+            checkWalletForAdminTokenSpy.mockRestore();
+        });
+
+        it('should qualify for system admin role when all criteria are met', async () => {
+            const deps = createMockDependencies();
+            const roleQualificationService = new RoleQualificationService(deps);
+
+            const testUserId = 'user-123';
+            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+                id: testUserId,
+                userLevel: UserLevel.VERIFIED,
+                createdAt: new Date()
+            });
+            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue('0x1234...');
+
+            // Mock checkWalletForAdminToken to return true
+            const checkWalletForAdminTokenSpy = jest.spyOn(
+                RoleQualificationService.prototype as any,
+                'checkWalletForAdminToken'
+            ).mockResolvedValue(true);
+
+            const result = await roleQualificationService.checkQualification(testUserId, UserRole.SYSTEM_ADMIN);
+
+            expect(result.qualified).toBe(true);
+            expect(result.criteria).toEqual(expect.objectContaining({
+                userLevel: UserLevel.VERIFIED,
+                hasAdminToken: true
+            }));
+            checkWalletForAdminTokenSpy.mockRestore();
+        });
+    });
+
+    describe('System Admin Criteria', () => {
+        it('should get qualification criteria for system admin role', async () => {
+            const deps = createMockDependencies();
+            const roleQualificationService = new RoleQualificationService(deps);
+
+            const criteria = await roleQualificationService.getQualificationCriteria(UserRole.SYSTEM_ADMIN);
+
+            expect(criteria).toEqual(expect.objectContaining({
+                userLevel: UserLevel.VERIFIED,
+                hasAdminToken: true
+            }));
+            expect(typeof (criteria as any)?.contractAddress).toBe('string');
+            expect(typeof (criteria as any)?.tokenId).toBe('string');
+        });
+
+        it('should validate system admin role criteria successfully', async () => {
+            const deps = createMockDependencies();
+            const roleQualificationService = new RoleQualificationService(deps);
+
+            const validCriteria = {
+                userLevel: UserLevel.VERIFIED,
+                hasAdminToken: true,
+                contractAddress: '0x1234...',
+                tokenId: '123'
+            };
+
+            const result = roleQualificationService.validateCriteria(validCriteria, UserRole.SYSTEM_ADMIN);
+
+            expect(result).toBe(true);
+        });
+
+        it('should invalidate system admin criteria with missing properties', async () => {
+            const deps = createMockDependencies();
+            const roleQualificationService = new RoleQualificationService(deps);
+
+            const invalidCriteria = {
+                userLevel: UserLevel.VERIFIED,
+                hasAdminToken: true
+            };
+
+            const result = roleQualificationService.validateCriteria(invalidCriteria, UserRole.SYSTEM_ADMIN);
+
+            expect(result).toBe(false);
+        });
+
+        it('should invalidate system admin criteria with incorrect types', async () => {
+            const deps = createMockDependencies();
+            const roleQualificationService = new RoleQualificationService(deps);
+
+            const invalidCriteria = {
+                userLevel: 'VERIFIED', // Should be enum
+                hasAdminToken: 'true', // Should be boolean
+                contractAddress: 123, // Should be string
+                tokenId: true // Should be string or number
+            };
+
+            const result = roleQualificationService.validateCriteria(invalidCriteria, UserRole.SYSTEM_ADMIN);
+
+            expect(result).toBe(false);
+        });
+    });
+
     describe('Internal Methods', () => {
 
         describe('getAccountAgeDays', () => {
@@ -358,6 +540,49 @@ describe('RoleQualificationService', () => {
                 const age = (roleQualificationService as any).getAccountAgeDays(creationDate);
 
                 expect(age).toEqual(365);
+            });
+        });
+
+        describe('checkWalletForAdminToken', () => {
+            it('should return false if API response is invalid', async () => {
+                const deps = createMockDependencies();
+                const roleQualificationService = new RoleQualificationService(deps);
+
+                // Mock fetch to return invalid JSON
+                global.fetch = jest.fn().mockResolvedValue({
+                    ok: true,
+                    json: () => Promise.resolve({ status: '0', message: 'Error' })
+                });
+
+                const result = await (roleQualificationService as any).checkWalletForAdminToken(
+                    '0x1234...',
+                    '0x5678...',
+                    '123',
+                    'test-api-key',
+                    '80094'
+                );
+
+                expect(result).toBe(false);
+                expect(global.fetch).toHaveBeenCalled();
+            });
+
+            it('should return false if API request fails', async () => {
+                const deps = createMockDependencies();
+                const roleQualificationService = new RoleQualificationService(deps);
+
+                // Mock fetch to reject
+                global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
+
+                const result = await (roleQualificationService as any).checkWalletForAdminToken(
+                    '0x1234...',
+                    '0x5678...',
+                    '123',
+                    'test-api-key',
+                    '80094'
+                );
+
+                expect(result).toBe(false);
+                expect(global.fetch).toHaveBeenCalled();
             });
         });
     });

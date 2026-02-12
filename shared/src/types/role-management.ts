@@ -126,7 +126,8 @@ export class RoleDetails {
 
 export class RoleHierarchy {
     private static readonly HIERARCHY = new Map<UserRole, number>([
-        [UserRole.QUALIFIED_ALPHA, 100]
+        [UserRole.QUALIFIED_ALPHA, 100],
+        [UserRole.SYSTEM_ADMIN, 200]
     ]);
 
     /**

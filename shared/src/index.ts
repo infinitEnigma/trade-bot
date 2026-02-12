@@ -12,6 +12,7 @@ export enum UserLevel {
 
 export enum UserRole {
   QUALIFIED_ALPHA = "QUALIFIED_ALPHA",
+  SYSTEM_ADMIN = "SYSTEM_ADMIN",
 }
 
 export interface User {

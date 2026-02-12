@@ -63,6 +63,8 @@ export class RoleQualificationService implements IRoleQualificationService {
             switch (role) {
                 case UserRole.QUALIFIED_ALPHA:
                     return this.checkAlphaQualification(user);
+                case UserRole.SYSTEM_ADMIN:
+                    return this.checkSystemAdminQualification(user);
                 default:
                     return {
                         qualified: false,
@@ -96,6 +98,13 @@ export class RoleQualificationService implements IRoleQualificationService {
                         minimumAccountAge: 30, // days
                         hasCompletedTrades: true
                     };
+                case UserRole.SYSTEM_ADMIN:
+                    return {
+                        userLevel: UserLevel.VERIFIED,
+                        hasAdminToken: true,
+                        contractAddress: process.env.ADMIN_CONTRACT_ADDRESS,
+                        tokenId: process.env.ADMIN_TOKEN_ID
+                    };
                 default:
                     return null;
             }
@@ -122,12 +131,171 @@ export class RoleQualificationService implements IRoleQualificationService {
             switch (role) {
                 case UserRole.QUALIFIED_ALPHA:
                     return this.validateAlphaCriteria(criteriaObj);
+                case UserRole.SYSTEM_ADMIN:
+                    return this.validateSystemAdminCriteria(criteriaObj);
                 default:
                     return false;
             }
         } catch (error) {
             this.deps.logger.error("Failed to validate qualification criteria", {
                 role,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            return false;
+        }
+    }
+
+    /**
+     * Check if user qualifies for SYSTEM_ADMIN role
+     */
+    private async checkSystemAdminQualification(user: User): Promise<RoleQualificationResult> {
+        // Check basic user level
+        if (user.userLevel !== UserLevel.VERIFIED) {
+            return {
+                qualified: false,
+                reason: 'User must be verified',
+                criteria: {
+                    currentLevel: user.userLevel,
+                    requiredLevel: UserLevel.VERIFIED
+                }
+            };
+        }
+
+        // Check if user has admin token in their wallet
+        const hasAdminToken = await this.checkUserHasAdminToken(user.id);
+        if (!hasAdminToken) {
+            return {
+                qualified: false,
+                reason: 'User does not have admin token',
+                criteria: {
+                    hasAdminToken: false,
+                    contractAddress: process.env.ADMIN_CONTRACT_ADDRESS,
+                    tokenId: process.env.ADMIN_TOKEN_ID
+                }
+            };
+        }
+
+        // All criteria met
+        return {
+            qualified: true,
+            criteria: {
+                userLevel: user.userLevel,
+                hasAdminToken: true,
+                contractAddress: process.env.ADMIN_CONTRACT_ADDRESS,
+                tokenId: process.env.ADMIN_TOKEN_ID
+            }
+        };
+    }
+
+    /**
+     * Validate SYSTEM_ADMIN criteria
+     */
+    private validateSystemAdminCriteria(criteria: Record<string, unknown>): boolean {
+        return (
+            criteria.userLevel === UserLevel.VERIFIED &&
+            typeof criteria.hasAdminToken === 'boolean' &&
+            typeof criteria.contractAddress === 'string' &&
+            (typeof criteria.tokenId === 'string' || typeof criteria.tokenId === 'number')
+        );
+    }
+
+    /**
+     * Check if user has admin token in their wallet using Etherscan API
+     */
+    private async checkUserHasAdminToken(userId: string): Promise<boolean> {
+        try {
+            // Get user's wallet address from Kodiak credentials
+            const walletAddress = await this.deps.userRepository.getWalletAddress(userId);
+            if (!walletAddress) {
+                this.deps.logger.debug("User has no wallet address", { userId });
+                return false;
+            }
+
+            const apiKey = process.env.ETHERSCAN_API_KEY;
+            const contractAddress = process.env.ADMIN_CONTRACT_ADDRESS;
+            const adminTokenId = process.env.ADMIN_TOKEN_ID;
+            const chainId = process.env.ADMIN_CHAIN_ID;
+
+            if (!apiKey || !contractAddress || !adminTokenId || !chainId) {
+                this.deps.logger.warn("Admin token verification configuration missing", {
+                    hasApiKey: !!apiKey,
+                    hasContractAddress: !!contractAddress,
+                    hasTokenId: !!adminTokenId,
+                    hasChainId: !!chainId
+                });
+                return false;
+            }
+
+            // Check if user has the specific admin token
+            const hasToken = await this.checkWalletForAdminToken(
+                walletAddress,
+                contractAddress,
+                adminTokenId,
+                apiKey,
+                chainId
+            );
+
+            this.deps.logger.debug("Admin token check result", {
+                userId,
+                walletAddress,
+                hasToken
+            });
+
+            return hasToken;
+
+        } catch (error) {
+            this.deps.logger.error("Failed to check admin token", {
+                userId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            return false;
+        }
+    }
+
+    /**
+     * Check if wallet has the specific admin token using Etherscan API
+     */
+    private async checkWalletForAdminToken(
+        walletAddress: string,
+        contractAddress: string,
+        tokenId: string,
+        apiKey: string,
+        chainId: string
+    ): Promise<boolean> {
+        try {
+            const url = `https://api.etherscan.io/v2/api?apikey=${apiKey}&chainid=${chainId}&module=account&action=tokennfttx&contractaddress=${contractAddress}&address=${walletAddress}`;
+
+            const response = await fetch(url);
+            if (!response.ok) {
+                this.deps.logger.warn("Etherscan API request failed", {
+                    status: response.status,
+                    statusText: response.statusText
+                });
+                return false;
+            }
+
+            const data = await response.json() as any;
+            if (data.status !== '1' || !data.result || !Array.isArray(data.result)) {
+                this.deps.logger.debug("Etherscan API response invalid", {
+                    status: data.status,
+                    message: data.message
+                });
+                return false;
+            }
+
+            // Check if the wallet has received the specific token
+            const hasToken = data.result.some((tx: any) => {
+                return (
+                    tx.contractAddress.toLowerCase() === contractAddress.toLowerCase() &&
+                    tx.to.toLowerCase() === walletAddress.toLowerCase() &&
+                    tx.tokenID === tokenId
+                );
+            });
+
+            return hasToken;
+
+        } catch (error) {
+            this.deps.logger.error("Etherscan API request failed", {
                 error: error instanceof Error ? error.message : String(error)
             });
             return false;
