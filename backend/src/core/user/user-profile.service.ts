@@ -102,6 +102,15 @@ export class UserProfileService {
             updatedAt: userData.user.updatedAt,
         };
 
+        // Debug logging to check if kodiakStatus.accountId is being set correctly
+        userLogger.debug('🔍 UserProfile debug:', {
+            userId: userData.user.id,
+            hasKodiak: userData.hasCredentials,
+            kodiakAccountId: userData.kodiakAccountId,
+            kodiakVerified: userData.kodiakVerified,
+            kodiakStatus: profile.kodiakStatus
+        });
+
         // Cache the profile for future requests
         try {
             await this.deps.cache.setex(cacheKey, this.CACHE_TTL, profile);

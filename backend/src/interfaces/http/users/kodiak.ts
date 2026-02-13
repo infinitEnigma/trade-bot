@@ -121,6 +121,13 @@ router.get("/kodiak/status", authMiddleware, createRateLimiter("kodiak-status", 
         const userKodiakService = serviceProvider.getUserKodiakService();
         const status = await userKodiakService.getKodiakConnectionStatus(userId);
 
+        // Debug logging to identify the issue
+        logger.debug("Kodiak status response", {
+            userId,
+            status,
+            accountId: status?.accountId
+        });
+
         // Prevent caching of user-specific data
         //res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
         //res.set('Pragma', 'no-cache');

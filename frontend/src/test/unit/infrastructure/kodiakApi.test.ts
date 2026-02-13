@@ -14,6 +14,7 @@ vi.mock("../../../infrastructure/api/client", () => ({
 describe("kodiakApi", () => {
     let mockPost: vi.Mock;
     let mockGet: vi.Mock;
+    let mockDelete: vi.Mock;
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -21,10 +22,12 @@ describe("kodiakApi", () => {
         // Create mock methods
         mockPost = vi.fn();
         mockGet = vi.fn();
+        mockDelete = vi.fn();
 
         (httpClient.getClient as vi.Mock).mockReturnValue({
             post: mockPost,
             get: mockGet,
+            delete: mockDelete,
         });
     });
 
@@ -45,7 +48,7 @@ describe("kodiakApi", () => {
                 },
             };
 
-            mockPost.mockResolvedValue(mockResponse);
+            mockPost.mockResolvedValue({ data: mockResponse });
 
             const result = await kodiakApi.connectKodiak(mockCredentials);
 
@@ -80,18 +83,18 @@ describe("kodiakApi", () => {
                 message: "Kodiak disconnected successfully",
             };
 
-            mockPost.mockResolvedValue(mockResponse);
+            mockDelete.mockResolvedValue({ data: mockResponse });
 
             const result = await kodiakApi.disconnectKodiak();
 
             expect(httpClient.getClient).toHaveBeenCalled();
-            expect(mockPost).toHaveBeenCalledWith("/api/user/kodiak/disconnect");
+            expect(mockDelete).toHaveBeenCalledWith("/api/user/kodiak/disconnect");
             expect(result).toEqual(mockResponse);
         });
 
         it("should handle disconnect errors", async () => {
             const errorMessage = "Failed to disconnect";
-            mockPost.mockRejectedValue(new Error(errorMessage));
+            mockDelete.mockRejectedValue(new Error(errorMessage));
 
             await expect(kodiakApi.disconnectKodiak()).rejects.toThrow(errorMessage);
         });
@@ -110,7 +113,7 @@ describe("kodiakApi", () => {
                 },
             };
 
-            mockGet.mockResolvedValue(mockResponse);
+            mockGet.mockResolvedValue({ data: mockResponse });
 
             const result = await kodiakApi.getKodiakStatus();
 
@@ -136,7 +139,7 @@ describe("kodiakApi", () => {
                 },
             };
 
-            mockGet.mockResolvedValue(mockResponse);
+            mockGet.mockResolvedValue({ data: mockResponse });
 
             const result = await kodiakApi.getKodiakBalance();
 

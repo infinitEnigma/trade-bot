@@ -64,7 +64,8 @@ class KodiakApi {
      * Frontend sends encrypted credentials to backend for validation and storage
      */
     async connectKodiak(credentials: KodiakCredentials): Promise<KodiakConnectResponse> {
-        return httpClient.getClient().post('/api/user/kodiak/connect', credentials);
+        const response = await httpClient.getClient().post('/api/user/kodiak/connect', credentials);
+        return response.data;
     }
 
     /**
@@ -72,7 +73,8 @@ class KodiakApi {
      * Backend handles credential removal and user level downgrade
      */
     async disconnectKodiak(): Promise<KodiakDisconnectResponse> {
-        return httpClient.getClient().post('/api/user/kodiak/disconnect');
+        const response = await httpClient.getClient().delete('/api/user/kodiak/disconnect');
+        return response.data;
     }
 
     /**
@@ -80,14 +82,16 @@ class KodiakApi {
      * Backend returns encrypted status information
      */
     async getKodiakStatus(): Promise<{ success: boolean; data?: KodiakStatus; error?: string }> {
-        return httpClient.getClient().get('/api/user/kodiak/status');
+        const response = await httpClient.getClient().get('/api/user/kodiak/status');
+        return response.data;
     }
 
     /**
      * Get Kodiak account balance
      */
     async getKodiakBalance(): Promise<{ success: boolean; data?: KodiakBalanceResponse; error?: string }> {
-        return httpClient.getClient().get('/api/user/kodiak/balance');
+        const response = await httpClient.getClient().get('/api/user/kodiak/balance');
+        return response.data;
     }
 
     /**
