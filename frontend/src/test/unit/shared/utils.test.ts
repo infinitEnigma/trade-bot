@@ -19,7 +19,7 @@ import {
     isValidEmail,
     deepClone,
     isTokenExpired,
-} from "./utils";
+} from "../../../shared/utils/utils";
 
 describe("utils.ts", () => {
     describe("cn function", () => {

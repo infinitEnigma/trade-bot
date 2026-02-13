@@ -406,6 +406,7 @@ describe('WebSocketService', () => {
         it('should track errors count metric', () => {
             const errorCount = 5;
             (webSocketService as any).metrics.errorsCount = errorCount;
+            (webSocketService as any).startTime = Date.now() - 60000; // 1 minute ago
 
             const metrics = webSocketService.getMetrics();
             expect(metrics.errorRate).toBeGreaterThan(0);
