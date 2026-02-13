@@ -179,9 +179,22 @@ export function getInitials(name: string): string {
 
 /**
  * Sleep utility for async operations
+ * More accurate than setTimeout for short durations
  */
 export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  const start = Date.now();
+  return new Promise(resolve => {
+    const timer = setTimeout(() => {
+      const actualDuration = Date.now() - start;
+      if (actualDuration >= ms) {
+        resolve();
+      } else {
+        // If timer fired early, schedule a new timer for the remaining time
+        clearTimeout(timer);
+        sleep(ms - actualDuration).then(resolve);
+      }
+    }, ms);
+  });
 }
 
 /**

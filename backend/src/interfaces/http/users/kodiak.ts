@@ -110,7 +110,7 @@ router.delete("/kodiak/disconnect", authMiddleware, async (req: AuthenticatedReq
 });
 
 // GET /api/user/kodiak/status
-router.get("/kodiak/status", createRateLimiter("kodiak-status", kodiakSyncedRateLimit), async (req: AuthenticatedRequest, res: Response) => {
+router.get("/kodiak/status", authMiddleware, createRateLimiter("kodiak-status", kodiakSyncedRateLimit), async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Ensure user is authenticated (should always be true due to authMiddleware)
         if (!req.user) {

@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Link } from "react-router-dom";
-import { useAuth } from "../../features/auth";
+import { useAuth } from "../../../features/auth";
 import { SmartNavigation } from "./SmartNavigation";
 import {
   LogOut,
@@ -11,7 +11,7 @@ import {
   Zap,
   ChevronDown,
 } from "lucide-react";
-import { ThemeToggle } from "../../shared/components/ui/ThemeToggle";
+import { ThemeToggle } from "../ui/ThemeToggle";
 
 interface AppHeaderProps {
   title?: string;

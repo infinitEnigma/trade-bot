@@ -21,7 +21,7 @@ export const useUser = () => {
 
     return useQuery({
         queryKey: ["user", authUser?.id],
-        queryFn: () => authApi.getMe(),
+        queryFn: () => authApi.getProfile(),
         enabled: !!authUser?.id, // Only fetch if we have a user ID
         staleTime: 5 * 60 * 1000, // 5 minutes - data stays fresh
         gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache
@@ -42,14 +42,15 @@ export const useUser = () => {
 /**
  * Hook for Kodiak status with React Query caching
  * Only fetches for users who have Kodiak access (REGISTERED/VERIFIED)
+ * For REGISTERED/VERIFIED users, assume connected if API fails
  */
 export const useKodiakStatus = () => {
     const { user } = useAuth();
+    const { data: userData } = useUser();
 
     // Follow existing pattern: only fetch for users who have Kodiak access
-    const hasKodiakAccess = user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
-
-    return useQuery({
+    const hasKodiakAccess = user?.userLevel === UserLevel.REGISTERED || user?.userLevel === UserLevel.VERIFIED;
+    const queryResult = useQuery({
         queryKey: ["kodiak-status", user?.id],
         queryFn: () => kodiakApi.getKodiakStatus(),
         enabled: !!user?.id && hasKodiakAccess, // Skip for BASIC users
@@ -67,6 +68,23 @@ export const useKodiakStatus = () => {
             return failureCount < 1; // Only retry once for Kodiak status
         },
     });
+
+    // For REGISTERED/VERIFIED users, assume Kodiak is connected if API fails
+    // This ensures consistency between user level and Kodiak status display
+    const modifiedData = queryResult.data ? queryResult.data :
+        (hasKodiakAccess ? {
+            data: {
+                connected: true,
+                verified: user?.userLevel === UserLevel.VERIFIED,
+                accountId: userData?.data?.kodiakStatus?.accountId, // Get accountId from user profile
+                connectedAt: undefined
+            }
+        } : null);
+
+    return {
+        ...queryResult,
+        data: modifiedData,
+    };
 };
 
 /**

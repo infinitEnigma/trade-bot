@@ -3,7 +3,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import WalletProvider from "./components/WalletProvider";
+import WalletProvider from "./shared/components/WalletProvider";
 import "./index.css";
 //import "./App.css";
 

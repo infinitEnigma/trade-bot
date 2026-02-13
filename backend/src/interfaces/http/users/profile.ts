@@ -45,9 +45,20 @@ router.get("/profile", authMiddleware, async (req: AuthenticatedRequest, res: Re
         const userProfileService = serviceProvider.getUserProfileService();
         const profile = await userProfileService.getUserProfile(userId);
 
+        // Return data in the format expected by the frontend
         res.json({
             success: true,
-            data: profile,
+            data: {
+                user: {
+                    id: profile.id,
+                    email: profile.email,
+                    userLevel: profile.userLevel,
+                    roles: profile.roles,
+                    createdAt: profile.createdAt,
+                    updatedAt: profile.updatedAt,
+                },
+                kodiakStatus: profile.kodiakStatus,
+            },
         });
 
         logger.info("Profile retrieved successfully", {

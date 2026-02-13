@@ -27,4 +27,4 @@ export { strategyService } from "./services";
 export { BotControls } from "./bots/components";
 
 // Balance subdomain
-export { useBalance } from "./balance/hooks";
+//export { useBalance } from "./balance/hooks";

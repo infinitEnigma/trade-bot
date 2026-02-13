@@ -42,6 +42,15 @@ Object.defineProperty(window, "sessionStorage", {
     value: localStorageMock,
 });
 
+// Mock IntersectionObserver
+global.IntersectionObserver = class {
+    constructor(callback: IntersectionObserverCallback) { }
+    observe() { }
+    unobserve() { }
+    disconnect() { }
+    takeRecords() { return []; }
+} as unknown as typeof IntersectionObserver;
+
 // Mock matchMedia
 Object.defineProperty(window, "matchMedia", {
     writable: true,

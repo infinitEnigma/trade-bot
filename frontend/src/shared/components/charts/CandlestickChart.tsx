@@ -11,8 +11,10 @@ import {
   HistogramSeries,
   Time,
 } from "lightweight-charts";
-import { useChartData } from "../hooks/useChartData";
-import { useVisibility } from "../../../shared/hooks/useVisibility";
+import { useChartData } from "../../hooks/useChartData";
+import { useVisibility } from "../../hooks/useVisibility";
+import { useAuth } from "@/features/auth";
+import { UserLevel } from "@/shared/types";
 
 export interface CandleData {
   time: number;
@@ -34,6 +36,9 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   interval,
   height = 400,
 }) => {
+  const { user } = useAuth();
+    
+    if (!user && !UserLevel.VERIFIED) return null;
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);

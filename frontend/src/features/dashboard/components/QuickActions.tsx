@@ -4,12 +4,13 @@ import React, { Suspense } from "react";
 import { Link } from "react-router-dom";
 import { Activity } from "lucide-react";
 import { Card } from "../../../shared/components/ui";
-import { WalletConnectDialog } from "../../../components/WalletConnectDialog";
+import { WalletConnectDialog } from "../../../shared/components/WalletConnectDialog";
 import { Loader2 } from "lucide-react";
+import { UserLevel } from "@/shared/types";
 
 interface QuickActionsProps {
   hasKodiakAccess: boolean;
-  userLevel?: string;
+  //userLevel: UserLevel.REGISTERED;
 }
 
 /**
@@ -18,7 +19,7 @@ interface QuickActionsProps {
 export const QuickActions: React.FC<QuickActionsProps> = ({
   hasKodiakAccess,
   //userLevel
-}) => {
+}) => {  
   return (
     <Card>
       <h2 className="text-lg font-semibold text-text mb-4">
@@ -35,7 +36,7 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
       </div>
 
       {/* Wallet Status Widget - only for registered users */}
-      {hasKodiakAccess && (
+      {hasKodiakAccess && UserLevel.REGISTERED && (
         <div className="mt-6 pt-6 border-t border-white/5">
           <Suspense
             fallback={

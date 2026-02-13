@@ -204,6 +204,8 @@ export class UserRepositoryAdapter implements IUserRepository {
         user: User;
         roles: string[];
         hasCredentials: boolean;
+        kodiakAccountId?: string;
+        kodiakVerified?: boolean;
     } | null> {
         try {
             const result = await query(`
@@ -220,12 +222,14 @@ export class UserRepositoryAdapter implements IUserRepository {
                         ) FILTER (WHERE ur.role IS NOT NULL),
                         '[]'::json
                     ) as roles,
-                    CASE WHEN kc.id IS NOT NULL THEN true ELSE false END as has_credentials
+                    CASE WHEN kc.id IS NOT NULL THEN true ELSE false END as has_credentials,
+                    kc.account_id as kodiak_account_id,
+                    kc.verified as kodiak_verified
                 FROM users u
                 LEFT JOIN user_roles ur ON u.id = ur.user_id
-                LEFT JOIN kodiak_credentials kc ON u.id = kc.user_id AND kc.verified = true
+                LEFT JOIN kodiak_credentials kc ON u.id = kc.user_id
                 WHERE u.id = $1
-                GROUP BY u.id, u.email, u.user_level, u.created_at, u.updated_at, kc.id
+                GROUP BY u.id, u.email, u.user_level, u.created_at, u.updated_at, kc.id, kc.account_id, kc.verified
             `, [id]);
 
             if (result.rows.length === 0) {
@@ -240,6 +244,8 @@ export class UserRepositoryAdapter implements IUserRepository {
                 updated_at: string;
                 roles?: string[];
                 has_credentials?: boolean;
+                kodiak_account_id?: string;
+                kodiak_verified?: boolean;
             };
             const user = this.mapRowToUser({
                 id: row.id,
@@ -252,7 +258,9 @@ export class UserRepositoryAdapter implements IUserRepository {
             return {
                 user,
                 roles: row.roles || [],
-                hasCredentials: row.has_credentials || false
+                hasCredentials: row.has_credentials || false,
+                kodiakAccountId: row.kodiak_account_id,
+                kodiakVerified: row.kodiak_verified
             };
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);

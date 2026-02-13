@@ -65,6 +65,8 @@ export interface IUserRepository {
         user: User;
         roles: string[];
         hasCredentials: boolean;
+        kodiakAccountId?: string;
+        kodiakVerified?: boolean;
     } | null>;
 
     /**

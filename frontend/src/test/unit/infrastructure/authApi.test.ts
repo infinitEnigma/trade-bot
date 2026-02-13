@@ -1,11 +1,11 @@
 /** @format */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { authApi } from "./auth";
-import { httpClient } from "./client";
+import { authApi } from "../../../infrastructure/api";
+import { httpClient } from "../../../infrastructure/api/client";
 
 // Mock the HTTP client
-vi.mock("./client", () => ({
+vi.mock("../../../infrastructure/api/client", () => ({
     httpClient: {
         getClient: vi.fn(),
     },

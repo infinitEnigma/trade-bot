@@ -35,6 +35,8 @@ export interface UserProfile {
         accountId: string;
         verified: boolean;
     } | null;
+    createdAt: Date;
+    updatedAt: Date;
 }
 
 export interface UserSettings {
@@ -93,9 +95,11 @@ export class UserProfileService {
             roles: userData.roles,
             hasKodiak: userData.hasCredentials,
             kodiakStatus: userData.hasCredentials ? {
-                accountId: '', // TODO: Add account_id to authenticated user data
-                verified: true  // TODO: Add verified status to authenticated user data
+                accountId: userData.kodiakAccountId || '',
+                verified: !!userData.kodiakVerified
             } : null,
+            createdAt: userData.user.createdAt,
+            updatedAt: userData.user.updatedAt,
         };
 
         // Cache the profile for future requests

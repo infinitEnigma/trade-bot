@@ -1,9 +1,9 @@
 /** @format */
 
 import { useEffect, useState, useCallback } from "react";
-import { UserLevel, Balance as DomainBalance } from "../../../../shared/types";
-import { globalBalanceManager } from "../../../../shared/services/balance-manager";
-import { useAuth } from "../../../auth";
+import { UserLevel, Balance as DomainBalance } from "../types";
+import { globalBalanceManager } from "../services/balance-manager";
+import { useAuth } from "../../features/auth";
 
 export interface Balance {
     walletBalance: number;

@@ -1,7 +1,7 @@
 /** @format */
 
 import { describe, it, expect } from "vitest";
-import { UserRole, UserLevel, User, Balance, StrategyType, Strategy, StrategyConfig } from "./types";
+import { UserRole, UserLevel, User, Balance, StrategyType, Strategy, StrategyConfig } from "../../../shared/types";
 
 describe("types.ts", () => {
     describe("Enums", () => {

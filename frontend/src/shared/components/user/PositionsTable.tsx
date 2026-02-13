@@ -3,9 +3,11 @@
 import React, { Suspense } from "react";
 import { TrendingUp, TrendingDown, Settings, X, Loader2, Target } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Card } from "../../../shared/components/ui";
-import { SectionHeader } from "../../../shared/components/ui";
-import { Position } from "../types/dashboard.types";
+import { Card } from "../ui";
+import { SectionHeader } from "../ui";
+import { Position } from "../../../features/dashboard/types/dashboard.types";
+import { useAuth } from "@/features/auth";
+import { UserLevel } from "@/shared/types";
 
 interface PositionsTableProps {
   positions: Position[];
@@ -21,6 +23,9 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
   profitablePositions,
   isLoading,
 }) => {
+  const { user } = useAuth();
+    
+    if (!user && !UserLevel.VERIFIED) return null;
   return (
     <Card>
       <SectionHeader

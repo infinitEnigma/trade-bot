@@ -1,7 +1,7 @@
 /** @format */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { authService } from "./authService";
+import { authService } from "../../../features/auth";
 import { authApi } from "../../../infrastructure/api/auth";
 
 // Mock the API
@@ -78,23 +78,25 @@ describe("AuthService", () => {
     });
 
     describe("getProfile method", () => {
-        it("should call authApi.getMe and return the response", async () => {
+        it("should call authApi.getProfile and return the response", async () => {
             const mockResponse = {
                 success: true,
-                data: { id: "1", email: "test@example.com", userLevel: "VERIFIED" },
+                data: {
+                    user: { id: "1", email: "test@example.com", userLevel: "VERIFIED" },
+                    kodiakStatus: { accountId: "test-account-123", verified: true },
+                },
             };
-
-            (authApi.getMe as vi.Mock).mockResolvedValue(mockResponse);
+            (authApi.getProfile as vi.Mock).mockResolvedValue(mockResponse);
 
             const result = await authService.getProfile();
 
-            expect(authApi.getMe).toHaveBeenCalled();
+            expect(authApi.getProfile).toHaveBeenCalled();
             expect(result).toEqual(mockResponse);
         });
 
         it("should handle getProfile errors", async () => {
             const errorMessage = "Failed to get profile";
-            (authApi.getMe as vi.Mock).mockRejectedValue(new Error(errorMessage));
+            (authApi.getProfile as vi.Mock).mockRejectedValue(new Error(errorMessage));
 
             await expect(authService.getProfile()).rejects.toThrow(errorMessage);
         });

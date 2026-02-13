@@ -4,8 +4,8 @@ import React, { useState, useEffect } from "react";
 import { useAccount, useConnect, useDisconnect, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { toast } from "sonner";
-import { walletApi } from "../infrastructure/api";
-import { useAuth } from "../features/auth";
+import { walletApi } from "../../infrastructure/api";
+import { useAuth } from "../../features/auth";
 
 interface WalletConnectDialogProps {
   isOpen?: boolean;

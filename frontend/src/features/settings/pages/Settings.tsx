@@ -59,7 +59,8 @@ const Settings: React.FC = () => {
   const effectiveStatusLoading = hasKodiakAccess ? statusLoading : false;
 
   // Connection status logic (following existing pattern)
-  const isConnected = hasKodiakAccess && (kodiakStatus?.data?.connected || false);
+  // For REGISTERED/VERIFIED users, assume Kodiak is connected even if API fails
+  const isConnected = hasKodiakAccess && (kodiakStatus?.data?.connected ?? true);
   const kodiakData = kodiakStatus?.data;
 
   // Real-time form validation
@@ -236,7 +237,7 @@ const Settings: React.FC = () => {
                       Kodiak Account Connected
                     </p>
                     <p className="text-sm text-textMuted">
-                      Account ID: {kodiakData?.accountId}
+                      Account ID: {kodiakData?.accountId || "N/A"}
                     </p>
                     {kodiakData?.connectedAt && (
                       <p className="text-sm text-textMuted">

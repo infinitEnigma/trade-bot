@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Button } from "./Button";
+import { Button } from "../../../shared/components/ui";
 
 describe("Button component", () => {
   describe("basic functionality", () => {

@@ -3,10 +3,12 @@
 import React, { Suspense } from "react";
 import { motion } from "framer-motion";
 import { Wallet, DollarSign, Activity, TrendingUp } from "lucide-react";
-import { Card } from "../../../shared/components/ui";
-import { SectionHeader } from "../../../shared/components/ui";
-import { DashboardCardSkeleton } from "../../../shared/components/feedback";
-import { BalanceData } from "../types/dashboard.types";
+import { Card } from "../ui";
+import { SectionHeader } from "../ui";
+import { DashboardCardSkeleton } from "../feedback";
+import { BalanceData } from "../../../features/dashboard/types/dashboard.types";
+import { useAuth } from "@/features/auth";
+import { UserLevel } from "@/shared/types";
 
 interface BalanceCardsProps {
   balance: BalanceData | null;
@@ -17,6 +19,10 @@ interface BalanceCardsProps {
  * BalanceCards component - displays the 4 main balance metrics
  */
 export const BalanceCards: React.FC<BalanceCardsProps> = ({ balance, loading }) => {
+  const { user } = useAuth();
+  
+  if (!user && !UserLevel.VERIFIED) return null;
+  
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

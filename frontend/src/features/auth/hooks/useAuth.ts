@@ -27,12 +27,12 @@ const useAuthStore = create<AuthStore>()(
 
                         if (profileResponse.success && profileResponse.data) {
                             // Check if user is verified and needs admin qualification check
-                            if (profileResponse.data.userLevel === 'VERIFIED') {
+                            if (profileResponse.data.user.userLevel === 'VERIFIED') {
                                 try {
                                     const adminQualificationResponse = await authService.checkAdminQualification();
                                     if (adminQualificationResponse.success && adminQualificationResponse.data?.isQualified) {
                                         // Add SYSTEM_ADMIN role to user if qualified
-                                        profileResponse.data.roles = [...(profileResponse.data.roles || []), 'SYSTEM_ADMIN'];
+                                        profileResponse.data.user.roles = [...(profileResponse.data.user.roles || []), 'SYSTEM_ADMIN'];
                                     }
                                 } catch (adminError) {
                                     console.error("Admin qualification check failed:", adminError);
@@ -42,7 +42,7 @@ const useAuthStore = create<AuthStore>()(
 
                             // Use complete user data from /api/auth/me for accurate user level
                             set({
-                                user: profileResponse.data as AuthUser,
+                                user: profileResponse.data.user as AuthUser,
                                 isAuthenticated: true,
                                 isLoading: false,
                             });
@@ -146,15 +146,15 @@ const useAuthStore = create<AuthStore>()(
                     const response = await authService.getProfile();
 
                     if (response.success && response.data) {
-                        console.log("🔄 AUTH: Auth check successful, user:", response.data.userLevel);
+                        console.log("🔄 AUTH: Auth check successful, user:", response.data.user.userLevel);
 
                         // Check if user is verified and needs admin qualification check
-                        if (response.data.userLevel === 'VERIFIED') {
+                        if (response.data.user.userLevel === 'VERIFIED') {
                             try {
                                 const adminQualificationResponse = await authService.checkAdminQualification();
                                 if (adminQualificationResponse.success && adminQualificationResponse.data?.isQualified) {
                                     // Add SYSTEM_ADMIN role to user if qualified
-                                    response.data.roles = [...(response.data.roles || []), 'SYSTEM_ADMIN'];
+                                    response.data.user.roles = [...(response.data.user.roles || []), 'SYSTEM_ADMIN'];
                                 }
                             } catch (adminError) {
                                 console.error("Admin qualification check failed:", adminError);
@@ -163,7 +163,7 @@ const useAuthStore = create<AuthStore>()(
                         }
 
                         set({
-                            user: response.data as AuthUser,
+                            user: response.data.user as AuthUser,
                             isAuthenticated: true,
                             isLoading: false,
                         });

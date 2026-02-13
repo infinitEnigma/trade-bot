@@ -20,10 +20,11 @@ import { UserRole } from "./shared/types";
 
 // Components
 import { LoadingSpinner } from "./shared/components/ui";
-import { AppHeader } from "./components/ui/AppHeader";
+import { AppHeader } from "./shared/components/layout/AppHeader";
 import { getWebSocketUrl } from "./infrastructure/config";
 
 // Lazy load pages
+const LandingPage = React.lazy(() => import("./features/landing/pages/LandingPage"));
 const Login = React.lazy(() => import("./features/auth/pages/Login"));
 const Register = React.lazy(() => import("./features/auth/pages/Register"));
 const Dashboard = React.lazy(() => import("./features/dashboard/pages/Dashboard"));
@@ -120,16 +121,31 @@ const AnimatedRoutes = () => {
   };
 
   const isAuthRoute = location.pathname === '/login' || location.pathname === '/register';
+  const isLandingRoute = location.pathname === '/';
 
   return (
     <div className="min-h-screen bg-background text-text">
       {/* Header - only show for protected routes */}
-      {!isAuthRoute && <AppHeader />}
+      {!isAuthRoute && !isLandingRoute && <AppHeader />}
 
       {/* Content area with padding for header */}
-      <div className={isAuthRoute ? "" : "pt-16"}>
+      <div className={isAuthRoute || isLandingRoute ? "" : "pt-16"}>
         <AnimatePresence mode="wait" initial={false}>
           <Routes location={location} key={location.pathname}>
+            <Route
+              path="/"
+              element={
+                <motion.div
+                  initial="initial"
+                  animate="in"
+                  exit="out"
+                  variants={pageVariants}
+                  transition={pageTransition}
+                >
+                  <LandingPage />
+                </motion.div>
+              }
+            />
             <Route
               path="/login"
               element={
@@ -253,7 +269,6 @@ const AnimatedRoutes = () => {
                 </ProtectedRoute>
               }
             />
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </AnimatePresence>
       </div>

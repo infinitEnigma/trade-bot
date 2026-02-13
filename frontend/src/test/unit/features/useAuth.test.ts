@@ -2,12 +2,12 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useAuth, updateAuthUser } from "./useAuth";
-import { authService } from "../services/authService";
+import { useAuth, updateAuthUser } from "../../../features/auth/hooks/useAuth";
+import { authService } from "../../../features/auth/services/authService";
 import { UserLevel } from "../../../shared/types";
 
 // Mock the auth service
-vi.mock("../services/authService");
+vi.mock("../../../features/auth/services/authService");
 
 // Mock checkAdminQualification to return not qualified by default
 (authService.checkAdminQualification as vi.Mock).mockResolvedValue({
@@ -53,7 +53,10 @@ describe("useAuth hook", () => {
 
             (authService.getProfile as vi.Mock).mockResolvedValue({
                 success: true,
-                data: mockUser,
+                data: {
+                    user: mockUser,
+                    kodiakStatus: { accountId: "test-account-123", verified: true },
+                },
             });
 
             const { result } = renderHook(() => useAuth());
@@ -152,7 +155,10 @@ describe("useAuth hook", () => {
 
             (authService.getProfile as vi.Mock).mockResolvedValue({
                 success: true,
-                data: mockUser,
+                data: {
+                    user: mockUser,
+                    kodiakStatus: { accountId: "test-account-123", verified: true },
+                },
             });
 
             const { result } = renderHook(() => useAuth());
@@ -186,7 +192,10 @@ describe("useAuth hook", () => {
 
             (authService.getProfile as vi.Mock).mockResolvedValue({
                 success: true,
-                data: mockUser,
+                data: {
+                    user: mockUser,
+                    kodiakStatus: { accountId: "test-account-123", verified: true },
+                },
             });
 
             const { result } = renderHook(() => useAuth());
@@ -219,7 +228,10 @@ describe("useAuth hook", () => {
 
             (authService.getProfile as vi.Mock).mockResolvedValue({
                 success: true,
-                data: mockUser,
+                data: {
+                    user: mockUser,
+                    kodiakStatus: { accountId: "test-account-123", verified: true },
+                },
             });
 
             const { result } = renderHook(() => useAuth());
@@ -322,7 +334,10 @@ describe("useAuth hook", () => {
 
             (authService.getProfile as vi.Mock).mockResolvedValue({
                 success: true,
-                data: mockUser,
+                data: {
+                    user: mockUser,
+                    kodiakStatus: { accountId: "test-account-123", verified: true },
+                },
             });
 
             const { result } = renderHook(() => useAuth());
@@ -498,7 +513,10 @@ describe("useAuth hook", () => {
 
             (authService.getProfile as vi.Mock).mockResolvedValue({
                 success: true,
-                data: mockUser,
+                data: {
+                    user: mockUser,
+                    kodiakStatus: { accountId: "test-account-123", verified: true },
+                },
             });
 
             const { result } = renderHook(() => useAuth());
@@ -531,7 +549,10 @@ describe("useAuth hook", () => {
 
             (authService.getProfile as vi.Mock).mockResolvedValue({
                 success: true,
-                data: mockUser,
+                data: {
+                    user: mockUser,
+                    kodiakStatus: { accountId: "test-account-123", verified: true },
+                },
             });
 
             const { result } = renderHook(() => useAuth());

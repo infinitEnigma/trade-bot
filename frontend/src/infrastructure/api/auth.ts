@@ -1,7 +1,7 @@
 /** @format */
 
 import { httpClient } from "./client";
-import type { ApiResponse, LoginResponse, RegisterResponse, UserProfileResponse } from "@trade-bot/shared";
+import type { ApiResponse, LoginResponse, RegisterResponse } from "@trade-bot/shared";
 
 /**
  * Authentication API endpoints
@@ -48,7 +48,13 @@ export const authApi = {
     /**
      * Get user profile information
      */
-    async getProfile(): Promise<ApiResponse<UserProfileResponse>> {
+    async getProfile(): Promise<ApiResponse<{
+        user: any;
+        kodiakStatus?: {
+            accountId: string;
+            verified: boolean;
+        };
+    }>> {
         const response = await httpClient.getClient().get("/api/user/profile");
         return response.data;
     },

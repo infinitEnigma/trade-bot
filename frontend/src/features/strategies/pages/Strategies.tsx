@@ -19,12 +19,12 @@ import {
 
 
 // Lazy load heavy components for better performance
-const CandlestickChart = lazy(() => import("../components/CandlestickChart"));
+const CandlestickChart = lazy(() => import("../../../shared/components/charts/CandlestickChart"));
 const StrategyForm = lazy(() => import("../components/StrategyForm").then(module => ({ default: module.StrategyForm })));
 const BotControls = lazy(() => import("../bots/components").then(module => ({ default: module.BotControls })));
-import { useBalance } from "../balance/hooks";
+import { useBalance } from "../../../shared/hooks";
 import { useAuth } from "../../auth";
-import { UserProgressCard } from "../../../components/ui/UserProgressCard";
+import { UserProgressCard } from "../../../shared/components/user/UserProgressCard";
 import { PageLayout, Container } from "../../../shared/components/layout";
 
 const Strategies: React.FC = React.memo(() => {

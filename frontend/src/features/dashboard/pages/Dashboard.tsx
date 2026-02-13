@@ -29,9 +29,9 @@ import { Link } from "react-router-dom";
 import { Card } from "../../../shared/components/ui/Card";
 import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
 
-import { UserProgressCard } from "../../../components/ui/UserProgressCard";
+import { UserProgressCard } from "../../../shared/components/user/UserProgressCard";
 import { LoadingSpinner } from "../../../shared/components/ui";
-import { useBalance } from "../../strategies/balance/hooks";
+import { useBalance } from "../../../shared/hooks";
 import { Container, Grid, Section } from "../../../shared/components/layout";
 
 // Type definitions for Dashboard components
@@ -74,9 +74,9 @@ interface PerformanceData {
 }
 
 // Lazy load heavy components
-const PriceChart = React.lazy(() => import("../components/PriceChart"));
+const PriceChart = React.lazy(() => import("../../../shared/components/charts/PriceChart"));
 const WalletConnectDialog = React.lazy(() =>
-  import("../../../components/WalletConnectDialog").then(module => ({
+  import("../../../shared/components/WalletConnectDialog").then(module => ({
     default: module.WalletConnectDialog,
   }))
 );

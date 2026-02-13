@@ -60,6 +60,8 @@ describe('User Profile Controller', () => {
                 roles: [],
                 hasKodiak: false,
                 kodiakStatus: null,
+                createdAt: new Date('2024-01-01'),
+                updatedAt: new Date('2024-01-02'),
             };
 
             mockUserProfileService.getUserProfile.mockResolvedValue(mockProfile);
@@ -79,7 +81,17 @@ describe('User Profile Controller', () => {
             expect(mockUserProfileService.getUserProfile).toHaveBeenCalledWith('user-123');
             expect(res.json).toHaveBeenCalledWith({
                 success: true,
-                data: mockProfile,
+                data: {
+                    user: {
+                        id: mockProfile.id,
+                        email: mockProfile.email,
+                        userLevel: mockProfile.userLevel,
+                        roles: mockProfile.roles,
+                        createdAt: mockProfile.createdAt,
+                        updatedAt: mockProfile.updatedAt,
+                    },
+                    kodiakStatus: mockProfile.kodiakStatus,
+                },
             });
         });
 

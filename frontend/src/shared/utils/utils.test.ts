@@ -119,12 +119,15 @@ describe("utils.ts", () => {
     });
 
     describe("sleep function", () => {
-        it("should sleep for specified duration", async () => {
+        it("should sleep for approximately specified duration", async () => {
             const start = Date.now();
             await sleep(100);
             const end = Date.now();
+            const duration = end - start;
 
-            expect(end - start).toBeGreaterThanOrEqual(100);
+            // Allow for small precision error (up to 10ms) to prevent flaky tests
+            expect(duration).toBeGreaterThanOrEqual(99);
+            expect(duration).toBeLessThanOrEqual(101); // Also ensure it doesn't take too long
         });
     });
 

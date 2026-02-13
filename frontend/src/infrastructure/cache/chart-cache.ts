@@ -1,6 +1,6 @@
 /** @format */
 
-import { CandleData } from "../../features/strategies/components/CandlestickChart";
+import { CandleData } from "../../shared/components/charts/CandlestickChart";
 import { PriceDataPoint } from "../../features/analytics/types/analytics.types";
 
 /**

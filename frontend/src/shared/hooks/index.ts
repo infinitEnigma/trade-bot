@@ -3,4 +3,5 @@
 export { useVisibility } from "./useVisibility";
 export { useMemoryMonitor } from "./useMemoryMonitor";
 export { usePageBackground } from "./usePageBackground";
-export { useChartData } from "../../features/strategies/hooks/useChartData";
+export { useChartData } from "./useChartData";
+export { useBalance } from "./useBalance";

@@ -1,6 +1,6 @@
 /** @format */
 
-export { BalanceCards } from "./BalanceCards";
+//export { BalanceCards } from "../../../components/user/BalanceCards";
 export { QuickActions } from "./QuickActions";
-export { PositionsTable } from "./PositionsTable";
-export { RecentTrades } from "./RecentTrades";
+/*export { PositionsTable } from "../../../components/user/PositionsTable";
+export { RecentTrades } from "../../../components/user/RecentTrades";*/

@@ -49,7 +49,7 @@ export class AuthService {
      */
     async getProfile() {
         try {
-            const response = await authApi.getMe();
+            const response = await authApi.getProfile();
             return response;
         } catch (error) {
             console.error("Auth service getProfile error:", error);

@@ -2,8 +2,8 @@
 
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
-import { useAuth } from "../../features/auth";
-import { UserRole } from "../../shared/types";
+import { useAuth } from "../../../features/auth";
+import { UserRole } from "../../types";
 import {
   Home,
   Zap,

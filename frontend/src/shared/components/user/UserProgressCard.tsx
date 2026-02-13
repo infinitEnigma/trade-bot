@@ -1,8 +1,8 @@
 /** @format */
 
 import React from "react";
-import { useAuth } from "../../features/auth";
-import { User, UserLevel, UserRole } from "../../shared/types";
+import { useAuth } from "../../../features/auth";
+import { User, UserLevel, UserRole } from "../../types";
 import {
   CheckCircle,
   Lock,

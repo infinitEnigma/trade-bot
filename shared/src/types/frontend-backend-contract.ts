@@ -90,7 +90,10 @@ export interface RegisterResponse {
  */
 export interface UserProfileResponse {
     user: FrontendUser;
-    kodiakCredentials?: FrontendKodiakCredentials;
+    kodiakStatus?: {
+        accountId: string;
+        verified: boolean;
+    };
 }
 
 /**
