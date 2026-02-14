@@ -16,7 +16,7 @@ jest.mock('../../../src/infrastructure/external/kodiak-integration.service', () 
     },
 }));
 
-jest.mock('../../../src/infrastructure/messaging/market-stream.service', () => ({
+jest.mock('../../../src/infrastructure/messaging/market-stream', () => ({
     marketStreamService: {
         getKlines: jest.fn(),
         getLatestMarkPrice: jest.fn(),
@@ -72,7 +72,7 @@ jest.mock('../../../src/shared/utils/context', () => ({
 
 // Get mock services
 const mockKodiakService = require('../../../src/infrastructure/external/kodiak-integration.service').kodiakIntegrationService;
-const mockMarketStreamService = require('../../../src/infrastructure/messaging/market-stream.service').marketStreamService;
+const mockMarketStreamService = require('../../../src/infrastructure/messaging/market-stream').marketStreamService;
 const mockRedisService = require('../../../src/infrastructure/cache/redis.service').redisService;
 const mockQuery = require('../../../src/database/pool').query;
 

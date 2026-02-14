@@ -6,6 +6,23 @@ import { UserRole, UserLevel } from '@trade-bot/shared';
 import { serviceProvider } from '../../src/core/service-provider';
 import { query } from '../../src/database/pool';
 
+// Mock @noble/ed25519 module to avoid Jest parse errors
+jest.mock('@noble/ed25519', () => ({
+    sign: jest.fn(),
+    verify: jest.fn(),
+    getPublicKey: jest.fn(),
+    keygen: jest.fn(),
+    etc: jest.fn(),
+    getPublicKeyAsync: jest.fn(),
+    hash: jest.fn(),
+    hashes: jest.fn(),
+    keygenAsync: jest.fn(),
+    Point: jest.fn(),
+    signAsync: jest.fn(),
+    utils: jest.fn(),
+    verifyAsync: jest.fn(),
+}));
+
 describe('Admin Qualification Check API', () => {
     let testUserId: string;
     let testUserEmail: string;

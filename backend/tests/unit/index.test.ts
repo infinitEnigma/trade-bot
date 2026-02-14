@@ -38,6 +38,23 @@ jest.mock('../../src/server/route-config');
 jest.mock('../../src/server/middleware-config');
 jest.mock('../../src/infrastructure/messaging');
 
+// Mock @noble/ed25519 module to avoid Jest parse errors
+jest.mock('@noble/ed25519', () => ({
+    sign: jest.fn(),
+    verify: jest.fn(),
+    getPublicKey: jest.fn(),
+    keygen: jest.fn(),
+    etc: jest.fn(),
+    getPublicKeyAsync: jest.fn(),
+    hash: jest.fn(),
+    hashes: jest.fn(),
+    keygenAsync: jest.fn(),
+    Point: jest.fn(),
+    signAsync: jest.fn(),
+    utils: jest.fn(),
+    verifyAsync: jest.fn(),
+}));
+
 import { app, io, validateEnvironment, REQUIRED_ENV_VARS, startServer, stopServer } from '../../src/index';
 
 describe('Application Entry Point (index.ts)', () => {

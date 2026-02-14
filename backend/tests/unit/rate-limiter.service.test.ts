@@ -24,6 +24,23 @@ jest.mock('../../src/infrastructure', () => ({
     },
 }));
 
+// Mock @noble/ed25519 module to avoid Jest parse errors
+jest.mock('@noble/ed25519', () => ({
+    sign: jest.fn(),
+    verify: jest.fn(),
+    getPublicKey: jest.fn(),
+    keygen: jest.fn(),
+    etc: jest.fn(),
+    getPublicKeyAsync: jest.fn(),
+    hash: jest.fn(),
+    hashes: jest.fn(),
+    keygenAsync: jest.fn(),
+    Point: jest.fn(),
+    signAsync: jest.fn(),
+    utils: jest.fn(),
+    verifyAsync: jest.fn(),
+}));
+
 describe('RateLimiterService', () => {
     describe('Rate limiters creation', () => {
         it('should create rate limiter instances', () => {

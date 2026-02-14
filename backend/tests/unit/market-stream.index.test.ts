@@ -1,6 +1,11 @@
 /** @format */
 
 import { MarketStreamService } from '../../src/infrastructure/messaging/market-stream/index';
+import { WebSocketManager } from '../../src/infrastructure/messaging/market-stream/websocket-manager';
+import { AuthManager } from '../../src/infrastructure/messaging/market-stream/auth-manager';
+import { CacheManager } from '../../src/infrastructure/messaging/market-stream/cache-manager';
+import { SubscriptionManager } from '../../src/infrastructure/messaging/market-stream/subscription-manager';
+import { MessageHandler } from '../../src/infrastructure/messaging/market-stream/message-handler';
 
 // Mock external dependencies
 jest.mock('../../src/core/logging/logger.service');
@@ -32,6 +37,13 @@ jest.mock('../../src/infrastructure/security/encryption.service', () => ({
 describe('MarketStreamService', () => {
     let marketStreamService: MarketStreamService;
 
+    // Mock instances
+    let mockWsManager: jest.Mocked<WebSocketManager>;
+    let mockAuthManager: jest.Mocked<AuthManager>;
+    let mockCacheManager: jest.Mocked<CacheManager>;
+    let mockSubscriptionManager: jest.Mocked<SubscriptionManager>;
+    let mockMessageHandler: jest.Mocked<MessageHandler>;
+
     // Mock dependencies
     const mockWebSocket = {
         on: jest.fn(),
@@ -42,7 +54,56 @@ describe('MarketStreamService', () => {
     beforeEach(() => {
         // Reset all mocks before each test
         jest.clearAllMocks();
-        marketStreamService = new MarketStreamService();
+
+        // Create mock instances
+        mockWsManager = {
+            createConnection: jest.fn(),
+            getConnection: jest.fn(),
+            isConnected: jest.fn(),
+            disconnectAll: jest.fn(),
+            cleanupAllIntervals: jest.fn(),
+            getStats: jest.fn()
+        } as unknown as jest.Mocked<WebSocketManager>;
+
+        mockAuthManager = {
+            getAccountId: jest.fn(),
+            authenticate: jest.fn()
+        } as unknown as jest.Mocked<AuthManager>;
+
+        mockCacheManager = {
+            getTick: jest.fn(),
+            getKlines: jest.fn(),
+            getMarkPrice: jest.fn(),
+            getStats: jest.fn()
+        } as unknown as jest.Mocked<CacheManager>;
+
+        mockSubscriptionManager = {
+            addPendingSubscription: jest.fn(),
+            getPendingSubscriptions: jest.fn(),
+            clearPendingSubscription: jest.fn(),
+            subscribe: jest.fn(),
+            unsubscribe: jest.fn(),
+            clearAll: jest.fn(),
+            getStats: jest.fn(),
+            getDetailedStats: jest.fn()
+        } as unknown as jest.Mocked<SubscriptionManager>;
+
+        mockMessageHandler = {
+            handleMessage: jest.fn(),
+            setSocketServer: jest.fn(),
+            setWebSocketManager: jest.fn(),
+            clearProcessingQueue: jest.fn(),
+            getStats: jest.fn()
+        } as unknown as jest.Mocked<MessageHandler>;
+
+        // Create MarketStreamService instance with mock dependencies
+        marketStreamService = new MarketStreamService(
+            mockWsManager,
+            mockAuthManager,
+            mockCacheManager,
+            mockMessageHandler,
+            mockSubscriptionManager
+        );
     });
 
     describe('instance creation', () => {
@@ -63,7 +124,8 @@ describe('MarketStreamService', () => {
             };
 
             marketStreamService.setSocketServer(mockIo as any);
-            // Verify the method exists and doesn't throw
+            expect(mockMessageHandler.setSocketServer).toHaveBeenCalledWith(mockIo);
+            expect(mockMessageHandler.setWebSocketManager).toHaveBeenCalledWith(mockWsManager);
         });
     });
 
@@ -72,45 +134,38 @@ describe('MarketStreamService', () => {
             const mockAccountId = 'test-account-123';
 
             // Mock dependencies
-            const mockAuthManager = require('../../src/infrastructure/messaging/market-stream/auth-manager').AuthManager;
-            mockAuthManager.prototype.getAccountId.mockResolvedValue(mockAccountId);
-            mockAuthManager.prototype.authenticate.mockResolvedValue();
-
-            const mockWebSocketManager = require('../../src/infrastructure/messaging/market-stream/websocket-manager').WebSocketManager;
-            mockWebSocketManager.prototype.createConnection.mockResolvedValue(mockWebSocket);
-            mockWebSocketManager.prototype.getConnection.mockReturnValue(mockWebSocket);
-            mockWebSocketManager.prototype.isConnected.mockReturnValue(true);
-
-            const mockSubscriptionManager = require('../../src/infrastructure/messaging/market-stream/subscription-manager').SubscriptionManager;
-            mockSubscriptionManager.prototype.getPendingSubscriptions.mockReturnValue(['BTC-PERP@kline_1m']);
-            mockSubscriptionManager.prototype.clearPendingSubscription.mockImplementation();
+            mockAuthManager.getAccountId.mockResolvedValue(mockAccountId);
+            mockAuthManager.authenticate.mockResolvedValue();
+            mockWsManager.createConnection.mockResolvedValue(mockWebSocket);
+            mockWsManager.getConnection.mockReturnValue(mockWebSocket);
+            mockWsManager.isConnected.mockReturnValue(true);
+            mockSubscriptionManager.getPendingSubscriptions.mockReturnValue(['BTC-PERP@kline_1m']);
+            mockSubscriptionManager.clearPendingSubscription.mockImplementation();
 
             await marketStreamService.connectToOrderly(['BTC-PERP']);
 
-            expect(mockAuthManager.prototype.getAccountId).toHaveBeenCalled();
-            expect(mockWebSocketManager.prototype.createConnection).toHaveBeenCalledWith(mockAccountId);
-            expect(mockAuthManager.prototype.authenticate).toHaveBeenCalledWith(mockWebSocket, mockAccountId);
-            expect(mockSubscriptionManager.prototype.addPendingSubscription).toHaveBeenCalled();
+            expect(mockAuthManager.getAccountId).toHaveBeenCalled();
+            expect(mockWsManager.createConnection).toHaveBeenCalledWith(mockAccountId);
+            expect(mockAuthManager.authenticate).toHaveBeenCalledWith(mockWebSocket, mockAccountId);
+            expect(mockSubscriptionManager.addPendingSubscription).toHaveBeenCalled();
         });
 
         it('should handle connection errors gracefully', async () => {
-            const mockAuthManager = require('../../src/infrastructure/messaging/market-stream/auth-manager').AuthManager;
             const testError = new Error('Connection failed');
-            mockAuthManager.prototype.getAccountId.mockRejectedValue(testError);
+            mockAuthManager.getAccountId.mockRejectedValue(testError);
 
             await marketStreamService.connectToOrderly(['BTC-PERP']);
 
-            expect(mockAuthManager.prototype.getAccountId).toHaveBeenCalled();
+            expect(mockAuthManager.getAccountId).toHaveBeenCalled();
         });
 
         it('should handle no account ID returned from auth manager', async () => {
-            const mockAuthManager = require('../../src/infrastructure/messaging/market-stream/auth-manager').AuthManager;
-            mockAuthManager.prototype.getAccountId.mockResolvedValue(null);
+            mockAuthManager.getAccountId.mockResolvedValue(null);
 
             await marketStreamService.connectToOrderly(['BTC-PERP']);
 
-            expect(mockAuthManager.prototype.getAccountId).toHaveBeenCalled();
-            expect(require('../../src/infrastructure/messaging/market-stream/websocket-manager').WebSocketManager.prototype.createConnection).not.toHaveBeenCalled();
+            expect(mockAuthManager.getAccountId).toHaveBeenCalled();
+            expect(mockWsManager.createConnection).not.toHaveBeenCalled();
         });
     });
 
@@ -119,9 +174,8 @@ describe('MarketStreamService', () => {
             marketStreamService.subscribe('test-client', 'BTC-PERP@kline_1m');
             marketStreamService.unsubscribe('test-client', 'BTC-PERP@kline_1m');
 
-            const mockSubscriptionManager = require('../../src/infrastructure/messaging/market-stream/subscription-manager').SubscriptionManager;
-            expect(mockSubscriptionManager.prototype.subscribe).toHaveBeenCalledWith('test-client', 'BTC-PERP@kline_1m');
-            expect(mockSubscriptionManager.prototype.unsubscribe).toHaveBeenCalledWith('test-client', 'BTC-PERP@kline_1m');
+            expect(mockSubscriptionManager.subscribe).toHaveBeenCalledWith('test-client', 'BTC-PERP@kline_1m');
+            expect(mockSubscriptionManager.unsubscribe).toHaveBeenCalledWith('test-client', 'BTC-PERP@kline_1m');
         });
 
         it('should handle subscribe and unsubscribe for legacy methods', () => {
@@ -130,9 +184,8 @@ describe('MarketStreamService', () => {
             // Test legacy connectToMarkPrice
             marketStreamService.connectToMarkPrice('BTC-PERP');
 
-            const mockSubscriptionManager = require('../../src/infrastructure/messaging/market-stream/subscription-manager').SubscriptionManager;
-            expect(mockSubscriptionManager.prototype.subscribe).toHaveBeenCalledWith('legacy-client', 'BTC-PERP@kline_1m');
-            expect(mockSubscriptionManager.prototype.subscribe).toHaveBeenCalledWith('legacy-client', 'BTC-PERP@markprice');
+            expect(mockSubscriptionManager.subscribe).toHaveBeenCalledWith('legacy-client', 'BTC-PERP@kline_1m');
+            expect(mockSubscriptionManager.subscribe).toHaveBeenCalledWith('legacy-client', 'BTC-PERP@markprice');
         });
     });
 
@@ -148,12 +201,11 @@ describe('MarketStreamService', () => {
                 change24h: 2.5
             };
 
-            const mockCacheManager = require('../../src/infrastructure/messaging/market-stream/cache-manager').CacheManager;
-            mockCacheManager.prototype.getTick.mockResolvedValue(mockTickData);
+            mockCacheManager.getTick.mockResolvedValue(mockTickData);
 
             const result = await marketStreamService.getLatestTick('BTC-PERP');
             expect(result).toEqual(mockTickData);
-            expect(mockCacheManager.prototype.getTick).toHaveBeenCalledWith('BTC-PERP');
+            expect(mockCacheManager.getTick).toHaveBeenCalledWith('BTC-PERP');
         });
 
         it('should retrieve kline data from cache', async () => {
@@ -170,12 +222,11 @@ describe('MarketStreamService', () => {
                 endTime: Date.now()
             }];
 
-            const mockCacheManager = require('../../src/infrastructure/messaging/market-stream/cache-manager').CacheManager;
-            mockCacheManager.prototype.getKlines.mockResolvedValue(mockKlineData);
+            mockCacheManager.getKlines.mockResolvedValue(mockKlineData);
 
             const result = await marketStreamService.getKlines('BTC-PERP', '1m');
             expect(result).toEqual(mockKlineData);
-            expect(mockCacheManager.prototype.getKlines).toHaveBeenCalledWith('BTC-PERP', '1m', 300);
+            expect(mockCacheManager.getKlines).toHaveBeenCalledWith('BTC-PERP', '1m', 300);
         });
 
         it('should retrieve latest mark price data from cache', async () => {
@@ -185,12 +236,11 @@ describe('MarketStreamService', () => {
                 timestamp: Date.now()
             };
 
-            const mockCacheManager = require('../../src/infrastructure/messaging/market-stream/cache-manager').CacheManager;
-            mockCacheManager.prototype.getMarkPrice.mockResolvedValue(mockMarkPriceData);
+            mockCacheManager.getMarkPrice.mockResolvedValue(mockMarkPriceData);
 
             const result = await marketStreamService.getLatestMarkPrice('BTC-PERP');
             expect(result).toEqual(mockMarkPriceData);
-            expect(mockCacheManager.prototype.getMarkPrice).toHaveBeenCalledWith('BTC-PERP');
+            expect(mockCacheManager.getMarkPrice).toHaveBeenCalledWith('BTC-PERP');
         });
     });
 
@@ -198,61 +248,140 @@ describe('MarketStreamService', () => {
         it('should disconnect all connections cleanly', () => {
             marketStreamService.disconnectAll();
 
-            const mockWebSocketManager = require('../../src/infrastructure/messaging/market-stream/websocket-manager').WebSocketManager;
-            const mockSubscriptionManager = require('../../src/infrastructure/messaging/market-stream/subscription-manager').SubscriptionManager;
-
-            expect(mockWebSocketManager.prototype.disconnectAll).toHaveBeenCalled();
-            expect(mockSubscriptionManager.prototype.clearAll).toHaveBeenCalled();
+            expect(mockWsManager.disconnectAll).toHaveBeenCalled();
+            expect(mockSubscriptionManager.clearAll).toHaveBeenCalled();
         });
     });
 
     describe('status and statistics', () => {
         it('should return service status with disconnected state', () => {
-            const mockWebSocketManager = require('../../src/infrastructure/messaging/market-stream/websocket-manager').WebSocketManager;
-            mockWebSocketManager.prototype.isConnected.mockReturnValue(false);
-
-            const mockSubscriptionManager = require('../../src/infrastructure/messaging/market-stream/subscription-manager').SubscriptionManager;
-            mockSubscriptionManager.prototype.getStats.mockReturnValue({ active: 0, pending: 0 });
-            mockSubscriptionManager.prototype.getPendingSubscriptions.mockReturnValue([]);
+            mockWsManager.isConnected.mockReturnValue(false);
+            mockSubscriptionManager.getStats.mockReturnValue({
+                activeSubscriptions: 0,
+                totalReferences: 0,
+                topics: []
+            });
+            mockSubscriptionManager.getPendingSubscriptions.mockReturnValue([]);
 
             const status = marketStreamService.getStatus();
             expect(status.connected).toBe(false);
             expect(status.websockets).toEqual([]);
             expect(status.pendingSubscriptions).toBe(0);
-            expect(status.subscriptionStats).toEqual({ active: 0, pending: 0 });
+            expect(status.subscriptionStats).toEqual({
+                activeSubscriptions: 0,
+                totalReferences: 0,
+                topics: []
+            });
         });
 
         it('should return service status with connected state', () => {
-            const mockWebSocketManager = require('../../src/infrastructure/messaging/market-stream/websocket-manager').WebSocketManager;
-            mockWebSocketManager.prototype.isConnected.mockReturnValue(true);
-
-            const mockSubscriptionManager = require('../../src/infrastructure/messaging/market-stream/subscription-manager').SubscriptionManager;
-            mockSubscriptionManager.prototype.getStats.mockReturnValue({ active: 2, pending: 1 });
-            mockSubscriptionManager.prototype.getPendingSubscriptions.mockReturnValue(['ETH-PERP@kline_1m']);
+            mockWsManager.isConnected.mockReturnValue(true);
+            mockSubscriptionManager.getStats.mockReturnValue({
+                activeSubscriptions: 2,
+                totalReferences: 3,
+                topics: ['BTC-PERP@kline_1m', 'ETH-PERP@markprice']
+            });
+            mockSubscriptionManager.getPendingSubscriptions.mockReturnValue(['ETH-PERP@kline_1m']);
 
             const status = marketStreamService.getStatus();
             expect(status.connected).toBe(true);
             expect(status.websockets).toEqual(['market']);
             expect(status.pendingSubscriptions).toBe(1);
-            expect(status.subscriptionStats).toEqual({ active: 2, pending: 1 });
+            expect(status.subscriptionStats).toEqual({
+                activeSubscriptions: 2,
+                totalReferences: 3,
+                topics: ['BTC-PERP@kline_1m', 'ETH-PERP@markprice']
+            });
         });
 
-        it('should return detailed service statistics', () => {
-            const mockWebSocketManager = require('../../src/infrastructure/messaging/market-stream/websocket-manager').WebSocketManager;
-            const mockCacheManager = require('../../src/infrastructure/messaging/market-stream/cache-manager').CacheManager;
-            const mockSubscriptionManager = require('../../src/infrastructure/messaging/market-stream/subscription-manager').SubscriptionManager;
-            const mockMessageHandler = require('../../src/infrastructure/messaging/market-stream/message-handler').MessageHandler;
+        it('should return detailed service statistics', async () => {
+            mockWsManager.getStats.mockReturnValue({
+                activeConnections: 1,
+                connectionKeys: ['market'],
+                circuitBreakerStates: {},
+                queueDepth: 0,
+                maxQueueSize: 10000,
+                backpressureActive: false,
+                backpressureStates: {},
+                processingBatchSize: 50,
+                backpressureThreshold: 1000,
+                recoveryStates: {},
+                healthCheckConfig: {
+                    timeout: 5000,
+                    retries: 2,
+                    interval: 10000,
+                    successThreshold: 2,
+                    failureThreshold: 3,
+                    enablePingPong: true,
+                    enableAuthCheck: false,
+                    enableSubscriptionCheck: false
+                }
+            });
+            mockCacheManager.getStats.mockResolvedValue({
+                redisConnected: true,
+                cacheKeys: ['tick:BTC-PERP', 'kline:BTC-PERP:1m']
+            });
+            mockSubscriptionManager.getDetailedStats.mockReturnValue({
+                activeSubscriptions: [
+                    {
+                        topic: 'BTC-PERP@kline_1m',
+                        count: 2,
+                        lastUsed: Date.now(),
+                        age: 0
+                    }
+                ],
+                pendingSubscriptions: [],
+                cleanupTimers: 0
+            });
+            mockMessageHandler.getStats.mockReturnValue({
+                hasSocketServer: true,
+                activeRooms: ['BTC-PERP', 'ETH-PERP']
+            });
 
-            mockWebSocketManager.prototype.getStats.mockReturnValue({ connections: 1, active: true });
-            mockCacheManager.prototype.getStats.mockReturnValue({ ticks: 10, klines: 5, markPrices: 3 });
-            mockSubscriptionManager.prototype.getDetailedStats.mockReturnValue({ active: 2, topics: ['BTC-PERP@kline_1m'] });
-            mockMessageHandler.prototype.getStats.mockReturnValue({ messagesProcessed: 100, errors: 2 });
-
-            const stats = marketStreamService.getDetailedStats();
-            expect(stats.websocket).toEqual({ connections: 1, active: true });
-            expect(stats.cache).toEqual({ ticks: 10, klines: 5, markPrices: 3 });
-            expect(stats.subscriptions).toEqual({ active: 2, topics: ['BTC-PERP@kline_1m'] });
-            expect(stats.messageHandler).toEqual({ messagesProcessed: 100, errors: 2 });
+            const stats = await marketStreamService.getDetailedStats();
+            expect(stats.websocket).toEqual({
+                activeConnections: 1,
+                connectionKeys: ['market'],
+                circuitBreakerStates: {},
+                queueDepth: 0,
+                maxQueueSize: 10000,
+                backpressureActive: false,
+                backpressureStates: {},
+                processingBatchSize: 50,
+                backpressureThreshold: 1000,
+                recoveryStates: {},
+                healthCheckConfig: {
+                    timeout: 5000,
+                    retries: 2,
+                    interval: 10000,
+                    successThreshold: 2,
+                    failureThreshold: 3,
+                    enablePingPong: true,
+                    enableAuthCheck: false,
+                    enableSubscriptionCheck: false
+                }
+            });
+            // Check if cache stats have the correct structure
+            expect(stats.cache).toEqual(
+                expect.objectContaining({
+                    redisConnected: true,
+                    cacheKeys: expect.arrayContaining(['tick:BTC-PERP', 'kline:BTC-PERP:1m'])
+                })
+            );
+            expect(stats.subscriptions).toEqual({
+                activeSubscriptions: [
+                    expect.objectContaining({
+                        topic: 'BTC-PERP@kline_1m',
+                        count: 2
+                    })
+                ],
+                pendingSubscriptions: [],
+                cleanupTimers: 0
+            });
+            expect(stats.messageHandler).toEqual({
+                hasSocketServer: true,
+                activeRooms: ['BTC-PERP', 'ETH-PERP']
+            });
         });
     });
 });

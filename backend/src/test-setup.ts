@@ -97,42 +97,120 @@ if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
 async function cleanupAdditionalServices(): Promise<void> {
     try {
         // Import services that need cleanup
-        const { marketStreamService } = await import('./infrastructure/messaging/market-stream.service');
+        const { marketStreamService } = await import('./infrastructure/messaging/market-stream');
         const { botReconciliationWorker } = await import('./workers/bot-reconciliation');
         const { getAsyncOperationManager } = await import('./infrastructure/async/async-operation-manager.service');
         const { redisService } = await import('./infrastructure/cache/redis.service');
 
-        // Cleanup each service
+        // Cleanup each service with enhanced error handling
         if (marketStreamService) {
-            marketStreamService.cleanupForTests();
+            try {
+                logger.debug('Cleaning up MarketStreamService...');
+                marketStreamService.cleanupForTests();
+                logger.debug('MarketStreamService cleanup completed');
+            } catch (error) {
+                logger.error('❌ Error cleaning up MarketStreamService:', error as Error);
+            }
         }
 
         if (botReconciliationWorker) {
-            botReconciliationWorker.cleanupForTests();
+            try {
+                logger.debug('Cleaning up BotReconciliationWorker...');
+                botReconciliationWorker.cleanupForTests();
+                logger.debug('BotReconciliationWorker cleanup completed');
+            } catch (error) {
+                logger.error('❌ Error cleaning up BotReconciliationWorker:', error as Error);
+            }
         }
 
         if (getAsyncOperationManager) {
-            getAsyncOperationManager().cleanupForTests();
+            try {
+                logger.debug('Cleaning up AsyncOperationManager...');
+                getAsyncOperationManager().cleanupForTests();
+                logger.debug('AsyncOperationManager cleanup completed');
+            } catch (error) {
+                logger.error('❌ Error cleaning up AsyncOperationManager:', error as Error);
+            }
         }
 
         if (redisService && typeof redisService.cleanupForTests === 'function') {
-            redisService.cleanupForTests();
+            try {
+                logger.debug('Cleaning up RedisService...');
+                redisService.cleanupForTests();
+                logger.debug('RedisService cleanup completed');
+            } catch (error) {
+                logger.error('❌ Error cleaning up RedisService:', error as Error);
+            }
         }
 
         // Cleanup credential cache service if it has cleanup method
         if (credentialCacheService && typeof credentialCacheService.cleanupForTests === 'function') {
-            credentialCacheService.cleanupForTests();
+            try {
+                logger.debug('Cleaning up CredentialCacheService...');
+                credentialCacheService.cleanupForTests();
+                logger.debug('CredentialCacheService cleanup completed');
+            } catch (error) {
+                logger.error('❌ Error cleaning up CredentialCacheService:', error as Error);
+            }
         }
 
         // Cleanup error notification service if it has cleanup method
         if (errorNotificationService && typeof errorNotificationService.cleanupForTests === 'function') {
-            errorNotificationService.cleanupForTests();
+            try {
+                logger.debug('Cleaning up ErrorNotificationService...');
+                errorNotificationService.cleanupForTests();
+                logger.debug('ErrorNotificationService cleanup completed');
+            } catch (error) {
+                logger.error('❌ Error cleaning up ErrorNotificationService:', error as Error);
+            }
         }
 
         // Cleanup memory rate limiter if it has cleanup method
         if (memoryRateLimiter && typeof memoryRateLimiter.cleanupForTests === 'function') {
-            memoryRateLimiter.cleanupForTests();
+            try {
+                logger.debug('Cleaning up MemoryRateLimiter...');
+                memoryRateLimiter.cleanupForTests();
+                logger.debug('MemoryRateLimiter cleanup completed');
+            } catch (error) {
+                logger.error('❌ Error cleaning up MemoryRateLimiter:', error as Error);
+            }
         }
+
+        // Additional forceful cleanup for WebSocketManager interval
+        // This is a safety net in case the marketStreamService cleanup fails
+        try {
+            const { WebSocketManager } = await import('./infrastructure/messaging/market-stream/websocket-manager');
+            // Note: We can't directly access the singleton's wsManager instance
+            // But we can try to force clear any remaining intervals
+            logger.debug('Attempting forceful interval cleanup...');
+
+            // Force clear all intervals (this is aggressive but necessary for tests)
+            const timers = require('timers');
+            const intervalIds = (timers as any)._getActiveIds ? (timers as any)._getActiveIds() : [];
+            intervalIds.forEach((id: any) => {
+                try {
+                    clearInterval(id);
+                    logger.debug(`Cleared interval: ${id}`);
+                } catch (error) {
+                    // Ignore errors when clearing intervals
+                }
+            });
+
+            // Also clear all timeouts
+            const timeoutIds = (timers as any)._getActiveIds ? (timers as any)._getActiveIds() : [];
+            timeoutIds.forEach((id: any) => {
+                try {
+                    clearTimeout(id);
+                    logger.debug(`Cleared timeout: ${id}`);
+                } catch (error) {
+                    // Ignore errors when clearing timeouts
+                }
+            });
+
+        } catch (intervalCleanupError) {
+            logger.error('❌ Error during forceful interval cleanup:', intervalCleanupError as Error);
+        }
+
     } catch (error) {
         logger.error('❌ Error during additional service cleanup:', error as Error);
     }

@@ -52,6 +52,23 @@ jest.mock('../../src/shared/utils/context', () => ({
   setUserContext: jest.fn(),
 }));
 
+// Mock @noble/ed25519 module to avoid Jest parse errors
+jest.mock('@noble/ed25519', () => ({
+  sign: jest.fn(),
+  verify: jest.fn(),
+  getPublicKey: jest.fn(),
+  keygen: jest.fn(),
+  etc: jest.fn(),
+  getPublicKeyAsync: jest.fn(),
+  hash: jest.fn(),
+  hashes: jest.fn(),
+  keygenAsync: jest.fn(),
+  Point: jest.fn(),
+  signAsync: jest.fn(),
+  utils: jest.fn(),
+  verifyAsync: jest.fn(),
+}));
+
 import { selectAuthService } from '../../src/core/service-selector';
 import { redisService } from '../../src/infrastructure/cache/redis.service';
 

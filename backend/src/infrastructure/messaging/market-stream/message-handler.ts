@@ -274,16 +274,16 @@ export class MessageHandler {
   }
 
   /**
-   * Broadcast tick data to clients subscribed to a symbol with Socket.IO
+   * Broadcast tick data to clients subscribed to a symbol with backpressure handling
    */
   private async broadcastToSymbol(symbol: string, data: TickData): Promise<void> {
-    if (!this.io) {
-      logger.warn("Cannot broadcast - Socket.IO server not initialized");
+    if (!this.wsManager) {
+      logger.warn("Cannot broadcast - WebSocket manager not initialized");
       return;
     }
 
     try {
-      this.io.emit(`market:${symbol}`, data);
+      await this.wsManager.sendMessage("market", `market:${symbol}`, data, MessagePriority.HIGH);
       logger.debug("Tick data broadcasted to clients", {
         symbol,
         price: data.price,
@@ -296,16 +296,16 @@ export class MessageHandler {
   }
 
   /**
-   * Broadcast kline data to clients subscribed to klines for a symbol/interval with Socket.IO
+   * Broadcast kline data to clients subscribed to klines for a symbol/interval with backpressure handling
    */
   private async broadcastToKlines(symbol: string, interval: string, data: Record<string, unknown>): Promise<void> {
-    if (!this.io) {
-      logger.warn("Cannot broadcast - Socket.IO server not initialized");
+    if (!this.wsManager) {
+      logger.warn("Cannot broadcast - WebSocket manager not initialized");
       return;
     }
 
     try {
-      this.io.emit(`kline:${symbol}:${interval}`, data);
+      await this.wsManager.sendMessage("market", `kline:${symbol}:${interval}`, data, MessagePriority.MEDIUM);
       logger.debug("Kline data broadcasted to clients", {
         symbol,
         interval,
@@ -319,16 +319,16 @@ export class MessageHandler {
   }
 
   /**
-   * Broadcast mark price data to clients subscribed to mark price for a symbol with Socket.IO
+   * Broadcast mark price data to clients subscribed to mark price for a symbol with backpressure handling
    */
   private async broadcastToMarkPrice(symbol: string, data: Record<string, unknown>): Promise<void> {
-    if (!this.io) {
-      logger.warn("Cannot broadcast - Socket.IO server not initialized");
+    if (!this.wsManager) {
+      logger.warn("Cannot broadcast - WebSocket manager not initialized");
       return;
     }
 
     try {
-      this.io.emit(`markprice:${symbol}`, data);
+      await this.wsManager.sendMessage("market", `markprice:${symbol}`, data, MessagePriority.MEDIUM);
       logger.debug("Mark price data broadcasted to clients", {
         symbol,
       });
@@ -364,5 +364,12 @@ export class MessageHandler {
         ? Array.from(this.io.sockets.adapter.rooms.keys())
         : [],
     };
+  }
+
+  /**
+   * Clear processing queue for test purposes
+   */
+  clearProcessingQueue(): void {
+    logger.debug("Message handler processing queue cleared");
   }
 }

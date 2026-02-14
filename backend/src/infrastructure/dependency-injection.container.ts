@@ -33,7 +33,7 @@ import { botInstanceRepositoryAdapter } from './adapters/repositories/bot-instan
 // Pure Services
 import { BotManagementService } from '../core/bots/bot-management.service';
 import { WebSocketService } from '../infrastructure/messaging/websocket.service';
-import { MarketStreamService, marketStreamService } from '../infrastructure/messaging/market-stream.service';
+import { MarketStreamService, marketStreamService } from '../infrastructure/messaging/market-stream';
 import { WebSocketRateLimiter, webSocketRateLimiter } from '../infrastructure/security/rate-limiter/websocket-rate-limiter.adapter';
 
 // Pure Services

@@ -116,6 +116,16 @@ export class WebSocketManager {
 
   constructor(config: WebSocketConfig = DEFAULT_WS_CONFIG) {
     this.config = config;
+    // Do not start queue processor automatically in test environment
+    if (process.env.NODE_ENV !== 'test' && process.env.JEST_WORKER_ID === undefined) {
+      this.startQueueProcessor();
+    }
+  }
+
+  /**
+   * Explicitly start the queue processor (for test environments)
+   */
+  startQueueProcessorForTests(): void {
     this.startQueueProcessor();
   }
 
@@ -423,6 +433,53 @@ export class WebSocketManager {
     this.healthCheckIntervals.clear();
   }
 
+  /**
+   * Explicitly stop the queue processor interval
+   */
+  stopQueueProcessor(): void {
+    if (this.processingInterval) {
+      clearInterval(this.processingInterval);
+      this.processingInterval = null;
+      logger.info("Queue processor stopped");
+    }
+  }
+
+  /**
+   * Cleanup all intervals and timers - alias for cleanupForTests
+   */
+  cleanupAllIntervals(): void {
+    this.cleanupForTests();
+  }
+
+  /**
+   * Destructor to ensure proper cleanup when instance is garbage collected
+   * This acts as a safety net for any scenarios where explicit cleanup wasn't called
+   */
+  [Symbol.dispose](): void {
+    this.cleanupForTests();
+  }
+
+  /**
+   * Static method to create a WebSocketManager instance with automatic cleanup
+   * This is useful for test scenarios where we want to ensure cleanup happens
+   */
+  static createWithAutoCleanup(config?: WebSocketConfig): WebSocketManager {
+    const manager = new WebSocketManager(config);
+
+    // In test environment, automatically register cleanup
+    if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
+      const originalDispose = manager[Symbol.dispose].bind(manager);
+      manager[Symbol.dispose] = () => {
+        originalDispose();
+        if (manager.processingInterval) {
+          clearInterval(manager.processingInterval);
+          manager.processingInterval = null;
+        }
+      };
+    }
+
+    return manager;
+  }
   // ===============================
   // QUEUE-BASED BACKPRESSURE SYSTEM
   // ===============================
@@ -555,6 +612,13 @@ export class WebSocketManager {
       processingInterval: 100,
       batchSize: this.processingBatchSize,
     });
+  }
+
+  /**
+   * Check if queue processor is running
+   */
+  isQueueProcessorRunning(): boolean {
+    return this.processingInterval !== null;
   }
 
   /**

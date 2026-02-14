@@ -17,6 +17,23 @@ jest.mock('../../src/core/logging');
 jest.mock('../../src/core/user/user-profile.service');
 jest.mock('../../src/core/user/user-kodiak.service');
 
+// Mock @noble/ed25519 module to avoid Jest parse errors
+jest.mock('@noble/ed25519', () => ({
+    sign: jest.fn(),
+    verify: jest.fn(),
+    getPublicKey: jest.fn(),
+    keygen: jest.fn(),
+    etc: jest.fn(),
+    getPublicKeyAsync: jest.fn(),
+    hash: jest.fn(),
+    hashes: jest.fn(),
+    keygenAsync: jest.fn(),
+    Point: jest.fn(),
+    signAsync: jest.fn(),
+    utils: jest.fn(),
+    verifyAsync: jest.fn(),
+}));
+
 // Import the mocked services
 import { UserProfileService } from '../../src/core/user/user-profile.service';
 import { UserKodiakService } from '../../src/core/user/user-kodiak.service';

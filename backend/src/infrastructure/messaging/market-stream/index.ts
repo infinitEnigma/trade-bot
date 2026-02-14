@@ -23,12 +23,25 @@ export class MarketStreamService {
   private subscriptionManager: SubscriptionManager;
   private io: Server | null = null;
 
-  constructor() {
-    this.wsManager = new WebSocketManager();
-    this.authManager = new AuthManager();
-    this.cacheManager = new CacheManager();
-    this.messageHandler = new MessageHandler(this.cacheManager);
-    this.subscriptionManager = new SubscriptionManager();
+  constructor(
+    wsManager?: WebSocketManager,
+    authManager?: AuthManager,
+    cacheManager?: CacheManager,
+    messageHandler?: MessageHandler,
+    subscriptionManager?: SubscriptionManager
+  ) {
+    this.wsManager = wsManager || WebSocketManager.createWithAutoCleanup();
+    this.authManager = authManager || new AuthManager();
+    this.cacheManager = cacheManager || new CacheManager();
+    this.subscriptionManager = subscriptionManager || new SubscriptionManager();
+    this.messageHandler = messageHandler || new MessageHandler(this.cacheManager);
+  }
+
+  /**
+   * Destructor to ensure proper cleanup when instance is garbage collected
+   */
+  [Symbol.dispose](): void {
+    this.cleanupForTests();
   }
 
   /**
@@ -223,14 +236,14 @@ export class MarketStreamService {
   /**
    * Get detailed service statistics
    */
-  getDetailedStats(): {
+  async getDetailedStats(): Promise<{
     websocket: unknown;
     cache: unknown;
     subscriptions: unknown;
     messageHandler: unknown;
-  } {
+  }> {
     const websocket = this.wsManager.getStats();
-    const cache = this.cacheManager.getStats();
+    const cache = await this.cacheManager.getStats();
     const subscriptions = this.subscriptionManager.getDetailedStats();
     const messageHandler = this.messageHandler.getStats();
 
@@ -240,6 +253,40 @@ export class MarketStreamService {
       subscriptions,
       messageHandler,
     };
+  }
+
+  /**
+   * Cleanup method for test environments
+   * Stops all connections, timers, and intervals
+   */
+  cleanupForTests(): void {
+    try {
+      // Disconnect all WebSocket connections
+      this.wsManager.disconnectAll();
+
+      // Clear all subscriptions
+      this.subscriptionManager.clearAll();
+
+      // Clear pending subscriptions
+      const pendingSubscriptions = this.subscriptionManager.getPendingSubscriptions();
+      pendingSubscriptions.forEach(topic => {
+        this.subscriptionManager.clearPendingSubscription(topic);
+      });
+
+      // Clear processing queue
+      this.messageHandler.clearProcessingQueue();
+
+      // Clear any remaining intervals and timeouts in WebSocket manager
+      this.wsManager.cleanupAllIntervals();
+
+      logger.info("Market stream service cleaned up for tests", {
+        pendingSubscriptions: pendingSubscriptions.length,
+        queueCleared: true,
+        intervalsCleared: true,
+      });
+    } catch (error) {
+      logger.error("Error during market stream cleanup", error as Error);
+    }
   }
 }
 

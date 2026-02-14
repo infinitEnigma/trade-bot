@@ -3,6 +3,23 @@
 import { MiddlewareConfig, MiddlewareConfigOptions } from "../../src/server/middleware-config";
 import express from "express";
 
+// Mock @noble/ed25519 module to avoid Jest parse errors
+jest.mock('@noble/ed25519', () => ({
+    sign: jest.fn(),
+    verify: jest.fn(),
+    getPublicKey: jest.fn(),
+    keygen: jest.fn(),
+    etc: jest.fn(),
+    getPublicKeyAsync: jest.fn(),
+    hash: jest.fn(),
+    hashes: jest.fn(),
+    keygenAsync: jest.fn(),
+    Point: jest.fn(),
+    signAsync: jest.fn(),
+    utils: jest.fn(),
+    verifyAsync: jest.fn(),
+}));
+
 describe("MiddlewareConfig", () => {
     describe("configure", () => {
         it("should configure an Express application with default options", async () => {
