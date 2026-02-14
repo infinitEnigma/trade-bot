@@ -383,6 +383,50 @@ export interface SystemHealthResponse {
 }
 
 // ===========================================
+// MARKET DATA TYPES (Shared between frontend and backend)
+// ===========================================
+
+/**
+ * Tick data (real-time price updates)
+ */
+export interface TickData {
+    symbol: string;
+    price: number;
+    volume: number;
+    timestamp: number;
+    bid: number;
+    ask: number;
+    change24h: number;
+}
+
+/**
+ * Kline/candlestick data
+ */
+export interface KlineData {
+    symbol: string;
+    type: string;
+    open: number;
+    close: number;
+    high: number;
+    low: number;
+    volume: number;
+    amount: number;
+    startTime: number;
+    endTime: number;
+    interval?: string;
+}
+
+/**
+ * Mark price data
+ */
+export interface MarkPriceData {
+    symbol: string;
+    price: number;
+    timestamp: number;
+    fundingRate?: number;
+}
+
+// ===========================================
 // WEB SOCKET EVENTS
 // ===========================================
 

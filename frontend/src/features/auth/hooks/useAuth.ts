@@ -131,13 +131,13 @@ const useAuthStore = create<AuthStore>()(
                 try {
                     set({ isLoading: true });
 
-                    // Skip check on auth pages to avoid rate limiting during login
+                    // Skip check on auth pages and landing page to avoid rate limiting
                     const currentPath = window.location.pathname;
                     const isAuthPage = currentPath === "/login" || currentPath === "/register";
+                    const isLandingPage = currentPath === "/";
 
-                    if (isAuthPage) {
-                        console.log("🔄 AUTH: Skipping checkAuth on auth page:", currentPath);
-                        // Completely skip API call on login/register pages
+                    if (isAuthPage || isLandingPage) {
+                        console.log("🔄 AUTH: Skipping checkAuth on", currentPath);
                         set({ isLoading: false });
                         return;
                     }

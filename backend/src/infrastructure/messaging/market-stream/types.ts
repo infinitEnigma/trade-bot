@@ -5,35 +5,12 @@
  * Shared across all market stream modules
  */
 
-export interface TickData {
-  symbol: string;
-  price: number;
-  volume: number;
-  timestamp: number;
-  bid: number;
-  ask: number;
-  change24h: number;
-}
+import { TickData as SharedTickData, KlineData as SharedKlineData, MarkPriceData as SharedMarkPriceData } from "@trade-bot/shared";
 
-export interface KlineData {
-  symbol: string;
-  type: string;
-  open: number;
-  close: number;
-  high: number;
-  low: number;
-  volume: number;
-  amount: number;
-  startTime: number;
-  endTime: number;
-}
-
-export interface MarkPriceData {
-  symbol: string;
-  price: number;
-  timestamp: number;
-  fundingRate?: number;
-}
+// Re-export shared types for compatibility
+export type TickData = SharedTickData;
+export type KlineData = SharedKlineData;
+export type MarkPriceData = SharedMarkPriceData;
 
 /**
  * WebSocket Message Types for ORDERLY API

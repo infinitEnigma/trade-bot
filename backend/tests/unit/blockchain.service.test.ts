@@ -229,19 +229,70 @@ describe('BlockchainService', () => {
                 success: true
             });
 
-            // Mock the ethers contract
-            const mockContract = {
-                balanceOf: jest.fn().mockResolvedValue(BigInt('1000000')),
-                symbol: jest.fn().mockResolvedValue('USDC')
+            // Mock Etherscan token transactions API response
+            const mockEtherscanResponse = {
+                status: "1",
+                message: "OK",
+                result: [
+                    {
+                        blockNumber: "123456",
+                        timeStamp: "1620000000",
+                        hash: "0xabc123...",
+                        nonce: "0",
+                        blockHash: "0xdef456...",
+                        from: "0x1111111111111111111111111111111111111111",
+                        contractAddress: validTokenAddress,
+                        to: validWalletAddress,
+                        value: "1000000", // 1 USDC (6 decimals)
+                        tokenName: "USD Coin",
+                        tokenSymbol: "USDC",
+                        tokenDecimal: "6",
+                        transactionIndex: "0",
+                        gas: "21000",
+                        gasPrice: "20000000000",
+                        gasUsed: "21000",
+                        cumulativeGasUsed: "21000",
+                        input: "0x",
+                        methodId: "0x",
+                        functionName: "",
+                        confirmations: "100"
+                    },
+                    {
+                        blockNumber: "123457",
+                        timeStamp: "1620000001",
+                        hash: "0xabc124...",
+                        nonce: "1",
+                        blockHash: "0xdef457...",
+                        from: validWalletAddress,
+                        contractAddress: validTokenAddress,
+                        to: "0x2222222222222222222222222222222222222222",
+                        value: "500000", // 0.5 USDC (6 decimals)
+                        tokenName: "USD Coin",
+                        tokenSymbol: "USDC",
+                        tokenDecimal: "6",
+                        transactionIndex: "1",
+                        gas: "21000",
+                        gasPrice: "20000000000",
+                        gasUsed: "21000",
+                        cumulativeGasUsed: "42000",
+                        input: "0x",
+                        methodId: "0x",
+                        functionName: "",
+                        confirmations: "99"
+                    }
+                ]
             };
 
-            (ethers.Contract as jest.Mock).mockReturnValue(mockContract);
+            mockFetch.mockResolvedValue({
+                ok: true,
+                json: jest.fn().mockResolvedValue(mockEtherscanResponse)
+            });
 
             const result = await blockchainService.getTokenBalance(validWalletAddress, validTokenAddress, 6);
 
             expect(result.address).toEqual(validWalletAddress);
             expect(result.tokenAddress).toEqual(validTokenAddress);
-            expect(parseFloat(result.tokenBalanceFormatted)).toBeGreaterThan(0);
+            expect(parseFloat(result.tokenBalanceFormatted)).toBeCloseTo(0.5); // 1 - 0.5 = 0.5 USDC
             expect(redisService.get).toHaveBeenCalled();
             expect(redisService.setex).toHaveBeenCalled();
             expect(logger.debug).toHaveBeenCalledWith(
@@ -259,13 +310,12 @@ describe('BlockchainService', () => {
                 data: null
             });
 
-            const mockError = new Error('Contract call failed');
-            const mockContract = {
-                balanceOf: jest.fn().mockRejectedValue(mockError),
-                symbol: jest.fn().mockRejectedValue(mockError)
-            };
-
-            (ethers.Contract as jest.Mock).mockReturnValue(mockContract);
+            const mockError = new Error('Etherscan API request failed with status: 500');
+            mockFetch.mockResolvedValue({
+                ok: false,
+                status: 500,
+                statusText: 'Internal Server Error'
+            });
 
             await expect(blockchainService.getTokenBalance(validWalletAddress, validTokenAddress)).rejects.toThrow(
                 `Failed to get token balance for ${validWalletAddress}`
@@ -275,9 +325,18 @@ describe('BlockchainService', () => {
     });
 
     describe('checkHealth', () => {
-        it('should return healthy status when RPC is reachable', async () => {
-            const mockProvider = (blockchainService as any).provider;
-            mockProvider.getBlockNumber = jest.fn().mockResolvedValue(1234567);
+        it('should return healthy status when API is reachable', async () => {
+            // Mock Etherscan API response
+            const mockEtherscanResponse = {
+                status: "1",
+                message: "OK",
+                result: "0"
+            };
+
+            mockFetch.mockResolvedValue({
+                ok: true,
+                json: jest.fn().mockResolvedValue(mockEtherscanResponse)
+            });
 
             const result = await blockchainService.checkHealth();
 
@@ -286,20 +345,23 @@ describe('BlockchainService', () => {
             expect(logger.debug).toHaveBeenCalledWith(
                 'Blockchain service health check successful',
                 expect.objectContaining({
-                    blockNumber: 1234567
+                    chainId: mockConfig.chainId
                 })
             );
         });
 
-        it('should return unhealthy status when RPC is unreachable', async () => {
-            const mockError = new Error('RPC connection timeout');
-            const mockProvider = (blockchainService as any).provider;
-            mockProvider.getBlockNumber = jest.fn().mockRejectedValue(mockError);
+        it('should return unhealthy status when API is unreachable', async () => {
+            const mockError = new Error('Etherscan API request failed with status: 503');
+            mockFetch.mockResolvedValue({
+                ok: false,
+                status: 503,
+                statusText: 'Service Unavailable'
+            });
 
             const result = await blockchainService.checkHealth();
 
             expect(result.healthy).toBe(false);
-            expect(result.error).toEqual(mockError.message);
+            expect(result.error).toContain('503');
             expect(logger.error).toHaveBeenCalledWith(
                 'Blockchain service health check failed',
                 expect.any(Error),

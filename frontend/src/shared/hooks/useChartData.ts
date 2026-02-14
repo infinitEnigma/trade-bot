@@ -7,7 +7,7 @@ import { CandleData } from "../components/charts/CandlestickChart";
 import { useAuth } from "../../features/auth";
 import React from "react";
 import { websocketClient } from "../../infrastructure/websocket/client";
-import type { TickData as WsTickData, MarkPriceData as WsMarkPriceData, KlineData as WsKlineData } from "../../infrastructure/websocket/client";
+import type { TickData as WsTickData, MarkPriceData as WsMarkPriceData, KlineData as WsKlineData } from "@trade-bot/shared";
 
 /**
  * Data freshness metadata from backend responses
@@ -421,57 +421,61 @@ export const useWebSocketPriceUpdates = ({
 
   useEffect(() => {
     // Connect to WebSocket
-    try {
-      //const socket = websocketClient.connect();
-      setConnectionStatus(websocketClient.getStatus());
+    const connectAndSubscribe = async () => {
+      try {
+        await websocketClient.connect();
+        setConnectionStatus(websocketClient.getStatus());
 
-      // Subscribe to symbol
-      websocketClient.subscribeToSymbol(symbol);
+        // Subscribe to symbol
+        await websocketClient.subscribeToSymbol(symbol);
 
-      // Set up listeners
-      const handleTick = (data: WsTickData) => {
-        if (data.symbol === symbol) {
-          setTickData(data);
-          console.log(`💰 Tick update for ${symbol}: $${data.price}`);
-        }
-      };
+        // Set up listeners
+        const handleTick = (data: WsTickData) => {
+          if (data.symbol === symbol) {
+            setTickData(data);
+            console.log(`💰 Tick update for ${symbol}: $${data.price}`);
+          }
+        };
 
-      const handleKline = (data: WsKlineData) => {
-        if (data.symbol === symbol && data.interval === interval) {
-          setKlineData(data);
-          console.log(`📊 Kline update for ${symbol} ${interval}`);
-        }
-      };
+        const handleKline = (data: WsKlineData) => {
+          if (data.symbol === symbol && data.interval === interval) {
+            setKlineData(data);
+            console.log(`📊 Kline update for ${symbol} ${interval}`);
+          }
+        };
 
-      const handleMarkPrice = (data: WsMarkPriceData) => {
-        if (data.symbol === symbol) {
-          setMarkPriceData(data);
-          console.log(`🏷️ Mark price update for ${symbol}: $${data.price}`);
-        }
-      };
+        const handleMarkPrice = (data: WsMarkPriceData) => {
+          if (data.symbol === symbol) {
+            setMarkPriceData(data);
+            console.log(`🏷️ Mark price update for ${symbol}: $${data.price}`);
+          }
+        };
 
-      const handleStatusChange = (status: string) => {
-        setConnectionStatus(status);
-        console.log(`📡 WebSocket status: ${status}`);
-      };
+        const handleStatusChange = (status: string) => {
+          setConnectionStatus(status);
+          console.log(`📡 WebSocket status: ${status}`);
+        };
 
-      websocketClient.onTick(handleTick);
-      websocketClient.onKline(handleKline);
-      websocketClient.onMarkPrice(handleMarkPrice);
-      websocketClient.onStatusChange(handleStatusChange);
+        websocketClient.onTick(handleTick);
+        websocketClient.onKline(handleKline);
+        websocketClient.onMarkPrice(handleMarkPrice);
+        websocketClient.onStatusChange(handleStatusChange);
 
-      // Cleanup
-      return () => {
-        websocketClient.offTick(handleTick);
-        websocketClient.offKline(handleKline);
-        websocketClient.offMarkPrice(handleMarkPrice);
-        websocketClient.offStatusChange(handleStatusChange);
-        websocketClient.unsubscribeFromSymbol(symbol);
-      };
-    } catch (error) {
-      console.error("Failed to connect to WebSocket:", error);
-      setConnectionStatus("error");
-    }
+        // Cleanup
+        return () => {
+          websocketClient.offTick(handleTick);
+          websocketClient.offKline(handleKline);
+          websocketClient.offMarkPrice(handleMarkPrice);
+          websocketClient.offStatusChange(handleStatusChange);
+          websocketClient.unsubscribeFromSymbol(symbol);
+        };
+      } catch (error) {
+        console.error("Failed to connect to WebSocket:", error);
+        setConnectionStatus("error");
+      }
+    };
+
+    connectAndSubscribe();
   }, [symbol, interval]);
 
   return {

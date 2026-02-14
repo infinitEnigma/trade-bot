@@ -274,54 +274,44 @@ export class MessageHandler {
   }
 
   /**
-   * Broadcast tick data to clients subscribed to a symbol with backpressure handling
+   * Broadcast tick data to clients subscribed to a symbol with Socket.IO
    */
   private async broadcastToSymbol(symbol: string, data: TickData): Promise<void> {
-    if (!this.wsManager) {
-      logger.warn("Cannot broadcast - no WebSocket manager with backpressure support");
+    if (!this.io) {
+      logger.warn("Cannot broadcast - Socket.IO server not initialized");
       return;
     }
 
-    // Use backpressure-aware messaging with HIGH priority for real-time market data
-    const success = await this.wsManager.sendMessage(
-      "market",
-      `market:${symbol}`,
-      data,
-      MessagePriority.HIGH // Real-time market data gets high priority
-    );
-
-    if (!success) {
-      logger.warn("Failed to queue tick data message", {
+    try {
+      this.io.emit(`market:${symbol}`, data);
+      logger.debug("Tick data broadcasted to clients", {
         symbol,
-        hasData: !!data,
+        price: data.price,
       });
-    } else {
-      logger.debug("Tick data queued for broadcast with backpressure handling", {
+    } catch (error) {
+      logger.error("Failed to broadcast tick data", error as Error, {
         symbol,
-        priority: MessagePriority.HIGH,
       });
     }
   }
 
   /**
-   * Broadcast kline data to clients subscribed to klines for a symbol/interval
+   * Broadcast kline data to clients subscribed to klines for a symbol/interval with Socket.IO
    */
   private async broadcastToKlines(symbol: string, interval: string, data: Record<string, unknown>): Promise<void> {
-    if (!this.wsManager) {
-      logger.warn("Cannot broadcast - no WebSocket manager with backpressure support");
+    if (!this.io) {
+      logger.warn("Cannot broadcast - Socket.IO server not initialized");
       return;
     }
 
-    // Kline data gets MEDIUM priority (less critical than real-time ticks)
-    const success = await this.wsManager.sendMessage(
-      "market",
-      `kline:${symbol}:${interval}`,
-      data,
-      MessagePriority.MEDIUM
-    );
-
-    if (!success) {
-      logger.warn("Failed to queue kline data message", {
+    try {
+      this.io.emit(`kline:${symbol}:${interval}`, data);
+      logger.debug("Kline data broadcasted to clients", {
+        symbol,
+        interval,
+      });
+    } catch (error) {
+      logger.error("Failed to broadcast kline data", error as Error, {
         symbol,
         interval,
       });
@@ -329,24 +319,21 @@ export class MessageHandler {
   }
 
   /**
-   * Broadcast mark price data to clients subscribed to mark price for a symbol
+   * Broadcast mark price data to clients subscribed to mark price for a symbol with Socket.IO
    */
   private async broadcastToMarkPrice(symbol: string, data: Record<string, unknown>): Promise<void> {
-    if (!this.wsManager) {
-      logger.warn("Cannot broadcast - no WebSocket manager with backpressure support");
+    if (!this.io) {
+      logger.warn("Cannot broadcast - Socket.IO server not initialized");
       return;
     }
 
-    // Mark price data gets MEDIUM priority
-    const success = await this.wsManager.sendMessage(
-      "market",
-      `markprice:${symbol}`,
-      data,
-      MessagePriority.MEDIUM
-    );
-
-    if (!success) {
-      logger.warn("Failed to queue mark price data message", {
+    try {
+      this.io.emit(`markprice:${symbol}`, data);
+      logger.debug("Mark price data broadcasted to clients", {
+        symbol,
+      });
+    } catch (error) {
+      logger.error("Failed to broadcast mark price data", error as Error, {
         symbol,
       });
     }

@@ -283,8 +283,19 @@ const AnimatedRoutes = () => {
 // Conditional WebSocket Connection Component - Only for VERIFIED users
 const ConditionalWebSocketInitializer = () => {
   const { user, isAuthenticated } = useAuth();
+  const location = useLocation();
 
   React.useEffect(() => {
+    const isLandingPage = location.pathname === "/";
+    const isAuthPage = location.pathname === "/login" || location.pathname === "/register";
+
+    // Skip WebSocket initialization on landing and auth pages
+    if (isLandingPage || isAuthPage) {
+      console.log('📡 Skipping WebSocket initialization on', location.pathname);
+      websocketSubscriptionManager.cleanup();
+      return;
+    }
+
     // Only initialize WebSocket for authenticated VERIFIED users
     if (isAuthenticated && user?.userLevel === 'VERIFIED') {
       console.log('📡 Initializing WebSocket for VERIFIED user:', user.email);
@@ -319,7 +330,7 @@ const ConditionalWebSocketInitializer = () => {
       // Clean up any existing connections for non-verified users
       websocketSubscriptionManager.cleanup();
     }
-  }, [isAuthenticated, user?.userLevel, user?.email]);
+  }, [isAuthenticated, user?.userLevel, user?.email, location.pathname]);
 
   return null;
 };

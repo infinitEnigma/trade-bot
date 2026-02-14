@@ -10,6 +10,43 @@ import { ethers } from "ethers";
 import { integrationLogger as logger } from "../../core/logging/context-aware-logger.service";
 import { redisService } from "../cache/redis.service";
 
+// Etherscan API response interfaces
+interface EtherscanBalanceResponse {
+    status: string;
+    message: string;
+    result: string;
+}
+
+interface EtherscanTokenTransaction {
+    blockNumber: string;
+    timeStamp: string;
+    hash: string;
+    nonce: string;
+    blockHash: string;
+    from: string;
+    contractAddress: string;
+    to: string;
+    value: string;
+    tokenName: string;
+    tokenSymbol: string;
+    tokenDecimal: string;
+    transactionIndex: string;
+    gas: string;
+    gasPrice: string;
+    gasUsed: string;
+    cumulativeGasUsed: string;
+    input: string;
+    methodId: string;
+    functionName: string;
+    confirmations: string;
+}
+
+interface EtherscanTokenTransactionsResponse {
+    status: string;
+    message: string;
+    result: EtherscanTokenTransaction[];
+}
+
 export interface BlockchainBalance {
     address: string;
     nativeBalance: string; // In wei
@@ -30,7 +67,7 @@ export interface TokenBalance {
 }
 
 export interface BlockchainServiceConfig {
-    defaultRpcUrl: string;
+    etherscanApiKey: string;
     chainId: number;
     chainName: string;
     nativeSymbol: string;
@@ -42,33 +79,21 @@ export interface BlockchainServiceConfig {
  */
 export class BlockchainService {
     private config: BlockchainServiceConfig;
-    private provider: ethers.JsonRpcProvider;
 
     constructor(config: Partial<BlockchainServiceConfig> = {}) {
         // Set default configuration with fallback values
         this.config = {
-            defaultRpcUrl: config.defaultRpcUrl || process.env.BLOCKCHAIN_RPC_URL || `https://mainnet.infura.io/v3/${process.env.INFURA_API_KEY || "your-infura-key"}`,
-            chainId: config.chainId || 1, // Mainnet by default
+            etherscanApiKey: config.etherscanApiKey || process.env.ETHERSCAN_API_KEY || "your-etherscan-key",
+            chainId: config.chainId || 80094, // Default to specified chain (80094)
             chainName: config.chainName || "Ethereum Mainnet",
             nativeSymbol: config.nativeSymbol || "ETH",
             cacheTtl: config.cacheTtl || 60, // 60 seconds cache
         };
 
-        // Initialize ethers provider
-        this.provider = new ethers.JsonRpcProvider(this.config.defaultRpcUrl);
-
-        // Log provider errors for debugging
-        this.provider.on("error", (error) => {
-            logger.error("Blockchain provider error", error, {
-                chainId: this.config.chainId,
-                chainName: this.config.chainName,
-            });
-        });
-
         logger.info("Blockchain service initialized", {
             chainId: this.config.chainId,
             chainName: this.config.chainName,
-            rpcUrl: this.config.defaultRpcUrl.includes("your-infura-key") ? "default-infura" : "custom",
+            apiKey: this.config.etherscanApiKey.includes("your-etherscan-key") ? "default" : "custom",
         });
     }
 
@@ -101,12 +126,26 @@ export class BlockchainService {
                 return JSON.parse(cachedResult.data);
             }
 
-            logger.debug("Fetching blockchain balance from RPC", {
+            logger.debug("Fetching blockchain balance from Etherscan API", {
                 walletAddress,
             });
 
-            // Fetch balance from blockchain
-            const balance = await this.provider.getBalance(walletAddress);
+            // Fetch balance from Etherscan API
+            const apiUrl = `https://api.etherscan.io/v2/api?apikey=${this.config.etherscanApiKey}&chainid=${this.config.chainId}&module=account&action=balance&address=${walletAddress}&tag=latest`;
+
+            const response = await fetch(apiUrl);
+            if (!response.ok) {
+                throw new Error(`Etherscan API request failed with status: ${response.status}`);
+            }
+
+            const data = await response.json() as EtherscanBalanceResponse;
+
+            if (data.status !== "1" || !data.result) {
+                throw new Error(`Etherscan API error: ${data.message || "Unknown error"}`);
+            }
+
+            // Balance is returned in wei
+            const balance = data.result;
             const balanceFormatted = ethers.formatEther(balance);
 
             const result: BlockchainBalance = {
@@ -170,40 +209,70 @@ export class BlockchainService {
                 chainId: this.config.chainId,
             });
 
-            // Create token contract instance
-            const tokenAbi = [
-                "function balanceOf(address owner) view returns (uint256)",
-                "function symbol() view returns (string)",
-                "function decimals() view returns (uint8)",
-            ];
+            // Fetch token transaction history from Etherscan API
+            const apiUrl = `https://api.etherscan.io/v2/api?apikey=${this.config.etherscanApiKey}&chainid=${this.config.chainId}&module=account&action=tokentx&contractaddress=${tokenAddress}&address=${walletAddress}`;
 
-            const tokenContract = new ethers.Contract(tokenAddress, tokenAbi, this.provider);
+            const response = await fetch(apiUrl);
+            if (!response.ok) {
+                throw new Error(`Etherscan API request failed with status: ${response.status}`);
+            }
 
-            // Get balance and token info
-            const [balance, symbol] = await Promise.all([
-                tokenContract.balanceOf(walletAddress),
-                tokenContract.symbol(),
-            ]);
+            const data = await response.json() as EtherscanTokenTransactionsResponse;
 
-            const balanceFormatted = ethers.formatUnits(balance, decimals);
+            if (data.status !== "1" || !Array.isArray(data.result)) {
+                throw new Error(`Etherscan API error: ${data.message || "Unknown error"}`);
+            }
+
+            // Calculate token balance from transactions
+            let balance = BigInt(0);
+            let tokenSymbol = "UNKNOWN";
+            let tokenDecimals = decimals;
+
+            for (const tx of data.result) {
+                // Extract token info from first transaction (assuming all transactions are for same token)
+                if (!tokenSymbol && tx.tokenSymbol) {
+                    tokenSymbol = tx.tokenSymbol;
+                }
+                if (tx.tokenDecimal) {
+                    tokenDecimals = parseInt(tx.tokenDecimal);
+                }
+
+                // Calculate balance by adding incoming and subtracting outgoing transfers
+                const txValue = BigInt(tx.value);
+
+                if (tx.to.toLowerCase() === walletAddress.toLowerCase()) {
+                    // Incoming transfer
+                    balance += txValue;
+                } else if (tx.from.toLowerCase() === walletAddress.toLowerCase()) {
+                    // Outgoing transfer
+                    balance -= txValue;
+                }
+            }
+
+            // Ensure balance can't be negative (shouldn't happen with valid data)
+            if (balance < BigInt(0)) {
+                balance = BigInt(0);
+            }
+
+            const balanceFormatted = ethers.formatUnits(balance, tokenDecimals);
 
             const result: TokenBalance = {
                 address: walletAddress,
                 tokenAddress,
-                tokenSymbol: symbol,
+                tokenSymbol: tokenSymbol,
                 tokenBalance: balance.toString(),
                 tokenBalanceFormatted: balanceFormatted,
-                decimals,
+                decimals: tokenDecimals,
             };
 
             // Cache the result
             await redisService.setex(cacheKey, this.config.cacheTtl, JSON.stringify(result));
 
-            logger.debug("Token balance fetched and cached", {
+            logger.debug("Token balance calculated and cached", {
                 walletAddress,
                 tokenAddress,
                 balance: balanceFormatted,
-                symbol,
+                symbol: tokenSymbol,
                 chainId: this.config.chainId,
             });
 
@@ -294,10 +363,23 @@ export class BlockchainService {
      */
     async checkHealth(): Promise<{ healthy: boolean; error?: string }> {
         try {
-            // Test connection by getting latest block
-            const blockNumber = await this.provider.getBlockNumber();
+            // Test connection by making a simple API call (we'll use the same balance endpoint with a test address)
+            // Note: This is a placeholder TODO: use a dedicated health check endpoint
+            const testAddress = "0x0000000000000000000000000000000000000000";
+            const apiUrl = `https://api.etherscan.io/v2/api?apikey=${this.config.etherscanApiKey}&chainid=${this.config.chainId}&module=account&action=balance&address=${testAddress}&tag=latest`;
+
+            const response = await fetch(apiUrl);
+            if (!response.ok) {
+                throw new Error(`Etherscan API request failed with status: ${response.status}`);
+            }
+
+            const data = await response.json() as EtherscanBalanceResponse;
+
+            if (data.status !== "1") {
+                throw new Error(`Etherscan API error: ${data.message || "Unknown error"}`);
+            }
+
             logger.debug("Blockchain service health check successful", {
-                blockNumber,
                 chainId: this.config.chainId,
             });
             return { healthy: true };

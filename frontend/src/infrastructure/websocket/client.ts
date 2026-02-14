@@ -2,6 +2,7 @@
 
 import { io, Socket } from "socket.io-client";
 import { getWebSocketUrl } from "../config";
+import { TickData, KlineData, MarkPriceData } from "@trade-bot/shared";
 
 /**
  * WebSocket connection status
@@ -12,39 +13,6 @@ export enum WebSocketStatus {
     CONNECTED = "connected",
     RECONNECTING = "reconnecting",
     ERROR = "error",
-}
-
-/**
- * Market data types
- */
-export interface TickData {
-    symbol: string;
-    price: number;
-    volume: number;
-    timestamp: number;
-    bid: number;
-    ask: number;
-    change24h: number;
-}
-
-export interface KlineData {
-    symbol: string;
-    type: "kline";
-    open: number;
-    close: number;
-    high: number;
-    low: number;
-    volume: number;
-    amount: number;
-    startTime: number;
-    endTime: number;
-    interval: string;
-}
-
-export interface MarkPriceData {
-    symbol: string;
-    price: number;
-    timestamp: number;
 }
 
 /**
@@ -80,42 +48,77 @@ class WebSocketClient {
     /**
      * Connect to WebSocket server with reconnection logic
      */
-    public connect(url: string = getWebSocketUrl()): Socket {
-        if (this.socket?.connected) {
-            return this.socket;
-        }
+    public connect(url: string = getWebSocketUrl()): Promise<Socket> {
+        return new Promise((resolve, reject) => {
+            if (this.socket?.connected) {
+                resolve(this.socket);
+                return;
+            }
 
-        if (this.status === WebSocketStatus.CONNECTING || this.status === WebSocketStatus.RECONNECTING) {
-            console.log("📡 WebSocket connection already in progress");
-            return this.socket!;
-        }
+            if (this.status === WebSocketStatus.CONNECTING || this.status === WebSocketStatus.RECONNECTING) {
+                console.log("📡 WebSocket connection already in progress");
+                // Wait for connection to complete
+                const checkConnection = setInterval(() => {
+                    if (this.socket?.connected) {
+                        clearInterval(checkConnection);
+                        resolve(this.socket);
+                    } else if (this.status === WebSocketStatus.ERROR) {
+                        clearInterval(checkConnection);
+                        reject(new Error('Connection failed'));
+                    }
+                }, 200);
+                return;
+            }
 
-        this.status = WebSocketStatus.CONNECTING;
-        this.reconnectAttempts = 0;
-        this.notifyStatusChange();
-
-        // Get token from localStorage
-        const token = localStorage.getItem('token');
-
-        if (!token) {
-            console.error('📡 No authentication token found for WebSocket connection');
-            this.status = WebSocketStatus.ERROR;
+            this.status = WebSocketStatus.CONNECTING;
+            this.reconnectAttempts = 0;
             this.notifyStatusChange();
-            throw new Error('No authentication token found');
-        }
 
-        this.socket = io(url, {
-            withCredentials: true,
-            transports: ["websocket", "polling"],
-            reconnection: false, // We handle reconnection manually
-            timeout: 10000,
-            auth: { token }, // Pass token for authentication
+            // Get token from localStorage
+            const token = localStorage.getItem('token');
+
+            if (!token) {
+                console.error('📡 No authentication token found for WebSocket connection');
+                this.status = WebSocketStatus.ERROR;
+                this.notifyStatusChange();
+                reject(new Error('No authentication token found'));
+                return;
+            }
+
+            this.socket = io(url, {
+                withCredentials: true,
+                transports: ["websocket", "polling"],
+                reconnection: false, // We handle reconnection manually
+                timeout: 10000,
+                auth: { token }, // Pass token for authentication
+            });
+
+            this.socket.on("connect", () => {
+                console.log("📡 WebSocket connected successfully");
+                this.status = WebSocketStatus.CONNECTED;
+                this.reconnectAttempts = 0;
+                this.notifyStatusChange();
+                resolve(this.socket!);
+            });
+
+            this.socket.on("connect_error", (error) => {
+                console.error("📡 WebSocket connection error", error);
+                this.status = WebSocketStatus.ERROR;
+                this.notifyStatusChange();
+                this.notifyError(error);
+                reject(error);
+            });
+
+            this.socket.on("connect_timeout", () => {
+                console.error("📡 WebSocket connection timeout");
+                this.status = WebSocketStatus.ERROR;
+                this.notifyStatusChange();
+                reject(new Error('Connection timeout'));
+            });
+
+            this.setupEventListeners();
+            console.log("📡 WebSocket connection initialized");
         });
-
-        this.setupEventListeners();
-        console.log("📡 WebSocket connection initialized");
-
-        return this.socket;
     }
 
     /**
@@ -196,12 +199,12 @@ class WebSocketClient {
     /**
      * Subscribe to market data for a specific symbol
      */
-    public subscribeToSymbol(symbol: string): void {
+    public async subscribeToSymbol(symbol: string): Promise<void> {
         // Connect to WebSocket if not already connected
         if (!this.socket?.connected) {
             try {
                 console.log("📡 Connecting WebSocket before subscribing");
-                this.connect();
+                await this.connect();
             } catch (error) {
                 console.error("📡 Failed to connect WebSocket for subscription:", error);
                 this.subscribedSymbols.add(symbol);
@@ -347,32 +350,35 @@ class WebSocketClient {
             this.attemptReconnection();
         });
 
-        // Market data event listeners
-        this.socket.on("market:data", (data: TickData) => {
-            this.notifyTickListeners(data);
-        });
-
-        this.socket.on("kline:data", (data: KlineData) => {
-            this.notifyKlineListeners(data);
-        });
-
-        this.socket.on("markprice:data", (data: MarkPriceData) => {
-            this.notifyMarkPriceListeners(data);
+        // Market data event listeners - dynamically handle symbol-specific events
+        this.socket.onAny((event, data) => {
+            // Handle ticker events: "market:${symbol}"
+            if (event.startsWith("market:")) {
+                this.notifyTickListeners(data);
+            }
+            // Handle kline events: "kline:${symbol}:${interval}"
+            else if (event.startsWith("kline:")) {
+                this.notifyKlineListeners(data);
+            }
+            // Handle mark price events: "markprice:${symbol}"
+            else if (event.startsWith("markprice:")) {
+                this.notifyMarkPriceListeners(data);
+            }
         });
     }
 
     /**
      * Resubscribe to symbols on reconnection
      */
-    private resubscribe(): void {
+    private async resubscribe(): Promise<void> {
         if (!this.isConnected() || this.subscribedSymbols.size === 0) {
             return;
         }
 
         console.log(`📡 Resubscribing to ${this.subscribedSymbols.size} symbols`);
-        this.subscribedSymbols.forEach(symbol => {
-            this.subscribeToSymbol(symbol);
-        });
+        for (const symbol of this.subscribedSymbols) {
+            await this.subscribeToSymbol(symbol);
+        }
     }
 
     /**
