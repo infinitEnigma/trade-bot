@@ -283,7 +283,7 @@ describe("utils.ts", () => {
     describe("isTokenExpired function", () => {
         it("should check token expiration", () => {
             // Create a token that expires in 1 hour
-            const futureToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiO" + (Math.floor(Date.now() / 1000) + 3600);
+            //const futureToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiO" + (Math.floor(Date.now() / 1000) + 3600);
 
             // Create a token that expired 1 hour ago
             const expiredToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiO" + (Math.floor(Date.now() / 1000) - 3600);

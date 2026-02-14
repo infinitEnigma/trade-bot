@@ -9,7 +9,7 @@ import { createErrorResponse, ExternalServiceError, DataFreshnessUtils, Freshnes
 import { getCorrelationId } from "../../../shared/utils/context";
 import { ContextAwareLogger } from "../../../core/logging/"; // ✅ Import context-aware logger
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
-import { marketStreamService } from "../../../infrastructure/messaging/market-stream.service";
+import { marketStreamService } from "../../../infrastructure/messaging";
 import { getCacheConfig, getFullCacheConfig } from "../../../config/cache.config"; // ✅ Import centralized cache config
 import { AxiosError } from "axios";
 

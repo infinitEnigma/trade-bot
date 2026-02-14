@@ -135,5 +135,28 @@ export const tradingApi = {
         );
     },
 
+    async getKodiakBalance() {
+        return globalRequestManager.deduplicateRequest(
+            "kodiak:balance",
+            async () => {
+                try {
+                    const response = await httpClient.getClient().get("/api/user/kodiak/balance");
+                    return response.data;
+                } catch (error: unknown) {
+                    // Return empty data instead of throwing for missing credentials
+                    const apiError = error as ApiError;
+                    if (apiError.response?.status === 403 || apiError.response?.status === 400) {
+                        return {
+                            success: true,
+                            data: null,
+                            message: "Kodiak account not connected",
+                        };
+                    }
+                    throw error;
+                }
+            },
+            "tradingApi"
+        );
+    },
 
 };

@@ -8,7 +8,7 @@
  * Dramatically reduces API calls while maintaining data freshness.
  */
 
-import { balanceApi } from "../../infrastructure/api";
+import { tradingApi } from "../../infrastructure/api/trading";
 import { Balance } from "../../shared/types";
 
 interface BalanceSubscriber {
@@ -99,7 +99,7 @@ class GlobalBalanceManager {
         console.log(`💰 Global Balance: Refreshing for ${this.subscribers.size} subscribers`);
 
         try {
-            const response = await balanceApi.getCurrentBalance();
+            const response = await tradingApi.getKodiakBalance();
 
             if (response.success && response.data) {
                 this.lastBalanceData = response.data;

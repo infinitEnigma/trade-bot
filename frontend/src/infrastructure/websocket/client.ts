@@ -15,6 +15,39 @@ export enum WebSocketStatus {
 }
 
 /**
+ * Market data types
+ */
+export interface TickData {
+    symbol: string;
+    price: number;
+    volume: number;
+    timestamp: number;
+    bid: number;
+    ask: number;
+    change24h: number;
+}
+
+export interface KlineData {
+    symbol: string;
+    type: "kline";
+    open: number;
+    close: number;
+    high: number;
+    low: number;
+    volume: number;
+    amount: number;
+    startTime: number;
+    endTime: number;
+    interval: string;
+}
+
+export interface MarkPriceData {
+    symbol: string;
+    price: number;
+    timestamp: number;
+}
+
+/**
  * WebSocket client for real-time market data
  * Manages socket connections and subscriptions with reconnection logic
  */
@@ -28,6 +61,10 @@ class WebSocketClient {
     private reconnectTimer: NodeJS.Timeout | null = null;
     private connectionListeners: Array<(status: WebSocketStatus) => void> = [];
     private errorListeners: Array<(error: Error) => void> = [];
+    private tickListeners: Array<(data: TickData) => void> = [];
+    private klineListeners: Array<(data: KlineData) => void> = [];
+    private markPriceListeners: Array<(data: MarkPriceData) => void> = [];
+    private subscribedSymbols: Set<string> = new Set();
 
     private constructor() {
         // Private constructor for singleton
@@ -57,11 +94,22 @@ class WebSocketClient {
         this.reconnectAttempts = 0;
         this.notifyStatusChange();
 
+        // Get token from localStorage
+        const token = localStorage.getItem('token');
+
+        if (!token) {
+            console.error('📡 No authentication token found for WebSocket connection');
+            this.status = WebSocketStatus.ERROR;
+            this.notifyStatusChange();
+            throw new Error('No authentication token found');
+        }
+
         this.socket = io(url, {
             withCredentials: true,
             transports: ["websocket", "polling"],
             reconnection: false, // We handle reconnection manually
             timeout: 10000,
+            auth: { token }, // Pass token for authentication
         });
 
         this.setupEventListeners();
@@ -146,12 +194,105 @@ class WebSocketClient {
     }
 
     /**
+     * Subscribe to market data for a specific symbol
+     */
+    public subscribeToSymbol(symbol: string): void {
+        // Connect to WebSocket if not already connected
+        if (!this.socket?.connected) {
+            try {
+                console.log("📡 Connecting WebSocket before subscribing");
+                this.connect();
+            } catch (error) {
+                console.error("📡 Failed to connect WebSocket for subscription:", error);
+                this.subscribedSymbols.add(symbol);
+                return;
+            }
+        }
+
+        // Check socket is available and connected before emitting
+        if (this.socket?.connected) {
+            console.log(`📡 Subscribing to market data for ${symbol}`);
+            this.socket.emit("subscribe_market", symbol);
+            this.subscribedSymbols.add(symbol);
+        } else {
+            console.warn("📡 WebSocket not connected, cannot subscribe");
+            this.subscribedSymbols.add(symbol);
+        }
+    }
+
+    /**
+     * Unsubscribe from market data for a specific symbol
+     */
+    public unsubscribeFromSymbol(symbol: string): void {
+        if (this.socket?.connected) {
+            console.log(`📡 Unsubscribing from market data for ${symbol}`);
+            this.socket.emit("unsubscribe_market", symbol);
+        }
+        this.subscribedSymbols.delete(symbol);
+    }
+
+    /**
+     * Add tick data listener
+     */
+    public onTick(listener: (data: TickData) => void): void {
+        this.tickListeners.push(listener);
+    }
+
+    /**
+     * Remove tick data listener
+     */
+    public offTick(listener: (data: TickData) => void): void {
+        const index = this.tickListeners.indexOf(listener);
+        if (index !== -1) {
+            this.tickListeners.splice(index, 1);
+        }
+    }
+
+    /**
+     * Add kline data listener
+     */
+    public onKline(listener: (data: KlineData) => void): void {
+        this.klineListeners.push(listener);
+    }
+
+    /**
+     * Remove kline data listener
+     */
+    public offKline(listener: (data: KlineData) => void): void {
+        const index = this.klineListeners.indexOf(listener);
+        if (index !== -1) {
+            this.klineListeners.splice(index, 1);
+        }
+    }
+
+    /**
+     * Add mark price data listener
+     */
+    public onMarkPrice(listener: (data: MarkPriceData) => void): void {
+        this.markPriceListeners.push(listener);
+    }
+
+    /**
+     * Remove mark price data listener
+     */
+    public offMarkPrice(listener: (data: MarkPriceData) => void): void {
+        const index = this.markPriceListeners.indexOf(listener);
+        if (index !== -1) {
+            this.markPriceListeners.splice(index, 1);
+        }
+    }
+
+    /**
      * Cleanup method for app unmount
      */
     public cleanup(): void {
         this.disconnect();
         this.connectionListeners = [];
         this.errorListeners = [];
+        this.tickListeners = [];
+        this.klineListeners = [];
+        this.markPriceListeners = [];
+        this.subscribedSymbols.clear();
     }
 
     /**
@@ -165,6 +306,9 @@ class WebSocketClient {
             this.reconnectAttempts = 0;
             this.notifyStatusChange();
             console.log("📡 WebSocket connected successfully");
+
+            // Re-subscribe to previously subscribed symbols
+            this.resubscribe();
         });
 
         this.socket.on("disconnect", (reason) => {
@@ -202,6 +346,72 @@ class WebSocketClient {
             this.notifyStatusChange();
             this.attemptReconnection();
         });
+
+        // Market data event listeners
+        this.socket.on("market:data", (data: TickData) => {
+            this.notifyTickListeners(data);
+        });
+
+        this.socket.on("kline:data", (data: KlineData) => {
+            this.notifyKlineListeners(data);
+        });
+
+        this.socket.on("markprice:data", (data: MarkPriceData) => {
+            this.notifyMarkPriceListeners(data);
+        });
+    }
+
+    /**
+     * Resubscribe to symbols on reconnection
+     */
+    private resubscribe(): void {
+        if (!this.isConnected() || this.subscribedSymbols.size === 0) {
+            return;
+        }
+
+        console.log(`📡 Resubscribing to ${this.subscribedSymbols.size} symbols`);
+        this.subscribedSymbols.forEach(symbol => {
+            this.subscribeToSymbol(symbol);
+        });
+    }
+
+    /**
+     * Notify tick listeners
+     */
+    private notifyTickListeners(data: TickData): void {
+        for (const listener of this.tickListeners) {
+            try {
+                listener(data);
+            } catch (error) {
+                console.error("Error in tick listener", error);
+            }
+        }
+    }
+
+    /**
+     * Notify kline listeners
+     */
+    private notifyKlineListeners(data: KlineData): void {
+        for (const listener of this.klineListeners) {
+            try {
+                listener(data);
+            } catch (error) {
+                console.error("Error in kline listener", error);
+            }
+        }
+    }
+
+    /**
+     * Notify mark price listeners
+     */
+    private notifyMarkPriceListeners(data: MarkPriceData): void {
+        for (const listener of this.markPriceListeners) {
+            try {
+                listener(data);
+            } catch (error) {
+                console.error("Error in mark price listener", error);
+            }
+        }
     }
 
     /**

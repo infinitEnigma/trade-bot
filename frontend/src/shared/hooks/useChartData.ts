@@ -6,6 +6,8 @@ import { marketApi } from "../../infrastructure/api";
 import { CandleData } from "../components/charts/CandlestickChart";
 import { useAuth } from "../../features/auth";
 import React from "react";
+import { websocketClient } from "../../infrastructure/websocket/client";
+import type { TickData as WsTickData, MarkPriceData as WsMarkPriceData, KlineData as WsKlineData } from "../../infrastructure/websocket/client";
 
 /**
  * Data freshness metadata from backend responses
@@ -406,7 +408,82 @@ export const useCurrentPrice = (symbol: string) => {
 };
 
 /**
- * Combined hook that merges historical and live data
+ * Hook for WebSocket-based real-time price updates
+ */
+export const useWebSocketPriceUpdates = ({
+  symbol,
+  interval,
+}: UseChartDataOptions) => {
+  const [tickData, setTickData] = useState<WsTickData | null>(null);
+  const [klineData, setKlineData] = useState<WsKlineData | null>(null);
+  const [markPriceData, setMarkPriceData] = useState<WsMarkPriceData | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<string>("disconnected");
+
+  useEffect(() => {
+    // Connect to WebSocket
+    try {
+      //const socket = websocketClient.connect();
+      setConnectionStatus(websocketClient.getStatus());
+
+      // Subscribe to symbol
+      websocketClient.subscribeToSymbol(symbol);
+
+      // Set up listeners
+      const handleTick = (data: WsTickData) => {
+        if (data.symbol === symbol) {
+          setTickData(data);
+          console.log(`💰 Tick update for ${symbol}: $${data.price}`);
+        }
+      };
+
+      const handleKline = (data: WsKlineData) => {
+        if (data.symbol === symbol && data.interval === interval) {
+          setKlineData(data);
+          console.log(`📊 Kline update for ${symbol} ${interval}`);
+        }
+      };
+
+      const handleMarkPrice = (data: WsMarkPriceData) => {
+        if (data.symbol === symbol) {
+          setMarkPriceData(data);
+          console.log(`🏷️ Mark price update for ${symbol}: $${data.price}`);
+        }
+      };
+
+      const handleStatusChange = (status: string) => {
+        setConnectionStatus(status);
+        console.log(`📡 WebSocket status: ${status}`);
+      };
+
+      websocketClient.onTick(handleTick);
+      websocketClient.onKline(handleKline);
+      websocketClient.onMarkPrice(handleMarkPrice);
+      websocketClient.onStatusChange(handleStatusChange);
+
+      // Cleanup
+      return () => {
+        websocketClient.offTick(handleTick);
+        websocketClient.offKline(handleKline);
+        websocketClient.offMarkPrice(handleMarkPrice);
+        websocketClient.offStatusChange(handleStatusChange);
+        websocketClient.unsubscribeFromSymbol(symbol);
+      };
+    } catch (error) {
+      console.error("Failed to connect to WebSocket:", error);
+      setConnectionStatus("error");
+    }
+  }, [symbol, interval]);
+
+  return {
+    tickData,
+    klineData,
+    markPriceData,
+    connectionStatus,
+  };
+};
+
+/**
+ * Combined hook that merges historical and WebSocket real-time data
  * Maintains backward compatibility with existing CandlestickChart
  */
 export const useChartData = ({
@@ -416,44 +493,51 @@ export const useChartData = ({
   // Get historical data (1x/minute)
   const historicalQuery = useChartHistorical({ symbol, interval });
 
-  // Get live price updates (more frequent)
-  const liveQuery = useLivePrices({ symbol, interval });
+  // Get WebSocket real-time updates
+  const { tickData, klineData, markPriceData, connectionStatus } = useWebSocketPriceUpdates({ symbol, interval });
 
   // Extract data from queries with useMemo
   const historicalData = React.useMemo(() => {
     return historicalQuery.data?.candles || [];
   }, [historicalQuery.data]);
 
-  const liveData = React.useMemo(() => {
-    return liveQuery.data || [];
-  }, [liveQuery.data]);
-
-
-  // Merge data using React.useMemo to avoid unnecessary recalculations
+  // Merge historical data with WebSocket updates
   const mergedData = React.useMemo(() => {
-    if (historicalData.length > 0 || liveData.length > 0) {
-      return mergeCandleData(historicalData, liveData);
+    let data = [...historicalData];
+
+    if (klineData) {
+      // Convert kline data to candle format
+      const candle: CandleData = {
+        time: klineData.startTime,
+        open: klineData.open,
+        high: klineData.high,
+        low: klineData.low,
+        close: klineData.close,
+        volume: klineData.volume,
+      };
+
+      // Merge or replace the latest candle
+      data = mergeCandleData(data, [candle]);
     }
-    return [];
-  }, [historicalData, liveData]);
+
+    return data;
+  }, [historicalData, klineData]);
 
   // Determine error state (prioritize historical data errors)
   const error = React.useMemo(() => {
     if (historicalQuery.error) {
       return historicalQuery.error?.message || "Failed to load historical data";
-    } else if (liveQuery.error) {
-      return liveQuery.error?.message || "Failed to load live prices";
     }
     return null;
-  }, [historicalQuery.error, liveQuery.error]);
+  }, [historicalQuery.error]);
 
   return {
     data: mergedData,
-    loading: historicalQuery.isLoading || liveQuery.isLoading,
+    loading: historicalQuery.isLoading,
     error,
-    refetch: () => {
-      historicalQuery.refetch();
-      liveQuery.refetch();
-    },
+    refetch: () => historicalQuery.refetch(),
+    tickData,
+    markPriceData,
+    connectionStatus,
   };
 };

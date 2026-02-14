@@ -289,10 +289,19 @@ const ConditionalWebSocketInitializer = () => {
     if (isAuthenticated && user?.userLevel === 'VERIFIED') {
       console.log('📡 Initializing WebSocket for VERIFIED user:', user.email);
 
+      // Get token from auth context or localStorage
+      const token = localStorage.getItem('token'); // Replace with your actual token retrieval method
+      
+      if (!token) {
+        console.error('📡 No authentication token found for WebSocket connection');
+        return;
+      }
+
       // Initialize WebSocket connection for market data
       const socket = io(getWebSocketUrl(), {
         withCredentials: true,
         transports: ["websocket", "polling"],
+        auth: { token }, // Pass token for authentication
       });
 
       // Set up the socket in the subscription manager

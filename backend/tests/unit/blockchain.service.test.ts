@@ -53,9 +53,19 @@ describe('BlockchainService', () => {
         cacheTtl: 60
     };
 
+    // Mock fetch
+    const mockFetch = jest.fn();
+    global.fetch = mockFetch;
+
     beforeEach(() => {
+        // Set Etherscan API key for testing
+        process.env.ETHERSCAN_API_KEY = 'test-api-key';
         blockchainService = new BlockchainService(mockConfig);
         jest.clearAllMocks();
+    });
+
+    afterEach(() => {
+        delete process.env.ETHERSCAN_API_KEY;
     });
 
     describe('initialization', () => {
@@ -118,9 +128,17 @@ describe('BlockchainService', () => {
                 success: true
             });
 
-            // Mock ethers provider balance call
-            const mockProvider = (blockchainService as any).provider;
-            mockProvider.getBalance = jest.fn().mockResolvedValue(BigInt('1000000000000000000'));
+            // Mock Etherscan API response
+            const mockEtherscanResponse = {
+                status: "1",
+                message: "OK",
+                result: "1000000000000000000" // 1 ETH in wei
+            };
+
+            mockFetch.mockResolvedValue({
+                ok: true,
+                json: jest.fn().mockResolvedValue(mockEtherscanResponse)
+            });
 
             const result = await blockchainService.getNativeBalance(validAddress);
 
@@ -129,7 +147,7 @@ describe('BlockchainService', () => {
             expect(redisService.get).toHaveBeenCalled();
             expect(redisService.setex).toHaveBeenCalled();
             expect(logger.debug).toHaveBeenCalledWith(
-                'Fetching blockchain balance from RPC',
+                'Fetching blockchain balance from Etherscan API',
                 expect.objectContaining({
                     walletAddress: validAddress
                 })
@@ -142,9 +160,12 @@ describe('BlockchainService', () => {
                 data: null
             });
 
-            const mockError = new Error('RPC connection failed');
-            const mockProvider = (blockchainService as any).provider;
-            mockProvider.getBalance = jest.fn().mockRejectedValue(mockError);
+            const mockError = new Error('Etherscan API error: 500 Internal Server Error');
+            mockFetch.mockResolvedValue({
+                ok: false,
+                status: 500,
+                statusText: 'Internal Server Error'
+            });
 
             await expect(blockchainService.getNativeBalance(validAddress)).rejects.toThrow(
                 `Failed to get balance for ${validAddress}`
