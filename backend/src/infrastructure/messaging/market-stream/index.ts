@@ -71,6 +71,9 @@ export class MarketStreamService {
 
       const ws = await this.wsManager.createConnection(accountId);
 
+      // Start queue processor when we have an active connection
+      this.wsManager.startQueueProcessor();
+
       // Authenticate the connection
       await this.authManager.authenticate(ws, accountId);
 
@@ -84,11 +87,17 @@ export class MarketStreamService {
         }
       });
 
-      // Queue subscriptions for these symbols
+      // Queue subscriptions for these symbols (both kline and mark price)
       symbols.forEach(symbol => {
-        const topic = `${symbol}@kline_1m`;
-        this.subscriptionManager.addPendingSubscription(topic);
-        logger.info("Added topic to pending subscriptions", { symbol, topic });
+        const klineTopic = `${symbol}@kline_1m`;
+        const markPriceTopic = `${symbol}@markprice`;
+        this.subscriptionManager.addPendingSubscription(klineTopic);
+        this.subscriptionManager.addPendingSubscription(markPriceTopic);
+        logger.info("Added topics to pending subscriptions", {
+          symbol,
+          klineTopic,
+          markPriceTopic
+        });
       });
 
       // Send pending subscriptions

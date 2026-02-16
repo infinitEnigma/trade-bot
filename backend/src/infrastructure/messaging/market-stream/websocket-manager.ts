@@ -116,14 +116,29 @@ export class WebSocketManager {
 
   constructor(config: WebSocketConfig = DEFAULT_WS_CONFIG) {
     this.config = config;
-    // Do not start queue processor automatically in test environment
-    if (process.env.NODE_ENV !== 'test' && process.env.JEST_WORKER_ID === undefined) {
-      this.startQueueProcessor();
-    }
+    // Queue processor will not start automatically - must be explicitly started
   }
 
   /**
-   * Explicitly start the queue processor (for test environments)
+   * Explicitly start the queue processor
+   */
+  startQueueProcessor(): void {
+    if (this.processingInterval) return;
+
+    this.processingInterval = setInterval(() => {
+      if (!this.queueProcessorRunning) {
+        this.processQueueBatch();
+      }
+    }, 100); // Process every 100ms
+
+    logger.info("Queue processor started", {
+      processingInterval: 100,
+      batchSize: this.processingBatchSize,
+    });
+  }
+
+  /**
+   * Alias for startQueueProcessor (for backward compatibility)
    */
   startQueueProcessorForTests(): void {
     this.startQueueProcessor();
@@ -596,23 +611,6 @@ export class WebSocketManager {
     }
   }
 
-  /**
-   * Start the queue processor that handles backpressure
-   */
-  private startQueueProcessor(): void {
-    if (this.processingInterval) return;
-
-    this.processingInterval = setInterval(() => {
-      if (!this.queueProcessorRunning) {
-        this.processQueueBatch();
-      }
-    }, 100); // Process every 100ms
-
-    logger.info("Queue processor started", {
-      processingInterval: 100,
-      batchSize: this.processingBatchSize,
-    });
-  }
 
   /**
    * Check if queue processor is running

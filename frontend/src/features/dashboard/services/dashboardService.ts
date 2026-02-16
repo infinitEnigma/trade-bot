@@ -1,6 +1,6 @@
 /** @format */
 
-import { tradingApi } from "../../../infrastructure/api";
+import { kodiakApi } from "../../../infrastructure/api";
 import { Position, Trade, PortfolioPerformancePoint } from "../types/dashboard.types";
 
 /**
@@ -24,7 +24,7 @@ export class DashboardService {
      */
     async getPositions(): Promise<Position[]> {
         try {
-            const response = await tradingApi.getKodiakPositions();
+            const response = await kodiakApi.getKodiakPositions();
             return response.success ? response.data?.rows || [] : [];
         } catch (error) {
             console.error("Dashboard service getPositions error:", error);
@@ -37,7 +37,7 @@ export class DashboardService {
      */
     async getTrades(): Promise<Trade[]> {
         try {
-            const response = await tradingApi.getKodiakTrades();
+            const response = await kodiakApi.getKodiakTrades();
             return response.success ? response.data?.rows || [] : [];
         } catch (error) {
             console.error("Dashboard service getTrades error:", error);

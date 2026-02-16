@@ -409,6 +409,7 @@ export const useCurrentPrice = (symbol: string) => {
 
 /**
  * Hook for WebSocket-based real-time price updates
+ * Only connects and subscribes if user is VERIFIED
  */
 export const useWebSocketPriceUpdates = ({
   symbol,
@@ -418,11 +419,21 @@ export const useWebSocketPriceUpdates = ({
   const [klineData, setKlineData] = useState<WsKlineData | null>(null);
   const [markPriceData, setMarkPriceData] = useState<WsMarkPriceData | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<string>("disconnected");
+  const { user } = useAuth();
+  const isVerified = user?.userLevel === 'VERIFIED';
 
   useEffect(() => {
+    // Only connect if user is VERIFIED
+    if (!isVerified) {
+      console.log("📡 WebSocket: User not VERIFIED, skipping connection");
+      setConnectionStatus("disconnected");
+      return;
+    }
+
     // Connect to WebSocket
     const connectAndSubscribe = async () => {
       try {
+        console.log("📡 WebSocket: Connecting for VERIFIED user");
         await websocketClient.connect();
         setConnectionStatus(websocketClient.getStatus());
 
@@ -463,6 +474,7 @@ export const useWebSocketPriceUpdates = ({
 
         // Cleanup
         return () => {
+          console.log("📡 WebSocket: Cleaning up listeners");
           websocketClient.offTick(handleTick);
           websocketClient.offKline(handleKline);
           websocketClient.offMarkPrice(handleMarkPrice);
@@ -476,7 +488,13 @@ export const useWebSocketPriceUpdates = ({
     };
 
     connectAndSubscribe();
-  }, [symbol, interval]);
+
+    // Cleanup function to disconnect when component unmounts or user level changes
+    return () => {
+      console.log("📡 WebSocket: Disconnecting");
+      websocketClient.disconnect();
+    };
+  }, [symbol, interval, isVerified]);
 
   return {
     tickData,

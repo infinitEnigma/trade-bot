@@ -10,18 +10,17 @@ import {
 } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Toaster } from "sonner";
-import { io } from "socket.io-client";
 import { useAuth } from "./features/auth";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ErrorProvider, ErrorNotifications } from "./contexts/ErrorContext";
 import { usePageBackground } from "./shared/hooks";
 import { websocketSubscriptionManager } from "./infrastructure/websocket/websocket-manager";
+import { websocketClient } from "./infrastructure/websocket/client";
 import { UserRole } from "./shared/types";
 
 // Components
 import { LoadingSpinner } from "./shared/components/ui";
 import { AppHeader } from "./shared/components/layout/AppHeader";
-import { getWebSocketUrl } from "./infrastructure/config";
 
 // Lazy load pages
 const LandingPage = React.lazy(() => import("./features/landing/pages/LandingPage"));
@@ -300,35 +299,28 @@ const ConditionalWebSocketInitializer = () => {
     if (isAuthenticated && user?.userLevel === 'VERIFIED') {
       console.log('📡 Initializing WebSocket for VERIFIED user:', user.email);
 
-      // Get token from auth context or localStorage
-      const token = localStorage.getItem('token'); // Replace with your actual token retrieval method
-      
-      if (!token) {
-        console.error('📡 No authentication token found for WebSocket connection');
-        return;
-      }
+      // Initialize WebSocket using our singleton client
+      const connectWebSocket = async () => {
+        try {
+          await websocketClient.connect();
+          console.log('📡 WebSocket connection initialized for VERIFIED user');
+        } catch (error) {
+          console.error('📡 Failed to initialize WebSocket:', error);
+        }
+      };
 
-      // Initialize WebSocket connection for market data
-      const socket = io(getWebSocketUrl(), {
-        withCredentials: true,
-        transports: ["websocket", "polling"],
-        auth: { token }, // Pass token for authentication
-      });
-
-      // Set up the socket in the subscription manager
-      websocketSubscriptionManager.setSocket(socket, 'verified-user-connection');
-
-      console.log('📡 WebSocket connection initialized for VERIFIED user');
+      connectWebSocket();
 
       return () => {
         // Cleanup when user logs out or level changes
         console.log('📡 Cleaning up WebSocket connection');
         websocketSubscriptionManager.cleanup();
-        socket.disconnect();
+        websocketClient.cleanup();
       };
     } else if (!isAuthenticated || user?.userLevel !== 'VERIFIED') {
       // Clean up any existing connections for non-verified users
       websocketSubscriptionManager.cleanup();
+      websocketClient.cleanup();
     }
   }, [isAuthenticated, user?.userLevel, user?.email, location.pathname]);
 

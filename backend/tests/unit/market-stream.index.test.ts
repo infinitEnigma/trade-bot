@@ -62,7 +62,8 @@ describe('MarketStreamService', () => {
             isConnected: jest.fn(),
             disconnectAll: jest.fn(),
             cleanupAllIntervals: jest.fn(),
-            getStats: jest.fn()
+            getStats: jest.fn(),
+            startQueueProcessor: jest.fn()
         } as unknown as jest.Mocked<WebSocketManager>;
 
         mockAuthManager = {

@@ -159,11 +159,23 @@ export class WebSocketService implements IWebSocketService {
 
         this.io.use(async (socket, next) => {
             try {
+                this.logger.debug("WebSocket authentication middleware invoked", {
+                    socketId: socket.id,
+                    ip: socket.handshake.address,
+                    userAgent: socket.handshake.headers["user-agent"],
+                });
+
                 const client = await this.authMiddleware.authenticate(socket);
                 (socket as unknown as { client: WebSocketClient }).client = client;
                 this.clients.set(socket.id, client);
                 this.metrics.totalConnections++;
                 this.metrics.activeConnections = this.clients.size;
+
+                this.logger.debug("WebSocket authentication successful", {
+                    socketId: socket.id,
+                    userId: client.userId,
+                    userLevel: client.userLevel,
+                });
 
                 next();
             } catch (error) {

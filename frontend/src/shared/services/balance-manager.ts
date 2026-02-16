@@ -8,8 +8,17 @@
  * Dramatically reduces API calls while maintaining data freshness.
  */
 
-import { tradingApi } from "../../infrastructure/api/trading";
-import { Balance } from "../../shared/types";
+import { kodiakApi } from "@/infrastructure/api";
+
+// Legacy balance interface expected by frontend components
+export interface Balance {
+    walletBalance: number;
+    accountBalance: number;
+    availableBalance: number;
+    reservedBalance: number;
+    totalAssets: number;
+    timestamp: string;
+}
 
 interface BalanceSubscriber {
     callback: (balance: Balance) => void;
@@ -99,16 +108,27 @@ class GlobalBalanceManager {
         console.log(`💰 Global Balance: Refreshing for ${this.subscribers.size} subscribers`);
 
         try {
-            const response = await tradingApi.getKodiakBalance();
+            const response = await kodiakApi.getKodiakBalance();
 
             if (response.success && response.data) {
-                this.lastBalanceData = response.data;
+                // Convert KodiakAccountInfo to legacy format
+                const kodiakBalance = response.data;
+                const legacyBalance = {
+                    walletBalance: parseFloat(kodiakBalance.totalBalance || '0'),
+                    accountBalance: parseFloat(kodiakBalance.totalBalance || '0'),
+                    availableBalance: parseFloat(kodiakBalance.totalBalance || '0'), // Assuming total balance is available for now
+                    reservedBalance: 0, // Not provided by Kodiak API
+                    totalAssets: parseFloat(kodiakBalance.totalBalance || '0'),
+                    timestamp: new Date().toISOString()
+                };
+
+                this.lastBalanceData = legacyBalance;
                 console.log('💰 Global Balance: Updated, notifying subscribers');
 
                 // Notify all subscribers
                 this.subscribers.forEach(subscriber => {
                     try {
-                        subscriber.callback(response.data);
+                        subscriber.callback(legacyBalance);
                     } catch (error) {
                         console.error(`💰 Global Balance: Subscriber ${subscriber.id} callback failed:`, error);
                     }

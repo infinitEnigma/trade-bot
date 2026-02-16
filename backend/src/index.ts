@@ -87,9 +87,9 @@ export function validateEnvironment(): void {
     const missing = REQUIRED_ENV_VARS.filter(key => !process.env[key]);
 
     if (missing.length > 0) {
-        logger.error("❌ Missing required environment variables");
+        logger.warn("❌ Missing required environment variables");
         missing.forEach(key => logger.error(`   - ${key}`));
-        logger.error("💡 Create .env file from .env.example template");
+        logger.warn("💡 Create .env file from .env.example template");
         throw new Error("Missing required environment variables");
     }
 
@@ -103,11 +103,11 @@ export function validateEnvironment(): void {
         secrets.forEach(key => {
             const value = process.env[key];
             if (!value) {
-                logger.error(`🔴 SECURITY: ${key} is missing in production environment`);
+                logger.warn(`🔴 SECURITY: ${key} is missing in production environment`);
                 throw new Error(`Missing required secret: ${key}`);
             }
             if (value.length < 32) {
-                logger.error(
+                logger.warn(
                     `🔴 SECURITY: ${key} must be at least 32 characters in production. Current length: ${value.length}`
                 );
                 throw new Error(`Insufficient secret length for ${key}`);
@@ -291,6 +291,70 @@ const io = new Server(httpServer, {
         methods: ["GET", "POST"],
         credentials: true,
     },
+    // Fix for socket.io protocol error: "Cannot read properties of undefined (reading 'protocol')"
+    allowEIO3: true, // Allow compatibility with Socket.IO v3 clients
+    //transports: ["polling", "websocket", "webtransport"], //"polling"], // Explicitly specify transport methods
+    //connectionStateRecovery: false,//{
+    // The backup duration of the sessions and the packets
+    //maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutes
+    // Whether to skip middlewares upon successful recovery
+    //skipMiddlewares: false,
+    //},
+    path: "/socket.io/", // Match nginx proxy path
+});
+
+// Set up Redis Streams adapter for Socket.IO
+import { createAdapter } from "@socket.io/redis-streams-adapter";
+import { createClient } from "redis";
+
+// Create Redis client for Socket.IO adapter (separate from cache client)
+const socketIoRedisClient = createClient({
+    url: process.env.REDIS_URL || "redis://localhost:6379",
+    database: 2, // Use separate database for Socket.IO to avoid conflicts
+});
+
+socketIoRedisClient.on("error", (err) => {
+    logger.error("Socket.IO Redis adapter error", err);
+});
+
+socketIoRedisClient.on("connect", () => {
+    logger.info("Socket.IO Redis adapter connected");
+});
+
+// Initialize adapter
+socketIoRedisClient.connect().then(() => {
+    logger.info("Redis Streams adapter initialized");
+    io.adapter(createAdapter(socketIoRedisClient));
+}).catch((err) => {
+    logger.error("Failed to initialize Redis Streams adapter", err);
+    // Continue without adapter - single server mode
+    logger.warn("Socket.IO running in single server mode");
+});
+
+// Add error handler to prevent server crash from Socket.IO protocol errors
+io.engine.on("connection_error", (err: Error & { context?: unknown; code?: string | number }) => {
+    logger.warn("Socket.IO connection error", {
+        message: err.message,
+        context: err.context,
+        code: err.code,
+    });
+});
+
+io.engine.on("connection", (socket: { id: string; on: (event: string, callback: (err: Error) => void) => void }) => {
+    socket.on("error", (err: Error) => {
+        logger.warn("Socket.IO engine socket error", {
+            socketId: socket.id,
+            error: err.message,
+        });
+    });
+});
+
+// Add global error handler for Socket.IO server
+io.on("error", (error: Error) => {
+    logger.warn("Socket.IO server error", {
+        message: error.message,
+        stack: error.stack,
+    });
 });
 
 // Make io available to routes
@@ -395,7 +459,7 @@ export const startServer = (): Promise<typeof httpServer> => {
             */
 
             // 🚫 DEFERRED: Market stream service - only initialize when VERIFIED users connect
-            // marketStreamService.setSocketServer(io);
+            //marketStreamService.setSocketServer(io);
             logger.info(
                 "📡 Market stream service deferred - initializes only for VERIFIED users"
             );
@@ -500,6 +564,7 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
             } else {
                 logger.warn("Process will exit due to shutdown timeout");
                 process.exit(1); // Force exit after timeout
+                //process.exitCode = 1;
             }
         }
     }, 30000);
@@ -575,10 +640,50 @@ process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 // Handle uncaught exceptions (development safety net)
-process.on("uncaughtException", error => {
+process.on("uncaughtException", (error) => {
+    // Check if this is the Socket.IO protocol error
+    if (error instanceof TypeError &&
+        error.message.includes("Cannot read properties of undefined (reading 'protocol')")) {
+        logger.warn("Socket.IO protocol error caught - ignoring to prevent crash", {
+            error: error.message,
+            stack: error.stack?.slice(0, 200), // Limit stack trace length
+        });
+        //return; // Don't trigger shutdown for this specific error
+    }
+
     logger.error("Uncaught exception - initiating emergency shutdown", error);
     gracefulShutdown("uncaughtException");
 });
+
+// Additional error handling for Socket.IO engine
+/*io.engine.on("error", (error: Error) => {
+    logger.warn("Socket.IO engine error", {
+        message: error.message,
+        stack: error.stack,
+    });
+});*/
+
+// Patch Socket.IO to handle cases where conn might be undefined
+/*const originalOnConnect = (require('socket.io/dist/socket').Socket.prototype as any)._onconnect;
+(require('socket.io/dist/socket').Socket.prototype as any)._onconnect = function () {
+    try {
+        if (this.conn) {
+            originalOnConnect.call(this);
+        } else {
+            logger.warn("Socket.IO _onconnect called with undefined conn", {
+                socketId: this.id,
+            });
+            // Simulate successful connect without protocol check
+            this.connected = true;
+            this.join(this.id);
+        }
+    } catch (error) {
+        logger.warn("Socket.IO _onconnect error", {
+            socketId: this.id,
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
+};*/
 
 // Handle unhandled promise rejections
 process.on("unhandledRejection", (reason, _promise) => {

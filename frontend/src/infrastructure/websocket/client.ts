@@ -51,6 +51,7 @@ class WebSocketClient {
     public connect(url: string = getWebSocketUrl()): Promise<Socket> {
         return new Promise((resolve, reject) => {
             if (this.socket?.connected) {
+                console.log("📡 WebSocket already connected");
                 resolve(this.socket);
                 return;
             }
@@ -60,6 +61,7 @@ class WebSocketClient {
                 // Wait for connection to complete
                 const checkConnection = setInterval(() => {
                     if (this.socket?.connected) {
+                        console.log("Websocket reconnected")
                         clearInterval(checkConnection);
                         resolve(this.socket);
                     } else if (this.status === WebSocketStatus.ERROR) {
@@ -74,23 +76,20 @@ class WebSocketClient {
             this.reconnectAttempts = 0;
             this.notifyStatusChange();
 
-            // Get token from localStorage
-            const token = localStorage.getItem('token');
+            // NOTE: We no longer need to get token from localStorage
+            // Backend now extracts token from httpOnly cookies, which are automatically included
+            // when withCredentials: true is set
 
-            if (!token) {
-                console.error('📡 No authentication token found for WebSocket connection');
-                this.status = WebSocketStatus.ERROR;
-                this.notifyStatusChange();
-                reject(new Error('No authentication token found'));
-                return;
-            }
-
+            console.log(`📡 Attempting to connect to WebSocket server: ${url}`);
             this.socket = io(url, {
                 withCredentials: true,
-                transports: ["websocket", "polling"],
+                transports: ["polling", "websocket"], // "polling"],
                 reconnection: false, // We handle reconnection manually
                 timeout: 10000,
-                auth: { token }, // Pass token for authentication
+                //forceNew: true, // Always create new connection
+                //upgrade: true, // Disable HTTP upgrade to prevent protocol issues
+                path: "/socket.io/", // Match nginx proxy path
+                // No need to pass auth token - backend extracts from cookies
             });
 
             this.socket.on("connect", () => {
@@ -101,12 +100,12 @@ class WebSocketClient {
                 resolve(this.socket!);
             });
 
-            this.socket.on("connect_error", (error) => {
-                console.error("📡 WebSocket connection error", error);
+            this.socket.on("connect_error", (err) => {
+                console.error("📡 WebSocket connection error", err.message, err.cause);
                 this.status = WebSocketStatus.ERROR;
                 this.notifyStatusChange();
-                this.notifyError(error);
-                reject(error);
+                this.notifyError(err);
+                reject(err);
             });
 
             this.socket.on("connect_timeout", () => {
@@ -114,6 +113,13 @@ class WebSocketClient {
                 this.status = WebSocketStatus.ERROR;
                 this.notifyStatusChange();
                 reject(new Error('Connection timeout'));
+            });
+
+            this.socket.on("error", (error) => {
+                console.error("📡 WebSocket error", error);
+                this.status = WebSocketStatus.ERROR;
+                this.notifyStatusChange();
+                this.notifyError(error);
             });
 
             this.setupEventListeners();

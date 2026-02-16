@@ -3,12 +3,6 @@
 import { httpClient } from "./client";
 import { globalRequestManager } from "../request-manager";
 
-interface ApiError extends Error {
-    response?: {
-        status?: number;
-    };
-}
-
 /**
  * Trading API endpoints
  * Handles strategies, bots, and trading operations with global deduplication
@@ -84,79 +78,6 @@ export const tradingApi = {
             botId,
         });
         return response.data;
-    },
-
-    // Kodiak exchange integration endpoints with global deduplication
-    async getKodiakPositions() {
-        return globalRequestManager.deduplicateRequest(
-            "kodiak:positions",
-            async () => {
-                try {
-                    const response = await httpClient.getClient().get("/api/user/kodiak/positions");
-                    return response.data;
-                } catch (error: unknown) {
-                    // Return empty data instead of throwing for missing credentials
-                    const apiError = error as ApiError;
-                    if (apiError.response?.status === 403 || apiError.response?.status === 400) {
-                        return {
-                            success: true,
-                            data: { rows: [] },
-                            message: "Kodiak account not connected",
-                        };
-                    }
-                    throw error;
-                }
-            },
-            "tradingApi"
-        );
-    },
-
-    async getKodiakTrades(limit = 50) {
-        return globalRequestManager.deduplicateRequest(
-            `kodiak:trades:${limit}`,
-            async () => {
-                try {
-                    const response = await httpClient.getClient().get(`/api/user/kodiak/trades?limit=${limit}`);
-                    return response.data;
-                } catch (error: unknown) {
-                    // Return empty data instead of throwing for missing credentials
-                    const apiError = error as ApiError;
-                    if (apiError.response?.status === 403 || apiError.response?.status === 400) {
-                        return {
-                            success: true,
-                            data: { rows: [] },
-                            message: "Kodiak account not connected",
-                        };
-                    }
-                    throw error;
-                }
-            },
-            "tradingApi"
-        );
-    },
-
-    async getKodiakBalance() {
-        return globalRequestManager.deduplicateRequest(
-            "kodiak:balance",
-            async () => {
-                try {
-                    const response = await httpClient.getClient().get("/api/user/kodiak/balance");
-                    return response.data;
-                } catch (error: unknown) {
-                    // Return empty data instead of throwing for missing credentials
-                    const apiError = error as ApiError;
-                    if (apiError.response?.status === 403 || apiError.response?.status === 400) {
-                        return {
-                            success: true,
-                            data: null,
-                            message: "Kodiak account not connected",
-                        };
-                    }
-                    throw error;
-                }
-            },
-            "tradingApi"
-        );
     },
 
 };

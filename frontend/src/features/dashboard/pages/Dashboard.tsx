@@ -4,7 +4,7 @@ import React, { useState, Suspense } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../auth";
-import { tradingApi } from "../../../infrastructure/api";
+import { kodiakApi } from "../../../infrastructure/api";
 import {
   TrendingUp,
   TrendingDown,
@@ -161,7 +161,7 @@ const Dashboard: React.FC = () => {
 
   const { data: positionsData, isLoading: positionsLoading } = useQuery({
     queryKey: ["kodiak-positions", user?.id],
-    queryFn: () => tradingApi.getKodiakPositions(),
+    queryFn: () => kodiakApi.getKodiakPositions(),
     enabled: hasKodiakAccess && !!user?.id,
     staleTime: 30000, // 30 seconds
     gcTime: 300000, // 5 minutes
@@ -174,7 +174,7 @@ const Dashboard: React.FC = () => {
 
   const { data: tradesData, isLoading: tradesLoading, error: tradesError } = useQuery({
     queryKey: ["kodiak-trades", user?.id],
-    queryFn: () => tradingApi.getKodiakTrades(),
+    queryFn: () => kodiakApi.getKodiakTrades(),
     enabled: hasKodiakAccess && !!user?.id,
     staleTime: 30000,
     gcTime: 300000,

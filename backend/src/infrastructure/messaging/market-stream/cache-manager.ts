@@ -242,7 +242,7 @@ export class CacheManager {
    * Get all cache keys for a symbol
    */
   private async getSymbolKeys(symbol: string): Promise<string[]> {
-    // In a real implementation, you might use Redis SCAN or KEYS
+    // TODO: use Redis SCAN or KEYS
     // For now, we'll just return the known key patterns
     return [
       `tick:${symbol}`,
@@ -257,7 +257,7 @@ export class CacheManager {
   async clearAll(): Promise<void> {
     try {
       logger.info("Clearing all market data cache");
-      // In a real implementation, you might use Redis SCAN and DEL
+      // TODO: use Redis SCAN and DEL
       // For now, this is a placeholder
       logger.info("Market data cache cleared");
     } catch (error) {
@@ -274,7 +274,7 @@ export class CacheManager {
   }> {
     try {
       const redisConnected = await redisService.isHealthy();
-      // In a real implementation, you might scan for cache keys
+      // TODO: scan for cache keys
       const cacheKeys: string[] = [];
 
       return {

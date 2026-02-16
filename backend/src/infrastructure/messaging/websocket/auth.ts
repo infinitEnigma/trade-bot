@@ -141,6 +141,16 @@ export class WebSocketAuthMiddleware {
             return authHeader.substring(7);
         }
 
+        // NEW: Extract token from cookies (since we use httpOnly cookies for auth)
+        const cookies = socket.handshake.headers?.cookie;
+        if (cookies) {
+            // Look for accessToken cookie
+            const cookieMatch = cookies.match(/accessToken=([^;]+)/);
+            if (cookieMatch && cookieMatch[1]) {
+                return cookieMatch[1];
+            }
+        }
+
         return null;
     }
 
