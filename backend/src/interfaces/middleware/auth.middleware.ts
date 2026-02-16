@@ -4,6 +4,7 @@ import { Request, Response, NextFunction } from "express";
 import { selectAuthService } from "../../core/service-selector";
 import { AuthResult, LegacyAuthResult } from "../../core/auth/auth.service.pure";
 import { jwtTokenAdapter } from "../../infrastructure/adapters/token/jwt-token.adapter";
+import Tokens from "csrf";
 
 const authService = selectAuthService();
 import { redisService } from "../../infrastructure/cache/redis.service";
@@ -11,6 +12,9 @@ import { setUserContext } from "../../shared/utils/context";
 //import { roleManagementService } from "../../core/auth/role-management.service";
 import { authLogger } from "../../core/logging";
 import { progressiveAuthLimiter } from "../../infrastructure/security/rate-limiter.service";
+
+// Initialize CSRF tokens for refresh
+const csrfTokens = new Tokens();
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -241,6 +245,24 @@ export async function authMiddleware(
             secure: process.env.NODE_ENV === "production",
             sameSite: "strict",
             maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+          });
+
+          // Refresh CSRF token and secret
+          const newCsrfSecret = csrfTokens.secretSync();
+          const newCsrfToken = csrfTokens.create(newCsrfSecret);
+
+          res.cookie('csrfSecret', newCsrfSecret, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 24 * 60 * 60 * 1000, // 24 hours
+          });
+
+          res.cookie('csrfToken', newCsrfToken, {
+            httpOnly: false,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 24 * 60 * 60 * 1000, // 24 hours
           });
 
           // Verify the new access token and set user on request
@@ -482,6 +504,24 @@ export async function authMiddleware(
           secure: process.env.NODE_ENV === "production",
           sameSite: "strict",
           maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        });
+
+        // Refresh CSRF token and secret
+        const newCsrfSecret = csrfTokens.secretSync();
+        const newCsrfToken = csrfTokens.create(newCsrfSecret);
+
+        res.cookie('csrfSecret', newCsrfSecret, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        });
+
+        res.cookie('csrfToken', newCsrfToken, {
+          httpOnly: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 24 * 60 * 60 * 1000, // 24 hours
         });
 
         // Verify the new access token and set user on request

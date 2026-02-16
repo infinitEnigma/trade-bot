@@ -147,7 +147,6 @@ describe('MarketStreamService', () => {
 
             expect(mockAuthManager.getAccountId).toHaveBeenCalled();
             expect(mockWsManager.createConnection).toHaveBeenCalledWith(mockAccountId);
-            expect(mockAuthManager.authenticate).toHaveBeenCalledWith(mockWebSocket, mockAccountId);
             expect(mockSubscriptionManager.addPendingSubscription).toHaveBeenCalled();
         });
 

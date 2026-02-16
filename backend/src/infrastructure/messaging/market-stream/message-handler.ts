@@ -151,8 +151,11 @@ export class MessageHandler {
    */
   private async handleTickerData(symbol: string, data: { price?: string; lastPrice?: string; volume?: string; bid?: string; ask?: string; change24h?: string }): Promise<void> {
     try {
+      // Remove .e suffix from symbol (Orderly Network uses PERP_BTC_USDC.e format)
+      const cleanedSymbol = symbol.replace(/\.e$/, "");
+
       const tickData: TickData = {
-        symbol,
+        symbol: cleanedSymbol,
         price: parseFloat(data.price || data.lastPrice || "0"),
         volume: parseFloat(data.volume || "0"),
         timestamp: Date.now(),
@@ -162,13 +165,13 @@ export class MessageHandler {
       };
 
       // Cache the tick data
-      await this.cacheManager.cacheTick(symbol, tickData);
+      await this.cacheManager.cacheTick(cleanedSymbol, tickData);
 
       // Broadcast to all clients subscribed to this symbol
-      this.broadcastToSymbol(symbol, tickData);
+      this.broadcastToSymbol(cleanedSymbol, tickData);
 
       logger.debug("Ticker data processed and broadcasted", {
-        symbol,
+        symbol: cleanedSymbol,
         price: tickData.price,
       });
     } catch (error) {
@@ -188,7 +191,9 @@ export class MessageHandler {
         return;
       }
 
-      const [symbol, klinePart] = (message.topic || "").split("@");
+      const [symbolWithSuffix, klinePart] = (message.topic || "").split("@");
+      // Remove .e suffix from symbol (Orderly Network uses PERP_BTC_USDC.e format)
+      const symbol = symbolWithSuffix.replace(/\.e$/, "");
       const interval = klinePart.replace("kline_", "");
 
       const newCandle: KlineData = {
@@ -248,7 +253,10 @@ export class MessageHandler {
         return;
       }
 
-      const symbol = (message.topic || "").split("@")[0];
+      // Remove .e suffix from symbol (Orderly Network uses PERP_BTC_USDC.e format)
+      const symbolWithSuffix = (message.topic || "").split("@")[0];
+      const symbol = symbolWithSuffix.replace(/\.e$/, "");
+
       const priceData = {
         symbol,
         price: parseFloat(markPriceData.price || "0"),

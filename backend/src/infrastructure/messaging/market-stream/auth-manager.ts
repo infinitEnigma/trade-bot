@@ -54,10 +54,10 @@ export class AuthManager {
         event: "auth",
         id: `auth_${Date.now()}`,
         params: {
-          accountId,
-          apiKey,
-          signature: signatureB64,
-          timestamp,
+          orderly_account_id: accountId,
+          orderly_key: apiKey,
+          orderly_signature: signatureB64,
+          orderly_timestamp: timestamp,
         },
       });
 

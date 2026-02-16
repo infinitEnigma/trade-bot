@@ -202,7 +202,7 @@ export class CacheManager {
           error: result.error,
         });
       } else {
-        logger.debug("Mark price cache miss", { symbol });
+        logger.debug("Mark price cache miss", { symbol, cacheKey, result: result.error });
       }
 
       return null;

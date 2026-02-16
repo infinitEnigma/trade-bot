@@ -56,7 +56,8 @@ export class MarketStreamService {
 
   /**
    * Connect to Orderly public market WebSocket
-   * Uses: wss://ws-evm.orderly.org/ws/stream/public
+   * Uses: wss://ws-evm.orderly.org/ws/stream/{accountId}
+   * Public endpoints do NOT require authentication
    */
   async connectToOrderly(symbols: string[]): Promise<void> {
     logger.info("connectToOrderly called with symbols", { symbols });
@@ -74,10 +75,7 @@ export class MarketStreamService {
       // Start queue processor when we have an active connection
       this.wsManager.startQueueProcessor();
 
-      // Authenticate the connection
-      await this.authManager.authenticate(ws, accountId);
-
-      // Set up message handling
+      // Set up message handling (public endpoints don't require authentication)
       ws.on("message", (data: WebSocket.Data) => {
         try {
           const message = JSON.parse(data.toString());

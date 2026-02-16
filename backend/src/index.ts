@@ -131,8 +131,7 @@ import { ExpressConfig } from "./server/express-config";
 import { RouteConfig } from "./server/route-config";
 import { MiddlewareConfig } from "./server/middleware-config";
 
-// 📡 Real-time Services
-import { marketStreamService } from "./infrastructure";
+
 
 // 🔄 Infrastructure Services
 import { redisService } from "./infrastructure";
@@ -143,7 +142,7 @@ import { diContainer } from "./infrastructure/dependency-injection.container";
 // 🤖 Bot Reconciliation Worker (initialized after database)
 // TEMPORARILY DISABLED: Possible Kodiak rate limiting issue in production
 // Import kept for future re-enablement when rate limiting is resolved
-import { botReconciliationWorker as _botReconciliationWorker } from "./workers/bot-reconciliation";
+//import { botReconciliationWorker as _botReconciliationWorker } from "./workers/bot-reconciliation";
 
 // ===========================================
 // 🗄️ 3. DATABASE & REDIS INITIALIZATION
@@ -415,17 +414,12 @@ app.use(handleErrors);
 // Handles authentication, subscriptions, and market data streaming
 // ===========================================
 
-// Import the WebSocket service
+// 📡 Real-time Services
 import { WebSocketService } from "./infrastructure/messaging";
+import { marketStreamService } from "./infrastructure";
 
-// Initialize WebSocket service with Socket.IO server
-const webSocketService = new WebSocketService(
-    marketStreamService,
-    diContainer.authService,
-    logger
-);
 
-webSocketService.initialize(io);
+//webSocketService.initialize(io);
 
 // ===========================================
 // ⚙️ 9. SERVER LIFECYCLE MANAGEMENT
@@ -444,6 +438,7 @@ export const startServer = (): Promise<typeof httpServer> => {
     return new Promise((resolve) => {
         httpServer.listen(PORT, () => {
             logger.info(`🚀 Server running on port ${PORT}`);
+
             logger.info("🌐 WebSocket server ready");
             logger.info(`🏭 Environment: ${process.env.NODE_ENV || "development"}`);
 
@@ -458,8 +453,14 @@ export const startServer = (): Promise<typeof httpServer> => {
             });
             */
 
-            // 🚫 DEFERRED: Market stream service - only initialize when VERIFIED users connect
-            //marketStreamService.setSocketServer(io);
+            // Initialize WebSocket service with Socket.IO server
+            /*const webSocketService = new WebSocketService(
+                marketStreamService,
+                diContainer.authService,
+                logger
+            );
+            webSocketService.initialize(io);
+            marketStreamService.setSocketServer(io);*/
             logger.info(
                 "📡 Market stream service deferred - initializes only for VERIFIED users"
             );
@@ -491,9 +492,11 @@ export const stopServer = (...args: any[]): Promise<void> => {
     return new Promise((resolve, reject) => {
         // Check if server is actually running before trying to close
         // This prevents errors in test environments where server might not have been started
+
         try {
             // In test/mock environments, this check may fail, so we'll try to close directly
             // with error handling
+            //marketStreamService.disconnectAll();
             httpServer.close((err) => {
                 if (err) {
                     // If error is about server not running, just resolve
