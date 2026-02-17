@@ -19,6 +19,9 @@ import { signatureVerificationServiceAdapter } from './adapters/security/signatu
 // Redis Services
 import { redisService } from './cache/redis.service';
 
+// Kodiak Connection Service
+import { kodiakConnectionService } from './external/kodiak-connection.service';
+
 // Repository Adapters
 import { userRepositoryAdapter } from './adapters/repositories/user-repository.adapter';
 import { balanceRepositoryAdapter } from './adapters/repositories/balance-repository.adapter';
@@ -339,31 +342,27 @@ export class DependencyInjectionContainer {
     }
 
     /**
+     * Kodiak Connection Service - Infrastructure service for Kodiak exchange connections
+     */
+    get kodiakConnectionService() {
+        return kodiakConnectionService;
+    }
+
+    /**
      * User Kodiak Service - Pure business logic for user Kodiak integration
      */
     get userKodiakService(): UserKodiakService {
         return new UserKodiakService({
-            kodiakConnectionService: {
-                connectKodiak: async (userId: string, connectionData: any) => {
-                    // TODO: Implement actual Kodiak connection service
-                    return { success: false, message: "Not implemented" };
-                },
-                disconnectKodiak: async (userId: string) => {
-                    // TODO: Implement actual Kodiak disconnection service
-                    return { success: false, message: "Not implemented" };
-                },
-                getConnectionStatus: async (userId: string) => {
-                    // TODO: Implement actual Kodiak connection status check
-                    return { connected: false };
-                }
-            },
+            kodiakConnectionService: this.kodiakConnectionService,
             cache: {
                 getCachedResult: async (userId: string, accountId: string) => {
-                    // TODO: Implement actual cache service
-                    return null;
+                    const cacheKey = `kodiak:connection:${userId}:${accountId}`;
+                    const result = await this.cacheService.get(cacheKey);
+                    return result.success ? result.data : null;
                 },
                 setCachedResult: async (userId: string, accountId: string, success: boolean, error?: string) => {
-                    // TODO: Implement actual cache service
+                    const cacheKey = `kodiak:connection:${userId}:${accountId}`;
+                    await this.cacheService.set(cacheKey, { success, error }, 300); // Cache for 5 minutes
                 }
             }
         });

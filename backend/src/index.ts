@@ -292,13 +292,7 @@ const io = new Server(httpServer, {
     },
     // Fix for socket.io protocol error: "Cannot read properties of undefined (reading 'protocol')"
     allowEIO3: true, // Allow compatibility with Socket.IO v3 clients
-    //transports: ["polling", "websocket", "webtransport"], //"polling"], // Explicitly specify transport methods
-    //connectionStateRecovery: false,//{
-    // The backup duration of the sessions and the packets
-    //maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutes
-    // Whether to skip middlewares upon successful recovery
-    //skipMiddlewares: false,
-    //},
+    transports: ["polling"], // Disable WebSocket upgrade to prevent protocol errors
     path: "/socket.io/", // Match nginx proxy path
 });
 
@@ -454,16 +448,14 @@ export const startServer = (): Promise<typeof httpServer> => {
             */
 
             // Initialize WebSocket service with Socket.IO server
-            /*const webSocketService = new WebSocketService(
+            const webSocketService = new WebSocketService(
                 marketStreamService,
                 diContainer.authService,
                 logger
             );
             webSocketService.initialize(io);
-            marketStreamService.setSocketServer(io);*/
-            logger.info(
-                "📡 Market stream service deferred - initializes only for VERIFIED users"
-            );
+            //marketStreamService.setSocketServer(io);
+            logger.info("📡 WebSocket service initialized");
 
             // 🚫 DEFERRED: Bot status service - only initialize when VERIFIED users with bots connect
             // botStatusService.initializeBackgroundProcesses()
@@ -651,7 +643,7 @@ process.on("uncaughtException", (error) => {
             error: error.message,
             stack: error.stack?.slice(0, 200), // Limit stack trace length
         });
-        //return; // Don't trigger shutdown for this specific error
+        return; // Don't trigger shutdown for this specific error
     }
 
     logger.error("Uncaught exception - initiating emergency shutdown", error);
@@ -666,27 +658,7 @@ process.on("uncaughtException", (error) => {
     });
 });*/
 
-// Patch Socket.IO to handle cases where conn might be undefined
-/*const originalOnConnect = (require('socket.io/dist/socket').Socket.prototype as any)._onconnect;
-(require('socket.io/dist/socket').Socket.prototype as any)._onconnect = function () {
-    try {
-        if (this.conn) {
-            originalOnConnect.call(this);
-        } else {
-            logger.warn("Socket.IO _onconnect called with undefined conn", {
-                socketId: this.id,
-            });
-            // Simulate successful connect without protocol check
-            this.connected = true;
-            this.join(this.id);
-        }
-    } catch (error) {
-        logger.warn("Socket.IO _onconnect error", {
-            socketId: this.id,
-            error: error instanceof Error ? error.message : String(error),
-        });
-    }
-};*/
+
 
 // Handle unhandled promise rejections
 process.on("unhandledRejection", (reason, _promise) => {

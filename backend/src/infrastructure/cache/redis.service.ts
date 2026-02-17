@@ -281,6 +281,24 @@ class RedisService {
   }
 
   /**
+   * Scan Redis for keys matching a pattern (safer than KEYS for large datasets)
+   */
+  public async scan(
+    cursor: string = '0',
+    options: { MATCH?: string; COUNT?: number } = {}
+  ): Promise<{ success: boolean; cursor: string; keys: string[]; error?: string }> {
+    try {
+      const result = await this.client.scan(cursor, options);
+      return { success: true, cursor: result.cursor, keys: result.keys };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Redis SCAN error", error as Error, { cursor, options });
+      return { success: false, cursor: '0', keys: [], error: errorMessage };
+    }
+  }
+
+  /**
    * Check if Redis is currently healthy
    */
   public async isHealthy(): Promise<boolean> {

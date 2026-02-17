@@ -242,13 +242,47 @@ export class CacheManager {
    * Get all cache keys for a symbol
    */
   private async getSymbolKeys(symbol: string): Promise<string[]> {
-    // TODO: use Redis SCAN or KEYS
-    // For now, we'll just return the known key patterns
-    return [
+    const keys: string[] = [
       `tick:${symbol}`,
-      `markprice:${symbol}`,
-      // Note: kline keys have intervals, so we'd need to scan for those
+      `markprice:${symbol}`
     ];
+
+    // Scan for kline keys with all possible intervals
+    const possibleIntervals = ['1m', '5m', '15m', '30m', '1h', '1d', '1w', '1M'];
+    for (const interval of possibleIntervals) {
+      const klineKeys = await this.scanRedisKeys(`kline:${symbol}:${interval}`);
+      keys.push(...klineKeys);
+    }
+
+    return keys;
+  }
+
+  /**
+   * Scan Redis for keys matching a pattern using SCAN (safer than KEYS)
+   */
+  private async scanRedisKeys(pattern: string): Promise<string[]> {
+    const keys: string[] = [];
+    let cursor = '0';
+
+    do {
+      const result = await redisService.scan(cursor, {
+        MATCH: pattern,
+        COUNT: 100
+      });
+
+      if (result.success) {
+        cursor = result.cursor;
+        keys.push(...result.keys);
+      } else {
+        logger.warn("Redis SCAN operation failed", {
+          pattern,
+          error: result.error
+        });
+        break;
+      }
+    } while (cursor !== '0');
+
+    return keys;
   }
 
   /**

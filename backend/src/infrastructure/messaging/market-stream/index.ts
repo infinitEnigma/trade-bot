@@ -66,9 +66,14 @@ export class MarketStreamService {
       // Get account ID for WebSocket URL
       const accountId = await this.authManager.getAccountId();
       if (!accountId) {
-        logger.error("No account found for WebSocket connection");
+        logger.error("No verified account found for WebSocket connection");
         return;
       }
+
+      logger.debug("Attempting to create WebSocket connection", {
+        accountId,
+        symbols
+      });
 
       const ws = await this.wsManager.createConnection(accountId);
 
@@ -79,9 +84,15 @@ export class MarketStreamService {
       ws.on("message", (data: WebSocket.Data) => {
         try {
           const message = JSON.parse(data.toString());
+          logger.debug("Received WebSocket message", {
+            topic: message.topic,
+            event: message.event
+          });
           this.messageHandler.handleMessage(message);
         } catch (error) {
-          logger.error("Failed to parse WebSocket message", error as Error);
+          logger.error("Failed to parse WebSocket message", error as Error, {
+            rawData: data.toString().substring(0, 200) // Log first 200 chars
+          });
         }
       });
 
@@ -91,7 +102,7 @@ export class MarketStreamService {
         const markPriceTopic = `${symbol}@markprice`;
         this.subscriptionManager.addPendingSubscription(klineTopic);
         this.subscriptionManager.addPendingSubscription(markPriceTopic);
-        logger.info("Added topics to pending subscriptions", {
+        logger.debug("Added topics to pending subscriptions", {
           symbol,
           klineTopic,
           markPriceTopic
@@ -101,7 +112,10 @@ export class MarketStreamService {
       // Send pending subscriptions
       this.sendPendingSubscriptions();
     } catch (error) {
-      logger.error("Failed to connect to Orderly", error as Error);
+      logger.error("Failed to connect to Orderly", error as Error, {
+        symbols,
+        errorMessage: (error as Error).message
+      });
     }
   }
 
@@ -210,9 +224,16 @@ export class MarketStreamService {
 
   /**
    * Get latest mark price data from cache
+   * If cache is empty, connect to WebSocket to start receiving data
    */
   async getLatestMarkPrice(symbol: string): Promise<MarkPriceData | null> {
-    return this.cacheManager.getMarkPrice(symbol);
+    const markPriceData = await this.cacheManager.getMarkPrice(symbol);
+    if (!markPriceData) {
+      // If no data in cache, connect to WebSocket to start receiving updates
+      logger.debug("Mark price cache miss, connecting to WebSocket", { symbol });
+      await this.connectToOrderly([symbol]);
+    }
+    return markPriceData;
   }
 
   /**

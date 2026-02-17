@@ -171,7 +171,7 @@ export class WebSocketManager {
       const ws = new WebSocket(wsUrl);
 
       ws.on("open", () => {
-        logger.info("WebSocket connected successfully", { connectionKey });
+        logger.info("WebSocket connected successfully", { connectionKey, url: wsUrl });
         this.websockets.set(connectionKey, ws);
         this.reconnectAttempts.set(connectionKey, 0);
 
@@ -183,7 +183,11 @@ export class WebSocketManager {
       });
 
       ws.on("error", (error: Error) => {
-        logger.error("WebSocket connection error", error, { connectionKey });
+        logger.error("WebSocket connection error", error, {
+          connectionKey,
+          url: wsUrl,
+          errorMessage: error.message
+        });
         reject(error);
       });
 
@@ -191,7 +195,8 @@ export class WebSocketManager {
         logger.warn("WebSocket closed", {
           connectionKey,
           code,
-          reason,
+          reason: reason || 'No reason provided',
+          url: wsUrl
         });
         this.websockets.delete(connectionKey);
         this.stopHeartbeat(connectionKey);

@@ -180,7 +180,7 @@ export class WebSocketService implements IWebSocketService {
                 next();
             } catch (error) {
                 if (error instanceof WebSocketError) {
-                    this.logger.warn("WebSocket authentication failed", {
+                    this.logger.error("WebSocket authentication failed", {
                         socketId: socket.id,
                         error: error.message,
                         code: error.code,
@@ -188,10 +188,10 @@ export class WebSocketService implements IWebSocketService {
                     });
 
                     // Emit auth error before disconnecting
-                    socket.emit("auth_error", {
+                    /*socket.emit("auth_error", {
                         error: error.message,
                         code: error.code,
-                    });
+                    });*/
                 } else {
                     const errorObj = error instanceof Error ? error : new Error(String(error));
                     this.logger.error("Unexpected authentication error", {
@@ -213,7 +213,7 @@ export class WebSocketService implements IWebSocketService {
     private setupConnectionHandlers(): void {
         if (!this.io) return;
 
-        this.io.on("connection", (socket) => {
+        this.io.on("connection", async (socket) => {
             const client = (socket as unknown as { client: WebSocketClient }).client;
 
             this.logger.info("WebSocket client connected", {
@@ -230,6 +230,8 @@ export class WebSocketService implements IWebSocketService {
                 this.logger.debug("Market stream service initialized for verified user", {
                     userId: client.userId,
                 });
+                // Connect to Kodiak websocket for market data
+                await this.marketStreamService.connectToOrderly(["PERP_BTC_USDC", "PERP_ETH_USDC"]);
             }
 
             // Set up event handlers

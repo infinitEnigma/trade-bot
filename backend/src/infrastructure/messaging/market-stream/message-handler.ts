@@ -191,9 +191,9 @@ export class MessageHandler {
         return;
       }
 
-      const [symbolWithSuffix, klinePart] = (message.topic || "").split("@");
+      const [symbol, klinePart] = (message.topic || "").split("@");
       // Remove .e suffix from symbol (Orderly Network uses PERP_BTC_USDC.e format)
-      const symbol = symbolWithSuffix.replace(/\.e$/, "");
+      //const symbol = symbolWithSuffix.replace(/\.e$/, "");
       const interval = klinePart.replace("kline_", "");
 
       const newCandle: KlineData = {
@@ -259,7 +259,9 @@ export class MessageHandler {
 
       const priceData = {
         symbol,
-        price: parseFloat(markPriceData.price || "0"),
+        price: typeof markPriceData.price === 'number'
+          ? markPriceData.price
+          : parseFloat(markPriceData.price || "0"),
         timestamp: markPriceData.timestamp || Date.now(),
       };
 
@@ -282,16 +284,16 @@ export class MessageHandler {
   }
 
   /**
-   * Broadcast tick data to clients subscribed to a symbol with backpressure handling
+   * Broadcast tick data to clients subscribed to a symbol
    */
   private async broadcastToSymbol(symbol: string, data: TickData): Promise<void> {
-    if (!this.wsManager) {
-      logger.warn("Cannot broadcast - WebSocket manager not initialized");
+    if (!this.io) {
+      logger.warn("Cannot broadcast - Socket.IO server not initialized");
       return;
     }
 
     try {
-      await this.wsManager.sendMessage("market", `market:${symbol}`, data, MessagePriority.HIGH);
+      this.io.emit(`market:${symbol}`, data);
       logger.debug("Tick data broadcasted to clients", {
         symbol,
         price: data.price,
@@ -304,16 +306,16 @@ export class MessageHandler {
   }
 
   /**
-   * Broadcast kline data to clients subscribed to klines for a symbol/interval with backpressure handling
+   * Broadcast kline data to clients subscribed to klines for a symbol/interval
    */
   private async broadcastToKlines(symbol: string, interval: string, data: Record<string, unknown>): Promise<void> {
-    if (!this.wsManager) {
-      logger.warn("Cannot broadcast - WebSocket manager not initialized");
+    if (!this.io) {
+      logger.warn("Cannot broadcast - Socket.IO server not initialized");
       return;
     }
 
     try {
-      await this.wsManager.sendMessage("market", `kline:${symbol}:${interval}`, data, MessagePriority.MEDIUM);
+      this.io.emit(`kline:${symbol}:${interval}`, data);
       logger.debug("Kline data broadcasted to clients", {
         symbol,
         interval,
@@ -327,16 +329,16 @@ export class MessageHandler {
   }
 
   /**
-   * Broadcast mark price data to clients subscribed to mark price for a symbol with backpressure handling
+   * Broadcast mark price data to clients subscribed to mark price for a symbol
    */
   private async broadcastToMarkPrice(symbol: string, data: Record<string, unknown>): Promise<void> {
-    if (!this.wsManager) {
-      logger.warn("Cannot broadcast - WebSocket manager not initialized");
+    if (!this.io) {
+      logger.warn("Cannot broadcast - Socket.IO server not initialized");
       return;
     }
 
     try {
-      await this.wsManager.sendMessage("market", `markprice:${symbol}`, data, MessagePriority.MEDIUM);
+      this.io.emit(`markprice:${symbol}`, data);
       logger.debug("Mark price data broadcasted to clients", {
         symbol,
       });
@@ -348,15 +350,22 @@ export class MessageHandler {
   }
 
   /**
-   * Send a message to a specific client room with backpressure handling
+   * Send a message to a specific client room
    */
-  async broadcastToRoom(room: string, event: string, data: Record<string, unknown>, priority: MessagePriority = MessagePriority.MEDIUM): Promise<boolean> {
-    if (!this.wsManager) {
-      logger.warn("Cannot broadcast - no WebSocket manager with backpressure support");
+  async broadcastToRoom(room: string, event: string, data: Record<string, unknown>): Promise<boolean> {
+    if (!this.io) {
+      logger.warn("Cannot broadcast - Socket.IO server not initialized");
       return false;
     }
 
-    return await this.wsManager.sendMessage("market", event, data, priority);
+    try {
+      this.io.to(room).emit(event, data);
+      logger.debug("Message broadcasted to room", { room, event });
+      return true;
+    } catch (error) {
+      logger.error("Failed to broadcast to room", error as Error, { room, event });
+      return false;
+    }
   }
 
   /**

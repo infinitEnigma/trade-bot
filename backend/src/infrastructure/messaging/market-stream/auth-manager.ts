@@ -124,17 +124,20 @@ export class AuthManager {
       const result = await query<{
         account_id: string;
       }>(
-        "SELECT account_id FROM kodiak_credentials LIMIT 1"
+        "SELECT account_id FROM kodiak_credentials WHERE verified = true LIMIT 1"
       );
 
       if (result.rows.length === 0) {
-        logger.warn("No Kodiak credentials found for WebSocket authentication");
+        logger.warn("No verified Kodiak credentials found for WebSocket authentication");
         return null;
       }
 
+      logger.debug("Retrieved verified account ID for WebSocket connection", {
+        accountId: result.rows[0].account_id
+      });
       return result.rows[0].account_id;
     } catch (error) {
-      logger.error("Error getting account ID", error as Error);
+      logger.error("Error getting verified account ID", error as Error);
       return null;
     }
   }

@@ -3,7 +3,7 @@ const WebSocket = require('ws');
 // Configuration
 const CONFIG = {
     // Mainnet URL with account ID
-    wsUrl: 'wss://ws-evm.orderly.org/ws/stream/0xc833b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
+    wsUrl: 'wss://ws-evm.orderly.org/ws/stream/0x125a4423b9883442c1d53b5c8a88e815c8f0e69feaf0d7da699e0fff85eb2c54',
     symbols: ['PERP_ETH_USDC', 'PERP_BTC_USDC'],
     topics: ['markprice', 'kline_1m'],
     connectionTimeout: 5000,

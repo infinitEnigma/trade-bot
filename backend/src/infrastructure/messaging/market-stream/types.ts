@@ -157,8 +157,8 @@ export function hasKlineData(data: unknown): data is { symbol: string; type: str
   return typeof data === 'object' && data !== null && 'symbol' in data && 'open' in data && 'close' in data;
 }
 
-export function hasMarkPriceData(data: unknown): data is { symbol: string; price: string; timestamp?: number } {
-  return typeof data === 'object' && data !== null && 'symbol' in data && 'price' in data;
+export function hasMarkPriceData(data: unknown): data is { symbol?: string; price: number | string; timestamp?: number } {
+  return typeof data === 'object' && data !== null && 'price' in data;
 }
 
 /**
