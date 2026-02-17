@@ -81,27 +81,38 @@ export class MarketStreamService {
       this.wsManager.startQueueProcessor();
 
       // Set up message handling (public endpoints don't require authentication)
-      ws.on("message", (data: WebSocket.Data) => {
-        try {
-          const message = JSON.parse(data.toString());
-          logger.debug("Received WebSocket message", {
-            topic: message.topic,
-            event: message.event
-          });
-          this.messageHandler.handleMessage(message);
-        } catch (error) {
-          logger.error("Failed to parse WebSocket message", error as Error, {
-            rawData: data.toString().substring(0, 200) // Log first 200 chars
-          });
-        }
-      });
+      // Check if listener already exists to avoid memory leak
+      const existingListeners = ws.listeners("message");
+      if (existingListeners.length === 0) {
+        ws.on("message", (data: WebSocket.Data) => {
+          try {
+            const message = JSON.parse(data.toString());
+            logger.debug("Received WebSocket message", {
+              topic: message.topic,
+              event: message.event
+            });
+            this.messageHandler.handleMessage(message);
+          } catch (error) {
+            logger.error("Failed to parse WebSocket message", error as Error, {
+              rawData: data.toString().substring(0, 200) // Log first 200 chars
+            });
+          }
+        });
+      }
 
       // Queue subscriptions for these symbols (both kline and mark price)
       symbols.forEach(symbol => {
         const klineTopic = `${symbol}@kline_1m`;
         const markPriceTopic = `${symbol}@markprice`;
-        this.subscriptionManager.addPendingSubscription(klineTopic);
-        this.subscriptionManager.addPendingSubscription(markPriceTopic);
+
+        // Check if topic is already pending to avoid duplicate subscriptions
+        if (!this.subscriptionManager.getPendingSubscriptions().includes(klineTopic)) {
+          this.subscriptionManager.addPendingSubscription(klineTopic);
+        }
+        if (!this.subscriptionManager.getPendingSubscriptions().includes(markPriceTopic)) {
+          this.subscriptionManager.addPendingSubscription(markPriceTopic);
+        }
+
         logger.debug("Added topics to pending subscriptions", {
           symbol,
           klineTopic,
@@ -224,15 +235,13 @@ export class MarketStreamService {
 
   /**
    * Get latest mark price data from cache
-   * If cache is empty, connect to WebSocket to start receiving data
+   * Always connect to WebSocket to ensure we receive updates
    */
   async getLatestMarkPrice(symbol: string): Promise<MarkPriceData | null> {
     const markPriceData = await this.cacheManager.getMarkPrice(symbol);
-    if (!markPriceData) {
-      // If no data in cache, connect to WebSocket to start receiving updates
-      logger.debug("Mark price cache miss, connecting to WebSocket", { symbol });
-      await this.connectToOrderly([symbol]);
-    }
+    // Always connect to WebSocket to ensure we receive updates
+    logger.debug("Getting mark price, ensuring WebSocket connection is active", { symbol });
+    await this.connectToOrderly([symbol]);
     return markPriceData;
   }
 
