@@ -153,7 +153,7 @@ export class WebSocketManager {
   ): Promise<WebSocket> {
     // Check if already connected
     if (this.websockets.has(connectionKey)) {
-      logger.debug("WebSocket already exists", { connectionKey });
+      //logger.debug("WebSocket already exists", { connectionKey });
       const existingWs = this.websockets.get(connectionKey);
       if (existingWs) {
         return existingWs;

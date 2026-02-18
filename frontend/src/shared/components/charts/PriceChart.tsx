@@ -1,6 +1,6 @@
 /** @format */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   LineChart,
   Line,
@@ -10,7 +10,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { useChartHistorical, useCurrentPrice } from "../../hooks/useChartData";
+import { useChartHistorical, useCurrentPrice, useWebSocketPriceUpdates } from "../../hooks/useChartData";
 import { Card } from "../ui/Card";
 import { SectionHeader } from "../ui/SectionHeader";
 
@@ -130,6 +130,12 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
       error: priceError,
     } = useCurrentPrice(selectedSymbol);
 
+    // WebSocket real-time mark price updates (faster than polling)
+    const { markPriceData } = useWebSocketPriceUpdates({
+      symbol: selectedSymbol,
+      interval: selectedResolution,
+    });
+
     // Extract candles from the response object - memoized to prevent unnecessary recalculations
     const historyData = useMemo(() => {
       return historyResult?.candles || [];
@@ -201,9 +207,131 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
       return chartPoints.slice(-maxDataPoints);
     }, [historyData]);
 
+    // ─── Live chart data: seeds from historical, then grows with each price tick ───
+    const [liveChartData, setLiveChartData] = useState<ChartPoint[]>([]);
+    // Track the last timestamp we added so we don't double-insert the same second
+    const lastLiveTimestampRef = useRef<number>(0);
+    // Separate ref for WebSocket bucket tracking (independent from HTTP polling ref)
+    const lastWsTimestampRef = useRef<number>(0);
+
+    // Seed (or re-seed on symbol/resolution change) from historical data
+    useEffect(() => {
+      if (chartData.length > 0) {
+        setLiveChartData(chartData);
+        lastLiveTimestampRef.current = chartData[chartData.length - 1].timestamp;
+      }
+    }, [chartData]);
+
+    // Append a new point every time the polled price updates
+    useEffect(() => {
+      if (!currentPriceData?.price) return;
+
+      const nowSec = Math.floor(Date.now() / 1000);
+      const price = currentPriceData.price;
+      const timeLabel = new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      setLiveChartData(prev => {
+        if (prev.length === 0) return prev; // Wait for historical seed
+
+        const last = prev[prev.length - 1];
+
+        // Same minute-bucket: update the existing point in place (OHLC update)
+        if (last.time === timeLabel) {
+          const updated: ChartPoint = {
+            ...last,
+            high: Math.max(last.high, price),
+            low: Math.min(last.low, price),
+            close: price,
+            price,
+          };
+          return [...prev.slice(0, -1), updated];
+        }
+
+        // New minute: only add if timestamp is strictly newer to avoid duplicates
+        if (nowSec <= lastLiveTimestampRef.current) return prev;
+        lastLiveTimestampRef.current = nowSec;
+
+        const newPoint: ChartPoint = {
+          time: timeLabel,
+          timestamp: nowSec,
+          open: price,
+          high: price,
+          low: price,
+          close: price,
+          volume: 0,
+          price,
+        };
+
+        // Keep the MA(20) rolling: compute from last 20 close prices
+        const window = prev.slice(-19).map(p => p.price);
+        window.push(price);
+        newPoint.ma20 = window.reduce((a, b) => a + b, 0) / window.length;
+
+        // Cap at 200 points to match historical limit
+        return [...prev, newPoint].slice(-200);
+      });
+    }, [currentPriceData]);
+
+    // Update chart line from WebSocket mark price in real-time.
+    // Uses a 5-second bucket: within the bucket the last point updates in-place (OHLC);
+    // every 5 seconds a new point is appended so the line visibly extends to the right.
+    const WS_BUCKET_SECONDS = 5;
+    useEffect(() => {
+      if (!markPriceData?.price || markPriceData.symbol !== selectedSymbol) return;
+
+      const price = markPriceData.price;
+      const nowSec = Math.floor(Date.now() / 1000);
+      const timeLabel = new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      setLiveChartData(prev => {
+        if (prev.length === 0) return prev; // Wait for historical seed
+
+        const last = prev[prev.length - 1];
+        const secondsSinceLast = nowSec - lastWsTimestampRef.current;
+
+        if (secondsSinceLast < WS_BUCKET_SECONDS) {
+          // Within the 5-second bucket: update last point's OHLC in-place
+          return [...prev.slice(0, -1), {
+            ...last,
+            high: Math.max(last.high, price),
+            low: Math.min(last.low, price),
+            close: price,
+            price,
+          }];
+        }
+
+        // New 5-second bucket: append a new data point so the line extends
+        lastWsTimestampRef.current = nowSec;
+        // Keep HTTP polling ref in sync to avoid duplicate points
+        lastLiveTimestampRef.current = nowSec;
+
+        const priceWindow = prev.slice(-19).map(p => p.price);
+        priceWindow.push(price);
+
+        return [...prev, {
+          time: timeLabel,
+          timestamp: nowSec,
+          open: last.close || price,
+          high: price,
+          low: price,
+          close: price,
+          volume: 0,
+          price,
+          ma20: priceWindow.reduce((a, b) => a + b, 0) / priceWindow.length,
+        }].slice(-200);
+      });
+    }, [markPriceData, selectedSymbol]);
+    // ─────────────────────────────────────────────────────────────────────────────
+
     // Use real-time price data for display, fallback to chart data
     const currentPrice = currentPriceData?.price ||
-      (chartData.length > 0 ? chartData[chartData.length - 1].price : null);
+      (liveChartData.length > 0 ? liveChartData[liveChartData.length - 1].price : null);
 
     // Calculate price change based on real-time data or chart data
     const priceChange = currentPriceData?.change24h ?
@@ -312,10 +440,10 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
             </div>
           )}
 
-          {!isLoading && !error && chartData.length > 0 && (
+          {!isLoading && !error && liveChartData.length > 0 && (
             <div className="h-[20vh]">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
+                <LineChart data={liveChartData}>
                   <CartesianGrid
                     strokeDasharray="3 3"
                     stroke="var(--border-light)"

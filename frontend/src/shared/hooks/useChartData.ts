@@ -420,81 +420,74 @@ export const useWebSocketPriceUpdates = ({
   const [markPriceData, setMarkPriceData] = useState<WsMarkPriceData | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<string>("disconnected");
   const { user } = useAuth();
-  const isVerified = user?.userLevel === 'VERIFIED';
+  const isAuthenticated = !!user; // Connect for any authenticated user (BASIC, REGISTERED, VERIFIED)
 
   useEffect(() => {
-    // Only connect if user is VERIFIED
-    if (!isVerified) {
-      console.log("📡 WebSocket: User not VERIFIED, skipping connection");
+    // Only connect if user is authenticated
+    if (!isAuthenticated) {
+      console.log("📡 WebSocket: User not authenticated, skipping connection");
       setConnectionStatus("disconnected");
       return;
     }
 
-    // Connect to WebSocket
-    const connectAndSubscribe = async () => {
-      try {
-        console.log("📡 WebSocket: Connecting for VERIFIED user");
-        await websocketClient.connect();
-        setConnectionStatus(websocketClient.getStatus());
+    console.log("📡 WebSocket: Setting up listeners for authenticated user");
 
-        // Subscribe to symbol
-        await websocketClient.subscribeToSymbol(symbol);
-
-        // Set up listeners
-        const handleTick = (data: WsTickData) => {
-          if (data.symbol === symbol) {
-            setTickData(data);
-            console.log(`💰 Tick update for ${symbol}: $${data.price}`);
-          }
-        };
-
-        const handleKline = (data: WsKlineData) => {
-          if (data.symbol === symbol && data.interval === interval) {
-            setKlineData(data);
-            console.log(`📊 Kline update for ${symbol} ${interval}`);
-          }
-        };
-
-        const handleMarkPrice = (data: WsMarkPriceData) => {
-          if (data.symbol === symbol) {
-            setMarkPriceData(data);
-            console.log(`🏷️ Mark price update for ${symbol}: $${data.price}`);
-          }
-        };
-
-        const handleStatusChange = (status: string) => {
-          setConnectionStatus(status);
-          console.log(`📡 WebSocket status: ${status}`);
-        };
-
-        websocketClient.onTick(handleTick);
-        websocketClient.onKline(handleKline);
-        websocketClient.onMarkPrice(handleMarkPrice);
-        websocketClient.onStatusChange(handleStatusChange);
-
-        // Cleanup
-        return () => {
-          console.log("📡 WebSocket: Cleaning up listeners");
-          websocketClient.offTick(handleTick);
-          websocketClient.offKline(handleKline);
-          websocketClient.offMarkPrice(handleMarkPrice);
-          websocketClient.offStatusChange(handleStatusChange);
-          websocketClient.unsubscribeFromSymbol(symbol);
-        };
-      } catch (error) {
-        console.error("Failed to connect to WebSocket:", error);
-        setConnectionStatus("error");
+    // Define handlers in effect scope so both registration and cleanup can reference them
+    const handleTick = (data: WsTickData) => {
+      if (data.symbol === symbol) {
+        setTickData(data);
+        console.log(`💰 Tick update for ${symbol}: $${data.price}`);
       }
     };
 
-    connectAndSubscribe();
-
-    // Cleanup function to disconnect when component unmounts or user level changes
-    return () => {
-      console.log("📡 WebSocket: Disconnecting");
-      websocketClient.disconnect();
+    const handleKline = (data: WsKlineData) => {
+      if (data.symbol === symbol && data.interval === interval) {
+        setKlineData(data);
+        console.log(`📊 Kline update for ${symbol} ${interval}`);
+      }
     };
-  }, [symbol, interval, isVerified]);
+
+    const handleMarkPrice = (data: WsMarkPriceData) => {
+      if (data.symbol === symbol) {
+        setMarkPriceData(data);
+        console.log(`🏷️ Mark price update for ${symbol}: $${data.price}`);
+      }
+    };
+
+    const handleStatusChange = (status: string) => {
+      setConnectionStatus(status);
+      console.log(`📡 WebSocket status: ${status}`);
+    };
+
+    // Register listeners synchronously before connecting — ensures no events are missed
+    websocketClient.onTick(handleTick);
+    websocketClient.onKline(handleKline);
+    websocketClient.onMarkPrice(handleMarkPrice);
+    websocketClient.onStatusChange(handleStatusChange);
+
+    // Connect and subscribe (fire-and-forget — cleanup handles teardown regardless of outcome)
+    websocketClient.connect()
+      .then(() => {
+        console.log("📡 WebSocket: Connected for VERIFIED user");
+        setConnectionStatus(websocketClient.getStatus());
+        return websocketClient.subscribeToSymbol(symbol);
+      })
+      .catch(error => {
+        console.error("📡 WebSocket: Failed to connect:", error);
+        setConnectionStatus("error");
+      });
+
+    // Cleanup: remove listeners and unsubscribe from the symbol.
+    // DO NOT call disconnect() here — it would tear down the shared socket for all consumers.
+    return () => {
+      console.log("📡 WebSocket: Cleaning up listeners for", symbol);
+      websocketClient.offTick(handleTick);
+      websocketClient.offKline(handleKline);
+      websocketClient.offMarkPrice(handleMarkPrice);
+      websocketClient.offStatusChange(handleStatusChange);
+      websocketClient.unsubscribeFromSymbol(symbol);
+    };
+  }, [symbol, interval, isAuthenticated]);
 
   return {
     tickData,
@@ -528,9 +521,15 @@ export const useChartData = ({
     let data = [...historicalData];
 
     if (klineData) {
-      // Convert kline data to candle format
+      // Convert kline data to candle format.
+      // klineData.startTime is in milliseconds (from Orderly Network WebSocket),
+      // but historical candles use seconds — divide by 1000 to align them.
+      const startTimeSec = klineData.startTime > 1e12
+        ? Math.floor(klineData.startTime / 1000)
+        : klineData.startTime;
+
       const candle: CandleData = {
-        time: klineData.startTime,
+        time: startTimeSec,
         open: klineData.open,
         high: klineData.high,
         low: klineData.low,
@@ -544,6 +543,9 @@ export const useChartData = ({
 
     return data;
   }, [historicalData, klineData]);
+  // Note: markPriceData is intentionally NOT included in mergedData here.
+  // CandlestickChart consumes markPriceData separately via series.update() to avoid
+  // triggering a full setData() redraw on every ~1 second price tick.
 
   // Determine error state (prioritize historical data errors)
   const error = React.useMemo(() => {

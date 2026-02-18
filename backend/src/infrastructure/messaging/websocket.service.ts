@@ -224,13 +224,10 @@ export class WebSocketService implements IWebSocketService {
                 activeConnections: this.clients.size,
             });
 
-            // Initialize market stream service when a VERIFIED user connects
-            if (client.userLevel === "VERIFIED") {
-                this.marketStreamService.setSocketServer(this.io!);
-                this.logger.debug("Market stream service initialized for verified user", {
-                    userId: client.userId,
-                });
-                // Connect to Kodiak websocket for market data
+            // connectToOrderly requires a user accountId — only available for REGISTERED/VERIFIED users.
+            // BASIC users connect via WebSocket to receive any ongoing broadcasts,
+            // but they cannot initiate the Orderly stream themselves.
+            if (client.userLevel === "REGISTERED" || client.userLevel === "VERIFIED") {
                 await this.marketStreamService.connectToOrderly(["PERP_BTC_USDC", "PERP_ETH_USDC"]);
             }
 

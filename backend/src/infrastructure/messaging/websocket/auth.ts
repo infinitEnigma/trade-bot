@@ -64,21 +64,8 @@ export class WebSocketAuthMiddleware {
                 );
             }
 
-            // Require VERIFIED level for WebSocket access
-            if (user.userLevel !== "VERIFIED") {
-                throw new WebSocketError(
-                    "Real-time data requires VERIFIED account",
-                    WebSocketErrorCode.INSUFFICIENT_PERMISSIONS,
-                    403,
-                    {
-                        socketId: socket.id,
-                        userId: decoded.userId,
-                        userLevel: user.userLevel,
-                        requiredLevel: "VERIFIED",
-                        correlationId,
-                    }
-                );
-            }
+            // Allow any authenticated user (BASIC, REGISTERED, VERIFIED) to connect via WebSocket.
+            // Fine-grained data access control is handled per-event in the event handlers.
 
             const client: WebSocketClient = {
                 userId: decoded.userId,

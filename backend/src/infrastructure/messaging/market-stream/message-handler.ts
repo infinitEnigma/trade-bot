@@ -207,6 +207,7 @@ export class MessageHandler {
         amount: parseFloat(klineData.amount?.toString() || "0"),
         startTime: parseInt(klineData.startTime?.toString() || "0"),
         endTime: parseInt(klineData.endTime?.toString() || "0"),
+        interval,
       };
 
       // Get existing klines and add the new one
@@ -225,9 +226,8 @@ export class MessageHandler {
       // Cache the updated klines
       await this.cacheManager.cacheKlines(symbol, interval, updatedKlines);
 
-      // Broadcast the new candle
-      //const broadcastData = { ...klineData, interval };
-      //this.broadcastToKlines(symbol, interval, broadcastData);
+      // Broadcast the new candle to WebSocket clients
+      await this.broadcastToKlines(symbol, interval, newCandle as unknown as Record<string, unknown>);
 
       logger.debug("Kline data processed and broadcasted", {
         symbol,
@@ -269,7 +269,7 @@ export class MessageHandler {
       await this.cacheManager.cacheMarkPrice(symbol, priceData);
 
       // Broadcast to all clients subscribed to mark price for this symbol
-      //this.broadcastToMarkPrice(symbol, priceData);
+      await this.broadcastToMarkPrice(symbol, priceData as unknown as Record<string, unknown>);
 
       logger.debug("Mark price data processed and broadcasted", {
         symbol,
@@ -306,48 +306,56 @@ export class MessageHandler {
   }*/
 
   /**
+   * Safely emit an event to all connected sockets.
+   * Uses direct socket iteration instead of io.emit() to avoid
+   * "socket.client.writeToEngine is not a function" errors that occur
+   * when polling-transport sockets are in a transitional state.
+   */
+  private safeEmit(event: string, data: Record<string, unknown>): number {
+    if (!this.io) return 0;
+
+    let delivered = 0;
+    this.io.sockets.sockets.forEach((socket) => {
+      if (!socket.connected) return;
+      try {
+        socket.emit(event, data);
+        delivered++;
+      } catch {
+        // Socket disconnected mid-emit (polling gap), skip silently
+      }
+    });
+    return delivered;
+  }
+
+  /**
    * Broadcast kline data to clients subscribed to klines for a symbol/interval
    */
-  /*private async broadcastToKlines(symbol: string, interval: string, data: Record<string, unknown>): Promise<void> {
+  private async broadcastToKlines(symbol: string, interval: string, data: Record<string, unknown>): Promise<void> {
     if (!this.io) {
       logger.warn("Cannot broadcast - Socket.IO server not initialized");
       return;
     }
 
-    try {
-      this.io.emit(`kline:${symbol}:${interval}`, data);
-      logger.debug("Kline data broadcasted to clients", {
-        symbol,
-        interval,
-      });
-    } catch (error) {
-      logger.error("Failed to broadcast kline data", error as Error, {
-        symbol,
-        interval,
-      });
+    const delivered = this.safeEmit(`kline:${symbol}:${interval}`, data);
+    if (delivered > 0) {
+      logger.debug("Kline data broadcasted to clients", { symbol, interval, recipients: delivered });
     }
-  }*/
+  }
 
   /**
    * Broadcast mark price data to clients subscribed to mark price for a symbol
    */
-  /*private async broadcastToMarkPrice(symbol: string, data: Record<string, unknown>): Promise<void> {
+  private async broadcastToMarkPrice(symbol: string, data: Record<string, unknown>): Promise<void> {
     if (!this.io) {
       logger.warn("Cannot broadcast - Socket.IO server not initialized");
       return;
     }
 
-    try {
-      this.io.emit(`markprice:${symbol}`, data);
-      logger.debug("Mark price data broadcasted to clients", {
-        symbol,
-      });
-    } catch (error) {
-      logger.error("Failed to broadcast mark price data", error as Error, {
-        symbol,
-      });
+    const delivered = this.safeEmit(`markprice:${symbol}`, data);
+    if (delivered > 0) {
+      logger.debug("Mark price data broadcasted to clients", { symbol, recipients: delivered });
     }
-  }*/
+  }
 
   /**
    * Send a message to a specific client room

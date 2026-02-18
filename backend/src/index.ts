@@ -314,15 +314,14 @@ socketIoRedisClient.on("connect", () => {
     logger.info("Socket.IO Redis adapter connected");
 });
 
-// Initialize adapter
-socketIoRedisClient.connect().then(() => {
-    logger.info("Redis Streams adapter initialized");
-    io.adapter(createAdapter(socketIoRedisClient));
-}).catch((err) => {
-    logger.error("Failed to initialize Redis Streams adapter", err);
-    // Continue without adapter - single server mode
-    logger.warn("Socket.IO running in single server mode");
+// Redis Streams adapter is disabled: incompatible with polling transport on single-server deployments.
+// io.adapter(createAdapter(...)) causes "socket.client.writeToEngine is not a function" errors
+// because the cluster adapter tries to write via WebSocket methods that don't exist on polling sockets.
+// Re-enable only if switching to multi-server with WebSocket transport.
+socketIoRedisClient.connect().catch((err) => {
+    logger.warn("Socket.IO Redis client (unused) failed to connect", { error: (err as Error).message });
 });
+logger.info("Socket.IO running in single server mode (Redis Streams adapter disabled)");
 
 // Add error handler to prevent server crash from Socket.IO protocol errors
 io.engine.on("connection_error", (err: Error & { context?: unknown; code?: string | number }) => {
@@ -454,8 +453,11 @@ export const startServer = (): Promise<typeof httpServer> => {
                 logger
             );
             webSocketService.initialize(io);
-            //marketStreamService.setSocketServer(io);
+            marketStreamService.setSocketServer(io);
             logger.info("📡 WebSocket service initialized");
+
+            // Note: connectToOrderly requires a user accountId (only available for REGISTERED/VERIFIED).
+            // It is triggered in websocket.service.ts when a REGISTERED/VERIFIED user connects.
 
             // 🚫 DEFERRED: Bot status service - only initialize when VERIFIED users with bots connect
             // botStatusService.initializeBackgroundProcesses()
@@ -662,6 +664,15 @@ process.on("uncaughtException", (error) => {
 
 // Handle unhandled promise rejections
 process.on("unhandledRejection", (reason, _promise) => {
+    // Ignore Socket.IO adapter errors that are non-fatal broadcast issues
+    if (reason instanceof TypeError &&
+        (reason.message.includes("writeToEngine is not a function") ||
+            reason.message.includes("Cannot read properties of undefined (reading 'protocol')"))) {
+        logger.warn("Socket.IO adapter error suppressed (non-fatal broadcast issue)", {
+            error: reason.message,
+        });
+        return;
+    }
     logger.error("Unhandled promise rejection - initiating emergency shutdown", reason instanceof Error ? reason : new Error(String(reason)));
     gracefulShutdown("unhandledRejection");
 });

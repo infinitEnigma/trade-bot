@@ -13,8 +13,6 @@ import {
 } from "lightweight-charts";
 import { useChartData } from "../../hooks/useChartData";
 import { useVisibility } from "../../hooks/useVisibility";
-import { useAuth } from "@/features/auth";
-import { UserLevel } from "@/shared/types";
 
 export interface CandleData {
   time: number;
@@ -36,9 +34,6 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   interval,
   height = 400,
 }) => {
-  const { user } = useAuth();
-    
-    if (!user && !UserLevel.VERIFIED) return null;
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -53,8 +48,9 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     data: chartData,
     loading,
     error: chartError,
+    markPriceData,
   } = useChartData({
-    symbol, //: symbol, // Use full symbol name for WebSocket subscriptions
+    symbol,
     interval,
   });
 
@@ -172,7 +168,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     }
   }, [height, chartError]);
 
-  // Update chart data when candleData changes
+  // Update chart data when historical/kline data changes (full redraw)
   useEffect(() => {
     if (
       !isChartReady.current ||
@@ -184,26 +180,26 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       return;
     }
 
-      try {
+    try {
       // Transform data for the chart
       const chartDataForDisplay = chartData.map(item => ({
-        time: item.time as Time, // Cast to Time type for lightweight-charts
+        time: item.time as Time,
         open: item.open,
         high: item.high,
         low: item.low,
         close: item.close,
       }));
 
-      // Set candlestick data
+      // Full redraw — only triggered on historical data changes (not every price tick)
       candlestickSeriesRef.current.setData(chartDataForDisplay);
 
       // Set volume data if available
       const volumeData = chartData
         .filter(item => item.volume !== undefined)
         .map(item => ({
-          time: item.time as Time, // Cast to Time type for lightweight-charts
+          time: item.time as Time,
           value: item.volume || 0,
-          color: item.close >= item.open ? "#10b981" : "#ef4444", // Green for up, red for down
+          color: item.close >= item.open ? "#10b981" : "#ef4444",
         }));
 
       if (volumeData.length > 0) {
@@ -218,6 +214,35 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       console.error("Failed to update chart data:", dataError);
     }
   }, [chartData, isChartReady, isVisible]);
+
+  // Live candle update from WebSocket mark price — uses series.update() (single candle,
+  // no full redraw) so the current candle's close/high/low tracks price in real-time.
+  useEffect(() => {
+    if (
+      !isChartReady.current ||
+      !candlestickSeriesRef.current ||
+      !markPriceData ||
+      !chartData ||
+      chartData.length === 0
+    ) {
+      return;
+    }
+
+    const price = markPriceData.price;
+    const lastCandle = chartData[chartData.length - 1];
+
+    try {
+      candlestickSeriesRef.current.update({
+        time: lastCandle.time as Time,
+        open: lastCandle.open,
+        high: Math.max(lastCandle.high, price),
+        low: Math.min(lastCandle.low, price),
+        close: price,
+      });
+    } catch {
+      // Silently ignore update errors (e.g. chart not yet fully ready)
+    }
+  }, [markPriceData]);
 
   return (
     <div className="w-full bg-surface rounded-lg shadow-sm border border-white/10">
