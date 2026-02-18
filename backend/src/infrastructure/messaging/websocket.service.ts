@@ -180,7 +180,7 @@ export class WebSocketService implements IWebSocketService {
                 next();
             } catch (error) {
                 if (error instanceof WebSocketError) {
-                    this.logger.error("WebSocket authentication failed", {
+                    this.logger.error("WebSocket authentication failed - service", {
                         socketId: socket.id,
                         error: error.message,
                         code: error.code,

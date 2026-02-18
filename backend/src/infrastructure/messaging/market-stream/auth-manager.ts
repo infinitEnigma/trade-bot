@@ -46,7 +46,7 @@ export class AuthManager {
       // Sign the message using Ed25519
       const privateKey = bs58.decode(secretKey);
       const messageBytes = new TextEncoder().encode(message);
-      const signature = await ed25519.sign(messageBytes, privateKey);
+      const signature = await ed25519.signAsync(messageBytes, privateKey);
       const signatureB64 = Buffer.from(signature).toString("base64url");
 
       // Send authentication message
