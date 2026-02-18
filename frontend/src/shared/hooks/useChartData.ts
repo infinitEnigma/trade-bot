@@ -190,9 +190,13 @@ export const useChartHistorical = ({
       const fromTimestamp = Math.floor(Date.now() / 1000) - 24 * 60 * 60; // 24 hours ago
       const toTimestamp = Math.floor(Date.now() / 1000);
 
-      // Map interval to TradingView resolution format
+      // Map interval to TradingView resolution format.
+      // Accepts both human-readable labels ("1m", "4h", "1d") AND native TradingView
+      // resolution strings ("1", "5", "60", "240", "D") so callers don't need to
+      // pre-convert before passing the value.
       const getResolution = (interval: string): string => {
         switch (interval) {
+          // Human-readable labels
           case "1m": return "1";
           case "5m": return "5";
           case "15m": return "15";
@@ -203,7 +207,23 @@ export const useChartHistorical = ({
           case "1d": return "1D";
           case "1w": return "1W";
           case "1M": return "1M";
-          default: return "60";
+          // Native TradingView resolution strings — pass through as-is
+          case "1":
+          case "3":
+          case "5":
+          case "15":
+          case "30":
+          case "60":
+          case "120":
+          case "240":
+          case "360":
+          case "720":
+          case "D":
+          case "W":
+          case "M":
+            return interval;
+          default:
+            return "60";
         }
       };
 

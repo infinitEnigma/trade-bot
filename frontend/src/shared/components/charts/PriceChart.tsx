@@ -23,15 +23,15 @@ interface PriceChartProps {
  * Chart point data structure for Recharts
  */
 interface ChartPoint {
-  time: string;
-  timestamp: number;
+  time: string;       // HH:MM label for tooltip / display
+  timestamp: number;  // Unix seconds — used as the X-axis dataKey so the line moves smoothly
   open: number;
   high: number;
   low: number;
   close: number;
   volume: number;
   price: number;
-  ma20?: number; // Optional moving average
+  ma20?: number;
 }
 
 /**
@@ -46,32 +46,22 @@ interface CustomTooltipProps {
     name: string;
     stroke: string;
   }>;
-  label?: string;
+  label?: string | number;
 }
 
-// Custom tooltip component for price charts - moved outside to avoid recreation
-const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
+// Custom tooltip component — lives outside PriceChart to avoid recreation on every render
+const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
       <div className="glass-card p-3 border border-white/10">
-        <p className="text-sm font-medium">{`Time: ${label}`}</p>
-        <p className="text-sm text-success">{`Open: $${data.open?.toFixed(
-          2
-        )}`}</p>
-        <p className="text-sm text-primary">{`High: $${data.high?.toFixed(
-          2
-        )}`}</p>
-        <p className="text-sm text-danger">{`Low: $${data.low?.toFixed(
-          2
-        )}`}</p>
-        <p className="text-sm text-text">{`Close: $${data.close?.toFixed(
-          2
-        )}`}</p>
-        {data.ma20 && (
-          <p className="text-sm text-warning">{`MA(20): $${data.ma20?.toFixed(
-            2
-          )}`}</p>
+        <p className="text-sm font-medium">{`Time: ${data.time}`}</p>
+        <p className="text-sm text-success">{`Open: $${data.open?.toFixed(2)}`}</p>
+        <p className="text-sm text-primary">{`High: $${data.high?.toFixed(2)}`}</p>
+        <p className="text-sm text-danger">{`Low: $${data.low?.toFixed(2)}`}</p>
+        <p className="text-sm text-text">{`Close: $${data.close?.toFixed(2)}`}</p>
+        {data.ma20 !== undefined && (
+          <p className="text-sm text-warning">{`MA(20): $${data.ma20?.toFixed(2)}`}</p>
         )}
         <p className="text-sm text-info">{`Volume: ${data.volume?.toLocaleString()}`}</p>
       </div>
@@ -79,6 +69,36 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   }
   return null;
 };
+
+// ------------------------------------------------------------------
+// Timeframe definitions
+// value = the resolution string passed to the API (TradingView format)
+// ------------------------------------------------------------------
+const TIMEFRAMES = [
+  { label: "1m",  value: "1"   },
+  { label: "5m",  value: "5"   },
+  { label: "15m", value: "15"  },
+  { label: "1H",  value: "60"  },
+  { label: "4H",  value: "240" },
+  { label: "1D",  value: "D"   },
+] as const;
+
+// Supported symbols
+const SYMBOLS = [
+  "PERP_BTC_USDC",
+  "PERP_ETH_USDC",
+  "PERP_SOL_USDC",
+  "PERP_AVAX_USDC",
+  "PERP_NEAR_USDC",
+];
+
+/** Format a Unix-seconds timestamp into HH:MM for axis ticks */
+const fmtTime = (ts: number): string =>
+  new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+/** Format a price value to always show exactly 2 decimal places */
+const fmtPrice = (value: number | string): string =>
+  `$${Number(value).toFixed(2)}`;
 
 const PriceChart: React.FC<PriceChartProps> = React.memo(
   ({ symbol = "PERP_BTC_USDC", resolution = "1" }) => {
@@ -88,273 +108,229 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
     // Cleanup on unmount to prevent memory leaks
     useEffect(() => {
       return () => {
-        // Clear any potential references
         if (window.gc && typeof window.gc === "function") {
           window.gc();
         }
       };
     }, []);
 
-    // Timeframes for selector
-    const timeframes = [
-      { label: "1m", value: "1" },
-      { label: "5m", value: "5" },
-      { label: "15m", value: "15" },
-      { label: "1H", value: "60" },
-      { label: "4H", value: "240" },
-      { label: "1D", value: "D" },
-    ];
-
-    // Popular symbols
-    const symbols = [
-      "PERP_BTC_USDC",
-      "PERP_ETH_USDC",
-      "PERP_SOL_USDC",
-      "PERP_AVAX_USDC",
-      "PERP_NEAR_USDC",
-    ];
-
-    // Fetch historical chart data using optimized hook with smart polling
+    // ── Historical data ──────────────────────────────────────────────────────
     const {
       data: historyResult,
       isLoading,
       error,
     } = useChartHistorical({
       symbol: selectedSymbol,
+      // Pass the raw TradingView resolution directly — useChartHistorical already
+      // uses getResolution() internally for values like "1m", but here we supply the
+      // native format ("1", "5", "60", "D") that the hook's switch falls through to,
+      // which defaults to "60".  We pass the value straight through so the hook picks
+      // the right resolution without an extra remapping layer.
       interval: selectedResolution,
     });
 
-    // Fetch real-time current price with user-level awareness
+    // ── Current price (polled) ───────────────────────────────────────────────
     const {
       data: currentPriceData,
       error: priceError,
     } = useCurrentPrice(selectedSymbol);
 
-    // WebSocket real-time mark price updates (faster than polling)
+    // ── WebSocket real-time mark price ───────────────────────────────────────
     const { markPriceData } = useWebSocketPriceUpdates({
       symbol: selectedSymbol,
       interval: selectedResolution,
     });
 
-    // Extract candles from the response object - memoized to prevent unnecessary recalculations
-    const historyData = useMemo(() => {
-      return historyResult?.candles || [];
-    }, [historyResult]);
+    // Extract candle array from the response
+    const historyData = useMemo(
+      () => historyResult?.candles || [],
+      [historyResult],
+    );
 
-    // Transform TradingView data to Recharts format - memoized for performance
-    const chartData = useMemo(() => {
-      if (!historyData || historyData.length === 0) {
-        return [];
-      }
+    // Transform historical candles to ChartPoint format with MA(20)
+    const chartData = useMemo<ChartPoint[]>(() => {
+      if (!historyData || historyData.length === 0) return [];
 
-      // historyData is already transformed candle data from useChartHistorical
-      const chartPoints: ChartPoint[] = [];
       const prices: number[] = [];
-
-      // Process the candle data directly
-      historyData.forEach(candle => {
-        const time = new Date(candle.time * 1000);
+      const points: ChartPoint[] = historyData.map(candle => {
         const price = candle.close;
-
-        const point: ChartPoint = {
-          time: time.toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          timestamp: candle.time,
-          open: candle.open,
-          high: candle.high,
-          low: candle.low,
-          close: candle.close,
-          volume: candle.volume || 0,
-          price, // For line chart
-        };
-
-        chartPoints.push(point);
         prices.push(price);
+        return {
+          time:      fmtTime(candle.time),
+          timestamp: candle.time,
+          open:   candle.open,
+          high:   candle.high,
+          low:    candle.low,
+          close:  candle.close,
+          volume: candle.volume || 0,
+          price,
+        };
       });
 
-      // Calculate MA(20) - ensure we have enough data and calculate for ALL points
-      if (prices.length >= 20) {
-        for (let i = 0; i < chartPoints.length; i++) {
-          if (i >= 19) {
-            // Calculate MA(20) for points that have enough historical data
-            const sum = prices.slice(i - 19, i + 1).reduce((a, b) => a + b, 0);
-            const avg = sum / 20;
-            chartPoints[i].ma20 = avg;
-          } else {
-            // For early points, show MA if we have at least some data
-            const availableData = Math.min(i + 1, 20);
-            const startIndex = Math.max(0, i - 19);
-            const sum = prices.slice(startIndex, i + 1).reduce((a, b) => a + b, 0);
-            const avg = sum / availableData;
-            chartPoints[i].ma20 = avg;
-          }
-        }
-      } else if (prices.length >= 5) {
-        // Calculate MA with available data if we have at least 5 points
-        for (let i = 0; i < chartPoints.length; i++) {
-          const availableData = Math.min(i + 1, prices.length);
-          const startIndex = Math.max(0, i - 4); // Simple MA(5) for fewer data points
-          const sum = prices.slice(startIndex, i + 1).reduce((a, b) => a + b, 0);
-          const avg = sum / availableData;
-          chartPoints[i].ma20 = avg;
-        }
+      // Rolling MA(20)
+      for (let i = 0; i < points.length; i++) {
+        const start = Math.max(0, i - 19);
+        const slice = prices.slice(start, i + 1);
+        points[i].ma20 = slice.reduce((a, b) => a + b, 0) / slice.length;
       }
 
-      // Limit data points to prevent memory accumulation
-      const maxDataPoints = 200; // Keep last 200 data points
-      return chartPoints.slice(-maxDataPoints);
+      return points.slice(-200);
     }, [historyData]);
 
-    // ─── Live chart data: seeds from historical, then grows with each price tick ───
+    // ── Live chart data: seeded from history, then extended by price ticks ───
     const [liveChartData, setLiveChartData] = useState<ChartPoint[]>([]);
-    // Track the last timestamp we added so we don't double-insert the same second
     const lastLiveTimestampRef = useRef<number>(0);
-    // Separate ref for WebSocket bucket tracking (independent from HTTP polling ref)
-    const lastWsTimestampRef = useRef<number>(0);
+    const lastWsTimestampRef   = useRef<number>(0);
 
-    // Seed (or re-seed on symbol/resolution change) from historical data
+    // Re-seed whenever symbol / resolution / historical data changes
     useEffect(() => {
       if (chartData.length > 0) {
         setLiveChartData(chartData);
         lastLiveTimestampRef.current = chartData[chartData.length - 1].timestamp;
+        lastWsTimestampRef.current   = chartData[chartData.length - 1].timestamp;
       }
     }, [chartData]);
 
-    // Append a new point every time the polled price updates
+    // HTTP-polled price update ─ updates the current minute's bucket
     useEffect(() => {
       if (!currentPriceData?.price) return;
 
-      const nowSec = Math.floor(Date.now() / 1000);
-      const price = currentPriceData.price;
-      const timeLabel = new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
+      const nowSec   = Math.floor(Date.now() / 1000);
+      const price    = currentPriceData.price;
+      const timeLabel = fmtTime(nowSec);
 
       setLiveChartData(prev => {
-        if (prev.length === 0) return prev; // Wait for historical seed
+        if (prev.length === 0) return prev;
 
         const last = prev[prev.length - 1];
 
-        // Same minute-bucket: update the existing point in place (OHLC update)
+        // Same minute-bucket: update last point in place
         if (last.time === timeLabel) {
-          const updated: ChartPoint = {
-            ...last,
-            high: Math.max(last.high, price),
-            low: Math.min(last.low, price),
-            close: price,
-            price,
-          };
-          return [...prev.slice(0, -1), updated];
+          return [
+            ...prev.slice(0, -1),
+            {
+              ...last,
+              high:  Math.max(last.high, price),
+              low:   Math.min(last.low,  price),
+              close: price,
+              price,
+            },
+          ];
         }
 
-        // New minute: only add if timestamp is strictly newer to avoid duplicates
+        // New minute — guard against duplicates
         if (nowSec <= lastLiveTimestampRef.current) return prev;
         lastLiveTimestampRef.current = nowSec;
 
-        const newPoint: ChartPoint = {
-          time: timeLabel,
-          timestamp: nowSec,
-          open: price,
-          high: price,
-          low: price,
-          close: price,
-          volume: 0,
-          price,
-        };
-
-        // Keep the MA(20) rolling: compute from last 20 close prices
         const window = prev.slice(-19).map(p => p.price);
         window.push(price);
-        newPoint.ma20 = window.reduce((a, b) => a + b, 0) / window.length;
 
-        // Cap at 200 points to match historical limit
+        const newPoint: ChartPoint = {
+          time:      timeLabel,
+          timestamp: nowSec,
+          open:   price,
+          high:   price,
+          low:    price,
+          close:  price,
+          volume: 0,
+          price,
+          ma20: window.reduce((a, b) => a + b, 0) / window.length,
+        };
+
         return [...prev, newPoint].slice(-200);
       });
     }, [currentPriceData]);
 
-    // Update chart line from WebSocket mark price in real-time.
-    // Uses a 5-second bucket: within the bucket the last point updates in-place (OHLC);
-    // every 5 seconds a new point is appended so the line visibly extends to the right.
+    // WebSocket mark-price update ─ uses a 5-second sub-bucket so the line
+    // visibly extends to the right every 5 s while tracking price in real time.
     const WS_BUCKET_SECONDS = 5;
     useEffect(() => {
       if (!markPriceData?.price || markPriceData.symbol !== selectedSymbol) return;
 
-      const price = markPriceData.price;
+      const price  = markPriceData.price;
       const nowSec = Math.floor(Date.now() / 1000);
-      const timeLabel = new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
 
       setLiveChartData(prev => {
-        if (prev.length === 0) return prev; // Wait for historical seed
+        if (prev.length === 0) return prev;
 
-        const last = prev[prev.length - 1];
-        const secondsSinceLast = nowSec - lastWsTimestampRef.current;
+        const last              = prev[prev.length - 1];
+        const secondsSinceLast  = nowSec - lastWsTimestampRef.current;
 
         if (secondsSinceLast < WS_BUCKET_SECONDS) {
-          // Within the 5-second bucket: update last point's OHLC in-place
-          return [...prev.slice(0, -1), {
-            ...last,
-            high: Math.max(last.high, price),
-            low: Math.min(last.low, price),
-            close: price,
-            price,
-          }];
+          // Within bucket: update last point in-place — line moves on Y axis
+          return [
+            ...prev.slice(0, -1),
+            {
+              ...last,
+              high:  Math.max(last.high, price),
+              low:   Math.min(last.low,  price),
+              close: price,
+              price,
+              // Keep the same timestamp so the X position is stable within bucket
+              timestamp: last.timestamp,
+            },
+          ];
         }
 
-        // New 5-second bucket: append a new data point so the line extends
-        lastWsTimestampRef.current = nowSec;
-        // Keep HTTP polling ref in sync to avoid duplicate points
+        // New 5-second bucket: append a point so the line extends on X axis
+        lastWsTimestampRef.current  = nowSec;
         lastLiveTimestampRef.current = nowSec;
 
         const priceWindow = prev.slice(-19).map(p => p.price);
         priceWindow.push(price);
 
-        return [...prev, {
-          time: timeLabel,
-          timestamp: nowSec,
-          open: last.close || price,
-          high: price,
-          low: price,
-          close: price,
-          volume: 0,
-          price,
-          ma20: priceWindow.reduce((a, b) => a + b, 0) / priceWindow.length,
-        }].slice(-200);
+        return [
+          ...prev,
+          {
+            time:      fmtTime(nowSec),
+            timestamp: nowSec,
+            open:   last.close || price,
+            high:   price,
+            low:    price,
+            close:  price,
+            volume: 0,
+            price,
+            ma20: priceWindow.reduce((a, b) => a + b, 0) / priceWindow.length,
+          },
+        ].slice(-200);
       });
     }, [markPriceData, selectedSymbol]);
-    // ─────────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
 
-    // Use real-time price data for display, fallback to chart data
-    const currentPrice = currentPriceData?.price ||
+    // Current price for the header display
+    const currentPrice =
+      currentPriceData?.price ??
       (liveChartData.length > 0 ? liveChartData[liveChartData.length - 1].price : null);
 
-    // Calculate price change based on real-time data or chart data
-    const priceChange = currentPriceData?.change24h ?
-      parseFloat(currentPriceData.change24h.toString()) :
-      (chartData.length > 1
+    const priceChange =
+      currentPriceData?.change24h != null
+        ? parseFloat(String(currentPriceData.change24h))
+        : chartData.length > 1
         ? chartData[chartData.length - 1].price - chartData[chartData.length - 2].price
-        : 0);
+        : 0;
 
-    const priceChangePercent = currentPriceData?.change24h && currentPrice !== null ?
-      ((priceChange / (currentPrice - priceChange)) * 100) :
-      (chartData.length > 1 && currentPrice !== null
+    const priceChangePercent =
+      currentPriceData?.change24h != null && currentPrice !== null
+        ? (priceChange / (currentPrice - priceChange)) * 100
+        : chartData.length > 1 && currentPrice !== null
         ? (priceChange / chartData[chartData.length - 2].price) * 100
-        : 0);
+        : 0;
+
+    // ── X-axis tick formatter: show HH:MM from raw timestamp ────────────────
+    const xTickFormatter = (ts: number): string => fmtTime(ts);
+
+    // Reduce X-axis tick density based on how many points we have
+    const xTickCount = Math.min(8, Math.max(2, Math.floor(liveChartData.length / 10)));
 
     return (
       <Card className="mb-8">
         <SectionHeader
           title={
             <div className="flex items-center gap-4">
-              <span>{`Price Chart - ${selectedSymbol
+              <span>{`Price Chart — ${selectedSymbol
                 .replace("PERP_", "")
                 .replace("_USDC", "")}`}</span>
-              {currentPrice ? (
+              {currentPrice != null ? (
                 <div className="flex items-center gap-2">
                   <span className="text-2xl font-bold text-text-primary">
                     ${currentPrice.toFixed(2)}
@@ -366,41 +342,45 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                       }`}
                     >
                       {priceChange >= 0 ? "+" : ""}
-                      {priceChange.toFixed(2)} (
-                      {priceChangePercent >= 0 ? "+" : ""}
+                      {priceChange.toFixed(2)} ({priceChangePercent >= 0 ? "+" : ""}
                       {priceChangePercent.toFixed(2)}%)
                     </span>
                   )}
-                  {/* Data source indicator */}
                   {currentPriceData?.source && (
                     <span className="text-xs px-2 py-1 rounded bg-surface text-textMuted">
-                      {currentPriceData.source === 'public' ? 'Public' :
-                       currentPriceData.source === 'authenticated' ? 'Live' :
-                       currentPriceData.source === 'public_fallback' ? 'Fallback' : 'Cached'}
+                      {currentPriceData.source === "public"
+                        ? "Public"
+                        : currentPriceData.source === "authenticated"
+                        ? "Live"
+                        : currentPriceData.source === "public_fallback"
+                        ? "Fallback"
+                        : "Cached"}
                     </span>
                   )}
                 </div>
               ) : priceError ? (
-                <div className="text-sm text-danger">
-                  Price data unavailable
-                </div>
+                <div className="text-sm text-danger">Price data unavailable</div>
               ) : (
-                <div className="text-sm text-textMuted">
-                  Loading price...
-                </div>
+                <div className="text-sm text-textMuted">Loading price…</div>
               )}
             </div>
           }
-          subtitle="Real-time price chart with volume and MA(20)"
+          subtitle="Real-time price chart with MA(20)"
           actions={
             <div className="flex items-center gap-3">
               {/* Symbol selector */}
               <select
                 value={selectedSymbol}
-                onChange={e => setSelectedSymbol(e.target.value)}
+                onChange={e => {
+                  setSelectedSymbol(e.target.value);
+                  // Reset live data so the seeding effect fires cleanly
+                  setLiveChartData([]);
+                  lastLiveTimestampRef.current = 0;
+                  lastWsTimestampRef.current   = 0;
+                }}
                 className="px-3 py-1 text-sm bg-surface border border-white/10 rounded-lg"
               >
-                {symbols.map(sym => (
+                {SYMBOLS.map(sym => (
                   <option key={sym} value={sym}>
                     {sym.replace("PERP_", "").replace("_USDC", "")}
                   </option>
@@ -409,10 +389,15 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
 
               {/* Timeframe selector */}
               <div className="flex gap-1">
-                {timeframes.map(tf => (
+                {TIMEFRAMES.map(tf => (
                   <button
                     key={tf.value}
-                    onClick={() => setSelectedResolution(tf.value)}
+                    onClick={() => {
+                      setSelectedResolution(tf.value);
+                      setLiveChartData([]);
+                      lastLiveTimestampRef.current = 0;
+                      lastWsTimestampRef.current   = 0;
+                    }}
                     className={`px-2 py-1 text-xs rounded ${
                       selectedResolution === tf.value
                         ? "bg-primary text-white"
@@ -430,7 +415,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         <div className="relative">
           {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10 rounded-lg">
-              <div className="text-textMuted">Loading chart data...</div>
+              <div className="text-textMuted">Loading chart data…</div>
             </div>
           )}
 
@@ -448,19 +433,44 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                     strokeDasharray="3 3"
                     stroke="var(--border-light)"
                   />
+
+                  {/*
+                   * X-axis: keyed on numeric `timestamp` (Unix seconds).
+                   * This lets Recharts plot each 5-second WS bucket at its own
+                   * X position so the line visibly moves rightward with every
+                   * price update, rather than waiting for the minute to change.
+                   */}
                   <XAxis
-                    dataKey="time"
+                    dataKey="timestamp"
+                    type="number"
+                    scale="time"
+                    domain={["dataMin", "dataMax"]}
+                    tickCount={xTickCount}
+                    tickFormatter={xTickFormatter}
                     stroke="var(--text-secondary)"
                     fontSize={12}
                     tick={{ fill: "var(--text-secondary)" }}
                   />
+
+                  {/*
+                   * Y-axis: always shows exactly 2 decimal places with a $ prefix.
+                   * A small 10-unit pad is added to domain so the line has breathing
+                   * room above/below the visible extremes.
+                   */}
                   <YAxis
                     stroke="var(--text-secondary)"
                     fontSize={12}
                     tick={{ fill: "var(--text-secondary)" }}
-                    domain={["dataMin - 0.1", "dataMax + 0.1"]}
+                    domain={[
+                      (dataMin: number) => Math.floor((dataMin - 10) * 100) / 100,
+                      (dataMax: number) => Math.ceil((dataMax + 10) * 100) / 100,
+                    ]}
+                    tickFormatter={fmtPrice}
+                    width={80}
                   />
+
                   <Tooltip content={<CustomTooltip />} />
+
                   <Line
                     type="monotone"
                     dataKey="price"
@@ -469,6 +479,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                     dot={false}
                     name="Price"
                     connectNulls={false}
+                    isAnimationActive={false}
                   />
                   <Line
                     type="monotone"
@@ -479,6 +490,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                     dot={false}
                     name="MA(20)"
                     connectNulls={false}
+                    isAnimationActive={false}
                   />
                 </LineChart>
               </ResponsiveContainer>
