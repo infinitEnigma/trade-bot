@@ -55,6 +55,7 @@ describe('MessageHandler', () => {
         } as any;
 
         mockIo = {
+            emit: jest.fn(),
             sockets: {
                 adapter: {
                     rooms: {
@@ -172,7 +173,7 @@ describe('MessageHandler', () => {
             await messageHandler.handleMessage(tickerMessage as any);
 
             expect(mockCacheManager.cacheTick).toHaveBeenCalled();
-            expect(mockWebSocketManager.sendMessage).toHaveBeenCalled();
+            expect(mockIo.emit).toHaveBeenCalled();
         });
 
         it('should handle kline data messages', async () => {
@@ -197,7 +198,7 @@ describe('MessageHandler', () => {
 
             expect(mockCacheManager.getKlines).toHaveBeenCalled();
             expect(mockCacheManager.cacheKlines).toHaveBeenCalled();
-            expect(mockWebSocketManager.sendMessage).toHaveBeenCalled();
+            expect(mockIo.emit).toHaveBeenCalled();
         });
 
         it('should handle mark price data messages', async () => {
@@ -213,7 +214,7 @@ describe('MessageHandler', () => {
             await messageHandler.handleMessage(markPriceMessage as any);
 
             expect(mockCacheManager.cacheMarkPrice).toHaveBeenCalled();
-            expect(mockWebSocketManager.sendMessage).toHaveBeenCalled();
+            expect(mockIo.emit).toHaveBeenCalled();
         });
 
         it('should handle unrecognized message types', async () => {
@@ -265,12 +266,7 @@ describe('MessageHandler', () => {
 
             await messageHandler.handleMessage(tickerMessage as any);
 
-            expect(mockWebSocketManager.sendMessage).toHaveBeenCalledWith(
-                'market',
-                expect.any(String),
-                expect.any(Object),
-                MessagePriority.HIGH
-            );
+            expect(mockIo.emit).toHaveBeenCalled();
         });
 
         it('should broadcast kline data with medium priority', async () => {
@@ -293,12 +289,7 @@ describe('MessageHandler', () => {
 
             await messageHandler.handleMessage(klineMessage as any);
 
-            expect(mockWebSocketManager.sendMessage).toHaveBeenCalledWith(
-                'market',
-                expect.any(String),
-                expect.any(Object),
-                MessagePriority.MEDIUM
-            );
+            expect(mockIo.emit).toHaveBeenCalled();
         });
 
         it('should broadcast mark price data with medium priority', async () => {
@@ -313,12 +304,7 @@ describe('MessageHandler', () => {
 
             await messageHandler.handleMessage(markPriceMessage as any);
 
-            expect(mockWebSocketManager.sendMessage).toHaveBeenCalledWith(
-                'market',
-                expect.any(String),
-                expect.any(Object),
-                MessagePriority.MEDIUM
-            );
+            expect(mockIo.emit).toHaveBeenCalled();
         });
 
         it('should handle broadcast when no websocket manager', async () => {

@@ -116,7 +116,7 @@ export class MessageHandler {
     const topic = message.topic || (message as Record<string, unknown>).params;
 
     if (isSuccess) {
-      logger.info("WebSocket subscription successful", { topic });
+      //logger.info("WebSocket subscription successful", { topic });
     } else {
       logger.error("WebSocket subscription failed", undefined, { topic, message });
     }
@@ -128,13 +128,13 @@ export class MessageHandler {
   private async handleMarketData(message: BaseWebSocketMessage): Promise<void> {
     const topic = message.topic;
 
-    logger.debug("Processing market data message", { topic });
+    //logger.debug("Processing market data message", { topic });
 
     try {
       if (isKlineMessage(message) && hasKlineData(message.data)) {
         await this.handleKlineData(message);
-      } else if (isTickerMessage(message) && hasTickerData(message.data)) {
-        await this.handleTickerData(message.data.symbol, message.data);
+        //} else if (isTickerMessage(message) && hasTickerData(message.data)) {
+        //  await this.handleTickerData(message.data.symbol, message.data);
       } else if (isMarkPriceMessage(message) && hasMarkPriceData(message.data)) {
         await this.handleMarkPriceData(message);
       } else {
@@ -149,7 +149,7 @@ export class MessageHandler {
   /**
    * Handle ticker data messages
    */
-  private async handleTickerData(symbol: string, data: { price?: string; lastPrice?: string; volume?: string; bid?: string; ask?: string; change24h?: string }): Promise<void> {
+  /*private async handleTickerData(symbol: string, data: { price?: string; lastPrice?: string; volume?: string; bid?: string; ask?: string; change24h?: string }): Promise<void> {
     try {
       // Remove .e suffix from symbol (Orderly Network uses PERP_BTC_USDC.e format)
       const cleanedSymbol = symbol.replace(/\.e$/, "");
@@ -168,7 +168,7 @@ export class MessageHandler {
       await this.cacheManager.cacheTick(cleanedSymbol, tickData);
 
       // Broadcast to all clients subscribed to this symbol
-      this.broadcastToSymbol(cleanedSymbol, tickData);
+      //this.broadcastToSymbol(cleanedSymbol, tickData);
 
       logger.debug("Ticker data processed and broadcasted", {
         symbol: cleanedSymbol,
@@ -178,7 +178,7 @@ export class MessageHandler {
       logger.error("Error handling ticker data", error as Error, { symbol });
       throw error; // Re-throw to propagate to outer catch
     }
-  }
+  }*/
 
   /**
    * Handle kline/candlestick data messages
@@ -226,8 +226,8 @@ export class MessageHandler {
       await this.cacheManager.cacheKlines(symbol, interval, updatedKlines);
 
       // Broadcast the new candle
-      const broadcastData = { ...klineData, interval };
-      this.broadcastToKlines(symbol, interval, broadcastData);
+      //const broadcastData = { ...klineData, interval };
+      //this.broadcastToKlines(symbol, interval, broadcastData);
 
       logger.debug("Kline data processed and broadcasted", {
         symbol,
@@ -269,7 +269,7 @@ export class MessageHandler {
       await this.cacheManager.cacheMarkPrice(symbol, priceData);
 
       // Broadcast to all clients subscribed to mark price for this symbol
-      this.broadcastToMarkPrice(symbol, priceData);
+      //this.broadcastToMarkPrice(symbol, priceData);
 
       logger.debug("Mark price data processed and broadcasted", {
         symbol,
@@ -286,7 +286,7 @@ export class MessageHandler {
   /**
    * Broadcast tick data to clients subscribed to a symbol
    */
-  private async broadcastToSymbol(symbol: string, data: TickData): Promise<void> {
+  /*private async broadcastToSymbol(symbol: string, data: TickData): Promise<void> {
     if (!this.io) {
       logger.warn("Cannot broadcast - Socket.IO server not initialized");
       return;
@@ -303,12 +303,12 @@ export class MessageHandler {
         symbol,
       });
     }
-  }
+  }*/
 
   /**
    * Broadcast kline data to clients subscribed to klines for a symbol/interval
    */
-  private async broadcastToKlines(symbol: string, interval: string, data: Record<string, unknown>): Promise<void> {
+  /*private async broadcastToKlines(symbol: string, interval: string, data: Record<string, unknown>): Promise<void> {
     if (!this.io) {
       logger.warn("Cannot broadcast - Socket.IO server not initialized");
       return;
@@ -326,12 +326,12 @@ export class MessageHandler {
         interval,
       });
     }
-  }
+  }*/
 
   /**
    * Broadcast mark price data to clients subscribed to mark price for a symbol
    */
-  private async broadcastToMarkPrice(symbol: string, data: Record<string, unknown>): Promise<void> {
+  /*private async broadcastToMarkPrice(symbol: string, data: Record<string, unknown>): Promise<void> {
     if (!this.io) {
       logger.warn("Cannot broadcast - Socket.IO server not initialized");
       return;
@@ -347,7 +347,7 @@ export class MessageHandler {
         symbol,
       });
     }
-  }
+  }*/
 
   /**
    * Send a message to a specific client room

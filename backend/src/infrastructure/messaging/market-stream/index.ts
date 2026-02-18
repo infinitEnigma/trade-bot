@@ -21,6 +21,7 @@ export class MarketStreamService {
   private cacheManager: CacheManager;
   private messageHandler: MessageHandler;
   private subscriptionManager: SubscriptionManager;
+  //private setSocketServer(io: Server): void;
   private io: Server | null = null;
 
   constructor(
@@ -60,20 +61,21 @@ export class MarketStreamService {
    * Public endpoints do NOT require authentication
    */
   async connectToOrderly(symbols: string[]): Promise<void> {
-    logger.info("connectToOrderly called with symbols", { symbols });
+    //logger.info("connectToOrderly called with symbols", { symbols });
 
     try {
       // Get account ID for WebSocket URL
       const accountId = await this.authManager.getAccountId();
+
       if (!accountId) {
         logger.error("No verified account found for WebSocket connection");
         return;
       }
 
-      logger.debug("Attempting to create WebSocket connection", {
+      /*logger.debug("Attempting to create WebSocket connection", {
         accountId,
         symbols
-      });
+      });*/
 
       const ws = await this.wsManager.createConnection(accountId);
 
@@ -87,10 +89,10 @@ export class MarketStreamService {
         ws.on("message", (data: WebSocket.Data) => {
           try {
             const message = JSON.parse(data.toString());
-            logger.debug("Received WebSocket message", {
+            /*logger.debug("Received WebSocket message", {
               topic: message.topic,
               event: message.event
-            });
+            });*/
             this.messageHandler.handleMessage(message);
           } catch (error) {
             logger.error("Failed to parse WebSocket message", error as Error, {
@@ -98,7 +100,9 @@ export class MarketStreamService {
             });
           }
         });
-      }
+      } /*else {
+        console.log("8. Message listener already exists");
+      }*/
 
       // Queue subscriptions for these symbols (both kline and mark price)
       symbols.forEach(symbol => {
@@ -106,18 +110,20 @@ export class MarketStreamService {
         const markPriceTopic = `${symbol}@markprice`;
 
         // Check if topic is already pending to avoid duplicate subscriptions
-        if (!this.subscriptionManager.getPendingSubscriptions().includes(klineTopic)) {
+        const pendingTopics = this.subscriptionManager.getPendingSubscriptions();
+
+        if (!pendingTopics.includes(klineTopic)) {
           this.subscriptionManager.addPendingSubscription(klineTopic);
         }
-        if (!this.subscriptionManager.getPendingSubscriptions().includes(markPriceTopic)) {
+        if (!pendingTopics.includes(markPriceTopic)) {
           this.subscriptionManager.addPendingSubscription(markPriceTopic);
         }
 
-        logger.debug("Added topics to pending subscriptions", {
+        /*logger.debug("Added topics to pending subscriptions", {
           symbol,
           klineTopic,
           markPriceTopic
-        });
+        });*/
       });
 
       // Send pending subscriptions
@@ -141,10 +147,10 @@ export class MarketStreamService {
     }
 
     const topics = this.subscriptionManager.getPendingSubscriptions();
-    logger.info("Sending pending subscriptions", {
+    /*logger.info("Sending pending subscriptions", {
       count: topics.length,
       topics,
-    });
+    });*/
 
     topics.forEach(topic => {
       this.subscribeToTopic(ws, topic);
@@ -172,7 +178,7 @@ export class MarketStreamService {
       });
 
       ws.send(message);
-      logger.info("Subscription message sent to Orderly", { topic });
+      //logger.info("Subscription message sent to Orderly", { topic });
     } catch (error) {
       logger.error("Failed to send subscription", error as Error, { topic });
     }
@@ -235,7 +241,7 @@ export class MarketStreamService {
 
   /**
    * Get latest mark price data from cache
-   * Always connect to WebSocket to ensure we receive updates
+   * WebSocket connection is managed at startup
    */
   async getLatestMarkPrice(symbol: string): Promise<MarkPriceData | null> {
     const markPriceData = await this.cacheManager.getMarkPrice(symbol);

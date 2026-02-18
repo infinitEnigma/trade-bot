@@ -48,7 +48,8 @@ describe('MarketStreamService', () => {
     const mockWebSocket = {
         on: jest.fn(),
         send: jest.fn(),
-        readyState: 1 // OPEN
+        readyState: 1, // OPEN
+        listeners: jest.fn().mockReturnValue([]) // Add listeners method that returns empty array
     } as any;
 
     beforeEach(() => {
@@ -140,13 +141,17 @@ describe('MarketStreamService', () => {
             mockWsManager.createConnection.mockResolvedValue(mockWebSocket);
             mockWsManager.getConnection.mockReturnValue(mockWebSocket);
             mockWsManager.isConnected.mockReturnValue(true);
-            mockSubscriptionManager.getPendingSubscriptions.mockReturnValue(['BTC-PERP@kline_1m']);
+            mockSubscriptionManager.getPendingSubscriptions.mockReturnValue([]);
             mockSubscriptionManager.clearPendingSubscription.mockImplementation();
 
             await marketStreamService.connectToOrderly(['BTC-PERP']);
 
             expect(mockAuthManager.getAccountId).toHaveBeenCalled();
             expect(mockWsManager.createConnection).toHaveBeenCalledWith(mockAccountId);
+
+            // Log the calls to addPendingSubscription
+            console.log('addPendingSubscription calls:', mockSubscriptionManager.addPendingSubscription.mock.calls);
+
             expect(mockSubscriptionManager.addPendingSubscription).toHaveBeenCalled();
         });
 

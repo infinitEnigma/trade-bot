@@ -127,44 +127,56 @@ export class ContextAwareLogger {
 
 
     /**
-     * Get current context information for logging with caching optimization
+     * Get current context information for logging with caching optimization.
+     *
+     * IMPORTANT: only the *pure* context fields (correlationId, userId, userLevel,
+     * requestId, component, instance-level additionalMeta) are stored in the cache.
+     * Per-call `additionalMeta` (e.g. { price, symbol }) is merged on top at call
+     * time and is NEVER stored in the cache — this prevents stale per-call values
+     * from bleeding into subsequent log entries that share the same correlation
+     * context (e.g. heartbeat logs inheriting a price value from an earlier HTTP
+     * request handler that ran in the same AsyncLocalStorage context).
      */
     private getContextInfo(additionalMeta?: Record<string, unknown>): LogContext {
         const currentGeneration = this.checkContextChange();
 
-        // Return cached version if context hasn't changed and we have cached info
-        if (this.contextCache.cachedInfo && this.contextCache.generation === currentGeneration) {
-            return {
-                ...this.contextCache.cachedInfo,
-                ...this.additionalMeta,
-                ...additionalMeta
+        // Build or reuse the *pure* context (no per-call meta)
+        if (!this.contextCache.cachedInfo || this.contextCache.generation !== currentGeneration) {
+            const correlationId = getCorrelationId();
+            const userId = getCurrentUserId();
+            const context = getCurrentContext();
+
+            const pureContextInfo: LogContext = {
+                correlationId: correlationId || 'unknown',
+                userId: userId || 'unknown',
+                component: this.componentName,
+                ...this.additionalMeta, // instance-level meta only (set via child())
             };
-        }
 
-        // Compute fresh context info with null checks
-        const correlationId = getCorrelationId();
-        const userId = getCurrentUserId();
-        const context = getCurrentContext();
-
-        const contextInfo: LogContext = {
-            correlationId: correlationId || 'unknown',
-            userId: userId || 'unknown',
-            component: this.componentName,
-            ...this.additionalMeta,
-            ...(additionalMeta || {})
-        };
-
-        if (context) {
-            contextInfo.userLevel = context.userLevel;
-            contextInfo.requestId = context.requestId;
-            if (context.startTime && typeof context.startTime === 'number') {
-                contextInfo.operationDuration = Date.now() - context.startTime;
+            if (context) {
+                pureContextInfo.userLevel = context.userLevel;
+                pureContextInfo.requestId = context.requestId;
+                // NOTE: operationDuration is time-sensitive so it is NOT cached —
+                // it is computed fresh on every call below.
             }
+
+            // Cache only the pure context, never per-call additionalMeta
+            this.contextCache.cachedInfo = pureContextInfo;
         }
 
-        // Cache the result for future calls
-        this.contextCache.cachedInfo = contextInfo;
-        return contextInfo;
+        // Compute operationDuration fresh on every call (time-sensitive)
+        const context = getCurrentContext();
+        const operationDuration =
+            context?.startTime && typeof context.startTime === 'number'
+                ? Date.now() - context.startTime
+                : undefined;
+
+        // Merge: cached pure context + fresh duration + per-call meta (not cached)
+        return {
+            ...this.contextCache.cachedInfo,
+            ...(operationDuration !== undefined ? { operationDuration } : {}),
+            ...(additionalMeta || {}),
+        };
     }
 
     /**

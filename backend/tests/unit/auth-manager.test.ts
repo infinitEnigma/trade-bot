@@ -240,11 +240,12 @@ describe('AuthManager', () => {
             expect(mockWs.send).toHaveBeenCalled();
 
             const sentMessage = JSON.parse(mockWs.send.mock.calls[0][0]);
+            console.log('sentMessage:', sentMessage);
             expect(sentMessage.event).toBe('auth');
-            expect(sentMessage.params.accountId).toBe(mockAccountId);
-            expect(sentMessage.params.apiKey).toBe(mockApiKey);
-            expect(sentMessage.params.signature).toBeDefined();
-            expect(sentMessage.params.timestamp).toBeGreaterThan(0);
+            expect(sentMessage.params.orderly_account_id).toBe(mockAccountId);
+            expect(sentMessage.params.orderly_key).toBe(mockApiKey);
+            expect(sentMessage.params.orderly_signature).toBeDefined();
+            expect(sentMessage.params.orderly_timestamp).toBeGreaterThan(0);
         });
     });
 });

@@ -32,6 +32,7 @@ jest.mock('../../src/infrastructure/cache/redis.service', () => ({
         del: jest.fn(),
         atomicCacheUpdate: jest.fn(),
         isHealthy: jest.fn(),
+        scan: jest.fn(),
     }
 }));
 jest.mock('../../src/infrastructure/cache/cache-invalidation.service');
@@ -369,6 +370,14 @@ describe('CacheManager', () => {
                 keysInvalidated: 2
             });
             require('../../src/infrastructure/cache/cache-invalidation.service').cacheInvalidationService.invalidateWithBroadcast = mockInvalidateWithBroadcast;
+
+            // Mock redis scan to return some keys
+            const mockScan = jest.fn().mockResolvedValue({
+                success: true,
+                cursor: '0',
+                keys: []
+            });
+            require('../../src/infrastructure/cache/redis.service').redisService.scan = mockScan;
 
             await cacheManager.invalidateSymbolData(mockSymbol);
 
