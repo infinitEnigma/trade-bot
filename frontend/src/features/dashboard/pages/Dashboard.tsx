@@ -32,7 +32,7 @@ import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
 import { UserProgressCard } from "../../../shared/components/user/UserProgressCard";
 import { LoadingSpinner } from "../../../shared/components/ui";
 import { useBalance } from "../../../shared/hooks";
-import { Container, Grid, Section } from "../../../shared/components/layout";
+import { Container, ElectricalNetworkBackground, Grid, Section } from "../../../shared/components/layout";
 
 // Type definitions for Dashboard components
 interface StatsCardProps {
@@ -236,6 +236,7 @@ const Dashboard: React.FC = () => {
         <Section>
         {/* ✅ User Progress Card - Shows account progression */}
         <div className="mb-8">
+          <ElectricalNetworkBackground />
           <UserProgressCard />
         </div>
 

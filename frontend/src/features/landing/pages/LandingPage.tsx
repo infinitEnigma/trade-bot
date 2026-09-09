@@ -3,6 +3,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import {ElectricalNetworkBackground} from "../../../shared/components/layout";
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -67,14 +68,14 @@ export const LandingPage: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-bg-primary via-purple-900/20 to-bg-primary overflow-hidden relative">
+    <div className="min-h-screen bg-gradient-to-br from-bg-primary via-purple-800/20 to-bg-primary overflow-hidden relative">
       {/* Background decoration */}
+      <ElectricalNetworkBackground />
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl"></div>
         <div className="absolute top-1/2 left-1/4 w-60 h-60 bg-blue-500/10 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 right-1/3 w-96 h-96 bg-pink-500/10 rounded-full blur-3xl"></div>
       </div>
-
       {/* Navigation */}
       <nav className="relative z-10 px-6 py-6 flex justify-between items-center">
         <div className="flex items-center space-x-2">

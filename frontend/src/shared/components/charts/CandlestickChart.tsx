@@ -49,10 +49,23 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     loading,
     error: chartError,
     markPriceData,
+    connectionStatus,
   } = useChartData({
     symbol,
     interval,
   });
+
+  // Debug logging for chart data
+  useEffect(() => {
+    console.log(`📈 CandlestickChart [${symbol}] data update:`, {
+      dataLength: chartData?.length || 0,
+      loading,
+      chartError,
+      connectionStatus,
+      isVisible,
+      hasMarkPrice: !!markPriceData,
+    });
+  }, [chartData, loading, chartError, connectionStatus, isVisible, markPriceData, symbol]);
 
   // Initialize chart
   useEffect(() => {

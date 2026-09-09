@@ -16,7 +16,7 @@ import {
 import { Card } from "../../../shared/components/ui";
 import { SectionHeader } from "../../../shared/components/ui";
 import { MetricIcon } from "../../../shared/components/ui";
-import { Container, Grid } from "../../../shared/components/layout";
+import { Container, ElectricalNetworkBackground, Grid } from "../../../shared/components/layout";
 import { SmartToast } from "../../../shared/utils/toast";
 import { KodiakConnectResponse } from "../../../infrastructure/api/kodiak";
 
@@ -158,7 +158,7 @@ const Settings: React.FC = () => {
     }
   };
 
-  return (
+  return (    
     <Container
         size={{
           default: 'lg',
@@ -169,6 +169,7 @@ const Settings: React.FC = () => {
         }}
         className="py-2 space-y-4"
       >
+        <ElectricalNetworkBackground />
         {/* Account Overview */}
         <Card>
           <SectionHeader title="Account Overview" />

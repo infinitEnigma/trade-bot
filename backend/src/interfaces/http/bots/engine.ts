@@ -413,8 +413,62 @@ router.post("/bot-recovery", botEngineAuth, async (req: Request, res: Response) 
     }
 });
 
+// GET /api/bot/engine/status (for frontend to check engine status)
+// Note: Since this router is mounted at /engine, the path is just /status
+router.get("/status", async (req: Request, res: Response) => {
+    try {
+        // Get bot statistics from database to determine engine status
+        const botStatsResult = await query(`
+            SELECT
+                COUNT(*) as total_bots,
+                COUNT(CASE WHEN status = 'RUNNING' THEN 1 END) as running_bots,
+                COUNT(CASE WHEN status = 'STOPPED' THEN 1 END) as stopped_bots,
+                COUNT(CASE WHEN status = 'ERROR' THEN 1 END) as error_bots
+            FROM bot_instances
+        `);
+        const botStats = botStatsResult.rows[0] as {
+            total_bots: string;
+            running_bots: string;
+            stopped_bots: string;
+            error_bots: string;
+        };
+
+        // Engine is considered running if there are any running bots
+        const running = parseInt(botStats.running_bots || '0') > 0;
+
+        const engineStatus = {
+            running,
+            status: running ? 'running' : 'idle',
+            activeBots: parseInt(botStats.running_bots || '0'),
+            totalBots: parseInt(botStats.total_bots || '0'),
+            stoppedBots: parseInt(botStats.stopped_bots || '0'),
+            errorBots: parseInt(botStats.error_bots || '0'),
+            lastUpdate: Date.now(),
+        };
+
+        logger.debug("Engine status requested", {
+            status: engineStatus.status,
+            activeBots: engineStatus.activeBots,
+        });
+
+        res.json({
+            success: true,
+            data: engineStatus,
+        });
+    } catch (error) {
+        const err = error as Error;
+        logger.error("Engine status check error", err);
+
+        res.status(500).json({
+            success: false,
+            error: "Failed to get engine status"
+        });
+    }
+});
+
 // GET /api/bot/engine/health (health check endpoint for engine)
-router.get("/engine/health", async (req: Request, res: Response) => {
+// Note: Since this router is mounted at /engine, the path is just /health
+router.get("/health", async (req: Request, res: Response) => {
     try {
         // Get basic system health
         const health: EngineHealth = {
