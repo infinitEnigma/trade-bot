@@ -58,6 +58,7 @@ import { Server } from "socket.io";
 import { contextLogger as logger } from "./core/logging";
 import { engineProtocolService } from "./core/bots/engine-protocol.service";
 import { botLifecycleService } from "./core/bots/bot-lifecycle.service";
+import { commandTimeoutSweeper } from "./core/bots/command-timeout.sweeper";
 import { setRequestContext, generateCorrelationId, generateRequestId } from "./shared/utils/context";
 
 // Set default context for application initialization
@@ -468,6 +469,10 @@ export const startServer = (): Promise<typeof httpServer> => {
                     logger.error("Failed to start engine protocol listener", error instanceof Error ? error : new Error(String(error)));
                 });
 
+            // ✅ START COMMAND TIMEOUT SWEEPER (lifecycle supervision)
+            // Transitions bots to ERROR when the engine never confirms a command.
+            commandTimeoutSweeper.start();
+
             // Note: connectToOrderly requires a user accountId (only available for REGISTERED/VERIFIED).
             // It is triggered in websocket.service.ts when a REGISTERED/VERIFIED user connects.
 
@@ -585,6 +590,7 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
 
         // Stop consuming engine events (leaves in-flight messages for redelivery)
         try {
+            commandTimeoutSweeper.stop();
             engineProtocolService.stop();
             logger.info("Engine protocol listener stopped");
         } catch (error) {

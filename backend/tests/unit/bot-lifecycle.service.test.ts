@@ -36,6 +36,9 @@ import { query } from '../../src/database/pool';
 
 const mockQuery = query as jest.Mock;
 
+/** Successful non-SELECT result (UPDATE/INSERT/DELETE) for the query mock. */
+const okResult = () => Promise.resolve({ rows: [], rowCount: 1 });
+
 // ===========================================
 // SHARED STATE MACHINE
 // ===========================================
@@ -128,7 +131,7 @@ describe('BotLifecycleService', () => {
                 if (String(sql).startsWith('SELECT id, user_id')) {
                     return Promise.resolve({ rows: [botRow] });
                 }
-                return Promise.resolve({ rows: [] });
+                return okResult();
             });
 
             const result = await service.start('bot-1', 'user-1');
@@ -165,7 +168,7 @@ describe('BotLifecycleService', () => {
                 if (String(sql).startsWith('SELECT id, user_id')) {
                     return Promise.resolve({ rows: [botRow] });
                 }
-                return Promise.resolve({ rows: [] });
+                return okResult();
             });
             engineProtocol.sendCommand.mockResolvedValue({ success: false, error: 'redis down' });
 
@@ -190,7 +193,7 @@ describe('BotLifecycleService', () => {
                 if (String(sql).startsWith('SELECT id, user_id')) {
                     return Promise.resolve({ rows: [{ ...botRow, desired_state: 'RUNNING', actual_state: 'RUNNING' }] });
                 }
-                return Promise.resolve({ rows: [] });
+                return okResult();
             });
 
             const result = await service.stop('bot-1', 'user-1');
@@ -217,7 +220,7 @@ describe('BotLifecycleService', () => {
                 if (String(sql).startsWith('SELECT id, user_id')) {
                     return Promise.resolve({ rows: [{ ...botRow, desired_state: 'RUNNING', actual_state: 'STARTING' }] });
                 }
-                return Promise.resolve({ rows: [] });
+                return okResult();
             });
 
             await service.handleEngineEvent(event);
@@ -234,7 +237,7 @@ describe('BotLifecycleService', () => {
                 if (String(sql).startsWith('SELECT id, user_id')) {
                     return Promise.resolve({ rows: [{ ...botRow, actual_state: 'STOPPED' }] });
                 }
-                return Promise.resolve({ rows: [] });
+                return okResult();
             });
 
             await expect(service.handleEngineEvent(event)).resolves.toBeUndefined();
@@ -248,7 +251,7 @@ describe('BotLifecycleService', () => {
                 if (String(sql).startsWith('SELECT id, user_id')) {
                     return Promise.resolve({ rows: [{ ...botRow, desired_state: 'RUNNING', actual_state: 'STARTING' }] });
                 }
-                return Promise.resolve({ rows: [] });
+                return okResult();
             });
 
             await service.handleEngineEvent(event);
@@ -264,12 +267,132 @@ describe('BotLifecycleService', () => {
                 if (String(sql).startsWith('SELECT id, user_id')) {
                     return Promise.resolve({ rows: [{ ...botRow, desired_state: 'RUNNING', actual_state: 'RUNNING' }] });
                 }
-                return Promise.resolve({ rows: [] });
+                return okResult();
             });
 
             await service.handleEngineEvent(event);
 
             expect(mockQuery.mock.calls.filter(call => String(call[0]).includes('UPDATE bot_instances'))).toHaveLength(0);
+        });
+
+        it('skips a STATE_CHANGED event that loses the compare-and-set race', async () => {
+            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'engine-1', from: 'STARTING', to: 'RUNNING' }, 'corr-1');
+
+            mockQuery.mockImplementation((sql: string) => {
+                if (String(sql).startsWith('SELECT id, user_id')) {
+                    return Promise.resolve({ rows: [{ ...botRow, desired_state: 'RUNNING', actual_state: 'STARTING' }] });
+                }
+                // Simulate a concurrent writer: the guarded UPDATE matches 0 rows.
+                return Promise.resolve({ rows: [], rowCount: 0 });
+            });
+
+            await service.handleEngineEvent(event);
+
+            expect(mockQuery.mock.calls.filter(call => String(call[0]).includes('UPDATE bot_instances'))).toHaveLength(1);
+            // No lifecycle event should be recorded for a stale (unapplied) transition.
+            expect(mockQuery.mock.calls.filter(call => String(call[0]).includes('INSERT INTO bot_lifecycle_events'))).toHaveLength(0);
+        });
+    });
+
+    describe('concurrency (compare-and-set transitions)', () => {
+        it('start rejects with 409 when the guarded UPDATE does not match', async () => {
+            mockQuery.mockImplementation((sql: string) => {
+                if (String(sql).startsWith('SELECT id, user_id')) {
+                    return Promise.resolve({ rows: [botRow] });
+                }
+                return Promise.resolve({ rows: [], rowCount: 0 });
+            });
+
+            await expect(service.start('bot-1', 'user-1')).rejects.toMatchObject({ statusCode: 409 });
+            expect(engineProtocol.sendCommand).not.toHaveBeenCalled();
+        });
+
+        it('sends the guarded UPDATE with the expected actual_state', async () => {
+            mockQuery.mockImplementation((sql: string) => {
+                if (String(sql).startsWith('SELECT id, user_id')) {
+                    return Promise.resolve({ rows: [botRow] });
+                }
+                return okResult();
+            });
+
+            await service.start('bot-1', 'user-1');
+
+            const update = mockQuery.mock.calls.find(call => String(call[0]).includes('UPDATE bot_instances'));
+            expect(update).toBeDefined();
+            expect(String(update![0])).toContain('AND actual_state = $11');
+            expect(update![1][10]).toBe('STOPPED'); // expected actual_state we read
+        });
+    });
+
+    describe('command tracking & timeout sweep', () => {
+        it('records a PENDING command after a start command is delivered', async () => {
+            mockQuery.mockImplementation((sql: string) => {
+                if (String(sql).startsWith('SELECT id, user_id')) {
+                    return Promise.resolve({ rows: [botRow] });
+                }
+                return okResult();
+            });
+
+            await service.start('bot-1', 'user-1');
+
+            const insert = mockQuery.mock.calls.find(call => String(call[0]).includes('INSERT INTO bot_commands'));
+            expect(insert).toBeDefined();
+            expect(insert![1][0]).toBe('c1'); // correlationId
+            expect(insert![1][2]).toBe('BOT_START');
+        });
+
+        it('marks the command ACCEPTED on COMMAND_ACCEPTED', async () => {
+            const event = createBotEvent('COMMAND_ACCEPTED', { botId: 'bot-1', commandType: 'BOT_START', engineId: 'engine-1' }, 'c1');
+
+            mockQuery.mockImplementation(() => okResult());
+
+            await service.handleEngineEvent(event);
+
+            const update = mockQuery.mock.calls.find(call => String(call[0]).includes('UPDATE bot_commands'));
+            expect(update).toBeDefined();
+            expect(update![1][1]).toBe('ACCEPTED');
+        });
+
+        it('times out expired PENDING commands and transitions the bot to ERROR', async () => {
+            mockQuery.mockImplementation((sql: string) => {
+                if (String(sql).includes('FROM bot_commands') && String(sql).startsWith('SELECT')) {
+                    return Promise.resolve({
+                        rows: [{ correlation_id: 'c-expired', bot_id: 'bot-1', command_type: 'BOT_START' }],
+                    });
+                }
+                if (String(sql).startsWith('SELECT id, user_id')) {
+                    return Promise.resolve({ rows: [{ ...botRow, desired_state: 'RUNNING', actual_state: 'STARTING' }] });
+                }
+                return okResult();
+            });
+
+            const timedOut = await service.sweepTimedOutCommands();
+
+            expect(timedOut).toBe(1);
+            const botUpdate = mockQuery.mock.calls.find(call => String(call[0]).includes('UPDATE bot_instances'));
+            expect(botUpdate).toBeDefined();
+            expect(botUpdate![1][2]).toBe('ERROR');
+            expect(mockQuery.mock.calls.some(call => String(call[0]).includes('INSERT INTO bot_lifecycle_events'))).toBe(true);
+        });
+
+        it('does not double-process a timed-out command whose claim loses the race', async () => {
+            mockQuery.mockImplementation((sql: string) => {
+                if (String(sql).includes('FROM bot_commands') && String(sql).startsWith('SELECT')) {
+                    return Promise.resolve({
+                        rows: [{ correlation_id: 'c-expired', bot_id: 'bot-1', command_type: 'BOT_START' }],
+                    });
+                }
+                // The claim UPDATE loses the race against a concurrent sweep.
+                if (String(sql).includes("state = 'TIMED_OUT'")) {
+                    return Promise.resolve({ rows: [], rowCount: 0 });
+                }
+                return okResult();
+            });
+
+            const timedOut = await service.sweepTimedOutCommands();
+
+            expect(timedOut).toBe(0);
+            expect(mockQuery.mock.calls.some(call => String(call[0]).includes('UPDATE bot_instances'))).toBe(false);
         });
     });
 });

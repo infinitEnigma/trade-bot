@@ -76,6 +76,9 @@ interface PersistTransitionInput {
     errorMessage?: string | null;
 }
 
+/** How long a PENDING command may wait for the engine before it times out. */
+export const BOT_COMMAND_TIMEOUT_MS = Number(process.env.BOT_COMMAND_TIMEOUT_MS ?? 30_000);
+
 interface LifecycleEventInput {
     eventType: string;
     fromState: string | null;
@@ -122,10 +125,17 @@ export class BotLifecycleService {
         // moves, e.g. STOPPING -> STARTING).
         const nextState = assertTransition(bot.actual_state, "STARTING");
 
-        await this.persistTransition(botId, {
-            desiredState: "RUNNING",
-            actualState: nextState,
-        });
+        // Compare-and-set: only persist if actual_state is still what we read.
+        const persisted = await this.persistTransition(
+            botId,
+            { desiredState: "RUNNING", actualState: nextState },
+            bot.actual_state
+        );
+        if (!persisted) {
+            const error = new Error("Bot lifecycle state changed concurrently - retry");
+            (error as Error & { statusCode?: number }).statusCode = 409;
+            throw error;
+        }
         await this.recordLifecycleEvent(botId, {
             eventType: "START_REQUESTED",
             fromState: bot.actual_state,
@@ -138,7 +148,7 @@ export class BotLifecycleService {
         const sendResult = await this.sendStartCommand(bot.id, userId, bot.strategy_id);
         if (!sendResult.success) {
             // Roll back to STOPPED so the bot is not stuck in STARTING with no command in flight.
-            await this.persistTransition(botId, { desiredState: "STOPPED", actualState: "STOPPED" });
+            await this.persistTransition(botId, { desiredState: "STOPPED", actualState: "STOPPED" }, nextState);
             await this.recordLifecycleEvent(botId, {
                 eventType: "START_FAILED",
                 fromState: nextState,
@@ -150,6 +160,12 @@ export class BotLifecycleService {
             const error = new Error("Failed to deliver start command to engine");
             (error as Error & { statusCode?: number }).statusCode = 503;
             throw error;
+        }
+
+        // Track the command so the timeout sweeper can detect an engine that
+        // never processes it (Redis accepted the message but the engine is down).
+        if (sendResult.correlationId) {
+            await this.recordPendingCommand(botId, sendResult.correlationId, "BOT_START");
         }
 
         await this.recordLifecycleEvent(botId, {
@@ -238,11 +254,20 @@ export class BotLifecycleService {
         const targetState: BotActualState = bot.actual_state === "RUNNING" ? "STOPPING" : "STOPPED";
         const nextState = assertTransition(bot.actual_state, targetState);
 
-        await this.persistTransition(botId, {
-            desiredState: "STOPPED",
-            actualState: nextState,
-            stoppedAt: nextState === "STOPPED" ? new Date() : null,
-        });
+        const persisted = await this.persistTransition(
+            botId,
+            {
+                desiredState: "STOPPED",
+                actualState: nextState,
+                stoppedAt: nextState === "STOPPED" ? new Date() : null,
+            },
+            bot.actual_state
+        );
+        if (!persisted) {
+            const error = new Error("Bot lifecycle state changed concurrently - retry");
+            (error as Error & { statusCode?: number }).statusCode = 409;
+            throw error;
+        }
         await this.recordLifecycleEvent(botId, {
             eventType: "STOP_REQUESTED",
             fromState: bot.actual_state,
@@ -266,6 +291,11 @@ export class BotLifecycleService {
             const error = new Error("Failed to deliver stop command to engine");
             (error as Error & { statusCode?: number }).statusCode = 503;
             throw error;
+        }
+
+        // Track the command for timeout supervision (same as BOT_START).
+        if (sendResult.correlationId) {
+            await this.recordPendingCommand(botId, sendResult.correlationId, "BOT_STOP");
         }
 
         await this.recordLifecycleEvent(botId, {
@@ -318,6 +348,7 @@ export class BotLifecycleService {
             correlationId: event.correlationId,
             engineId: payload.engineId,
         });
+        await this.resolveCommand(event.correlationId, "ACCEPTED");
         await this.recordLifecycleEvent(payload.botId, {
             eventType: `${payload.commandType}_ACCEPTED`,
             fromState: null,
@@ -348,13 +379,27 @@ export class BotLifecycleService {
 
         if (bot.actual_state !== "ERROR") {
             const nextState = assertTransition(bot.actual_state, "ERROR");
-            await this.persistTransition(bot.id, {
-                desiredState: "STOPPED",
-                actualState: nextState,
-                errorCode: payload.errorCode,
-                errorMessage: payload.message,
-            });
+            const persisted = await this.persistTransition(
+                bot.id,
+                {
+                    desiredState: "STOPPED",
+                    actualState: nextState,
+                    errorCode: payload.errorCode,
+                    errorMessage: payload.message,
+                },
+                bot.actual_state
+            );
+            if (!persisted) {
+                logger.warn("Command failed processed against stale bot state - skipping", {
+                    botId: bot.id,
+                    actualState: bot.actual_state,
+                    correlationId: event.correlationId,
+                });
+                return;
+            }
         }
+
+        await this.resolveCommand(event.correlationId, "FAILED", payload.errorCode, payload.message);
 
         await this.recordLifecycleEvent(bot.id, {
             eventType: "COMMAND_FAILED",
@@ -399,15 +444,30 @@ export class BotLifecycleService {
         const isRunning = payload.to === "RUNNING";
         const isStopped = payload.to === "STOPPED";
 
-        await this.persistTransition(bot.id, {
-            desiredState: bot.desired_state,
-            actualState: payload.to,
-            engineId: payload.engineId,
-            startedAt: isRunning ? new Date() : null,
-            stoppedAt: isStopped ? new Date() : null,
-            errorCode: isRunning || isStopped ? null : undefined,
-            errorMessage: isRunning || isStopped ? null : undefined,
-        });
+        // Compare-and-set against the state we just read: if another actor
+        // changed it meanwhile, this event is stale and must not be applied.
+        const persisted = await this.persistTransition(
+            bot.id,
+            {
+                desiredState: bot.desired_state,
+                actualState: payload.to,
+                engineId: payload.engineId,
+                startedAt: isRunning ? new Date() : null,
+                stoppedAt: isStopped ? new Date() : null,
+                errorCode: isRunning || isStopped ? null : undefined,
+                errorMessage: isRunning || isStopped ? null : undefined,
+            },
+            bot.actual_state
+        );
+        if (!persisted) {
+            logger.warn("State changed event processed against stale bot state - skipping", {
+                botId: bot.id,
+                from: bot.actual_state,
+                to: payload.to,
+                correlationId: event.correlationId,
+            });
+            return;
+        }
 
         await this.recordLifecycleEvent(bot.id, {
             eventType: "STATE_CHANGED",
@@ -426,6 +486,134 @@ export class BotLifecycleService {
         });
 
         this.emitStateChanged(bot.id, bot.user_id, bot.actual_state, payload.to, event.correlationId);
+    }
+
+    // ===========================================
+    // COMMAND TRACKING & TIMEOUT SUPERVISION
+    // ===========================================
+
+    /**
+     * Record a command as PENDING in `bot_commands`. The timeout sweeper uses
+     * this table to detect commands that Redis accepted but the engine never
+     * processed (e.g. engine down), so bots cannot be stuck in STARTING/STOPPING.
+     */
+    private async recordPendingCommand(botId: string, correlationId: string, commandType: string): Promise<void> {
+        try {
+            await query(
+                `INSERT INTO bot_commands (correlation_id, bot_id, command_type, state, expires_at)
+                 VALUES ($1, $2, $3, 'PENDING', NOW() + make_interval(secs => $4))
+                 ON CONFLICT (correlation_id) DO NOTHING`,
+                [correlationId, botId, commandType, BOT_COMMAND_TIMEOUT_MS / 1000]
+            );
+        } catch (error) {
+            // Command tracking must never break the lifecycle flow itself;
+            // the worst case is a command without timeout supervision.
+            logger.error("Failed to record pending command", undefined, {
+                botId,
+                correlationId,
+                commandType,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    /**
+     * Mark a tracked command resolved. Unknown correlationIds are ignored so
+     * events for commands tracked before this feature keep working.
+     */
+    private async resolveCommand(correlationId: string, state: "ACCEPTED" | "FAILED", errorCode?: string, errorMessage?: string): Promise<void> {
+        try {
+            await query(
+                `UPDATE bot_commands
+                 SET state = $2,
+                     resolved_at = CURRENT_TIMESTAMP,
+                     error_code = COALESCE($3, error_code),
+                     error_message = COALESCE($4, error_message)
+                 WHERE correlation_id = $1 AND state = 'PENDING'`,
+                [correlationId, state, errorCode ?? null, errorMessage ?? null]
+            );
+        } catch (error) {
+            logger.error("Failed to resolve tracked command", undefined, {
+                correlationId,
+                state,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    /**
+     * Timeout supervision sweep: every PENDING command past its expiry is
+     * marked TIMED_OUT and the bot is transitioned to ERROR (the engine
+     * never confirmed the operation, so the actual state is unreliable).
+     * Returns the number of commands timed out.
+     *
+     * Called periodically by the CommandTimeoutSweeper; also safe to call
+     * manually (e.g. from tests or an admin endpoint).
+     */
+    async sweepTimedOutCommands(): Promise<number> {
+        const pending = await query<{ correlation_id: string; bot_id: string; command_type: string }>(
+            `SELECT correlation_id, bot_id, command_type
+             FROM bot_commands
+             WHERE state = 'PENDING' AND expires_at < NOW()`,
+            []
+        );
+        let timedOut = 0;
+
+        for (const cmd of pending.rows) {
+            // Claim the command first so concurrent sweeps cannot double-process.
+            const claimed = await query(
+                `UPDATE bot_commands
+                 SET state = 'TIMED_OUT', resolved_at = CURRENT_TIMESTAMP,
+                     error_code = 'COMMAND_TIMEOUT'
+                 WHERE correlation_id = $1 AND state = 'PENDING'`,
+                [cmd.correlation_id]
+            );
+            if ((claimed.rowCount ?? 0) !== 1) {
+                continue;
+            }
+            timedOut++;
+
+            const bot = await this.findBot(cmd.bot_id);
+            if (!bot) {
+                logger.warn("Timed-out command references unknown bot", { botId: cmd.bot_id, correlationId: cmd.correlation_id });
+                continue;
+            }
+
+            // Only transitional states can get stuck waiting on the engine.
+            if (bot.actual_state === "STARTING" || bot.actual_state === "STOPPING") {
+                const nextState = assertTransition(bot.actual_state, "ERROR");
+                const persisted = await this.persistTransition(
+                    bot.id,
+                    {
+                        desiredState: "STOPPED",
+                        actualState: nextState,
+                        errorCode: "COMMAND_TIMEOUT",
+                        errorMessage: `${cmd.command_type} command timed out after ${Math.round(BOT_COMMAND_TIMEOUT_MS / 1000)}s without engine confirmation`,
+                    },
+                    bot.actual_state
+                );
+                if (persisted) {
+                    this.emitStateChanged(bot.id, bot.user_id, bot.actual_state, nextState, cmd.correlation_id);
+                }
+            }
+
+            await this.recordLifecycleEvent(bot.id, {
+                eventType: "COMMAND_TIMED_OUT",
+                fromState: bot.actual_state,
+                toState: bot.actual_state === "STARTING" || bot.actual_state === "STOPPING" ? "ERROR" : bot.actual_state,
+                correlationId: cmd.correlation_id,
+                messageId: null,
+                metadata: { commandType: cmd.command_type, timeoutMs: BOT_COMMAND_TIMEOUT_MS },
+            });
+
+            logger.error("Lifecycle command timed out without engine confirmation", undefined, {
+                botId: cmd.bot_id,
+                commandType: cmd.command_type,
+                correlationId: cmd.correlation_id,
+            });
+        }
+
+        return timedOut;
     }
 
     // ===========================================
@@ -461,34 +649,61 @@ export class BotLifecycleService {
         return bot;
     }
 
-    private async persistTransition(botId: string, input: PersistTransitionInput): Promise<void> {
+    /**
+     * Persist a lifecycle transition. When `expectedActualState` is provided,
+     * the UPDATE is guarded with a compare-and-set predicate
+     * (`AND actual_state = $expected`) so concurrent lifecycle operations
+     * cannot race: the caller receives `false` if the row's actual_state
+     * changed underneath it and must treat the transition as stale.
+     */
+    private async persistTransition(
+        botId: string,
+        input: PersistTransitionInput,
+        expectedActualState?: BotActualState
+    ): Promise<boolean> {
         const now = new Date();
-        await query(
-            `UPDATE bot_instances
-             SET desired_state = $2,
-                 actual_state = $3,
-                 status = $4,
-                 engine_id = COALESCE($5, engine_id),
-                 state_changed_at = $6,
-                 started_at = COALESCE($7, started_at),
-                 stopped_at = COALESCE($8, stopped_at),
-                 last_error_code = COALESCE($9, last_error_code),
-                 last_error_message = COALESCE($10, last_error_message),
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = $1`,
-            [
-                botId,
-                input.desiredState,
-                input.actualState,
-                STATUS_BY_ACTUAL[input.actualState],
-                input.engineId ?? null,
-                now,
-                input.startedAt ?? null,
-                input.stoppedAt ?? null,
-                input.errorCode === undefined ? null : input.errorCode,
-                input.errorMessage === undefined ? null : input.errorMessage,
-            ]
-        );
+        const sql = expectedActualState
+            ? `UPDATE bot_instances
+               SET desired_state = $2,
+                   actual_state = $3,
+                   status = $4,
+                   engine_id = COALESCE($5, engine_id),
+                   state_changed_at = $6,
+                   started_at = COALESCE($7, started_at),
+                   stopped_at = COALESCE($8, stopped_at),
+                   last_error_code = COALESCE($9, last_error_code),
+                   last_error_message = COALESCE($10, last_error_message),
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = $1 AND actual_state = $11`
+            : `UPDATE bot_instances
+               SET desired_state = $2,
+                   actual_state = $3,
+                   status = $4,
+                   engine_id = COALESCE($5, engine_id),
+                   state_changed_at = $6,
+                   started_at = COALESCE($7, started_at),
+                   stopped_at = COALESCE($8, stopped_at),
+                   last_error_code = COALESCE($9, last_error_code),
+                   last_error_message = COALESCE($10, last_error_message),
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = $1`;
+        const params: unknown[] = [
+            botId,
+            input.desiredState,
+            input.actualState,
+            STATUS_BY_ACTUAL[input.actualState],
+            input.engineId ?? null,
+            now,
+            input.startedAt ?? null,
+            input.stoppedAt ?? null,
+            input.errorCode === undefined ? null : input.errorCode,
+            input.errorMessage === undefined ? null : input.errorMessage,
+        ];
+        if (expectedActualState) {
+            params.push(expectedActualState);
+        }
+        const result = await query(sql, params);
+        return (result.rowCount ?? 0) === 1;
     }
 
     private async recordLifecycleEvent(botId: string, input: LifecycleEventInput): Promise<void> {
