@@ -19,6 +19,8 @@ import {
     isStopBotCommand,
     isStatusRequestCommand,
 } from '@trade-bot/shared';
+import * as fs from 'fs';
+import * as path from 'path';
 import { GridTradingStrategy } from './strategies/grid';
 import { OrderlyClient, createOrderlyClient } from './services/orderly';
 
@@ -29,6 +31,44 @@ import { OrderlyClient, createOrderlyClient } from './services/orderly';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
 const BOT_ENGINE_API_KEY = process.env.BOT_ENGINE_API_KEY || '';
 const TICK_INTERVAL_MS = 5000;
+const HEARTBEAT_INTERVAL_MS = Number(process.env.ENGINE_HEARTBEAT_INTERVAL_MS || 10_000);
+const ENGINE_VERSION = 'kodiak@1.0.0';
+
+/**
+ * Persistent engine identity: engineId survives restarts (env override or
+ * state file) and `epoch` increments on every start, so the backend can
+ * reject delayed events from a superseded engine process.
+ */
+interface EngineIdentity {
+    engineId: string;
+    epoch: number;
+}
+
+const ENGINE_STATE_FILE = process.env.ENGINE_STATE_FILE || path.join(process.cwd(), '.engine-state.json');
+
+function loadOrCreateEngineIdentity(): EngineIdentity {
+    let state: { engineId?: string; epoch?: number } = {};
+    try {
+        state = JSON.parse(fs.readFileSync(ENGINE_STATE_FILE, 'utf-8'));
+    } catch {
+        // First run or unreadable state file - create a fresh identity.
+    }
+
+    const engineId = process.env.ENGINE_ID || state.engineId || 'kodiak-engine-' + crypto.randomUUID().substring(0, 8);
+    // Each (re)start of the same engine bumps the epoch.
+    const epoch = (state.engineId === engineId ? state.epoch ?? 0 : 0) + 1;
+
+    try {
+        fs.writeFileSync(ENGINE_STATE_FILE, JSON.stringify({ engineId, epoch }, null, 2));
+    } catch (error) {
+        logger.warn('Could not persist engine state file - epoch will reset on restart', {
+            file: ENGINE_STATE_FILE,
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
+
+    return { engineId, epoch };
+}
 
 /** Bounded size for the command deduplication set (at-least-once delivery). */
 const DEDUP_SET_MAX_SIZE = 10_000;
@@ -85,10 +125,67 @@ class BotManager {
     private processedMessageIds: Set<string> = new Set();
     private streamOperations: ReturnType<typeof getRedisStreamOperations>;
     readonly engineId: string;
+    /** Monotonically increasing per (re)start - rejects superseded processes. */
+    readonly epoch: number;
+    private heartbeatIntervalId: NodeJS.Timeout | null = null;
 
     constructor() {
         this.streamOperations = getRedisStreamOperations();
-        this.engineId = 'kodiak-engine-' + Math.random().toString(36).substring(2, 11);
+        const identity = loadOrCreateEngineIdentity();
+        this.engineId = identity.engineId;
+        this.epoch = identity.epoch;
+    }
+
+    /**
+     * Register with the backend and start the heartbeat loop. The backend
+     * marks this engine OFFLINE (and its bots UNKNOWN) if heartbeats stop.
+     */
+    startHeartbeat(): void {
+        const startedAt = new Date().toISOString();
+        const registerOnce = async (): Promise<void> => {
+            await this.streamOperations.publish(ENGINE_EVENTS_STREAM, {
+                version: 1,
+                messageId: crypto.randomUUID(),
+                correlationId: crypto.randomUUID(),
+                timestamp: startedAt,
+                type: 'ENGINE_REGISTER',
+                payload: { engineId: this.engineId, epoch: this.epoch, version: ENGINE_VERSION, startedAt },
+            } as never);
+            logger.info('Engine registered with backend', { engineId: this.engineId, epoch: this.epoch, version: ENGINE_VERSION });
+        };
+
+        void registerOnce();
+
+        this.heartbeatIntervalId = setInterval(() => {
+            void this.streamOperations
+                .publish(ENGINE_EVENTS_STREAM, {
+                    version: 1,
+                    messageId: crypto.randomUUID(),
+                    correlationId: crypto.randomUUID(),
+                    timestamp: new Date().toISOString(),
+                    type: 'ENGINE_HEARTBEAT',
+                    payload: {
+                        engineId: this.engineId,
+                        epoch: this.epoch,
+                        activeBotIds: [...this.bots.keys()],
+                        version: ENGINE_VERSION,
+                    },
+                } as never)
+                .then(result => {
+                    if (!result.success) {
+                        logger.error('Failed to publish engine heartbeat', { error: result.error });
+                    }
+                });
+        }, HEARTBEAT_INTERVAL_MS);
+        // Never keep the process alive just for the heartbeat.
+        this.heartbeatIntervalId.unref();
+    }
+
+    stopHeartbeat(): void {
+        if (this.heartbeatIntervalId) {
+            clearInterval(this.heartbeatIntervalId);
+            this.heartbeatIntervalId = null;
+        }
     }
 
     /**
@@ -280,6 +377,7 @@ class BotManager {
      * Stop all bots (engine shutdown).
      */
     async stopAll(reason: string): Promise<void> {
+        this.stopHeartbeat();
         for (const [, runtime] of this.bots) {
             try {
                 await runtime.strategy.stop();
@@ -342,14 +440,9 @@ async function main(): Promise<void> {
         await streamOperations.connect();
         await streamOperations.createConsumerGroup(ENGINE_COMMANDS_STREAM, ENGINE_COMMANDS_CONSUMER_GROUP);
 
-        await streamOperations.publish(ENGINE_EVENTS_STREAM, {
-            version: 1,
-            messageId: crypto.randomUUID(),
-            correlationId: crypto.randomUUID(),
-            timestamp: new Date().toISOString(),
-            type: 'ENGINE_STARTED',
-            payload: { engineId: botManager.engineId, uptime: 0 },
-        } as never);
+        // Register with the backend and start heartbeating (ENGINE_REGISTER
+        // + periodic ENGINE_HEARTBEAT events carry identity, epoch and liveness).
+        botManager.startHeartbeat();
 
         await listenForCommands(botManager, streamOperations);
     } catch (error) {

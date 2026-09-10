@@ -50,6 +50,7 @@ interface BotRow {
     status: string;
     desired_state: BotDesiredState;
     actual_state: BotActualState;
+    engine_id: string | null;
 }
 
 interface BotRowWithStrategy extends BotRow {
@@ -91,6 +92,8 @@ interface LifecycleEventInput {
 export class BotLifecycleService {
     private engineProtocol: EngineProtocolService;
     private socketServer: { to: (room: string) => { emit: (event: string, data: unknown) => void } } | null = null;
+    /** Optional handler for engine lifecycle events (registration/heartbeat). */
+    private engineLifecycleHandler: ((event: BotEvent) => Promise<boolean>) | null = null;
 
     constructor(engineProtocol: EngineProtocolService) {
         this.engineProtocol = engineProtocol;
@@ -102,6 +105,14 @@ export class BotLifecycleService {
      */
     setSocketServer(io: NonNullable<BotLifecycleService["socketServer"]>): void {
         this.socketServer = io;
+    }
+
+    /**
+     * Register the handler for ENGINE_REGISTER / ENGINE_HEARTBEAT events
+     * (injected to avoid a circular dependency with EngineRegistryService).
+     */
+    setEngineLifecycleHandler(handler: (event: BotEvent) => Promise<boolean>): void {
+        this.engineLifecycleHandler = handler;
     }
 
     // ===========================================
@@ -325,6 +336,13 @@ export class BotLifecycleService {
      * leaves the message unacked for redelivery.
      */
     async handleEngineEvent(event: BotEvent): Promise<void> {
+        // Engine registration/heartbeat events go to the registry (if wired).
+        if ((event.type === "ENGINE_REGISTER" || event.type === "ENGINE_HEARTBEAT") && this.engineLifecycleHandler) {
+            const handled = await this.engineLifecycleHandler(event);
+            if (handled) {
+                return;
+            }
+        }
         switch (event.type) {
             case "COMMAND_ACCEPTED":
                 await this.handleCommandAccepted(event);
@@ -430,6 +448,18 @@ export class BotLifecycleService {
             return;
         }
 
+        // Reject events from a superseded engine process (Engine A crashed,
+        // Engine B took over, A's delayed event arrives).
+        if (bot.engine_id && payload.engineId && bot.engine_id !== payload.engineId) {
+            logger.warn("State change from non-authoritative engine - ignoring", {
+                botId: payload.botId,
+                registeredEngineId: bot.engine_id,
+                eventEngineId: payload.engineId,
+                correlationId: event.correlationId,
+            });
+            return;
+        }
+
         // Never trust illegal engine reports.
         if (!canTransition(bot.actual_state, payload.to)) {
             logger.warn("Engine reported illegal state transition - ignoring", {
@@ -486,6 +516,56 @@ export class BotLifecycleService {
         });
 
         this.emitStateChanged(bot.id, bot.user_id, bot.actual_state, payload.to, event.correlationId);
+    }
+
+    // ===========================================
+    // ENGINE LIVENESS SUPERVISION
+    // ===========================================
+
+    /**
+     * Transition all RUNNING bots owned by `engineId` to UNKNOWN (called by
+     * EngineRegistryService when an engine's heartbeat times out). UNKNOWN
+     * means "engine unreachable, actual state untrusted" - the state machine
+     * allows recovery to RUNNING/STOPPED/ERROR once truth is re-established.
+     * Also notifies the frontend for each affected bot.
+     */
+    async markBotsUnknownForEngine(engineId: string): Promise<number> {
+        const bots = await query<BotRow>(
+            `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id
+             FROM bot_instances
+             WHERE engine_id = $1 AND actual_state = 'RUNNING'`,
+            [engineId]
+        );
+
+        for (const bot of bots.rows) {
+            const persisted = await this.persistTransition(
+                bot.id,
+                {
+                    desiredState: bot.desired_state,
+                    actualState: "UNKNOWN",
+                    errorCode: "ENGINE_HEARTBEAT_LOST",
+                    errorMessage: `Engine ${engineId} heartbeat timed out; actual state untrusted`,
+                },
+                bot.actual_state
+            );
+            if (persisted) {
+                await this.recordLifecycleEvent(bot.id, {
+                    eventType: "ENGINE_HEARTBEAT_LOST",
+                    fromState: bot.actual_state,
+                    toState: "UNKNOWN",
+                    correlationId: null,
+                    messageId: null,
+                    metadata: { engineId },
+                });
+                this.emitStateChanged(bot.id, bot.user_id, bot.actual_state, "UNKNOWN", `engine-offline-${engineId}`);
+                logger.error("Bot marked UNKNOWN after engine heartbeat loss", undefined, {
+                    botId: bot.id,
+                    engineId,
+                });
+            }
+        }
+
+        return bots.rows.length;
     }
 
     // ===========================================
@@ -635,7 +715,7 @@ export class BotLifecycleService {
     }
 
     private async findBot(botId: string): Promise<BotRow | null> {
-        const result = await query<BotRow>("SELECT id, user_id, strategy_id, status, desired_state, actual_state FROM bot_instances WHERE id = $1", [botId]);
+        const result = await query<BotRow>("SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id FROM bot_instances WHERE id = $1", [botId]);
         return result.rows[0] ?? null;
     }
 

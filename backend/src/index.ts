@@ -59,6 +59,7 @@ import { contextLogger as logger } from "./core/logging";
 import { engineProtocolService } from "./core/bots/engine-protocol.service";
 import { botLifecycleService } from "./core/bots/bot-lifecycle.service";
 import { commandTimeoutSweeper } from "./core/bots/command-timeout.sweeper";
+import { engineRegistryService } from "./core/bots/engine-registry.service";
 import { setRequestContext, generateCorrelationId, generateRequestId } from "./shared/utils/context";
 
 // Set default context for application initialization
@@ -462,6 +463,9 @@ export const startServer = (): Promise<typeof httpServer> => {
             // ✅ START ENGINE PROTOCOL LISTENER (Redis Streams control plane)
             // Consumes engine events and drives bot lifecycle persistence.
             botLifecycleService.setSocketServer(io);
+            // ENGINE_REGISTER / ENGINE_HEARTBEAT go to the engine registry
+            // (liveness supervision + authoritative engine identity).
+            botLifecycleService.setEngineLifecycleHandler(event => engineRegistryService.handleEngineEvent(event));
             engineProtocolService
                 .start(event => botLifecycleService.handleEngineEvent(event))
                 .then(() => logger.info("🔌 Engine protocol listener started"))
@@ -472,6 +476,11 @@ export const startServer = (): Promise<typeof httpServer> => {
             // ✅ START COMMAND TIMEOUT SWEEPER (lifecycle supervision)
             // Transitions bots to ERROR when the engine never confirms a command.
             commandTimeoutSweeper.start();
+
+            // ✅ START ENGINE REGISTRY SUPERVISION (heartbeat liveness)
+            // Marks engines OFFLINE after a heartbeat timeout and their
+            // RUNNING bots to UNKNOWN (actual state untrusted).
+            engineRegistryService.start();
 
             // Note: connectToOrderly requires a user accountId (only available for REGISTERED/VERIFIED).
             // It is triggered in websocket.service.ts when a REGISTERED/VERIFIED user connects.
@@ -591,6 +600,7 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
         // Stop consuming engine events (leaves in-flight messages for redelivery)
         try {
             commandTimeoutSweeper.stop();
+            engineRegistryService.stop();
             engineProtocolService.stop();
             logger.info("Engine protocol listener stopped");
         } catch (error) {

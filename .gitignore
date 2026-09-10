@@ -48,4 +48,4 @@ frontend/coverage/
 engine/coverage/
 
 # Debug files
-backend/debug/
+backend/debug/.engine-state.json

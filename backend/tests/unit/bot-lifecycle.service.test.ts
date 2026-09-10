@@ -292,6 +292,23 @@ describe('BotLifecycleService', () => {
             // No lifecycle event should be recorded for a stale (unapplied) transition.
             expect(mockQuery.mock.calls.filter(call => String(call[0]).includes('INSERT INTO bot_lifecycle_events'))).toHaveLength(0);
         });
+
+        it('ignores STATE_CHANGED from a non-authoritative engine id', async () => {
+            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'rogue-engine', from: 'STARTING', to: 'RUNNING' }, 'corr-9');
+
+            mockQuery.mockImplementation((sql: string) => {
+                if (String(sql).startsWith('SELECT id, user_id')) {
+                    return Promise.resolve({
+                        rows: [{ ...botRow, engine_id: 'trusted-engine', desired_state: 'RUNNING', actual_state: 'STARTING' }],
+                    });
+                }
+                return okResult();
+            });
+
+            await service.handleEngineEvent(event);
+
+            expect(mockQuery.mock.calls.filter(call => String(call[0]).includes('UPDATE bot_instances'))).toHaveLength(0);
+        });
     });
 
     describe('concurrency (compare-and-set transitions)', () => {

@@ -16,12 +16,19 @@
 
 import { ProtocolMessage } from "./bot-command";
 import { BotActualState } from "./bot-state";
+import { EngineLifecycleEventPayload } from "./engine-lifecycle";
 
 // ===========================================
 // EVENT TYPES
 // ===========================================
 
-export type BotEventType = "COMMAND_ACCEPTED" | "COMMAND_FAILED" | "STATE_CHANGED";
+export type BotEventType =
+    | "COMMAND_ACCEPTED"
+    | "COMMAND_FAILED"
+    | "STATE_CHANGED"
+    // Engine lifecycle events (registration / heartbeat) - see engine-lifecycle.ts
+    | "ENGINE_REGISTER"
+    | "ENGINE_HEARTBEAT";
 
 export interface CommandAcceptedEventPayload {
     botId: string;
@@ -50,7 +57,11 @@ export interface StateChangedEventPayload {
     reason?: string;
 }
 
-export type BotEventPayload = CommandAcceptedEventPayload | CommandFailedEventPayload | StateChangedEventPayload;
+export type BotEventPayload =
+    | CommandAcceptedEventPayload
+    | CommandFailedEventPayload
+    | StateChangedEventPayload
+    | EngineLifecycleEventPayload;
 
 export type BotEvent = ProtocolMessage<BotEventPayload>;
 
@@ -81,7 +92,10 @@ export function createBotEvent<P extends BotEventPayload>(type: BotEventType, pa
 import { isProtocolMessage } from "./bot-command";
 
 export function isBotEvent(obj: unknown): obj is BotEvent {
-    return isProtocolMessage(obj) && (["COMMAND_ACCEPTED", "COMMAND_FAILED", "STATE_CHANGED"] as string[]).includes(obj.type);
+    return (
+        isProtocolMessage(obj) &&
+        (["COMMAND_ACCEPTED", "COMMAND_FAILED", "STATE_CHANGED", "ENGINE_REGISTER", "ENGINE_HEARTBEAT"] as string[]).includes(obj.type)
+    );
 }
 
 export function isCommandAcceptedEvent(obj: unknown): obj is ProtocolMessage<CommandAcceptedEventPayload> {

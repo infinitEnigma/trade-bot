@@ -295,6 +295,7 @@ export * from './types/logging';
 export * from './protocol/bot-state';
 export * from './protocol/bot-command';
 export * from './protocol/bot-event';
+export * from './protocol/engine-lifecycle';
 
 // ============================================
 // Engine Integration Contract
