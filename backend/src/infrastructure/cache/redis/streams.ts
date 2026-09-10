@@ -33,6 +33,9 @@ export const ENGINE_EVENTS_CONSUMER_GROUP = "engine-events-group";
 export const BACKEND_CONSUMER_NAME = "backend-consumer";
 export const ENGINE_CONSUMER_NAME = "engine-consumer";
 
+/** TTL for durable dedup markers (survive process restarts). */
+export const DEDUP_TTL_SECONDS = 24 * 60 * 60;
+
 export interface StreamMessage {
     id: string;
     data: EngineCommand | EngineEvent;
@@ -160,6 +163,66 @@ export class RedisStreamOperations {
             const errorMessage = (error as Error).message;
             logger.error("Stream acknowledge error", error as Error, { stream, consumerGroup, error: errorMessage });
             return { success: false, error: errorMessage };
+        }
+    }
+
+    /**
+     * Recover pending messages via XAUTOCLAIM: claims entries that were read
+     * by a consumer which crashed/never acked them, provided they have been
+     * idle for at least `minIdleMs`. Only long-stuck messages are claimed -
+     * in-flight processing on a healthy consumer takes seconds.
+     */
+    async claimPending(
+        stream: string,
+        consumerGroup: string,
+        consumerName: string,
+        minIdleMs: number,
+        count: number = 10
+    ): Promise<{ success: boolean; messages?: StreamMessage[]; error?: string }> {
+        try {
+            const client = this.connectionManager.getClient();
+            const reply = await client.xAutoClaim(stream, consumerGroup, consumerName, minIdleMs, "0-0", { COUNT: count });
+            const entries = (reply?.messages ?? []).filter(m => m !== null) as { id: string; message: Record<string, string> }[];
+
+            const messages = entries.map(msg => ({
+                id: msg.id,
+                data: JSON.parse(msg.message.data),
+            }));
+            if (messages.length > 0) {
+                logger.info("Recovered pending stream messages via XAUTOCLAIM", { stream, consumerGroup, count: messages.length });
+            }
+            return { success: true, messages };
+        } catch (error) {
+            const errorMessage = (error as Error).message;
+            logger.error("Stream claim-pending error", error as Error, { stream, consumerGroup, error: errorMessage });
+            return { success: false, error: errorMessage };
+        }
+    }
+
+    /**
+     * Durable at-least-once deduplication marker. Unlike the in-memory set,
+     * this survives process restarts (stored in Redis with a TTL).
+     * Returns true if this process is the first to mark the message.
+     */
+    async markMessageProcessed(scope: string, messageId: string, ttlSeconds: number = DEDUP_TTL_SECONDS): Promise<boolean> {
+        try {
+            const client = this.connectionManager.getClient();
+            const result = await client.set(`tradebot:dedup:${scope}:${messageId}`, "1", { EX: ttlSeconds, NX: true });
+            return result === "OK";
+        } catch (error) {
+            logger.error("Dedup marker write failed - falling back to in-memory dedup", error as Error, { scope, messageId });
+            return true; // Fail open: better to double-process than to drop.
+        }
+    }
+
+    /** Check the durable dedup marker. Unknown errors fail open (not processed). */
+    async isMessageProcessed(scope: string, messageId: string): Promise<boolean> {
+        try {
+            const client = this.connectionManager.getClient();
+            return (await client.get(`tradebot:dedup:${scope}:${messageId}`)) === "1";
+        } catch (error) {
+            logger.error("Dedup marker read failed", error as Error, { scope, messageId });
+            return false;
         }
     }
 

@@ -32,6 +32,8 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
 const BOT_ENGINE_API_KEY = process.env.BOT_ENGINE_API_KEY || '';
 const TICK_INTERVAL_MS = 5000;
 const HEARTBEAT_INTERVAL_MS = Number(process.env.ENGINE_HEARTBEAT_INTERVAL_MS || 10_000);
+/** Min idle time before a stuck pending command is reclaimed (XAUTOCLAIM). */
+const PENDING_RECOVERY_MIN_IDLE_MS = Number(process.env.PENDING_RECOVERY_MIN_IDLE_MS || 60_000);
 const ENGINE_VERSION = 'kodiak@1.0.0';
 
 /**
@@ -128,6 +130,8 @@ class BotManager {
     /** Monotonically increasing per (re)start - rejects superseded processes. */
     readonly epoch: number;
     private heartbeatIntervalId: NodeJS.Timeout | null = null;
+    /** Scope for the durable (Redis-backed) command dedup markers. */
+    private readonly dedupScope = 'engine-commands';
 
     constructor() {
         this.streamOperations = getRedisStreamOperations();
@@ -214,10 +218,12 @@ class BotManager {
     /**
      * Handle one command envelope. Never throws: failures are reported via
      * COMMAND_FAILED / STATE_CHANGED events so the message can be acked.
+     * Deduplication is durable (Redis-backed with TTL) so a command processed
+     * before an engine crash is not re-executed after redelivery.
      */
     async handleCommand(command: BotCommand): Promise<void> {
-        // Deduplicate redelivered commands (at-least-once delivery).
-        if (this.processedMessageIds.has(command.messageId)) {
+        // Durable deduplication of redelivered commands (at-least-once delivery).
+        if (this.processedMessageIds.has(command.messageId) || (await this.streamOperations.isMessageProcessed(this.dedupScope, command.messageId))) {
             logger.debug('Duplicate command ignored', { messageId: command.messageId, type: command.type });
             return;
         }
@@ -233,10 +239,7 @@ class BotManager {
                 logger.warn('Unknown command type', { type: String((command as { type?: string }).type) });
             }
 
-            this.processedMessageIds.add(command.messageId);
-            if (this.processedMessageIds.size > DEDUP_SET_MAX_SIZE) {
-                this.processedMessageIds = new Set(Array.from(this.processedMessageIds).slice(-DEDUP_SET_MAX_SIZE / 2));
-            }
+            await this.markCommandProcessed(command.messageId);
         } catch (error) {
             logger.error('Unexpected error handling command', {
                 commandType: command.type,
@@ -245,6 +248,14 @@ class BotManager {
             });
             this.processedMessageIds.add(command.messageId);
         }
+    }
+
+    private async markCommandProcessed(messageId: string): Promise<void> {
+        this.processedMessageIds.add(messageId);
+        if (this.processedMessageIds.size > DEDUP_SET_MAX_SIZE) {
+            this.processedMessageIds = new Set(Array.from(this.processedMessageIds).slice(-DEDUP_SET_MAX_SIZE / 2));
+        }
+        await this.streamOperations.markMessageProcessed(this.dedupScope, messageId);
     }
 
     /**
@@ -419,6 +430,25 @@ async function listenForCommands(botManager: BotManager, streamOperations: Retur
                     }
                     // Ack after processing: message survives an engine crash.
                     await streamOperations.ack(ENGINE_COMMANDS_STREAM, ENGINE_COMMANDS_CONSUMER_GROUP, message.id);
+                }
+            } else {
+                // No new commands: opportunistically recover pending commands
+                // that a crashed engine consumer read but never acked. The 60s
+                // min-idle ensures only long-stuck messages are claimed.
+                const recovered = await streamOperations.claimPending(
+                    ENGINE_COMMANDS_STREAM,
+                    ENGINE_COMMANDS_CONSUMER_GROUP,
+                    'engine-' + botManager.engineId,
+                    PENDING_RECOVERY_MIN_IDLE_MS
+                );
+                if (recovered.success && recovered.messages) {
+                    for (const message of recovered.messages) {
+                        const data = message.data as unknown;
+                        if (isBotCommand(data)) {
+                            await botManager.handleCommand(data);
+                        }
+                        await streamOperations.ack(ENGINE_COMMANDS_STREAM, ENGINE_COMMANDS_CONSUMER_GROUP, message.id);
+                    }
                 }
             }
         } catch (error) {

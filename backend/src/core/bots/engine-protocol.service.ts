@@ -40,6 +40,11 @@ export const ENGINE_COMMANDS_CONSUMER_GROUP = "engine-workers";
 /** Bounded size for the backend-side event deduplication set. */
 const DEDUP_SET_MAX_SIZE = 10_000;
 
+/** Minimum idle time before a pending event is claimed by XAUTOCLAIM. */
+export const PENDING_RECOVERY_MIN_IDLE_MS = Number(process.env.PENDING_RECOVERY_MIN_IDLE_MS ?? 60_000);
+/** How often the event loop attempts a pending-event recovery pass. */
+const PENDING_RECOVERY_INTERVAL_MS = Number(process.env.PENDING_RECOVERY_INTERVAL_MS ?? 30_000);
+
 export interface EngineProtocolServiceDependencies {
     streamOperations?: RedisStreamOperations;
     connectionManager?: RedisConnectionManager;
@@ -70,6 +75,8 @@ export class EngineProtocolService {
     private isListening = false;
     /** Recently processed event messageIds for at-least-once deduplication. */
     private processedMessageIds: Set<string> = new Set();
+    /** Scope for the durable (Redis-backed) dedup markers. */
+    private readonly dedupScope = "backend-engine-events";
 
     constructor(deps: EngineProtocolServiceDependencies = {}) {
         this.connectionManager = deps.connectionManager ?? new RedisConnectionManager();
@@ -156,6 +163,7 @@ export class EngineProtocolService {
     // ===========================================
 
     private async eventListenerLoop(): Promise<void> {
+        let lastRecoveryAt = 0;
         while (this.isListening) {
             try {
                 const result = await this.streamOperations.read(BOT_EVENTS_STREAM, {
@@ -167,6 +175,11 @@ export class EngineProtocolService {
                 });
 
                 if (!result.success || !result.messages || result.messages.length === 0) {
+                    await this.recoverPendingEvents(lastRecoveryAt).then(recovered => {
+                        if (recovered) {
+                            lastRecoveryAt = Date.now();
+                        }
+                    });
                     continue;
                 }
 
@@ -185,6 +198,32 @@ export class EngineProtocolService {
         }
     }
 
+    /**
+     * Claim and process pending events that a previous backend consumer read
+     * but never acked (crash before ACK). Rate-limited to one XAUTOCLAIM scan
+     * per recovery interval; only messages idle beyond PENDING_RECOVERY_MIN_IDLE_MS
+     * are claimed so healthy in-flight processing is never disturbed.
+     * Returns true if a recovery pass ran.
+     */
+    private async recoverPendingEvents(lastRecoveryAt: number): Promise<boolean> {
+        const now = Date.now();
+        if (now - lastRecoveryAt < PENDING_RECOVERY_INTERVAL_MS) {
+            return false;
+        }
+        const result = await this.streamOperations.claimPending(
+            BOT_EVENTS_STREAM,
+            BACKEND_EVENTS_CONSUMER_GROUP,
+            this.consumerName,
+            PENDING_RECOVERY_MIN_IDLE_MS
+        );
+        if (result.success && result.messages) {
+            for (const message of result.messages) {
+                await this.processEventMessage(message.id, message.data);
+            }
+        }
+        return true;
+    }
+
     private async processEventMessage(streamId: string, data: unknown): Promise<void> {
         if (!isBotEvent(data)) {
             logger.warn("Ignoring malformed engine event", { streamId });
@@ -192,8 +231,8 @@ export class EngineProtocolService {
             return;
         }
 
-        // Deduplicate redelivered messages (at-least-once delivery).
-        if (this.processedMessageIds.has(data.messageId)) {
+        // Durable deduplication (survives restarts, Redis-backed with TTL).
+        if (await this.alreadyProcessed(data.messageId)) {
             logger.debug("Duplicate engine event ignored", { messageId: data.messageId, type: data.type });
             await this.safeAck(streamId);
             return;
@@ -204,11 +243,7 @@ export class EngineProtocolService {
                 await this.eventHandler(data);
             }
 
-            this.processedMessageIds.add(data.messageId);
-            if (this.processedMessageIds.size > DEDUP_SET_MAX_SIZE) {
-                // Bounded memory: keep only the newest half when the set grows too large.
-                this.processedMessageIds = new Set(Array.from(this.processedMessageIds).slice(-DEDUP_SET_MAX_SIZE / 2));
-            }
+            await this.markProcessed(data.messageId);
 
             await this.safeAck(streamId);
         } catch (error) {
@@ -219,6 +254,22 @@ export class EngineProtocolService {
                 error: error instanceof Error ? error.message : String(error),
             });
         }
+    }
+
+    /** Durable (Redis) plus in-memory fallback dedup check. */
+    private async alreadyProcessed(messageId: string): Promise<boolean> {
+        if (this.processedMessageIds.has(messageId)) {
+            return true;
+        }
+        return this.streamOperations.isMessageProcessed(this.dedupScope, messageId);
+    }
+
+    private async markProcessed(messageId: string): Promise<void> {
+        this.processedMessageIds.add(messageId);
+        if (this.processedMessageIds.size > DEDUP_SET_MAX_SIZE) {
+            this.processedMessageIds = new Set(Array.from(this.processedMessageIds).slice(-DEDUP_SET_MAX_SIZE / 2));
+        }
+        await this.streamOperations.markMessageProcessed(this.dedupScope, messageId);
     }
 
     private async safeAck(streamId: string): Promise<void> {

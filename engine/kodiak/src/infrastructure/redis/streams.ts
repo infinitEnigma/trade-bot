@@ -182,7 +182,9 @@ export class RedisStreamOperations {
      */
     async createConsumerGroup(stream: string, consumerGroup: string): Promise<{ success: boolean; error?: string }> {
         try {
-            await this.client.xGroupCreate(stream, consumerGroup, '$', { MKSTREAM: true });
+            // Start at '0' (not '$') so a fresh deployment consumes commands
+            // that were queued before the group existed.
+            await this.client.xGroupCreate(stream, consumerGroup, '0', { MKSTREAM: true });
             logger.info('Consumer group created', { stream, consumerGroup });
             return { success: true };
         } catch (error) {
@@ -246,6 +248,60 @@ export class RedisStreamOperations {
             const errorMessage = (error as Error).message;
             logger.error('Stream delete error', { stream, messageId, error: errorMessage });
             return { success: false, error: errorMessage };
+        }
+    }
+
+    /**
+     * Recover pending messages via XAUTOCLAIM: claims entries read by a
+     * consumer that crashed/never acked, provided they were idle at least
+     * `minIdleMs`. Long idle threshold avoids disturbing in-flight work.
+     */
+    async claimPending(
+        stream: string,
+        consumerGroup: string,
+        consumerName: string,
+        minIdleMs: number,
+        count: number = 10
+    ): Promise<{ success: boolean; messages?: StreamMessage[]; error?: string }> {
+        try {
+            const reply = await this.client.xAutoClaim(stream, consumerGroup, consumerName, minIdleMs, '0-0', { COUNT: count });
+            const entries = (reply?.messages ?? []).filter(m => m !== null) as { id: string; message: Record<string, string> }[];
+
+            const messages = entries.map(msg => ({
+                id: msg.id,
+                data: JSON.parse(msg.message.data),
+            }));
+            if (messages.length > 0) {
+                logger.info('Recovered pending stream messages via XAUTOCLAIM', { stream, consumerGroup, count: messages.length });
+            }
+            return { success: true, messages };
+        } catch (error) {
+            const errorMessage = (error as Error).message;
+            logger.error('Stream claim-pending error', { stream, consumerGroup, error: errorMessage });
+            return { success: false, error: errorMessage };
+        }
+    }
+
+    /**
+     * Durable at-least-once deduplication marker (Redis-backed with TTL) -
+     * survives engine restarts, unlike the in-memory set.
+     */
+    async markMessageProcessed(scope: string, messageId: string, ttlSeconds: number = 24 * 60 * 60): Promise<boolean> {
+        try {
+            const result = await this.client.set(`tradebot:dedup:${scope}:${messageId}`, '1', { EX: ttlSeconds, NX: true });
+            return result === 'OK';
+        } catch (error) {
+            logger.error('Dedup marker write failed - falling back to in-memory dedup', { scope, messageId, error: (error as Error).message });
+            return true; // Fail open: better to double-process than to drop.
+        }
+    }
+
+    async isMessageProcessed(scope: string, messageId: string): Promise<boolean> {
+        try {
+            return (await this.client.get(`tradebot:dedup:${scope}:${messageId}`)) === '1';
+        } catch (error) {
+            logger.error('Dedup marker read failed', { scope, messageId, error: (error as Error).message });
+            return false;
         }
     }
 }
