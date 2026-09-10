@@ -68,7 +68,6 @@
 
 import { Router, Response, NextFunction } from "express";
 import { v4 as uuidv4 } from "uuid";
-import { randomBytes, createCipheriv } from "crypto";
 import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
 import { query } from "../../../database/pool";
 import {
@@ -81,8 +80,8 @@ import {
 } from "@trade-bot/shared";
 import { getCorrelationId, getContextForLogging } from "../../../shared/utils/context";
 import { validators } from "../../middleware/validation.middleware";
-import { withCredentials, SecureCredentials } from "../../../infrastructure/security/encryption.service"; // ✅ Secure credential handling
 import { serviceProvider } from "../../../core/service-provider";
+import { botLifecycleService } from "../../../core/bots/bot-lifecycle.service";
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service"; // ✅ Rate limiting
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
@@ -347,38 +346,26 @@ router.post(
             const userId = getUserId(req);
             const { strategyId, notionalAmount } = req.body;
 
-            // Ensure trading engine is running
+            // Ensure trading engine process is running
             await serviceProvider.getEngineManager().ensureEngineRunning();
-
-            // Create and start bot using bot management service
-            const botManagementService = serviceProvider.getBotManagementService();
-            const botInstance = await botManagementService.createAndStartBot(userId, strategyId, parseFloat(notionalAmount));
 
             // Check if user has verified credentials first
             const hasCredentials = await hasUserKodiakCredentials(userId);
             if (!hasCredentials) {
                 const authError = new ValidationError("No verified Kodiak credentials found");
-                return res.status(authError.statusCode).json(
-                    createErrorResponse(authError, getCorrelationId())
-                );
+                return res.status(authError.statusCode).json(createErrorResponse(authError, getCorrelationId()));
             }
 
-            // Get strategy details
-            const strategyResult = await query<{ id: string; name: string; type: string; config: Record<string, unknown>; user_id: string }>(
-                "SELECT * FROM strategies WHERE id = $1 AND user_id = $2",
-                [strategyId, userId]
-            );
+            // Desired-state transition: creates the instance, persists
+            // desired_state=RUNNING / actual_state=STARTING, records the
+            // lifecycle audit trail, and sends BOT_START to the engine via
+            // Redis Streams. The engine fetches credentials out-of-band
+            // after COMMAND_ACCEPTED - no secrets ever travel through the
+            // control protocol or Socket.IO.
+            const lifecycle = await botLifecycleService.createAndStart(userId, strategyId, parseFloat(notionalAmount));
 
-            if (strategyResult.rows.length === 0) {
-                const notFoundError = new NotFoundError("Strategy not found");
-                return res.status(notFoundError.statusCode).json(
-                    createErrorResponse(notFoundError, getCorrelationId())
-                );
-            }
-
-            const strategy = strategyResult.rows[0];
-
-            // Log credential access for audit trail
+            // Log credential access for audit trail (engine will fetch
+            // credentials through the authenticated engine endpoint).
             await query(
                 "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
                 [
@@ -386,73 +373,24 @@ router.post(
                     "CREDENTIAL_ACCESS",
                     {
                         action: "bot_start",
-                        botId: botInstance.id,
+                        botId: lifecycle.botId,
                         strategyId,
-                        timestamp: new Date().toISOString()
+                        correlationId: lifecycle.correlationId,
+                        timestamp: new Date().toISOString(),
                     },
                 ]
             );
 
-            // Update strategy as active
-            await query("UPDATE strategies SET active = true WHERE id = $1", [
-                strategyId,
-            ]);
-
-            // Use secure credential handling - decrypt, use, and auto-cleanup
-            await withCredentials(userId, async (credentials: SecureCredentials) => {
-                // Generate session key for end-to-end encryption
-                const sessionKey = randomBytes(32).toString('hex');
-
-                // Get encryption service instance
-                const { encryptionService } = await import("../../../infrastructure/security/encryption.service");
-                const encryptedSessionKey = await encryptionService.encryptWithVersion(sessionKey);
-
-                // Create decrypted credentials object (temporary, will be encrypted immediately)
-                const decryptedCredentials = {
-                    accountId: credentials.get('accountId'),
-                    accessKey: credentials.get('apiKey'),
-                    secretKey: credentials.get('secretKey'),
-                };
-
-                // Encrypt credentials with session key for transmission
-                const algorithm = 'aes-256-gcm';
-                const iv = randomBytes(16);
-                const cipher = createCipheriv(algorithm, Buffer.from(sessionKey, 'hex'), iv);
-
-                const credentialsJson = JSON.stringify(decryptedCredentials);
-                let encrypted = cipher.update(credentialsJson, 'utf8', 'hex');
-                encrypted += cipher.final('hex');
-                const authTag = cipher.getAuthTag();
-
-                const encryptedCredentialsPayload = {
-                    encrypted,
-                    iv: iv.toString('hex'),
-                    authTag: authTag.toString('hex'),
-                };
-
-                // Emit WebSocket event with encrypted credentials
-                const io = req.app.get("io");
-                io.emit("bot:start", {
-                    botId: botInstance.id,
-                    strategyId,
-                    strategy,
-                    userId,
-                    encryptedCredentials: encryptedCredentialsPayload,
-                    sessionKey: encryptedSessionKey, // Encrypted session key for engine to decrypt
-                });
-            });
-
-            res.json({
+            // 202 Accepted: the bot is STARTING, not yet RUNNING.
+            // Only a STATE_CHANGED event from the engine means RUNNING.
+            res.status(202).json({
                 success: true,
                 data: {
-                    botId: botInstance.id,
+                    botId: lifecycle.botId,
                     strategyId,
-                    status: "RUNNING",
-                    strategy: {
-                        name: strategy.name,
-                        type: strategy.type,
-                        config: strategy.config,
-                    },
+                    desiredState: lifecycle.desiredState,
+                    actualState: lifecycle.actualState,
+                    correlationId: lifecycle.correlationId,
                 },
                 timestamp: Date.now(),
             });
@@ -461,11 +399,13 @@ router.post(
                 ...getContextForLogging(),
                 userId: req.user?.userId,
             });
-            console.error("Detailed error in start bot endpoint:", err);
-            const internalError = new DatabaseError("Failed to start bot");
-            res.status(internalError.statusCode).json(
-                createErrorResponse(internalError, getCorrelationId())
-            );
+            const statusCode = (err as Error & { statusCode?: number }).statusCode ?? 500;
+            const message = statusCode === 404 ? "Strategy not found" : statusCode === 409 ? (err as Error).message : statusCode === 503 ? "Engine communication unavailable" : "Failed to start bot";
+            res.status(statusCode).json({
+                success: false,
+                error: message,
+                timestamp: Date.now(),
+            });
         }
     }
 );
@@ -491,15 +431,19 @@ router.post(
             const userId = getUserId(req);
             const { botId } = req.body;
 
-            // Stop bot using service
-            const botManagementService = serviceProvider.getBotManagementService();
-            await botManagementService.stopBot(userId, botId);
+            // Desired-state transition: persists desired_state=STOPPED,
+            // actual_state=STOPPING (or STOPPED), records the audit trail and
+            // sends BOT_STOP to the engine via Redis Streams. Idempotent.
+            const lifecycle = await botLifecycleService.stop(botId, userId);
 
-            res.json({
+            // 202 Accepted: the bot is STOPPING until the engine confirms.
+            res.status(202).json({
                 success: true,
                 data: {
-                    botId,
-                    status: "STOPPED",
+                    botId: lifecycle.botId,
+                    desiredState: lifecycle.desiredState,
+                    actualState: lifecycle.actualState,
+                    correlationId: lifecycle.correlationId,
                 },
                 timestamp: Date.now(),
             });
@@ -507,10 +451,12 @@ router.post(
             logger.error("Stop bot error", err as Error, {
                 userId: req.user?.userId,
             });
-            const dbError = new DatabaseError("Failed to stop bot");
-            res.status(dbError.statusCode).json(
-                createErrorResponse(dbError, getCorrelationId())
-            );
+            const statusCode = (err as Error & { statusCode?: number }).statusCode ?? 500;
+            res.status(statusCode).json({
+                success: false,
+                error: statusCode === 404 ? "Bot not found" : statusCode === 503 ? "Engine communication unavailable" : "Failed to stop bot",
+                timestamp: Date.now(),
+            });
         }
     }
 );
@@ -537,6 +483,8 @@ router.get(
 
             const statusInfo = {
                 ...botInstance,
+                desiredState: botInstance.desired_state,
+                actualState: botInstance.actual_state,
                 statusValidation: {
                     isStale: false, // Simplified
                     lastHeartbeatAge: 0,

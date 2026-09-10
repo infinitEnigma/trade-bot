@@ -1,553 +1,376 @@
 import 'dotenv/config';
 import { logger } from './utils/logger';
-import { getRedisStreamOperations } from './infrastructure/redis/streams';
 import {
-  EngineCommand,
-  EngineEvent,
-  isStartEngineCommand,
-  isStopEngineCommand,
-  isStartBotCommand,
-  isStopBotCommand,
-  isEmergencyStopCommand,
-  isUpdateStrategyConfigCommand
+    getRedisStreamOperations,
+    ENGINE_COMMANDS_STREAM,
+    ENGINE_EVENTS_STREAM,
+    ENGINE_COMMANDS_CONSUMER_GROUP,
+} from './infrastructure/redis/streams';
+import {
+    BotActualState,
+    BotCommand,
+    BotEvent,
+    BotEventType,
+    EngineEvent,
+    StartBotCommandPayload,
+    createBotEvent,
+    isBotCommand,
+    isStartBotCommand,
+    isStopBotCommand,
+    isStatusRequestCommand,
 } from '@trade-bot/shared';
 import { GridTradingStrategy } from './strategies/grid';
 import { OrderlyClient, createOrderlyClient } from './services/orderly';
 
-// Bot instance management
-interface BotInstance {
-  botId: string;
-  strategyId: string;
-  strategy: GridTradingStrategy;
-  intervalId: NodeJS.Timeout;
-  userId: string;
-  orderlyClient: OrderlyClient; // Each bot has its own client with user credentials
+// ===========================================
+// CONFIGURATION
+// ===========================================
+
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+const BOT_ENGINE_API_KEY = process.env.BOT_ENGINE_API_KEY || '';
+const TICK_INTERVAL_MS = 5000;
+
+/** Bounded size for the command deduplication set (at-least-once delivery). */
+const DEDUP_SET_MAX_SIZE = 10_000;
+
+// ===========================================
+// BOT RUNTIME
+// ===========================================
+
+interface BotRuntime {
+    botId: string;
+    strategyId: string;
+    userId: string;
+    state: BotActualState;
+    strategy: GridTradingStrategy;
+    intervalId: NodeJS.Timeout;
+    orderlyClient: OrderlyClient;
 }
 
-class TradingEngine {
-  private bots: Map<string, BotInstance> = new Map();
-  private streamOperations = getRedisStreamOperations();
-  private engineId = 'kodiak-engine-' + Math.random().toString(36).substr(2, 9);
+interface FetchCredentialsResult {
+    accountId: string;
+    accessKey: string;
+    secretKey: string;
+}
 
-  constructor() {
-    logger.info('Trading Engine initialized');
-  }
-
-  /**
-   * Start the engine and begin listening for commands
-   */
-  async start(): Promise<void> {
-    try {
-      logger.info('Starting Trading Engine', { engineId: this.engineId });
-
-      // Connect to Redis
-      await this.streamOperations.connect();
-
-      // Create consumer group if it doesn't exist
-      await this.streamOperations.createConsumerGroup('engine:commands', 'engine-group');
-
-      // Start listening for commands
-      this.listenForCommands();
-
-      // Send engine started event
-      await this.streamOperations.publish('engine:events', {
-        type: 'ENGINE_STARTED',
-        engineId: this.engineId,
-        timestamp: Date.now(),
-        uptime: 0
-      } as EngineEvent);
-
-      logger.info('Trading Engine started successfully', { engineId: this.engineId });
-
-    } catch (error) {
-      logger.error('Failed to start Trading Engine', {
-        engineId: this.engineId,
-        error: error instanceof Error ? error.message : String(error)
-      });
-      process.exit(1);
+/**
+ * Out-of-band credential fetch: after COMMAND_ACCEPTED the engine pulls the
+ * user's Kodiak credentials from the authenticated backend endpoint.
+ * Secrets never travel through the Redis Streams control plane.
+ */
+async function fetchCredentials(botId: string, correlationId: string): Promise<FetchCredentialsResult> {
+    if (!BOT_ENGINE_API_KEY) {
+        throw new Error('BOT_ENGINE_API_KEY not configured');
     }
-  }
+    const url = `${BACKEND_URL}/api/bot/engine/credentials/${encodeURIComponent(botId)}?correlationId=${encodeURIComponent(correlationId)}`;
+    const response = await fetch(url, { headers: { 'x-bot-engine-key': BOT_ENGINE_API_KEY } });
+    if (!response.ok) {
+        throw new Error(`Credential fetch failed with HTTP ${response.status}`);
+    }
+    const body = (await response.json()) as { success: boolean; data?: FetchCredentialsResult; error?: string };
+    if (!body.success || !body.data) {
+        throw new Error(body.error || 'Credential fetch returned no data');
+    }
+    return body.data;
+}
 
-  /**
-   * Listen for commands from the backend
-   */
-  private async listenForCommands(): Promise<void> {
-    logger.info('Listening for engine commands');
+// === PART 2 (BotManager) appended below ===
+// ===========================================
+// BOT MANAGER
+// ===========================================
 
+class BotManager {
+    private bots: Map<string, BotRuntime> = new Map();
+    private initializing = new Set<string>();
+    private processedMessageIds: Set<string> = new Set();
+    private streamOperations: ReturnType<typeof getRedisStreamOperations>;
+    readonly engineId: string;
+
+    constructor() {
+        this.streamOperations = getRedisStreamOperations();
+        this.engineId = 'kodiak-engine-' + Math.random().toString(36).substring(2, 11);
+    }
+
+    /**
+     * Publish a protocol event to the backend.
+     */
+    private async publishEvent(type: BotEventType, payload: Record<string, unknown>, correlationId: string): Promise<void> {
+        const event: BotEvent = createBotEvent(type, payload as never, correlationId);
+        const result = await this.streamOperations.publish(ENGINE_EVENTS_STREAM, event as unknown as EngineEvent);
+        if (!result.success) {
+            logger.error('Failed to publish engine event', { type, botId: (payload as { botId?: string }).botId, error: result.error });
+        }
+    }
+
+    private async publishAccepted(botId: string, commandType: string, correlationId: string): Promise<void> {
+        await this.publishEvent('COMMAND_ACCEPTED', { botId, commandType, engineId: this.engineId }, correlationId);
+    }
+
+    private async publishFailed(botId: string, commandType: string, correlationId: string, errorCode: string, message: string): Promise<void> {
+        await this.publishEvent('COMMAND_FAILED', { botId, commandType, engineId: this.engineId, errorCode, message }, correlationId);
+    }
+
+    private async publishStateChanged(botId: string, from: BotActualState, to: BotActualState, correlationId: string, reason?: string): Promise<void> {
+        await this.publishEvent('STATE_CHANGED', { botId, engineId: this.engineId, from, to, reason }, correlationId);
+    }
+
+    /**
+     * Handle one command envelope. Never throws: failures are reported via
+     * COMMAND_FAILED / STATE_CHANGED events so the message can be acked.
+     */
+    async handleCommand(command: BotCommand): Promise<void> {
+        // Deduplicate redelivered commands (at-least-once delivery).
+        if (this.processedMessageIds.has(command.messageId)) {
+            logger.debug('Duplicate command ignored', { messageId: command.messageId, type: command.type });
+            return;
+        }
+
+        try {
+            if (isStartBotCommand(command)) {
+                await this.handleStart(command);
+            } else if (isStopBotCommand(command)) {
+                await this.handleStop(command);
+            } else if (isStatusRequestCommand(command)) {
+                await this.handleStatusRequest(command);
+            } else {
+                logger.warn('Unknown command type', { type: String((command as { type?: string }).type) });
+            }
+
+            this.processedMessageIds.add(command.messageId);
+            if (this.processedMessageIds.size > DEDUP_SET_MAX_SIZE) {
+                this.processedMessageIds = new Set(Array.from(this.processedMessageIds).slice(-DEDUP_SET_MAX_SIZE / 2));
+            }
+        } catch (error) {
+            logger.error('Unexpected error handling command', {
+                commandType: command.type,
+                botId: (command.payload as { botId?: string }).botId,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            this.processedMessageIds.add(command.messageId);
+        }
+    }
+
+    /**
+     * BOT_START: START -> COMMAND_ACCEPTED -> STARTING -> (init) -> RUNNING
+     */
+    private async handleStart(command: BotCommand): Promise<void> {
+        const { botId, strategyId, userId, config } = command.payload as StartBotCommandPayload;
+        const correlationId = command.correlationId;
+
+        await this.publishAccepted(botId, 'BOT_START', correlationId);
+
+        // Idempotency: never create a second trading loop for a running bot.
+        const existing = this.bots.get(botId);
+        if (existing && existing.state === 'RUNNING') {
+            logger.info('Start command for already-running bot - no-op', { botId });
+            await this.publishStateChanged(botId, 'RUNNING', 'RUNNING', correlationId);
+            return;
+        }
+        if (this.initializing.has(botId)) {
+            logger.info('Start command while initialization in flight - no-op', { botId });
+            return;
+        }
+
+        this.initializing.add(botId);
+        try {
+            await this.publishStateChanged(botId, 'STOPPED', 'STARTING', correlationId);
+
+            // 1. Fetch credentials out-of-band.
+            const credentials = await fetchCredentials(botId, correlationId);
+
+            // 2. Connect an Orderly client for this user.
+            const orderlyClient = createOrderlyClient(credentials.accountId, credentials.accessKey, credentials.secretKey, process.env.NODE_ENV !== 'production');
+
+            // 3. Resolve current market price.
+            const symbol = String(config.symbol || '');
+            if (!symbol) {
+                throw new Error('Strategy config is missing symbol');
+            }
+            const ticker = await orderlyClient.getTicker(symbol);
+            const currentPrice = Number(ticker.mark_price || ticker.price);
+            if (!currentPrice) {
+                throw new Error(`Could not resolve current price for ${symbol}`);
+            }
+
+            // 4. Create, initialize and start the strategy.
+            const gridStrategy = new GridTradingStrategy(
+                {
+                    symbol,
+                    gridSize: Number(config.gridSize) || 10,
+                    gridRangePercent: Number(config.gridRange) || 5,
+                    orderQuantity: Number(config.orderQuantity) || 1,
+                },
+                orderlyClient
+            );
+            await gridStrategy.initialize(currentPrice);
+            await gridStrategy.start();
+
+            // 5. Trading loop.
+            const intervalId = setInterval(() => {
+                void gridStrategy.tick().catch(error => {
+                    logger.error('Strategy tick error', { botId, error: error instanceof Error ? error.message : String(error) });
+                });
+            }, TICK_INTERVAL_MS);
+
+            this.bots.set(botId, {
+                botId,
+                strategyId,
+                userId,
+                state: 'RUNNING',
+                strategy: gridStrategy,
+                intervalId,
+                orderlyClient,
+            });
+
+            await this.publishStateChanged(botId, 'STARTING', 'RUNNING', correlationId);
+            logger.info('Bot started', { botId, symbol, engineId: this.engineId });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            logger.error('Bot start failed', { botId, error: message });
+            await this.publishFailed(botId, 'BOT_START', correlationId, 'BOT_START_FAILED', message);
+            await this.publishStateChanged(botId, 'STARTING', 'ERROR', correlationId, 'init_failed');
+        } finally {
+            this.initializing.delete(botId);
+        }
+    }
+
+    // === PART 3 (stop/status/loop/shutdown) appended below ===
+
+    /**
+     * BOT_STOP: -> COMMAND_ACCEPTED -> STOPPING -> (teardown) -> STOPPED
+     */
+    private async handleStop(command: BotCommand): Promise<void> {
+        const botId = (command.payload as { botId: string }).botId;
+        const correlationId = command.correlationId;
+
+        await this.publishAccepted(botId, 'BOT_STOP', correlationId);
+
+        const existing = this.bots.get(botId);
+        if (!existing) {
+            // Idempotency: stopping an unknown/stopped bot is a safe no-op.
+            logger.info('Stop command for unknown bot - no-op', { botId });
+            await this.publishStateChanged(botId, 'STOPPED', 'STOPPED', correlationId, 'not_running');
+            return;
+        }
+
+        await this.publishStateChanged(botId, 'RUNNING', 'STOPPING', correlationId, 'normal_stop');
+        try {
+            await existing.strategy.stop();
+        } catch (error) {
+            logger.error('Strategy stop error during bot stop', { botId, error: error instanceof Error ? error.message : String(error) });
+        }
+        clearInterval(existing.intervalId);
+        this.bots.delete(botId);
+
+        await this.publishStateChanged(botId, 'STOPPING', 'STOPPED', correlationId, 'normal_stop');
+        logger.info('Bot stopped', { botId, engineId: this.engineId });
+    }
+
+    /**
+     * BOT_STATUS_REQUEST: reply with the bot's state snapshot.
+     */
+    private async handleStatusRequest(command: BotCommand): Promise<void> {
+        const botId = (command.payload as { botId: string }).botId;
+        const existing = this.bots.get(botId);
+        const actualState: BotActualState = existing ? existing.state : this.initializing.has(botId) ? 'STARTING' : 'STOPPED';
+        await this.publishEvent('STATE_CHANGED', { botId, engineId: this.engineId, from: actualState, to: actualState, reason: 'status_request' }, command.correlationId);
+    }
+
+    /**
+     * Stop all bots (engine shutdown).
+     */
+    async stopAll(reason: string): Promise<void> {
+        for (const [, runtime] of this.bots) {
+            try {
+                await runtime.strategy.stop();
+            } catch (error) {
+                logger.error('Error stopping bot during shutdown', { botId: runtime.botId, error: error instanceof Error ? error.message : String(error) });
+            }
+            clearInterval(runtime.intervalId);
+        }
+        this.bots.clear();
+        logger.info('All bots stopped', { reason });
+    }
+}
+
+// ===========================================
+// COMMAND LOOP & BOOTSTRAP
+// ===========================================
+
+async function listenForCommands(botManager: BotManager, streamOperations: ReturnType<typeof getRedisStreamOperations>): Promise<void> {
+    logger.info('Listening for engine commands', { engineId: botManager.engineId });
+
+    // eslint-disable-next-line no-constant-condition
     while (true) {
-      try {
-        const result = await this.streamOperations.read('engine:commands', {
-          block: 5000, // Block for 5 seconds
-          count: 10,
-          consumerGroup: 'engine-group',
-          consumerName: 'engine-' + this.engineId,
-          autoAck: true
-        });
-
-        if (result.success && result.messages && result.messages.length > 0) {
-          for (const message of result.messages) {
-            await this.handleCommand(message.data);
-          }
-        }
-      } catch (error) {
-        logger.error('Error reading commands from stream', {
-          error: error instanceof Error ? error.message : String(error)
-        });
-      }
-    }
-  }
-
-  /**
-   * Handle incoming commands
-   */
-  private async handleCommand(command: EngineCommand): Promise<void> {
-    logger.debug('Received command', {
-      engineId: this.engineId,
-      commandType: command.type
-    });
-
-    try {
-      if (isStartEngineCommand(command)) {
-        await this.handleStartEngine(command);
-      } else if (isStopEngineCommand(command)) {
-        await this.handleStopEngine(command);
-      } else if (isStartBotCommand(command)) {
-        await this.handleStartBot(command);
-      } else if (isStopBotCommand(command)) {
-        await this.handleStopBot(command);
-      } else if (isEmergencyStopCommand(command)) {
-        await this.handleEmergencyStop(command);
-      } else if (isUpdateStrategyConfigCommand(command)) {
-        await this.handleUpdateStrategyConfig(command);
-      } else {
-        logger.warn('Unknown command type', { commandType: command.type });
-      }
-    } catch (error) {
-      logger.error('Error handling command', {
-        commandType: command.type,
-        error: error instanceof Error ? error.message : String(error)
-      });
-    }
-  }
-
-  /**
-   * Handle engine start command
-   */
-  private async handleStartEngine(command: any): Promise<void> {
-    logger.info('Engine start command received', { engineId: this.engineId });
-    // Already started
-  }
-
-  /**
-   * Handle engine stop command
-   */
-  private async handleStopEngine(command: any): Promise<void> {
-    logger.info('Engine stop command received', { engineId: this.engineId });
-    await this.shutdown();
-  }
-
-  /**
-   * Handle bot start command
-   */
-  private async handleStartBot(command: any): Promise<void> {
-    const { botId, strategyId, config, credentials } = command;
-
-    try {
-      logger.info('Starting bot', {
-        botId,
-        strategyId,
-        engineId: this.engineId
-      });
-
-      // Check if bot already exists
-      if (this.bots.has(botId)) {
-        logger.warn('Bot already exists, skipping start', { botId, engineId: this.engineId });
-        return;
-      }
-
-      // Validate that we have credentials
-      if (!credentials || !credentials.accountId || !credentials.accessKey || !credentials.secretKey) {
-        logger.error('Missing credentials for bot', { botId, engineId: this.engineId });
-        return;
-      }
-
-      // Create Orderly client for this specific user/bot
-      const orderlyClient = createOrderlyClient(
-        credentials.accountId,
-        credentials.accessKey,
-        credentials.secretKey,
-        process.env.NODE_ENV !== 'production' // Use testnet for development
-      );
-
-      // Get current market price for initialization
-      const symbol = config.symbol;
-      const ticker = await orderlyClient.getTicker(symbol);
-      const currentPrice = Number(ticker.mark_price || ticker.price);
-
-      if (!currentPrice) {
-        logger.error('Could not get current price', { symbol, engineId: this.engineId });
-        return;
-      }
-
-      // Create strategy instance
-      const gridConfig = {
-        symbol: config.symbol,
-        gridSize: config.gridSize || 10,
-        gridRangePercent: config.gridRange || 5,
-        orderQuantity: config.orderQuantity || 1
-      };
-
-      const gridStrategy = new GridTradingStrategy(gridConfig, orderlyClient);
-
-      // Initialize strategy
-      await gridStrategy.initialize(currentPrice);
-
-      // Start strategy
-      await gridStrategy.start();
-
-      // Set up trading loop (tick every 5 seconds)
-      const intervalId = setInterval(async () => {
         try {
-          await gridStrategy.tick();
+            const result = await streamOperations.read(ENGINE_COMMANDS_STREAM, {
+                block: 5000,
+                count: 10,
+                consumerGroup: ENGINE_COMMANDS_CONSUMER_GROUP,
+                consumerName: 'engine-' + botManager.engineId,
+                autoAck: true, // reads new (">") entries; acking is manual below
+            });
 
-          // Send heartbeat to backend
-          this.sendHeartbeat(botId, 'RUNNING');
+            if (result.success && result.messages && result.messages.length > 0) {
+                for (const message of result.messages) {
+                    const data = message.data as unknown;
+                    if (isBotCommand(data)) {
+                        await botManager.handleCommand(data);
+                    } else {
+                        logger.warn('Ignoring malformed command', { streamId: message.id });
+                    }
+                    // Ack after processing: message survives an engine crash.
+                    await streamOperations.ack(ENGINE_COMMANDS_STREAM, ENGINE_COMMANDS_CONSUMER_GROUP, message.id);
+                }
+            }
         } catch (error) {
-          logger.error('Strategy tick error', {
-            error: error instanceof Error ? error.message : String(error),
-            botId,
-            engineId: this.engineId
-          });
+            logger.error('Error reading commands from stream', {
+                error: error instanceof Error ? error.message : String(error),
+            });
         }
-      }, 5000);
-
-      // Store bot instance
-      const botInstance: BotInstance = {
-        botId,
-        strategyId,
-        strategy: gridStrategy,
-        intervalId,
-        userId: command.userId || 'unknown',
-        orderlyClient
-      };
-
-      this.bots.set(botId, botInstance);
-
-      // Send initial heartbeat
-      this.sendHeartbeat(botId, 'RUNNING');
-
-      // Send bot started event
-      await this.streamOperations.publish('engine:events', {
-        type: 'BOT_STARTED',
-        engineId: this.engineId,
-        botId,
-        strategyId,
-        symbol: config.symbol,
-        strategyType: 'GRID',
-        timestamp: Date.now()
-      } as EngineEvent);
-
-      logger.info('Bot started successfully', {
-        botId,
-        symbol: config.symbol,
-        currentPrice,
-        engineId: this.engineId
-      });
-    } catch (error) {
-      logger.error('Failed to start bot', {
-        error: error instanceof Error ? error.message : String(error),
-        botId,
-        strategyId,
-        engineId: this.engineId
-      });
-
-      // Send error event
-      await this.streamOperations.publish('engine:events', {
-        type: 'ENGINE_ERROR',
-        engineId: this.engineId,
-        botId,
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        timestamp: Date.now()
-      } as EngineEvent);
     }
-  }
-
-  /**
-   * Handle bot stop command
-   */
-  private async handleStopBot(command: any): Promise<void> {
-    const { botId } = command;
-
-    try {
-      logger.info('Stopping bot', { botId, engineId: this.engineId });
-
-      const botInstance = this.bots.get(botId);
-      if (!botInstance) {
-        logger.warn('Bot not found for stop', { botId, engineId: this.engineId });
-        return;
-      }
-
-      // Stop strategy
-      await botInstance.strategy.stop();
-
-      // Clear trading interval
-      clearInterval(botInstance.intervalId);
-
-      // Remove from bots map
-      this.bots.delete(botId);
-
-      // Send final heartbeat
-      this.sendHeartbeat(botId, 'STOPPED');
-
-      // Send bot stopped event
-      await this.streamOperations.publish('engine:events', {
-        type: 'BOT_STOPPED',
-        engineId: this.engineId,
-        botId,
-        reason: 'normal_stop',
-        timestamp: Date.now()
-      } as EngineEvent);
-
-      logger.info('Bot stopped successfully', { botId, engineId: this.engineId });
-    } catch (error) {
-      logger.error('Failed to stop bot', {
-        error: error instanceof Error ? error.message : String(error),
-        botId,
-        engineId: this.engineId
-      });
-    }
-  }
-
-  /**
-   * Handle emergency stop command
-   */
-  private async handleEmergencyStop(command: any): Promise<void> {
-    const { botId, action } = command;
-
-    try {
-      logger.warn('Emergency stop initiated', { botId, action, engineId: this.engineId });
-
-      const botInstance = this.bots.get(botId);
-      if (!botInstance) {
-        logger.warn('Bot not found for emergency stop', { botId, engineId: this.engineId });
-        return;
-      }
-
-      if (action === 'CANCEL_ALL_ORDERS') {
-        // Strategy stop() method already cancels all orders
-        await botInstance.strategy.stop();
-      }
-
-      // Clear trading interval
-      clearInterval(botInstance.intervalId);
-
-      // Remove from bots map
-      this.bots.delete(botId);
-
-      // Send emergency stop event
-      await this.streamOperations.publish('engine:events', {
-        type: 'BOT_STOPPED',
-        engineId: this.engineId,
-        botId,
-        reason: 'emergency_stop',
-        timestamp: Date.now()
-      } as EngineEvent);
-
-      logger.warn('Emergency stop completed', { botId, engineId: this.engineId });
-    } catch (error) {
-      logger.error('Emergency stop failed', {
-        error: error instanceof Error ? error.message : String(error),
-        botId,
-        engineId: this.engineId
-      });
-    }
-  }
-
-  /**
-   * Handle strategy configuration update
-   */
-  private async handleUpdateStrategyConfig(command: any): Promise<void> {
-    const { botId, config } = command;
-
-    try {
-      logger.info('Updating strategy configuration', { botId, engineId: this.engineId });
-
-      const botInstance = this.bots.get(botId);
-      if (!botInstance) {
-        logger.warn('Bot not found for config update', { botId, engineId: this.engineId });
-        return;
-      }
-
-      // For grid strategy, we might need to stop and restart with new config
-      // This is simplified - in real implementation, you might update config on the fly
-      await botInstance.strategy.stop();
-      clearInterval(botInstance.intervalId);
-
-      // Create new strategy instance with updated config
-      const gridConfig = {
-        symbol: config.symbol,
-        gridSize: config.gridSize || 10,
-        gridRangePercent: config.gridRange || 5,
-        orderQuantity: config.orderQuantity || 1
-      };
-
-      const gridStrategy = new GridTradingStrategy(gridConfig, botInstance.orderlyClient);
-
-      // Get current market price for initialization
-      const ticker = await botInstance.orderlyClient.getTicker(config.symbol);
-      const currentPrice = Number(ticker.mark_price || ticker.price);
-
-      if (!currentPrice) {
-        logger.error('Could not get current price for config update', {
-          symbol: config.symbol,
-          engineId: this.engineId
-        });
-        return;
-      }
-
-      // Initialize strategy
-      await gridStrategy.initialize(currentPrice);
-
-      // Start strategy
-      await gridStrategy.start();
-
-      // Set up trading loop (tick every 5 seconds)
-      const intervalId = setInterval(async () => {
-        try {
-          await gridStrategy.tick();
-
-          // Send heartbeat to backend
-          this.sendHeartbeat(botId, 'RUNNING');
-        } catch (error) {
-          logger.error('Strategy tick error after config update', {
-            error: error instanceof Error ? error.message : String(error),
-            botId,
-            engineId: this.engineId
-          });
-        }
-      }, 5000);
-
-      // Update bot instance
-      botInstance.strategy = gridStrategy;
-      botInstance.intervalId = intervalId;
-
-      logger.info('Strategy configuration updated', { botId, engineId: this.engineId });
-    } catch (error) {
-      logger.error('Failed to update strategy configuration', {
-        error: error instanceof Error ? error.message : String(error),
-        botId,
-        engineId: this.engineId
-      });
-    }
-  }
-
-  /**
-   * Send heartbeat to backend
-   */
-  private async sendHeartbeat(botId: string, status: string): Promise<void> {
-    try {
-      // Calculate bot statistics
-      const botInstance = this.bots.get(botId);
-      let position = 0;
-      let exposure = 0;
-      let currentPrice = 0;
-      let totalTrades = 0;
-      let totalPnl = 0;
-
-      if (botInstance) {
-        const strategyStatus = botInstance.strategy.getStatus();
-        position = strategyStatus.totalTrades;
-        exposure = strategyStatus.totalPnl;
-        currentPrice = strategyStatus.currentPrice;
-        totalTrades = strategyStatus.totalTrades;
-        totalPnl = strategyStatus.totalPnl;
-      }
-
-      // Send heartbeat via Redis stream
-      await this.streamOperations.publish('engine:events', {
-        type: 'BOT_HEARTBEAT',
-        engineId: this.engineId,
-        botId,
-        status,
-        position,
-        exposure,
-        currentPrice,
-        totalTrades,
-        totalPnl,
-        timestamp: Date.now()
-      } as EngineEvent);
-    } catch (error) {
-      logger.error('Heartbeat send failed', {
-        error: error instanceof Error ? error.message : String(error),
-        botId,
-        engineId: this.engineId
-      });
-    }
-  }
-
-  /**
-   * Shutdown the trading engine
-   */
-  async shutdown(): Promise<void> {
-    logger.info('Shutting down trading engine...', { engineId: this.engineId });
-
-    // Stop all bots
-    for (const [botId, botInstance] of this.bots) {
-      try {
-        await botInstance.strategy.stop();
-        clearInterval(botInstance.intervalId);
-        this.sendHeartbeat(botId, 'STOPPED');
-      } catch (error) {
-        logger.error('Error stopping bot during shutdown', {
-          error: error instanceof Error ? error.message : String(error),
-          botId,
-          engineId: this.engineId
-        });
-      }
-    }
-
-    this.bots.clear();
-
-    // Send engine stopped event
-    await this.streamOperations.publish('engine:events', {
-      type: 'ENGINE_STOPPED',
-      engineId: this.engineId,
-      reason: 'graceful_shutdown',
-      uptime: 0, // We should track actual uptime
-      timestamp: Date.now()
-    } as EngineEvent);
-
-    // Disconnect from Redis
-    await this.streamOperations.disconnect();
-
-    logger.info('Trading engine shutdown complete', { engineId: this.engineId });
-  }
-
-  /**
-   * Get bot status
-   */
-  public getBotStatus(botId: string): any {
-    const botInstance = this.bots.get(botId);
-    if (!botInstance) return null;
-
-    return botInstance.strategy.getStatus();
-  }
-
-  /**
-   * Get all bot statuses
-   */
-  public getAllBotStatuses(): any[] {
-    return Array.from(this.bots.values()).map(botInstance => {
-      const status = botInstance.strategy.getStatus();
-      return {
-        botId: botInstance.botId,
-        strategyId: botInstance.strategyId,
-        status: status.status,
-        currentPrice: status.currentPrice,
-        totalTrades: status.totalTrades,
-        totalPnl: status.totalPnl
-      }
-    })
-  }
 }
+
+async function main(): Promise<void> {
+    activeBotManager = new BotManager();
+    const botManager = activeBotManager;
+    const streamOperations = getRedisStreamOperations();
+
+    try {
+        logger.info('Starting Trading Engine', { engineId: botManager.engineId });
+
+        await streamOperations.connect();
+        await streamOperations.createConsumerGroup(ENGINE_COMMANDS_STREAM, ENGINE_COMMANDS_CONSUMER_GROUP);
+
+        await streamOperations.publish(ENGINE_EVENTS_STREAM, {
+            version: 1,
+            messageId: crypto.randomUUID(),
+            correlationId: crypto.randomUUID(),
+            timestamp: new Date().toISOString(),
+            type: 'ENGINE_STARTED',
+            payload: { engineId: botManager.engineId, uptime: 0 },
+        } as never);
+
+        await listenForCommands(botManager, streamOperations);
+    } catch (error) {
+        logger.error('Failed to start Trading Engine', {
+            engineId: botManager.engineId,
+            error: error instanceof Error ? error.message : String(error),
+        });
+        process.exit(1);
+    }
+}
+
+// Graceful shutdown on SIGTERM/SIGINT.
+let activeBotManager: BotManager | null = null;
+const shutdown = async (signal: string): Promise<void> => {
+    logger.info(`${signal} received, shutting down engine`, { engineId: activeBotManager?.engineId });
+    if (activeBotManager) {
+        await activeBotManager.stopAll('graceful_shutdown');
+    }
+    process.exit(0);
+};
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
+
+void main();

@@ -504,3 +504,18 @@ GET /health/external
 **This backend architecture represents a production-grade implementation of domain-driven design, providing a solid foundation for enterprise-scale trading applications.**
 
 *Last Updated: January 20, 2026*
+
+---
+
+## Bot Lifecycle Control Protocol (Milestone 1)
+
+`POST /api/bot/start` and `POST /api/bot/stop` are now **desired-state
+commands** returning **202 Accepted** with `{ botId, desiredState, actualState }`.
+The actual state only changes when the engine reports `STATE_CHANGED` events
+over Redis Streams (`tradebot:engine:commands` / `tradebot:engine:events`),
+which the backend persists (including a `bot_lifecycle_events` audit trail,
+migration 007) and forwards to the frontend as Socket.IO `bot.stateChanged`.
+
+Key modules: `src/core/bots/engine-protocol.service.ts` (Redis Streams control
+plane) and `src/core/bots/bot-lifecycle.service.ts` (desired/actual state
+machine, the only writer of bot lifecycle state).

@@ -10,6 +10,7 @@ import { query } from "../../../database/pool";
 // Bot services have been removed - using direct database operations instead
 import { serviceProvider } from "../../../core/service-provider";
 import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../../../core/notifications/error-notification.service";
+import { withCredentials, SecureCredentials } from "../../../infrastructure/security/encryption.service";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 /**
@@ -137,6 +138,73 @@ router.post("/heartbeat", botEngineAuth, async (req: Request, res: Response) => 
         );
 
         res.status(500).json({ success: false, error: "Failed to record heartbeat" });
+    }
+});
+
+// GET /api/bot/engine/credentials/:botId?correlationId=... (called by engine)
+//
+// Out-of-band credential delivery for the lifecycle protocol: after the
+// engine accepts a BOT_START command it fetches the user's Kodiak
+// credentials here - no secrets ever travel through Redis Streams.
+//
+// Guards:
+// - bot engine API key (botEngineAuth middleware)
+// - bot must exist with desired_state = RUNNING
+// - credentials are issued at most once per (botId, correlationId),
+//   enforced via a bot_lifecycle_events marker row.
+router.get("/credentials/:botId", botEngineAuth, async (req: Request, res: Response) => {
+    try {
+        const { botId } = req.params;
+        const correlationId = (req.query.correlationId as string) || "";
+
+        if (!correlationId) {
+            return res.status(400).json({ success: false, error: "correlationId required" });
+        }
+
+        const botResult = await query<{ user_id: string; desired_state: string; actual_state: string }>(
+            "SELECT user_id, desired_state, actual_state FROM bot_instances WHERE id = $1",
+            [botId]
+        );
+        if (botResult.rows.length === 0) {
+            return res.status(404).json({ success: false, error: "Bot not found" });
+        }
+
+        const bot = botResult.rows[0];
+        if (bot.desired_state !== "RUNNING" || !["STARTING", "RUNNING"].includes(bot.actual_state)) {
+            return res.status(409).json({ success: false, error: "Bot is not in a startable state" });
+        }
+
+        // Issue at most once per (botId, correlationId).
+        const issuedMarker = await query(
+            "SELECT id FROM bot_lifecycle_events WHERE bot_id = $1 AND event_type = 'CREDENTIALS_ISSUED' AND correlation_id = $2",
+            [botId, correlationId]
+        );
+        if (issuedMarker.rows.length > 0) {
+            return res.status(409).json({ success: false, error: "Credentials already issued for this correlation" });
+        }
+
+        // Decrypt credentials in-memory; never persisted or logged.
+        const credentials = await withCredentials(bot.user_id, async (secure: SecureCredentials) => ({
+            accountId: secure.get("accountId"),
+            accessKey: secure.get("apiKey"),
+            secretKey: secure.get("secretKey"),
+        }));
+
+        await query(
+            `INSERT INTO bot_lifecycle_events (bot_id, event_type, correlation_id, metadata)
+             VALUES ($1, 'CREDENTIALS_ISSUED', $2, '{}')`,
+            [botId, correlationId]
+        );
+
+        logger.info("Engine credentials issued", { botId, correlationId });
+
+        res.json({ success: true, data: credentials });
+    } catch (error) {
+        const err = error as Error;
+        logger.error("Engine credential fetch error", err, {
+            botId: req.params?.botId,
+        });
+        res.status(500).json({ success: false, error: "Failed to issue credentials" });
     }
 });
 

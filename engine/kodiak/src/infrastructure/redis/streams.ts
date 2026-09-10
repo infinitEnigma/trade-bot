@@ -13,13 +13,13 @@ import {
     isUpdateStrategyConfigCommand
 } from '@trade-bot/shared';
 
-// Stream names
-export const ENGINE_COMMANDS_STREAM = 'engine:commands';
-export const ENGINE_EVENTS_STREAM = 'engine:events';
+// Stream names (lifecycle control plane - see shared/src/protocol)
+export const ENGINE_COMMANDS_STREAM = 'tradebot:engine:commands';
+export const ENGINE_EVENTS_STREAM = 'tradebot:engine:events';
 
 // Consumer group names
-export const ENGINE_COMMANDS_CONSUMER_GROUP = 'engine-commands-group';
-export const ENGINE_EVENTS_CONSUMER_GROUP = 'engine-events-group';
+export const ENGINE_COMMANDS_CONSUMER_GROUP = 'engine-workers';
+export const ENGINE_EVENTS_CONSUMER_GROUP = 'backend-group';
 
 // Consumer names
 export const BACKEND_CONSUMER_NAME = 'backend-consumer';
@@ -94,11 +94,13 @@ export class RedisStreamOperations {
     async read(stream: string, options: StreamReadOptions = {}): Promise<{ success: boolean; messages?: StreamMessage[]; error?: string }> {
         try {
             if (options.consumerGroup && options.consumerName) {
-                // Read from consumer group
+                // Read from consumer group - always use ">" to get NEW messages.
+                // Acking is the caller's responsibility (manual ack after
+                // processing), so at-least-once delivery works correctly.
                 const result = await this.client.xReadGroup(
                     options.consumerGroup,
                     options.consumerName,
-                    { key: stream, id: options.autoAck ? '>' : '0' },
+                    { key: stream, id: '>' },
                     {
                         BLOCK: options.block || 0,
                         COUNT: options.count || 10,

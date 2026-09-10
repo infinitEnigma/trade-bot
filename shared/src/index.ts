@@ -289,6 +289,14 @@ export * from './types/errors';
 export * from './types/logging';
 
 // ============================================
+// Bot Lifecycle Protocol (Backend ⇄ Engine)
+// ============================================
+
+export * from './protocol/bot-state';
+export * from './protocol/bot-command';
+export * from './protocol/bot-event';
+
+// ============================================
 // Engine Integration Contract
 // ============================================
 

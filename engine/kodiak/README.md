@@ -581,3 +581,25 @@ UPDATE bot_instances SET status = 'FORCE_STOPPING' WHERE status = 'RUNNING';
 ---
 
 **Engine Status**: ✅ Production Ready | **TypeScript Version**: 5.x | **Supported Strategies**: Grid Trading
+
+---
+
+## Bot Lifecycle Control Protocol (Milestone 1)
+
+The engine consumes lifecycle commands from the Redis Stream
+`tradebot:engine:commands` (consumer group `engine-workers`) and publishes
+acknowledgements/state events to `tradebot:engine:events`. The protocol
+envelope (`messageId`, `correlationId`, `version`) is defined in
+`@trade-bot/shared/src/protocol`.
+
+Flow: `BOT_START -> COMMAND_ACCEPTED -> STATE_CHANGED(STARTING) -> STATE_CHANGED(RUNNING)`
+(any failure -> `COMMAND_FAILED` + `STATE_CHANGED(ERROR)`).
+
+**Credentials are never sent through the stream.** After `COMMAND_ACCEPTED`,
+the engine fetches them from the backend endpoint
+`GET /api/bot/engine/credentials/:botId?correlationId=...`.
+
+Required environment variables:
+
+- `BOT_ENGINE_API_KEY` - backend engine API key (also used by `x-bot-engine-key`)
+- `BACKEND_URL` - backend base URL (default `http://localhost:3000`)

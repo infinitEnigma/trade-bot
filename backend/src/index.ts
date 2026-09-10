@@ -56,6 +56,8 @@ import { Server } from "socket.io";
 
 // Import logger first before any other code
 import { contextLogger as logger } from "./core/logging";
+import { engineProtocolService } from "./core/bots/engine-protocol.service";
+import { botLifecycleService } from "./core/bots/bot-lifecycle.service";
 import { setRequestContext, generateCorrelationId, generateRequestId } from "./shared/utils/context";
 
 // Set default context for application initialization
@@ -456,6 +458,16 @@ export const startServer = (): Promise<typeof httpServer> => {
             marketStreamService.setSocketServer(io);
             logger.info("📡 WebSocket service initialized");
 
+            // ✅ START ENGINE PROTOCOL LISTENER (Redis Streams control plane)
+            // Consumes engine events and drives bot lifecycle persistence.
+            botLifecycleService.setSocketServer(io);
+            engineProtocolService
+                .start(event => botLifecycleService.handleEngineEvent(event))
+                .then(() => logger.info("🔌 Engine protocol listener started"))
+                .catch((error: unknown) => {
+                    logger.error("Failed to start engine protocol listener", error instanceof Error ? error : new Error(String(error)));
+                });
+
             // Note: connectToOrderly requires a user accountId (only available for REGISTERED/VERIFIED).
             // It is triggered in websocket.service.ts when a REGISTERED/VERIFIED user connects.
 
@@ -570,6 +582,14 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
         // Phase 1: Stop accepting new connections
         logger.info("Phase 1: Stopping new connections");
         await stopServer();
+
+        // Stop consuming engine events (leaves in-flight messages for redelivery)
+        try {
+            engineProtocolService.stop();
+            logger.info("Engine protocol listener stopped");
+        } catch (error) {
+            logger.error("Error stopping engine protocol listener", error instanceof Error ? error : new Error(String(error)));
+        }
 
         // Phase 2: Close external service connections
         logger.info("Phase 2: Closing external connections");
