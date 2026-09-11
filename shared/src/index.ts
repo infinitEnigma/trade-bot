@@ -10,10 +10,16 @@ export enum UserLevel {
   VERIFIED = "VERIFIED",
 }
 
+export enum UserRole {
+  QUALIFIED_ALPHA = "QUALIFIED_ALPHA",
+  SYSTEM_ADMIN = "SYSTEM_ADMIN",
+}
+
 export interface User {
   id: string;
   email: string;
   userLevel: UserLevel;
+  roles?: UserRole[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -96,18 +102,7 @@ export interface OrderBook {
 // Trading Types
 // ============================================
 
-export interface Position {
-  symbol: string;
-  side: "LONG" | "SHORT";
-  quantity: number;
-  entryPrice: number;
-  markPrice: number;
-  pnl: number;
-  pnlPercent: number;
-  leverage: number;
-  marginRatio: number;
-  liquidationPrice?: number;
-}
+// Position interface removed - now using domain class from domain.ts
 
 export interface Order {
   orderId: string;
@@ -251,8 +246,116 @@ export interface DashboardData {
     totalBalance: number;
     totalPnl: number;
     availableBalance: number;
-    positions: Position[];
+    positions: import('./types/domain').Position[];
   };
   recentTrades: Trade[];
   activeStrategies: Strategy[];
 }
+
+// ============================================
+// Infrastructure Interfaces - Contract Layer
+// ============================================
+
+export * from './types/infrastructure';
+
+// ============================================
+// Role Management Interfaces & Domain Models
+// ============================================
+
+export * from './types/role-management';
+
+// ============================================
+// Repository Interfaces - Data Access Contracts
+// ============================================
+
+export * from './types/repositories';
+
+// ============================================
+// Domain Models - Rich Business Objects
+// ============================================
+
+export * from './types/domain';
+
+// ============================================
+// Error Handling Types & Classes
+// ============================================
+
+export * from './types/errors';
+
+// ============================================
+// Logging Types & Utilities
+// ============================================
+
+export * from './types/logging';
+
+// ============================================
+// Bot Lifecycle Protocol (Backend ⇄ Engine)
+// ============================================
+
+export * from './protocol/bot-state';
+export * from './protocol/bot-command';
+export * from './protocol/bot-event';
+export * from './protocol/engine-lifecycle';
+
+// ============================================
+// Engine Integration Contract
+// ============================================
+
+export * from './types/engine-contract';
+
+// ============================================
+// Frontend-Backend Integration Contract
+// ============================================
+
+export * from './types/frontend-backend-contract';
+
+// Explicitly export error classes for better discoverability
+/*export {
+  AppError,
+  ValidationError,
+  MissingRequiredFieldError,
+  InvalidFormatError,
+  AuthenticationError,
+  AuthorizationError,
+  InvalidCredentialsError,
+  NotFoundError,
+  ConflictError,
+  DatabaseError,
+  ConnectionError,
+  ExternalServiceError,
+  ServiceUnavailableError,
+  InsufficientBalanceError,
+  PositionSizeExceededError,
+  InternalError,
+  ConfigurationError,
+  ErrorCode,
+  ErrorContext,
+  isOperationalError,
+  getErrorStatusCode,
+  createErrorResponse,
+  DataFreshnessMetadata,
+  FreshnessAwareResponse,
+  DataFreshnessUtils
+} from './types/errors';*/
+
+// Explicitly export logging types for better discoverability
+/*export {
+  LoggerErrorSeverity,
+  LoggerErrorType,
+  ErrorInfo,
+  StackFrame,
+  PerformanceMetrics,
+  DatabaseMetrics,
+  HttpRequestInfo,
+  UserContextInfo,
+  LogContext,
+  ErrorCodes,
+  createErrorInfo,
+  createPerformanceMetrics,
+  createDatabaseMetrics,
+  createHttpRequestInfo,
+  createUserContextInfo,
+  parseStackTrace,
+  classifyError,
+  createEnhancedErrorInfo
+} from './types/logging';*/

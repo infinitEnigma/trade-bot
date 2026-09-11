@@ -4,12 +4,82 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/rewire-white.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trade Bot - Kodiak Integration</title>
+
+    <!-- Critical CSS - Load immediately for above-the-fold content -->
+    <link rel="preload" href="/src/styles/critical.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="/src/styles/critical.css"></noscript>
+
+    <!-- Preload critical resources -->
+    <link rel="modulepreload" href="/src/main.tsx">
+    <link rel="modulepreload" href="/src/App.tsx">
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Enhanced Health check script - handles maintenance recovery -->
+    <script>
+    (function() {
+        const HEALTH_CHECK_INTERVAL = 30000; // Check every 30 seconds
+        const isMaintenancePage = window.location.pathname === '/maintenance.html';
+
+        const checkHealth = function() {
+            fetch('/api/health-check', {
+                method: 'GET',
+                headers: { 'Cache-Control': 'no-cache' }
+            })
+            .then(response => {
+                if (response.ok) {
+                    // Backend is healthy
+                    if (isMaintenancePage) {
+                        // Clear ALL client state and logout before redirecting
+                        console.log('Backend recovered, clearing state and redirecting to login');
+                        localStorage.clear();
+                        sessionStorage.clear();
+
+                        // Clear auth cookies by calling logout endpoint
+                        fetch('/api/auth/logout', {
+                            method: 'POST',
+                            credentials: 'include'
+                        }).finally(() => {
+                            // Redirect to login page to force fresh authentication
+                            window.location.href = '/login';
+                        });
+
+                        return;
+                    }
+                    // If on main app, continue normally
+                } else {
+                    // Backend is down
+                    if (!isMaintenancePage) {
+                        console.log('Backend down, redirecting to maintenance');
+                        window.location.href = '/maintenance.html';
+                    }
+                }
+            })
+            .catch(error => {
+                console.warn('Backend health check failed:', error);
+                if (!isMaintenancePage) {
+                    window.location.href = '/maintenance.html';
+                }
+            });
+        };
+
+        // Initial check
+        if ('requestIdleCallback' in window) {
+            requestIdleCallback(checkHealth, { timeout: 2000 });
+        } else {
+            setTimeout(checkHealth, 500);
+        }
+
+        // Periodic checks (more frequent on maintenance page)
+        const interval = isMaintenancePage ? 10000 : 60000; // 10s on maintenance, 60s normally
+        setInterval(checkHealth, interval);
+    })();
+    </script>
+
   </body>
 </html>

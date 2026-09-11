@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Shared TypeScript types for trade-bot",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "types": "dist/types/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -11,9 +11,13 @@
     }
   },
   "scripts": {
-    "build": "tsc && tsc --module commonjs --outDir dist/cjs --target es2022 --declaration false && mv dist/cjs/index.js dist/index.cjs && rm -rf dist/cjs",
+    "build": "tsc && tsc --project tsconfig.cjs.json && mv dist/cjs/index.js dist/index.cjs && rm -rf dist/cjs",
     "dev": "tsc --watch",
-    "test": "jest"
+    "test": "jest",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src"
   },
   "keywords": [
     "shared",
@@ -21,5 +25,12 @@
   ],
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.53.0",
+    "@typescript-eslint/parser": "^8.53.0",
+    "eslint": "^9.39.2",
+    "prettier": "^3.4.2",
+    "typescript": "^5.9.3"
   }
 }

@@ -39,4 +39,13 @@ AI_*
 docs/
 
 # Log files
+logs/
 backend/logs/
+
+# Test coverage
+backend/coverage/
+frontend/coverage/
+engine/coverage/
+
+# Debug files
+backend/debug/.engine-state.json

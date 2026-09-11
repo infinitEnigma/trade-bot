@@ -1,9 +1,61 @@
 /** @format */
 
+/**
+ * Kodiak/Orderly API Client for Engine
+ *
+ * NOTE: This client makes direct calls to Kodiak API. For full system centralization,
+ * this engine should eventually call the backend's centralized Kodiak service instead:
+ * - Backend service: backend/src/infrastructure/external/kodiak-integration.service.ts
+ * - This would require the engine to make HTTP calls to backend API endpoints
+ *
+ * CURRENT ARCHITECTURE:
+ * Engine (OrderlyClient) → Direct Kodiak API
+ *
+ * PLANNED ARCHITECTURE:
+ * Engine (OrderlyClient) → Backend API Endpoints → Centralized Kodiak Service
+ *
+ * Benefits of planned approach:
+ * - Single source of truth for all Kodiak API access
+ * - Unified caching, rate limiting, and error handling
+ * - Consistent authentication and signature generation
+ * - Easier to audit and maintain API integration
+ */
+
 import axios, { AxiosInstance } from "axios";
 import { OrderRequest, OrderResponse } from "../types/strategy";
 import { createHash } from "crypto";
-import * as ed25519 from "@noble/ed25519";
+import { getPublicKeyAsync, signAsync } from "@noble/ed25519";
+import { logger } from "../utils/logger";
+
+interface OrderlyPosition {
+  symbol: string;
+  position_qty: number;
+  mark_price: number;
+  [key: string]: unknown;
+}
+
+interface OrderlyAccountInfo {
+  total_value: number;
+  max_leverage: number;
+  max_notional?: Record<string, number>;
+  [key: string]: unknown;
+}
+
+interface OrderlyTicker {
+  price: number;
+  symbol: string;
+  [key: string]: unknown;
+}
+
+interface OrderlyKline {
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  [key: string]: unknown;
+}
 
 interface OrderlyConfig {
   accountId: string;
@@ -32,12 +84,41 @@ export class OrderlyClient {
     path: string,
     body?: string
   ): Promise<string> {
-    const message = `${timestamp}${method}${path}${body || ""}`;
-    const privateKeyBytes = Buffer.from(this.config.orderlySecret, "base64");
-    const messageBytes = new TextEncoder().encode(message);
-    const hash = createHash("sha256").update(messageBytes).digest();
-    const signature = await ed25519.sign(hash, privateKeyBytes);
-    return Buffer.from(signature).toString("base64url");
+    try {
+      // Create the message string as required by Kodiak API
+      const message = `${timestamp}${method}${path}${body || ""}`;
+
+      // Decode base64 secret key to bytes
+      let privateKeyBytes = Buffer.from(this.config.orderlySecret, "base64");
+
+      // Handle different key formats - Ed25519 expects 32 bytes
+      if (privateKeyBytes.length > 32) {
+        // If key is longer than 32 bytes, take first 32 bytes (private key part)
+        privateKeyBytes = privateKeyBytes.subarray(0, 32);
+      } else if (privateKeyBytes.length < 32) {
+        // If key is shorter, pad with zeros (defensive programming)
+        const padded = Buffer.alloc(32);
+        privateKeyBytes.copy(padded);
+        privateKeyBytes = padded;
+      }
+
+      // Convert message to bytes
+      const messageBytes = new TextEncoder().encode(message);
+
+      // Hash the message with SHA256 as required by Kodiak API
+      const hash = createHash("sha256").update(messageBytes).digest();
+
+      // Sign the hash using Ed25519
+      const signature = await signAsync(hash, privateKeyBytes);
+
+      // Return base64url-encoded signature
+      return Buffer.from(signature).toString("base64url");
+    } catch (error) {
+      throw new Error(
+        `Failed to generate Kodiak signature: ${error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
   }
 
   private async signRequest(
@@ -62,7 +143,88 @@ export class OrderlyClient {
     };
   }
 
+  async validatePositionSize(request: OrderRequest): Promise<void> {
+    try {
+      // Get account info for balance and limits
+      const accountInfo = await this.getAccountInfo();
+      const positions = await this.getPositions();
+
+      // Calculate current exposure
+      const currentExposure = positions.reduce((total, position) => {
+        return total + Math.abs(position.position_qty * position.mark_price);
+      }, 0);
+
+      // Get current price for notional calculation
+      const ticker = await this.getTicker(request.symbol);
+      const currentPrice = ticker.price;
+
+      // Calculate order notional value
+      const orderNotional = request.orderQuantity * currentPrice;
+
+      // Validation rules from docs
+      const maxLeverage = accountInfo.max_leverage || 20;
+      const accountBalance = accountInfo.total_value || 0; // Assuming this field exists
+      const maxExposurePercent = 0.8; // 80% of account balance
+
+      // Rule 1: Notional amount <= account_balance * max_leverage
+      const maxAllowedNotional = accountBalance * maxLeverage;
+      if (orderNotional > maxAllowedNotional) {
+        throw new Error(
+          `Order too large. Notional: ${orderNotional}, Max allowed: ${maxAllowedNotional}`
+        );
+      }
+
+      // Rule 2: Total exposure <= 80% of account balance
+      const newTotalExposure = currentExposure + orderNotional;
+      const maxTotalExposure = accountBalance * maxExposurePercent;
+      if (newTotalExposure > maxTotalExposure) {
+        throw new Error(
+          `Total exposure too high. New exposure: ${newTotalExposure}, Max allowed: ${maxTotalExposure}`
+        );
+      }
+
+      // Rule 3: Check position limits per symbol
+      const symbolPosition = positions.find(p => p.symbol === request.symbol);
+      if (symbolPosition) {
+        const symbolExposure = Math.abs(
+          symbolPosition.position_qty * symbolPosition.mark_price
+        );
+        const newSymbolExposure = symbolExposure + orderNotional;
+        const maxSymbolExposure = accountBalance * 0.5; // 50% per symbol limit
+
+        if (newSymbolExposure > maxSymbolExposure) {
+          throw new Error(
+            `Symbol exposure too high. Symbol: ${request.symbol}, New exposure: ${newSymbolExposure}, Max allowed: ${maxSymbolExposure}`
+          );
+        }
+      }
+
+      // Rule 4: Validate against Orderly max_notional limits
+      const maxNotionalLimits = accountInfo.max_notional || {};
+      const symbolMaxNotional = maxNotionalLimits[request.symbol];
+      if (symbolMaxNotional && orderNotional > symbolMaxNotional) {
+        throw new Error(
+          `Order exceeds Orderly max notional limit for ${request.symbol}. Order: ${orderNotional}, Limit: ${symbolMaxNotional}`
+        );
+      }
+
+      logger.info("Position size validation passed", {
+        orderNotional,
+        symbol: request.symbol,
+      });
+    } catch (error) {
+      logger.error("Position size validation failed", {
+        error: error instanceof Error ? error.message : String(error),
+        symbol: request.symbol,
+      });
+      throw error;
+    }
+  }
+
   async createOrder(request: OrderRequest): Promise<OrderResponse> {
+    // Validate position size before placing order
+    await this.validatePositionSize(request);
+
     const path = "/v1/order";
     const headers = await this.signRequest("POST", path, request);
 
@@ -98,7 +260,7 @@ export class OrderlyClient {
     };
   }
 
-  async getPositions(): Promise<any[]> {
+  async getPositions(): Promise<OrderlyPosition[]> {
     const path = "/v1/positions";
     const headers = await this.signRequest("GET", path);
 
@@ -106,7 +268,7 @@ export class OrderlyClient {
     return response.data.data.rows || [];
   }
 
-  async getAccountInfo(): Promise<any> {
+  async getAccountInfo(): Promise<OrderlyAccountInfo> {
     const path = "/v1/client/info";
     const headers = await this.signRequest("GET", path);
 
@@ -114,7 +276,7 @@ export class OrderlyClient {
     return response.data.data;
   }
 
-  async getTicker(symbol: string): Promise<any> {
+  async getTicker(symbol: string): Promise<OrderlyTicker> {
     const path = `/v1/public/ticker?symbol=${symbol}`;
     const response = await this.client.get(path);
     return response.data.data;
@@ -124,7 +286,7 @@ export class OrderlyClient {
     symbol: string,
     interval: string = "1m",
     limit: number = 100
-  ): Promise<any[]> {
+  ): Promise<OrderlyKline[]> {
     const path = `/v1/kline?symbol=${symbol}&type=${interval}&limit=${limit}`;
     const response = await this.client.get(path);
     return response.data.data.rows || [];

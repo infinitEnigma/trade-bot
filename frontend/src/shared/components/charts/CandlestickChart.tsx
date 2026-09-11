@@ -1,0 +1,341 @@
+/** @format */
+
+import React, { useEffect, useRef } from "react";
+import {
+  createChart,
+  IChartApi,
+  ISeriesApi,
+  ColorType,
+  CrosshairMode,
+  CandlestickSeries,
+  HistogramSeries,
+  Time,
+} from "lightweight-charts";
+import { useChartData } from "../../hooks/useChartData";
+import { useVisibility } from "../../hooks/useVisibility";
+
+export interface CandleData {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+}
+
+interface CandlestickChartProps {
+  symbol: string;
+  interval: string;
+  height?: number;
+}
+
+export const CandlestickChart: React.FC<CandlestickChartProps> = ({
+  symbol,
+  interval,
+  height = 400,
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const isChartReady = useRef(false);
+
+  // Visibility detection - pause WebSocket when page loses focus
+  const isVisible = useVisibility();
+
+  // Get chart data with live updates - only active when page is visible
+  const {
+    data: chartData,
+    loading,
+    error: chartError,
+    markPriceData,
+    connectionStatus,
+  } = useChartData({
+    symbol,
+    interval,
+  });
+
+  // Debug logging for chart data
+  useEffect(() => {
+    console.log(`📈 CandlestickChart [${symbol}] data update:`, {
+      dataLength: chartData?.length || 0,
+      loading,
+      chartError,
+      connectionStatus,
+      isVisible,
+      hasMarkPrice: !!markPriceData,
+    });
+  }, [chartData, loading, chartError, connectionStatus, isVisible, markPriceData, symbol]);
+
+  // Initialize chart
+  useEffect(() => {
+    if (!containerRef.current || chartError) return;
+
+    try {
+      // Create chart instance with dark theme to match page style
+      const chart = createChart(containerRef.current, {
+        layout: {
+          background: { type: ColorType.Solid, color: "#0f0f23" }, // Dark background
+          textColor: "#e2e8f0", // Light text
+          fontFamily: "system-ui, -apple-system, sans-serif",
+        },
+        width: containerRef.current.clientWidth,
+        height,
+        timeScale: {
+          timeVisible: true,
+          secondsVisible: false,
+          borderColor: "#334155", // Dark border
+          fixLeftEdge: false,
+          fixRightEdge: false,
+        },
+        rightPriceScale: {
+          borderColor: "#334155", // Dark border
+          scaleMargins: {
+            top: 0.1,
+            bottom: 0.25, // Leave space for volume
+          },
+        },
+        crosshair: {
+          mode: CrosshairMode.Normal,
+        },
+        grid: {
+          vertLines: {
+            color: "#1e293b", // Dark grid lines
+            style: 1,
+          },
+          horzLines: {
+            color: "#1e293b", // Dark grid lines
+            style: 1,
+          },
+        },
+        handleScroll: {
+          mouseWheel: true,
+          pressedMouseMove: true,
+          horzTouchDrag: true,
+          vertTouchDrag: true,
+        },
+        handleScale: {
+          axisPressedMouseMove: true,
+          mouseWheel: true,
+          pinch: true,
+        },
+      });
+
+      // Create candlestick series
+      const candlestickSeries = chart.addSeries(CandlestickSeries, {
+        upColor: "#10b981", // Green for bullish
+        downColor: "#ef4444", // Red for bearish
+        borderUpColor: "#10b981",
+        borderDownColor: "#ef4444",
+        wickUpColor: "#10b981",
+        wickDownColor: "#ef4444",
+        priceFormat: {
+          type: "price",
+          precision: 2,
+          minMove: 0.01,
+        },
+      });
+
+      // Create volume series
+      const volumeSeries = chart.addSeries(HistogramSeries, {
+        color: "#6b7280",
+        priceFormat: {
+          type: "volume",
+        },
+        priceScaleId: "volume",
+      });
+
+      // Set volume series options
+      volumeSeries.priceScale().applyOptions({
+        scaleMargins: {
+          top: 0.8,
+          bottom: 0,
+        },
+      });
+
+      chartRef.current = chart;
+      candlestickSeriesRef.current = candlestickSeries;
+      volumeSeriesRef.current = volumeSeries;
+      isChartReady.current = true;
+
+      // Handle window resize
+      const handleResize = () => {
+        if (containerRef.current && chart) {
+          chart.applyOptions({
+            width: containerRef.current.clientWidth,
+          });
+        }
+      };
+
+      window.addEventListener("resize", handleResize);
+
+      return () => {
+        window.removeEventListener("resize", handleResize);
+        if (chart) {
+          chart.remove();
+        }
+        isChartReady.current = false;
+      };
+    } catch (chartError) {
+      console.error("Failed to create chart:", chartError);
+    }
+  }, [height, chartError]);
+
+  // Update chart data when historical/kline data changes (full redraw)
+  useEffect(() => {
+    if (
+      !isChartReady.current ||
+      !candlestickSeriesRef.current ||
+      !volumeSeriesRef.current ||
+      !chartData ||
+      chartData.length === 0
+    ) {
+      return;
+    }
+
+    try {
+      // Transform data for the chart
+      const chartDataForDisplay = chartData.map(item => ({
+        time: item.time as Time,
+        open: item.open,
+        high: item.high,
+        low: item.low,
+        close: item.close,
+      }));
+
+      // Full redraw — only triggered on historical data changes (not every price tick)
+      candlestickSeriesRef.current.setData(chartDataForDisplay);
+
+      // Set volume data if available
+      const volumeData = chartData
+        .filter(item => item.volume !== undefined)
+        .map(item => ({
+          time: item.time as Time,
+          value: item.volume || 0,
+          color: item.close >= item.open ? "#10b981" : "#ef4444",
+        }));
+
+      if (volumeData.length > 0) {
+        volumeSeriesRef.current.setData(volumeData);
+      }
+
+      // Auto-fit the chart to show all data
+      if (chartRef.current && chartDataForDisplay.length > 0) {
+        chartRef.current.timeScale().fitContent();
+      }
+    } catch (dataError) {
+      console.error("Failed to update chart data:", dataError);
+    }
+  }, [chartData, isChartReady, isVisible]);
+
+  // Live candle update from WebSocket mark price — uses series.update() (single candle,
+  // no full redraw) so the current candle's close/high/low tracks price in real-time.
+  useEffect(() => {
+    if (
+      !isChartReady.current ||
+      !candlestickSeriesRef.current ||
+      !markPriceData ||
+      !chartData ||
+      chartData.length === 0
+    ) {
+      return;
+    }
+
+    const price = markPriceData.price;
+    const lastCandle = chartData[chartData.length - 1];
+
+    try {
+      candlestickSeriesRef.current.update({
+        time: lastCandle.time as Time,
+        open: lastCandle.open,
+        high: Math.max(lastCandle.high, price),
+        low: Math.min(lastCandle.low, price),
+        close: price,
+      });
+    } catch {
+      // Silently ignore update errors (e.g. chart not yet fully ready)
+    }
+  }, [markPriceData]);
+
+  return (
+    <div className="w-full bg-surface rounded-lg shadow-sm border border-white/10">
+      <div className="p-4 border-b border-white/10 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <h3 className="text-lg font-semibold text-text">
+            {symbol.replace("PERP_", "").replace("_USDC", "")}
+          </h3>
+          <span className="px-2 py-1 text-xs bg-primary/20 text-primary rounded-full">
+            {interval}
+          </span>
+        </div>
+        {chartError && (
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-danger rounded-full"></div>
+            <span className="text-sm text-danger">{chartError}</span>
+          </div>
+        )}
+        {loading && !chartError && (
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
+            <span className="text-sm text-textMuted">Loading...</span>
+          </div>
+        )}
+        {!loading && !chartError && chartData && chartData.length > 0 && (
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-success rounded-full"></div>
+            <span className="text-sm text-success">
+              Live • {chartData.length} candles
+            </span>
+          </div>
+        )}
+      </div>
+      <div
+        ref={containerRef}
+        className="w-full relative"
+        style={{ height: `${height}px` }}
+      >
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10">
+            <div className="text-center">
+              <div className="w-8 h-8 mx-auto mb-2 animate-spin border-2 border-primary/30 border-t-primary rounded-full"></div>
+              <p className="text-sm font-medium text-text">
+                Loading chart data...
+              </p>
+              <p className="text-xs text-textMuted mt-1">
+                Fetching historical data
+              </p>
+            </div>
+          </div>
+        )}
+
+        {chartError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10">
+            <div className="text-center">
+              <div className="w-12 h-12 mx-auto mb-2">⚠️</div>
+              <p className="text-sm font-medium text-danger">
+                Error loading chart
+              </p>
+              <p className="text-xs text-textMuted mt-2">{chartError}</p>
+            </div>
+          </div>
+        )}
+
+        {!loading && !chartError && (!chartData || chartData.length === 0) && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10">
+            <div className="text-center">
+              <div className="w-12 h-12 mx-auto mb-2">📡</div>
+              <p className="text-sm font-medium text-text">
+                Waiting for live data...
+              </p>
+              <p className="text-xs text-textMuted mt-1">
+                WebSocket connected, awaiting ticks
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default CandlestickChart;

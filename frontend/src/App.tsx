@@ -1,35 +1,53 @@
 /** @format */
 
+import React, { Suspense } from "react";
 import {
   BrowserRouter as Router,
   Routes,
   Route,
   Navigate,
+  useLocation,
 } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { Toaster } from "sonner";
-import { AuthProvider, useAuth } from "./contexts/AuthContext";
-
-// Pages
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import Dashboard from "./pages/Dashboard";
-import Strategies from "./pages/Strategies";
-import Settings from "./pages/Settings";
+import { useAuth } from "./features/auth";
+import { ThemeProvider } from "./contexts/ThemeContext";
+import { ErrorProvider, ErrorNotifications } from "./contexts/ErrorContext";
+import { usePageBackground } from "./shared/hooks";
+import { websocketSubscriptionManager } from "./infrastructure/websocket/websocket-manager";
+import { websocketClient } from "./infrastructure/websocket/client";
+import { UserRole } from "./shared/types";
 
 // Components
-import LoadingSpinner from "./components/ui/LoadingSpinner";
+import { LoadingSpinner } from "./shared/components/ui";
+import { AppHeader } from "./shared/components/layout/AppHeader";
+
+// Lazy load pages
+const LandingPage = React.lazy(() => import("./features/landing/pages/LandingPage"));
+const Login = React.lazy(() => import("./features/auth/pages/Login"));
+const Register = React.lazy(() => import("./features/auth/pages/Register"));
+const Dashboard = React.lazy(() => import("./features/dashboard/pages/Dashboard"));
+const Strategies = React.lazy(() => import("./features/strategies/pages/Strategies"));
+const Settings = React.lazy(() => import("./features/settings/pages/Settings"));
+const Analytics = React.lazy(() => import("./features/analytics/pages/Analytics"));
+const Profile = React.lazy(() => import("./features/auth/pages/Profile"));
+const AdminDashboard = React.lazy(() => import("./features/admin/pages/AdminDashboard"));
 
 // Protected Route Component
 const ProtectedRoute = ({
   children,
   requireVerified = false,
+  requireRegistered = false,
+  requireRole,
 }: {
   children: React.ReactNode;
   requireVerified?: boolean;
+  requireRegistered?: boolean;
+  requireRole?: UserRole;
 }) => {
-  const { user, isAuthenticated, loading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
 
-  if (loading) {
+  if (isLoading) {
     return <LoadingSpinner />;
   }
 
@@ -41,64 +59,325 @@ const ProtectedRoute = ({
     return <Navigate to="/dashboard" replace />;
   }
 
+  if (requireRegistered && user?.userLevel === "BASIC") {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (requireRole && !user?.roles?.includes(requireRole)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   return <>{children}</>;
 };
 
-// App Router Component
+// Minimal Providers for Auth Pages (Login/Register)
+const MinimalProviders = ({ children }: { children: React.ReactNode }) => (
+  <ThemeProvider defaultTheme="dark">
+    {children}
+  </ThemeProvider>
+);
+
+// Full Providers for Authenticated App
+const FullProviders = ({ children }: { children: React.ReactNode }) => (
+  <ThemeProvider defaultTheme="dark">
+    <ErrorProvider>
+      <ConditionalWebSocketInitializer />
+      {children}
+      <ErrorNotifications />
+    </ErrorProvider>
+  </ThemeProvider>
+);
+
+// Animated Routes Component
+const AnimatedRoutes = () => {
+  const location = useLocation();
+
+  // Apply page-specific background patterns
+  usePageBackground();
+
+  const pageVariants = {
+    initial: {
+      opacity: 0,
+      y: 20,
+      scale: 0.98,
+    },
+    in: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+    },
+    out: {
+      opacity: 0,
+      y: -20,
+      scale: 1.02,
+    },
+  };
+
+  const pageTransition = {
+    type: "tween" as const,
+    ease: "anticipate" as const,
+    duration: 0.4,
+  };
+
+  const isAuthRoute = location.pathname === '/login' || location.pathname === '/register';
+  const isLandingRoute = location.pathname === '/';
+
+  return (
+    <div className="min-h-screen bg-background text-text">
+      {/* Header - only show for protected routes */}
+      {!isAuthRoute && !isLandingRoute && <AppHeader />}
+
+      {/* Content area with padding for header */}
+      <div className={isAuthRoute || isLandingRoute ? "" : "pt-16"}>
+        <AnimatePresence mode="wait" initial={false}>
+          <Routes location={location} key={location.pathname}>
+            <Route
+              path="/"
+              element={
+                <motion.div
+                  initial="initial"
+                  animate="in"
+                  exit="out"
+                  variants={pageVariants}
+                  transition={pageTransition}
+                >
+                  <LandingPage />
+                </motion.div>
+              }
+            />
+            <Route
+              path="/login"
+              element={
+                <motion.div
+                  initial="initial"
+                  animate="in"
+                  exit="out"
+                  variants={pageVariants}
+                  transition={pageTransition}
+                >
+                  <Login />
+                </motion.div>
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <motion.div
+                  initial="initial"
+                  animate="in"
+                  exit="out"
+                  variants={pageVariants}
+                  transition={pageTransition}
+                >
+                  <Register />
+                </motion.div>
+              }
+            />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <motion.div
+                    initial="initial"
+                    animate="in"
+                    exit="out"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                  >
+                    <Dashboard />
+                  </motion.div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/strategies"
+              element={
+                <ProtectedRoute requireRegistered={true}>
+                  <motion.div
+                    initial="initial"
+                    animate="in"
+                    exit="out"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                  >
+                    <Strategies />
+                  </motion.div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/analytics"
+              element={
+                <ProtectedRoute requireRole={UserRole.QUALIFIED_ALPHA}>
+                  <motion.div
+                    initial="initial"
+                    animate="in"
+                    exit="out"
+                    variants={pageVariants}
+                  >
+                    <Analytics />
+                  </motion.div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <motion.div
+                    initial="initial"
+                    animate="in"
+                    exit="out"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                  >
+                    <Profile />
+                  </motion.div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <motion.div
+                    initial="initial"
+                    animate="in"
+                    exit="out"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                  >
+                    <Settings />
+                  </motion.div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute requireRole={UserRole.SYSTEM_ADMIN}>
+                  <motion.div
+                    initial="initial"
+                    animate="in"
+                    exit="out"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                  >
+                    <AdminDashboard />
+                  </motion.div>
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+};
+
+// Old AppRouter removed - replaced with conditional version below
+
+
+
+// Conditional WebSocket Connection Component - Only for VERIFIED users
+const ConditionalWebSocketInitializer = () => {
+  const { user, isAuthenticated } = useAuth();
+  const location = useLocation();
+
+  React.useEffect(() => {
+    const isLandingPage = location.pathname === "/";
+    const isAuthPage = location.pathname === "/login" || location.pathname === "/register";
+
+    // Skip WebSocket initialization on landing and auth pages
+    if (isLandingPage || isAuthPage) {
+      console.log('📡 Skipping WebSocket initialization on', location.pathname);
+      websocketSubscriptionManager.cleanup();
+      return;
+    }
+
+    // Only initialize WebSocket for authenticated VERIFIED users
+    if (isAuthenticated && user?.userLevel === 'VERIFIED') {
+      console.log('📡 Initializing WebSocket for VERIFIED user:', user.email);
+
+      // Initialize WebSocket using our singleton client
+      const connectWebSocket = async () => {
+        try {
+          await websocketClient.connect();
+          console.log('📡 WebSocket connection initialized for VERIFIED user');
+        } catch (error) {
+          console.error('📡 Failed to initialize WebSocket:', error);
+        }
+      };
+
+      connectWebSocket();
+
+      return () => {
+        // Cleanup when user logs out or level changes
+        console.log('📡 Cleaning up WebSocket connection');
+        websocketSubscriptionManager.cleanup();
+        websocketClient.cleanup();
+      };
+    } else if (!isAuthenticated || user?.userLevel !== 'VERIFIED') {
+      // Clean up any existing connections for non-verified users
+      websocketSubscriptionManager.cleanup();
+      websocketClient.cleanup();
+    }
+  }, [isAuthenticated, user?.userLevel, user?.email, location.pathname]);
+
+  return null;
+};
+
+
+
+// App Router Component with Conditional Providers
 const AppRouter = () => {
+  const { isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    // Minimal providers for unauthenticated users (login/register)
+    return (
+      <Router>
+        <MinimalProviders>
+          <div className="min-h-screen bg-background text-text">
+            <Suspense fallback={<LoadingSpinner />}>
+              <AnimatedRoutes />
+            </Suspense>
+          </div>
+        </MinimalProviders>
+      </Router>
+    );
+  }
+
+  // Full providers for authenticated users
   return (
     <Router>
-      <div className="min-h-screen bg-background text-text">
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
+      <FullProviders>
+        <div className="min-h-screen bg-background text-text">
+          <Suspense fallback={<LoadingSpinner />}>
+            <AnimatedRoutes />
+          </Suspense>
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              style: {
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-light)",
+                color: "var(--text-primary)",
+              },
+            }}
           />
-          <Route
-            path="/strategies"
-            element={
-              <ProtectedRoute requireVerified={true}>
-                <Strategies />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <ProtectedRoute>
-                <Settings />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </div>
+        </div>
+      </FullProviders>
     </Router>
   );
 };
 
-// Main App Component
+// Main App Component - Only provides authentication context
 function App() {
   return (
-    <AuthProvider>
+    <ThemeProvider defaultTheme="dark">
       <AppRouter />
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          style: {
-            background: "#13131a",
-            border: "1px solid rgba(255, 255, 255, 0.08)",
-            color: "#e2e8f0",
-          },
-        }}
-      />
-    </AuthProvider>
+    </ThemeProvider>
   );
 }
 

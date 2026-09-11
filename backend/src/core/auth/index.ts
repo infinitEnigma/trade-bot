@@ -1,0 +1,23 @@
+/**
+ * ===========================================
+ * 🔐 AUTH DOMAIN - Authentication & Authorization
+ * ===========================================
+ *
+ * Core business logic for user authentication, authorization,
+ * and role-based access control.
+ *
+ * RESPONSIBILITIES:
+ * - JWT token management and validation
+ * - User authentication (login/register)
+ * - Role-based permissions and access control
+ * - Password hashing and security
+ * - Session management
+ *
+ * @format
+ */
+
+// Export auth-related services
+export { selectAuthService, selectBalanceService } from '../service-selector';
+export { RoleManagementService } from './role-management.service.pure';
+
+// Note: Type exports are not available yet - services need to be updated to export interfaces

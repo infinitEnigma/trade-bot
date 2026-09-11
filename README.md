@@ -1,328 +1,347 @@
-# Trade Bot - Automated Strategy Execution
+# Trade Bot
 
-## **Perpetual Futures Trading on Perps Platforms**
+**Automated Perpetual Futures Trading Platform for Berachain**
 
-**currently supported -> Kodiak <https://perps.kodiak.finance>**
-
----
-
-## 🎯 Project Overview
-
-Automated trading platform for perpetual futures on Berachain, integrated with Kodiak platform.
-
-| Attribute | Value |
-| ----------- | ------- |
-| Network | Berachain Mainnet (chainID: 80094) |
-| API | Orderly/Kodiak on Berachain |
-| Deployment | Bare Metal |
-| UI Theme | Dark mode default (light toggle available) |
-| Trading | Real trading with safety limits |
+[![License: Apache](https://img.shields.io/badge/License-Apache-yellow.svg)](LICENSE)
+[![Node Version](https://img.shields.io/badge/node-%3E%3D25.0.0-brightgreen)](package.json)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](tsconfig.json)
 
 ---
 
-## 🏗️ Architecture
+## Overview
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                     Bare Metal Server                       │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │  Frontend   │  │  Backend    │  │  Bot Engine         │  │
-│  │  (Nginx)    │  │  (Node.js)  │  │  (Separate Process) │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-│         │               │                    │              │
-│         └───────────────┼────────────────────┘              │
-│                         ▼                                   │
-│              ┌─────────────────────┐                        │
-│              │  PostgreSQL + Redis │                        │
-│              └─────────────────────┘                        │
-└─────────────────────────────────────────────────────────────┘
-                        │
-                        ▼
-              ┌─────────────────────┐
-              │  Kodiak/Orderly     │
-              │  API (Mainnet)      │
-              └─────────────────────┘
-```
+Trade Bot is a **production-ready, full-stack automated trading platform** for perpetual futures on Berachain. It enables users to deploy algorithmic trading strategies with a modular architecture featuring a React 19 frontend, Node.js 25 Express backend, and independent trading engine.
+
+| Component | Technology | Status | Documentation |
+|-----------|-----------|--------|---------------|
+| **Network** | Berachain Mainnet (80094) | ✅ Live | - |
+| **Exchange** | Kodiak (Orderly) | ✅ Integrated | - |
+| **Frontend** | React 19 + Vite + Tailwind CSS | ✅ Complete | [📖 Frontend Docs](frontend/README.md) |
+| **Backend** | Express.js + PostgreSQL + Redis | ✅ Complete | [📖 Backend Docs](backend/README.md) |
+| **Trading Engine** | TypeScript (Node.js) | ✅ Operational | [📖 Engine Docs](engine/kodiak/README.md) |
+| **Deployment** | Bare Metal Server | ✅ Ready | - |
 
 ---
 
-## 📁 Project Structure
+## Quick Start
 
-```text
-trade-bot/
-├── frontend/              # React 18 Dashboard
-├── backend/               # Node.js 20 API Server
-├── engine/kodiak/         # Trading Bot Engine
-├── database/              # PostgreSQL migrations
-├── shared/                # Shared TypeScript types
-└── README.md              # This document
-```
+### Prerequisites
+- Node.js ≥ 25.0.9
+- PostgreSQL 14+
+- Redis 5.0+
 
----
-
-## 🔗 API Endpoints (Berachain/Kodiak)
-
-### Public API
-
-- **Base URL**: `https://api.orderly.org/v1/`
-- **WebSocket**: `wss://ws-evm.orderly.org/ws/stream/{account_id}`
-
-### Private API  
-
-- **Base URL**: `https://api.orderly.org/v1/`
-- **WebSocket**: `wss://ws-private-evm.orderly.org/v2/ws/private/stream/{account_id}`
-
-### Key Endpoints (Rest)
-
-| Method | Endpoint | Description |
-| -------- | ---------- | ------------- |
-| GET | `/v1/public/account?account_id=${value.accountId}` | Account - Wallet Address |
-| GET | `/v1/public/ticker` | Market ticker |
-| GET | `/v1/client/info` | Account - Info |
-| GET | `/v1/client/statistics` | Account - Stats |
-| GET | `/v1/kline` | OHLC data |
-| GET | `/v1/orderbook` | Order book |
-| GET | `/v1/positions` | User open positions |
-| GET | `/v1/position_history?limit=100` | User positions history |
-| POST | `/v1/order` | Create order |
-| DELETE | `/v1/order` | Cancel order |
-
----
-
-### Contract Addresses
-
-### Bera
-
-| Contract Name | Mainnet Address |
-| -------- | ---------- |
-| USDC | 0x549943e04f40284185054145c6e4e9568c1d3241 |
-| Vault | 0x816f722424B49Cf1275cc86DA9840Fbd5a6167e9 |
-| VaultProxyAdmin | 0xa2ea0a58b083c492adc91a687fac8b53adb7c0fd |
-| VaultCrossChainManager | 0xa0a07a78c7d31E6f8698F48Fc9219f9a3030f38C |
-| CrossChainRelay | 0x173b47edbeca665125edc24c509bfe545cda60a9 |
-
----
-
-## 📊 Implementation Phases
-
-### Phase 1: Infrastructure & Foundation
-
-- [x] Initialize monorepo with workspace configuration
-- [x] Set up shared types package
-- [x] Configure TypeScript with strict mode
-- [x] Set up PostgreSQL database schema
-- [x] Configure Redis for caching/sessions
-- [x] Create environment configuration files
-
-### Phase 2: Backend Server
-
-- [x] JWT authentication (register, login, refresh)
-- [x] User level management (Basic → Registered → Verified)
-- [x] AES-256 encryption for API credentials
-- [x] Kodiak API client implementation
-- [x] REST API routes (auth, user, market, strategies, bot)
-- [x] WebSocket server for real-time updates
-- [x] Rate limiting and security middleware
-
-### Phase 3: Frontend Dashboard
-
-- [x] React 18 + Vite + TypeScript setup
-- [x] Tailwind CSS with dark glassmorphism theme
-- [x] Authentication pages (Login/Register)
-- [x] Dashboard with portfolio overview
-- [ ] Candlestick charts (recharts)
-- [ ] Kodiak API client implementation
-- [ ] Strategy management UI
-
-### Phase 4: Bot Engine
-
-- [ ] Core engine architecture
-- [ ] Kodiak API client implementation
-- [ ] Grid Trading Strategy implementation
-- [ ] Risk management system
-- [ ] Backend communication protocol
-- [ ] Performance tracking
-
-### Phase 5: Integration & Testing
-
-- [ ] Frontend-Backend integration
-- [ ] Backend-Bot integration
-- [ ] End-to-end testing
-- [ ] Security audit
-- [ ] Performance optimization
-
-### Phase 6: Deployment
-
-- [ ] Nginx setup
-- [ ] Production deployment
-- [ ] Monitoring & logging
-
----
-
-## 🎨 UI Design Specs
-
-### Color Palette (Dark Mode)
-
-| Color | Hex | Usage |
-| ------- | ----- | ------- |
-| Background | `#0a0a0f` | Main background |
-| Surface | `#13131a` | Cards, panels |
-| Primary | `#6366f1` | Actions, links |
-| Success | `#10b981` | Profits, buy |
-| Danger | `#ef4444` | Losses, sell |
-| Text | `#e2e8f0` | Primary text |
-| Text-muted | `#94a3b8` | Secondary text |
-
-### Components
-
-- Glassmorphism cards with backdrop blur
-- Smooth Framer Motion animations
-- Responsive layout (desktop-first)
-- Real-time data updates
-- Professional Trading Charts
-- Strategy Management Tools
-
----
-
-## 🤖 Grid Trading Strategy
-
-### Strategy Parameters
-
-| Parameter | Type | Description |
-| ----------- | ------ | ------------- |
-| symbol | string | Trading pair (e.g., PERP_BTC_USDC) |
-| gridSize | number | Number of grid levels |
-| orderQuantity | number | Size per order |
-| gridRange | number | Price range percentage |
-| takeProfit | number | Profit per grid |
-
-### How It Works
-
-1. Calculate price bands based on current price
-2. Place limit orders at regular intervals
-3. When order fills, place opposite order
-4. Repeat to capture small profits
-
----
-
-## ⚠️ Safety Features
-
-- [ ] Position size limits per trade
-- [ ] Max daily loss halt
-- [ ] Emergency stop button
-- [ ] Confirmation dialogs for large orders
-- [ ] Comprehensive logging
-- [ ] Real-time monitoring
-
----
-
-## 📅 Implementation Order
-
-1. **Week 1**: Infrastructure & Database
-2. **Week 2**: Backend Authentication & API
-3. **Week 3**: Frontend Core & Dashboard
-4. **Week 4**: Bot Engine Core
-5. **Week 5**: Integration & Testing
-6. **Week 6**: Polish & Deployment
-
----
-
-## 📝 Database Schema
-
-### Users Table
-
-```sql
-id UUID PRIMARY KEY,
-email VARCHAR(255) UNIQUE,
-password_hash VARCHAR(255),
-user_level VARCHAR(20), -- BASIC, REGISTERED, VERIFIED
-created_at TIMESTAMP,
-updated_at TIMESTAMP
-```
-
-### Kodiak Credentials Table
-
-```sql
-id UUID PRIMARY KEY,
-user_id UUID REFERENCES users(id),
-account_id VARCHAR(255),
-api_key_encrypted TEXT,
-secret_key_encrypted TEXT,
-wallet_signature TEXT,
-verified BOOLEAN,
-created_at TIMESTAMP
-```
-
-### Strategies Table
-
-```sql
-id UUID PRIMARY KEY,
-user_id UUID REFERENCES users(id),
-name VARCHAR(255),
-type VARCHAR(50), -- GRID, TREND, etc.
-config JSONB,
-active BOOLEAN,
-created_at TIMESTAMP
-```
-
-### Trades Table
-
-```sql
-id UUID PRIMARY KEY,
-user_id UUID REFERENCES users(id),
-strategy_id UUID REFERENCES strategies(id),
-order_id VARCHAR(255),
-symbol VARCHAR(50),
-side VARCHAR(10),
-quantity DECIMAL,
-price DECIMAL,
-pnl DECIMAL,
-status VARCHAR(20),
-executed_at TIMESTAMP
-```
-
----
-
-## 🔐 Authentication Levels
-
-| Level | Requirements | Access |
-| ------- | -------------- | -------- |
-| **Basic** | Email + Password | Platform access, market data |
-| **Registered** | Kodiak API keys | Trading data, positions |
-| **Verified** | Wallet signature | Full access, bot control |
-
----
-
-## 🚀 Getting Started
+### Installation & Development
 
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd trade-bot
+# Clone and install dependencies
+git clone <repo-url> && cd trade-bot
+npm install
 
-# Install dependencies
-cd frontend && npm install
-cd ../backend && npm install
-cd ../engine/kodiak && npm install
-cd ../shared && npm install
+# Configure environment
+cp .env.example .env
+# Edit .env with your database, Redis, and API credentials
 
-# Start development environment
-cd shared && npm build
-cd ../engine/kodiak && npm build
-cd ../backend && npm run dev
-cd frontend && npm run dev
+# Run database migrations
+npm run db:migrate
+
+# Start all services
+npm run dev
+
+# Or start individual services
+npm run dev:frontend   # http://localhost:5173
+npm run dev:backend    # http://localhost:3000
+npm run dev:engine     # Trading bot engine
+```
+
+### Production Build
+
+```bash
+npm run build          # Build all packages
+npm start              # Start production server
 ```
 
 ---
 
-## 📚 Resources
+## Architecture
 
-- [Kodiak/Orderly Documentation](https://docs.orderly.network/)
-- [Berachain Documentation](https://docs.berachain.com/)
-- [AI Assistant Guide](./AI_ASSISTANT_GUIDE.md)
+### 🏗️ Enterprise Domain-Driven Architecture
+
+Trade Bot implements a **production-grade domain-driven design** with clean architecture principles, featuring **6 architectural layers** and **5 core business domains**.
+
+```
+┌────────────────────────────────────────────────────┐
+│              Bare Metal Server                     │
+├────────────────────────────────────────────────────┤
+│                                                    │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────┐  │
+│  │  Frontend    │  │   Backend    │  │  Engine  │  │
+│  │  React 19    │  │  Express.js  │  │ Trading  │  │
+│  │  + Vite      │  │  Node.js 25  │  │  Bot     │  │
+│  └──────────────┘  └──────────────┘  └──────────┘  │
+│                                                    │
+├────────────────────────────────────────────────────┤
+│         🏗️ DOMAIN-DRIVEN BACKEND ARCHITECTURE      │
+├────────────────────────────────────────────────────┤
+│                                                    │
+│  ┌─────────────────────────────────────────────┐   │
+│  │          🔄 INTERFACES LAYER                │   │
+│  │  HTTP Routes • WebSocket • Middleware       │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                    │
+│  ┌─────────────────────────────────────────────┐   │
+│  │          ⚙️ CORE BUSINESS DOMAINS           │   │
+│  │                                             │   │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐        │   │
+│  │  │  Auth   │ │ Trading │ │ Wallet  │        │   │
+│  │  │ Domain  │ │ Domain  │ │ Domain  │        │   │
+│  │  └─────────┘ └─────────┘ └─────────┘        │   │
+│  │                                             │   │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐        │   │
+│  │  │  User   │ │Logging  │ │Notifications│    │   │
+│  │  │ Domain  │ │ Domain  │ │  Domain   │      │   │
+│  │  └─────────┘ └─────────┘ └─────────┘        │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                    │
+│  ┌─────────────────────────────────────────────┐   │
+│  │        🏗️ INFRASTRUCTURE LAYER              │   │
+│  │  Cache • Security • External • Messaging     │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                    │
+│  ┌─────────────────────────────────────────────┐   │
+│  │         📚 SHARED UTILITIES LAYER            │   │
+│  │  Types • Utils • Constants • Validation      │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                    │
+│  ┌─────────────────────────────────────────────┐   │
+│  │          ⚡ WORKERS LAYER                     │   │
+│  │  Background Jobs • CPU-Intensive Tasks       │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                    │
+├────────────────────────────────────────────────────┤
+│                ┌──────────────────────┐            │
+│                │  PostgreSQL + Redis  │            │
+│                └──────────────────────┘            │
+│                                                    │
+└────────────────────────────────────────────────────┘
+                      │
+                      ▼
+            ┌──────────────────────┐
+            │ Kodiak/Orderly API   │
+            │ (Berachain Mainnet)  │
+            └──────────────────────┘
+```
+
+### 🏛️ Clean Architecture Layers
+
+| Layer | Responsibility | Technologies | Status |
+|-------|----------------|--------------|--------|
+| **🔄 Interfaces** | HTTP/WebSocket APIs, middleware | Express.js, Socket.IO | ✅ Production |
+| **⚙️ Core** | Business logic, domain models | TypeScript classes | ✅ Enterprise |
+| **🏗️ Infrastructure** | Technical capabilities, external APIs | Redis, PostgreSQL, Kodiak | ✅ Production |
+| **📚 Shared** | Common utilities, types, constants | Pure functions | ✅ Complete |
+| **⚡ Workers** | Background processing, CPU tasks | Worker threads | ✅ Operational |
+
+### 🎯 Core Business Domains
+
+| Domain | Purpose | Key Services | Status |
+|--------|---------|--------------|--------|
+| **🔐 Authentication** | User identity, JWT tokens, security | Auth service, Role management | ✅ Production |
+| **📊 Trading** | Bot management, position tracking | Engine manager, Bot status, Performance | ✅ Operational |
+| **💰 Wallet** | Balance management, qualifications | Balance service, Wallet validation | ✅ Production |
+| **👤 User** | Profile management, Kodiak integration | User profiles, Kodiak credentials | ✅ Production |
+| **📝 Logging** | Structured logging, context tracking | Context-aware logger, Winston | ✅ Enterprise |
+| **🚨 Notifications** | Error alerts, system notifications | Discord webhooks, Email (future) | ✅ Operational |
+
+### Monorepo Packages
+
+| Package | Purpose | Status |
+|---------|---------|--------|
+| `frontend/` | React 19 UI dashboard with real-time charts | ✅ Production |
+| `backend/` | Express.js REST/WebSocket API server | ✅ Production |
+| `engine/kodiak/` | Independent trading bot engine | ✅ Production |
+| `shared/` | Shared TypeScript type definitions | ✅ Complete |
+| `database/` | PostgreSQL migrations & schema | ✅ Complete |
 
 ---
 
-**Last Updated**: January 11, 2026
-**Version**: 1.0.0
+## Technology Stack
+
+### Frontend
+- **React 19.2** - UI framework with hooks
+- **Vite** - Fast build tool with HMR
+- **TypeScript 5** - Type-safe development
+- **Tailwind CSS 4** - Utility-first styling
+- **React Router 7** - Client-side routing
+- **Zustand** - Lightweight state management
+- **Recharts + Lightweight Charts** - Market data visualization
+- **Socket.IO** - Real-time bot status updates
+
+### Backend
+- **Node.js 25** - JavaScript runtime
+- **Express.js 5** - REST API framework
+- **TypeScript 5** - Type-safe backend code
+- **PostgreSQL 14+** - Primary data store
+- **Redis 5** - Caching & rate limiting
+- **JWT + bcrypt** - Authentication & security
+- **Helmet** - HTTP security headers
+- **Winston** - Structured logging with rotation
+
+### Trading Engine
+- **TypeScript 5** - Type-safe trading logic
+- **node-cron** - Periodic strategy execution
+- **PostgreSQL** - Trade persistence
+- **WebSocket (ws)** - Kodiak market feeds
+- **Winston** - Trade execution logging
+
+---
+
+## 📖 Detailed Documentation
+
+- **[🎨 Frontend Documentation](frontend/README.md)** - React UI setup, components, and development
+- **[⚙️ Backend Documentation](backend/README.md)** - API reference, database setup, and server configuration
+- **[🤖 Trading Engine Documentation](engine/kodiak/README.md)** - Strategy implementation, bot management, and configuration
+- **[🗄️ Database Setup](DATABASE_SETUP.md)** - PostgreSQL schema and migrations
+- **[🚀 Deployment Guide](docs/DEPLOYMENT_SETUP.md)** - Production deployment instructions
+
+---
+
+## Development
+
+### Enterprise Domain-Driven Project Structure
+
+```
+trade-bot/
+├── frontend/                    # React 19 UI application
+│   ├── README.md               # Frontend documentation
+│   ├── src/pages/              # Route components
+│   ├── src/components/         # Reusable UI components
+│   └── src/lib/api.ts          # API client
+│
+├── backend/                     # Express.js API server (Domain-Driven)
+│   ├── README.md               # Backend architecture documentation
+│   └── src/
+│       ├── index.ts            # Application entry point
+│       ├── config/             # Configuration files
+│       ├── interfaces/         # 🔄 HTTP/WebSocket APIs & middleware
+│       │   ├── http/          # REST API routes (12+ files)
+│       │   ├── middleware/    # Request processing middleware
+│       │   └── websocket/     # Real-time WebSocket handlers
+│       ├── core/              # ⚙️ Business domain logic
+│       │   ├── auth/          # 🔐 Authentication & authorization
+│       │   ├── user/          # 👤 User management & profiles
+│       │   ├── trading/       # 📊 Bot trading & position tracking
+│       │   ├── wallet/        # 💰 Balance & wallet operations
+│       │   ├── logging/       # 📝 Structured logging & context
+│       │   └── notifications/ # 🚨 Error notifications & alerts
+│       ├── infrastructure/    # 🏗️ Technical capabilities
+│       │   ├── cache/         # Redis caching & invalidation
+│       │   ├── security/      # Encryption, rate limiting, keys
+│       │   ├── external/      # Kodiak API integration
+│       │   ├── messaging/     # WebSocket & market streaming
+│       │   ├── async/         # Background job management
+│       │   └── retry.service.ts # Cross-cutting retry logic
+│       ├── shared/            # 📚 Common utilities & types
+│       │   ├── types/         # TypeScript interfaces
+│       │   ├── utils/         # Pure utility functions
+│       │   ├── constants/     # Application constants
+│       │   └── validation/    # Schema validation
+│       ├── workers/           # ⚡ Background processing
+│       │   ├── password-worker.ts    # CPU-intensive hashing
+│       │   ├── bot-reconciliation.ts # Background reconciliation
+│       │   └── index.ts              # Worker exports
+│       └── database/          # PostgreSQL connection & migrations
+│
+├── engine/kodiak/             # Independent trading bot engine
+│   ├── README.md             # Engine documentation
+│   ├── src/strategies/       # Strategy implementations
+│   └── src/services/         # Orderly API client
+│
+├── shared/                    # Cross-package TypeScript types
+├── database/                  # PostgreSQL migrations & schema
+├── docs/                     # Architecture & deployment docs
+└── scripts/                  # Build & maintenance scripts
+```
+
+### Scripts
+
+```bash
+# Development
+npm run dev              # Start all services
+npm run dev:frontend    # Frontend only (Vite)
+npm run dev:backend     # Backend only with auto-reload
+npm run dev:engine      # Bot engine only
+
+# Building
+npm run build           # Build all packages
+
+# Testing
+npm run test            # Run full test suite
+```
+
+---
+
+## Security
+
+- ✅ **A+ SSL Rating** (SSL Labs)
+- ✅ **JWT Authentication** with encrypted storage
+- ✅ **Rate Limiting** (100 req/15s per IP)
+- ✅ **CORS Protection** with origin validation
+- ✅ **Helmet Security Headers**
+- ✅ **SQL Injection Protection**
+- ✅ **Password Hashing** (bcrypt 12 rounds)
+- ✅ **HSTS Enabled** with preload support
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Commit changes: `git commit -am 'Add feature'`
+4. Push branch: `git push origin feature/your-feature`
+5. Open a pull request
+
+### Code Standards
+- TypeScript strict mode enabled
+- ESLint configuration enforced
+- Prettier formatting on commit
+- Comprehensive error handling
+- Detailed logging for debugging
+
+---
+
+## Roadmap
+
+### Q1 2026
+- [ ] Trend Following strategy
+- [ ] Daily loss halt circuit breaker
+- [ ] Expand test coverage to >80%
+- [ ] Email verification enforcement
+
+### Q2 2026
+- [ ] Arbitrage strategy
+- [ ] Backtesting framework
+- [ ] Analytics dashboard
+
+### Q3 2026
+- [ ] Horizontal scaling
+- [ ] Advanced risk management
+- [ ] Mobile app support
+
+---
+
+## License
+
+Apache License 2.0 - See [LICENSE](LICENSE) for details
+
+---
+
+## Resources
+
+- **[Kodiak/Orderly Documentation](https://docs.orderly.network/)**
+- **[Berachain Documentation](https://docs.berachain.com/)**
+- **[TypeScript Documentation](https://www.typescriptlang.org/)**
+
+---
+
+**Status**: Production Ready | **Version**: 1.0.0 | **Updated**: January 17, 2026
