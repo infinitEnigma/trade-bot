@@ -1,7 +1,22 @@
-/** @format */
+/**
+ * BotControls Component
+ *
+ * Uses the `useBotLifecycle` hook to get authoritative server state.
+ * The frontend NEVER assumes immediate state transitions.
+ *
+ * UI States:
+ * - Stopped: Bot is stopped and ready to start
+ * - Starting...: Bot is in the process of starting (loading)
+ * - Running: Bot is actively trading
+ * - Stopping...: Bot is in the process of stopping (loading)
+ * - Connection lost: WebSocket connection lost
+ * - Error: Bot encountered an error
+ *
+ * @format
+ */
 
 import React, { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { UserRole } from "../../../../shared/types";
 import {
   Play,
@@ -11,26 +26,19 @@ import {
   CheckCircle,
   Wallet,
   Shield,
-  Zap
+  Zap,
+  WifiOff,
 } from "lucide-react";
 
-// Import from infrastructure
 import { tradingApi, authApi } from "../../../../infrastructure/api";
-
-// Import from features
 import { useAuth } from "../../../auth";
-
-// Import utilities
 import { OperationToasts } from "../../../../shared/utils/toast";
+import { useBotState, BOT_INSTANCES_QUERY_KEY } from "../../../bots/hooks/useBotLifecycle";
+import { BotInstance } from "../../../strategies/types/strategies.types";
 
 interface BotControlsProps {
   strategyId: string;
-  bot?: {
-    id: string;
-    status: "RUNNING" | "STOPPED" | "ERROR";
-    total_trades: number;
-    total_pnl: number;
-  };
+  bot?: BotInstance;
   onStatusChange: () => void;
 }
 
@@ -134,7 +142,10 @@ const QualificationCheckButton: React.FC = () => {
 };
 
 /**
- * BotControls Component - migrated to trading/bots feature
+ * BotControls Component
+ *
+ * Uses the `useBotLifecycle` hook to get authoritative server state.
+ * The frontend NEVER assumes immediate state transitions.
  */
 export const BotControls: React.FC<BotControlsProps> = ({
   strategyId,
@@ -142,14 +153,24 @@ export const BotControls: React.FC<BotControlsProps> = ({
   onStatusChange,
 }) => {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const hasQualification = user?.roles?.includes(UserRole.QUALIFIED_ALPHA);
+
+  // Use the bot lifecycle hook for authoritative server state
+  const { actualState, isTransitional, isConnectionLost } = useBotState(bot?.id ?? strategyId);
+
+  // Invalidate query cache when mutations succeed
+  const invalidateCache = () => {
+    queryClient.invalidateQueries({ queryKey: [BOT_INSTANCES_QUERY_KEY] });
+    onStatusChange();
+  };
 
   // Start bot mutation
   const startMutation = useMutation({
     mutationFn: () => tradingApi.startBot(strategyId),
     onSuccess: () => {
       OperationToasts.botStarted("Strategy");
-      onStatusChange();
+      invalidateCache();
     },
     onError: (error: unknown) => {
       const errorMessage = error instanceof Error
@@ -166,7 +187,7 @@ export const BotControls: React.FC<BotControlsProps> = ({
     mutationFn: () => tradingApi.stopBot(bot!.id),
     onSuccess: () => {
       OperationToasts.botStopped("Strategy");
-      onStatusChange();
+      invalidateCache();
     },
     onError: (error: unknown) => {
       const errorMessage = error instanceof Error
@@ -183,7 +204,7 @@ export const BotControls: React.FC<BotControlsProps> = ({
     mutationFn: () => tradingApi.emergencyStop(bot!.id),
     onSuccess: () => {
       OperationToasts.botEmergencyStop("Strategy");
-      onStatusChange();
+      invalidateCache();
     },
     onError: (error: unknown) => {
       const errorMessage = error instanceof Error
@@ -195,8 +216,8 @@ export const BotControls: React.FC<BotControlsProps> = ({
     },
   });
 
-  const isStarting = startMutation.isPending;
-  const isStopping = stopMutation.isPending;
+  // Determine loading state from server state (not local assumptions)
+  const isLoading = isTransitional || startMutation.isPending || stopMutation.isPending;
 
   // Check if user has alpha qualification
   if (!hasQualification) {
@@ -209,6 +230,34 @@ export const BotControls: React.FC<BotControlsProps> = ({
     );
   }
 
+  // Connection lost state
+  if (isConnectionLost && bot) {
+    return (
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <ActionButton
+            icon={<Square className="w-4 h-4" />}
+            label="Stop Trading"
+            variant="danger"
+            disabled={true}
+            onClick={() => stopMutation.mutate()}
+          />
+          <ActionButton
+            icon={<AlertTriangle className="w-4 h-4" />}
+            label="Emergency Stop"
+            variant="warning"
+            disabled={true}
+            onClick={() => {}}
+          />
+        </div>
+        <div className="text-xs text-danger text-center flex items-center justify-center gap-1">
+          <WifiOff className="w-3 h-3" />
+          <span>Connection lost • Reconnecting...</span>
+        </div>
+      </div>
+    );
+  }
+
   if (!bot) {
     // No bot exists - show start button
     return (
@@ -217,7 +266,7 @@ export const BotControls: React.FC<BotControlsProps> = ({
           icon={<Play className="w-4 h-4" />}
           label="Start Trading Bot"
           variant="success"
-          loading={isStarting}
+          loading={isLoading}
           onClick={() => startMutation.mutate()}
         />
         <div className="text-xs text-textMuted text-center">
@@ -228,8 +277,12 @@ export const BotControls: React.FC<BotControlsProps> = ({
     );
   }
 
-  // Bot exists - show appropriate controls based on status
-  if (bot.status === "RUNNING") {
+  // Bot exists - show appropriate controls based on actual server state
+  // Use actualState from the hook if available, otherwise fall back to bot.status
+  const currentState = actualState ?? bot.status;
+
+  // RUNNING state
+  if (currentState === "RUNNING") {
     return (
       <div className="space-y-3">
         <div className="flex gap-2">
@@ -237,7 +290,7 @@ export const BotControls: React.FC<BotControlsProps> = ({
             icon={<Square className="w-4 h-4" />}
             label="Stop Trading"
             variant="danger"
-            loading={isStopping}
+            loading={isLoading}
             onClick={() => stopMutation.mutate()}
           />
           <ActionButton
@@ -262,14 +315,55 @@ export const BotControls: React.FC<BotControlsProps> = ({
     );
   }
 
-  if (bot.status === "STOPPED") {
+  // STARTING state (transitional)
+  if (currentState === "STARTING") {
+    return (
+      <div className="space-y-3">
+        <ActionButton
+          icon={<Loader2 className="w-4 h-4 animate-spin" />}
+          label="Starting Bot..."
+          variant="info"
+          loading={true}
+          disabled={true}
+          onClick={() => {}}
+        />
+        <div className="text-xs text-warning text-center flex items-center justify-center gap-1">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          <span>Initializing trading engine...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // STOPPING state (transitional)
+  if (currentState === "STOPPING") {
+    return (
+      <div className="space-y-3">
+        <ActionButton
+          icon={<Loader2 className="w-4 h-4 animate-spin" />}
+          label="Stopping Bot..."
+          variant="info"
+          loading={true}
+          disabled={true}
+          onClick={() => {}}
+        />
+        <div className="text-xs text-warning text-center flex items-center justify-center gap-1">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          <span>Safely stopping trading engine...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // STOPPED state
+  if (currentState === "STOPPED") {
     return (
       <div className="flex flex-col gap-3">
         <ActionButton
           icon={<Play className="w-4 h-4" />}
           label="Resume Trading"
           variant="success"
-          loading={isStarting}
+          loading={isLoading}
           onClick={() => startMutation.mutate()}
         />
         <div className="text-xs text-textMuted text-center">
@@ -280,7 +374,7 @@ export const BotControls: React.FC<BotControlsProps> = ({
     );
   }
 
-  // Error state or other status
+  // ERROR or UNKNOWN state
   return (
     <div className="space-y-3">
       <div className="flex gap-2">
@@ -288,20 +382,24 @@ export const BotControls: React.FC<BotControlsProps> = ({
           icon={<Square className="w-4 h-4" />}
           label="Stop Bot"
           variant="danger"
-          loading={isStopping}
+          loading={isLoading}
           onClick={() => stopMutation.mutate()}
         />
         <ActionButton
           icon={<Play className="w-4 h-4" />}
           label="Restart Bot"
           variant="success"
-          loading={isStarting}
+          loading={isLoading}
           onClick={() => startMutation.mutate()}
         />
       </div>
       <div className="text-xs text-amber-400 text-center flex items-center justify-center gap-1">
         <AlertTriangle className="w-3 h-3" />
-        <span>Bot in error state • Check logs for details</span>
+        <span>
+          {currentState === "UNKNOWN"
+            ? "Connection lost • Bot state unknown"
+            : "Bot in error state • Check logs for details"}
+        </span>
       </div>
     </div>
   );

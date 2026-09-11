@@ -3,15 +3,13 @@
 import React from "react";
 import { Strategy, StrategyType } from "../../../shared/types";
 import { BarChart3 } from "lucide-react";
-import { StrategyConfig } from "../types/strategies.types";
-//import { Link } from "react-router-dom";
+import { StrategyConfig, BotInstance } from "../types/strategies.types";
 import { Card } from "../../../shared/components/ui";
 import { StrategyCard } from "./StrategyCard";
-//import { BotInstance, StrategyFormData } from "../../types/trading.types";
 
 interface StrategyListProps {
   strategies: Strategy[];
-  getBotForStrategy: (strategyId: string) => { id: string; status: "RUNNING" | "STOPPED" | "ERROR"; total_trades: number; total_pnl: number; } | undefined;
+  getBotForStrategy: (strategyId: string) => BotInstance | undefined;
   onCreateStrategy: () => void;
   onEditStrategy: (strategy: Strategy) => void;
   onDeleteStrategy: (strategyId: string) => void;
