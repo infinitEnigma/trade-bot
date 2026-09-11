@@ -12,7 +12,9 @@ jest.mock('../../src/infrastructure', () => ({
         setex: jest.fn().mockResolvedValue({ success: true })
     },
     marketStreamService: {
-        disconnectAll: jest.fn().mockResolvedValue(true)
+        disconnectAll: jest.fn().mockResolvedValue(true),
+        setSocketServer: jest.fn(),
+        connectToOrderly: jest.fn().mockResolvedValue(undefined)
     }
 }));
 jest.mock('../../src/infrastructure/dependency-injection.container', () => ({
@@ -58,6 +60,17 @@ jest.mock('@noble/ed25519', () => ({
 import { app, io, validateEnvironment, REQUIRED_ENV_VARS, startServer, stopServer } from '../../src/index';
 
 describe('Application Entry Point (index.ts)', () => {
+    const httpModule = require('http');
+    const originalHttpCreateServer = jest.requireActual('http').createServer;
+
+    // Guarantee that every mutated http.createServer is restored, even when
+    // one of the lifecycle tests fails before its own restore statement.
+    // Otherwise the mock leaks into the Jest worker and breaks supertest
+    // (app.address is not a function) in later controller suites.
+    afterEach(() => {
+        httpModule.createServer = originalHttpCreateServer;
+    });
+
     // Increase listener limit to prevent memory leak warnings during tests
     beforeAll(() => {
         process.setMaxListeners(20);
@@ -65,6 +78,7 @@ describe('Application Entry Point (index.ts)', () => {
 
     // Clean up listeners after all tests
     afterAll(() => {
+        httpModule.createServer = originalHttpCreateServer;
         process.removeAllListeners('SIGTERM');
         process.removeAllListeners('SIGINT');
         process.removeAllListeners('uncaughtException');
@@ -519,7 +533,9 @@ describe('Application Entry Point (index.ts)', () => {
                     setex: jest.fn().mockResolvedValue({ success: true })
                 },
                 marketStreamService: {
-                    disconnectAll: jest.fn().mockResolvedValue(true)
+                    disconnectAll: jest.fn().mockResolvedValue(true),
+                    setSocketServer: jest.fn(),
+                    connectToOrderly: jest.fn().mockResolvedValue(undefined)
                 }
             }));
 
@@ -565,7 +581,9 @@ describe('Application Entry Point (index.ts)', () => {
                     setex: jest.fn().mockResolvedValue({ success: true })
                 },
                 marketStreamService: {
-                    disconnectAll: jest.fn().mockResolvedValue(true)
+                    disconnectAll: jest.fn().mockResolvedValue(true),
+                    setSocketServer: jest.fn(),
+                    connectToOrderly: jest.fn().mockResolvedValue(undefined)
                 }
             }));
 
@@ -634,7 +652,9 @@ describe('Application Entry Point (index.ts)', () => {
                 marketStreamService: {
                     disconnectAll: jest.fn().mockImplementation(() => {
                         throw new Error('Market stream disconnection failed');
-                    })
+                    }),
+                    setSocketServer: jest.fn(),
+                    connectToOrderly: jest.fn().mockResolvedValue(undefined)
                 }
             }));
 

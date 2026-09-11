@@ -21,7 +21,12 @@ jest.mock('bs58', () => ({
 }));
 
 jest.mock('@noble/ed25519', () => ({
-    sign: jest.fn()
+    signAsync: jest.fn(),
+    verifyAsync: jest.fn(),
+    sign: jest.fn(),
+    verify: jest.fn(),
+    getPublicKey: jest.fn(),
+    getPublicKeyAsync: jest.fn()
 }));
 
 // Mock the dynamic import for encryption service
@@ -227,7 +232,7 @@ describe('AuthManager', () => {
             mockBs58.decode.mockReturnValue(Buffer.from('test-private-key'));
 
             const mockEd25519 = require('@noble/ed25519');
-            mockEd25519.sign.mockResolvedValue(Buffer.from('test-signature'));
+            mockEd25519.signAsync.mockResolvedValue(Buffer.from('test-signature'));
 
             const mockWs = { send: jest.fn() } as any;
 
@@ -236,7 +241,7 @@ describe('AuthManager', () => {
             expect(mockEncryptionService.decryptApiKey).toHaveBeenCalled();
             expect(mockEncryptionService.decryptSecretKey).toHaveBeenCalled();
             expect(mockBs58.decode).toHaveBeenCalled();
-            expect(mockEd25519.sign).toHaveBeenCalled();
+            expect(mockEd25519.signAsync).toHaveBeenCalled();
             expect(mockWs.send).toHaveBeenCalled();
 
             const sentMessage = JSON.parse(mockWs.send.mock.calls[0][0]);

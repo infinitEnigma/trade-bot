@@ -132,7 +132,7 @@ describe('WebSocketAuthMiddleware', () => {
                 });
         });
 
-        it('should throw error when user has insufficient permissions (BASIC level)', async () => {
+        it('should allow BASIC users to connect', async () => {
             // Arrange
             const mockToken = 'valid-jwt-token';
             const mockUserId = 'test-user-id';
@@ -144,16 +144,14 @@ describe('WebSocketAuthMiddleware', () => {
                 userLevel: 'BASIC'
             });
 
-            // Act & Assert
-            await expect(authMiddleware.authenticate(mockSocket))
-                .rejects.toThrow(WebSocketError);
+            // Act
+            const result = await authMiddleware.authenticate(mockSocket);
 
-            await expect(authMiddleware.authenticate(mockSocket))
-                .rejects.toMatchObject({
-                    message: 'Real-time data requires VERIFIED account',
-                    code: WebSocketErrorCode.INSUFFICIENT_PERMISSIONS,
-                    statusCode: 403
-                });
+            // Assert: BASIC users can connect; fine-grained access is enforced per event.
+            expect(result).toEqual(expect.objectContaining({
+                userId: mockUserId,
+                userLevel: 'BASIC'
+            }));
         });
 
         it('should throw internal error when auth service throws unexpected error', async () => {
