@@ -130,6 +130,12 @@ async function fetchCredentials(botId: string, correlationId: string): Promise<F
 class BotManager {
     private bots: Map<string, BotRuntime> = new Map();
     private initializing = new Set<string>();
+    /**
+     * Bots whose BOT_STOP arrived while a start was still initializing. The
+     * in-flight handleStart checks this at each await boundary and aborts,
+     * so a stop can never be "lost" and then resurrected as RUNNING later.
+     */
+    private stopRequested = new Set<string>();
     private processedMessageIds: Set<string> = new Set();
     private streamOperations: ReturnType<typeof getRedisStreamOperations>;
     readonly engineId: string;
@@ -266,6 +272,10 @@ class BotManager {
 
     /**
      * BOT_START: START -> COMMAND_ACCEPTED -> STARTING -> (init) -> RUNNING
+     *
+     * Cancellation-safe: a BOT_STOP arriving mid-initialization adds the bot
+     * to `stopRequested`; every await boundary below checks it and aborts,
+     * reporting STARTING -> STOPPED instead of letting the start resurrect.
      */
     private async handleStart(command: BotCommand): Promise<void> {
         const { botId, strategyId, userId, config } = command.payload as StartBotCommandPayload;
@@ -286,28 +296,40 @@ class BotManager {
         }
 
         this.initializing.add(botId);
+        // A fresh start supersedes any past (already-consumed) stop marker.
+        this.stopRequested.delete(botId);
+
+        // Hoisted so cancellation can tear down partial initialization.
+        let orderlyClient: OrderlyClient | null = null;
+        let gridStrategy: GridTradingStrategy | null = null;
+        let intervalId: NodeJS.Timeout | null = null;
+
         try {
             await this.publishStateChanged(botId, 'STOPPED', 'STARTING', correlationId);
+            this.throwIfCancelled(botId);
 
             // 1. Fetch credentials out-of-band.
             const credentials = await fetchCredentials(botId, correlationId);
+            this.throwIfCancelled(botId);
 
             // 2. Connect an Orderly client for this user.
-            const orderlyClient = createOrderlyClient(credentials.accountId, credentials.accessKey, credentials.secretKey, process.env.NODE_ENV !== 'production');
+            orderlyClient = createOrderlyClient(credentials.accountId, credentials.accessKey, credentials.secretKey, process.env.NODE_ENV !== 'production');
 
             // 3. Resolve current market price.
             const symbol = String(config.symbol || '');
             if (!symbol) {
                 throw new Error('Strategy config is missing symbol');
             }
+            this.throwIfCancelled(botId);
             const ticker = await orderlyClient.getTicker(symbol);
+            this.throwIfCancelled(botId);
             const currentPrice = Number(ticker.mark_price || ticker.price);
             if (!currentPrice) {
                 throw new Error(`Could not resolve current price for ${symbol}`);
             }
 
             // 4. Create, initialize and start the strategy.
-            const gridStrategy = new GridTradingStrategy(
+            gridStrategy = new GridTradingStrategy(
                 {
                     symbol,
                     gridSize: Number(config.gridSize) || 10,
@@ -317,11 +339,13 @@ class BotManager {
                 orderlyClient
             );
             await gridStrategy.initialize(currentPrice);
+            this.throwIfCancelled(botId);
             await gridStrategy.start();
+            this.throwIfCancelled(botId);
 
             // 5. Trading loop.
-            const intervalId = setInterval(() => {
-                void gridStrategy.tick().catch(error => {
+            intervalId = setInterval(() => {
+                void gridStrategy!.tick().catch(error => {
                     logger.error('Strategy tick error', { botId, error: error instanceof Error ? error.message : String(error) });
                 });
             }, TICK_INTERVAL_MS);
@@ -339,12 +363,40 @@ class BotManager {
             await this.publishStateChanged(botId, 'STARTING', 'RUNNING', correlationId);
             logger.info('Bot started', { botId, symbol, engineId: this.engineId });
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            logger.error('Bot start failed', { botId, error: message });
-            await this.publishFailed(botId, 'BOT_START', correlationId, 'BOT_START_FAILED', message);
-            await this.publishStateChanged(botId, 'STARTING', 'ERROR', correlationId, 'init_failed');
+            if (this.stopRequested.has(botId)) {
+                // A stop arrived during initialization - abort cleanly. The
+                // bot must NOT go RUNNING/ERROR; report the cancellation.
+                logger.info('Bot start cancelled by a stop request', { botId });
+                if (gridStrategy) {
+                    try {
+                        await gridStrategy.stop();
+                    } catch (stopError) {
+                        logger.error('Error stopping cancelled strategy', { botId, error: stopError instanceof Error ? stopError.message : String(stopError) });
+                    }
+                }
+                if (intervalId) {
+                    clearInterval(intervalId);
+                }
+                this.stopRequested.delete(botId);
+                await this.publishStateChanged(botId, 'STARTING', 'STOPPED', correlationId, 'cancelled');
+            } else {
+                const message = error instanceof Error ? error.message : String(error);
+                logger.error('Bot start failed', { botId, error: message });
+                await this.publishFailed(botId, 'BOT_START', correlationId, 'BOT_START_FAILED', message);
+                await this.publishStateChanged(botId, 'STARTING', 'ERROR', correlationId, 'init_failed');
+            }
         } finally {
             this.initializing.delete(botId);
+        }
+    }
+
+    /**
+     * Abort a start-in-flight if a stop has been requested since. Called after
+     * every await boundary so cancellation is prompt and never resurrects.
+     */
+    private throwIfCancelled(botId: string): void {
+        if (this.stopRequested.has(botId)) {
+            throw new Error(`Bot start cancelled by stop request: ${botId}`);
         }
     }
 
@@ -358,6 +410,17 @@ class BotManager {
         const correlationId = command.correlationId;
 
         await this.publishAccepted(botId, 'BOT_STOP', correlationId);
+
+        // A start is still initializing - signal cancellation instead of the
+        // "unknown bot" no-op. The in-flight handleStart aborts at the next
+        // boundary and reports STARTING -> STOPPED, so the bot can't later
+        // resurrect as RUNNING after the user asked to stop.
+        if (this.initializing.has(botId)) {
+            logger.info('Stop requested during initialization - cancelling start', { botId });
+            this.stopRequested.add(botId);
+            await this.publishStateChanged(botId, 'STARTING', 'STOPPED', correlationId, 'cancelled');
+            return;
+        }
 
         const existing = this.bots.get(botId);
         if (!existing) {
@@ -392,9 +455,31 @@ class BotManager {
 
     /**
      * Stop all bots (engine shutdown).
+     *
+     * Graceful shutdown is made authoritative: each RUNNING bot reports
+     * RUNNING -> STOPPING -> STOPPED and each initializing start is cancelled
+     * (STARTING -> STOPPED) BEFORE the heartbeat stops. That lets the backend
+     * persist a clean STOPPED instead of waiting for the heartbeat timeout to
+     * mark the bots UNKNOWN. A crash/disappearance (no state reports) is what
+     * should surface as UNKNOWN, not a normal shutdown.
      */
     async stopAll(reason: string): Promise<void> {
-        this.stopHeartbeat();
+        const correlationId = 'engine-shutdown:' + crypto.randomUUID();
+
+        // Report before teardown so the events reach the backend before the
+        // heartbeat stops and the engine goes OFFLINE.
+        for (const [, runtime] of this.bots) {
+            try {
+                await this.publishStateChanged(runtime.botId, runtime.state, 'STOPPING', correlationId, 'engine_shutdown');
+            } catch (error) {
+                logger.error('Error reporting STOPPING for shutdown', { botId: runtime.botId, error: error instanceof Error ? error.message : String(error) });
+            }
+        }
+        // Cancel any start-in-flight so it cannot resurrect during shutdown.
+        for (const botId of this.initializing) {
+            this.stopRequested.add(botId);
+        }
+
         for (const [, runtime] of this.bots) {
             try {
                 await runtime.strategy.stop();
@@ -402,8 +487,18 @@ class BotManager {
                 logger.error('Error stopping bot during shutdown', { botId: runtime.botId, error: error instanceof Error ? error.message : String(error) });
             }
             clearInterval(runtime.intervalId);
+            try {
+                await this.publishStateChanged(runtime.botId, 'STOPPING', 'STOPPED', correlationId, 'engine_shutdown');
+            } catch (error) {
+                logger.error('Error reporting STOPPED for shutdown', { botId: runtime.botId, error: error instanceof Error ? error.message : String(error) });
+            }
         }
         this.bots.clear();
+
+        // Stopping the heartbeat last so the STOPPED reports flush first.
+        this.stopHeartbeat();
+        // Leave `stopRequested` markers in place: a start suspended on an await
+        // when this ran must still abort rather than resurrect after process exit.
         logger.info('All bots stopped', { reason });
     }
 }
