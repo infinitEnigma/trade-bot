@@ -106,20 +106,27 @@ export class EngineRegistryService {
      * Refresh engine liveness and reconcile the heartbeat's runtime inventory
      * against backend state. Heartbeats from a stale epoch (an old process
      * that came back to life) are rejected.
+     *
+     * Registration is self-healing: an unknown engine_id is UPSERTED (inserted)
+     * here, so a lost initial ENGINE_REGISTER is repaired on the first
+     * heartbeat instead of leaving the engine permanently non-authoritative.
      */
     async heartbeat(payload: EngineHeartbeatEventPayload): Promise<void> {
         try {
             const result = await query(
-                `UPDATE engine_registry
-                 SET last_seen_at = CURRENT_TIMESTAMP,
+                `INSERT INTO engine_registry (engine_id, epoch, status, version, started_at, last_seen_at)
+                 VALUES ($1, $2, 'ONLINE', $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                 ON CONFLICT (engine_id) DO UPDATE SET
+                     epoch = GREATEST(engine_registry.epoch, EXCLUDED.epoch),
                      status = 'ONLINE',
-                     epoch = GREATEST(engine_registry.epoch, $2),
+                     version = EXCLUDED.version,
+                     last_seen_at = CURRENT_TIMESTAMP,
                      updated_at = CURRENT_TIMESTAMP
-                 WHERE engine_id = $1 AND epoch <= $2`,
-                [payload.engineId, payload.epoch]
+                 WHERE EXCLUDED.epoch >= engine_registry.epoch`,
+                [payload.engineId, payload.epoch, payload.version]
             );
             if ((result.rowCount ?? 0) === 0) {
-                logger.warn("Heartbeat from unknown or stale engine epoch - ignoring", {
+                logger.warn("Heartbeat from stale engine epoch - ignoring", {
                     engineId: payload.engineId,
                     epoch: payload.epoch,
                 });
@@ -163,8 +170,13 @@ export class EngineRegistryService {
             logger.warn("Engine authority check failed: unregistered engine", { engineId, epoch });
             return false;
         }
-        if (epoch !== undefined && row.epoch > epoch) {
-            logger.warn("Engine authority check failed: superseded epoch", {
+        // Exact authority: a runtime event must carry the epoch this engine is
+        // currently registered under. A mismatch in EITHER direction (delayed
+        // event from a superseded process, or an impossible future epoch) is
+        // rejected. The registry owns epoch assignment (via registration), so
+        // runtime events must match it exactly - not merely trail it.
+        if (epoch !== undefined && row.epoch !== epoch) {
+            logger.warn("Engine authority check failed: epoch mismatch", {
                 engineId,
                 eventEpoch: epoch,
                 registeredEpoch: row.epoch,
