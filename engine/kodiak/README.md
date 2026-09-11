@@ -28,18 +28,30 @@ The trading engine is an independent TypeScript service that executes automated 
 ```
 Trading Engine (engine/kodiak/)
 ├── src/
-│   ├── index.ts              # Main engine entry point
+│   ├── index.ts              # Entry point + BotManager (embedded): command
+│   │                         #   loop, init/cancellation, heartbeat,
+│   │                         #   registration and graceful shutdown
+│   ├── infrastructure/       # Resource adapters
+│   │   └── redis/streams.ts  # Redis Streams client (XADD / XREADGROUP /
+│   │                         #   XACK / XAUTOCLAIM / consumer groups)
 │   ├── strategies/           # Trading strategy implementations
-│   │   ├── grid.ts          # Grid trading strategy
-│   │   └── index.ts         # Strategy factory
-│   ├── services/            # Core services
-│   │   ├── orderly.ts       # Kodiak/Orderly API client
-│   │   └── logger.ts        # Structured logging
-│   └── types/               # TypeScript definitions
-│       └── strategy.ts      # Strategy interfaces
-├── package.json             # Engine dependencies
-└── tsconfig.json           # TypeScript configuration
+│   │   └── grid.ts           # Grid trading strategy
+│   ├── services/             # Core services
+│   │   └── orderly.ts        # Kodiak/Orderly API client
+│   ├── types/                # TypeScript definitions
+│   │   └── strategy.ts       # Strategy interfaces
+│   └── utils/logger.ts       # Structured logging
+├── package.json              # Engine dependencies
+└── tsconfig.json             # TypeScript configuration
 ```
+
+> **BotManager location:** the engine's `BotManager` lives directly in
+> `src/index.ts`. It owns the runtime bot map, initialization (with
+> listen-for-cancellation between await boundaries), the heartbeat +
+> registration loop, the Redis Streams command consumer and the SIGTERM/SIGINT
+> graceful-shutdown path. There is deliberately no separate `BotManager`
+> module - the control-plane logic and process lifecycle are co-located in the
+> entry point.
 
 ---
 
