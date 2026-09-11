@@ -124,10 +124,8 @@ export class BotLifecycleService {
             throw error;
         }
 
-        // Track the command so the timeout sweeper can detect an engine that
-        // never processes it (Redis accepted the message but the engine is down).
-        await this.dispatcher.trackPending(botId, sendResult, "BOT_START");
-
+        // Dispatch already tracked the command as PENDING (record-before-publish),
+        // so the timeout sweeper can detect an engine that never processes it.
         await this.repository.recordLifecycleEvent(botId, {
             eventType: "START_COMMAND_SENT",
             fromState: nextState,
@@ -243,9 +241,8 @@ export class BotLifecycleService {
             throw error;
         }
 
-        // Track the command for timeout supervision (same as BOT_START).
-        await this.dispatcher.trackPending(botId, sendResult, "BOT_STOP");
-
+        // Dispatch already tracked the command as PENDING (record-before-publish),
+        // giving the timeout sweeper a row to detect an engine that never stops it.
         await this.repository.recordLifecycleEvent(botId, {
             eventType: "STOP_COMMAND_SENT",
             fromState: nextState,
