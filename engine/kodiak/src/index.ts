@@ -63,9 +63,15 @@ function loadOrCreateEngineIdentity(): EngineIdentity {
     try {
         fs.writeFileSync(ENGINE_STATE_FILE, JSON.stringify({ engineId, epoch }, null, 2));
     } catch (error) {
-        logger.warn('Could not persist engine state file - epoch will reset on restart', {
+        const message = `Could not persist engine identity to ${ENGINE_STATE_FILE}: ${error instanceof Error ? error.message : String(error)}`;
+        if (process.env.NODE_ENV === 'production') {
+            // Without a persisted epoch the identity loses monotonicity on the
+            // next restart (epoch could silently revert) - refuse to start.
+            throw new Error(`FATAL: ${message} - engine identity must be persistable in production`);
+        }
+        logger.error('Engine identity could not be persisted - epoch will reset on restart', {
             file: ENGINE_STATE_FILE,
-            error: error instanceof Error ? error.message : String(error),
+            error: message,
         });
     }
 
@@ -204,15 +210,15 @@ class BotManager {
     }
 
     private async publishAccepted(botId: string, commandType: string, correlationId: string): Promise<void> {
-        await this.publishEvent('COMMAND_ACCEPTED', { botId, commandType, engineId: this.engineId }, correlationId);
+        await this.publishEvent('COMMAND_ACCEPTED', { botId, commandType, engineId: this.engineId, engineEpoch: this.epoch }, correlationId);
     }
 
     private async publishFailed(botId: string, commandType: string, correlationId: string, errorCode: string, message: string): Promise<void> {
-        await this.publishEvent('COMMAND_FAILED', { botId, commandType, engineId: this.engineId, errorCode, message }, correlationId);
+        await this.publishEvent('COMMAND_FAILED', { botId, commandType, engineId: this.engineId, engineEpoch: this.epoch, errorCode, message }, correlationId);
     }
 
     private async publishStateChanged(botId: string, from: BotActualState, to: BotActualState, correlationId: string, reason?: string): Promise<void> {
-        await this.publishEvent('STATE_CHANGED', { botId, engineId: this.engineId, from, to, reason }, correlationId);
+        await this.publishEvent('STATE_CHANGED', { botId, engineId: this.engineId, engineEpoch: this.epoch, from, to, reason }, correlationId);
     }
 
     /**
@@ -381,7 +387,7 @@ class BotManager {
         const botId = (command.payload as { botId: string }).botId;
         const existing = this.bots.get(botId);
         const actualState: BotActualState = existing ? existing.state : this.initializing.has(botId) ? 'STARTING' : 'STOPPED';
-        await this.publishEvent('STATE_CHANGED', { botId, engineId: this.engineId, from: actualState, to: actualState, reason: 'status_request' }, command.correlationId);
+        await this.publishEvent('STATE_CHANGED', { botId, engineId: this.engineId, engineEpoch: this.epoch, from: actualState, to: actualState, reason: 'status_request' }, command.correlationId);
     }
 
     /**

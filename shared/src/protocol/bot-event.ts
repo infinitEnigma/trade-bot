@@ -35,6 +35,8 @@ export interface CommandAcceptedEventPayload {
     /** The command type that was accepted, e.g. "BOT_START". */
     commandType: string;
     engineId: string;
+    /** Restart epoch of the emitting engine process (authority validation). */
+    engineEpoch: number;
 }
 
 export interface CommandFailedEventPayload {
@@ -42,6 +44,8 @@ export interface CommandFailedEventPayload {
     /** The command type that failed, e.g. "BOT_START". */
     commandType: string;
     engineId: string;
+    /** Restart epoch of the emitting engine process (authority validation). */
+    engineEpoch: number;
     /** Stable machine-readable error code, e.g. "CREDENTIAL_FETCH_FAILED". */
     errorCode: string;
     /** Human-readable error description. */
@@ -51,6 +55,8 @@ export interface CommandFailedEventPayload {
 export interface StateChangedEventPayload {
     botId: string;
     engineId: string;
+    /** Restart epoch of the emitting engine process (authority validation). */
+    engineEpoch: number;
     from: BotActualState;
     to: BotActualState;
     /** Optional reason, e.g. "started", "normal_stop", "init_failed", "emergency_stop". */

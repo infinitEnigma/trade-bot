@@ -60,28 +60,40 @@ export class EngineRegistryService {
     }
 
     /**
-     * Register (or re-register) an engine. A registration with a higher
-     * epoch than the stored one supersedes the previous process.
+     * Register (or re-register) an engine.
+     * - epoch > stored: a new process takes over (status refreshed to ONLINE).
+     * - epoch = stored: idempotent re-registration.
+     * - epoch < stored: a delayed registration from a superseded process -
+     *   the row is NOT refreshed (a stale register must not resurrect an
+     *   OFFLINE engine or overwrite its state).
      */
     async register(payload: EngineRegisterEventPayload): Promise<void> {
         try {
-            await query(
+            const result = await query(
                 `INSERT INTO engine_registry (engine_id, epoch, status, version, started_at, last_seen_at)
                  VALUES ($1, $2, 'ONLINE', $3, $4, CURRENT_TIMESTAMP)
                  ON CONFLICT (engine_id) DO UPDATE SET
-                     epoch = GREATEST(engine_registry.epoch, EXCLUDED.epoch),
+                     epoch = EXCLUDED.epoch,
                      status = 'ONLINE',
                      version = EXCLUDED.version,
                      started_at = EXCLUDED.started_at,
                      last_seen_at = CURRENT_TIMESTAMP,
-                     updated_at = CURRENT_TIMESTAMP`,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE EXCLUDED.epoch >= engine_registry.epoch`,
                 [payload.engineId, payload.epoch, payload.version, payload.startedAt]
             );
-            logger.info("Engine registered", {
-                engineId: payload.engineId,
-                epoch: payload.epoch,
-                version: payload.version,
-            });
+            if ((result.rowCount ?? 0) === 0) {
+                logger.warn("Stale engine registration ignored (superseded epoch)", {
+                    engineId: payload.engineId,
+                    incomingEpoch: payload.epoch,
+                });
+            } else {
+                logger.info("Engine registered", {
+                    engineId: payload.engineId,
+                    epoch: payload.epoch,
+                    version: payload.version,
+                });
+            }
         } catch (error) {
             logger.error("Failed to register engine", undefined, {
                 engineId: payload.engineId,
@@ -91,7 +103,8 @@ export class EngineRegistryService {
     }
 
     /**
-     * Refresh engine liveness. Heartbeats from a stale epoch (an old process
+     * Refresh engine liveness and reconcile the heartbeat's runtime inventory
+     * against backend state. Heartbeats from a stale epoch (an old process
      * that came back to life) are rejected.
      */
     async heartbeat(payload: EngineHeartbeatEventPayload): Promise<void> {
@@ -110,6 +123,18 @@ export class EngineRegistryService {
                     engineId: payload.engineId,
                     epoch: payload.epoch,
                 });
+                return;
+            }
+
+            // The engine is healthy and tells us which bots it actually runs -
+            // use that inventory to detect drift against persisted state.
+            try {
+                await botLifecycleService.reconcileHeartbeatInventory(payload.engineId, payload.activeBotIds);
+            } catch (error) {
+                logger.error("Heartbeat inventory reconciliation failed", undefined, {
+                    engineId: payload.engineId,
+                    error: error instanceof Error ? error.message : String(error),
+                });
             }
         } catch (error) {
             logger.error("Failed to process engine heartbeat", undefined, {
@@ -120,31 +145,33 @@ export class EngineRegistryService {
     }
 
     /**
-     * Reject events from an engine whose epoch has been superseded by a
-     * newer registration (e.g. a delayed event from a crashed process).
+     * Fail-closed engine-authority check for runtime events.
+     * - unknown engine            → false (must register before reporting)
+     * - superseded epoch          → false (delayed event from an old process)
+     * - OFFLINE engine            → false (heartbeat lost, state untrusted)
+     * - known + ONLINE + current  → true
+     * DB errors THROW so the calling event handler propagates and the stream
+     * message stays unacked for redelivery (transient failure ≠ authority).
      */
     async isEngineAuthoritative(engineId: string, epoch?: number): Promise<boolean> {
-        try {
-            const result = await query<EngineRow>(
-                `SELECT engine_id, epoch, status, version, last_seen_at FROM engine_registry WHERE engine_id = $1`,
-                [engineId]
-            );
-            const row = result.rows[0];
-            if (!row) {
-                // Engine never registered - only possible for pre-registry events.
-                return true;
-            }
-            if (epoch !== undefined && row.epoch > epoch) {
-                return false;
-            }
-            return row.status === "ONLINE";
-        } catch (error) {
-            logger.error("Failed to check engine authority - failing open", undefined, {
-                engineId,
-                error: error instanceof Error ? error.message : String(error),
-            });
-            return true;
+        const result = await query<EngineRow>(
+            `SELECT engine_id, epoch, status, version, last_seen_at FROM engine_registry WHERE engine_id = $1`,
+            [engineId]
+        );
+        const row = result.rows[0];
+        if (!row) {
+            logger.warn("Engine authority check failed: unregistered engine", { engineId, epoch });
+            return false;
         }
+        if (epoch !== undefined && row.epoch > epoch) {
+            logger.warn("Engine authority check failed: superseded epoch", {
+                engineId,
+                eventEpoch: epoch,
+                registeredEpoch: row.epoch,
+            });
+            return false;
+        }
+        return row.status === "ONLINE";
     }
 
     // ===========================================

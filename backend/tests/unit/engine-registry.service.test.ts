@@ -22,6 +22,7 @@ jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
 jest.mock('../../src/core/bots/bot-lifecycle.service', () => ({
     botLifecycleService: {
         markBotsUnknownForEngine: jest.fn().mockResolvedValue(2),
+        reconcileHeartbeatInventory: jest.fn().mockResolvedValue({ unlisted: 0, drift: 0 }),
     },
 }));
 
@@ -74,7 +75,7 @@ describe('EngineRegistryService', () => {
         });
 
         it('returns false for non-engine-lifecycle events', async () => {
-            const event = createBotEvent('STATE_CHANGED', { botId: 'b1', engineId: 'e1', from: 'STARTING', to: 'RUNNING' }, 'c1');
+            const event = createBotEvent('STATE_CHANGED', { botId: 'b1', engineId: 'e1', engineEpoch: 1, from: 'STARTING', to: 'RUNNING' }, 'c1');
             expect(await service.handleEngineEvent(event)).toBe(false);
         });
     });
@@ -97,7 +98,7 @@ describe('EngineRegistryService', () => {
         });
     });
 
-    describe('isEngineAuthoritative', () => {
+    describe('isEngineAuthoritative (fail closed)', () => {
         it('rejects an engine whose epoch is superseded', async () => {
             mockQuery.mockReturnValue({ rows: [{ engine_id: 'engine-1', epoch: 5, status: 'ONLINE' }], rowCount: 1 });
             expect(await service.isEngineAuthoritative('engine-1', 4)).toBe(false);
@@ -111,6 +112,68 @@ describe('EngineRegistryService', () => {
         it('rejects an OFFLINE engine', async () => {
             mockQuery.mockReturnValue({ rows: [{ engine_id: 'engine-1', epoch: 5, status: 'OFFLINE' }], rowCount: 1 });
             expect(await service.isEngineAuthoritative('engine-1')).toBe(false);
+        });
+
+        it('rejects an unregistered engine (fail closed)', async () => {
+            mockQuery.mockReturnValue({ rows: [], rowCount: 0 });
+            expect(await service.isEngineAuthoritative('unknown-engine', 1)).toBe(false);
+        });
+
+        it('throws on DB failure so the event stays unacked for redelivery', async () => {
+            mockQuery.mockRejectedValue(new Error('db down'));
+            await expect(service.isEngineAuthoritative('engine-1', 5)).rejects.toThrow('db down');
+        });
+    });
+
+    describe('stale registration guard', () => {
+        it('ignores a registration whose epoch is superseded (no resurrection)', async () => {
+            // Guarded ON CONFLICT UPDATE matches 0 rows for a stale epoch.
+            mockQuery.mockReturnValue({ rows: [], rowCount: 0 });
+            const event = createBotEvent(
+                'ENGINE_REGISTER',
+                { engineId: 'engine-1', epoch: 4, version: 'kodiak@1.0.0', startedAt: new Date().toISOString() },
+                'corr-stale'
+            );
+
+            await service.handleEngineEvent(event);
+
+            const upsert = mockQuery.mock.calls.find(call => String(call[0]).includes('INSERT INTO engine_registry'));
+            expect(upsert).toBeDefined();
+            // The epoch guard clause keeps stale registers from refreshing the row.
+            expect(String(upsert![0])).toContain('WHERE EXCLUDED.epoch >= engine_registry.epoch');
+        });
+    });
+
+    describe('heartbeat inventory reconciliation', () => {
+        it('reconciles activeBotIds on a successful heartbeat', async () => {
+            mockQuery.mockImplementation((sql: string) => {
+                if (String(sql).includes('UPDATE engine_registry')) {
+                    return Promise.resolve({ rows: [], rowCount: 1 });
+                }
+                return ok();
+            });
+            const event = createBotEvent(
+                'ENGINE_HEARTBEAT',
+                { engineId: 'engine-1', epoch: 3, activeBotIds: ['b1'], version: 'kodiak@1.0.0' },
+                'corr-4'
+            );
+
+            await service.handleEngineEvent(event);
+
+            expect(botLifecycleService.reconcileHeartbeatInventory).toHaveBeenCalledWith('engine-1', ['b1']);
+        });
+
+        it('does not reconcile heartbeats from a stale epoch', async () => {
+            mockQuery.mockReturnValue({ rows: [], rowCount: 0 });
+            const event = createBotEvent(
+                'ENGINE_HEARTBEAT',
+                { engineId: 'engine-1', epoch: 2, activeBotIds: ['b1'], version: 'kodiak@1.0.0' },
+                'corr-5'
+            );
+
+            await service.handleEngineEvent(event);
+
+            expect(botLifecycleService.reconcileHeartbeatInventory).not.toHaveBeenCalled();
         });
     });
 

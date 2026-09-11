@@ -21,9 +21,13 @@ import { BotLifecycleNotifier } from "./bot-lifecycle-notifier";
 import { BOT_COMMAND_TIMEOUT_MS } from "./types";
 
 export type EngineLifecycleEventHandler = (event: BotEvent) => Promise<boolean>;
+/** Validates that (engineId, epoch) is the authoritative engine process. */
+export type EngineAuthorityChecker = (engineId: string, epoch?: number) => Promise<boolean>;
 
 export class BotEventProcessor {
     private engineLifecycleHandler: EngineLifecycleEventHandler | null = null;
+    /** Fail-closed authority check - must be wired for runtime events to apply. */
+    private authorityChecker: EngineAuthorityChecker | null = null;
 
     constructor(
         private repository: BotLifecycleRepository,
@@ -33,6 +37,33 @@ export class BotEventProcessor {
     /** Injected to avoid a circular dependency with EngineRegistryService. */
     setEngineLifecycleHandler(handler: EngineLifecycleEventHandler): void {
         this.engineLifecycleHandler = handler;
+    }
+
+    /**
+     * Inject the engine-authority checker (EngineRegistryService). Without a
+     * wired checker no runtime event is trusted: fail closed.
+     */
+    setAuthorityChecker(checker: EngineAuthorityChecker): void {
+        this.authorityChecker = checker;
+    }
+
+    /**
+     * Validate that a runtime event comes from the authoritative engine
+     * process: an epoch must be present and the (engineId, epoch) pair must
+     * pass the registry check. DB failures inside the checker THROW (the
+     * message stays unacked for redelivery); unproven authority returns false
+     * (the event is stale/dropped and the message is acked).
+     */
+    private async isAuthoritativeEvent(engineId: string, engineEpoch: unknown): Promise<boolean> {
+        if (!this.authorityChecker) {
+            logger.error("No engine authority checker wired - rejecting runtime event", undefined, { engineId, engineEpoch });
+            return false;
+        }
+        if (typeof engineEpoch !== "number") {
+            logger.warn("Runtime event without engineEpoch - rejecting", { engineId, engineEpoch });
+            return false;
+        }
+        return this.authorityChecker(engineId, engineEpoch);
     }
 
     /**
@@ -89,7 +120,11 @@ export class BotEventProcessor {
     }
 
     private async handleCommandAccepted(event: BotEvent): Promise<void> {
-        const payload = event.payload as { botId: string; commandType: string; engineId: string };
+        const payload = event.payload as { botId: string; commandType: string; engineId: string; engineEpoch?: number };
+
+        if (!(await this.isAuthoritativeEvent(payload.engineId, payload.engineEpoch))) {
+            return;
+        }
 
         if (await this.isStaleGeneration(payload.botId, event.correlationId)) {
             return;
@@ -113,7 +148,7 @@ export class BotEventProcessor {
     }
 
     private async handleCommandFailed(event: BotEvent): Promise<void> {
-        const payload = event.payload as { botId: string; commandType: string; engineId: string; errorCode: string; message: string };
+        const payload = event.payload as { botId: string; commandType: string; engineId: string; engineEpoch?: number; errorCode: string; message: string };
         logger.error("Command failed in engine", undefined, {
             botId: payload.botId,
             commandType: payload.commandType,
@@ -121,6 +156,10 @@ export class BotEventProcessor {
             message: payload.message,
             correlationId: event.correlationId,
         });
+
+        if (!(await this.isAuthoritativeEvent(payload.engineId, payload.engineEpoch))) {
+            return;
+        }
 
         if (await this.isStaleGeneration(payload.botId, event.correlationId)) {
             return;
@@ -169,7 +208,11 @@ export class BotEventProcessor {
     }
 
     private async handleStateChanged(event: BotEvent): Promise<void> {
-        const payload = event.payload as { botId: string; engineId: string; from: BotActualState; to: BotActualState; reason?: string };
+        const payload = event.payload as { botId: string; engineId: string; engineEpoch?: number; from: BotActualState; to: BotActualState; reason?: string };
+
+        if (!(await this.isAuthoritativeEvent(payload.engineId, payload.engineEpoch))) {
+            return;
+        }
 
         const bot = await this.repository.findBot(payload.botId);
         if (!bot) {
@@ -302,6 +345,75 @@ export class BotEventProcessor {
         }
 
         return bots.length;
+    }
+
+    /**
+     * Reconcile a healthy engine's heartbeat inventory (`activeBotIds`)
+     * against persisted lifecycle state:
+     * - backend says RUNNING (assigned to this engine) but the engine does
+     *   not list the bot → the engine is healthy and does NOT run it →
+     *   transition the bot to UNKNOWN (drift-safe: not ERROR, because the
+     *   engine did not report a failure).
+     * - the engine lists a bot the backend does not consider running → drift
+     *   warning only (the backend may be mid-transition; a BOT_STATUS_REQUEST
+     *   resolves it authoritatively).
+     */
+    async reconcileHeartbeatInventory(engineId: string, activeBotIds: string[]): Promise<{ unlisted: number; drift: number }> {
+        const activeSet = new Set(activeBotIds);
+
+        // 1) Backend RUNNING bots missing from the engine's inventory.
+        const runningBots = await this.repository.findRunningBotsForEngine(engineId);
+        let unlisted = 0;
+        for (const bot of runningBots) {
+            if (activeSet.has(bot.id)) {
+                continue;
+            }
+            const persisted = await this.repository.persistTransition(
+                bot.id,
+                {
+                    desiredState: bot.desired_state,
+                    actualState: "UNKNOWN",
+                    errorCode: "HEARTBEAT_INVENTORY_DRIFT",
+                    errorMessage: `Healthy engine ${engineId} does not report running this bot; persisted RUNNING state untrusted`,
+                },
+                bot.actual_state
+            );
+            if (persisted) {
+                unlisted++;
+                await this.repository.recordLifecycleEvent(bot.id, {
+                    eventType: "HEARTBEAT_RECONCILED",
+                    fromState: bot.actual_state,
+                    toState: "UNKNOWN",
+                    correlationId: null,
+                    messageId: null,
+                    metadata: { engineId, activeBotIds },
+                });
+                this.notifier.emitStateChanged(bot.id, bot.user_id, bot.actual_state, "UNKNOWN", `heartbeat-reconcile-${engineId}`);
+                logger.error("Bot marked UNKNOWN via heartbeat inventory reconciliation", undefined, {
+                    botId: bot.id,
+                    engineId,
+                });
+            }
+        }
+
+        // 2) Engine-listed bots the backend does not consider active (drift warning).
+        const listed = activeBotIds.filter(id => id !== "");
+        const backendBots = await this.repository.findBotsByIds(listed);
+        const backendById = new Map(backendBots.map(b => [b.id, b]));
+        let drift = 0;
+        for (const botId of listed) {
+            const backend = backendById.get(botId);
+            if (!backend || (backend.actual_state !== "RUNNING" && backend.actual_state !== "STARTING" && backend.actual_state !== "STOPPING")) {
+                drift++;
+                logger.warn("Heartbeat inventory drift: engine reports active bot the backend does not track as running", {
+                    engineId,
+                    botId,
+                    backendState: backend?.actual_state ?? "not-found",
+                });
+            }
+        }
+
+        return { unlisted, drift };
     }
 
     /**

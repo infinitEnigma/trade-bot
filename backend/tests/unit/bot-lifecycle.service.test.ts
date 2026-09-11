@@ -123,6 +123,8 @@ describe('BotLifecycleService', () => {
         jest.clearAllMocks();
         engineProtocol = { sendCommand: jest.fn().mockResolvedValue({ success: true, messageId: 'm1', correlationId: 'c1' }) };
         service = new BotLifecycleService(engineProtocol as unknown as EngineProtocolService);
+        // Permissive authority checker by default; individual tests override it.
+        service.setAuthorityChecker(async () => true);
     });
 
     describe('start', () => {
@@ -214,7 +216,7 @@ describe('BotLifecycleService', () => {
 
     describe('handleEngineEvent', () => {
         it('processes STATE_CHANGED to RUNNING and persists the transition', async () => {
-            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'engine-1', from: 'STARTING', to: 'RUNNING' }, 'corr-1');
+            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'engine-1', engineEpoch: 1, from: 'STARTING', to: 'RUNNING' }, 'corr-1');
 
             mockQuery.mockImplementation((sql: string) => {
                 if (String(sql).startsWith('SELECT id, user_id')) {
@@ -231,7 +233,7 @@ describe('BotLifecycleService', () => {
         });
 
         it('ignores illegal engine-reported transitions without throwing', async () => {
-            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'engine-1', from: 'STARTING', to: 'RUNNING' }, 'corr-1');
+            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'engine-1', engineEpoch: 1, from: 'STARTING', to: 'RUNNING' }, 'corr-1');
 
             mockQuery.mockImplementation((sql: string) => {
                 if (String(sql).startsWith('SELECT id, user_id')) {
@@ -245,7 +247,7 @@ describe('BotLifecycleService', () => {
         });
 
         it('transitions the bot to ERROR on COMMAND_FAILED', async () => {
-            const event = createBotEvent('COMMAND_FAILED', { botId: 'bot-1', commandType: 'BOT_START', engineId: 'engine-1', errorCode: 'BOT_START_FAILED', message: 'boom' }, 'corr-1');
+            const event = createBotEvent('COMMAND_FAILED', { botId: 'bot-1', commandType: 'BOT_START', engineId: 'engine-1', engineEpoch: 1, errorCode: 'BOT_START_FAILED', message: 'boom' }, 'corr-1');
 
             mockQuery.mockImplementation((sql: string) => {
                 if (String(sql).startsWith('SELECT id, user_id')) {
@@ -261,7 +263,7 @@ describe('BotLifecycleService', () => {
         });
 
         it('is a no-op for duplicate STATE_CHANGED events', async () => {
-            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'engine-1', from: 'STARTING', to: 'RUNNING' }, 'corr-1');
+            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'engine-1', engineEpoch: 1, from: 'STARTING', to: 'RUNNING' }, 'corr-1');
 
             mockQuery.mockImplementation((sql: string) => {
                 if (String(sql).startsWith('SELECT id, user_id')) {
@@ -276,7 +278,7 @@ describe('BotLifecycleService', () => {
         });
 
         it('skips a STATE_CHANGED event that loses the compare-and-set race', async () => {
-            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'engine-1', from: 'STARTING', to: 'RUNNING' }, 'corr-1');
+            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'engine-1', engineEpoch: 1, from: 'STARTING', to: 'RUNNING' }, 'corr-1');
 
             mockQuery.mockImplementation((sql: string) => {
                 if (String(sql).startsWith('SELECT id, user_id')) {
@@ -294,7 +296,10 @@ describe('BotLifecycleService', () => {
         });
 
         it('ignores STATE_CHANGED from a non-authoritative engine id', async () => {
-            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'rogue-engine', from: 'STARTING', to: 'RUNNING' }, 'corr-9');
+            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'rogue-engine', engineEpoch: 1, from: 'STARTING', to: 'RUNNING' }, 'corr-9');
+
+            // Fail-closed: the registry says this engine is not authoritative.
+            service.setAuthorityChecker(async () => false);
 
             mockQuery.mockImplementation((sql: string) => {
                 if (String(sql).startsWith('SELECT id, user_id')) {
@@ -310,8 +315,27 @@ describe('BotLifecycleService', () => {
             expect(mockQuery.mock.calls.filter(call => String(call[0]).includes('UPDATE bot_instances'))).toHaveLength(0);
         });
 
+        it('rejects runtime events without an engineEpoch (fail closed)', async () => {
+            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'engine-1', from: 'STARTING', to: 'RUNNING' } as never, 'corr-10');
+            // Strip engineEpoch to simulate a legacy/stale producer.
+            (event.payload as Record<string, unknown>).engineEpoch = undefined;
+
+            await service.handleEngineEvent(event);
+
+            expect(mockQuery.mock.calls.some(call => String(call[0]).includes('UPDATE bot_instances'))).toBe(false);
+        });
+
+        it('rejects all runtime events when no authority checker is wired', async () => {
+            service = new BotLifecycleService(engineProtocol as unknown as EngineProtocolService);
+            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'engine-1', engineEpoch: 1, from: 'STARTING', to: 'RUNNING' }, 'corr-11');
+
+            await service.handleEngineEvent(event);
+
+            expect(mockQuery.mock.calls.some(call => String(call[0]).includes('UPDATE bot_instances'))).toBe(false);
+        });
+
         it('ignores events from a stale generation (correlationId maps to a TIMED_OUT command)', async () => {
-            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'engine-1', from: 'STARTING', to: 'RUNNING' }, 'c-timed-out');
+            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'engine-1', engineEpoch: 1, from: 'STARTING', to: 'RUNNING' }, 'c-timed-out');
 
             mockQuery.mockImplementation((sql: string) => {
                 if (String(sql).startsWith('SELECT id, user_id')) {
@@ -379,7 +403,7 @@ describe('BotLifecycleService', () => {
         });
 
         it('marks the command ACCEPTED on COMMAND_ACCEPTED', async () => {
-            const event = createBotEvent('COMMAND_ACCEPTED', { botId: 'bot-1', commandType: 'BOT_START', engineId: 'engine-1' }, 'c1');
+            const event = createBotEvent('COMMAND_ACCEPTED', { botId: 'bot-1', commandType: 'BOT_START', engineId: 'engine-1', engineEpoch: 1 }, 'c1');
 
             mockQuery.mockImplementation(() => okResult());
 
@@ -429,6 +453,48 @@ describe('BotLifecycleService', () => {
             const timedOut = await service.sweepTimedOutCommands();
 
             expect(timedOut).toBe(0);
+            expect(mockQuery.mock.calls.some(call => String(call[0]).includes('UPDATE bot_instances'))).toBe(false);
+        });
+    });
+
+    describe('heartbeat inventory reconciliation', () => {
+        it('marks a RUNNING bot UNKNOWN when the healthy engine does not list it', async () => {
+            mockQuery.mockImplementation((sql: string) => {
+                if (String(sql).startsWith('SELECT id, user_id') && String(sql).includes("actual_state = 'RUNNING'")) {
+                    return Promise.resolve({
+                        rows: [{ ...botRow, engine_id: 'engine-1', desired_state: 'RUNNING', actual_state: 'RUNNING' }],
+                    });
+                }
+                if (String(sql).startsWith('SELECT id, user_id') && String(sql).includes('IN ($')) {
+                    return Promise.resolve({ rows: [] });
+                }
+                return okResult();
+            });
+
+            const result = await service.reconcileHeartbeatInventory('engine-1', []);
+
+            expect(result.unlisted).toBe(1);
+            const update = mockQuery.mock.calls.find(call => String(call[0]).includes('UPDATE bot_instances'));
+            expect(update![1][2]).toBe('UNKNOWN');
+            expect(mockQuery.mock.calls.some(call => String(call[0]).includes('INSERT INTO bot_lifecycle_events'))).toBe(true);
+        });
+
+        it('reports drift for engine-listed bots the backend does not track as running', async () => {
+            mockQuery.mockImplementation((sql: string) => {
+                if (String(sql).startsWith('SELECT id, user_id') && String(sql).includes("actual_state = 'RUNNING'")) {
+                    return Promise.resolve({ rows: [] });
+                }
+                if (String(sql).startsWith('SELECT id, user_id') && String(sql).includes('IN ($')) {
+                    return Promise.resolve({
+                        rows: [{ ...botRow, id: 'bot-2', actual_state: 'STOPPED' }],
+                    });
+                }
+                return okResult();
+            });
+
+            const result = await service.reconcileHeartbeatInventory('engine-1', ['bot-2']);
+
+            expect(result.drift).toBe(1);
             expect(mockQuery.mock.calls.some(call => String(call[0]).includes('UPDATE bot_instances'))).toBe(false);
         });
     });

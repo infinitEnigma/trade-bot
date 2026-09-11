@@ -26,7 +26,7 @@ import { contextLogger as logger } from "../logging";
 import { EngineProtocolService, engineProtocolService } from "./engine-protocol.service";
 import { BotCommandDispatcher } from "./lifecycle/bot-command-dispatcher";
 import { BotLifecycleNotifier } from "./lifecycle/bot-lifecycle-notifier";
-import { BotEventProcessor, EngineLifecycleEventHandler } from "./lifecycle/bot-event-processor";
+import { BotEventProcessor, EngineAuthorityChecker, EngineLifecycleEventHandler } from "./lifecycle/bot-event-processor";
 import { BotLifecycleRepository } from "./lifecycle/bot-lifecycle.repository";
 import { BotLifecycleResult, BotRow, BOT_COMMAND_TIMEOUT_MS } from "./lifecycle/types";
 
@@ -56,6 +56,14 @@ export class BotLifecycleService {
      */
     setEngineLifecycleHandler(handler: EngineLifecycleEventHandler): void {
         this.eventProcessor.setEngineLifecycleHandler(handler);
+    }
+
+    /**
+     * Inject the fail-closed engine-authority checker (EngineRegistryService).
+     * Must be wired at startup, otherwise no runtime event is trusted.
+     */
+    setAuthorityChecker(checker: EngineAuthorityChecker): void {
+        this.eventProcessor.setAuthorityChecker(checker);
     }
 
     // ===========================================
@@ -267,6 +275,11 @@ export class BotLifecycleService {
     /** Mark an offline engine's RUNNING bots as UNKNOWN (see BotEventProcessor). */
     markBotsUnknownForEngine(engineId: string): Promise<number> {
         return this.eventProcessor.markBotsUnknownForEngine(engineId);
+    }
+
+    /** Reconcile a heartbeat's runtime inventory against backend state. */
+    reconcileHeartbeatInventory(engineId: string, activeBotIds: string[]): Promise<{ unlisted: number; drift: number }> {
+        return this.eventProcessor.reconcileHeartbeatInventory(engineId, activeBotIds);
     }
 
     // ===========================================

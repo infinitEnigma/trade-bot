@@ -466,6 +466,9 @@ export const startServer = (): Promise<typeof httpServer> => {
             // ENGINE_REGISTER / ENGINE_HEARTBEAT go to the engine registry
             // (liveness supervision + authoritative engine identity).
             botLifecycleService.setEngineLifecycleHandler(event => engineRegistryService.handleEngineEvent(event));
+            // Fail-closed authority: runtime events must come from the
+            // registered engine process with a current epoch.
+            botLifecycleService.setAuthorityChecker((engineId, epoch) => engineRegistryService.isEngineAuthoritative(engineId, epoch));
             engineProtocolService
                 .start(event => botLifecycleService.handleEngineEvent(event))
                 .then(() => logger.info("🔌 Engine protocol listener started"))

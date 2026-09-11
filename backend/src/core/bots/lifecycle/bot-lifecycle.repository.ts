@@ -199,6 +199,21 @@ export class BotLifecycleRepository {
         return result.rows;
     }
 
+    /** Lifecycle state of specific bots (heartbeat inventory drift checks). */
+    async findBotsByIds(botIds: string[]): Promise<BotRow[]> {
+        if (botIds.length === 0) {
+            return [];
+        }
+        const placeholders = botIds.map((_, i) => `$${i + 1}`).join(", ");
+        const result = await query<BotRow>(
+            `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id
+             FROM bot_instances
+             WHERE id IN (${placeholders})`,
+            botIds
+        );
+        return result.rows;
+    }
+
     /** Non-secret strategy configuration for the start command payload. */
     async findStrategyConfig(strategyId: string): Promise<Record<string, unknown>> {
         const result = await query<{ config: Record<string, unknown> | null }>("SELECT config FROM strategies WHERE id = $1", [strategyId]);
