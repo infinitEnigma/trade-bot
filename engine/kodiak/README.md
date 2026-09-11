@@ -584,7 +584,7 @@ UPDATE bot_instances SET status = 'FORCE_STOPPING' WHERE status = 'RUNNING';
 
 ---
 
-## Bot Lifecycle Control Protocol (Milestone 1)
+## Bot Lifecycle Control Protocol (with supervision)
 
 The engine consumes lifecycle commands from the Redis Stream
 `tradebot:engine:commands` (consumer group `engine-workers`) and publishes
@@ -598,6 +598,18 @@ Flow: `BOT_START -> COMMAND_ACCEPTED -> STATE_CHANGED(STARTING) -> STATE_CHANGED
 **Credentials are never sent through the stream.** After `COMMAND_ACCEPTED`,
 the engine fetches them from the backend endpoint
 `GET /api/bot/engine/credentials/:botId?correlationId=...`.
+
+**Registration & heartbeat:** on startup the engine publishes
+`ENGINE_REGISTER` (persistent `engineId` from `ENGINE_ID` or
+`.engine-state.json`, plus a restart `epoch`) and then `ENGINE_HEARTBEAT`
+every `ENGINE_HEARTBEAT_INTERVAL_MS` (default 10s). The backend marks the
+engine `OFFLINE` and its RUNNING bots `UNKNOWN` if heartbeats stop.
+
+**Reliability:** commands are deduplicated durably in Redis (24h TTL),
+pending commands never acked by a crashed consumer are reclaimed via
+`XAUTOCLAIM` after `PENDING_RECOVERY_MIN_IDLE_MS` (default 60s), and the
+consumer group is created at `0` so queued commands survive fresh
+deployments. Processed commands are never re-executed after a restart.
 
 Required environment variables:
 

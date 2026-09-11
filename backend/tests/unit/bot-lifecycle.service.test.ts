@@ -309,6 +309,26 @@ describe('BotLifecycleService', () => {
 
             expect(mockQuery.mock.calls.filter(call => String(call[0]).includes('UPDATE bot_instances'))).toHaveLength(0);
         });
+
+        it('ignores events from a stale generation (correlationId maps to a TIMED_OUT command)', async () => {
+            const event = createBotEvent('STATE_CHANGED', { botId: 'bot-1', engineId: 'engine-1', from: 'STARTING', to: 'RUNNING' }, 'c-timed-out');
+
+            mockQuery.mockImplementation((sql: string) => {
+                if (String(sql).startsWith('SELECT id, user_id')) {
+                    return Promise.resolve({
+                        rows: [{ ...botRow, engine_id: 'engine-1', desired_state: 'RUNNING', actual_state: 'STARTING' }],
+                    });
+                }
+                if (String(sql).startsWith('SELECT bot_id, state FROM bot_commands')) {
+                    return Promise.resolve({ rows: [{ bot_id: 'bot-1', state: 'TIMED_OUT' }] });
+                }
+                return okResult();
+            });
+
+            await service.handleEngineEvent(event);
+
+            expect(mockQuery.mock.calls.filter(call => String(call[0]).includes('UPDATE bot_instances'))).toHaveLength(0);
+        });
     });
 
     describe('concurrency (compare-and-set transitions)', () => {

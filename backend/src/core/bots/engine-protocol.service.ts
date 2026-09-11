@@ -133,7 +133,7 @@ export class EngineProtocolService {
     async sendCommand<P extends BotCommandPayload>(type: BotCommandType, payload: P, correlationId?: string): Promise<SendCommandResult> {
         const command: ProtocolMessage<P> = createBotCommand<P>(type, payload, correlationId);
 
-        const result = await this.streamOperations.publish(BOT_COMMANDS_STREAM, command as unknown as Parameters<RedisStreamOperations["publish"]>[1]);
+        const result = await this.streamOperations.publish(BOT_COMMANDS_STREAM, command);
 
         if (!result.success) {
             logger.error("Failed to publish bot command", undefined, {

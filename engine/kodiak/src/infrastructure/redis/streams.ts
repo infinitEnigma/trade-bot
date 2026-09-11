@@ -3,6 +3,7 @@ import { logger } from '../../utils/logger';
 import {
     EngineCommand,
     EngineEvent,
+    ProtocolMessage,
     isEngineCommand,
     isEngineEvent,
     isStartEngineCommand,
@@ -25,9 +26,17 @@ export const ENGINE_EVENTS_CONSUMER_GROUP = 'backend-group';
 export const BACKEND_CONSUMER_NAME = 'backend-consumer';
 export const ENGINE_CONSUMER_NAME = 'engine-consumer';
 
+/**
+ * Wire types carried by the stream layer. The control-plane protocol types
+ * (`ProtocolMessage` from shared/src/protocol) are natively accepted, so
+ * callers no longer need casts; the legacy `EngineCommand`/`EngineEvent`
+ * interfaces remain supported for the legacy guards below.
+ */
+export type StreamPayload = ProtocolMessage<unknown> | EngineCommand | EngineEvent;
+
 export interface StreamMessage {
     id: string;
-    data: EngineCommand | EngineEvent;
+    data: StreamPayload;
 }
 
 export interface StreamReadOptions {
@@ -73,7 +82,7 @@ export class RedisStreamOperations {
     /**
      * Publish a message to a stream
      */
-    async publish(stream: string, message: EngineCommand | EngineEvent): Promise<{ success: boolean; id?: string; error?: string }> {
+    async publish(stream: string, message: StreamPayload): Promise<{ success: boolean; id?: string; error?: string }> {
         try {
             const id = await this.client.xAdd(stream, '*', {
                 data: JSON.stringify(message),

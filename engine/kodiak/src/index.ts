@@ -154,7 +154,7 @@ class BotManager {
                 timestamp: startedAt,
                 type: 'ENGINE_REGISTER',
                 payload: { engineId: this.engineId, epoch: this.epoch, version: ENGINE_VERSION, startedAt },
-            } as never);
+            });
             logger.info('Engine registered with backend', { engineId: this.engineId, epoch: this.epoch, version: ENGINE_VERSION });
         };
 
@@ -174,7 +174,7 @@ class BotManager {
                         activeBotIds: [...this.bots.keys()],
                         version: ENGINE_VERSION,
                     },
-                } as never)
+                })
                 .then(result => {
                     if (!result.success) {
                         logger.error('Failed to publish engine heartbeat', { error: result.error });
@@ -197,7 +197,7 @@ class BotManager {
      */
     private async publishEvent(type: BotEventType, payload: Record<string, unknown>, correlationId: string): Promise<void> {
         const event: BotEvent = createBotEvent(type, payload as never, correlationId);
-        const result = await this.streamOperations.publish(ENGINE_EVENTS_STREAM, event as unknown as EngineEvent);
+        const result = await this.streamOperations.publish(ENGINE_EVENTS_STREAM, event);
         if (!result.success) {
             logger.error('Failed to publish engine event', { type, botId: (payload as { botId?: string }).botId, error: result.error });
         }

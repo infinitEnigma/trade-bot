@@ -507,15 +507,49 @@ GET /health/external
 
 ---
 
-## Bot Lifecycle Control Protocol (Milestone 1)
+## Bot Lifecycle Control Protocol (with supervision)
 
-`POST /api/bot/start` and `POST /api/bot/stop` are now **desired-state
+`POST /api/bot/start` and `POST /api/bot/stop` are **desired-state
 commands** returning **202 Accepted** with `{ botId, desiredState, actualState }`.
 The actual state only changes when the engine reports `STATE_CHANGED` events
 over Redis Streams (`tradebot:engine:commands` / `tradebot:engine:events`),
 which the backend persists (including a `bot_lifecycle_events` audit trail,
 migration 007) and forwards to the frontend as Socket.IO `bot.stateChanged`.
 
-Key modules: `src/core/bots/engine-protocol.service.ts` (Redis Streams control
+### Supervision
+
+The lifecycle protocol is supervised - commands are tracked, timeouts are
+enforced and engine liveness is monitored:
+
+- **Command tracking & timeouts** (migration 008): every delivered
+  `BOT_START`/`BOT_STOP` is recorded as `PENDING` in `bot_commands`. A
+  sweeper (`src/core/bots/command-timeout.sweeper.ts`, interval
+  `BOT_COMMAND_SWEEP_INTERVAL_MS`, timeout `BOT_COMMAND_TIMEOUT_MS`) marks
+  expired commands `TIMED_OUT` and transitions stuck `STARTING`/`STOPPING`
+  bots to `ERROR`, with an audit row and a frontend notification.
+- **Concurrency safety**: every lifecycle `UPDATE` uses a compare-and-set
+  guard (`WHERE ... AND actual_state = $expected`); concurrent start/stop
+  requests return 409 instead of racing.
+- **Engine registration & heartbeat** (migration 009): engines publish
+  `ENGINE_REGISTER` (persistent `engineId` + restart `epoch`) and periodic
+  `ENGINE_HEARTBEAT` events. The registry (`engine_registry` table,
+  `src/core/bots/engine-registry.service.ts`) marks engines `OFFLINE` after
+  a heartbeat timeout (`ENGINE_HEARTBEAT_TIMEOUT_MS`) and transitions their
+  RUNNING bots to `UNKNOWN` (actual state untrusted). Events from a
+  non-authoritative engine id or a superseded epoch are rejected.
+- **Stale-generation rejection**: engine events whose `correlationId`
+  references a `TIMED_OUT`/`FAILED` command (or a different bot) are ignored.
+- **Streams hardening**: consumers recover pending messages via `XAUTOCLAIM`
+  (idle > `PENDING_RECOVERY_MIN_IDLE_MS`); processed-message markers are
+  stored durably in Redis (`SET NX EX` 24h) so at-least-once deduplication
+  survives restarts; the engine's consumer group is created at `0` so
+  commands queued before a fresh deployment are consumed.
+
+Key modules: `src/core/bots/engine-protocol.service.ts` (Redis Streams
+control plane), `src/core/bots/bot-lifecycle.service.ts` (orchestrator and
+only writer of bot lifecycle state) with its components under
+`src/core/bots/lifecycle/` (repository, dispatcher, notifier, event
+processor), `src/core/bots/engine-registry.service.ts` (liveness) and
+`src/core/bots/command-timeout.sweeper.ts` (command timeouts).
 plane) and `src/core/bots/bot-lifecycle.service.ts` (desired/actual state
 machine, the only writer of bot lifecycle state).

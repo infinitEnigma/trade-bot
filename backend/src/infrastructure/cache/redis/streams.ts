@@ -17,7 +17,7 @@
 
 import { RedisConnectionManager } from "./connection-manager";
 import { redisLogger as logger } from "../../../core/logging/context-aware-logger.service";
-import type { EngineCommand, EngineEvent } from "@trade-bot/shared";
+import type { EngineCommand, EngineEvent, ProtocolMessage } from "@trade-bot/shared";
 //import * as redis from "redis";
 //import { TypedString } from "ethers/lib.commonjs/abi/typed";
 
@@ -36,9 +36,17 @@ export const ENGINE_CONSUMER_NAME = "engine-consumer";
 /** TTL for durable dedup markers (survive process restarts). */
 export const DEDUP_TTL_SECONDS = 24 * 60 * 60;
 
+/**
+ * Wire types carried by the stream layer. The control-plane protocol types
+ * (`ProtocolMessage` from shared/src/protocol) are natively accepted, so
+ * callers no longer need casts; the legacy `EngineCommand`/`EngineEvent`
+ * interfaces remain supported for the legacy engine-manager path.
+ */
+export type StreamPayload = ProtocolMessage<unknown> | EngineCommand | EngineEvent;
+
 export interface StreamMessage {
     id: string;
-    data: EngineCommand | EngineEvent;
+    data: StreamPayload;
 }
 
 export interface StreamReadOptions {
@@ -55,7 +63,7 @@ export class RedisStreamOperations {
     /**
      * Publish a message to a stream
      */
-    async publish(stream: string, message: EngineCommand | EngineEvent): Promise<{ success: boolean; id?: string; error?: string }> {
+    async publish(stream: string, message: StreamPayload): Promise<{ success: boolean; id?: string; error?: string }> {
         try {
             const client = this.connectionManager.getClient();
             const id = await client.xAdd(stream, "*", {
