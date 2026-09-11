@@ -518,7 +518,8 @@ async function listenForCommands(botManager: BotManager, streamOperations: Retur
                 count: 10,
                 consumerGroup: ENGINE_COMMANDS_CONSUMER_GROUP,
                 consumerName: 'engine-' + botManager.engineId,
-                autoAck: true, // reads new (">") entries; acking is manual below
+                // Acking is manual below: the message survives an engine crash
+                // until this consumer explicitly acks after processing.
             });
 
             if (result.success && result.messages && result.messages.length > 0) {

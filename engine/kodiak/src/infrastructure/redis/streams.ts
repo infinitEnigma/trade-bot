@@ -44,7 +44,6 @@ export interface StreamReadOptions {
     count?: number; // Number of messages to read
     consumerGroup?: string;
     consumerName?: string;
-    autoAck?: boolean;
 }
 
 export class RedisStreamOperations {
