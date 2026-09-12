@@ -56,6 +56,27 @@ export interface StreamReadOptions {
     consumerName?: string;
 }
 
+/** Single pending (un-ACKed) stream entry as returned by XPENDING. */
+export interface PendingEntryInsight {
+    id: string;
+    consumer: string;
+    idleMs: number;
+    deliveries: number;
+}
+
+/** Aggregated PEL observability snapshot for one consumer group. */
+export interface PendingInsight {
+    pendingTotal: number;
+    /** Entries idle at least the caller-provided stuck threshold. */
+    stuckCount: number;
+    /** Largest idle time among stuck entries (0 when none are stuck). */
+    oldestStuckIdleMs: number;
+    /** Highest redelivery count seen in the scanned entries. */
+    maxDeliveries: number;
+    /** Entries redelivered >= the caller-provided poison threshold. */
+    poisonIds: string[];
+}
+
 export class RedisStreamOperations {
     constructor(private connectionManager: RedisConnectionManager) { }
 
@@ -260,6 +281,49 @@ export class RedisStreamOperations {
             logger.error("Stream claim-pending fallback error", error as Error, { stream, consumerGroup, error: errorMessage });
             return { success: false, error: errorMessage };
         }
+    }
+
+    /**
+     * Inspect the consumer group's pending-entries list (PEL) for
+     * observability: how many entries exist, how many are stuck (idle beyond
+     * `stuckThresholdMs`), and whether any entry looks like a poison message
+     * (redelivered at least `poisonThreshold` times without being ACKed).
+     * Uses the plain XPENDING range form (Redis 5.0+), so it works on
+     * pre-6.2 servers. Bounded scan; callers are responsible for logging.
+     */
+    async getPendingInsight(
+        stream: string,
+        consumerGroup: string,
+        options: { stuckThresholdMs: number; poisonThreshold: number; maxScan?: number }
+    ): Promise<PendingInsight> {
+        const client = this.connectionManager.getClient();
+        const entries = await client.xPendingRange(stream, consumerGroup, "-", "+", options.maxScan ?? 500);
+        const rows = entries ?? [];
+
+        let stuckCount = 0;
+        let oldestStuckIdleMs = 0;
+        let maxDeliveries = 0;
+        const poisonIds: string[] = [];
+
+        for (const entry of rows) {
+            const idleMs = entry.millisecondsSinceLastDelivery;
+            maxDeliveries = Math.max(maxDeliveries, entry.deliveriesCounter);
+            if (idleMs >= options.stuckThresholdMs) {
+                stuckCount++;
+                oldestStuckIdleMs = Math.max(oldestStuckIdleMs, idleMs);
+            }
+            if (entry.deliveriesCounter >= options.poisonThreshold) {
+                poisonIds.push(entry.id);
+            }
+        }
+
+        return {
+            pendingTotal: rows.length,
+            stuckCount,
+            oldestStuckIdleMs,
+            maxDeliveries,
+            poisonIds,
+        };
     }
 
     /**

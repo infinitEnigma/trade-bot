@@ -39,6 +39,7 @@ describe('RedisStreamOperations', () => {
             xTrim: jest.fn(),
             xInfoStream: jest.fn(),
             xDel: jest.fn(),
+            xPendingRange: jest.fn(),
         };
 
         // Create mock connection manager
@@ -335,6 +336,49 @@ describe('RedisStreamOperations', () => {
 
             expect(result.success).toBe(false);
             expect(result.error).toBe(testError.message);
+        });
+    });
+
+    describe('getPendingInsight method', () => {
+        const INSIGHT_OPTS = { stuckThresholdMs: 30_000, poisonThreshold: 10 };
+
+        it('should aggregate pending entry counts, stuck entries and poison ids', async () => {
+            mockClient.xPendingRange.mockResolvedValue([
+                { id: '1-0', consumer: 'backend-consumer', millisecondsSinceLastDelivery: 5_000, deliveriesCounter: 1 },
+                { id: '2-0', consumer: 'backend-consumer', millisecondsSinceLastDelivery: 60_000, deliveriesCounter: 12 },
+                { id: '3-0', consumer: 'engine-consumer', millisecondsSinceLastDelivery: 45_000, deliveriesCounter: 3 },
+            ]);
+
+            const insight = await streamOperations.getPendingInsight('test:stream', 'test-group', INSIGHT_OPTS);
+
+            expect(mockClient.xPendingRange).toHaveBeenCalledWith('test:stream', 'test-group', '-', '+', 500);
+            expect(insight.pendingTotal).toBe(3);
+            expect(insight.stuckCount).toBe(2); // entries 2-0 and 3-0 idle >= 30s
+            expect(insight.oldestStuckIdleMs).toBe(60_000);
+            expect(insight.maxDeliveries).toBe(12);
+            expect(insight.poisonIds).toEqual(['2-0']); // deliveries >= 10
+        });
+
+        it('should return zeroed insight for an empty PEL', async () => {
+            mockClient.xPendingRange.mockResolvedValue([]);
+
+            const insight = await streamOperations.getPendingInsight('test:stream', 'test-group', INSIGHT_OPTS);
+
+            expect(insight).toEqual({
+                pendingTotal: 0,
+                stuckCount: 0,
+                oldestStuckIdleMs: 0,
+                maxDeliveries: 0,
+                poisonIds: [],
+            });
+        });
+
+        it('should propagate client errors to the caller', async () => {
+            mockClient.xPendingRange.mockRejectedValue(new Error('XPENDING failed'));
+
+            await expect(
+                streamOperations.getPendingInsight('test:stream', 'test-group', INSIGHT_OPTS)
+            ).rejects.toThrow('XPENDING failed');
         });
     });
 });

@@ -44,6 +44,12 @@ const DEDUP_SET_MAX_SIZE = 10_000;
 export const PENDING_RECOVERY_MIN_IDLE_MS = Number(process.env.PENDING_RECOVERY_MIN_IDLE_MS ?? 60_000);
 /** How often the event loop attempts a pending-event recovery pass. */
 const PENDING_RECOVERY_INTERVAL_MS = Number(process.env.PENDING_RECOVERY_INTERVAL_MS ?? 30_000);
+/** Pending entries idle at least this long count as "stuck" for backlog alerts. */
+export const PENDING_STUCK_ALERT_THRESHOLD_MS = Number(process.env.PENDING_STUCK_ALERT_THRESHOLD_MS ?? 30_000);
+/** Number of stuck pending entries before a backlog warning is logged. */
+export const PENDING_ALERT_THRESHOLD = Number(process.env.PENDING_ALERT_THRESHOLD ?? 5);
+/** Redelivery count at which a pending entry is flagged as a poison message. */
+export const PENDING_POISON_MAX_DELIVERIES = Number(process.env.PENDING_POISON_MAX_DELIVERIES ?? 10);
 
 export interface EngineProtocolServiceDependencies {
     streamOperations?: RedisStreamOperations;
@@ -220,7 +226,47 @@ export class EngineProtocolService {
                 await this.processEventMessage(message.id, message.data);
             }
         }
+        await this.logPendingInsight();
         return true;
+    }
+
+    /**
+     * Observability pass over the events PEL: log the backlog depth and flag
+     * stuck entries / poison messages (redelivered >= PENDING_POISON_MAX_DELIVERIES
+     * times without ever being ACKed). Poison entries are logged, not dropped -
+     * at-least-once delivery is preserved; the warn exists so operators notice
+     * a handler that keeps failing for the same event.
+     */
+    private async logPendingInsight(): Promise<void> {
+        try {
+            const insight = await this.streamOperations.getPendingInsight(BOT_EVENTS_STREAM, BACKEND_EVENTS_CONSUMER_GROUP, {
+                stuckThresholdMs: PENDING_STUCK_ALERT_THRESHOLD_MS,
+                poisonThreshold: PENDING_POISON_MAX_DELIVERIES,
+            });
+            logger.debug("Pending event queue insight", { stream: BOT_EVENTS_STREAM, consumerGroup: BACKEND_EVENTS_CONSUMER_GROUP, ...insight });
+            if (insight.stuckCount >= PENDING_ALERT_THRESHOLD) {
+                logger.warn("Pending event backlog detected", {
+                    stream: BOT_EVENTS_STREAM,
+                    consumerGroup: BACKEND_EVENTS_CONSUMER_GROUP,
+                    stuckCount: insight.stuckCount,
+                    oldestStuckIdleMs: insight.oldestStuckIdleMs,
+                    pendingTotal: insight.pendingTotal,
+                });
+            }
+            if (insight.poisonIds.length > 0) {
+                logger.warn("Poison engine events detected (repeated redelivery without ACK)", {
+                    stream: BOT_EVENTS_STREAM,
+                    consumerGroup: BACKEND_EVENTS_CONSUMER_GROUP,
+                    poisonIds: insight.poisonIds,
+                    maxDeliveries: insight.maxDeliveries,
+                });
+            }
+        } catch (error) {
+            // Observability must never break the recovery loop.
+            logger.debug("Pending insight check failed", {
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
     }
 
     private async processEventMessage(streamId: string, data: unknown): Promise<void> {

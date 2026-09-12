@@ -34,6 +34,12 @@ const TICK_INTERVAL_MS = 5000;
 const HEARTBEAT_INTERVAL_MS = Number(process.env.ENGINE_HEARTBEAT_INTERVAL_MS || 10_000);
 /** Min idle time before a stuck pending command is reclaimed (XAUTOCLAIM). */
 const PENDING_RECOVERY_MIN_IDLE_MS = Number(process.env.PENDING_RECOVERY_MIN_IDLE_MS || 60_000);
+/** Pending entries idle at least this long count as "stuck" for backlog alerts. */
+const PENDING_STUCK_ALERT_THRESHOLD_MS = Number(process.env.PENDING_STUCK_ALERT_THRESHOLD_MS || 30_000);
+/** Redelivery count at which a pending command is flagged as a poison message. */
+const PENDING_POISON_MAX_DELIVERIES = Number(process.env.PENDING_POISON_MAX_DELIVERIES || 10);
+/** How often the command loop inspects the commands PEL (rate-limited). */
+const PENDING_INSIGHT_INTERVAL_MS = Number(process.env.PENDING_INSIGHT_INTERVAL_MS || 30_000);
 const ENGINE_VERSION = 'kodiak@1.0.0';
 
 /**
@@ -509,6 +515,7 @@ class BotManager {
 
 async function listenForCommands(botManager: BotManager, streamOperations: ReturnType<typeof getRedisStreamOperations>): Promise<void> {
     logger.info('Listening for engine commands', { engineId: botManager.engineId });
+    let lastInsightAt = 0;
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
@@ -550,6 +557,42 @@ async function listenForCommands(botManager: BotManager, streamOperations: Retur
                             await botManager.handleCommand(data);
                         }
                         await streamOperations.ack(ENGINE_COMMANDS_STREAM, ENGINE_COMMANDS_CONSUMER_GROUP, message.id);
+                    }
+                }
+
+                // Rate-limited PEL observability: log backlog depth and flag
+                // poison commands (repeatedly redelivered, never ACKed).
+                const now = Date.now();
+                if (now - lastInsightAt >= PENDING_INSIGHT_INTERVAL_MS) {
+                    lastInsightAt = now;
+                    try {
+                        const insight = await streamOperations.getPendingInsight(ENGINE_COMMANDS_STREAM, ENGINE_COMMANDS_CONSUMER_GROUP, {
+                            stuckThresholdMs: PENDING_STUCK_ALERT_THRESHOLD_MS,
+                            poisonThreshold: PENDING_POISON_MAX_DELIVERIES,
+                        });
+                        logger.debug('Pending command queue insight', { stream: ENGINE_COMMANDS_STREAM, consumerGroup: ENGINE_COMMANDS_CONSUMER_GROUP, ...insight });
+                        if (insight.stuckCount > 0) {
+                            logger.warn('Pending command backlog detected', {
+                                stream: ENGINE_COMMANDS_STREAM,
+                                consumerGroup: ENGINE_COMMANDS_CONSUMER_GROUP,
+                                stuckCount: insight.stuckCount,
+                                oldestStuckIdleMs: insight.oldestStuckIdleMs,
+                                pendingTotal: insight.pendingTotal,
+                            });
+                        }
+                        if (insight.poisonIds.length > 0) {
+                            logger.warn('Poison engine commands detected (repeated redelivery without ACK)', {
+                                stream: ENGINE_COMMANDS_STREAM,
+                                consumerGroup: ENGINE_COMMANDS_CONSUMER_GROUP,
+                                poisonIds: insight.poisonIds,
+                                maxDeliveries: insight.maxDeliveries,
+                            });
+                        }
+                    } catch (error) {
+                        // Observability must never break the command loop.
+                        logger.debug('Pending insight check failed', {
+                            error: error instanceof Error ? error.message : String(error),
+                        });
                     }
                 }
             }
