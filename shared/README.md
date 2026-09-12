@@ -129,7 +129,7 @@ import {
 | Priority | Issue | Description |
 |----------|-------|-------------|
 | 🟡 P2 | God Package | Contains too many unrelated types. Should be split into `@trade-bot/protocol`, `@trade-bot/domain`, `@trade-bot/contracts`. |
-| 🟡 P2 | Legacy Models | Contains both old (`BotStatus.status: RUNNING | STOPPED | ERROR`) and new lifecycle state models. Should be consolidated. |
+| 🟡 P2 | Legacy Models | ✅ Fixed: Consolidated around canonical `BotActualState`. Removed `BotStatus` enum and inline status strings. |
 
 ---
 

@@ -246,7 +246,7 @@ Based on architectural review, the following issues are tracked:
 
 | Issue | Description |
 |-------|-------------|
-| **Legacy Bot Status Models** | The shared package contains both old (`BotStatus.status: RUNNING | STOPPED | ERROR`) and new lifecycle state models. These should be consolidated. |
+| **Legacy Bot Status Models** | ✅ Fixed: Consolidated around canonical `BotActualState` from `@trade-bot/shared/src/protocol`. Removed duplicate enums and inline status strings. |
 | **Shared Package Scope** | `@trade-bot/shared` has become a god package containing protocol types, domain models, API contracts, error classes, and logging types. Should be split. |
 | **Dead Code Cleanup** | Backend contains commented-out transitional code and unused imports that should be removed. |
 

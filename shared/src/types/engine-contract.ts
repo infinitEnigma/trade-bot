@@ -1,3 +1,4 @@
+import { BotActualState } from "../protocol/bot-state";
 /**
  * Engine Integration Contract - Formal API between backend and engine
  *
@@ -187,7 +188,7 @@ export interface EngineStatusEvent extends EngineEvent {
 export interface BotHeartbeatEvent extends EngineEvent {
     type: "BOT_HEARTBEAT";
     botId: string;
-    status: "RUNNING" | "STOPPED" | "ERROR" | "PAUSED";
+    status: BotActualState;
     position: number;
     exposure: number;
     currentPrice: number;
@@ -260,7 +261,7 @@ export interface EngineHealth {
 export interface BotStatus {
     botId: string;
     strategyId: string;
-    status: "RUNNING" | "STOPPED" | "ERROR" | "PAUSED";
+    status: BotActualState;
     symbol: string;
     currentPrice: number;
     totalTrades: number;
