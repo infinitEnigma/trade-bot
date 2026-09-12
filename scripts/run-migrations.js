@@ -12,6 +12,74 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'database', 'migrations');
 
+/**
+ * Split a SQL file into individual statements, respecting single/double
+ * quotes, dollar-quoted blocks, and line/block comments, so that
+ * CREATE INDEX CONCURRENTLY (which cannot run inside a multi-statement
+ * implicit transaction) executes standalone.
+ */
+function splitStatements(sql) {
+  const statements = [];
+  let current = '';
+  let inSingle = false;
+  let inDouble = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let dollarTag = null;
+
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i];
+    const next = i + 1 < sql.length ? sql[i + 1] : '';
+
+    if (inLineComment) {
+      current += ch;
+      if (ch === '\n') inLineComment = false;
+      continue;
+    }
+    if (inBlockComment) {
+      current += ch;
+      if (ch === '*' && next === '/') { current += next; i++; inBlockComment = false; }
+      continue;
+    }
+    if (inSingle) {
+      current += ch;
+      if (ch === "'") {
+        if (next === "'") { current += next; i++; } // escaped quote
+        else inSingle = false;
+      }
+      continue;
+    }
+    if (inDouble) {
+      current += ch;
+      if (ch === '"') inDouble = false;
+      continue;
+    }
+    if (dollarTag) {
+      if (sql.startsWith(dollarTag, i)) { current += dollarTag; i += dollarTag.length - 1; dollarTag = null; }
+      else current += ch;
+      continue;
+    }
+    if (ch === '-' && next === '-') { inLineComment = true; current += ch; continue; }
+    if (ch === '/' && next === '*') { inBlockComment = true; current += ch; continue; }
+    if (ch === "'") { inSingle = true; current += ch; continue; }
+    if (ch === '"') { inDouble = true; current += ch; continue; }
+    if (ch === '$') {
+      const match = /^\$[A-Za-z_]*\$/.exec(sql.slice(i));
+      if (match) { dollarTag = match[0]; current += dollarTag; i += dollarTag.length - 1; continue; }
+    }
+    if (ch === ';') {
+      if (current.trim()) statements.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim()) statements.push(current.trim());
+
+  // Drop statements that are pure comments/whitespace
+  return statements.filter(s => !/^(?:\s|--[^\n]*|\/\*[\s\S]*?\*\/)*$/.test(s));
+}
+
 async function runMigrations() {
   console.log('🚀 Starting database migrations...');
 
@@ -48,26 +116,27 @@ async function runMigrations() {
       console.log(`\n🔄 Executing migration: ${file}`);
 
       const sql = fs.readFileSync(filePath, 'utf8');
+      const statements = splitStatements(sql);
 
-      // Split by migration separator and execute each part
-      const migrations = sql.split('-- Migration completed successfully');
+      if (statements.length === 0) {
+        console.log(`   ⚠️  No executable statements found, skipping`);
+        continue;
+      }
 
-      for (let i = 0; i < migrations.length - 1; i++) { // Last element is empty
-        const migration = migrations[i].trim();
-        if (migration) {
-          try {
-            await pool.query(migration);
-            console.log(`   ✅ Migration part ${i + 1} executed successfully`);
-          } catch (error) {
-            // Check if this is an "already exists" error, which we can safely ignore
-            if (error.message.includes('already exists') ||
-                error.message.includes('does not exist') ||
-                error.message.includes('duplicate key value')) {
-              console.log(`   ⚠️  Migration part ${i + 1} skipped (already applied): ${error.message.split('\n')[0]}`);
-            } else {
-              console.error(`   ❌ Migration part ${i + 1} failed:`, error.message);
-              throw error;
-            }
+      for (let i = 0; i < statements.length; i++) {
+        try {
+          await pool.query(statements[i]);
+        } catch (error) {
+          // Only tolerate genuine idempotency duplicates ("already exists",
+          // seed-row "duplicate key"). Everything else - including
+          // "does not exist" - is a real failure and must abort the run.
+          if (error.message.includes('already exists') ||
+              error.message.includes('duplicate key value')) {
+            console.log(`   ⚠️  Statement ${i + 1}/${statements.length} skipped (already applied): ${error.message.split('\n')[0]}`);
+          } else {
+            console.error(`   ❌ Statement ${i + 1}/${statements.length} failed:`, error.message);
+            console.error(`      Statement: ${statements[i].split('\n')[0]}`);
+            throw error;
           }
         }
       }
