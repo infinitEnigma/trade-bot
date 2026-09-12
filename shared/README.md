@@ -6,7 +6,7 @@
 
 ## Overview
 
-The `@trade-bot/shared` package contains TypeScript types and interfaces shared between the frontend, backend, and engine packages. It serves as the single source of truth for the communication contracts between all packages.
+The `@trade-bot/shared` package contains **chain- and exchange-agnostic** TypeScript types and interfaces shared between the frontend, backend, and engine packages. It serves as the single source of truth for the communication contracts between all packages.
 
 > **⚠️ Known Issue**: This package has become a "god package" containing protocol types, domain models, API contracts, error classes, and logging types. It should be split into focused modules (see P2 issue below).
 

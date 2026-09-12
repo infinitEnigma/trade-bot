@@ -1,6 +1,6 @@
 # Trade Bot Backend
 
-**Express.js API Server with Bot Lifecycle Management & Engine Protocol**
+**Express.js API Server - Chain & Exchange Agnostic Trading Platform**
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](tsconfig.json)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D25.0.0-brightgreen)](package.json)
@@ -10,7 +10,7 @@
 
 ## Overview
 
-The backend is an Express.js API server that serves the frontend, manages user authentication, and orchestrates bot lifecycle through a Redis Streams protocol with the trading engine.
+The backend is an Express.js API server that serves the frontend, manages user authentication, and orchestrates bot lifecycle through a Redis Streams protocol with the trading engine. It is **chain- and exchange-agnostic** - supporting multiple blockchains and exchanges through a pluggable architecture.
 
 ### Key Responsibilities
 
@@ -203,4 +203,4 @@ npm run build && npm start
 
 ---
 
-**Backend Status**: Functional | **Version**: 1.0.0 | **Updated**: September 12, 2026
+**Backend Status**: Functional | **Architecture**: Chain & Exchange Agnostic | **Version**: 1.0.0 | **Updated**: September 12, 2026

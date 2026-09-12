@@ -1,6 +1,6 @@
 # Trading Engine
 
-**TypeScript Trading Bot Engine for Automated Strategy Execution**
+**Exchange-Agnostic Trading Bot Engine for Automated Strategy Execution**
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](package.json)
 [![Node.js](https://img.shields.io/badge/Node.js-25.x-green)](package.json)
@@ -9,7 +9,7 @@
 
 ## Overview
 
-The trading engine is an independent TypeScript service that executes automated trading strategies on the Berachain network via the Kodiak/Orderly exchange. It consumes commands from and publishes events to Redis Streams, coordinated by the backend.
+The trading engine is an independent, **exchange-agnostic** TypeScript service that executes automated trading strategies. It currently supports Kodiak/Orderly on Berachain and is designed to support multiple exchanges and chains. It consumes commands from and publishes events to Redis Streams, coordinated by the backend.
 
 > **✅ Fixed**: The engine now uses a sequential tick loop with single-flight guard to prevent overlapping `tick()` executions.
 
@@ -27,24 +27,35 @@ The trading engine is an independent TypeScript service that executes automated 
 ## Architecture
 
 ```
-Trading Engine (engine/kodiak/)
+Trading Engine (exchange-agnostic core)
 ├── src/
 │   ├── index.ts              # Entry point + BotManager (embedded): command
 │   │                         #   loop, init/cancellation, heartbeat,
 │   │                         #   registration and graceful shutdown
-│   ├── infrastructure/       # Resource adapters
-│   │   └── redis/streams.ts  # Redis Streams client (XADD / XREADGROUP /
-│   │                         #   XACK / XAUTOCLAIM / consumer groups)
+│   ├── application/         # Application layer
+│   │   ├── bot-manager.ts    # Bot lifecycle orchestration
+│   │   └── lifecycle-coordinator.ts # Heartbeat + registration + shutdown
+│   ├── protocol/             # Protocol layer
+│   │   ├── command-consumer.ts # Redis Streams command consumer loop
+│   │   ├── credential-fetcher.ts # Credential fetching from backend
+│   │   └── event-publisher.ts # Event publishing helpers
+│   ├── domain/               # Domain types
+│   │   ├── bot-runtime.ts    # Bot runtime interfaces
+│   │   ├── engine-identity.ts # Engine identity management
+│   │   └── exchange.ts       # Exchange client interface
+│   ├── exchanges/            # Exchange integrations (pluggable)
+│   │   └── kodiak/
+│   │       └── client.ts     # Kodiak/Orderly API client
 │   ├── strategies/           # Trading strategy implementations
 │   │   └── grid.ts           # Grid trading strategy
-│   ├── services/             # Core services
-│   │   └── orderly.ts        # Kodiak/Orderly API client
+│   ├── infrastructure/       # Infrastructure adapters
+│   │   └── redis/streams.ts  # Redis Streams client
 │   ├── types/                # TypeScript definitions
 │   │   └── strategy.ts       # Strategy interfaces
 │   └── utils/logger.ts       # Structured logging
 ```
 
-> **Note**: The `BotManager` is embedded in `src/index.ts`. This is a known architectural issue (P1) - the control-plane logic and process lifecycle should be decomposed into separate modules.
+> **Architecture**: The engine is exchange-agnostic. The core (`application/`, `protocol/`, `domain/`, `strategies/`) is decoupled from specific exchanges. Exchange implementations live in `exchanges/` and implement the `ExchangeClient` interface defined in `domain/exchange.ts`.
 
 ---
 
@@ -94,6 +105,7 @@ This requires `BOT_ENGINE_API_KEY` for authentication.
 - Backend API running
 - PostgreSQL database
 - Redis cache
+- Exchange API credentials (e.g., Kodiak)
 
 ### Configuration
 
@@ -201,18 +213,23 @@ interface GridStrategyConfig {
 
 ---
 
-## Known Issues
+## Architecture Highlights
 
-| Priority | Issue | Description |
-|----------|-------|-------------|
-| 🟠 P1 | Monolithic Design | BotManager embedded in index.ts with all responsibilities. Needs modularization. |
+### ✅ Recently Completed
 
-### ✅ Recently Fixed
+| Improvement | Description |
+|-------------|-------------|
+| Modularization | Engine decomposed into `application/`, `protocol/`, `domain/`, `exchanges/` layers |
+| Exchange-Agnostic | Core engine decoupled from specific exchanges via `ExchangeClient` interface |
+| Overlapping Ticks | Sequential tick loop with single-flight guard |
+| Order Idempotency | Deterministic `clientOrderId` for exchange duplicate detection |
 
-| Issue | Fix |
-|-------|-----|
-| Overlapping Ticks | Sequential tick loop with single-flight guard replaces `setInterval()`. |
-| Order Idempotency | Deterministic `clientOrderId` using `{botId}:{levelIndex}:{side}` format. |
+### Exchange Extensibility
+
+To add a new exchange:
+1. Create `src/exchanges/{exchange}/client.ts`
+2. Implement the `ExchangeClient` interface from `src/domain/exchange.ts`
+3. The engine core automatically works with the new exchange
 
 ---
 
@@ -226,4 +243,4 @@ interface GridStrategyConfig {
 
 ---
 
-**Engine Status**: In Development | **Version**: 1.0.0 | **Updated**: September 12, 2026
+**Engine Status**: In Development | **Architecture**: Exchange-Agnostic | **Version**: 1.0.0 | **Updated**: September 12, 2026

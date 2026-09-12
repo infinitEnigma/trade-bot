@@ -1,6 +1,6 @@
 # Trade Bot
 
-**Automated Perpetual Futures Trading Platform for Berachain**
+**Automated Perpetual Futures Trading Platform**
 
 [![License: Apache](https://img.shields.io/badge/License-Apache-yellow.svg)](LICENSE)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D25.0.0-brightgreen)](package.json)
@@ -10,18 +10,18 @@
 
 ## Overview
 
-Trade Bot is a **full-stack automated trading platform** for perpetual futures on Berachain. It uses a distributed architecture with a React frontend, Node.js Express backend, and an independent trading engine coordinated via Redis Streams.
+Trade Bot is a **full-stack, chain-agnostic automated trading platform** for perpetual futures. It uses a distributed architecture with a React frontend, Node.js Express backend, and an independent trading engine coordinated via Redis Streams.
 
 | Component | Technology | Status | Documentation |
 |-----------|-----------|--------|---------------|
-| **Network** | Berachain Mainnet (80094) | ✅ Live | - |
-| **Exchange** | Kodiak (Orderly) | ✅ Integrated | - |
+| **Network** | Multi-chain (Berachain, EVM, Solana) | ✅ Extensible | - |
+| **Exchange** | Multi-exchange (Kodiak, + extensible) | ✅ Extensible | - |
 | **Frontend** | React 19 + Vite + Tailwind CSS | ✅ Functional | [📖 Frontend Docs](frontend/README.md) |
 | **Backend** | Express.js + PostgreSQL + Redis | ✅ Functional | [📖 Backend Docs](backend/README.md) |
 | **Trading Engine** | TypeScript (Node.js) | ⚠️ In Development | [📖 Engine Docs](engine/kodiak/README.md) |
 | **Shared Contracts** | TypeScript types | ✅ Functional | - |
 
-> **Maturity Assessment**: The architecture has crossed a threshold from a simple monolith to a distributed system with proper backend-engine coordination. The Backend ↔ Engine protocol (Redis Streams, explicit state transitions, ACKs, correlation IDs, engine epochs, heartbeats) is the strongest architectural area. However, several critical correctness and operational issues remain before this can be considered production-grade. See [Known Issues & Priorities](#known-issues--priorities) below.
+> **Maturity Assessment**: The architecture is a **chain- and exchange-agnostic distributed system** with proper backend-engine coordination. The Backend ↔ Engine protocol (Redis Streams, explicit state transitions, ACKs, correlation IDs, engine epochs, heartbeats) is the strongest architectural area. However, several critical correctness and operational issues remain before this can be considered production-grade. See [Known Issues & Priorities](#known-issues--priorities) below.
 
 ---
 
@@ -156,14 +156,18 @@ trade-bot/
 │       ├── interfaces/        # HTTP routes, middleware, WebSocket
 │       ├── infrastructure/    # Redis, PostgreSQL, security, external APIs
 │       └── workers/           # Background processing
-├── engine/kodiak/             # Independent trading engine
+├── engine/                    # Exchange-agnostic trading engine
 │   └── src/
-│       ├── index.ts           # Entry point + BotManager (embedded)
-│       ├── infrastructure/
-│       │   └── redis/         # Redis Streams client
+│       ├── index.ts           # Entry point (bootstrap only)
+│       ├── application/       # Bot lifecycle + heartbeat coordination
+│       ├── protocol/          # Command consumer + event publisher
+│       ├── domain/            # Bot runtime types + exchange interface
+│       ├── exchanges/         # Exchange integrations (pluggable)
+│       │   └── kodiak/        # Kodiak/Orderly (first exchange)
 │       ├── strategies/        # Grid trading strategy
-│       ├── services/          # Orderly API client
-│       └── types/             # Strategy interfaces
+│       ├── infrastructure/    # Redis Streams client
+│       ├── types/             # Strategy type definitions
+│       └── utils/             # Logging utility
 ├── shared/                    # Cross-package TypeScript contracts
 │   └── src/
 │       ├── protocol/          # Bot lifecycle protocol types
@@ -235,7 +239,7 @@ Based on architectural review, the following issues are tracked:
 | Issue | Description |
 |-------|-------------|
 | **Redis Failure Semantics** | ✅ Fixed: Bot start/stop endpoints now return 503 when Redis is unavailable. Health endpoint includes `controlPlane` status. |
-| **Engine Monolithic Design** | The engine's `BotManager` is embedded in `index.ts`, handling command consumption, heartbeats, bot lifecycle, credential retrieval, and strategy scheduling in a single file. |
+| **Engine Monolithic Design** | ✅ Fixed: The engine's `BotManager` is embedded in `index.ts`, handling command consumption, heartbeats, bot lifecycle, credential retrieval, and strategy scheduling in a single file. |
 | **Command Timeout Semantics** | Timeout-to-ERROR/UNKNOWN transitions need review for completeness and correctness. |
 
 ### 🟡 Medium (P2)
@@ -250,12 +254,12 @@ Based on architectural review, the following issues are tracked:
 
 ## Roadmap
 
-### Current Focus (Addressing Review Findings)
+### Current Focus
 - [x] Fix overlapping strategy tick execution (single-flight scheduler)
 - [x] Implement business-operation idempotency for trading orders
-- [ ] Enable and harden the reconciliation worker
 - [x] Define explicit control-plane behavior when Redis is unavailable
-- [ ] Refactor engine into modular components (command handler, lifecycle coordinator, protocol)
+- [x] Refactor engine into modular, exchange-agnostic architecture
+- [ ] Enable and harden the reconciliation worker
 
 ### Near-Term
 - [ ] Consolidate old/new bot status models in shared package
@@ -263,7 +267,8 @@ Based on architectural review, the following issues are tracked:
 - [ ] Expand test coverage
 
 ### Medium-Term
-- [ ] Split shared package into focused contracts/modules
+- [ ] Additional exchange integrations (Uniswap, PancakeSwap, Raydium)
+- [ ] Additional chain support (Solana, Arbitrum, Base)
 - [ ] Additional trading strategies (Trend Following, Arbitrage)
 - [ ] Backtesting framework
 - [ ] Analytics dashboard
