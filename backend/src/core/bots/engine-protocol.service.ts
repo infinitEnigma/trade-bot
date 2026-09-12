@@ -171,7 +171,6 @@ export class EngineProtocolService {
                     count: 10,
                     consumerGroup: BACKEND_EVENTS_CONSUMER_GROUP,
                     consumerName: this.consumerName,
-                    autoAck: false,
                 });
 
                 if (!result.success || !result.messages || result.messages.length === 0) {

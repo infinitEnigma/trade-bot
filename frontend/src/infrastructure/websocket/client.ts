@@ -16,8 +16,19 @@ export enum WebSocketStatus {
 }
 
 /**
- * WebSocket client for real-time market data
- * Manages socket connections and subscriptions with reconnection logic
+ * Event data for bot.stateChanged events from backend.
+ */
+export interface BotStateChangedEventData {
+    botId: string;
+    from: string;
+    to: string;
+    correlationId: string;
+    timestamp: number;
+}
+
+/**
+ * WebSocket client for real-time market data and bot lifecycle events.
+ * Manages socket connections and subscriptions with reconnection logic.
  */
 class WebSocketClient {
     private socket: Socket | null = null;
@@ -32,6 +43,7 @@ class WebSocketClient {
     private tickListeners: Array<(data: TickData) => void> = [];
     private klineListeners: Array<(data: KlineData) => void> = [];
     private markPriceListeners: Array<(data: MarkPriceData) => void> = [];
+    private botStateChangedListeners: Array<(data: BotStateChangedEventData) => void> = [];
     private subscribedSymbols: Set<string> = new Set();
 
     private constructor() {
@@ -292,6 +304,24 @@ class WebSocketClient {
     }
 
     /**
+     * Add bot state changed listener.
+     * Called when the backend emits a `bot.stateChanged` event.
+     */
+    public onBotStateChanged(listener: (data: BotStateChangedEventData) => void): void {
+        this.botStateChangedListeners.push(listener);
+    }
+
+    /**
+     * Remove bot state changed listener.
+     */
+    public offBotStateChanged(listener: (data: BotStateChangedEventData) => void): void {
+        const index = this.botStateChangedListeners.indexOf(listener);
+        if (index !== -1) {
+            this.botStateChangedListeners.splice(index, 1);
+        }
+    }
+
+    /**
      * Cleanup method for app unmount
      */
     public cleanup(): void {
@@ -301,6 +331,7 @@ class WebSocketClient {
         this.tickListeners = [];
         this.klineListeners = [];
         this.markPriceListeners = [];
+        this.botStateChangedListeners = [];
         this.subscribedSymbols.clear();
     }
 
@@ -370,6 +401,10 @@ class WebSocketClient {
             else if (event.startsWith("markprice:")) {
                 this.notifyMarkPriceListeners(data);
             }
+            // Handle bot state changed events from backend
+            else if (event === "bot.stateChanged") {
+                this.notifyBotStateChanged(data as BotStateChangedEventData);
+            }
         });
     }
 
@@ -422,6 +457,20 @@ class WebSocketClient {
                 listener(data);
             } catch (error) {
                 console.error("Error in mark price listener", error);
+            }
+        }
+    }
+
+    /**
+     * Notify bot state changed listeners.
+     * Called when the backend emits a `bot.stateChanged` event.
+     */
+    private notifyBotStateChanged(data: BotStateChangedEventData): void {
+        for (const listener of this.botStateChangedListeners) {
+            try {
+                listener(data);
+            } catch (error) {
+                console.error("Error in bot state changed listener", error);
             }
         }
     }

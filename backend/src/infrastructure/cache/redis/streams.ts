@@ -54,7 +54,6 @@ export interface StreamReadOptions {
     count?: number; // Number of messages to read
     consumerGroup?: string;
     consumerName?: string;
-    autoAck?: boolean;
 }
 
 export class RedisStreamOperations {
@@ -99,7 +98,8 @@ export class RedisStreamOperations {
                 );
 
                 if (!result) {
-                    logger.warn("Failed to read from consumer group", {
+                    // Normal BLOCK timeout on an idle stream - not an error.
+                    logger.debug("Consumer group read returned no messages (idle timeout)", {
                         stream,
                         consumerGroup: options.consumerGroup
                     });
@@ -131,7 +131,8 @@ export class RedisStreamOperations {
                 );
 
                 if (!result) {
-                    logger.warn("Failed to read from stream", { stream })
+                    // Normal BLOCK timeout on an idle stream - not an error.
+                    logger.debug("Stream read returned no messages (idle timeout)", { stream });
                     return { success: true, messages: [] }; // Return success with empty messages instead of false
                 }
 
@@ -190,19 +191,73 @@ export class RedisStreamOperations {
         try {
             const client = this.connectionManager.getClient();
             const reply = await client.xAutoClaim(stream, consumerGroup, consumerName, minIdleMs, "0-0", { COUNT: count });
-            const entries = (reply?.messages ?? []).filter(m => m !== null) as { id: string; message: Record<string, string> }[];
-
-            const messages = entries.map(msg => ({
-                id: msg.id,
-                data: JSON.parse(msg.message.data),
-            }));
+            const messages = this.normalizeClaimedMessages(reply?.messages ?? []);
             if (messages.length > 0) {
                 logger.info("Recovered pending stream messages via XAUTOCLAIM", { stream, consumerGroup, count: messages.length });
             }
             return { success: true, messages };
         } catch (error) {
             const errorMessage = (error as Error).message;
+            // XAUTOCLAIM requires Redis >= 6.2; older servers (e.g. 6.0.x) reject
+            // it with "ERR unknown command". Fall back to XPENDING + XCLAIM
+            // (available since Redis 5.0), which recovers the same stuck entries.
+            if (/unknown command/i.test(errorMessage)) {
+                logger.debug("XAUTOCLAIM unavailable on this Redis version - using XPENDING/XCLAIM fallback", {
+                    stream,
+                    consumerGroup,
+                });
+                return this.claimPendingLegacy(stream, consumerGroup, consumerName, minIdleMs, count);
+            }
             logger.error("Stream claim-pending error", error as Error, { stream, consumerGroup, error: errorMessage });
+            return { success: false, error: errorMessage };
+        }
+    }
+
+    /** Map raw XAUTOCLAIM/XCLAIM message entries to StreamMessage[]. */
+    private normalizeClaimedMessages(entries: ({ id: string; message: Record<string, string> } | null)[]): StreamMessage[] {
+        return (entries.filter(m => m !== null) as { id: string; message: Record<string, string> }[]).map(msg => ({
+            id: msg.id,
+            data: JSON.parse(msg.message.data),
+        }));
+    }
+
+    /**
+     * Redis < 6.2 fallback for XAUTOCLAIM. XPENDING with the IDLE filter is
+     * itself a Redis >= 6.2 feature, so this uses the plain XPENDING range
+     * form (Redis 5.0+) and applies the min-idle filter client-side, then
+     * XCLAIMs the matching ids. XCLAIM's server-side min-idle re-check keeps
+     * the claim race-free (entries re-delivered in the meantime return null).
+     * The PEL only grows when a consumer crashes without ACKing, so scanning
+     * a bounded page is sufficient; dedup markers make reprocessing safe.
+     */
+    private async claimPendingLegacy(
+        stream: string,
+        consumerGroup: string,
+        consumerName: string,
+        minIdleMs: number,
+        count: number
+    ): Promise<{ success: boolean; messages?: StreamMessage[]; error?: string }> {
+        try {
+            const client = this.connectionManager.getClient();
+            // Bounded page: healthy consumers ACK immediately, so the PEL
+            // only accumulates entries after a crash.
+            const pending = await client.xPendingRange(stream, consumerGroup, "-", "+", Math.max(count, 100));
+            const ids = (pending ?? [])
+                .filter(p => p.millisecondsSinceLastDelivery >= minIdleMs)
+                .slice(0, count)
+                .map(p => p.id);
+            if (ids.length === 0) {
+                return { success: true, messages: [] };
+            }
+            const claimed = await client.xClaim(stream, consumerGroup, consumerName, minIdleMs, ids);
+            const messages = this.normalizeClaimedMessages(claimed ?? []);
+            if (messages.length > 0) {
+                logger.info("Recovered pending stream messages via XPENDING/XCLAIM", { stream, consumerGroup, count: messages.length });
+            }
+            return { success: true, messages };
+        } catch (error) {
+            const errorMessage = (error as Error).message;
+            logger.error("Stream claim-pending fallback error", error as Error, { stream, consumerGroup, error: errorMessage });
             return { success: false, error: errorMessage };
         }
     }
@@ -246,7 +301,9 @@ export class RedisStreamOperations {
         } catch (error) {
             const errorMessage = (error as Error).message;
             if (errorMessage.includes("BUSYGROUP")) {
-                logger.error("Consumer group already exists", error as Error, { stream, consumerGroup });
+                // Expected on every startup after the first: the group already
+                // exists, which is exactly the desired state.
+                logger.debug("Consumer group already exists", { stream, consumerGroup });
                 return { success: true };
             }
             logger.error("Consumer group creation error", error as Error, { stream, consumerGroup, error: errorMessage });

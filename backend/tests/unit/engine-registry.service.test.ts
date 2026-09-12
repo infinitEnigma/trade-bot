@@ -59,7 +59,7 @@ describe('EngineRegistryService', () => {
             expect(insert![1][1]).toBe(3);
         });
 
-        it('processes an ENGINE_HEARTBEAT event', async () => {
+        it('processes an ENGINE_HEARTBEAT event (self-healing upsert)', async () => {
             mockQuery.mockReturnValue(ok());
             const event = createBotEvent(
                 'ENGINE_HEARTBEAT',
@@ -70,8 +70,11 @@ describe('EngineRegistryService', () => {
             const handled = await service.handleEngineEvent(event);
 
             expect(handled).toBe(true);
-            const update = mockQuery.mock.calls.find(call => String(call[0]).includes('UPDATE engine_registry'));
-            expect(update).toBeDefined();
+            const upsert = mockQuery.mock.calls.find(call => String(call[0]).includes('INSERT INTO engine_registry'));
+            expect(upsert).toBeDefined();
+            // Heartbeat is an upsert (registers an unknown engine), so a lost
+            // initial ENGINE_REGISTER self-heals on the first heartbeat.
+            expect(String(upsert![0])).toContain('ON CONFLICT (engine_id)');
         });
 
         it('returns false for non-engine-lifecycle events', async () => {
@@ -91,10 +94,10 @@ describe('EngineRegistryService', () => {
 
             await service.handleEngineEvent(event);
 
-            const update = mockQuery.mock.calls.find(call => String(call[0]).includes('UPDATE engine_registry'));
-            expect(update).toBeDefined();
-            // The guard clause: WHERE engine_id = $1 AND epoch <= $2
-            expect(String(update![0])).toContain('epoch <= $2');
+            const upsert = mockQuery.mock.calls.find(call => String(call[0]).includes('INSERT INTO engine_registry'));
+            expect(upsert).toBeDefined();
+            // The epoch guard clause keeps a stale heartbeat from refreshing/inserting.
+            expect(String(upsert![0])).toContain('WHERE EXCLUDED.epoch >= engine_registry.epoch');
         });
     });
 
@@ -102,6 +105,13 @@ describe('EngineRegistryService', () => {
         it('rejects an engine whose epoch is superseded', async () => {
             mockQuery.mockReturnValue({ rows: [{ engine_id: 'engine-1', epoch: 5, status: 'ONLINE' }], rowCount: 1 });
             expect(await service.isEngineAuthoritative('engine-1', 4)).toBe(false);
+        });
+
+        it('rejects an engine whose event epoch is ahead of the registered epoch', async () => {
+            // Invariant is exact match, not "not yet superseded": an event
+            // carrying an impossible future epoch is just as untrustworthy.
+            mockQuery.mockReturnValue({ rows: [{ engine_id: 'engine-1', epoch: 5, status: 'ONLINE' }], rowCount: 1 });
+            expect(await service.isEngineAuthoritative('engine-1', 999)).toBe(false);
         });
 
         it('accepts an engine with a current epoch', async () => {
@@ -147,7 +157,7 @@ describe('EngineRegistryService', () => {
     describe('heartbeat inventory reconciliation', () => {
         it('reconciles activeBotIds on a successful heartbeat', async () => {
             mockQuery.mockImplementation((sql: string) => {
-                if (String(sql).includes('UPDATE engine_registry')) {
+                if (String(sql).includes('ON CONFLICT (engine_id)')) {
                     return Promise.resolve({ rows: [], rowCount: 1 });
                 }
                 return ok();

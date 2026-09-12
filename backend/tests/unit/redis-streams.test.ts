@@ -107,7 +107,7 @@ describe('RedisStreamOperations', () => {
             expect(result.messages![0].data.type).toBe(testCommand.type);
         });
 
-        it('should read messages from consumer group with autoAck true', async () => {
+        it('reads new messages from the consumer group; acking is the caller\'s responsibility', async () => {
             const mockMessages = [
                 { id: '1', message: { data: JSON.stringify(testCommand) } },
                 { id: '2', message: { data: JSON.stringify(testEvent) } },
@@ -119,34 +119,6 @@ describe('RedisStreamOperations', () => {
             const result = await streamOperations.read('test:stream', {
                 consumerGroup: 'test-group',
                 consumerName: 'test-consumer',
-                autoAck: true,
-                block: 1000,
-                count: 5,
-            });
-
-            expect(mockClient.xReadGroup).toHaveBeenCalledWith(
-                'test-group',
-                'test-consumer',
-                [{ key: 'test:stream', id: '>' }],
-                expect.anything()
-            );
-            expect(result.success).toBe(true);
-            expect(result.messages).toHaveLength(2);
-        });
-
-        it('should read messages from consumer group with autoAck false', async () => {
-            const mockMessages = [
-                { id: '1', message: { data: JSON.stringify(testCommand) } },
-                { id: '2', message: { data: JSON.stringify(testEvent) } },
-            ];
-            mockClient.xReadGroup.mockResolvedValue([
-                { key: 'test:stream', messages: mockMessages }
-            ]);
-
-            const result = await streamOperations.read('test:stream', {
-                consumerGroup: 'test-group',
-                consumerName: 'test-consumer',
-                autoAck: false,
                 block: 1000,
                 count: 5,
             });
@@ -177,7 +149,6 @@ describe('RedisStreamOperations', () => {
             const result = await streamOperations.read('test:stream', {
                 consumerGroup: 'test-group',
                 consumerName: 'test-consumer',
-                autoAck: true,
             });
 
             expect(mockClient.xReadGroup).toHaveBeenCalled();

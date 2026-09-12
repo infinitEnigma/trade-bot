@@ -5,17 +5,11 @@ import { Strategy, StrategyType } from "../../../shared/types";
 import { Zap, Edit, Trash2} from "lucide-react";
 import { Card } from "../../../shared/components/ui";
 import { BotControls } from "../bots/components/BotControls";
-import { getStrategyConfig } from "../types/strategies.types";
-//import { BotInstance } from "../../types/trading.types";
+import { getStrategyConfig, BotInstance } from "../types/strategies.types";
 
 interface StrategyCardProps {
   strategy: Strategy;
-  bot?: {
-    id: string;
-    status: "RUNNING" | "STOPPED" | "ERROR";
-    total_trades: number;
-    total_pnl: number;
-  };
+  bot?: BotInstance;
   onEdit: (strategy: Strategy) => void;
   onDelete: (strategyId: string) => void;
   onBotStatusChange: () => void;

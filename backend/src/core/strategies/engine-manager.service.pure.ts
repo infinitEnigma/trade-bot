@@ -270,8 +270,7 @@ export class EngineManager {
                     block: 1000, // Reduced block time for faster shutdown
                     count: 10,
                     consumerGroup: 'backend-group',
-                    consumerName: 'backend-consumer',
-                    autoAck: true
+                    consumerName: 'backend-consumer'
                 });
 
                 if (result.success && result.messages && result.messages.length > 0) {

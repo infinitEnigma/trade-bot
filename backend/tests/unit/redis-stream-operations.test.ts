@@ -214,7 +214,6 @@ describe('RedisStreamOperations', () => {
             const readResult = await streamOperations.read(TEST_STREAM, {
                 consumerGroup: 'test-group',
                 consumerName: 'test-consumer',
-                autoAck: false,
                 block: 2000,
                 count: 1
             });

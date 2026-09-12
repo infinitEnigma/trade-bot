@@ -781,7 +781,7 @@ describe('WebSocketService', () => {
     });
 
     describe('market stream integration', () => {
-        it('should initialize market stream service for verified users', () => {
+        it('should connect to Orderly for verified users', async () => {
             webSocketService.initialize(mockServer as Server);
 
             const connectionHandler = (mockServer.on as any).mock.calls.find(
@@ -802,13 +802,38 @@ describe('WebSocketService', () => {
                 ipAddress: '127.0.0.1',
             };
 
-            connectionHandler(mockSocket);
+            await connectionHandler(mockSocket);
 
-            expect(mockMarketStreamService.setSocketServer).toHaveBeenCalled();
-            expect(mockLogger.debug).toHaveBeenCalled();
+            expect(mockMarketStreamService.connectToOrderly).toHaveBeenCalledWith(['PERP_BTC_USDC', 'PERP_ETH_USDC']);
         });
 
-        it('should not initialize market stream service for non-verified users', () => {
+        it('should connect to Orderly for registered users', async () => {
+            webSocketService.initialize(mockServer as Server);
+
+            const connectionHandler = (mockServer.on as any).mock.calls.find(
+                (call: any[]) => call[0] === 'connection'
+            )[1];
+
+            const mockSocket = {
+                id: 'test-socket-id',
+                on: jest.fn(),
+                emit: jest.fn(),
+            };
+            (mockSocket as any).client = {
+                userId: 'test-user-id',
+                userLevel: 'REGISTERED',
+                subscriptions: new Set(),
+                connectedAt: new Date(),
+                lastActivity: Date.now(),
+                ipAddress: '127.0.0.1',
+            };
+
+            await connectionHandler(mockSocket);
+
+            expect(mockMarketStreamService.connectToOrderly).toHaveBeenCalledWith(['PERP_BTC_USDC', 'PERP_ETH_USDC']);
+        });
+
+        it('should not connect to Orderly for basic users', async () => {
             webSocketService.initialize(mockServer as Server);
 
             const connectionHandler = (mockServer.on as any).mock.calls.find(
@@ -829,9 +854,9 @@ describe('WebSocketService', () => {
                 ipAddress: '127.0.0.1',
             };
 
-            connectionHandler(mockSocket);
+            await connectionHandler(mockSocket);
 
-            expect(mockMarketStreamService.setSocketServer).not.toHaveBeenCalled();
+            expect(mockMarketStreamService.connectToOrderly).not.toHaveBeenCalled();
         });
     });
 

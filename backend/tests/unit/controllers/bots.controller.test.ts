@@ -45,6 +45,17 @@ jest.mock('../../../src/database/pool', () => ({
     query: jest.fn(),
 }));
 
+jest.mock('../../../src/core/bots/bot-lifecycle.service', () => ({
+    botLifecycleService: {
+        createAndStart: jest.fn(),
+        stop: jest.fn(),
+        start: jest.fn(),
+        handleEngineEvent: jest.fn(),
+        sweepTimedOutCommands: jest.fn(),
+        setSocketServer: jest.fn()
+    }
+}));
+
 jest.mock('../../../src/core/strategies/engine-manager.service.pure', () => ({
     EngineManager: jest.fn().mockImplementation(() => ({
         ensureEngineRunning: jest.fn().mockResolvedValue(undefined),
@@ -230,99 +241,101 @@ describe('Bots Controller', () => {
 
         describe('POST /api/bot/management/start', () => {
             it('should start a bot instance', async () => {
-                const mockStrategy = {
-                    id: 'strategy-1',
-                    name: 'Grid Trading BTC',
-                    type: 'GRID',
-                    config: { symbol: 'PERP_BTC_USDC' },
-                    user_id: 'user-123',
-                    active: false,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
+                const testStrategyId = 'd290f1ee-6c54-4b01-90e6-d701748f0851';
+                const mockLifecycleResult = {
+                    botId: 'test-bot-id',
+                    desiredState: 'RUNNING',
+                    actualState: 'STARTING',
+                    correlationId: 'test-correlation-id'
                 };
 
-                const mockBotInstance = {
-                    id: 'test-bot-id',
-                    strategy_id: 'strategy-1',
-                    user_id: 'user-123',
-                    status: 'RUNNING',
-                    running_time: 0,
-                    total_trades: 0,
-                    total_pnl: 0,
-                };
-
-                const serviceProvider = require('../../../src/core/service-provider').serviceProvider;
-                serviceProvider.getBotManagementService().createAndStartBot.mockResolvedValue(mockBotInstance);
-
-                // Mock the strategy repository used by bot management service
-                const strategyRepositoryAdapter = require('../../../src/infrastructure/adapters/repositories/strategy-repository.adapter').strategyRepositoryAdapter;
-                strategyRepositoryAdapter.getStrategy.mockResolvedValue(mockStrategy);
-
-                // Mock the bot instance repository
-                const botInstanceRepositoryAdapter = require('../../../src/infrastructure/adapters/repositories/bot-instance-repository.adapter').botInstanceRepositoryAdapter;
-                botInstanceRepositoryAdapter.getActiveBotInstances.mockResolvedValue([]);
-                botInstanceRepositoryAdapter.createBotInstance.mockResolvedValue(mockBotInstance);
-
-                // Mock the audit log repository
-                const auditLogRepositoryAdapter = require('../../../src/infrastructure/adapters/repositories/audit-log-repository.adapter').auditLogRepositoryAdapter;
-                auditLogRepositoryAdapter.logEvent.mockResolvedValue(undefined);
+                const { botLifecycleService } = require('../../../src/core/bots/bot-lifecycle.service');
+                botLifecycleService.createAndStart.mockResolvedValue(mockLifecycleResult);
 
                 const query = require('../../../src/database/pool').query;
-                query.mockImplementation((sql: string) => {
-                    //console.log('Query called with SQL:', sql);
-                    if (sql.includes('SELECT * FROM strategies')) {
-                        return Promise.resolve({ rows: [mockStrategy] });
-                    } else if (sql.includes('INSERT INTO audit_logs')) {
-                        return Promise.resolve({});
-                    } else if (sql.includes('UPDATE strategies')) {
-                        return Promise.resolve({});
-                    }
-                    return Promise.resolve({ rows: [] });
-                });
-
-                // Mock position validator
-                jest.spyOn(require('../../../src/core/strategies/position-validator.service.pure'), 'PositionValidatorService')
-                    .mockResolvedValue({
-                        isValid: true,
-                        maxAllowed: 10000,
-                        recommended: 5000,
-                    });
+                query.mockResolvedValue({});
 
                 const response = await request(app)
                     .post('/api/bot/management/start')
                     .send({
-                        strategyId: 'strategy-1',
+                        strategyId: testStrategyId,
                         notionalAmount: 1000.50,
                     });
 
-                //console.log('Response status:', response.status);
-                //console.log('Response body:', response.body);
-
-                expect(response.status).toBe(200);
+                expect(response.status).toBe(202);
                 expect(response.body.success).toBe(true);
                 expect(response.body.data.botId).toEqual('test-bot-id');
-                expect(response.body.data.strategyId).toEqual('strategy-1');
-                expect(response.body.data.status).toEqual('RUNNING');
-                expect(serviceProvider.getBotManagementService().createAndStartBot).toHaveBeenCalledWith('user-123', 'strategy-1', 1000.50);
+                expect(response.body.data.strategyId).toEqual(testStrategyId);
+                expect(response.body.data.desiredState).toEqual('RUNNING');
+                expect(response.body.data.actualState).toEqual('STARTING');
+                expect(response.body.data.correlationId).toEqual('test-correlation-id');
+                expect(botLifecycleService.createAndStart).toHaveBeenCalledWith('user-123', testStrategyId, 1000.50);
+            });
+
+            it('should return 404 when the strategy is not found', async () => {
+                const testStrategyId = 'd290f1ee-6c54-4b01-90e6-d701748f0851';
+                const notFoundError = new Error('Strategy not found');
+                (notFoundError as Error & { statusCode?: number }).statusCode = 404;
+
+                const { botLifecycleService } = require('../../../src/core/bots/bot-lifecycle.service');
+                botLifecycleService.createAndStart.mockRejectedValueOnce(notFoundError);
+
+                const response = await request(app)
+                    .post('/api/bot/management/start')
+                    .send({
+                        strategyId: testStrategyId,
+                        notionalAmount: 1000.50,
+                    });
+
+                expect(response.status).toBe(404);
+                expect(response.body.success).toBe(false);
             });
         });
 
         describe('POST /api/bot/management/stop', () => {
             it('should stop a running bot instance', async () => {
-                const serviceProvider = require('../../../src/core/service-provider').serviceProvider;
-                serviceProvider.getBotManagementService().stopBot.mockResolvedValue(undefined);
+                const testBotId = 'b0b1e9d6-9f41-4b1d-8b62-b3b42b7a5f8d';
+                const mockLifecycleResult = {
+                    botId: testBotId,
+                    desiredState: 'STOPPED',
+                    actualState: 'STOPPING',
+                    correlationId: 'test-correlation-id'
+                };
+
+                const { botLifecycleService } = require('../../../src/core/bots/bot-lifecycle.service');
+                botLifecycleService.stop.mockResolvedValue(mockLifecycleResult);
 
                 const response = await request(app)
                     .post('/api/bot/management/stop')
                     .send({
-                        botId: 'bot-1',
+                        botId: testBotId,
                     })
-                    .expect(200);
+                    .expect(202);
 
                 expect(response.body.success).toBe(true);
-                expect(response.body.data.botId).toEqual('bot-1');
-                expect(response.body.data.status).toEqual('STOPPED');
-                expect(serviceProvider.getBotManagementService().stopBot).toHaveBeenCalledWith('user-123', 'bot-1');
+                expect(response.body.data.botId).toEqual(testBotId);
+                expect(response.body.data.desiredState).toEqual('STOPPED');
+                expect(response.body.data.actualState).toEqual('STOPPING');
+                expect(response.body.data.correlationId).toEqual('test-correlation-id');
+                expect(botLifecycleService.stop).toHaveBeenCalledWith(testBotId, 'user-123');
+            });
+
+            it('should return 404 when the bot is not found', async () => {
+                const testBotId = 'b0b1e9d6-9f41-4b1d-8b62-b3b42b7a5f8d';
+                const notFoundError = new Error('Bot not found');
+                (notFoundError as Error & { statusCode?: number }).statusCode = 404;
+
+                const { botLifecycleService } = require('../../../src/core/bots/bot-lifecycle.service');
+                botLifecycleService.stop.mockRejectedValueOnce(notFoundError);
+
+                const response = await request(app)
+                    .post('/api/bot/management/stop')
+                    .send({
+                        botId: testBotId,
+                    });
+
+                expect(response.status).toBe(404);
+                expect(response.body.success).toBe(false);
             });
         });
 
@@ -486,7 +499,7 @@ describe('Bots Controller', () => {
             });
         });
 
-        describe('GET /api/bot/engine/engine/health', () => {
+        describe('GET /api/bot/engine/health', () => {
             it('should return engine health', async () => {
                 const query = require('../../../src/database/pool').query;
                 query.mockResolvedValueOnce({
@@ -495,7 +508,7 @@ describe('Bots Controller', () => {
                     .mockResolvedValueOnce({}); // Check database connectivity
 
                 const response = await request(app)
-                    .get('/api/bot/engine/engine/health')
+                    .get('/api/bot/engine/health')
                     .expect(200);
 
                 expect(response.body.success).toBe(true);
