@@ -98,6 +98,15 @@ export function useBotLifecycle(botId?: string) {
         staleTime: 30_000,
         gcTime: 5 * 60 * 1000,
         refetchOnWindowFocus: false,
+        // Anti-stuck guard: while any tracked bot sits in a transitional state
+        // (STARTING/STOPPING), poll the authoritative server state. A
+        // `bot.stateChanged` event missed during a WebSocket outage can
+        // otherwise leave the UI stuck on "Starting..."/"Stopping..." forever.
+        refetchInterval: (query) => {
+            const bots = query.state.data ?? [];
+            const hasTransitional = bots.some(b => isTransitionalState(b.status as BotActualState));
+            return hasTransitional ? 3_000 : false;
+        },
     });
 
     const updateBotStateInCache = useCallback((data: BotStateChangedEventData) => {

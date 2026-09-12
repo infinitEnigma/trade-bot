@@ -30,14 +30,20 @@ export interface BotStateChangedEventData {
  * WebSocket client for real-time market data and bot lifecycle events.
  * Manages socket connections and subscriptions with reconnection logic.
  */
-class WebSocketClient {
+export class WebSocketClient {
     private socket: Socket | null = null;
     private static instance: WebSocketClient;
     private status: WebSocketStatus = WebSocketStatus.DISCONNECTED;
     private reconnectAttempts: number = 0;
     private maxReconnectAttempts: number = 5;
     private reconnectDelay: number = 2000;
+    /** Slow retry cadence once the fast attempts are exhausted (never give up). */
+    private slowReconnectDelay: number = 30_000;
     private reconnectTimer: NodeJS.Timeout | null = null;
+    /** Single-flight guard: at most one connection attempt in progress. */
+    private connectPromise: Promise<Socket> | null = null;
+    /** Deferred settle hooks for the in-flight connect() promise. */
+    private pendingConnect: { resolve: (socket: Socket) => void; reject: (err: Error) => void } | null = null;
     private connectionListeners: Array<(status: WebSocketStatus) => void> = [];
     private errorListeners: Array<(error: Error) => void> = [];
     private tickListeners: Array<(data: TickData) => void> = [];
@@ -47,7 +53,28 @@ class WebSocketClient {
     private subscribedSymbols: Set<string> = new Set();
 
     private constructor() {
-        // Private constructor for singleton
+        // Reconnect proactively when the network returns or the tab becomes
+        // visible again (single-flight connect() guards duplicate attempts).
+        if (typeof window !== "undefined") {
+            window.addEventListener("online", () => {
+                if (!this.socket?.connected && !this.reconnectTimer && !this.connectPromise) {
+                    console.log("📡 Network online - reconnecting");
+                    this.connect().catch(() => { /* handled by connection error listeners */ });
+                }
+            });
+            document.addEventListener("visibilitychange", () => {
+                if (
+                    document.visibilityState === "visible" &&
+                    !this.socket?.connected &&
+                    !this.reconnectTimer &&
+                    !this.connectPromise &&
+                    this.status !== WebSocketStatus.DISCONNECTED
+                ) {
+                    console.log("📡 Tab visible - reconnecting");
+                    this.connect().catch(() => { /* handled by connection error listeners */ });
+                }
+            });
+        }
     }
 
     public static getInstance(): WebSocketClient {
@@ -58,85 +85,46 @@ class WebSocketClient {
     }
 
     /**
-     * Connect to WebSocket server with reconnection logic
+     * Connect to WebSocket server with reconnection logic.
+     * Single-flight: concurrent callers receive the in-flight promise.
      */
     public connect(url: string = getWebSocketUrl()): Promise<Socket> {
-        return new Promise((resolve, reject) => {
-            if (this.socket?.connected) {
-                console.log("📡 WebSocket already connected");
-                resolve(this.socket);
-                return;
-            }
+        if (this.connectPromise) {
+            console.log("📡 WebSocket connection already in progress");
+            return this.connectPromise;
+        }
 
-            if (this.status === WebSocketStatus.CONNECTING || this.status === WebSocketStatus.RECONNECTING) {
-                console.log("📡 WebSocket connection already in progress");
-                // Wait for connection to complete
-                const checkConnection = setInterval(() => {
-                    if (this.socket?.connected) {
-                        console.log("Websocket reconnected")
-                        clearInterval(checkConnection);
-                        resolve(this.socket);
-                    } else if (this.status === WebSocketStatus.ERROR) {
-                        clearInterval(checkConnection);
-                        reject(new Error('Connection failed'));
-                    }
-                }, 200);
-                return;
-            }
+        if (this.socket?.connected) {
+            console.log("📡 WebSocket already connected");
+            return Promise.resolve(this.socket);
+        }
 
-            this.status = WebSocketStatus.CONNECTING;
-            this.reconnectAttempts = 0;
-            this.notifyStatusChange();
+        // A manual connect supersedes any scheduled retry timer.
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
 
+        this.status = WebSocketStatus.CONNECTING;
+        this.notifyStatusChange();
+
+        console.log(`📡 Attempting to connect to WebSocket server: ${url}`);
+        this.connectPromise = new Promise<Socket>((resolve, reject) => {
+            this.pendingConnect = { resolve, reject };
             // NOTE: We no longer need to get token from localStorage
             // Backend now extracts token from httpOnly cookies, which are automatically included
             // when withCredentials: true is set
-
-            console.log(`📡 Attempting to connect to WebSocket server: ${url}`);
             this.socket = io(url, {
                 withCredentials: true,
                 transports: ["polling", "websocket"], // "polling"],
                 reconnection: false, // We handle reconnection manually
                 timeout: 10000,
-                //forceNew: true, // Always create new connection
-                //upgrade: true, // Disable HTTP upgrade to prevent protocol issues
                 path: "/socket.io/", // Match nginx proxy path
                 // No need to pass auth token - backend extracts from cookies
             });
-
-            this.socket.on("connect", () => {
-                console.log("📡 WebSocket connected successfully");
-                this.status = WebSocketStatus.CONNECTED;
-                this.reconnectAttempts = 0;
-                this.notifyStatusChange();
-                resolve(this.socket!);
-            });
-
-            this.socket.on("connect_error", (err) => {
-                console.error("📡 WebSocket connection error", err.message, err.cause);
-                this.status = WebSocketStatus.ERROR;
-                this.notifyStatusChange();
-                this.notifyError(err);
-                reject(err);
-            });
-
-            this.socket.on("connect_timeout", () => {
-                console.error("📡 WebSocket connection timeout");
-                this.status = WebSocketStatus.ERROR;
-                this.notifyStatusChange();
-                reject(new Error('Connection timeout'));
-            });
-
-            this.socket.on("error", (error) => {
-                console.error("📡 WebSocket error", error);
-                this.status = WebSocketStatus.ERROR;
-                this.notifyStatusChange();
-                this.notifyError(error);
-            });
-
             this.setupEventListeners();
-            console.log("📡 WebSocket connection initialized");
         });
+        return this.connectPromise;
     }
 
     /**
@@ -147,6 +135,8 @@ class WebSocketClient {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
         }
+        this.connectPromise = null;
+        this.pendingConnect = null;
 
         if (this.socket) {
             this.socket.disconnect();
@@ -336,18 +326,23 @@ class WebSocketClient {
     }
 
     /**
-     * Setup socket event listeners
+     * Setup socket event listeners. Registered exactly once per socket —
+     * this is the ONLY place that schedules reconnection attempts, so a
+     * failing connect() can never double-schedule retries.
      */
     private setupEventListeners(): void {
         if (!this.socket) return;
 
         this.socket.on("connect", () => {
+            console.log("📡 WebSocket connected successfully");
             this.status = WebSocketStatus.CONNECTED;
             this.reconnectAttempts = 0;
+            // Settle the single-flight connect() promise first so concurrent
+            // callers unblock, then notify listeners and resubscribe.
+            this.pendingConnect?.resolve(this.socket!);
+            this.pendingConnect = null;
+            this.connectPromise = null;
             this.notifyStatusChange();
-            console.log("📡 WebSocket connected successfully");
-
-            // Re-subscribe to previously subscribed symbols
             this.resubscribe();
         });
 
@@ -371,18 +366,22 @@ class WebSocketClient {
         this.socket.on("connect_error", (error) => {
             console.error("📡 WebSocket connection error", error);
             this.status = WebSocketStatus.ERROR;
+            // Settle the single-flight promise; a retry is scheduled by
+            // attemptReconnection() below (exactly once for this failure).
+            this.pendingConnect?.reject(error instanceof Error ? error : new Error(String(error)));
+            this.pendingConnect = null;
+            this.connectPromise = null;
             this.notifyStatusChange();
             this.notifyError(error);
-
-            // Attempt reconnection after delay
-            setTimeout(() => {
-                this.attemptReconnection();
-            }, this.reconnectDelay);
+            this.attemptReconnection();
         });
 
         this.socket.on("connect_timeout", () => {
             console.error("📡 WebSocket connection timeout");
             this.status = WebSocketStatus.ERROR;
+            this.pendingConnect?.reject(new Error("Connection timeout"));
+            this.pendingConnect = null;
+            this.connectPromise = null;
             this.notifyStatusChange();
             this.attemptReconnection();
         });
@@ -476,26 +475,38 @@ class WebSocketClient {
     }
 
     /**
-     * Attempt to reconnect to WebSocket server
+     * Attempt to reconnect to WebSocket server.
+     * Fast retries with exponential backoff for the first attempts, then a
+     * slow periodic cadence forever - the client never permanently gives up
+     * (the backend may come back hours later; the tab may sit in background).
      */
     private attemptReconnection(): void {
-        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            this.status = WebSocketStatus.DISCONNECTED;
-            this.notifyStatusChange();
-            console.error("📡 WebSocket reconnection attempts exhausted");
+        // Guard against double-scheduling (e.g. disconnect + connect_error
+        // firing in quick succession for the same socket failure).
+        if (this.reconnectTimer) {
             return;
         }
 
-        this.status = WebSocketStatus.RECONNECTING;
         this.reconnectAttempts++;
+        this.status = WebSocketStatus.RECONNECTING;
         this.notifyStatusChange();
 
-        const delay = this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1);
-        console.log(`📡 Attempting reconnection #${this.reconnectAttempts} in ${Math.round(delay / 1000)}s`);
+        const fast = this.reconnectAttempts <= this.maxReconnectAttempts;
+        const delay = fast
+            ? this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1)
+            : this.slowReconnectDelay;
+
+        if (fast) {
+            console.log(`📡 Attempting reconnection #${this.reconnectAttempts} in ${Math.round(delay / 1000)}s`);
+        } else {
+            console.log(`📡 Reconnection attempts exhausted - retrying every ${Math.round(delay / 1000)}s`);
+        }
 
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
-            this.connect();
+            this.connect().catch(() => {
+                // connect_error already scheduled the next attempt.
+            });
         }, delay);
     }
 
