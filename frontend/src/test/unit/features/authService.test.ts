@@ -1,6 +1,6 @@
 /** @format */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, Mock } from "vitest";
 import { authService } from "../../../features/auth";
 import { authApi } from "../../../infrastructure/api/auth";
 
@@ -30,7 +30,7 @@ describe("AuthService", () => {
                 data: { user: { id: "1", email, userLevel: "VERIFIED" } },
             };
 
-            (authApi.login as vi.Mock).mockResolvedValue(mockResponse);
+            (authApi.login as Mock).mockResolvedValue(mockResponse);
 
             const result = await authService.login(email, password);
 
@@ -43,7 +43,7 @@ describe("AuthService", () => {
             const password = "password123";
             const errorMessage = "Invalid credentials";
 
-            (authApi.login as vi.Mock).mockRejectedValue(new Error(errorMessage));
+            (authApi.login as Mock).mockRejectedValue(new Error(errorMessage));
 
             await expect(authService.login(email, password)).rejects.toThrow(errorMessage);
         });
@@ -58,7 +58,7 @@ describe("AuthService", () => {
                 data: { user: { id: "1", email, userLevel: "BASIC" } },
             };
 
-            (authApi.register as vi.Mock).mockResolvedValue(mockResponse);
+            (authApi.register as Mock).mockResolvedValue(mockResponse);
 
             const result = await authService.register(email, password);
 
@@ -71,7 +71,7 @@ describe("AuthService", () => {
             const password = "password123";
             const errorMessage = "Email already exists";
 
-            (authApi.register as vi.Mock).mockRejectedValue(new Error(errorMessage));
+            (authApi.register as Mock).mockRejectedValue(new Error(errorMessage));
 
             await expect(authService.register(email, password)).rejects.toThrow(errorMessage);
         });
@@ -86,7 +86,7 @@ describe("AuthService", () => {
                     kodiakStatus: { accountId: "test-account-123", verified: true },
                 },
             };
-            (authApi.getProfile as vi.Mock).mockResolvedValue(mockResponse);
+            (authApi.getProfile as Mock).mockResolvedValue(mockResponse);
 
             const result = await authService.getProfile();
 
@@ -96,7 +96,7 @@ describe("AuthService", () => {
 
         it("should handle getProfile errors", async () => {
             const errorMessage = "Failed to get profile";
-            (authApi.getProfile as vi.Mock).mockRejectedValue(new Error(errorMessage));
+            (authApi.getProfile as Mock).mockRejectedValue(new Error(errorMessage));
 
             await expect(authService.getProfile()).rejects.toThrow(errorMessage);
         });
@@ -109,7 +109,7 @@ describe("AuthService", () => {
                 data: { isQualified: true, requirements: [], progress: 100 },
             };
 
-            (authApi.checkQualification as vi.Mock).mockResolvedValue(mockResponse);
+            (authApi.checkQualification as Mock).mockResolvedValue(mockResponse);
 
             const result = await authService.checkQualification();
 
@@ -119,7 +119,7 @@ describe("AuthService", () => {
 
         it("should handle checkQualification errors", async () => {
             const errorMessage = "Failed to check qualification";
-            (authApi.checkQualification as vi.Mock).mockRejectedValue(new Error(errorMessage));
+            (authApi.checkQualification as Mock).mockRejectedValue(new Error(errorMessage));
 
             await expect(authService.checkQualification()).rejects.toThrow(errorMessage);
         });
@@ -132,7 +132,7 @@ describe("AuthService", () => {
                 data: { requirements: ["email_verified", "profile_completed"] },
             };
 
-            (authApi.getQualificationConfig as vi.Mock).mockResolvedValue(mockResponse);
+            (authApi.getQualificationConfig as Mock).mockResolvedValue(mockResponse);
 
             const result = await authService.getQualificationConfig();
 
@@ -142,7 +142,7 @@ describe("AuthService", () => {
 
         it("should handle getQualificationConfig errors", async () => {
             const errorMessage = "Failed to get qualification config";
-            (authApi.getQualificationConfig as vi.Mock).mockRejectedValue(new Error(errorMessage));
+            (authApi.getQualificationConfig as Mock).mockRejectedValue(new Error(errorMessage));
 
             await expect(authService.getQualificationConfig()).rejects.toThrow(errorMessage);
         });

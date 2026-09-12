@@ -10,16 +10,18 @@
 
 ## Overview
 
-Trade Bot is a **production-ready, full-stack automated trading platform** for perpetual futures on Berachain. It enables users to deploy algorithmic trading strategies with a modular architecture featuring a React 19 frontend, Node.js 25 Express backend, and independent trading engine.
+Trade Bot is a **full-stack automated trading platform** for perpetual futures on Berachain. It uses a distributed architecture with a React frontend, Node.js Express backend, and an independent trading engine coordinated via Redis Streams.
 
 | Component | Technology | Status | Documentation |
 |-----------|-----------|--------|---------------|
 | **Network** | Berachain Mainnet (80094) | ✅ Live | - |
 | **Exchange** | Kodiak (Orderly) | ✅ Integrated | - |
-| **Frontend** | React 19 + Vite + Tailwind CSS | ✅ Complete | [📖 Frontend Docs](frontend/README.md) |
-| **Backend** | Express.js + PostgreSQL + Redis | ✅ Complete | [📖 Backend Docs](backend/README.md) |
-| **Trading Engine** | TypeScript (Node.js) | ✅ Operational | [📖 Engine Docs](engine/kodiak/README.md) |
-| **Deployment** | Bare Metal Server | ✅ Ready | - |
+| **Frontend** | React 19 + Vite + Tailwind CSS | ✅ Functional | [📖 Frontend Docs](frontend/README.md) |
+| **Backend** | Express.js + PostgreSQL + Redis | ✅ Functional | [📖 Backend Docs](backend/README.md) |
+| **Trading Engine** | TypeScript (Node.js) | ⚠️ In Development | [📖 Engine Docs](engine/kodiak/README.md) |
+| **Shared Contracts** | TypeScript types | ✅ Functional | - |
+
+> **Maturity Assessment**: The architecture has crossed a threshold from a simple monolith to a distributed system with proper backend-engine coordination. The Backend ↔ Engine protocol (Redis Streams, explicit state transitions, ACKs, correlation IDs, engine epochs, heartbeats) is the strongest architectural area. However, several critical correctness and operational issues remain before this can be considered production-grade. See [Known Issues & Priorities](#known-issues--priorities) below.
 
 ---
 
@@ -64,202 +66,115 @@ npm start              # Start production server
 
 ## Architecture
 
-### 🏗️ Enterprise Domain-Driven Architecture
+### Distributed System Design
 
-Trade Bot implements a **production-grade domain-driven design** with clean architecture principles, featuring **6 architectural layers** and **5 core business domains**.
+The platform uses a distributed architecture where the Backend and Engine are independent processes coordinated via Redis Streams:
 
 ```
-┌────────────────────────────────────────────────────┐
-│              Bare Metal Server                     │
-├────────────────────────────────────────────────────┤
-│                                                    │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────┐  │
-│  │  Frontend    │  │   Backend    │  │  Engine  │  │
-│  │  React 19    │  │  Express.js  │  │ Trading  │  │
-│  │  + Vite      │  │  Node.js 25  │  │  Bot     │  │
-│  └──────────────┘  └──────────────┘  └──────────┘  │
-│                                                    │
-├────────────────────────────────────────────────────┤
-│         🏗️ DOMAIN-DRIVEN BACKEND ARCHITECTURE      │
-├────────────────────────────────────────────────────┤
-│                                                    │
-│  ┌─────────────────────────────────────────────┐   │
-│  │          🔄 INTERFACES LAYER                │   │
-│  │  HTTP Routes • WebSocket • Middleware       │   │
-│  └─────────────────────────────────────────────┘   │
-│                                                    │
-│  ┌─────────────────────────────────────────────┐   │
-│  │          ⚙️ CORE BUSINESS DOMAINS           │   │
-│  │                                             │   │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐        │   │
-│  │  │  Auth   │ │ Trading │ │ Wallet  │        │   │
-│  │  │ Domain  │ │ Domain  │ │ Domain  │        │   │
-│  │  └─────────┘ └─────────┘ └─────────┘        │   │
-│  │                                             │   │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐        │   │
-│  │  │  User   │ │Logging  │ │Notifications│    │   │
-│  │  │ Domain  │ │ Domain  │ │  Domain   │      │   │
-│  │  └─────────┘ └─────────┘ └─────────┘        │   │
-│  └─────────────────────────────────────────────┘   │
-│                                                    │
-│  ┌─────────────────────────────────────────────┐   │
-│  │        🏗️ INFRASTRUCTURE LAYER              │   │
-│  │  Cache • Security • External • Messaging     │   │
-│  └─────────────────────────────────────────────┘   │
-│                                                    │
-│  ┌─────────────────────────────────────────────┐   │
-│  │         📚 SHARED UTILITIES LAYER            │   │
-│  │  Types • Utils • Constants • Validation      │   │
-│  └─────────────────────────────────────────────┘   │
-│                                                    │
-│  ┌─────────────────────────────────────────────┐   │
-│  │          ⚡ WORKERS LAYER                     │   │
-│  │  Background Jobs • CPU-Intensive Tasks       │   │
-│  └─────────────────────────────────────────────┘   │
-│                                                    │
-├────────────────────────────────────────────────────┤
-│                ┌──────────────────────┐            │
-│                │  PostgreSQL + Redis  │            │
-│                └──────────────────────┘            │
-│                                                    │
-└────────────────────────────────────────────────────┘
-                      │
-                      ▼
-            ┌──────────────────────┐
-            │ Kodiak/Orderly API   │
-            │ (Berachain Mainnet)  │
-            └──────────────────────┘
+                    ┌───────────────┐
+                    │   Frontend    │
+                    │ React + Vite  │
+                    └───────┬───────┘
+                            │ HTTP / Socket.IO
+                            ▼
+                    ┌───────────────┐
+                    │    Backend    │
+                    │ Express       │
+                    │ PostgreSQL    │
+                    │ Redis         │
+                    └───────┬───────┘
+                            │
+                   Redis Streams
+                 command/event bus
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │    Engine     │
+                    │ BotManager    │
+                    │ Strategy      │
+                    │ Orderly/Kodiak│
+                    └───────────────┘
 ```
 
-### 🏛️ Clean Architecture Layers
+### Backend ↔ Engine Protocol
 
-| Layer | Responsibility | Technologies | Status |
-|-------|----------------|--------------|--------|
-| **🔄 Interfaces** | HTTP/WebSocket APIs, middleware | Express.js, Socket.IO | ✅ Production |
-| **⚙️ Core** | Business logic, domain models | TypeScript classes | ✅ Enterprise |
-| **🏗️ Infrastructure** | Technical capabilities, external APIs | Redis, PostgreSQL, Kodiak | ✅ Production |
-| **📚 Shared** | Common utilities, types, constants | Pure functions | ✅ Complete |
-| **⚡ Workers** | Background processing, CPU tasks | Worker threads | ✅ Operational |
+The control plane between Backend and Engine uses Redis Streams with consumer groups:
 
-### 🎯 Core Business Domains
+- **Commands** (Backend → Engine): `tradebot:engine:commands` stream
+- **Events** (Engine → Backend): `tradebot:engine:events` stream
 
-| Domain | Purpose | Key Services | Status |
-|--------|---------|--------------|--------|
-| **🔐 Authentication** | User identity, JWT tokens, security | Auth service, Role management | ✅ Production |
-| **📊 Trading** | Bot management, position tracking | Engine manager, Bot status, Performance | ✅ Operational |
-| **💰 Wallet** | Balance management, qualifications | Balance service, Wallet validation | ✅ Production |
-| **👤 User** | Profile management, Kodiak integration | User profiles, Kodiak credentials | ✅ Production |
-| **📝 Logging** | Structured logging, context tracking | Context-aware logger, Winston | ✅ Enterprise |
-| **🚨 Notifications** | Error alerts, system notifications | Discord webhooks, Email (future) | ✅ Operational |
+Both sides implement:
+- **At-least-once delivery** with manual ACK after processing
+- **Pending-message recovery** via `XAUTOCLAIM` for crashed consumers
+- **Deduplication** using durable Redis markers (24h TTL) + in-memory cache
+- **Correlation IDs** to trace commands through their lifecycle
+- **Engine identity + epoch** to reject stale events from superseded processes
+- **Heartbeat monitoring** for engine liveness detection
+- **Poison-message detection** for repeatedly redelivered messages
 
-### Monorepo Packages
+### Bot Lifecycle State Machine
 
-| Package | Purpose | Status |
-|---------|---------|--------|
-| `frontend/` | React 19 UI dashboard with real-time charts | ✅ Production |
-| `backend/` | Express.js REST/WebSocket API server | ✅ Production |
-| `engine/kodiak/` | Independent trading bot engine | ✅ Production |
-| `shared/` | Shared TypeScript type definitions | ✅ Complete |
-| `database/` | PostgreSQL migrations & schema | ✅ Complete |
+The backend separates desired state from actual state:
 
----
+```
+desired_state: what the user/system wants (RUNNING | STOPPED)
+actual_state:  what the engine reports (STOPPED | STARTING | RUNNING | STOPPING | ERROR | UNKNOWN)
+```
 
-## Technology Stack
+Valid transitions:
 
-### Frontend
-- **React 19.2** - UI framework with hooks
-- **Vite** - Fast build tool with HMR
-- **TypeScript 5** - Type-safe development
-- **Tailwind CSS 4** - Utility-first styling
-- **React Router 7** - Client-side routing
-- **Zustand** - Lightweight state management
-- **Recharts + Lightweight Charts** - Market data visualization
-- **Socket.IO** - Real-time bot status updates
+```
+STOPPED  ──START──▶ STARTING ──confirm──▶ RUNNING ──STOP──▶ STOPPING ──confirm──▶ STOPPED
+STARTING ──failure──▶ ERROR | STOPPED
+RUNNING  ──failure──▶ ERROR | UNKNOWN
+STOPPING ──failure──▶ ERROR
+UNKNOWN  ──reconnect──▶ RUNNING | STOPPED | ERROR
+ERROR    ──retry──▶ STARTING | STOPPED
+```
 
-### Backend
-- **Node.js 25** - JavaScript runtime
-- **Express.js 5** - REST API framework
-- **TypeScript 5** - Type-safe backend code
-- **PostgreSQL 14+** - Primary data store
-- **Redis 5** - Caching & rate limiting
-- **JWT + bcrypt** - Authentication & security
-- **Helmet** - HTTP security headers
-- **Winston** - Structured logging with rotation
+Every transition is validated centrally using compare-and-set semantics to prevent concurrent state corruption.
 
-### Trading Engine
-- **TypeScript 5** - Type-safe trading logic
-- **node-cron** - Periodic strategy execution
-- **PostgreSQL** - Trade persistence
-- **WebSocket (ws)** - Kodiak market feeds
-- **Winston** - Trade execution logging
-
----
-
-## 📖 Detailed Documentation
-
-- **[🎨 Frontend Documentation](frontend/README.md)** - React UI setup, components, and development
-- **[⚙️ Backend Documentation](backend/README.md)** - API reference, database setup, and server configuration
-- **[🤖 Trading Engine Documentation](engine/kodiak/README.md)** - Strategy implementation, bot management, and configuration
-- **[🗄️ Database Setup](DATABASE_SETUP.md)** - PostgreSQL schema and migrations
-- **[🚀 Deployment Guide](docs/DEPLOYMENT_SETUP.md)** - Production deployment instructions
-
----
-
-## Development
-
-### Enterprise Domain-Driven Project Structure
+### Project Structure
 
 ```
 trade-bot/
-├── frontend/                    # React 19 UI application
-│   ├── README.md               # Frontend documentation
-│   ├── src/pages/              # Route components
-│   ├── src/components/         # Reusable UI components
-│   └── src/lib/api.ts          # API client
-│
-├── backend/                     # Express.js API server (Domain-Driven)
-│   ├── README.md               # Backend architecture documentation
+├── frontend/                  # React SPA dashboard
 │   └── src/
-│       ├── index.ts            # Application entry point
-│       ├── config/             # Configuration files
-│       ├── interfaces/         # 🔄 HTTP/WebSocket APIs & middleware
-│       │   ├── http/          # REST API routes (12+ files)
-│       │   ├── middleware/    # Request processing middleware
-│       │   └── websocket/     # Real-time WebSocket handlers
-│       ├── core/              # ⚙️ Business domain logic
-│       │   ├── auth/          # 🔐 Authentication & authorization
-│       │   ├── user/          # 👤 User management & profiles
-│       │   ├── trading/       # 📊 Bot trading & position tracking
-│       │   ├── wallet/        # 💰 Balance & wallet operations
-│       │   ├── logging/       # 📝 Structured logging & context
-│       │   └── notifications/ # 🚨 Error notifications & alerts
-│       ├── infrastructure/    # 🏗️ Technical capabilities
-│       │   ├── cache/         # Redis caching & invalidation
-│       │   ├── security/      # Encryption, rate limiting, keys
-│       │   ├── external/      # Kodiak API integration
-│       │   ├── messaging/     # WebSocket & market streaming
-│       │   ├── async/         # Background job management
-│       │   └── retry.service.ts # Cross-cutting retry logic
-│       ├── shared/            # 📚 Common utilities & types
-│       │   ├── types/         # TypeScript interfaces
-│       │   ├── utils/         # Pure utility functions
-│       │   ├── constants/     # Application constants
-│       │   └── validation/    # Schema validation
-│       ├── workers/           # ⚡ Background processing
-│       │   ├── password-worker.ts    # CPU-intensive hashing
-│       │   ├── bot-reconciliation.ts # Background reconciliation
-│       │   └── index.ts              # Worker exports
-│       └── database/          # PostgreSQL connection & migrations
-│
-├── engine/kodiak/             # Independent trading bot engine
-│   ├── README.md             # Engine documentation
-│   ├── src/strategies/       # Strategy implementations
-│   └── src/services/         # Orderly API client
-│
-├── shared/                    # Cross-package TypeScript types
-├── database/                  # PostgreSQL migrations & schema
-├── docs/                     # Architecture & deployment docs
-└── scripts/                  # Build & maintenance scripts
+│       ├── features/          # Domain features (auth, bots, strategies, dashboard, analytics)
+│       ├── infrastructure/    # API client, WebSocket, caching
+│       └── shared/            # UI components, hooks, utilities
+├── backend/                   # Express API server
+│   └── src/
+│       ├── core/              # Business domains
+│       │   ├── auth/          # Authentication & authorization
+│       │   ├── bots/          # Bot lifecycle management + engine protocol
+│       │   ├── logging/       # Structured logging with correlation IDs
+│       │   ├── market/        # Market data services
+│       │   ├── strategies/    # Strategy management + engine process supervision
+│       │   ├── user/          # User profiles & Kodiak credentials
+│       │   └── wallet/        # Balance management
+│       ├── interfaces/        # HTTP routes, middleware, WebSocket
+│       ├── infrastructure/    # Redis, PostgreSQL, security, external APIs
+│       └── workers/           # Background processing
+├── engine/kodiak/             # Independent trading engine
+│   └── src/
+│       ├── index.ts           # Entry point + BotManager (embedded)
+│       ├── infrastructure/
+│       │   └── redis/         # Redis Streams client
+│       ├── strategies/        # Grid trading strategy
+│       ├── services/          # Orderly API client
+│       └── types/             # Strategy interfaces
+├── shared/                    # Cross-package TypeScript contracts
+│   └── src/
+│       ├── protocol/          # Bot lifecycle protocol types
+│       │   ├── bot-state.ts   # State machine & transitions
+│       │   ├── bot-command.ts # Command types & envelope
+│       │   ├── bot-event.ts   # Event types
+│       │   └── engine-lifecycle.ts # Engine registration & heartbeat
+│       └── types/             # Domain models, infrastructure contracts
+├── database/                  # PostgreSQL migrations
+├── docs/                      # Architecture & deployment docs
+└── scripts/                   # Build & maintenance scripts
 ```
 
 ### Scripts
@@ -276,20 +191,106 @@ npm run build           # Build all packages
 
 # Testing
 npm run test            # Run full test suite
+
+# Linting & Formatting
+npm run lint            # Lint all packages
+npm run lint:fix        # Fix lint issues
+npm run format          # Format all packages
 ```
 
 ---
 
 ## Security
 
-- ✅ **A+ SSL Rating** (SSL Labs)
-- ✅ **JWT Authentication** with encrypted storage
+- ✅ **JWT Authentication** with refresh token rotation
+- ✅ **CSRF Protection** for browser routes
 - ✅ **Rate Limiting** (100 req/15s per IP)
 - ✅ **CORS Protection** with origin validation
 - ✅ **Helmet Security Headers**
-- ✅ **SQL Injection Protection**
-- ✅ **Password Hashing** (bcrypt 12 rounds)
-- ✅ **HSTS Enabled** with preload support
+- ✅ **Password Hashing** (bcrypt)
+- ✅ **Encrypted credential storage** for Kodiak API keys
+- ✅ **API key authentication** for engine-to-backend communication
+
+---
+
+## Known Issues & Priorities
+
+Based on architectural review, the following issues are tracked:
+
+### ✅ Recently Fixed
+
+| Issue | Fix | Files Changed |
+|-------|-----|---------------|
+| **Overlapping Strategy Ticks** | Replaced `setInterval()` with sequential tick loop using self-replacing `setTimeout`. Added single-flight guard (`tickRunning` flag) to skip interval if previous tick still executing. | `engine/kodiak/src/index.ts` |
+| **Trading Operation Idempotency** | Added deterministic `clientOrderId` generation using format `{botId}:{levelIndex}:{side}`. Same bot/level/side always produces the same ID, allowing exchange to detect duplicates on command redelivery. | `engine/kodiak/src/strategies/grid.ts` |
+
+### 🔴 Critical (P0)
+
+| Issue | Description |
+|-------|-------------|
+| **Reconciliation Worker Disabled** | The bot reconciliation worker is temporarily disabled for production stability (Kodiak rate limiting concerns). This creates a reliability gap where desired/actual state drift may not be repaired. |
+
+### 🟠 High (P1)
+
+| Issue | Description |
+|-------|-------------|
+| **Redis Failure Semantics** | ✅ Fixed: Bot start/stop endpoints now return 503 when Redis is unavailable. Health endpoint includes `controlPlane` status. |
+| **Engine Monolithic Design** | The engine's `BotManager` is embedded in `index.ts`, handling command consumption, heartbeats, bot lifecycle, credential retrieval, and strategy scheduling in a single file. |
+| **Command Timeout Semantics** | Timeout-to-ERROR/UNKNOWN transitions need review for completeness and correctness. |
+
+### 🟡 Medium (P2)
+
+| Issue | Description |
+|-------|-------------|
+| **Legacy Bot Status Models** | The shared package contains both old (`BotStatus.status: RUNNING | STOPPED | ERROR`) and new lifecycle state models. These should be consolidated. |
+| **Shared Package Scope** | `@trade-bot/shared` has become a god package containing protocol types, domain models, API contracts, error classes, and logging types. Should be split. |
+| **Dead Code Cleanup** | Backend contains commented-out transitional code and unused imports that should be removed. |
+
+---
+
+## Roadmap
+
+### Current Focus (Addressing Review Findings)
+- [x] Fix overlapping strategy tick execution (single-flight scheduler)
+- [x] Implement business-operation idempotency for trading orders
+- [ ] Enable and harden the reconciliation worker
+- [x] Define explicit control-plane behavior when Redis is unavailable
+- [ ] Refactor engine into modular components (command handler, lifecycle coordinator, protocol)
+
+### Near-Term
+- [ ] Consolidate old/new bot status models in shared package
+- [ ] Complete command timeout → ERROR/UNKNOWN transition semantics
+- [ ] Expand test coverage
+
+### Medium-Term
+- [ ] Split shared package into focused contracts/modules
+- [ ] Additional trading strategies (Trend Following, Arbitrage)
+- [ ] Backtesting framework
+- [ ] Analytics dashboard
+
+### Long-Term
+- [ ] Horizontal scaling support
+- [ ] Advanced risk management features
+
+---
+
+## Architecture Ratings
+
+Per recent architectural review:
+
+| Area | Rating |
+|------|--------|
+| Monorepo structure | 8/10 |
+| Backend architecture | 7.5/10 |
+| Frontend architecture | 7.5/10 |
+| Backend ↔ Engine protocol | 8/10 |
+| Lifecycle model | 8.5/10 |
+| Engine reliability | 7/10 |
+| Trading execution | 7/10 |
+| Failure recovery | 6.5/10 |
+| Operational maturity | 6/10 |
+| Documentation | 4/10 |
+| **Overall** | **~7/10** |
 
 ---
 
@@ -310,26 +311,6 @@ npm run test            # Run full test suite
 
 ---
 
-## Roadmap
-
-### Q1 2026
-- [ ] Trend Following strategy
-- [ ] Daily loss halt circuit breaker
-- [ ] Expand test coverage to >80%
-- [ ] Email verification enforcement
-
-### Q2 2026
-- [ ] Arbitrage strategy
-- [ ] Backtesting framework
-- [ ] Analytics dashboard
-
-### Q3 2026
-- [ ] Horizontal scaling
-- [ ] Advanced risk management
-- [ ] Mobile app support
-
----
-
 ## License
 
 Apache License 2.0 - See [LICENSE](LICENSE) for details
@@ -344,4 +325,4 @@ Apache License 2.0 - See [LICENSE](LICENSE) for details
 
 ---
 
-**Status**: Production Ready | **Version**: 1.0.0 | **Updated**: January 17, 2026
+**Status**: In Development | **Version**: 1.0.0 | **Updated**: September 12, 2026

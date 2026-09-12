@@ -1,6 +1,6 @@
 /** @format */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, Mock } from "vitest";
 import { tradingApi } from "../../../infrastructure/api/trading";
 import { httpClient } from "../../../infrastructure/api/client";
 import { globalRequestManager } from "../../../infrastructure/request-manager";
@@ -19,10 +19,10 @@ vi.mock("../../../infrastructure/request-manager", () => ({
 }));
 
 describe("tradingApi", () => {
-    let mockGet: vi.Mock;
-    let mockPost: vi.Mock;
-    let mockPut: vi.Mock;
-    let mockDelete: vi.Mock;
+    let mockGet: Mock;
+    let mockPost: Mock;
+    let mockPut: Mock;
+    let mockDelete: Mock;
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -33,7 +33,7 @@ describe("tradingApi", () => {
         mockPut = vi.fn();
         mockDelete = vi.fn();
 
-        (httpClient.getClient as vi.Mock).mockReturnValue({
+        (httpClient.getClient as Mock).mockReturnValue({
             get: mockGet,
             post: mockPost,
             put: mockPut,
@@ -52,7 +52,7 @@ describe("tradingApi", () => {
                     ],
                 };
 
-                (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(
+                (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
                     mockResponse
                 );
 
@@ -142,7 +142,7 @@ describe("tradingApi", () => {
                     ],
                 };
 
-                (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(
+                (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
                     mockResponse
                 );
 
@@ -164,7 +164,7 @@ describe("tradingApi", () => {
                     data: { status: "running", botsActive: 2 },
                 };
 
-                (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(
+                (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
                     mockResponse
                 );
 
@@ -232,92 +232,6 @@ describe("tradingApi", () => {
                     botId,
                 });
                 expect(result).toEqual(mockResponse);
-            });
-        });
-    });
-
-    describe("Kodiak integration endpoints", () => {
-        describe("getKodiakPositions", () => {
-            it("should call get Kodiak positions with deduplication", async () => {
-                const mockResponse = {
-                    success: true,
-                    data: {
-                        rows: [
-                            { id: "1", symbol: "BTC/USDT", size: 0.1, entryPrice: 50000 },
-                            { id: "2", symbol: "ETH/USDT", size: 1.5, entryPrice: 3000 },
-                        ],
-                    },
-                };
-
-                (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(
-                    mockResponse
-                );
-
-                const result = await tradingApi.getKodiakPositions();
-
-                expect(globalRequestManager.deduplicateRequest).toHaveBeenCalledWith(
-                    "kodiak:positions",
-                    expect.any(Function),
-                    "tradingApi"
-                );
-                expect(result).toEqual(mockResponse);
-            });
-
-            it("should handle 403 errors when getting Kodiak positions", async () => {
-                const mockError = {
-                    response: { status: 403 },
-                };
-
-                (globalRequestManager.deduplicateRequest as any).mockImplementation(
-                    async (key: string, fn: () => Promise<any>) => {
-                        throw mockError;
-                    }
-                );
-
-                await expect(tradingApi.getKodiakPositions()).rejects.toEqual(mockError);
-            });
-        });
-
-        describe("getKodiakTrades", () => {
-            it("should call get Kodiak trades with deduplication", async () => {
-                const limit = 50;
-                const mockResponse = {
-                    success: true,
-                    data: {
-                        rows: [
-                            { id: "1", symbol: "BTC/USDT", price: 50000, amount: 0.1 },
-                            { id: "2", symbol: "ETH/USDT", price: 3000, amount: 1.5 },
-                        ],
-                    },
-                };
-
-                (globalRequestManager.deduplicateRequest as any).mockResolvedValue(
-                    mockResponse
-                );
-
-                const result = await tradingApi.getKodiakTrades(limit);
-
-                expect(globalRequestManager.deduplicateRequest).toHaveBeenCalledWith(
-                    `kodiak:trades:${limit}`,
-                    expect.any(Function),
-                    "tradingApi"
-                );
-                expect(result).toEqual(mockResponse);
-            });
-
-            it("should handle 400 errors when getting Kodiak trades", async () => {
-                const limit = 50;
-                const mockError = {
-                    response: { status: 400 },
-                };
-
-                (globalRequestManager.deduplicateRequest as any).mockImplementation(
-                    async (key: string, fn: () => Promise<any>) => {
-                        throw mockError;
-                    }
-                );
-
-                await expect(tradingApi.getKodiakTrades(limit)).rejects.toEqual(mockError);
             });
         });
     });

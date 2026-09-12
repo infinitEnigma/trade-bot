@@ -1,6 +1,6 @@
 /** @format */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, Mock } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useAuth, updateAuthUser } from "../../../features/auth/hooks/useAuth";
 import { authService } from "../../../features/auth/services/authService";
@@ -10,7 +10,7 @@ import { UserLevel } from "../../../shared/types";
 vi.mock("../../../features/auth/services/authService");
 
 // Mock checkAdminQualification to return not qualified by default
-(authService.checkAdminQualification as vi.Mock).mockResolvedValue({
+(authService.checkAdminQualification as Mock).mockResolvedValue({
     success: true,
     data: { isQualified: false }
 });
@@ -19,7 +19,7 @@ describe("useAuth hook", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         // Reset the checkAdminQualification mock
-        (authService.checkAdminQualification as vi.Mock).mockResolvedValue({
+        (authService.checkAdminQualification as Mock).mockResolvedValue({
             success: true,
             data: { isQualified: false }
         });
@@ -46,12 +46,12 @@ describe("useAuth hook", () => {
                 updatedAt: new Date(),
             };
 
-            (authService.login as vi.Mock).mockResolvedValue({
+            (authService.login as Mock).mockResolvedValue({
                 success: true,
                 data: { user: mockUser },
             });
 
-            (authService.getProfile as vi.Mock).mockResolvedValue({
+            (authService.getProfile as Mock).mockResolvedValue({
                 success: true,
                 data: {
                     user: mockUser,
@@ -80,7 +80,7 @@ describe("useAuth hook", () => {
 
         it("should handle login failure", async () => {
             const errorMessage = "Invalid credentials";
-            (authService.login as vi.Mock).mockRejectedValue(
+            (authService.login as Mock).mockRejectedValue(
                 new Error(errorMessage)
             );
 
@@ -113,7 +113,7 @@ describe("useAuth hook", () => {
                 updatedAt: new Date(),
             };
 
-            (authService.register as vi.Mock).mockResolvedValue({
+            (authService.register as Mock).mockResolvedValue({
                 success: true,
                 data: { user: mockUser },
             });
@@ -148,12 +148,12 @@ describe("useAuth hook", () => {
                 updatedAt: new Date(),
             };
 
-            (authService.login as vi.Mock).mockResolvedValue({
+            (authService.login as Mock).mockResolvedValue({
                 success: true,
                 data: { user: mockUser },
             });
 
-            (authService.getProfile as vi.Mock).mockResolvedValue({
+            (authService.getProfile as Mock).mockResolvedValue({
                 success: true,
                 data: {
                     user: mockUser,
@@ -190,12 +190,17 @@ describe("useAuth hook", () => {
                 roles: [],
             };
 
-            (authService.getProfile as vi.Mock).mockResolvedValue({
+            (authService.getProfile as Mock).mockResolvedValue({
                 success: true,
                 data: {
                     user: mockUser,
                     kodiakStatus: { accountId: "test-account-123", verified: true },
                 },
+            });
+
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/dashboard' },
+                writable: true,
             });
 
             const { result } = renderHook(() => useAuth());
@@ -221,12 +226,12 @@ describe("useAuth hook", () => {
                 updatedAt: new Date(),
             };
 
-            (authService.login as vi.Mock).mockResolvedValue({
+            (authService.login as Mock).mockResolvedValue({
                 success: true,
                 data: { user: mockUser },
             });
 
-            (authService.getProfile as vi.Mock).mockResolvedValue({
+            (authService.getProfile as Mock).mockResolvedValue({
                 success: true,
                 data: {
                     user: mockUser,
@@ -270,7 +275,7 @@ describe("useAuth hook", () => {
     describe("register functionality", () => {
         it("should handle registration failure", async () => {
             const errorMessage = "Email already exists";
-            (authService.register as vi.Mock).mockRejectedValue(
+            (authService.register as Mock).mockRejectedValue(
                 new Error(errorMessage)
             );
 
@@ -292,7 +297,7 @@ describe("useAuth hook", () => {
         });
 
         it("should handle registration with successful response but no user data", async () => {
-            (authService.register as vi.Mock).mockResolvedValue({
+            (authService.register as Mock).mockResolvedValue({
                 success: true,
                 data: null,
             });
@@ -327,12 +332,12 @@ describe("useAuth hook", () => {
                 updatedAt: new Date(),
             };
 
-            (authService.login as vi.Mock).mockResolvedValue({
+            (authService.login as Mock).mockResolvedValue({
                 success: true,
                 data: { user: mockUser },
             });
 
-            (authService.getProfile as vi.Mock).mockResolvedValue({
+            (authService.getProfile as Mock).mockResolvedValue({
                 success: true,
                 data: {
                     user: mockUser,
@@ -363,9 +368,14 @@ describe("useAuth hook", () => {
 
     describe("checkAuth functionality", () => {
         it("should handle failed auth check", async () => {
-            (authService.getProfile as vi.Mock).mockResolvedValue({
+            (authService.getProfile as Mock).mockResolvedValue({
                 success: false,
                 error: "Unauthorized",
+            });
+
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/dashboard' },
+                writable: true,
             });
 
             const { result } = renderHook(() => useAuth());
@@ -382,9 +392,14 @@ describe("useAuth hook", () => {
 
         it("should handle checkAuth error", async () => {
             const errorMessage = "Network error";
-            (authService.getProfile as vi.Mock).mockRejectedValue(
+            (authService.getProfile as Mock).mockRejectedValue(
                 new Error(errorMessage)
             );
+
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/dashboard' },
+                writable: true,
+            });
 
             const { result } = renderHook(() => useAuth());
 
@@ -444,12 +459,12 @@ describe("useAuth hook", () => {
                 updatedAt: new Date(),
             };
 
-            (authService.login as vi.Mock).mockResolvedValue({
+            (authService.login as Mock).mockResolvedValue({
                 success: true,
                 data: { user: mockUser },
             });
 
-            (authService.getProfile as vi.Mock).mockResolvedValue({
+            (authService.getProfile as Mock).mockResolvedValue({
                 success: false,
                 error: "Failed to fetch profile",
             });
@@ -471,7 +486,7 @@ describe("useAuth hook", () => {
         });
 
         it("should handle login with invalid response", async () => {
-            (authService.login as vi.Mock).mockResolvedValue({
+            (authService.login as Mock).mockResolvedValue({
                 success: false,
                 error: "Invalid response",
             });
@@ -511,7 +526,7 @@ describe("useAuth hook", () => {
                 writable: true,
             });
 
-            (authService.getProfile as vi.Mock).mockResolvedValue({
+            (authService.getProfile as Mock).mockResolvedValue({
                 success: true,
                 data: {
                     user: mockUser,
@@ -542,12 +557,12 @@ describe("useAuth hook", () => {
                 updatedAt: new Date(),
             };
 
-            (authService.login as vi.Mock).mockResolvedValue({
+            (authService.login as Mock).mockResolvedValue({
                 success: true,
                 data: { user: mockUser },
             });
 
-            (authService.getProfile as vi.Mock).mockResolvedValue({
+            (authService.getProfile as Mock).mockResolvedValue({
                 success: true,
                 data: {
                     user: mockUser,

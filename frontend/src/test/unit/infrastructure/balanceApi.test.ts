@@ -1,6 +1,6 @@
 /** @format */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, Mock } from "vitest";
 import { balanceApi } from "../../../infrastructure/api/balance";
 import { httpClient } from "../../../infrastructure/api/client";
 import { globalRequestManager } from "../../../infrastructure/request-manager";
@@ -19,14 +19,14 @@ vi.mock("../../../infrastructure/request-manager", () => ({
 }));
 
 describe("balanceApi", () => {
-    let mockGet: vi.Mock;
+    let mockGet: Mock;
 
     beforeEach(() => {
         vi.clearAllMocks();
 
         // Create mock methods
         mockGet = vi.fn();
-        (httpClient.getClient as vi.Mock).mockReturnValue({
+        (httpClient.getClient as Mock).mockReturnValue({
             get: mockGet,
             post: vi.fn(),
         });
@@ -39,7 +39,7 @@ describe("balanceApi", () => {
                 data: { balance: 1000, currency: "USD" },
             };
 
-            (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(mockResponse);
+            (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(mockResponse);
 
             const result = await balanceApi.getCurrentBalance();
 
@@ -53,7 +53,7 @@ describe("balanceApi", () => {
 
         it("should handle errors when getting current balance", async () => {
             const errorMessage = "Failed to fetch balance";
-            (globalRequestManager.deduplicateRequest as vi.Mock).mockRejectedValue(new Error(errorMessage));
+            (globalRequestManager.deduplicateRequest as Mock).mockRejectedValue(new Error(errorMessage));
 
             await expect(balanceApi.getCurrentBalance()).rejects.toThrow(errorMessage);
         });
@@ -66,7 +66,7 @@ describe("balanceApi", () => {
                 data: { balance: 1500, currency: "USD" },
             };
 
-            (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(mockResponse);
+            (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(mockResponse);
 
             const result = await balanceApi.refreshBalance();
 
@@ -80,7 +80,7 @@ describe("balanceApi", () => {
 
         it("should handle errors when refreshing balance", async () => {
             const errorMessage = "Refresh failed";
-            (globalRequestManager.deduplicateRequest as vi.Mock).mockRejectedValue(new Error(errorMessage));
+            (globalRequestManager.deduplicateRequest as Mock).mockRejectedValue(new Error(errorMessage));
 
             await expect(balanceApi.refreshBalance()).rejects.toThrow(errorMessage);
         });

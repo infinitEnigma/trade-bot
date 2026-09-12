@@ -34,14 +34,31 @@ router.get("/health/detailed", async (req: Request, res: Response) => {
   try {
     const health = await getHealthService().getSystemHealth();
 
-    const statusCode = health.status === "healthy" ? 200 : 503; // 503 Service Unavailable
+    // Additional control-plane check for Redis Streams availability
+    // This distinguishes "API is running" from "trading control plane is operational"
+    let controlPlaneStatus: "ready" | "not_ready" = "not_ready";
+    try {
+      const redisHealthy = await redisService.isHealthy();
+      controlPlaneStatus = redisHealthy ? "ready" : "not_ready";
+    } catch {
+      controlPlaneStatus = "not_ready";
+    }
+
+    const statusCode = health.status === "healthy" && controlPlaneStatus === "ready" ? 200 : 503;
 
     res.status(statusCode).json({
-      status: health.status,
+      status: controlPlaneStatus === "ready" ? health.status : "degraded",
       timestamp: health.timestamp.toISOString(),
       uptime: Math.floor((Date.now() - START_TIME) / 1000),
       version: process.env.npm_package_version || "1.0.0",
       environment: process.env.NODE_ENV || "development",
+      controlPlane: {
+        status: controlPlaneStatus,
+        redis: controlPlaneStatus === "ready",
+        description: controlPlaneStatus === "ready"
+          ? "Trading control plane is operational"
+          : "Trading control plane is NOT operational - bot commands will be rejected",
+      },
       checks: health.checks,
     });
 

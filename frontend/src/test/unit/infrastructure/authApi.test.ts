@@ -1,6 +1,6 @@
 /** @format */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, Mock } from "vitest";
 import { authApi } from "../../../infrastructure/api";
 import { httpClient } from "../../../infrastructure/api/client";
 
@@ -12,8 +12,8 @@ vi.mock("../../../infrastructure/api/client", () => ({
 }));
 
 describe("authApi", () => {
-    let mockPost: vi.Mock;
-    let mockGet: vi.Mock;
+    let mockPost: Mock;
+    let mockGet: Mock;
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -22,7 +22,7 @@ describe("authApi", () => {
         mockPost = vi.fn();
         mockGet = vi.fn();
 
-        (httpClient.getClient as vi.Mock).mockReturnValue({
+        (httpClient.getClient as Mock).mockReturnValue({
             post: mockPost,
             get: mockGet,
         });

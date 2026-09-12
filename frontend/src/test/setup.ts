@@ -11,7 +11,7 @@ afterEach(() => {
 
 // Global mocks for browser APIs
 global.ResizeObserver = class {
-    constructor(callback: ResizeObserverCallback) { }
+    constructor(_callback: ResizeObserverCallback) { }
     observe() { }
     unobserve() { }
     disconnect() { }
@@ -44,7 +44,7 @@ Object.defineProperty(window, "sessionStorage", {
 
 // Mock IntersectionObserver
 global.IntersectionObserver = class {
-    constructor(callback: IntersectionObserverCallback) { }
+    constructor(_callback: IntersectionObserverCallback) { }
     observe() { }
     unobserve() { }
     disconnect() { }

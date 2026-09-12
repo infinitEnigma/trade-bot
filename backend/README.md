@@ -1,6 +1,6 @@
-# Trade Bot Backend - Enterprise Domain-Driven Architecture
+# Trade Bot Backend
 
-**Production-Grade Express.js API Server with Clean Architecture & Domain-Driven Design**
+**Express.js API Server with Bot Lifecycle Management & Engine Protocol**
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](tsconfig.json)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D25.0.0-brightgreen)](package.json)
@@ -8,548 +8,199 @@
 
 ---
 
-## 🏗️ Architecture Overview
+## Overview
 
-This backend implements **enterprise-grade domain-driven design** with **clean architecture principles**, featuring **6 architectural layers** organized around **5 core business domains**.
+The backend is an Express.js API server that serves the frontend, manages user authentication, and orchestrates bot lifecycle through a Redis Streams protocol with the trading engine.
 
-### 🎯 Key Architectural Principles
+### Key Responsibilities
 
-- **🏛️ Clean Architecture** - Infrastructure, domain, interface, shared, workers layers
-- **🎯 Domain-Driven Design** - Business logic organized by domain boundaries
-- **🔄 Dependency Inversion** - High-level modules don't depend on low-level modules
-- **📦 Single Responsibility** - Each module has one reason to change
-- **🔌 Plugin Architecture** - Easy to extend and maintain
+- **REST API** for frontend communication (auth, users, bots, strategies, wallet)
+- **Bot Lifecycle Management** - desired/actual state machine with PostgreSQL persistence
+- **Engine Protocol** - Redis Streams control plane for engine coordination
+- **WebSocket Server** - real-time updates to frontend (bot state changes, market data)
+- **Credential Management** - encrypted storage of Kodiak API keys
 
 ---
 
-## 🏗️ Architecture Layers
+## Architecture
 
-### 🔄 Interfaces Layer (`src/interfaces/`)
+### Bot Lifecycle Service
 
-**Purpose:** External communication adapters and protocol handlers.
+The `BotLifecycleService` is the sole owner of bot lifecycle state. API routes must not manipulate bot state directly; they call this service and return 202 Accepted.
 
 ```
-interfaces/
-├── http/           # REST API routes (12+ endpoints)
-├── middleware/     # Request processing pipeline
-└── websocket/      # Real-time communication handlers
+BotLifecycleService (orchestrator)
+        │
+        ├── BotLifecycleRepository  - PostgreSQL persistence (CAS transitions, audit trail)
+        ├── BotCommandDispatcher    - command payloads + pending-command tracking
+        ├── BotLifecycleNotifier    - Socket.IO bot.stateChanged bridge
+        └── BotEventProcessor       - engine event handling + supervision sweeps
 ```
 
-**Responsibilities:**
-- HTTP request/response handling
-- WebSocket connection management
-- Request validation and sanitization
-- Response formatting and serialization
-- CORS and security headers
+### Engine Protocol Service
 
-**Key Files:**
-- `http/auth.ts` - Authentication endpoints
-- `http/bot-management.ts` - Trading bot operations
-- `middleware/context.ts` - Request context management
+The `EngineProtocolService` implements the Redis Streams control plane:
 
-### ⚙️ Core Layer (`src/core/`)
+- **Commands** (Backend → Engine): `tradebot:engine:commands` stream
+- **Events** (Engine → Backend): `tradebot:engine:events` stream
+- Consumer groups with manual ACK
+- Pending-message recovery via `XAUTOCLAIM`
+- Durable deduplication (Redis SET NX EX 24h)
+- Poison-message detection
 
-**Purpose:** Business domain logic and application rules.
+### Domain Services
 
 ```
 core/
-├── auth/           # 🔐 Authentication & authorization
-├── user/           # 👤 User management & profiles
-├── trading/        # 📊 Bot trading & position tracking
-├── wallet/         # 💰 Balance & wallet operations
-├── logging/        # 📝 Structured logging & context
-└── notifications/  # 🚨 Error notifications & alerts
+├── auth/          # JWT authentication, role management
+├── bots/          # Bot lifecycle + engine protocol (see above)
+├── logging/       # Structured logging with correlation IDs
+├── market/        # Market data services
+├── strategies/    # Strategy management + engine process supervision
+├── user/          # User profiles, Kodiak credentials
+└── wallet/        # Balance management, qualification checks
 ```
 
-**Domain Responsibilities:**
-
-#### 🔐 Authentication Domain
-- JWT token generation and validation
-- Password hashing and verification
-- User session management
-- Role-based access control
-
-#### 📊 Trading Domain
-- Bot lifecycle management
-- Position tracking and synchronization
-- Performance analytics
-- Risk management rules
-
-#### 💰 Wallet Domain
-- Balance management and caching
-- Wallet qualification checks
-- Transaction history
-- Account limits validation
-
-#### 👤 User Domain
-- Profile management
-- Kodiak credential handling
-- User settings and preferences
-
-#### 📝 Logging Domain
-- Structured logging with context
-- Correlation ID tracking
-- Performance timing
-- Error context preservation
-
-#### 🚨 Notifications Domain
-- Error alerting via Discord webhooks
-- System health monitoring
-- User notification preferences
-
-### 🏗️ Infrastructure Layer (`src/infrastructure/`)
-
-**Purpose:** Technical capabilities and external integrations.
+### Infrastructure
 
 ```
 infrastructure/
-├── cache/          # Redis caching & invalidation
-├── security/       # Encryption, rate limiting, keys
-├── external/       # Kodiak API integration
-├── messaging/      # WebSocket & market streaming
-├── async/          # Background job management
-└── retry.service.ts # Cross-cutting retry logic
+├── cache/         # Redis caching, streams, connection management
+├── external/      # Kodiak API integration
+├── messaging/     # WebSocket, market data streaming
+├── security/      # Encryption, rate limiting, key management
+└── adapters/      # Repository implementations, external service adapters
 ```
-
-**Infrastructure Services:**
-
-#### 🗄️ Cache Infrastructure
-- Redis connection management
-- Cache invalidation strategies
-- Atomic operations with transactions
-
-#### 🔒 Security Infrastructure
-- Credential encryption/decryption
-- Key management and rotation
-- Rate limiting and DDoS protection
-
-#### 🌐 External Infrastructure
-- Kodiak API client with retry logic
-- WebSocket connection management
-- API rate limiting and circuit breakers
-
-#### 📡 Messaging Infrastructure
-- WebSocket server management
-- Market data streaming
-- Real-time event broadcasting
-
-### 📚 Shared Layer (`src/shared/`)
-
-**Purpose:** Common utilities and cross-cutting concerns.
-
-```
-shared/
-├── types/          # TypeScript interfaces & types
-├── utils/          # Pure utility functions
-├── constants/      # Application constants
-└── validation/     # Schema validation & sanitization
-```
-
-**Shared Components:**
-- Context utilities for request tracing
-- Cryptographic signature generation
-- Common data validation schemas
-- Application-wide constants
-
-### ⚡ Workers Layer (`src/workers/`)
-
-**Purpose:** CPU-intensive and background processing tasks.
-
-```
-workers/
-├── password-worker.ts     # CPU-intensive password hashing
-├── bot-reconciliation.ts  # Background position reconciliation
-└── index.ts              # Worker exports and management
-```
-
-**Worker Responsibilities:**
-- Offloading CPU-intensive operations
-- Background data synchronization
-- Scheduled maintenance tasks
 
 ---
 
-## 🚀 Getting Started
+## Bot Lifecycle Protocol
+
+### Desired/Actual State Machine
+
+```
+desired_state: what the user/system wants (RUNNING | STOPPED)
+actual_state:  what the engine reports (STOPPED | STARTING | RUNNING | STOPPING | ERROR | UNKNOWN)
+```
+
+### Command Flow
+
+```
+POST /api/bot/start → 202 Accepted { botId, desiredState: RUNNING, actualState: STARTING }
+
+Backend                          Engine
+   │                               │
+   ├──── BOT_START command ────────▶│
+   │                               │
+   │◀─── COMMAND_ACCEPTED event ───┤
+   │                               │
+   │◀─── STATE_CHANGED(STARTING) ──┤
+   │                               │
+   │◀─── STATE_CHANGED(RUNNING) ───┤
+   │                               │
+```
+
+### Supervision Mechanisms
+
+- **Command tracking & timeouts**: Every delivered command is recorded as `PENDING`. A sweeper marks expired commands `TIMED_OUT` and transitions stuck bots to `ERROR`.
+- **Concurrency safety**: Every lifecycle UPDATE uses compare-and-set (`WHERE ... AND actual_state = $expected`); concurrent requests return 409.
+- **Engine registration & heartbeat**: Engines register with persistent `engineId` + restart `epoch`. The registry marks engines `OFFLINE` after heartbeat timeout and transitions RUNNING bots to `UNKNOWN`.
+- **Stale-generation rejection**: Events from a non-authoritative engine or superseded epoch are ignored.
+
+---
+
+## Quick Start
 
 ### Prerequisites
 - Node.js ≥ 25.0.9
 - PostgreSQL 14+
 - Redis 5.0+
 
-### Development Setup
+### Configuration
 
-```bash
-# Install dependencies
-npm install
-
-# Configure environment
-cp ../.env.example ../.env
-# Edit .env with database and API credentials
-
-# Run migrations
-npm run db:migrate
-
-# Start development server with auto-reload
-npm run dev
-```
-
-### Production Build
-
-```bash
-npm run build
-npm start
-```
-
----
-
-## 📊 Domain Usage Examples
-
-### Authentication Domain
-
-```typescript
-import { authService } from './core/auth';
-
-// User registration
-const result = await authService.register({
-  email: 'user@example.com',
-  password: 'securePassword123'
-});
-
-// JWT token generation
-const tokens = await authService.generateTokens(userId);
-```
-
-### Trading Domain
-
-```typescript
-import { positionValidatorService } from './core/trading';
-
-// Validate position size
-const validation = await positionValidatorService.validateUserPosition(
-  userId,
-  1000, // notional amount
-  'BTC-USDC', // symbol
-  0.8 // max exposure percent
-);
-```
-
-### Wallet Domain
-
-```typescript
-import { balanceService } from './core/wallet';
-
-// Get cached balance
-const balance = await balanceService.getUserBalance(userId);
-```
-
-### Logging Domain
-
-```typescript
-import { contextLogger } from './core/logging';
-
-// Context-aware logging
-contextLogger.info('User action completed', {
-  userId,
-  action: 'bot_started',
-  botId
-});
-```
-
-### Notifications Domain
-
-```typescript
-import { errorNotificationService } from './core/notifications';
-
-// Send error alert
-await errorNotificationService.notifyError(
-  new Error('Database connection failed'),
-  {
-    category: ErrorCategory.DATABASE,
-    operation: 'user_query',
-    userId
-  }
-);
-```
-
----
-
-## 🧪 Testing
-
-```bash
-# Run all tests
-npm test
-
-# Run specific domain tests
-npm run test:unit -- --grep "auth"
-
-# Run integration tests
-npm run test:integration
-```
-
----
-
-## 📈 Performance & Monitoring
-
-### Key Metrics
-- **Response Time:** <100ms for cached requests
-- **Error Rate:** <0.1% for production endpoints
-- **Cache Hit Rate:** >95% for frequently accessed data
-- **Database Connection Pool:** Optimized for concurrent requests
-
-### Monitoring
-- Winston structured logging with correlation IDs
-- Redis cache performance monitoring
-- Database query performance tracking
-- WebSocket connection health checks
-
----
-
-## 🔒 Security Features
-
-- **JWT Authentication** with refresh token rotation
-- **bcrypt Password Hashing** (12 rounds)
-- **Rate Limiting** (Redis-backed)
-- **Helmet Security Headers**
-- **CORS Protection** with origin validation
-- **SQL Injection Prevention** via parameterized queries
-- **XSS Protection** via input sanitization
-
----
-
-## 📚 API Documentation
-
-### REST Endpoints
-
-| Domain | Endpoint | Method | Description |
-|--------|----------|--------|-------------|
-| Auth | `/api/auth/login` | POST | User authentication |
-| Auth | `/api/auth/refresh` | POST | Token refresh |
-| Trading | `/api/bots` | GET | List user bots |
-| Trading | `/api/bots/:id/start` | POST | Start trading bot |
-| Wallet | `/api/balance` | GET | Get user balance |
-| User | `/api/profile` | GET | Get user profile |
-
-### WebSocket Events
-
-| Event | Direction | Description |
-|-------|-----------|-------------|
-| `bot:status` | Server → Client | Bot status updates |
-| `market:data` | Server → Client | Real-time market data |
-| `cache:invalidation` | Server → Client | Cache invalidation notifications |
-
----
-
-## 🛠️ Development Guidelines
-
-### Adding New Features
-
-1. **Identify Domain:** Determine which business domain owns the feature
-2. **Create Service:** Add service class to appropriate domain folder
-3. **Update Interface:** Add HTTP/WebSocket endpoints in `interfaces/`
-4. **Add Tests:** Create unit and integration tests
-5. **Update Documentation:** Update this README and API docs
-
-### Code Organization Rules
-
-- **One Domain Per Folder:** Keep domain boundaries clear
-- **Dependency Direction:** Core → Infrastructure → Shared (never reverse)
-- **Interface Segregation:** Small, focused interfaces
-- **Single Responsibility:** One reason to change per module
-
-### Naming Conventions
-
-- **Services:** `{domain}Service` (e.g., `authService`)
-- **Interfaces:** PascalCase with `I` prefix (e.g., `IAuthService`)
-- **Files:** kebab-case for consistency
-- **Folders:** Domain names (auth, trading, wallet, etc.)
-
----
-
-## 🚨 Error Handling
-
-### Structured Error Responses
-
-```typescript
-// Success response
-{
-  success: true,
-  data: { /* result */ },
-  timestamp: "2026-01-20T00:00:00Z"
-}
-
-// Error response
-{
-  success: false,
-  error: {
-    code: "VALIDATION_ERROR",
-    message: "Invalid input parameters",
-    details: { field: "email", issue: "required" }
-  },
-  timestamp: "2026-01-20T00:00:00Z"
-}
-```
-
-### Error Categories
-
-- `VALIDATION_ERROR` - Input validation failures
-- `AUTHENTICATION_ERROR` - JWT/token issues
-- `AUTHORIZATION_ERROR` - Permission denied
-- `NOT_FOUND_ERROR` - Resource not found
-- `CONFLICT_ERROR` - Business rule violations
-- `EXTERNAL_ERROR` - Third-party API failures
-- `INTERNAL_ERROR` - System failures
-
----
-
-## 🔄 Deployment
-
-### Environment Variables
+Create `.env` in the project root:
 
 ```bash
 # Database
-DATABASE_URL=postgresql://user:pass@localhost:5432/tradebot
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=trade_bot
+DB_USER=postgres
+DB_PASSWORD=yourpassword
 
 # Redis
 REDIS_URL=redis://localhost:6379
 
-# JWT
-JWT_SECRET=your-jwt-secret-key
-JWT_REFRESH_SECRET=your-refresh-secret-key
+# Authentication
+JWT_SECRET=your-jwt-secret
+JWT_REFRESH_SECRET=your-refresh-secret
+ENCRYPTION_MASTER_KEY=your-32-char-encryption-key
 
-# Kodiak API
-KODIAK_API_URL=https://api.orderly.org
-KODIAK_ACCOUNT_ID=your-account-id
+# External APIs
+KODIAK_API_URL=https://api.orderly.org/v1/
+KODIAK_WS_URL=wss://ws-evm.orderly.org/ws/stream/
 
-# Discord Notifications
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+# Application
+NODE_ENV=development
+FRONTEND_URL=http://localhost:5173
 ```
 
-### Health Checks
+### Development
 
 ```bash
-# Application health
-GET /health
+# Start with auto-reload
+npm run dev
 
-# Database connectivity
-GET /health/database
+# Run database migrations
+npm run db:migrate
 
-# Redis connectivity
-GET /health/redis
-
-# External API status
-GET /health/external
+# Build for production
+npm run build && npm start
 ```
 
 ---
 
-## 📈 Scaling Considerations
+## API Endpoints
 
-### Horizontal Scaling
-- Stateless design enables multiple instances
-- Redis-backed session storage
-- Database connection pooling
-- Load balancer configuration
+### Authentication
+- `POST /api/auth/register` - User registration
+- `POST /api/auth/login` - User login
+- `POST /api/auth/refresh` - Refresh access token
+- `POST /api/auth/logout` - Logout
 
-### Performance Optimizations
-- Redis caching for hot data
-- Database query optimization
-- Background job processing
-- WebSocket connection pooling
+### Bot Management
+- `POST /api/bot/start` - Start a bot (returns 202 Accepted)
+- `POST /api/bot/stop` - Stop a bot (returns 202 Accepted)
+- `GET /api/bot/status/:botId` - Get bot status
 
----
+### Engine (internal)
+- `GET /api/bot/engine/credentials/:botId` - Engine fetches credentials out-of-band
 
-## 🤝 Contributing
-
-### Development Workflow
-
-1. **Create Feature Branch:** `git checkout -b feature/your-feature`
-2. **Domain-First Design:** Identify affected domains
-3. **Clean Architecture:** Respect layer boundaries
-4. **Comprehensive Testing:** Unit + integration tests
-5. **Documentation Updates:** Keep READMEs current
-
-### Code Review Checklist
-
-- [ ] Domain boundaries respected
-- [ ] Dependency injection used
-- [ ] Error handling comprehensive
-- [ ] Logging context-aware
-- [ ] Tests written and passing
-- [ ] Documentation updated
+### Other
+- `GET /api/system/health` - Health check
+- `GET /api/market/ticker` - Market data
+- `GET /api/wallet/balance` - Wallet balance
 
 ---
 
-## 📚 Related Documentation
+## Known Issues
 
-- **[Main Project README](../README.md)** - Overall project overview
-- **[Frontend Documentation](../frontend/README.md)** - React UI details
-- **[Engine Documentation](../engine/kodiak/README.md)** - Trading bot engine
-- **[Database Setup](../DATABASE_SETUP.md)** - PostgreSQL configuration
-- **[API Reference](API_REFERENCE.md)** - Complete API documentation
-
----
-
-## 🎯 Architecture Achievements
-
-✅ **Enterprise-Grade:** Production-ready domain-driven design
-✅ **Scalable:** Clean architecture with clear separation of concerns
-✅ **Maintainable:** Well-documented domain boundaries
-✅ **Testable:** Dependency injection enables comprehensive testing
-✅ **Secure:** Security-first design with multiple protection layers
-✅ **Performant:** Optimized caching and background processing
-✅ **Observable:** Comprehensive logging and monitoring
+| Priority | Issue | Description |
+|----------|-------|-------------|
+| 🔴 P0 | Reconciliation Disabled | Bot reconciliation worker is temporarily disabled. State drift may not be repaired. |
+| 🟠 P1 | Redis Failure Semantics | ✅ Fixed: Bot start/stop endpoints return 503 when Redis unavailable. Health endpoint includes `controlPlane` status. |
+| 🟡 P2 | Dead Code | Contains commented-out transitional code and unused imports. |
 
 ---
 
-**This backend architecture represents a production-grade implementation of domain-driven design, providing a solid foundation for enterprise-scale trading applications.**
+## Code Standards
 
-*Last Updated: January 20, 2026*
+- TypeScript strict mode enabled
+- ESLint configuration enforced
+- Prettier formatting on commit
+- Winston structured logging with correlation IDs
+- All bot lifecycle mutations go through BotLifecycleService
 
 ---
 
-## Bot Lifecycle Control Protocol (with supervision)
-
-`POST /api/bot/start` and `POST /api/bot/stop` are **desired-state
-commands** returning **202 Accepted** with `{ botId, desiredState, actualState }`.
-The actual state only changes when the engine reports `STATE_CHANGED` events
-over Redis Streams (`tradebot:engine:commands` / `tradebot:engine:events`),
-which the backend persists (including a `bot_lifecycle_events` audit trail,
-migration 007) and forwards to the frontend as Socket.IO `bot.stateChanged`.
-
-### Supervision
-
-The lifecycle protocol is supervised - commands are tracked, timeouts are
-enforced and engine liveness is monitored:
-
-- **Command tracking & timeouts** (migration 008): every delivered
-  `BOT_START`/`BOT_STOP` is recorded as `PENDING` in `bot_commands`. A
-  sweeper (`src/core/bots/command-timeout.sweeper.ts`, interval
-  `BOT_COMMAND_SWEEP_INTERVAL_MS`, timeout `BOT_COMMAND_TIMEOUT_MS`) marks
-  expired commands `TIMED_OUT` and transitions stuck `STARTING`/`STOPPING`
-  bots to `ERROR`, with an audit row and a frontend notification.
-- **Concurrency safety**: every lifecycle `UPDATE` uses a compare-and-set
-  guard (`WHERE ... AND actual_state = $expected`); concurrent start/stop
-  requests return 409 instead of racing.
-- **Engine registration & heartbeat** (migration 009): engines publish
-  `ENGINE_REGISTER` (persistent `engineId` + restart `epoch`) and periodic
-  `ENGINE_HEARTBEAT` events. The registry (`engine_registry` table,
-  `src/core/bots/engine-registry.service.ts`) marks engines `OFFLINE` after
-  a heartbeat timeout (`ENGINE_HEARTBEAT_TIMEOUT_MS`) and transitions their
-  RUNNING bots to `UNKNOWN` (actual state untrusted). Events from a
-  non-authoritative engine id or a superseded epoch are rejected.
-- **Stale-generation rejection**: engine events whose `correlationId`
-  references a `TIMED_OUT`/`FAILED` command (or a different bot) are ignored.
-- **Streams hardening**: consumers recover pending messages via `XAUTOCLAIM`
-  (idle > `PENDING_RECOVERY_MIN_IDLE_MS`); processed-message markers are
-  stored durably in Redis (`SET NX EX` 24h) so at-least-once deduplication
-  survives restarts; the engine's consumer group is created at `0` so
-  commands queued before a fresh deployment are consumed.
-
-Key modules: `src/core/bots/engine-protocol.service.ts` (Redis Streams
-control plane), `src/core/bots/bot-lifecycle.service.ts` (orchestrator and
-only writer of bot lifecycle state) with its components under
-`src/core/bots/lifecycle/` (repository, dispatcher, notifier, event
-processor), `src/core/bots/engine-registry.service.ts` (liveness) and
-`src/core/bots/command-timeout.sweeper.ts` (command timeouts).
-plane) and `src/core/bots/bot-lifecycle.service.ts` (desired/actual state
-machine, the only writer of bot lifecycle state).
+**Backend Status**: Functional | **Version**: 1.0.0 | **Updated**: September 12, 2026

@@ -97,7 +97,7 @@ interface BotRuntime {
     userId: string;
     state: BotActualState;
     strategy: GridTradingStrategy;
-    intervalId: NodeJS.Timeout;
+    stopTick: () => void;
     orderlyClient: OrderlyClient;
 }
 
@@ -308,7 +308,15 @@ class BotManager {
         // Hoisted so cancellation can tear down partial initialization.
         let orderlyClient: OrderlyClient | null = null;
         let gridStrategy: GridTradingStrategy | null = null;
-        let intervalId: NodeJS.Timeout | null = null;
+        let tickTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+        // Cleanup function for the tick loop - hoisted for access in catch block
+        const cleanupTick = (): void => {
+            if (tickTimeoutId) {
+                clearTimeout(tickTimeoutId);
+                tickTimeoutId = null;
+            }
+        };
 
         try {
             await this.publishStateChanged(botId, 'STOPPED', 'STARTING', correlationId);
@@ -349,12 +357,38 @@ class BotManager {
             await gridStrategy.start();
             this.throwIfCancelled(botId);
 
-            // 5. Trading loop.
-            intervalId = setInterval(() => {
-                void gridStrategy!.tick().catch(error => {
-                    logger.error('Strategy tick error', { botId, error: error instanceof Error ? error.message : String(error) });
-                });
-            }, TICK_INTERVAL_MS);
+            // 5. Trading loop - sequential execution to prevent overlapping ticks.
+            // Uses a self-replacing timeout pattern: each tick must complete
+            // before the next one is scheduled. This prevents duplicate/conflicting
+            // orders when a tick takes longer than TICK_INTERVAL_MS.
+            let tickRunning = false;
+
+            const scheduleTick = (): void => {
+                if (tickTimeoutId) {
+                    clearTimeout(tickTimeoutId);
+                }
+                tickTimeoutId = setTimeout(async () => {
+                    // Single-flight guard: skip if previous tick still running
+                    if (tickRunning) {
+                        logger.warn('Previous tick still running, skipping this interval', { botId });
+                        scheduleTick();
+                        return;
+                    }
+                    tickRunning = true;
+                    try {
+                        await gridStrategy!.tick();
+                    } catch (error) {
+                        logger.error('Strategy tick error', { botId, error: error instanceof Error ? error.message : String(error) });
+                    } finally {
+                        tickRunning = false;
+                    }
+                    // Schedule next tick only if bot is still running
+                    if (this.bots.has(botId)) {
+                        scheduleTick();
+                    }
+                }, TICK_INTERVAL_MS);
+            };
+            scheduleTick();
 
             this.bots.set(botId, {
                 botId,
@@ -362,7 +396,7 @@ class BotManager {
                 userId,
                 state: 'RUNNING',
                 strategy: gridStrategy,
-                intervalId,
+                stopTick: cleanupTick,
                 orderlyClient,
             });
 
@@ -380,9 +414,7 @@ class BotManager {
                         logger.error('Error stopping cancelled strategy', { botId, error: stopError instanceof Error ? stopError.message : String(stopError) });
                     }
                 }
-                if (intervalId) {
-                    clearInterval(intervalId);
-                }
+                cleanupTick();
                 this.stopRequested.delete(botId);
                 await this.publishStateChanged(botId, 'STARTING', 'STOPPED', correlationId, 'cancelled');
             } else {
@@ -442,7 +474,7 @@ class BotManager {
         } catch (error) {
             logger.error('Strategy stop error during bot stop', { botId, error: error instanceof Error ? error.message : String(error) });
         }
-        clearInterval(existing.intervalId);
+        existing.stopTick();
         this.bots.delete(botId);
 
         await this.publishStateChanged(botId, 'STOPPING', 'STOPPED', correlationId, 'normal_stop');
@@ -492,7 +524,7 @@ class BotManager {
             } catch (error) {
                 logger.error('Error stopping bot during shutdown', { botId: runtime.botId, error: error instanceof Error ? error.message : String(error) });
             }
-            clearInterval(runtime.intervalId);
+            runtime.stopTick();
             try {
                 await this.publishStateChanged(runtime.botId, 'STOPPING', 'STOPPED', correlationId, 'engine_shutdown');
             } catch (error) {

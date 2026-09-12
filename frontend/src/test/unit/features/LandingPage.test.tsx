@@ -1,8 +1,7 @@
 /** @format */
 
-import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, Mock } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { LandingPage } from '../../../features/landing/pages/LandingPage';
 import { useNavigate } from 'react-router-dom';
 
@@ -34,7 +33,7 @@ describe('LandingPage', () => {
   const mockNavigate = vi.fn();
 
   beforeEach(() => {
-    (useNavigate as vi.Mock).mockReturnValue(mockNavigate);
+    (useNavigate as Mock).mockReturnValue(mockNavigate);
   });
 
   afterEach(() => {

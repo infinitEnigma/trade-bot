@@ -82,7 +82,8 @@ import { getCorrelationId, getContextForLogging } from "../../../shared/utils/co
 import { validators } from "../../middleware/validation.middleware";
 import { serviceProvider } from "../../../core/service-provider";
 import { botLifecycleService } from "../../../core/bots/bot-lifecycle.service";
-import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service"; // ✅ Rate limiting
+import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
+import { redisService } from "../../../infrastructure/cache/redis.service";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 const router = Router();
@@ -356,6 +357,19 @@ router.post(
                 return res.status(authError.statusCode).json(createErrorResponse(authError, getCorrelationId()));
             }
 
+            // Check control-plane health: Redis Streams must be available
+            // to deliver lifecycle commands to the engine
+            const controlPlaneHealthy = await redisService.isHealthy();
+            if (!controlPlaneHealthy) {
+                logger.warn("Bot start rejected: control plane (Redis) not operational", { userId, strategyId });
+                return res.status(503).json({
+                    success: false,
+                    error: "Trading control plane is not operational. Please try again later.",
+                    retryAfter: 30,
+                    timestamp: Date.now(),
+                });
+            }
+
             // Desired-state transition: creates the instance, persists
             // desired_state=RUNNING / actual_state=STARTING, records the
             // lifecycle audit trail, and sends BOT_START to the engine via
@@ -430,6 +444,19 @@ router.post(
         try {
             const userId = getUserId(req);
             const { botId } = req.body;
+
+            // Check control-plane health: Redis Streams must be available
+            // to deliver lifecycle commands to the engine
+            const controlPlaneHealthy = await redisService.isHealthy();
+            if (!controlPlaneHealthy) {
+                logger.warn("Bot stop rejected: control plane (Redis) not operational", { userId, botId });
+                return res.status(503).json({
+                    success: false,
+                    error: "Trading control plane is not operational. Please try again later.",
+                    retryAfter: 30,
+                    timestamp: Date.now(),
+                });
+            }
 
             // Desired-state transition: persists desired_state=STOPPED,
             // actual_state=STOPPING (or STOPPED), records the audit trail and

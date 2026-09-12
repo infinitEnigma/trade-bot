@@ -1,7 +1,6 @@
 /** @format */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import axios from "axios";
 import { httpClient } from "../../../infrastructure/api/client";
 
 // Mock console.log and console.error to avoid cluttering test output

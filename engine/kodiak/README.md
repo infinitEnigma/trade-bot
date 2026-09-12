@@ -9,17 +9,18 @@
 
 ## Overview
 
-The trading engine is an independent TypeScript service that executes automated trading strategies on the Berachain network via the Kodiak exchange. It provides real-time strategy execution, risk management, and trade monitoring capabilities.
+The trading engine is an independent TypeScript service that executes automated trading strategies on the Berachain network via the Kodiak/Orderly exchange. It consumes commands from and publishes events to Redis Streams, coordinated by the backend.
+
+> **✅ Fixed**: The engine now uses a sequential tick loop with single-flight guard to prevent overlapping `tick()` executions.
 
 ### Key Features
 
-- **Multi-Strategy Support** - Grid, Trend Following, Arbitrage, Mean Reversion
-- **Real-Time Execution** - Live order placement and market data processing
-- **Risk Management** - Position limits, stop-loss, and exposure controls
-- **WebSocket Integration** - Live market data feeds from Kodiak
-- **Order Management** - Automated order tracking and lifecycle management
-- **Performance Monitoring** - Real-time P&L tracking and bot metrics
-- **Graceful Shutdown** - Safe bot termination with order cancellation
+- **Redis Streams Command Consumer** - Receives BOT_START/BOT_STOP commands from backend
+- **Event Publisher** - Publishes COMMAND_ACCEPTED, STATE_CHANGED, ENGINE_REGISTER, ENGINE_HEARTBEAT events
+- **Engine Identity + Epoch** - Persistent identity with monotonic epoch for stale-event rejection
+- **Heartbeat** - Periodic liveness reporting to backend
+- **Strategy Execution** - Grid trading strategy with order management
+- **Graceful Shutdown** - Safe bot termination with order cancellation on SIGTERM/SIGINT
 
 ---
 
@@ -41,17 +42,48 @@ Trading Engine (engine/kodiak/)
 │   ├── types/                # TypeScript definitions
 │   │   └── strategy.ts       # Strategy interfaces
 │   └── utils/logger.ts       # Structured logging
-├── package.json              # Engine dependencies
-└── tsconfig.json             # TypeScript configuration
 ```
 
-> **BotManager location:** the engine's `BotManager` lives directly in
-> `src/index.ts`. It owns the runtime bot map, initialization (with
-> listen-for-cancellation between await boundaries), the heartbeat +
-> registration loop, the Redis Streams command consumer and the SIGTERM/SIGINT
-> graceful-shutdown path. There is deliberately no separate `BotManager`
-> module - the control-plane logic and process lifecycle are co-located in the
-> entry point.
+> **Note**: The `BotManager` is embedded in `src/index.ts`. This is a known architectural issue (P1) - the control-plane logic and process lifecycle should be decomposed into separate modules.
+
+---
+
+## Bot Lifecycle Protocol
+
+### Command Processing
+
+```
+Backend                          Engine
+   │                               │
+   ├──── BOT_START command ────────▶│
+   │                               │─── COMMAND_ACCEPTED event ───▶│
+   │                               │─── STATE_CHANGED(STARTING) ──▶│
+   │                               │   [fetch credentials]
+   │                               │   [connect to Orderly]
+   │                               │   [initialize strategy]
+   │                               │─── STATE_CHANGED(RUNNING) ───▶│
+```
+
+### Engine Identity
+
+```typescript
+interface EngineIdentity {
+    engineId: string;  // Persistent across restarts
+    epoch: number;     // Incremented on every start
+}
+```
+
+The backend rejects events from a superseded epoch, preventing stale events from old engine processes.
+
+### Credential Flow
+
+Credentials are **never** sent through Redis Streams. After COMMAND_ACCEPTED, the engine fetches them from:
+
+```
+GET /api/bot/engine/credentials/:botId?correlationId=...
+```
+
+This requires `BOT_ENGINE_API_KEY` for authentication.
 
 ---
 
@@ -62,13 +94,6 @@ Trading Engine (engine/kodiak/)
 - Backend API running
 - PostgreSQL database
 - Redis cache
-
-### Installation
-
-```bash
-cd engine/kodiak
-npm install
-```
 
 ### Configuration
 
@@ -89,6 +114,12 @@ KODIAK_WS_URL=wss://ws-evm.orderly.org/ws/stream/
 
 # Authentication
 ENCRYPTION_MASTER_KEY=your-32-char-key
+BOT_ENGINE_API_KEY=your-engine-api-key
+BACKEND_URL=http://localhost:3000
+
+# Engine Identity (optional)
+ENGINE_ID=my-engine-1  # Optional: persistent engine identifier
+ENGINE_STATE_FILE=./.engine-state.json
 ```
 
 ### Development
@@ -97,7 +128,7 @@ ENCRYPTION_MASTER_KEY=your-32-char-key
 # Start engine in development mode
 npm run dev
 
-# Start in production
+# Build and start in production
 npm run build && npm start
 ```
 
@@ -107,523 +138,92 @@ npm run build && npm start
 
 ### Grid Trading Strategy
 
-**Overview**: Creates automated buy/sell grids around a central price level.
+Creates automated buy/sell grids around a central price level.
 
 **Configuration**:
 ```typescript
-const gridConfig = {
-  symbol: "PERP_BTC_USDC",
-  gridLevels: 10,           // Number of grid levels
-  gridSpacing: 0.5,         // Percentage spacing between levels
-  minOrderSize: 0.001,      // Minimum order size
-  maxOrderSize: 0.1,        // Maximum order size
-  positionLimit: 1.0,       // Maximum position size
-  enableRebalancing: true   // Auto-rebalance grid
-};
-```
-
-**How it works**:
-1. Places buy orders below current price
-2. Places sell orders above current price
-3. As price moves, orders are filled creating profit opportunities
-4. Automatically rebalances grid as market conditions change
-
-### Trend Following Strategy
-
-**Overview**: Follows market momentum with configurable parameters.
-
-**Configuration**:
-```typescript
-const trendConfig = {
-  symbol: "PERP_ETH_USDC",
-  timeframe: "1h",          // Analysis timeframe
-  fastPeriod: 12,           // Fast EMA period
-  slowPeriod: 26,           // Slow EMA period
-  signalPeriod: 9,          // Signal line period
-  positionSize: 0.5,        // Position size as % of balance
-  stopLoss: 2.0,           // Stop loss percentage
-  takeProfit: 5.0          // Take profit percentage
-};
-```
-
-**How it works**:
-1. Calculates MACD indicator
-2. Generates buy/sell signals based on MACD crossovers
-3. Enters positions on signal confirmation
-4. Uses trailing stops for profit protection
-
-### Arbitrage Strategy
-
-**Overview**: Exploits price differences across markets.
-
-**Configuration**:
-```typescript
-const arbitrageConfig = {
-  baseSymbol: "PERP_BTC_USDC",
-  quoteSymbol: "PERP_BTC_USDT",  // Comparison pair
-  minSpread: 0.1,           // Minimum spread percentage
-  maxSpread: 2.0,           // Maximum spread percentage
-  tradeSize: 0.01,          // Trade size
-  maxSlippage: 0.05         // Maximum allowed slippage
-};
-```
-
-**How it works**:
-1. Monitors price differences between correlated pairs
-2. Identifies arbitrage opportunities
-3. Executes simultaneous buy/sell orders
-4. Profits from price convergence
-
-### Mean Reversion Strategy
-
-**Overview**: Trades against extreme price movements expecting return to mean.
-
-**Configuration**:
-```typescript
-const meanReversionConfig = {
-  symbol: "PERP_BTC_USDC",
-  lookbackPeriod: 20,       // Historical lookback period
-  entryThreshold: 2.0,      // Standard deviation entry threshold
-  exitThreshold: 0.5,       // Standard deviation exit threshold
-  positionSize: 0.3,        // Position size
-  maxHoldTime: 3600         // Maximum hold time (seconds)
-};
-```
-
-**How it works**:
-1. Calculates Bollinger Bands
-2. Identifies overbought/oversold conditions
-3. Enters counter-trend positions
-4. Exits when price returns to mean
-
----
-
-## Bot Management
-
-### Starting a Bot
-
-```typescript
-import { BotManager } from './services/bot-manager';
-
-// Create and start a bot
-const botManager = new BotManager();
-const bot = await botManager.createBot({
-  strategyId: "uuid",
-  userId: "uuid",
-  config: gridConfig
-});
-
-await botManager.startBot(bot.id);
-```
-
-### Bot Lifecycle
-
-1. **Initialization**: Load strategy configuration and validate parameters
-2. **Connection**: Establish WebSocket connection to Kodiak market data
-3. **Execution**: Begin strategy execution based on market conditions
-4. **Monitoring**: Track positions, P&L, and risk metrics
-5. **Termination**: Graceful shutdown with position closure
-
-### Bot States
-
-- `STOPPED` - Bot is not running
-- `STARTING` - Bot initialization in progress
-- `RUNNING` - Bot actively executing trades
-- `STOPPING` - Bot shutting down gracefully
-- `ERROR` - Bot encountered an error
-- `FORCE_STOPPING` - Emergency shutdown
-
-### Risk Management
-
-**Position Limits**:
-- Maximum position size per bot
-- Maximum total exposure across all bots
-- Daily loss limits
-
-**Stop Loss Protection**:
-- Automatic position closure on adverse price movements
-- Configurable stop loss percentages
-- Emergency stop functionality
-
----
-
-## API Integration
-
-### Kodiak/Orderly API Client
-
-The engine uses a dedicated API client for Kodiak integration:
-
-```typescript
-import { OrderlyClient } from './services/orderly';
-
-// Initialize client
-const client = new OrderlyClient({
-  accountId: "user-account-id",
-  apiKey: decryptedApiKey,
-  secretKey: decryptedSecretKey
-});
-
-// Place order
-const order = await client.placeOrder({
-  symbol: "PERP_BTC_USDC",
-  side: "BUY",
-  quantity: "0.01",
-  price: "45000"
-});
-
-// Monitor position
-const position = await client.getPosition("PERP_BTC_USDC");
-```
-
-### Market Data Streams
-
-Real-time market data via WebSocket:
-
-```typescript
-import { MarketDataStream } from './services/market-stream';
-
-// Subscribe to market data
-const stream = new MarketDataStream();
-stream.subscribe('PERP_BTC_USDC', (data) => {
-  console.log('Price:', data.price, 'Volume:', data.volume);
-});
-```
-
----
-
-## Performance & Monitoring
-
-### Metrics Tracking
-
-**Per-Bot Metrics**:
-- Total trades executed
-- Win/loss ratio
-- Total P&L
-- Running time
-- Error count
-
-**System Metrics**:
-- CPU usage
-- Memory consumption
-- WebSocket connection health
-- API rate limit usage
-
-### Logging
-
-Structured logging with Winston:
-
-```typescript
-import logger from './services/logger';
-
-// Different log levels
-logger.info('Bot started', { botId, strategy: 'grid' });
-logger.warn('High volatility detected', { symbol, volatility: 0.15 });
-logger.error('Order placement failed', { error: error.message, orderId });
-```
-
-### Health Checks
-
-Bot health monitoring:
-- WebSocket connection status
-- API connectivity
-- Database connectivity
-- Memory usage limits
-
----
-
-## Development
-
-### Adding New Strategies
-
-1. **Create Strategy Class**:
-```typescript
-import { BaseStrategy, StrategyConfig } from '../types/strategy';
-
-export class NewStrategy extends BaseStrategy {
-  constructor(config: StrategyConfig) {
-    super(config);
-  }
-
-  async execute(): Promise<void> {
-    // Strategy logic here
-  }
-
-  async validateConfig(): Promise<boolean> {
-    // Configuration validation
-    return true;
-  }
+interface GridStrategyConfig {
+    symbol: string;           // Trading pair (e.g., "ETH_PERP")
+    gridSize: number;         // Number of grid levels
+    gridRangePercent: number; // Price range percentage
+    orderQuantity: number;    // Quantity per order
 }
 ```
 
-2. **Register Strategy**:
-```typescript
-// In strategies/index.ts
-import { NewStrategy } from './new-strategy';
-
-export function createStrategy(type: string, config: StrategyConfig) {
-  switch (type) {
-    case 'NEW_STRATEGY':
-      return new NewStrategy(config);
-    // ... other strategies
-  }
-}
-```
-
-3. **Add Type Definitions**:
-```typescript
-// In types/strategy.ts
-export interface NewStrategyConfig extends BaseStrategyConfig {
-  customParameter: number;
-  anotherSetting: string;
-}
-```
-
-### Testing Strategies
-
-```typescript
-import { createStrategy } from './strategies';
-
-describe('NewStrategy', () => {
-  it('should execute trades correctly', async () => {
-    const strategy = createStrategy('NEW_STRATEGY', config);
-    await strategy.execute();
-    // Assertions
-  });
-});
-```
+**How it works**:
+1. Calculates grid levels around current price
+2. Places buy orders at levels below current price
+3. When buy order fills, places sell order at level above
+4. Tracks P&L from each completed buy-sell cycle
 
 ---
 
-## Deployment
+## Protocol Reliability
 
-### Production Setup
+### At-Least-Once Delivery
+- Messages are not deleted after being read
+- ACK only after handler completes successfully
+- Failed handler → message left unacked for redelivery
 
-1. **Build the engine**:
-```bash
-npm run build
-```
+### Pending Message Recovery
+- `XAUTOCLAIM` recovers messages from crashed consumers
+- Minimum idle time before reclaim: `PENDING_RECOVERY_MIN_IDLE_MS` (default 60s)
 
-2. **Configure environment**:
-```bash
-NODE_ENV=production
-LOG_LEVEL=info
-```
+### Deduplication
+- Processed message IDs stored durably in Redis (24h TTL)
+- In-memory cache for fast lookup
+- Prevents re-execution after restarts
 
-3. **Start with process manager**:
-```bash
-# Using PM2
-pm2 start dist/index.js --name "trade-engine"
+### Poison Message Detection
+- Tracks redelivery count per pending message
+- Logs warning when threshold exceeded (`PENDING_POISON_MAX_DELIVERIES`, default 10)
 
-# Or directly
-npm start
-```
-
-### Docker Deployment
-
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY dist/ ./
-CMD ["node", "index.js"]
-```
-
-### Monitoring
-
-**Process Monitoring**:
-- PM2 process management
-- Automatic restarts on failure
-- Log rotation
-- Resource usage monitoring
-
-**Trading Monitoring**:
-- Real-time P&L tracking
-- Position limit alerts
-- Error rate monitoring
-- Performance analytics
+### Heartbeat
+- Engine publishes `ENGINE_HEARTBEAT` every `ENGINE_HEARTBEAT_INTERVAL_MS` (default 10s)
+- Backend marks engine `OFFLINE` after `ENGINE_HEARTBEAT_TIMEOUT_MS` (default 30s)
+- Heartbeat includes `activeBotIds` for reconciliation
 
 ---
 
-## Configuration
+## Environment Variables
 
-### Environment Variables
-
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `DB_HOST` | PostgreSQL host | ✅ | localhost |
-| `DB_PORT` | PostgreSQL port | ✅ | 5432 |
-| `DB_NAME` | Database name | ✅ | trade_bot |
-| `DB_USER` | Database user | ✅ | postgres |
-| `DB_PASSWORD` | Database password | ✅ | - |
-| `REDIS_URL` | Redis connection URL | ✅ | redis://localhost:6379 |
-| `KODIAK_API_URL` | Kodiak API URL | ✅ | https://api.orderly.org/v1/ |
-| `KODIAK_WS_URL` | Kodiak WebSocket URL | ✅ | wss://ws-evm.orderly.org/ws/stream/ |
-| `ENCRYPTION_MASTER_KEY` | API key encryption key | ✅ | - |
-| `NODE_ENV` | Environment | ❌ | development |
-| `LOG_LEVEL` | Logging level | ❌ | info |
-
-### Strategy Configuration
-
-All strategies support common configuration options:
-
-```typescript
-interface BaseStrategyConfig {
-  symbol: string;              // Trading pair
-  positionLimit: number;       // Max position size
-  stopLoss?: number;          // Stop loss percentage
-  takeProfit?: number;        // Take profit percentage
-  enabled: boolean;           // Strategy enabled/disabled
-  maxSlippage: number;        // Max allowed slippage
-}
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BACKEND_URL` | `http://localhost:3000` | Backend base URL |
+| `BOT_ENGINE_API_KEY` | (required) | Backend engine API key |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL |
+| `ENGINE_ID` | auto-generated | Persistent engine identifier |
+| `ENGINE_STATE_FILE` | `./.engine-state.json` | Engine identity persistence |
+| `ENGINE_HEARTBEAT_INTERVAL_MS` | `10000` | Heartbeat interval (ms) |
+| `PENDING_RECOVERY_MIN_IDLE_MS` | `60000` | Min idle before XAUTOCLAIM (ms) |
+| `PENDING_STUCK_ALERT_THRESHOLD_MS` | `30000` | Stuck pending alert threshold (ms) |
+| `PENDING_POISON_MAX_DELIVERIES` | `10` | Poison message threshold |
 
 ---
 
-## Troubleshooting
+## Known Issues
 
-### Common Issues
+| Priority | Issue | Description |
+|----------|-------|-------------|
+| 🟠 P1 | Monolithic Design | BotManager embedded in index.ts with all responsibilities. Needs modularization. |
 
-**WebSocket Connection Failed**
-```bash
-# Check Kodiak WebSocket URL
-curl -I https://api.orderly.org/v1/public/ticker
+### ✅ Recently Fixed
 
-# Verify network connectivity
-ping api.orderly.org
-```
-
-**Database Connection Issues**
-```bash
-# Test database connection
-psql -h localhost -U postgres -d trade_bot -c "SELECT 1"
-
-# Check connection pool
-npm run db:metrics
-```
-
-**Order Placement Errors**
-- Verify API credentials are decrypted correctly
-- Check account balance and permissions
-- Review order parameters (symbol, quantity, price)
-
-**High Memory Usage**
-- Monitor bot instances
-- Check for memory leaks in strategy logic
-- Implement proper cleanup in strategy shutdown
-
-### Debug Mode
-
-Enable detailed logging:
-```bash
-LOG_LEVEL=debug npm run dev
-```
-
-### Emergency Stop
-
-Force stop all bots:
-```bash
-# Via API
-curl -X POST https://your-api.com/api/bot/emergency-stop
-
-# Or database
-UPDATE bot_instances SET status = 'FORCE_STOPPING' WHERE status = 'RUNNING';
-```
+| Issue | Fix |
+|-------|-----|
+| Overlapping Ticks | Sequential tick loop with single-flight guard replaces `setInterval()`. |
+| Order Idempotency | Deterministic `clientOrderId` using `{botId}:{levelIndex}:{side}` format. |
 
 ---
 
-## Performance Optimization
+## Code Standards
 
-### Execution Optimization
-
-- **Event-Driven Architecture**: React to market events instantly
-- **Connection Pooling**: Efficient database connections
-- **Caching**: Redis caching for market data
-- **Async Processing**: Non-blocking order execution
-
-### Risk Controls
-
-- **Position Sizing**: Configurable position limits
-- **Exposure Management**: Total portfolio exposure controls
-- **Circuit Breakers**: Automatic shutdown on extreme conditions
-- **Rate Limiting**: Respect exchange API limits
+- TypeScript strict mode enabled
+- ESLint configuration enforced
+- Prettier formatting on commit
+- Winston structured logging
+- All Redis operations through centralized streams client
 
 ---
 
-## Contributing
-
-1. Follow TypeScript strict typing guidelines
-2. Implement comprehensive error handling
-3. Add unit tests for new strategies
-4. Document strategy parameters and behavior
-5. Include performance benchmarks
-6. Test with paper trading before live deployment
-
-### Code Standards
-
-- **TypeScript**: Strict mode enabled, full type coverage
-- **Error Handling**: Try/catch with proper logging
-- **Async/Await**: Consistent async patterns
-- **Testing**: Unit tests for all strategies
-- **Documentation**: Inline comments and README updates
-- **Performance**: Efficient algorithms and data structures
-
----
-
-## Roadmap
-
-### Q1 2026
-- [ ] Trend Following strategy implementation
-- [ ] Advanced risk management features
-- [ ] Backtesting framework integration
-- [ ] Multi-timeframe analysis support
-
-### Q2 2026
-- [ ] Arbitrage strategy implementation
-- [ ] Portfolio optimization algorithms
-- [ ] Machine learning integration
-- [ ] Advanced order types support
-
-### Q3 2026
-- [ ] Cross-exchange arbitrage
-- [ ] Social trading features
-- [ ] Advanced analytics dashboard
-- [ ] Mobile trading app support
-
----
-
-**Engine Status**: ✅ Production Ready | **TypeScript Version**: 5.x | **Supported Strategies**: Grid Trading
-
----
-
-## Bot Lifecycle Control Protocol (with supervision)
-
-The engine consumes lifecycle commands from the Redis Stream
-`tradebot:engine:commands` (consumer group `engine-workers`) and publishes
-acknowledgements/state events to `tradebot:engine:events`. The protocol
-envelope (`messageId`, `correlationId`, `version`) is defined in
-`@trade-bot/shared/src/protocol`.
-
-Flow: `BOT_START -> COMMAND_ACCEPTED -> STATE_CHANGED(STARTING) -> STATE_CHANGED(RUNNING)`
-(any failure -> `COMMAND_FAILED` + `STATE_CHANGED(ERROR)`).
-
-**Credentials are never sent through the stream.** After `COMMAND_ACCEPTED`,
-the engine fetches them from the backend endpoint
-`GET /api/bot/engine/credentials/:botId?correlationId=...`.
-
-**Registration & heartbeat:** on startup the engine publishes
-`ENGINE_REGISTER` (persistent `engineId` from `ENGINE_ID` or
-`.engine-state.json`, plus a restart `epoch`) and then `ENGINE_HEARTBEAT`
-every `ENGINE_HEARTBEAT_INTERVAL_MS` (default 10s). The backend marks the
-engine `OFFLINE` and its RUNNING bots `UNKNOWN` if heartbeats stop.
-
-**Reliability:** commands are deduplicated durably in Redis (24h TTL),
-pending commands never acked by a crashed consumer are reclaimed via
-`XAUTOCLAIM` after `PENDING_RECOVERY_MIN_IDLE_MS` (default 60s), and the
-consumer group is created at `0` so queued commands survive fresh
-deployments. Processed commands are never re-executed after a restart.
-
-Required environment variables:
-
-- `BOT_ENGINE_API_KEY` - backend engine API key (also used by `x-bot-engine-key`)
-- `BACKEND_URL` - backend base URL (default `http://localhost:3000`)
+**Engine Status**: In Development | **Version**: 1.0.0 | **Updated**: September 12, 2026

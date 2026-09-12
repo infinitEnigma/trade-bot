@@ -2,6 +2,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+//import { WebSocketClient, WebSocketStatus } from "../../../infrastructure/websocket/client";
+
 /**
  * Tests for the WebSocketClient reconnect hardening:
  * - single-flight connect (no duplicate sockets / retry schedules)
@@ -47,7 +49,7 @@ vi.mock("../../../infrastructure/config", () => ({
 }));
 
 import { io } from "socket.io-client";
-import { WebSocketClient } from "../../../infrastructure/websocket/client";
+import { WebSocketClient, WebSocketStatus } from "../../../infrastructure/websocket/client";
 
 function lastSocket(): any {
     return socketInstances[socketInstances.length - 1];
@@ -55,7 +57,7 @@ function lastSocket(): any {
 
 describe("WebSocketClient reconnect hardening", () => {
     let client: WebSocketClient;
-    let statusSpy: ReturnType<typeof vi.fn>;
+    let statusSpy: (status: WebSocketStatus) => void;
 
     beforeEach(() => {
         vi.useFakeTimers();

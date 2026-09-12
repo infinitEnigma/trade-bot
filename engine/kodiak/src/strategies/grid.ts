@@ -133,9 +133,20 @@ export class GridTradingStrategy {
     }
   }
 
+  /**
+   * Generate a deterministic client order id for idempotency.
+   * Format: {botId}:{levelIndex}:{side}
+   * This ensures that if a command is redelivered after a crash, the same
+   * clientOrderId is generated and the exchange can detect the duplicate.
+   */
+  private generateClientOrderId(levelIndex: number, side: "BUY" | "SELL"): string {
+    return `${this.botId}:${levelIndex}:${side}`;
+  }
+
   private async placeBuyOrder(level: GridLevel, index: number): Promise<void> {
     try {
-      const clientOrderId = `grid_${this.botId}_buy_${index}_${Date.now()}`;
+      // Use deterministic clientOrderId for idempotency - same bot/level/side always produces same ID
+      const clientOrderId = this.generateClientOrderId(index, "BUY");
       const order: OrderRequest = {
         symbol: this.config.symbol,
         orderType: "LIMIT",
@@ -165,7 +176,8 @@ export class GridTradingStrategy {
 
   private async placeSellOrder(level: GridLevel, index: number): Promise<void> {
     try {
-      const clientOrderId = `grid_${this.botId}_sell_${index}_${Date.now()}`;
+      // Use deterministic clientOrderId for idempotency - same bot/level/side always produces same ID
+      const clientOrderId = this.generateClientOrderId(index, "SELL");
       const order: OrderRequest = {
         symbol: this.config.symbol,
         orderType: "LIMIT",

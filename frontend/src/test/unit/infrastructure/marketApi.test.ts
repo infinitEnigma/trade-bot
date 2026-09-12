@@ -1,6 +1,6 @@
 /** @format */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, Mock } from "vitest";
 import { marketApi } from "../../../infrastructure/api/market";
 import { httpClient } from "../../../infrastructure/api/client";
 import { globalRequestManager } from "../../../infrastructure/request-manager";
@@ -19,14 +19,14 @@ vi.mock("../../../infrastructure/request-manager", () => ({
 }));
 
 describe("marketApi", () => {
-    let mockGet: vi.Mock;
+    let mockGet: Mock;
 
     beforeEach(() => {
         vi.clearAllMocks();
 
         // Create mock methods
         mockGet = vi.fn();
-        (httpClient.getClient as vi.Mock).mockReturnValue({
+        (httpClient.getClient as Mock).mockReturnValue({
             get: mockGet,
         });
     });
@@ -40,7 +40,7 @@ describe("marketApi", () => {
                     data: { symbol, price: 50000, change: 2.5 },
                 };
 
-                (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(
+                (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
                     mockResponse
                 );
 
@@ -63,7 +63,7 @@ describe("marketApi", () => {
                     ],
                 };
 
-                (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(
+                (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
                     mockResponse
                 );
 
@@ -86,7 +86,7 @@ describe("marketApi", () => {
                     data: { symbol, price: 50100, fundingRate: 0.01 },
                 };
 
-                (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(
+                (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
                     mockResponse
                 );
 
@@ -109,7 +109,7 @@ describe("marketApi", () => {
                     data: { symbol, markPrice: 50050, indexPrice: 50025 },
                 };
 
-                (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(
+                (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
                     mockResponse
                 );
 
@@ -142,7 +142,7 @@ describe("marketApi", () => {
                     },
                 };
 
-                (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(
+                (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
                     mockResponse
                 );
 
@@ -177,7 +177,7 @@ describe("marketApi", () => {
                     },
                 };
 
-                (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(
+                (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
                     mockResponse
                 );
 
@@ -197,7 +197,7 @@ describe("marketApi", () => {
                     ],
                 };
 
-                (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(
+                (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
                     mockResponse
                 );
 
@@ -224,7 +224,7 @@ describe("marketApi", () => {
                     },
                 };
 
-                (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(
+                (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
                     mockResponse
                 );
 
@@ -250,7 +250,7 @@ describe("marketApi", () => {
                     ],
                 };
 
-                (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(
+                (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
                     mockResponse
                 );
 
@@ -284,7 +284,7 @@ describe("marketApi", () => {
                     },
                 };
 
-                (globalRequestManager.deduplicateRequest as vi.Mock).mockResolvedValue(
+                (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
                     mockResponse
                 );
 
