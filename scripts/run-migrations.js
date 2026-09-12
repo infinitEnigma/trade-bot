@@ -110,8 +110,31 @@ async function runMigrations() {
     console.log(`📁 Found ${migrationFiles.length} migration files:`);
     migrationFiles.forEach(file => console.log(`   - ${file}`));
 
-    // Execute migrations in order
-    for (const file of migrationFiles) {
+    // Migration ledger: skip files already applied to this database.
+    const force = process.argv.includes('--force') || process.env.FORCE_MIGRATIONS === '1';
+    await ensureLedger(pool);
+    const applied = await getAppliedMigrations(pool);
+    const baselined = await baselineLedgerIfNeeded(pool, migrationFiles, applied);
+    const appliedSet = new Set(applied.concat(baselined));
+
+    let pending = selectPendingFiles(migrationFiles, [...appliedSet]);
+    if (force) {
+      console.log('♻️  --force / FORCE_MIGRATIONS=1: re-executing all migration files (ledger ignored)');
+      pending = migrationFiles;
+    } else {
+      const skipped = migrationFiles.length - pending.length;
+      if (skipped > 0) {
+        console.log(`⏭️  Skipping ${skipped} already-applied migrations (tracked in ${LEDGER_TABLE})`);
+      }
+    }
+
+    if (pending.length === 0) {
+      console.log('\n🎉 Nothing to do - database schema is up to date.');
+      return;
+    }
+
+    // Execute pending migrations in order
+    for (const file of pending) {
       const filePath = path.join(MIGRATIONS_DIR, file);
       console.log(`\n🔄 Executing migration: ${file}`);
 
@@ -120,6 +143,7 @@ async function runMigrations() {
 
       if (statements.length === 0) {
         console.log(`   ⚠️  No executable statements found, skipping`);
+        await recordApplied(pool, file);
         continue;
       }
 
@@ -141,10 +165,12 @@ async function runMigrations() {
         }
       }
 
+      // Record in the ledger only after the whole file succeeded.
+      await recordApplied(pool, file);
       console.log(`✅ Migration ${file} completed successfully`);
     }
 
-    console.log('\n🎉 All migrations completed successfully!');
+    console.log(`\n🎉 All migrations completed successfully! (applied: ${pending.length}, ledger-tracked: ${migrationFiles.length - pending.length})`);
     console.log('\n📊 Database schema ready. You can now:');
     console.log('   - Start the server: npm run dev');
     console.log('   - Register users and connect Kodiak accounts');
@@ -159,6 +185,66 @@ async function runMigrations() {
 }
 
 // Run migrations if called directly
+const LEDGER_TABLE = 'schema_migrations';
+
+/**
+ * Pure decision: should the ledger be baselined (all current files marked
+ * applied without executing)? True when the ledger has no rows but the
+ * database already has the core schema (pre-ledger deployment). A fresh
+ * empty database must run every migration for real.
+ */
+function needsBaseline(appliedCount, hasCoreSchema) {
+  return appliedCount === 0 && hasCoreSchema;
+}
+
+/** Pure helper: which migration files still need to be applied? */
+function selectPendingFiles(files, appliedFilenames) {
+  const applied = new Set(appliedFilenames);
+  return files.filter(file => !applied.has(file));
+}
+
+async function ensureLedger(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${LEDGER_TABLE} (
+      filename TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+}
+
+async function getAppliedMigrations(pool) {
+  const result = await pool.query(`SELECT filename FROM ${LEDGER_TABLE}`);
+  return result.rows.map(row => row.filename);
+}
+
+async function recordApplied(pool, filename) {
+  await pool.query(
+    `INSERT INTO ${LEDGER_TABLE} (filename) VALUES ($1) ON CONFLICT (filename) DO NOTHING`,
+    [filename]
+  );
+}
+
+/**
+ * Pre-ledger baseline: if the ledger is empty but the database already has
+ * the core schema, mark every current migration file as applied so a legacy
+ * deployment is not re-executed. Returns the list of baselined files.
+ */
+async function baselineLedgerIfNeeded(pool, migrationFiles, applied) {
+  if (applied.length > 0) {
+    return [];
+  }
+  const coreSchema = await pool.query(`SELECT to_regclass('public.users') IS NOT NULL AS exists`);
+  if (!needsBaseline(applied.length, coreSchema.rows[0].exists)) {
+    return [];
+  }
+  for (const file of migrationFiles) {
+    await recordApplied(pool, file);
+  }
+  console.log(`📓 Ledger baseline: ${migrationFiles.length} migrations marked as applied (pre-ledger schema detected)`);
+  return migrationFiles;
+}
+
+// Run migrations if called directly
 if (require.main === module) {
   runMigrations().catch(error => {
     console.error('Fatal error:', error);
@@ -166,4 +252,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { runMigrations };
+module.exports = { runMigrations, splitStatements, needsBaseline, selectPendingFiles };
