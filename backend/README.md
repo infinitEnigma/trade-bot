@@ -191,6 +191,12 @@ npm run build && npm start
 | 🟠 P1 | Redis Failure Semantics | ✅ Fixed: Bot start/stop endpoints return 503 when Redis unavailable. Health endpoint includes `controlPlane` status. |
 | 🟡 P2 | Dead Code | Contains commented-out transitional code and unused imports. |
 
+### ✅ Recently Fixed
+
+| Issue | Fix |
+|-------|-----|
+| Command Timeout Semantics | Added timeout reason tracking (STATE_MISMATCH, STOP_INCOMPLETE, ENGINE_NO_RESPONSE, COMMAND_NEVER_DELIVERED) with appropriate target states (UNKNOWN for unclear states, ERROR for engine failures) |
+
 ---
 
 ## Code Standards

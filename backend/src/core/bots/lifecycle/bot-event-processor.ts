@@ -18,7 +18,7 @@ import { BotActualState, BotEvent, assertTransition, canTransition } from "@trad
 import { contextLogger as logger } from "../../logging";
 import { BotLifecycleRepository } from "./bot-lifecycle.repository";
 import { BotLifecycleNotifier } from "./bot-lifecycle-notifier";
-import { BOT_COMMAND_TIMEOUT_MS } from "./types";
+import { BOT_COMMAND_TIMEOUT_MS, getTimeoutReason, getTimeoutTargetState, TimeoutReason } from "./types";
 
 export type EngineLifecycleEventHandler = (event: BotEvent) => Promise<boolean>;
 /** Validates that (engineId, epoch) is the authoritative engine process. */
@@ -443,40 +443,68 @@ export class BotEventProcessor {
                 continue;
             }
 
-            // Only transitional states can get stuck waiting on the engine.
-            if (bot.actual_state === "STARTING" || bot.actual_state === "STOPPING") {
-                const nextState = assertTransition(bot.actual_state, "ERROR");
-                const persisted = await this.repository.persistTransition(
-                    bot.id,
-                    {
-                        desiredState: "STOPPED",
-                        actualState: nextState,
-                        errorCode: "COMMAND_TIMEOUT",
-                        errorMessage: `${cmd.command_type} command timed out after ${Math.round(BOT_COMMAND_TIMEOUT_MS / 1000)}s without engine confirmation`,
-                    },
-                    bot.actual_state
-                );
-                if (persisted) {
-                    this.notifier.emitStateChanged(bot.id, bot.user_id, bot.actual_state, nextState, cmd.correlation_id);
+            // Determine timeout reason and appropriate target state
+            const reason = getTimeoutReason(cmd.command_type, bot.actual_state);
+            const targetState = getTimeoutTargetState(reason, cmd.command_type);
+
+            // Handle based on bot state and timeout reason
+            if (bot.actual_state === "STARTING" || bot.actual_state === "STOPPING" || bot.actual_state === "RUNNING") {
+                // Validate the transition is legal
+                if (canTransition(bot.actual_state, targetState)) {
+                    const persisted = await this.repository.persistTransition(
+                        bot.id,
+                        {
+                            desiredState: targetState === "UNKNOWN" ? bot.desired_state : "STOPPED",
+                            actualState: targetState,
+                            errorCode: `COMMAND_TIMEOUT_${reason}`,
+                            errorMessage: this.formatTimeoutMessage(cmd, reason),
+                        },
+                        bot.actual_state
+                    );
+                    if (persisted) {
+                        this.notifier.emitStateChanged(bot.id, bot.user_id, bot.actual_state, targetState, cmd.correlation_id);
+                    }
                 }
             }
 
             await this.repository.recordLifecycleEvent(bot.id, {
                 eventType: "COMMAND_TIMED_OUT",
                 fromState: bot.actual_state,
-                toState: bot.actual_state === "STARTING" || bot.actual_state === "STOPPING" ? "ERROR" : bot.actual_state,
+                toState: targetState,
                 correlationId: cmd.correlation_id,
                 messageId: null,
-                metadata: { commandType: cmd.command_type, timeoutMs: BOT_COMMAND_TIMEOUT_MS },
+                metadata: {
+                    commandType: cmd.command_type,
+                    timeoutMs: BOT_COMMAND_TIMEOUT_MS,
+                    timeoutReason: reason,
+                },
             });
 
-            logger.error("Lifecycle command timed out without engine confirmation", undefined, {
+            logger.error("Lifecycle command timed out", undefined, {
                 botId: cmd.bot_id,
                 commandType: cmd.command_type,
+                fromState: bot.actual_state,
+                targetState,
+                timeoutReason: reason,
                 correlationId: cmd.correlation_id,
             });
         }
 
         return timedOut;
+    }
+
+    private formatTimeoutMessage(cmd: { command_type: string }, reason: TimeoutReason): string {
+        const seconds = Math.round(BOT_COMMAND_TIMEOUT_MS / 1000);
+        switch (reason) {
+            case TimeoutReason.STATE_MISMATCH:
+                return `${cmd.command_type} command timed out after ${seconds}s - bot is in unexpected state (likely event loss)`;
+            case TimeoutReason.STOP_INCOMPLETE:
+                return `${cmd.command_type} command timed out after ${seconds}s - stop operation did not complete`;
+            case TimeoutReason.ENGINE_NO_RESPONSE:
+                return `${cmd.command_type} command timed out after ${seconds}s - engine received command but never responded`;
+            case TimeoutReason.COMMAND_NEVER_DELIVERED:
+            default:
+                return `${cmd.command_type} command timed out after ${seconds}s - engine never received command`;
+        }
     }
 }

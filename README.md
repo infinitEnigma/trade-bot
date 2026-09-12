@@ -240,7 +240,7 @@ Based on architectural review, the following issues are tracked:
 |-------|-------------|
 | **Redis Failure Semantics** | ✅ Fixed: Bot start/stop endpoints now return 503 when Redis is unavailable. Health endpoint includes `controlPlane` status. |
 | **Engine Monolithic Design** | ✅ Fixed: The engine's `BotManager` is embedded in `index.ts`, handling command consumption, heartbeats, bot lifecycle, credential retrieval, and strategy scheduling in a single file. |
-| **Command Timeout Semantics** | Timeout-to-ERROR/UNKNOWN transitions need review for completeness and correctness. |
+| **Command Timeout Semantics** | ✅ Fixed: Added timeout reason tracking with appropriate state transitions. |
 
 ### 🟡 Medium (P2)
 
