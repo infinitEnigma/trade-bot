@@ -1,6 +1,10 @@
 import { GridTradingStrategy } from '../grid';
 import { OrderlyClient } from '../../exchanges/kodiak/client';
 import { GridStrategyConfig } from '../../types/strategy';
+import { loadGridSnapshot } from '../../infrastructure/state/grid-state';
+import * as os from 'os';
+import * as path from 'path';
+import * as fs from 'fs';
 
 const CONFIG: GridStrategyConfig = {
     symbol: 'PERP_BTC_USDC',
@@ -27,44 +31,56 @@ function makeOrderly(): MockOrderly {
     };
 }
 
-async function runOneTickAndCaptureClientOrderId(orderly: MockOrderly, botId = 'bot-1'): Promise<string> {
-    const strategy = new GridTradingStrategy(botId, CONFIG, orderly as unknown as OrderlyClient);
-    await strategy.initialize(100);
-    await strategy.start();
-    await strategy.tick();
-    return orderly.createOrder.mock.calls[0][0].clientOrderId as string;
-}
+// Isolate each test in its own snapshot directory so persisted slot state
+// never leaks across tests or into the repo working directory.
+let snapTmpDir: string;
+beforeEach(() => {
+    snapTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'grid-test-'));
+    process.env.GRID_SNAPSHOT_DIR = snapTmpDir;
+});
+afterEach(() => {
+    delete process.env.GRID_SNAPSHOT_DIR;
+    if (snapTmpDir) {
+        fs.rmSync(snapTmpDir, { recursive: true, force: true });
+    }
+});
 
 describe('GridTradingStrategy order idempotency', () => {
-    it('produces a stable clientOrderId for the same bot/level/side across restarts', async () => {
-        // Two independent strategy instances (simulating an engine restart that
-        // reconstructs the grid) must derive the SAME clientOrderId from the
-        // same logical botId so the exchange can reject a duplicate open order.
-        const a = makeOrderly();
-        const b = makeOrderly();
+    it('generates a deterministic clientOrderId for the same bot/level/side', () => {
+        const a = new GridTradingStrategy('bot-1', CONFIG, makeOrderly() as unknown as OrderlyClient);
+        const b = new GridTradingStrategy('bot-1', CONFIG, makeOrderly() as unknown as OrderlyClient);
 
-        const idA = await runOneTickAndCaptureClientOrderId(a);
-        const idB = await runOneTickAndCaptureClientOrderId(b);
+        const gen = (s: GridTradingStrategy) =>
+            (s as unknown as { generateClientOrderId(i: number, s: 'BUY' | 'SELL'): string })
+                .generateClientOrderId(0, 'BUY');
+
+        const idA = gen(a);
+        const idB = gen(b);
 
         expect(idA).toBe(idB);
-        expect(idA).toContain('bot-1:');
-        expect(idA).toContain(':0:BUY');
+        expect(idA).toBe('bot-1:0:BUY');
     });
 
     it('derives a different clientOrderId for a different botId', async () => {
         const a = makeOrderly();
-        const b = makeOrderly();
+        const sA = new GridTradingStrategy('bot-1', CONFIG, a as unknown as OrderlyClient);
+        await sA.initialize(100);
+        await sA.start();
+        await sA.tick();
+        const idA = a.createOrder.mock.calls[0][0].clientOrderId as string;
 
-        const idA = await runOneTickAndCaptureClientOrderId(a, 'bot-1');
-        const idB = await runOneTickAndCaptureClientOrderId(b, 'bot-2');
+        const b = makeOrderly();
+        const sB = new GridTradingStrategy('bot-2', CONFIG, b as unknown as OrderlyClient);
+        await sB.initialize(100);
+        await sB.start();
+        await sB.tick();
+        const idB = b.createOrder.mock.calls[0][0].clientOrderId as string;
 
         expect(idA).not.toBe(idB);
     });
 
     it('adopts an existing order via get-before-create instead of submitting again', async () => {
         const orderly = makeOrderly();
-        // An open order with the same clientOrderId already exists (a previous
-        // submission lost its response): adopt it, do NOT create a duplicate.
         orderly.findOrderByClientOrderId.mockResolvedValue({ orderId: 'existing-1', status: 'OPEN' });
 
         const strategy = new GridTradingStrategy('bot-1', CONFIG, orderly as unknown as OrderlyClient);
@@ -78,13 +94,9 @@ describe('GridTradingStrategy order idempotency', () => {
 
     it('reconciles via findOrderByClientOrderId after a create-order error (lost response)', async () => {
         const orderly = makeOrderly();
-        // Single-level grid + mid-range price => exactly one buy slot qualifies,
-        // so the create-order/reconcile path is exercised without cross-level noise.
         const config: GridStrategyConfig = { ...CONFIG, gridSize: 1 };
         orderly.getTicker.mockResolvedValue({ symbol: CONFIG.symbol, price: 100 });
 
-        // get-before-create finds nothing, then create throws (lost response),
-        // then the reconcile lookup finds the already-live order.
         orderly.findOrderByClientOrderId
             .mockResolvedValueOnce(null)
             .mockResolvedValueOnce({ orderId: 'recovered-7', status: 'OPEN' });
@@ -97,5 +109,96 @@ describe('GridTradingStrategy order idempotency', () => {
 
         expect(orderly.createOrder).toHaveBeenCalledTimes(1);
         expect(orderly.findOrderByClientOrderId).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('GridTradingStrategy slot-state persistence', () => {
+    it('restores slot state from a persisted snapshot instead of rebuilding', async () => {
+        // First instance: fresh build places buys, then persists a snapshot.
+        const first = makeOrderly();
+        const s1 = new GridTradingStrategy('bot-1', CONFIG, first as unknown as OrderlyClient);
+        await s1.initialize(100);
+        await s1.start();
+        await s1.tick();
+        expect(first.createOrder).toHaveBeenCalled();
+
+        // Second instance, same botId: restores from snapshot. Levels that
+        // already have a buyOrderId must NOT be re-placed.
+        const second = makeOrderly();
+        const s2 = new GridTradingStrategy('bot-1', CONFIG, second as unknown as OrderlyClient);
+        await s2.initialize(100);
+        await s2.start();
+        await s2.tick();
+
+        expect(second.createOrder).not.toHaveBeenCalled();
+    });
+
+    it('preserves a filled level across restart (never re-places it)', async () => {
+        const first = makeOrderly();
+        first.getOrder.mockResolvedValue({ orderId: 'O1', status: 'FILLED' });
+        const s1 = new GridTradingStrategy('bot-1', CONFIG, first as unknown as OrderlyClient);
+        await s1.initialize(100);
+        await s1.start();
+        await s1.tick();
+
+        const levels1 = (s1 as unknown as { levels: Array<{ filled: boolean; buyOrderId?: string }> }).levels;
+        expect(levels1[0].filled).toBe(true);
+        expect(levels1[0].buyOrderId).toBeUndefined();
+
+        const second = makeOrderly();
+        const s2 = new GridTradingStrategy('bot-1', CONFIG, second as unknown as OrderlyClient);
+        await s2.initialize(100);
+        await s2.start();
+        await s2.tick();
+
+        const levels2 = (s2 as unknown as { levels: Array<{ filled: boolean; buyOrderId?: string }> }).levels;
+        expect(levels2[0].filled).toBe(true);
+        expect(levels2[0].buyOrderId).toBeUndefined();
+        expect(second.createOrder).not.toHaveBeenCalled();
+    });
+
+    it('rebuilds fresh when the persisted snapshot shape (symbol) mismatches', async () => {
+        const first = makeOrderly();
+        const s1 = new GridTradingStrategy('bot-1', CONFIG, first as unknown as OrderlyClient);
+        await s1.initialize(100);
+        await s1.start();
+        await s1.tick();
+        expect(first.createOrder).toHaveBeenCalled();
+
+        const second = makeOrderly();
+        const differentConfig: GridStrategyConfig = { ...CONFIG, symbol: 'PERP_ETH_USDC' };
+        const s2 = new GridTradingStrategy('bot-1', differentConfig, second as unknown as OrderlyClient);
+        await s2.initialize(100);
+        await s2.start();
+        await s2.tick();
+
+        expect(second.createOrder).toHaveBeenCalled();
+    });
+
+    it('persists a snapshot after a tick', async () => {
+        const orderly = makeOrderly();
+        const strategy = new GridTradingStrategy('bot-1', CONFIG, orderly as unknown as OrderlyClient);
+        await strategy.initialize(100);
+        await strategy.start();
+        await strategy.tick();
+
+        const snap = loadGridSnapshot('bot-1');
+        expect(snap).not.toBeNull();
+        expect(snap?.baselinePrice).toBe(100);
+        expect(snap?.levels.length).toBeGreaterThan(0);
+    });
+
+    it('persists a snapshot when stopped', async () => {
+        const orderly = makeOrderly();
+        const strategy = new GridTradingStrategy('bot-1', CONFIG, orderly as unknown as OrderlyClient);
+        await strategy.initialize(100);
+        await strategy.start();
+        await strategy.tick();
+        await strategy.stop();
+
+        const snap = loadGridSnapshot('bot-1');
+        expect(snap).not.toBeNull();
+        expect(snap?.botId).toBe('bot-1');
+        expect(snap?.levels.length).toBeGreaterThan(0);
     });
 });

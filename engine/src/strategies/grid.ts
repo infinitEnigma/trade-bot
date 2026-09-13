@@ -1,6 +1,6 @@
 /** @format */
 
-// TODO 
+// TODO
 
 import { OrderlyClient } from "../exchanges/kodiak/client";
 import {
@@ -11,6 +11,8 @@ import {
   Trade,
 } from "../types/strategy";
 import { logger } from "../utils/logger";
+import { GridSnapshot, GridSnapshotLevel, GRID_SNAPSHOT_VERSION } from "../domain/grid-snapshot";
+import { loadGridSnapshot, saveGridSnapshot } from "../infrastructure/state/grid-state";
 
 export class GridTradingStrategy {
   private config: GridStrategyConfig;
@@ -19,6 +21,7 @@ export class GridTradingStrategy {
   private botId: string;
   private running: boolean = false;
   private currentPrice: number = 0;
+  private baselinePrice: number = 0;
   private totalPnl: number = 0;
   private totalTrades: number = 0;
   private trades: Trade[] = [];
@@ -32,28 +35,57 @@ export class GridTradingStrategy {
 
   async initialize(currentPrice: number): Promise<void> {
     this.currentPrice = currentPrice;
-    const priceRange = currentPrice * (this.config.gridRangePercent / 100);
-    const minPrice = currentPrice - priceRange / 2;
-    const maxPrice = currentPrice + priceRange / 2;
-    const gridSpacing = (maxPrice - minPrice) / this.config.gridSize;
 
-    // Create grid levels
-    this.levels = [];
-    for (let i = 0; i <= this.config.gridSize; i++) {
-      const price = minPrice + i * gridSpacing;
-      this.levels.push({
-        price: Number(price.toFixed(2)),
-        filled: false,
+    const snapshot = loadGridSnapshot(this.botId);
+    const canRestore =
+      snapshot !== null &&
+      snapshot.version === GRID_SNAPSHOT_VERSION &&
+      snapshot.symbol === this.config.symbol &&
+      snapshot.gridSize === this.config.gridSize &&
+      snapshot.gridRangePercent === this.config.gridRangePercent;
+
+    if (canRestore) {
+      // Restore at the saved baseline so level prices (and the live order IDs
+      // sitting at them on the exchange) stay stable across a restart.
+      this.baselinePrice = snapshot.baselinePrice;
+      const restored = this.mergeRestoredLevels(
+        this.buildLevels(snapshot.baselinePrice),
+        snapshot.levels
+      );
+      if (restored.length > 0) {
+        this.levels = restored;
+        const restoredCount = this.levels.filter(
+          (l) => l.buyOrderId || l.sellOrderId || l.filled
+        ).length;
+        logger.info("Grid strategy initialized (restored from snapshot)", {
+          symbol: this.config.symbol,
+          levels: this.levels.length,
+          restoredCount,
+          baselinePrice: this.baselinePrice,
+          botId: this.botId,
+        });
+      } else {
+        this.levels = this.buildLevels(currentPrice);
+        this.baselinePrice = currentPrice;
+        logger.info("Grid strategy initialized", {
+          symbol: this.config.symbol,
+          levels: this.levels.length,
+          baselinePrice: this.baselinePrice,
+          botId: this.botId,
+        });
+      }
+    } else {
+      this.levels = this.buildLevels(currentPrice);
+      this.baselinePrice = currentPrice;
+      logger.info("Grid strategy initialized", {
+        symbol: this.config.symbol,
+        levels: this.levels.length,
+        baselinePrice: this.baselinePrice,
+        botId: this.botId,
       });
     }
 
-    logger.info("Grid strategy initialized", {
-      symbol: this.config.symbol,
-      levels: this.levels.length,
-      minPrice: minPrice.toFixed(2),
-      maxPrice: maxPrice.toFixed(2),
-      botId: this.botId,
-    });
+    await this.persistSnapshot();
   }
 
   async start(): Promise<void> {
@@ -88,6 +120,8 @@ export class GridTradingStrategy {
       botId: this.botId,
       symbol: this.config.symbol,
     });
+
+    await this.persistSnapshot();
   }
 
   async tick(): Promise<void> {
@@ -123,6 +157,9 @@ export class GridTradingStrategy {
 
       // Check order status
       await this.checkOrders();
+
+      // Persist slot state unconditionally so a restart picks up fills/orders.
+      await this.persistSnapshot();
     } catch (error) {
       logger.error("Grid strategy tick error", {
         error: error instanceof Error ? error.message : String(error),
@@ -140,6 +177,76 @@ export class GridTradingStrategy {
    */
   private generateClientOrderId(levelIndex: number, side: "BUY" | "SELL"): string {
     return `${this.botId}:${levelIndex}:${side}`;
+  }
+
+  /**
+   * Build a fresh set of empty grid levels around a center price.
+   */
+  private buildLevels(centerPrice: number): GridLevel[] {
+    const priceRange = centerPrice * (this.config.gridRangePercent / 100);
+    const minPrice = centerPrice - priceRange / 2;
+    const maxPrice = centerPrice + priceRange / 2;
+    const gridSpacing = (maxPrice - minPrice) / this.config.gridSize;
+
+    const levels: GridLevel[] = [];
+    for (let i = 0; i <= this.config.gridSize; i++) {
+      const price = minPrice + i * gridSpacing;
+      levels.push({
+        price: Number(price.toFixed(2)),
+        filled: false,
+      });
+    }
+    return levels;
+  }
+
+  /**
+   * Merge saved slot state onto freshly-built levels by exact price match.
+   * Saved buyOrderId/sellOrderId/filled are carried over only when the level
+   * price still exists in the rebuilt grid (guards against config changes).
+   */
+  private mergeRestoredLevels(
+    base: GridLevel[],
+    saved: GridSnapshotLevel[]
+  ): GridLevel[] {
+    const byPrice = new Map<number, GridSnapshotLevel>();
+    for (const entry of saved) {
+      byPrice.set(entry.price, entry);
+    }
+
+    return base.map((level) => {
+      const savedLevel = byPrice.get(level.price);
+      if (savedLevel) {
+        return {
+          price: level.price,
+          buyOrderId: savedLevel.buyOrderId,
+          sellOrderId: savedLevel.sellOrderId,
+          filled: savedLevel.filled,
+        };
+      }
+      return { ...level };
+    });
+  }
+
+  private buildSnapshot(): GridSnapshot {
+    return {
+      version: GRID_SNAPSHOT_VERSION,
+      botId: this.botId,
+      symbol: this.config.symbol,
+      gridSize: this.config.gridSize,
+      gridRangePercent: this.config.gridRangePercent,
+      baselinePrice: this.baselinePrice,
+      levels: this.levels.map((l): GridSnapshotLevel => ({
+        price: l.price,
+        buyOrderId: l.buyOrderId,
+        sellOrderId: l.sellOrderId,
+        filled: l.filled,
+      })),
+      savedAt: new Date().toISOString(),
+    };
+  }
+
+  private async persistSnapshot(): Promise<void> {
+    await saveGridSnapshot(this.buildSnapshot());
   }
 
   private async placeBuyOrder(level: GridLevel, index: number): Promise<void> {
@@ -404,3 +511,4 @@ export class GridTradingStrategy {
     return this.running;
   }
 }
+

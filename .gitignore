@@ -42,6 +42,9 @@ redis-dump.rdb
 redis-appendonly.aof
 pg_hba.conf
 
+# Engine runtime grid-snapshots (per-bot slot state, regenerated on start)
+**/.grid-snapshots/
+
 # AI guides
 AI_*
 docs/
