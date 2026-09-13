@@ -19,5 +19,9 @@
 export { kodiakConnectionService } from './kodiak-connection.service';
 export { kodiakIntegrationService } from './kodiak-integration.service';
 
+// Export non-breaking traffic observer
+export { externalTrafficObserver } from './external-traffic-observer';
+export type { ExternalTrafficSnapshot } from './external-traffic-observer';
+
 // Export external utilities
 export * from './kodiak-client';

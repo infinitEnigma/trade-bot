@@ -280,6 +280,115 @@ export class BotLifecycleService {
     }
 
     // ===========================================
+    // LIFECYCLE RECONCILIATION (authoritative repairs)
+    // ===========================================
+
+    /**
+     * Re-send a BOT_STOP command for a bot whose desired state is STOPPED but
+     * whose engine still reports an active lifecycle. This is the ONLY
+     * automatic-repair path for stop drift; the command is tracked PENDING so
+     * the timeout sweeper continues to supervise it.
+     *
+     * Returns the dispatch result so the reconciler can bound retry attempts.
+     */
+    async reissueStopForReconciliation(botId: string, reason: string): Promise<BotLifecycleResult> {
+        const bot = await this.repository.findBot(botId);
+        if (!bot) {
+            const error = new Error("Bot not found");
+            (error as Error & { statusCode?: number }).statusCode = 404;
+            throw error;
+        }
+
+        if (bot.desired_state !== "STOPPED") {
+            throw new Error(`Refusing reconcile stop-reissue: desired_state is ${bot.desired_state}`);
+        }
+        if (bot.actual_state === "STOPPED" || bot.actual_state === "ERROR" || bot.actual_state === "UNKNOWN") {
+            throw new Error(`Refusing reconcile stop-reissue: actual_state is ${bot.actual_state}`);
+        }
+
+        const sendResult = await this.dispatcher.sendStopCommand(botId);
+        await this.repository.recordLifecycleEvent(botId, {
+            eventType: sendResult.success ? "RECONCILE_STOP_REISSUED" : "RECONCILE_STOP_REISSUE_FAILED",
+            fromState: bot.actual_state,
+            toState: bot.actual_state,
+            correlationId: sendResult.correlationId ?? null,
+            messageId: sendResult.messageId ?? null,
+            metadata: { reason, dispatchError: sendResult.error ?? null },
+        });
+
+        if (!sendResult.success) {
+            throw new Error(`Reconcile stop-reissue dispatch failed: ${sendResult.error ?? "unknown"}`);
+        }
+
+        // Surface the reconciliation to the frontend without a fake transition.
+        this.notifier.emitStateChanged(botId, bot.user_id, bot.actual_state, bot.actual_state, sendResult.correlationId ?? "");
+
+        return {
+            botId,
+            desiredState: "STOPPED",
+            actualState: bot.actual_state,
+            correlationId: sendResult.correlationId,
+        };
+    }
+
+    /**
+     * Degrade a transitional bot whose actual state can no longer be confirmed
+     * (no PENDING command, no recent state change) to UNKNOWN via a
+     * compare-and-set transition. UNKNOWN tells the user/reconciliation that
+     * the engine state is unverified, without fabricating a terminal state.
+     */
+    async reconcileStuckTransitionToUnknown(botId: string, reason: string): Promise<boolean> {
+        const bot = await this.repository.findBot(botId);
+        if (!bot) {
+            return false;
+        }
+        if (bot.actual_state !== "STARTING" && bot.actual_state !== "STOPPING") {
+            return false;
+        }
+
+        const persisted = await this.repository.persistTransition(
+            botId,
+            {
+                desiredState: bot.desired_state,
+                actualState: "UNKNOWN",
+                errorCode: "RECONCILE_STATE_UNCONFIRMED",
+                errorMessage: `Lifecycle reconciliation could not confirm ${bot.actual_state} state (${reason})`,
+            },
+            bot.actual_state
+        );
+
+        if (persisted) {
+            await this.repository.recordLifecycleEvent(botId, {
+                eventType: "RECONCILE_MARKED_UNKNOWN",
+                fromState: bot.actual_state,
+                toState: "UNKNOWN",
+                correlationId: null,
+                messageId: null,
+                metadata: { reason },
+            });
+            this.notifier.emitStateChanged(botId, bot.user_id, bot.actual_state, "UNKNOWN", `reconcile-${reason}`);
+        }
+
+        return persisted;
+    }
+
+    /** Audit-only marker: desired RUNNING but engine state is unconfirmed. No auto-start is performed. */
+    async recordReconcileNeedsUserAction(botId: string, reason: string): Promise<void> {
+        const bot = await this.repository.findBot(botId);
+        if (!bot) {
+            return;
+        }
+        await this.repository.recordLifecycleEvent(botId, {
+            eventType: "RECONCILE_NEEDS_USER_ACTION",
+            fromState: bot.actual_state,
+            toState: bot.actual_state,
+            correlationId: null,
+            messageId: null,
+            metadata: { reason, desiredState: bot.desired_state },
+        });
+    }
+
+    // ===========================================
     // HELPERS
     // ===========================================
 

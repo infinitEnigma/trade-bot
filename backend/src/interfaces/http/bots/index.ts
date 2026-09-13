@@ -3,8 +3,6 @@
 import { Router } from "express";
 import { botManagementRoutes } from "./management";
 import { botEngineRoutes } from "./engine";
-import { botReconciliationWorker } from "../../../workers/bot-reconciliation";
-import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 const router = Router();
 
@@ -12,22 +10,11 @@ const router = Router();
 router.use("/management", botManagementRoutes);
 router.use("/engine", botEngineRoutes);
 
-// Start bot reconciliation worker on module load
-botReconciliationWorker.start();
-
-logger.info("Bot routes initialized with modular architecture");
-
-// Graceful shutdown handler
-process.on('SIGTERM', () => {
-  logger.info("Received SIGTERM, stopping bot reconciliation worker");
-  botReconciliationWorker.stop();
-});
-
-process.on('SIGINT', () => {
-  logger.info("Received SIGINT, stopping bot reconciliation worker");
-  botReconciliationWorker.stop();
-});
-
+// NOTE: Background workers (reconciliation) must NOT start as a route-module
+// side effect. Their lifecycle is owned exclusively by the main server
+// startup/shutdown (see backend/src/index.ts). Side-effect startups here
+// previously raced the server lifecycle and could start the legacy worker
+// even though main declared it disabled.
 
 // Re-export individual route modules for domain access
 export { botManagementRoutes } from "./management";

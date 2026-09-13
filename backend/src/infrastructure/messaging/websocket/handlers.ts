@@ -3,6 +3,7 @@
 import { Socket } from "socket.io";
 import { WebSocketClient, IMarketStreamService, IRateLimiter, ILogger } from "../../../interfaces/websocket";
 import { WebSocketError, WebSocketErrorCode, WEBSOCKET_CONSTANTS, WebSocketUtils } from "./types";
+import { externalTrafficObserver } from "../../external/external-traffic-observer";
 
 /**
  * WebSocket Event Handlers
@@ -279,6 +280,7 @@ export class WebSocketEventHandlers {
             }
 
             // Connect to Orderly if not already connected
+            externalTrafficObserver.recordMarketSubscription(client.userId, symbol);
             try {
                 await this.marketStreamService.connectToOrderly([symbol]);
                 this.logger.debug("Connected to Orderly market stream", {

@@ -143,10 +143,13 @@ import { redisService } from "./infrastructure";
 // 🏭 Dependency Injection Container
 import { diContainer } from "./infrastructure/dependency-injection.container";
 
-// 🤖 Bot Reconciliation Worker (initialized after database)
-// TEMPORARILY DISABLED: Possible Kodiak rate limiting issue in production
-// Import kept for future re-enablement when rate limiting is resolved
+// 🤖 Bot Reconciliation Worker (legacy) - SUPERSEDED by lifecycle reconciliation
+// The legacy worker is never started: its SQL predates desired/actual lifecycle
+// state and its only external-call paths are placeholders. Kept for tests only.
 //import { botReconciliationWorker as _botReconciliationWorker } from "./workers/bot-reconciliation";
+
+// 🩺 Lifecycle Reconciliation (authoritative desired/actual drift repair)
+import { lifecycleReconciliationService } from "./core/bots/lifecycle-reconciliation.service";
 
 // ===========================================
 // 🗄️ 3. DATABASE & REDIS INITIALIZATION
@@ -439,16 +442,10 @@ export const startServer = (): Promise<typeof httpServer> => {
             logger.info("🌐 WebSocket server ready");
             logger.info(`🏭 Environment: ${process.env.NODE_ENV || "development"}`);
 
-            // ✅ START BOT RECONCILIATION WORKER (after database is ready)
-            // TEMPORARILY DISABLED - POSSIBLE KODIAK RATE LIMITING ISSUE
-            logger.info("Bot reconciliation worker temporarily disabled for production stability");
-            /*
-            botReconciliationWorker.start().catch((error) => {
-                logger.error("Failed to start bot reconciliation worker", {
-                    error: error instanceof Error ? error.message : String(error),
-                });
-            });
-            */
+            // ✅ START LIFECYCLE RECONCILIATION (after DB, engine protocol,
+            // command-timeout sweeper and engine registry supervision are up).
+            // Repairs desired/actual state drift through BotLifecycleService only.
+            lifecycleReconciliationService.start();
 
             // Initialize WebSocket service with Socket.IO server
             const webSocketService = new WebSocketService(
@@ -602,6 +599,7 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
 
         // Stop consuming engine events (leaves in-flight messages for redelivery)
         try {
+            lifecycleReconciliationService.stop();
             commandTimeoutSweeper.stop();
             engineRegistryService.stop();
             engineProtocolService.stop();
