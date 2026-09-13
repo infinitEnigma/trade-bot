@@ -3,11 +3,11 @@ node_modules/
 backend/node_modules/
 frontend/node_modules/
 shared/node_modules/
-engine/kodiak/node_modules/
+engine/node_modules/
 backend/dist/
 frontend/dist/
 shared/dist/
-engine/kodiak/dist/
+engine/dist/
 *.log
 .env
 */.env
