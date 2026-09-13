@@ -262,8 +262,8 @@ Based on architectural review, the following issues are tracked:
 - [ ] Enable and harden the reconciliation worker
 
 ### Near-Term
-- [ ] Consolidate old/new bot status models in shared package
-- [ ] Complete command timeout → ERROR/UNKNOWN transition semantics
+- [x] Consolidate old/new bot status models in shared package
+- [x] Complete command timeout → ERROR/UNKNOWN transition semantics
 - [ ] Expand test coverage
 
 ### Medium-Term
