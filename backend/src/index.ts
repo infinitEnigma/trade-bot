@@ -173,7 +173,9 @@ try {
 // Connect to Redis on startup (now imported from infrastructure)
 redisService.connect().catch((error: unknown) => {
     logger.error("❌ Failed to connect to Redis", error instanceof Error ? error : new Error(String(error)));
-    // Note: Application continues without Redis (degraded mode)
+    // The application stays online without Redis. Endpoints that require the
+    // trading control plane (bot start/stop) return 503 via redisService.isHealthy()
+    // rather than silently dispatching a command that cannot reach the engine.
 });
 
 // Initialize dependency injection container
@@ -183,48 +185,13 @@ diContainer.initialize().catch((error) => {
 });
 
 // ===========================================
-// 📊 4. CLIENT CONNECTION TRACKING
+// 📊 4. CLIENT CONNECTION TRACKING (REMOVED)
 // ===========================================
-// Tracks active WebSocket connections and API activity
-// Provides monitoring data for load balancing and scaling
+// The previous in-process client/activity tracking (`_updateClientCount`,
+// `_trackApiActivity`, `activeClients`) was dead code: nothing called it, and
+// the Redis `active_clients` key it wrote was consumed by no dashboards.
+// WebSocket/API activity is now surfaced by the monitoring/health services.
 // ===========================================
-
-let activeClients = 0;
-let lastActivityTime = Date.now();
-
-/**
- * Updates active client count and stores in Redis for monitoring
- * DEFERRED: Will be integrated with WebSocket connection tracking when monitoring dashboard is implemented
- */
-const _updateClientCount = async (change: number) => {
-    activeClients = Math.max(0, activeClients + change);
-    lastActivityTime = Date.now();
-    logger.info(`Active clients: ${activeClients}`, {
-        lastActivity: new Date(lastActivityTime).toLocaleTimeString(),
-    });
-
-    // Store client count in Redis for monitoring
-    const clientCountResult = await redisService.setex(
-        "active_clients",
-        60,
-        activeClients.toString()
-    );
-    if (!clientCountResult.success) {
-        logger.warn("Failed to store active client count in Redis", {
-            activeClients,
-            error: clientCountResult.error,
-        });
-    }
-};
-
-/**
- * Tracks HTTP API activity timestamps
- * DEFERRED: Will be integrated with analytics service when implemented
- */
-const _trackApiActivity = () => {
-    lastActivityTime = Date.now();
-    // Removed artificial client count manipulation that was causing issues
-};
 
 // ===========================================
 // 🚀 5. EXPRESS APPLICATION & SERVER SETUP
@@ -303,31 +270,12 @@ const io = new Server(httpServer, {
     path: "/socket.io/", // Match nginx proxy path
 });
 
-// Set up Redis Streams adapter for Socket.IO
-import { createAdapter } from "@socket.io/redis-streams-adapter";
-import { createClient } from "redis";
-
-// Create Redis client for Socket.IO adapter (separate from cache client)
-const socketIoRedisClient = createClient({
-    url: process.env.REDIS_URL || "redis://localhost:6379",
-    database: 2, // Use separate database for Socket.IO to avoid conflicts
-});
-
-socketIoRedisClient.on("error", (err) => {
-    logger.error("Socket.IO Redis adapter error", err);
-});
-
-socketIoRedisClient.on("connect", () => {
-    logger.info("Socket.IO Redis adapter connected");
-});
-
-// Redis Streams adapter is disabled: incompatible with polling transport on single-server deployments.
-// io.adapter(createAdapter(...)) causes "socket.client.writeToEngine is not a function" errors
-// because the cluster adapter tries to write via WebSocket methods that don't exist on polling sockets.
-// Re-enable only if switching to multi-server with WebSocket transport.
-socketIoRedisClient.connect().catch((err) => {
-    logger.warn("Socket.IO Redis client (unused) failed to connect", { error: (err as Error).message });
-});
+// Socket.IO runs in single-server mode. The Redis Streams adapter is NOT
+// configured because it is incompatible with the polling transport used here
+// (the cluster adapter writes via WebSocket methods that don't exist on
+// polling sockets, causing "socket.client.writeToEngine is not a function").
+// Re-enable the adapter only if moving to a multi-server deployment that uses
+// the WebSocket transport.
 logger.info("Socket.IO running in single server mode (Redis Streams adapter disabled)");
 
 // Add error handler to prevent server crash from Socket.IO protocol errors
@@ -555,7 +503,6 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
     if (shutdownInProgress) {
         logger.warn(`Shutdown already in progress, ignoring ${signal}`, {
             uptime: Math.floor((Date.now() - START_TIME) / 1000),
-            activeClients,
         });
         return;
     }
@@ -563,7 +510,6 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
     shutdownInProgress = true;
     logger.info(`${signal} received, starting graceful shutdown sequence`, {
         uptime: Math.floor((Date.now() - START_TIME) / 1000),
-        activeClients,
     });
 
     const shutdownStart = Date.now();

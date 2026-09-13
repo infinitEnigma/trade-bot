@@ -260,6 +260,51 @@ export class OrderlyClient {
     };
   }
 
+  /**
+   * Idempotency reconcile: find an existing OPEN order that carries the given
+   * clientOrderId on the symbol.
+   *
+   * Orderly enforces that a client_order_id is unique among open orders, so a
+   * duplicate submission is rejected by the exchange. If the engine lost the
+   * create-order response (network drop) but the exchange accepted the order,
+   * listing open orders and matching by clientOrderId lets the grid adopt the
+   * already-live order instead of re-submitting.
+   *
+   * Returns `null` when no open order matches (callers then place a new order).
+   */
+  async findOrderByClientOrderId(
+    symbol: string,
+    clientOrderId: string
+  ): Promise<OrderResponse | null> {
+    if (!clientOrderId) return null;
+
+    const path = `/v1/orders?symbol=${encodeURIComponent(symbol)}`;
+    const headers = await this.signRequest("GET", path);
+
+    const response = await this.client.get(path, { headers });
+    const rows: unknown[] = response.data?.data?.rows ?? [];
+
+    for (const row of rows) {
+      const r = (row ?? {}) as Record<string, unknown>;
+      if (String(r.client_order_id) === clientOrderId) {
+        return {
+          orderId: String(r.order_id),
+          status: String(r.status || "OPEN"),
+          executedPrice:
+            r.average_executed_price != null
+              ? Number(r.average_executed_price)
+              : undefined,
+          executedQuantity:
+            r.executed_quantity != null
+              ? Number(r.executed_quantity)
+              : undefined,
+        };
+      }
+    }
+
+    return null;
+  }
+
   async getPositions(): Promise<OrderlyPosition[]> {
     const path = "/v1/positions";
     const headers = await this.signRequest("GET", path);

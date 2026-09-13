@@ -22,6 +22,7 @@ import {
 } from '../infrastructure/redis/streams';
 import { logger } from '../utils/logger';
 import { BotManager } from '../application/bot-manager';
+import { CommandError } from '../application/command-error';
 
 const PENDING_RECOVERY_MIN_IDLE_MS = Number(process.env.PENDING_RECOVERY_MIN_IDLE_MS || 60_000);
 const PENDING_STUCK_ALERT_THRESHOLD_MS = Number(process.env.PENDING_STUCK_ALERT_THRESHOLD_MS || 30_000);
@@ -76,8 +77,9 @@ async function processMessage(
     msg: any,
     processedMessageIds: Set<string>
 ): Promise<void> {
+    let data: any;
     try {
-        const data = msg.data;
+        data = msg.data;
         if (!isBotCommand(data)) {
             logger.warn('Ignoring malformed command', { streamId: msg.id });
             await safeAck(streamOps, msg.id);
@@ -99,6 +101,15 @@ async function processMessage(
             streamId: msg.id,
             error: error instanceof Error ? error.message : String(error),
         });
+        // Business failures (already surfaced to the backend via
+        // COMMAND_FAILED / STATE_CHANGED) are authoritative: ACK so the command
+        // is not retried forever. Transient infrastructure failures stay
+        // pending so recoverPending can reclaim and retry them.
+        const retryable = data && error instanceof CommandError ? error.retryable : true;
+        if (!retryable) {
+            processedMessageIds.add(data.messageId);
+            await safeAck(streamOps, msg.id);
+        }
     }
 }
 

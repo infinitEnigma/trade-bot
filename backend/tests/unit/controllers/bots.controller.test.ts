@@ -137,6 +137,7 @@ jest.mock('../../../src/infrastructure/cache/redis.service', () => ({
         del: jest.fn().mockResolvedValue({ success: true }),
         atomicReadModifyWrite: jest.fn(),
         cleanupForTests: jest.fn(),
+        isHealthy: jest.fn().mockResolvedValue(true),
     },
 }));
 

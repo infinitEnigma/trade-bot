@@ -8,7 +8,6 @@
  */
 
 import { BotActualState, BotCommand, StartBotCommandPayload, StopBotCommandPayload } from '@trade-bot/shared';
-import { v4 as uuidv4 } from 'uuid';
 import { GridTradingStrategy } from '../strategies/grid';
 import { createOrderlyClient, OrderlyClient } from '../exchanges/kodiak/client';
 import { RedisStreamOperations } from '../infrastructure/redis/streams';
@@ -16,6 +15,8 @@ import { logger } from '../utils/logger';
 import { BotRuntime, FetchCredentialsResult, EngineIdentity } from '../domain/bot-runtime';
 import { publishEvent, publishAccepted, publishFailed } from '../protocol/event-publisher';
 import { fetchCredentials } from '../protocol/credential-fetcher';
+import { CommandError } from './command-error';
+import { StrategyRunner } from './strategy-runner';
 
 const TICK_INTERVAL_MS = 5000;
 
@@ -170,14 +171,8 @@ export class BotManager {
         config: Record<string, unknown>,
         correlationId: string
     ): Promise<void> {
-        let tickTimeoutId: ReturnType<typeof setTimeout> | null = null;
-
-        const cleanupTick = (): void => {
-            if (tickTimeoutId) {
-                clearTimeout(tickTimeoutId);
-                tickTimeoutId = null;
-            }
-        };
+        let runner: StrategyRunner | null = null;
+        const stopRunner = (): void => runner?.stop();
 
         try {
             await this.publishStateChanged(streamOps, botId, 'STOPPED', 'STARTING', correlationId);
@@ -198,18 +193,19 @@ export class BotManager {
             // 3. Get market price
             const symbol = String(config.symbol || '');
             if (!symbol) {
-                throw new Error('Strategy config is missing symbol');
+                throw new CommandError(false, 'Strategy config is missing symbol');
             }
             this.throwIfCancelled(botId);
             const ticker = await orderlyClient.getTicker(symbol);
             this.throwIfCancelled(botId);
             const currentPrice = Number(ticker.mark_price || ticker.price);
             if (!currentPrice) {
-                throw new Error(`Could not resolve current price for ${symbol}`);
+                throw new CommandError(false, `Could not resolve current price for ${symbol}`);
             }
 
             // 4. Create and start strategy
             const gridStrategy = new GridTradingStrategy(
+                botId,
                 {
                     symbol,
                     gridSize: Number(config.gridSize) || 10,
@@ -223,28 +219,21 @@ export class BotManager {
             await gridStrategy.start();
             this.throwIfCancelled(botId);
 
-            // 5. Trading loop
-            let tickRunning = false;
-            const scheduleTick = (): void => {
-                if (tickTimeoutId) clearTimeout(tickTimeoutId);
-                tickTimeoutId = setTimeout(async () => {
-                    if (tickRunning) {
-                        logger.warn('Previous tick still running, skipping', { botId });
-                        scheduleTick();
-                        return;
-                    }
-                    tickRunning = true;
-                    try {
-                        await gridStrategy!.tick();
-                    } catch (error) {
-                        logger.error('Strategy tick error', { botId, error: error instanceof Error ? error.message : String(error) });
-                    } finally {
-                        tickRunning = false;
-                    }
-                    if (this.bots.has(botId)) scheduleTick();
-                }, TICK_INTERVAL_MS);
-            };
-            scheduleTick();
+            // 5. Non-overlapping strategy tick loop (single-flight guard inside StrategyRunner)
+            runner = new StrategyRunner(
+                botId,
+                TICK_INTERVAL_MS,
+                () => gridStrategy.tick(),
+                {
+                    onError: (error) =>
+                        logger.error('Strategy tick error', {
+                            botId,
+                            error: error instanceof Error ? error.message : String(error),
+                        }),
+                    onSkip: () => logger.warn('Previous tick still running, skipping', { botId }),
+                }
+            );
+            runner.start();
 
             // Register bot
             this.bots.set(botId, {
@@ -253,13 +242,13 @@ export class BotManager {
                 userId,
                 state: 'RUNNING',
                 strategy: gridStrategy,
-                stopTick: cleanupTick,
+                stopTick: stopRunner,
                 orderlyClient,
             });
 
             await this.publishStateChanged(streamOps, botId, 'STARTING', 'RUNNING', correlationId, 'started');
         } catch (error) {
-            cleanupTick();
+            stopRunner();
             this.bots.delete(botId);
             const err = error instanceof Error ? error : new Error(String(error));
             await this.publishFailed(streamOps, botId, 'BOT_START', 'INIT_FAILED', err.message, correlationId);
@@ -271,7 +260,7 @@ export class BotManager {
     private throwIfCancelled(botId: string): void {
         if (this.stopRequested.has(botId)) {
             this.stopRequested.delete(botId);
-            throw new Error('Bot initialization cancelled');
+            throw new CommandError(false, 'Bot initialization cancelled');
         }
     }
 }

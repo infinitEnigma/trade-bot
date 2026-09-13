@@ -2,7 +2,6 @@
 
 // TODO 
 
-import { v4 as uuidv4 } from "uuid";
 import { OrderlyClient } from "../exchanges/kodiak/client";
 import {
   GridStrategyConfig,
@@ -25,10 +24,10 @@ export class GridTradingStrategy {
   private trades: Trade[] = [];
   private lastOrderCheck: Map<string, Date> = new Map();
 
-  constructor(config: GridStrategyConfig, orderly: OrderlyClient) {
+  constructor(botId: string, config: GridStrategyConfig, orderly: OrderlyClient) {
+    this.botId = botId;
     this.config = config;
     this.orderly = orderly;
-    this.botId = uuidv4();
   }
 
   async initialize(currentPrice: number): Promise<void> {
@@ -144,9 +143,27 @@ export class GridTradingStrategy {
   }
 
   private async placeBuyOrder(level: GridLevel, index: number): Promise<void> {
+    // Use deterministic clientOrderId for idempotency - same bot/level/side
+    // always produces the same ID, so the exchange can reject a duplicate.
+    const clientOrderId = this.generateClientOrderId(index, "BUY");
     try {
-      // Use deterministic clientOrderId for idempotency - same bot/level/side always produces same ID
-      const clientOrderId = this.generateClientOrderId(index, "BUY");
+      // Get-before-create: adopt an already-live order (lost response) with the
+      // same clientOrderId instead of submitting a second buy order.
+      const existing = await this.orderly.findOrderByClientOrderId(
+        this.config.symbol,
+        clientOrderId
+      );
+      if (existing && existing.orderId) {
+        level.buyOrderId = existing.orderId;
+        logger.info("Adopted existing buy order (idempotent reconcile)", {
+          price: level.price,
+          orderId: existing.orderId,
+          botId: this.botId,
+          symbol: this.config.symbol,
+        });
+        return;
+      }
+
       const order: OrderRequest = {
         symbol: this.config.symbol,
         orderType: "LIMIT",
@@ -165,6 +182,26 @@ export class GridTradingStrategy {
         symbol: this.config.symbol,
       });
     } catch (error) {
+      // The exchange may have accepted the order while the response was lost.
+      // Reconcile before giving up so we never double-place the same slot.
+      try {
+        const recovered = await this.orderly.findOrderByClientOrderId(
+          this.config.symbol,
+          clientOrderId
+        );
+        if (recovered && recovered.orderId) {
+          level.buyOrderId = recovered.orderId;
+          logger.warn("Reconciled buy order after submission error", {
+            price: level.price,
+            orderId: recovered.orderId,
+            botId: this.botId,
+            symbol: this.config.symbol,
+          });
+          return;
+        }
+      } catch {
+        /* reconcile lookup itself failed - fall through to error logging */
+      }
       logger.error("Failed to place buy order", {
         price: level.price,
         error: error instanceof Error ? error.message : String(error),
@@ -175,9 +212,27 @@ export class GridTradingStrategy {
   }
 
   private async placeSellOrder(level: GridLevel, index: number): Promise<void> {
+    // Use deterministic clientOrderId for idempotency - same bot/level/side
+    // always produces the same ID, so the exchange can reject a duplicate.
+    const clientOrderId = this.generateClientOrderId(index, "SELL");
     try {
-      // Use deterministic clientOrderId for idempotency - same bot/level/side always produces same ID
-      const clientOrderId = this.generateClientOrderId(index, "SELL");
+      // Get-before-create: adopt an already-live order (lost response) with the
+      // same clientOrderId instead of submitting a second sell order.
+      const existing = await this.orderly.findOrderByClientOrderId(
+        this.config.symbol,
+        clientOrderId
+      );
+      if (existing && existing.orderId) {
+        level.sellOrderId = existing.orderId;
+        logger.info("Adopted existing sell order (idempotent reconcile)", {
+          price: level.price,
+          orderId: existing.orderId,
+          botId: this.botId,
+          symbol: this.config.symbol,
+        });
+        return;
+      }
+
       const order: OrderRequest = {
         symbol: this.config.symbol,
         orderType: "LIMIT",
@@ -196,6 +251,26 @@ export class GridTradingStrategy {
         symbol: this.config.symbol,
       });
     } catch (error) {
+      // The exchange may have accepted the order while the response was lost.
+      // Reconcile before giving up so we never double-place the same slot.
+      try {
+        const recovered = await this.orderly.findOrderByClientOrderId(
+          this.config.symbol,
+          clientOrderId
+        );
+        if (recovered && recovered.orderId) {
+          level.sellOrderId = recovered.orderId;
+          logger.warn("Reconciled sell order after submission error", {
+            price: level.price,
+            orderId: recovered.orderId,
+            botId: this.botId,
+            symbol: this.config.symbol,
+          });
+          return;
+        }
+      } catch {
+        /* reconcile lookup itself failed - fall through to error logging */
+      }
       logger.error("Failed to place sell order", {
         price: level.price,
         error: error instanceof Error ? error.message : String(error),

@@ -16,6 +16,7 @@ jest.mock('../../../src/database/pool', () => ({
 jest.mock('../../../src/infrastructure/cache/redis.service', () => ({
     redisService: {
         getClient: jest.fn(),
+        isHealthy: jest.fn().mockResolvedValue(true),
     },
 }));
 
