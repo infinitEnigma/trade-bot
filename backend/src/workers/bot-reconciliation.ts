@@ -1,9 +1,12 @@
 /**
- * Bot Reconciliation Worker
+ * Bot Reconciliation Worker (LEGACY - SUPERSEDED, NOT STARTED)
  *
- * Handles background reconciliation of bot trading activities,
- * position synchronization, and trade settlement processing.
- * Ensures consistency between internal state and external exchange data.
+ * SUPERSEDED by `core/bots/lifecycle-reconciliation.service.ts`, which owns
+ * desired/actual lifecycle drift repair through BotLifecycleService. This
+ * legacy worker is NEVER started from production code: its bot queries use
+ * the legacy `status` column, its failures write legacy-only error fields,
+ * and its position/trade reconciliation methods are placeholders (no Kodiak
+ * calls). Kept only because tests still import it.
  */
 
 import { ContextAwareLogger } from "../core/logging";

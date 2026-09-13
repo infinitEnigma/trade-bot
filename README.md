@@ -232,7 +232,7 @@ Based on architectural review, the following issues are tracked:
 
 | Issue | Description |
 |-------|-------------|
-| **Reconciliation Worker Disabled** | The bot reconciliation worker is temporarily disabled for production stability (Kodiak rate limiting concerns). This creates a reliability gap where desired/actual state drift may not be repaired. |
+| **Reconciliation Worker Disabled** | ✅ Fixed: Replaced by a lifecycle-aware reconciler (`LifecycleReconciliationService`) that repairs desired/actual drift through `BotLifecycleService` only, with bounded stop-reissues, stuck-transition degradation to UNKNOWN, audit events, and CAS-safe transitions. The legacy worker is never started (route-module side-effect startup removed). |
 
 ### 🟠 High (P1)
 
@@ -259,7 +259,7 @@ Based on architectural review, the following issues are tracked:
 - [x] Implement business-operation idempotency for trading orders
 - [x] Define explicit control-plane behavior when Redis is unavailable
 - [x] Refactor engine into modular, exchange-agnostic architecture
-- [ ] Enable and harden the reconciliation worker
+- [x] Replace legacy reconciliation worker with lifecycle-aware reconciler (drift repair + attribution instrumentation)
 
 ### Near-Term
 - [x] Consolidate old/new bot status models in shared package

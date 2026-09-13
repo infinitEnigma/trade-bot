@@ -6,6 +6,7 @@ import { getPool, getPoolMetrics } from "../../../database/pool";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { keyManagementService } from "../../../infrastructure/security/key-management.service";
 import { getServiceStatus } from "../../../core/service-selector";
+import { externalTrafficObserver } from "../../../infrastructure/external/external-traffic-observer";
 import { httpLogger, logger as contextLogger } from "../../../core/logging";
 
 const router = Router();
@@ -296,6 +297,8 @@ router.get("/metrics", async (req: Request, res: Response) => {
       timestamp: new Date().toISOString(),
       uptime_seconds: uptime,
       ...metrics,
+      // External traffic attribution (Phase 0 rate-limit instrumentation)
+      external_traffic: externalTrafficObserver.snapshot(),
       process: {
         pid: process.pid,
         node_version: process.version,

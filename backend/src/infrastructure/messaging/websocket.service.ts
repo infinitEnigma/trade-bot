@@ -16,6 +16,7 @@ import { WebSocketAuthMiddleware } from "./websocket/auth";
 import { WebSocketEventHandlers } from "./websocket/handlers";
 import { WebSocketError, WEBSOCKET_CONSTANTS } from "./websocket/types";
 import { webSocketRateLimiter } from "../security/rate-limiter/websocket-rate-limiter.adapter";
+import { externalTrafficObserver } from "../external/external-traffic-observer";
 
 /**
  * WebSocket Service
@@ -228,6 +229,7 @@ export class WebSocketService implements IWebSocketService {
             // BASIC users connect via WebSocket to receive any ongoing broadcasts,
             // but they cannot initiate the Orderly stream themselves.
             if (client.userLevel === "REGISTERED" || client.userLevel === "VERIFIED") {
+                externalTrafficObserver.recordPrivilegedConnection(client.userId, client.userLevel, socket.id);
                 await this.marketStreamService.connectToOrderly(["PERP_BTC_USDC", "PERP_ETH_USDC"]);
             }
 

@@ -100,6 +100,22 @@ Backend                          Engine
    │                               │
 ```
 
+### Lifecycle Reconciliation
+
+`LifecycleReconciliationService` (`src/core/bots/lifecycle-reconciliation.service.ts`) runs a bounded,
+audited reconciliation sweep (default every 60s, jittered) started only by the main server lifecycle,
+after DB, engine protocol, command-timeout sweeper and engine registry supervision are up:
+
+- `desired=STOPPED` but engine active → reissue `BOT_STOP` (max 3 reissues/bot/hour, tracked PENDING,
+  so the timeout sweeper continues to supervise it).
+- Transitional state stuck beyond grace (3x command timeout) with no `PENDING` command → degrade to
+  `UNKNOWN` via compare-and-set + `RECONCILE_MARKED_UNKNOWN` audit event.
+- `desired=RUNNING` but actual `ERROR/UNKNOWN` → audit-only `RECONCILE_NEEDS_USER_ACTION` (no auto-start).
+
+It never writes lifecycle state directly: all repairs go through `BotLifecycleService`. Phase-0
+attribution counters (Kodiak requests/cache hit-miss/429, Orderly connections, privileged WebSocket
+connections, market subscriptions) are exposed at `GET /api/system/metrics` under `external_traffic`.
+
 ### Supervision Mechanisms
 
 - **Command tracking & timeouts**: Every delivered command is recorded as `PENDING`. A sweeper marks expired commands `TIMED_OUT` and transitions stuck bots to `ERROR`.
@@ -187,7 +203,7 @@ npm run build && npm start
 
 | Priority | Issue | Description |
 |----------|-------|-------------|
-| 🔴 P0 | Reconciliation Disabled | Bot reconciliation worker is temporarily disabled. State drift may not be repaired. |
+| 🔴 P0 | Reconciliation Disabled | ✅ Fixed: `LifecycleReconciliationService` now repairs desired/actual drift (bounded stop reissues, stuck->UNKNOWN via CAS, audit events). Legacy `BotReconciliationWorker` is superseded and never started (route-module startup removed). |
 | 🟠 P1 | Redis Failure Semantics | ✅ Fixed: Bot start/stop endpoints return 503 when Redis unavailable. Health endpoint includes `controlPlane` status. |
 | 🟡 P2 | Dead Code | Contains commented-out transitional code and unused imports. |
 

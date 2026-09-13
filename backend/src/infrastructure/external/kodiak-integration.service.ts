@@ -9,6 +9,7 @@ import { query } from "../../database/pool";
 import { redisService } from "../cache/redis.service";
 import { encryptionService } from "../security/encryption.service";
 import { kodiakCache } from "../external/kodiak-cache";
+import { externalTrafficObserver } from "./external-traffic-observer";
 import { integrationLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 export interface KodiakCredentials {
@@ -315,6 +316,7 @@ export class KodiakIntegrationService {
             // Check cache first
             const cached = kodiakCache.get(cacheKey);
             if (cached) {
+                externalTrafficObserver.recordKodiakCacheHit("positions", userId);
                 logger.debug("Returning cached Kodiak positions", { userId });
                 // Ensure cached data matches KodiakApiResponse interface
                 if (cached && typeof cached === 'object' && 'success' in cached) {
@@ -323,6 +325,8 @@ export class KodiakIntegrationService {
                     logger.warn("Cached Kodiak positions data has invalid structure, clearing cache", { userId });
                     kodiakCache.delete(cacheKey);
                 }
+            } else {
+                externalTrafficObserver.recordKodiakCacheMiss("positions", userId);
             }
 
             // Get credentials
@@ -340,6 +344,7 @@ export class KodiakIntegrationService {
                 "/positions",
                 credentials
             );
+            externalTrafficObserver.recordKodiakRequest("positions", userId);
 
             const result: KodiakApiResponse<KodiakPosition[]> = {
                 success: true,
@@ -378,6 +383,7 @@ export class KodiakIntegrationService {
             // Check cache first
             const cached = kodiakCache.get(cacheKey);
             if (cached) {
+                externalTrafficObserver.recordKodiakCacheHit("trades", userId);
                 logger.debug("Returning cached Kodiak trades", { userId, limit });
                 // Ensure cached data matches KodiakApiResponse interface
                 if (cached && typeof cached === 'object' && 'success' in cached) {
@@ -386,6 +392,8 @@ export class KodiakIntegrationService {
                     logger.warn("Cached Kodiak trades data has invalid structure, clearing cache", { userId, limit });
                     kodiakCache.delete(cacheKey);
                 }
+            } else {
+                externalTrafficObserver.recordKodiakCacheMiss("trades", userId);
             }
 
             // Get credentials
@@ -403,6 +411,7 @@ export class KodiakIntegrationService {
                 `/position_history?limit=${limit}`,
                 credentials
             );
+            externalTrafficObserver.recordKodiakRequest("trades", userId);
 
             const result: KodiakApiResponse<KodiakTrade[]> = {
                 success: true,
@@ -442,8 +451,11 @@ export class KodiakIntegrationService {
             // Check cache first
             const cacheResult = await redisService.get(cacheKey);
             if (cacheResult.success && cacheResult.data) {
+                externalTrafficObserver.recordKodiakCacheHit("balance", userId);
                 logger.debug("Returning cached Kodiak balance", { userId });
                 return JSON.parse(cacheResult.data);
+            } else {
+                externalTrafficObserver.recordKodiakCacheMiss("balance", userId);
             }
 
             // Get credentials
@@ -468,6 +480,7 @@ export class KodiakIntegrationService {
                 "/client/info",
                 credentials
             );
+            externalTrafficObserver.recordKodiakRequest("balance", userId);
 
             const holdings = Array.isArray(holdingsData)
                 ? holdingsData
@@ -552,8 +565,11 @@ export class KodiakIntegrationService {
             // Check cache first
             const cacheResult = await redisService.get(cacheKey);
             if (cacheResult.success && cacheResult.data) {
+                externalTrafficObserver.recordKodiakCacheHit("account-info", userId);
                 logger.debug("Returning cached Kodiak account info", { userId });
                 return JSON.parse(cacheResult.data);
+            } else {
+                externalTrafficObserver.recordKodiakCacheMiss("account-info", userId);
             }
 
             // Get credentials
@@ -571,6 +587,7 @@ export class KodiakIntegrationService {
                 "/client/info",
                 credentials
             );
+            externalTrafficObserver.recordKodiakRequest("account-info", userId);
 
             const result: KodiakApiResponse<KodiakAccountInfo> = {
                 success: true,
@@ -1067,6 +1084,7 @@ export class KodiakIntegrationService {
             }
 
             const response = await fetch(`${baseUrl}${signaturePath}`, requestOptions);
+            externalTrafficObserver.recordKodiakRequest(signaturePath, credentials.accountId);
 
             logger.debug("Kodiak API response received", {
                 status: response.status,
@@ -1075,6 +1093,7 @@ export class KodiakIntegrationService {
 
             if (!response.ok) {
                 const errorText = await response.text();
+                externalTrafficObserver.recordKodiakError(signaturePath, response.status);
                 logger.warn("Kodiak API error response", {
                     status: response.status,
                     statusText: response.statusText,

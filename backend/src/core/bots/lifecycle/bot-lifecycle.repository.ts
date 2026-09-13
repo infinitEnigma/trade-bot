@@ -246,4 +246,66 @@ export class BotLifecycleRepository {
         );
         return insertResult.rows[0].id;
     }
+
+    // ===========================================
+    // LIFECYCLE RECONCILIATION QUERIES
+    // ===========================================
+
+    /** Bots the user wants stopped but the engine still reports as active. */
+    async findDesiredStoppedButActiveBots(): Promise<BotRow[]> {
+        const result = await query<BotRow>(
+            `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id
+             FROM bot_instances
+             WHERE desired_state = 'STOPPED'
+               AND actual_state IN ('STARTING', 'RUNNING', 'STOPPING')`
+        );
+        return result.rows;
+    }
+
+    /**
+     * Transitional bots stuck with NO pending command and no state change
+     * within the grace window. Their actual state can no longer be confirmed
+     * by the supervision sweeps, so it must degrade to UNKNOWN.
+     */
+    async findStuckTransitionalBots(graceSeconds: number): Promise<BotRow[]> {
+        const result = await query<BotRow>(
+            `SELECT b.id, b.user_id, b.strategy_id, b.status, b.desired_state, b.actual_state, b.engine_id
+             FROM bot_instances b
+             WHERE b.actual_state IN ('STARTING', 'STOPPING')
+               AND b.state_changed_at < NOW() - make_interval(secs => $1)
+               AND NOT EXISTS (
+                   SELECT 1 FROM bot_commands c
+                   WHERE c.bot_id = b.id AND c.state = 'PENDING'
+               )`,
+            [graceSeconds]
+        );
+        return result.rows;
+    }
+
+    /** Bots the user wants running but whose actual state is unconfirmed (ERROR/UNKNOWN). */
+    async findDesiredRunningUnconfirmedBots(): Promise<BotRow[]> {
+        const result = await query<BotRow>(
+            `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id
+             FROM bot_instances
+             WHERE desired_state = 'RUNNING'
+               AND actual_state IN ('ERROR', 'UNKNOWN')`
+        );
+        return result.rows;
+    }
+
+    /**
+     * Count reconciliation stop-reissues for a bot within the last hour,
+     * used to bound automatic repair attempts.
+     */
+    async countRecentStopReissues(botId: string): Promise<number> {
+        const result = await query<{ count: string }>(
+            `SELECT COUNT(*) as count
+             FROM bot_lifecycle_events
+             WHERE bot_id = $1
+               AND event_type = 'RECONCILE_STOP_REISSUED'
+               AND created_at > NOW() - INTERVAL '1 hour'`,
+            [botId]
+        );
+        return parseInt(result.rows[0]?.count ?? "0", 10);
+    }
 }

@@ -10,6 +10,7 @@ import { AuthManager } from "./auth-manager";
 import { CacheManager } from "./cache-manager";
 import { SubscriptionManager } from "./subscription-manager";
 import { MessageHandler } from "./message-handler";
+import { externalTrafficObserver } from "../../external/external-traffic-observer";
 
 /**
  * Main market stream service that orchestrates all components
@@ -66,9 +67,11 @@ export class MarketStreamService {
     try {
       // Get account ID for WebSocket URL
       const accountId = await this.authManager.getAccountId();
+      externalTrafficObserver.recordOrderlyConnection(symbols, Boolean(accountId));
 
       if (!accountId) {
         logger.error("No verified account found for WebSocket connection");
+        externalTrafficObserver.recordOrderlyConnectionFailure(symbols);
         return;
       }
 
@@ -133,6 +136,7 @@ export class MarketStreamService {
         symbols,
         errorMessage: (error as Error).message
       });
+      externalTrafficObserver.recordOrderlyConnectionFailure(symbols);
     }
   }
 
@@ -247,6 +251,7 @@ export class MarketStreamService {
     const markPriceData = await this.cacheManager.getMarkPrice(symbol);
     // Always connect to WebSocket to ensure we receive updates
     logger.debug("Getting mark price, ensuring WebSocket connection is active", { symbol });
+    externalTrafficObserver.recordMarkPriceRefresh(symbol);
     await this.connectToOrderly([symbol]);
     return markPriceData;
   }
