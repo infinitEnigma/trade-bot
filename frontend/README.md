@@ -11,7 +11,7 @@
 
 ## Overview
 
-The frontend is a modern React 19 single-page application (SPA) built with Vite, providing a real-time trading dashboard with bot management, strategy configuration, and market data visualization.
+The frontend is a modern React 19 single-page application (SPA) built with Vite, providing a real-time trading dashboard with bot management, strategy configuration, and market data visualization. It is **chain- and exchange-agnostic** - supporting multiple blockchains and exchanges through the backend's pluggable architecture.
 
 ### Key Features
 

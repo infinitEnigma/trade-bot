@@ -13,6 +13,7 @@
 
 import { Balance, Position } from './domain';
 import { Trade } from '../index';
+import { BotActualState } from '../protocol/bot-state';
 
 // ===========================================
 // CACHE INFRASTRUCTURE
@@ -324,17 +325,8 @@ export interface ITradingEngineService {
 
 // ===========================================
 // BOT STATUS MANAGEMENT INFRASTRUCTURE
+// Uses canonical BotActualState from protocol
 // ===========================================
-
-export enum BotStatus {
-    STOPPED = 'STOPPED',
-    STARTING = 'STARTING',
-    RUNNING = 'RUNNING',
-    PAUSED = 'PAUSED',
-    RECOVERING = 'RECOVERING',
-    ERROR = 'ERROR',
-    FORCE_STOPPING = 'FORCE_STOPPING'
-}
 
 export interface IBotStatusService {
     /**
@@ -351,7 +343,7 @@ export interface IBotStatusService {
      * Get comprehensive bot status information
      */
     getBotStatusInfo(botId: string, userId: string): Promise<{
-        status: BotStatus;
+        status: BotActualState;
         lastHeartbeat?: number;
         errorMessage?: string;
         performance?: {
