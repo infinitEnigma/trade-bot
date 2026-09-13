@@ -1,3 +1,5 @@
+import { BotActualState } from "@trade-bot/shared";
+
 /** @format */
 
 export interface GridStrategyConfig {
@@ -19,7 +21,7 @@ export interface GridLevel {
 export interface BotStatus {
   botId: string;
   strategyId: string;
-  status: "STARTING" | "RUNNING" | "STOPPING" | "STOPPED" | "ERROR";
+  status: BotActualState;
   currentPrice: number;
   totalTrades: number;
   totalPnl: number;

@@ -22,10 +22,10 @@
  */
 
 import axios, { AxiosInstance } from "axios";
-import { OrderRequest, OrderResponse } from "../types/strategy";
+import { OrderRequest, OrderResponse } from "../../types/strategy";
 import { createHash } from "crypto";
 import { getPublicKeyAsync, signAsync } from "@noble/ed25519";
-import { logger } from "../utils/logger";
+import { logger } from "../../utils/logger";
 
 interface OrderlyPosition {
   symbol: string;

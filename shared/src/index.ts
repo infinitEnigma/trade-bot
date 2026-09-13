@@ -175,16 +175,6 @@ export interface StrategyConfig {
   stopLoss?: number;
 }
 
-export interface BotStatus {
-  botId: string;
-  strategyId: string;
-  status: "RUNNING" | "STOPPED" | "ERROR";
-  runningTime: number;
-  totalTrades: number;
-  totalPnl: number;
-  lastError?: string;
-}
-
 // ============================================
 // Trade History Types
 // ============================================
@@ -296,6 +286,9 @@ export * from './protocol/bot-state';
 export * from './protocol/bot-command';
 export * from './protocol/bot-event';
 export * from './protocol/engine-lifecycle';
+
+// Canonical bot lifecycle state (replaces legacy BotStatus)
+export { BotActualState, BotDesiredState } from './protocol/bot-state';
 
 // ============================================
 // Engine Integration Contract

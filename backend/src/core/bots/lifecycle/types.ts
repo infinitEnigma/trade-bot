@@ -62,3 +62,56 @@ export interface TrackedCommandRow {
     bot_id: string;
     command_type: string;
 }
+
+/**
+ * Reason for a command timeout - used to determine the appropriate
+ * state transition and provide better diagnostics.
+ */
+export enum TimeoutReason {
+    /** Engine never received the command (e.g., Redis failure) */
+    COMMAND_NEVER_DELIVERED = "COMMAND_NEVER_DELIVERED",
+    /** Engine received command but never responded (e.g., engine crash) */
+    ENGINE_NO_RESPONSE = "ENGINE_NO_RESPONSE",
+    /** Bot is in unexpected state (e.g., RUNNING when START timed out) */
+    STATE_MISMATCH = "STATE_MISMATCH",
+    /** STOP command timed out while bot was stopping */
+    STOP_INCOMPLETE = "STOP_INCOMPLETE",
+}
+
+/**
+ * Determine the appropriate timeout reason based on command type and bot state.
+ */
+export function getTimeoutReason(commandType: string, botState: BotActualState): TimeoutReason {
+    if (commandType === "BOT_START" && botState === "RUNNING") {
+        // Bot is already running - engine likely processed the start but events were lost
+        return TimeoutReason.STATE_MISMATCH;
+    }
+    if (commandType === "BOT_STOP" && botState === "STOPPING") {
+        // Stop was initiated but never completed
+        return TimeoutReason.STOP_INCOMPLETE;
+    }
+    if (botState === "STARTING") {
+        // Engine never confirmed the start
+        return TimeoutReason.ENGINE_NO_RESPONSE;
+    }
+    return TimeoutReason.COMMAND_NEVER_DELIVERED;
+}
+
+/**
+ * Determine the target state for a timed-out command based on the timeout reason.
+ */
+export function getTimeoutTargetState(reason: TimeoutReason, commandType: string): BotActualState {
+    switch (reason) {
+        case TimeoutReason.STATE_MISMATCH:
+            // Bot is in an unexpected state - mark as UNKNOWN for reconciliation
+            return "UNKNOWN";
+        case TimeoutReason.STOP_INCOMPLETE:
+            // Stop didn't complete - engine state is unclear
+            return "UNKNOWN";
+        case TimeoutReason.ENGINE_NO_RESPONSE:
+        case TimeoutReason.COMMAND_NEVER_DELIVERED:
+        default:
+            // Engine never responded - error
+            return "ERROR";
+    }
+}

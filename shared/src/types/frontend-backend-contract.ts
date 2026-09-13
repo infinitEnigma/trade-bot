@@ -1,3 +1,4 @@
+import { BotActualState } from "../protocol/bot-state";
 /**
  * Frontend-Backend Integration Contract - Formal API between frontend and backend
  *
@@ -146,7 +147,7 @@ export interface BotInstanceResponse {
     id: string;
     strategyId: string;
     name: string;
-    status: "RUNNING" | "STOPPED" | "ERROR" | "PAUSED";
+    status: BotActualState;
     config: any;
     riskLimits: FrontendRiskLimits;
     position?: number;
@@ -461,7 +462,7 @@ export interface FrontendBotStatusEvent extends FrontendWebSocketEvent {
     type: 'bot:status';
     data: {
         botId: string;
-        status: 'RUNNING' | 'STOPPED' | 'ERROR' | 'PAUSED';
+        status: BotActualState;
         position?: number;
         exposure?: number;
     };

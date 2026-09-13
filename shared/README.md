@@ -6,7 +6,7 @@
 
 ## Overview
 
-The `@trade-bot/shared` package contains TypeScript types and interfaces shared between the frontend, backend, and engine packages. It serves as the single source of truth for the communication contracts between all packages.
+The `@trade-bot/shared` package contains **chain- and exchange-agnostic** TypeScript types and interfaces shared between the frontend, backend, and engine packages. It serves as the single source of truth for the communication contracts between all packages.
 
 > **⚠️ Known Issue**: This package has become a "god package" containing protocol types, domain models, API contracts, error classes, and logging types. It should be split into focused modules (see P2 issue below).
 
@@ -129,7 +129,7 @@ import {
 | Priority | Issue | Description |
 |----------|-------|-------------|
 | 🟡 P2 | God Package | Contains too many unrelated types. Should be split into `@trade-bot/protocol`, `@trade-bot/domain`, `@trade-bot/contracts`. |
-| 🟡 P2 | Legacy Models | Contains both old (`BotStatus.status: RUNNING | STOPPED | ERROR`) and new lifecycle state models. Should be consolidated. |
+| 🟡 P2 | Legacy Models | ✅ Fixed: Consolidated around canonical `BotActualState`. Removed `BotStatus` enum and inline status strings. |
 
 ---
 

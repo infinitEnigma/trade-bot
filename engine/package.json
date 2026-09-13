@@ -1,0 +1,47 @@
+{
+  "name": "@trade-bot/engine",
+  "version": "1.0.0",
+  "description": "Exchange-agnostic trading bot engine",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "jest",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^3.0.0",
+    "@noble/hashes": "^2.0.1",
+    "@trade-bot/shared": "^1.0.0",
+    "axios": "^1.13.2",
+    "bs58": "^6.0.0",
+    "dotenv": "^17.2.3",
+    "node-cron": "^4.2.1",
+    "pg": "^8.17.0",
+    "redis": "^5.10.0",
+    "uuid": "^13.0.0",
+    "winston": "^3.19.0",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.0.9",
+    "@types/node-cron": "^3.0.11",
+    "@types/pg": "^8.16.0",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.53.0",
+    "@typescript-eslint/parser": "^8.53.0",
+    "eslint": "^9.39.2",
+    "jest": "^30.2.0",
+    "prettier": "^3.4.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=25.0.9"
+  }
+}

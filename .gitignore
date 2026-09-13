@@ -1,14 +1,22 @@
-# Vite / React / TS
+# Dependencies
 node_modules/
 backend/node_modules/
 frontend/node_modules/
 shared/node_modules/
-engine/kodiak/node_modules/
+engine/node_modules/
+
+# Build outputs
 backend/dist/
 frontend/dist/
 shared/dist/
-engine/kodiak/dist/
+engine/dist/
+
+# Logs
 *.log
+logs/
+backend/logs/
+
+# Environment
 .env
 */.env
 .env.*
@@ -34,13 +42,9 @@ redis-dump.rdb
 redis-appendonly.aof
 pg_hba.conf
 
-# AI gudies
+# AI guides
 AI_*
 docs/
-
-# Log files
-logs/
-backend/logs/
 
 # Test coverage
 backend/coverage/
@@ -49,3 +53,4 @@ engine/coverage/
 
 # Debug files
 backend/debug/.engine-state.json
+engine/.engine-state.json
