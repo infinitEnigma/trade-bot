@@ -78,7 +78,7 @@ describe('JwtTokenAdapter', () => {
             const result = adapter.generateAccessToken(mockPayload);
 
             expect(jwt.sign).toHaveBeenCalledWith(
-                mockPayload,
+                expect.objectContaining({ userId: '123', type: 'access' }),
                 mockJwtSecret,
                 expect.objectContaining({ expiresIn: '4h' })
             );
@@ -111,7 +111,7 @@ describe('JwtTokenAdapter', () => {
             const result = adapter.generateRefreshToken(mockPayload);
 
             expect(jwt.sign).toHaveBeenCalledWith(
-                mockPayload,
+                expect.objectContaining({ userId: '123', type: 'refresh' }),
                 mockJwtRefreshSecret,
                 expect.objectContaining({ expiresIn: '30d' })
             );
@@ -137,7 +137,7 @@ describe('JwtTokenAdapter', () => {
         it('should verify access token successfully', () => {
             const adapter = new JwtTokenAdapter();
             const mockToken = 'valid-access-token';
-            const mockPayload = { userId: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED };
+            const mockPayload = { userId: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED, type: 'access' as const };
 
             (jwt.verify as jest.Mock).mockImplementation((token, secret) => {
                 if (secret === mockJwtSecret) {
@@ -149,31 +149,81 @@ describe('JwtTokenAdapter', () => {
             const result = adapter.verifyToken(mockToken);
 
             expect(jwt.verify).toHaveBeenCalledWith(mockToken, mockJwtSecret);
+            expect(jwt.verify).not.toHaveBeenCalledWith(mockToken, mockJwtRefreshSecret);
             expect(result).toEqual(mockPayload);
         });
 
-        it('should verify refresh token successfully when access token fails', () => {
+        it('should verify refresh token with explicit refresh type', () => {
             const adapter = new JwtTokenAdapter();
             const mockToken = 'valid-refresh-token';
-            const mockPayload = { userId: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED };
+            const mockPayload = { userId: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED, type: 'refresh' as const };
 
             (jwt.verify as jest.Mock).mockImplementation((token, secret) => {
-                if (secret === mockJwtSecret) {
-                    throw new Error('Invalid access token');
-                } else if (secret === mockJwtRefreshSecret) {
+                if (secret === mockJwtRefreshSecret) {
                     return mockPayload;
                 }
                 throw new Error('Invalid secret');
             });
 
-            const result = adapter.verifyToken(mockToken);
+            const result = adapter.verifyToken(mockToken, 'refresh');
 
-            expect(jwt.verify).toHaveBeenCalledWith(mockToken, mockJwtSecret);
             expect(jwt.verify).toHaveBeenCalledWith(mockToken, mockJwtRefreshSecret);
+            expect(jwt.verify).not.toHaveBeenCalledWith(mockToken, mockJwtSecret);
             expect(result).toEqual(mockPayload);
         });
 
-        it('should return null when both token verifications fail', () => {
+        it('should reject a refresh token presented as an access token', () => {
+            const adapter = new JwtTokenAdapter();
+            const mockToken = 'refresh-token-as-access';
+            const mockPayload = { userId: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED, type: 'refresh' as const };
+
+            (jwt.verify as jest.Mock).mockImplementation((token, secret) => {
+                if (secret === mockJwtRefreshSecret) {
+                    return mockPayload;
+                }
+                throw new Error('Invalid secret');
+            });
+
+            const result = adapter.verifyToken(mockToken, 'access');
+
+            expect(result).toBeNull();
+        });
+
+        it('should reject an access token presented for refresh', () => {
+            const adapter = new JwtTokenAdapter();
+            const mockToken = 'access-token-as-refresh';
+            const mockPayload = { userId: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED, type: 'access' as const };
+
+            (jwt.verify as jest.Mock).mockImplementation((token, secret) => {
+                if (secret === mockJwtSecret) {
+                    return mockPayload;
+                }
+                throw new Error('Invalid secret');
+            });
+
+            const result = adapter.verifyToken(mockToken, 'refresh');
+
+            expect(result).toBeNull();
+        });
+
+        it('should reject a token signed with the correct secret but missing the type claim', () => {
+            const adapter = new JwtTokenAdapter();
+            const mockToken = 'legacy-token-without-type';
+            const mockPayload = { userId: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED };
+
+            (jwt.verify as jest.Mock).mockImplementation((token, secret) => {
+                if (secret === mockJwtSecret) {
+                    return mockPayload;
+                }
+                throw new Error('Invalid secret');
+            });
+
+            const result = adapter.verifyToken(mockToken, 'access');
+
+            expect(result).toBeNull();
+        });
+
+        it('should return null when token verification fails', () => {
             const adapter = new JwtTokenAdapter();
             const mockToken = 'invalid-token';
 
@@ -184,7 +234,7 @@ describe('JwtTokenAdapter', () => {
             const result = adapter.verifyToken(mockToken);
 
             expect(jwt.verify).toHaveBeenCalledWith(mockToken, mockJwtSecret);
-            expect(jwt.verify).toHaveBeenCalledWith(mockToken, mockJwtRefreshSecret);
+            expect(jwt.verify).not.toHaveBeenCalledWith(mockToken, mockJwtRefreshSecret);
             expect(result).toBeNull();
         });
 
@@ -205,7 +255,7 @@ describe('JwtTokenAdapter', () => {
             const adapter = new JwtTokenAdapter();
             const mockToken = 'invalid-token';
 
-            // Make jwt.verify throw an unexpected error that isn't caught by the inner try-catch blocks
+            // Make jwt.verify throw an unexpected error
             (jwt.verify as jest.Mock).mockImplementation(() => {
                 throw new TypeError('Unexpected type error');
             });
@@ -220,7 +270,7 @@ describe('JwtTokenAdapter', () => {
         it('should verify token and validate user exists', async () => {
             const adapter = new JwtTokenAdapter();
             const mockToken = 'valid-token';
-            const mockPayload = { userId: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED };
+            const mockPayload = { userId: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED, type: 'access' as const };
             const mockAuthService = {
                 getUserById: jest.fn().mockResolvedValue({ id: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED })
             };
@@ -253,7 +303,7 @@ describe('JwtTokenAdapter', () => {
         it('should return null when user does not exist', async () => {
             const adapter = new JwtTokenAdapter();
             const mockToken = 'valid-token';
-            const mockPayload = { userId: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED };
+            const mockPayload = { userId: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED, type: 'access' as const };
             const mockAuthService = {
                 getUserById: jest.fn().mockResolvedValue(null)
             };
@@ -269,7 +319,7 @@ describe('JwtTokenAdapter', () => {
         it('should return null when database validation fails', async () => {
             const adapter = new JwtTokenAdapter();
             const mockToken = 'valid-token';
-            const mockPayload = { userId: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED };
+            const mockPayload = { userId: '123', email: 'test@example.com', userLevel: UserLevel.VERIFIED, type: 'access' as const };
             const mockAuthService = {
                 getUserById: jest.fn().mockRejectedValue(new Error('Database error'))
             };

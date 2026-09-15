@@ -29,6 +29,7 @@ jest.mock('../../../src/infrastructure/dependency-injection.container', () => {
                 validateToken: jest.fn(),
                 getUserById: jest.fn(),
                 getAuthenticatedUserData: jest.fn(),
+                logout: jest.fn().mockResolvedValue({ success: true, message: 'Logged out successfully', tokensBlacklisted: 0 }),
             },
             userRepository: {},
             passwordService: {},

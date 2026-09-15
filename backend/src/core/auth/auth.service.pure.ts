@@ -29,6 +29,7 @@ import {
     UserLogin,
     AuthTokens,
     TokenPayload,
+    TokenType,
     CacheResult
 } from '@trade-bot/shared';
 
@@ -86,6 +87,9 @@ export interface LegacyAuthResult {
 export class AuthService {
     private readonly CACHE_TTL = 300; // 5 minutes for user data
     private readonly CACHE_PREFIX = 'auth:user';
+    private readonly JWT_BLACKLIST_PREFIX = 'jwt:blacklist:'; // Must match CACHE_KEYS.jwtBlacklist in config/cache.config.ts
+    private readonly REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60; // 30 days in seconds - matches refresh token expiry
+    private readonly ACCESS_TOKEN_TTL = 4 * 60 * 60; // 4 hours in seconds - matches access token expiry
 
     constructor(private deps: AuthServiceDependencies) { }
 
@@ -248,8 +252,15 @@ export class AuthService {
         try {
             this.deps.logger.debug('Token refresh attempt');
 
-            // Validate refresh token
-            const payload = this.deps.tokenService.verifyToken(refreshToken);
+            // Reject refresh tokens that were blacklisted (e.g. via logout)
+            if (await this.isTokenBlacklisted(refreshToken)) {
+                this.deps.logger.warn('Token refresh failed - token is blacklisted');
+                return { success: false, message: 'Invalid refresh token' };
+            }
+
+            // Validate refresh token (type claim enforces this is a refresh token,
+            // signed with the refresh secret - never accepts access tokens)
+            const payload = this.deps.tokenService.verifyToken(refreshToken, 'refresh');
             if (!payload) {
                 this.deps.logger.warn('Token refresh failed - invalid token');
                 return { success: false, message: 'Invalid refresh token' };
@@ -297,6 +308,12 @@ export class AuthService {
      */
     async validateToken(token: string): Promise<TokenPayload | null> {
         try {
+            // Reject tokens that were blacklisted (e.g. via logout/password change)
+            if (await this.isTokenBlacklisted(token)) {
+                this.deps.logger.debug('Token validation failed - token is blacklisted');
+                return null;
+            }
+
             // Use the new database validation method
             const payload = await this.deps.tokenService.verifyTokenWithDatabaseValidation(token, this);
             if (!payload) {
@@ -723,6 +740,85 @@ export class AuthService {
                 success: false,
                 errors: [error instanceof Error ? error.message : String(error)]
             };
+        }
+    }
+
+    /**
+     * Logout - blacklist the presented tokens so they can no longer be used
+     *
+     * Business Logic:
+     * - Verify each token to obtain its expiry (invalid/expired tokens are skipped)
+     * - Blacklist the token hash in cache until its natural expiry
+     * - Refresh tokens can no longer be used via refreshToken()
+     * - Access tokens can no longer be used via validateToken()
+     */
+    async logout(refreshToken?: string, accessToken?: string): Promise<{ success: boolean; message?: string; tokensBlacklisted?: number }> {
+        try {
+            let tokensBlacklisted = 0;
+
+            if (refreshToken) {
+                tokensBlacklisted += await this.blacklistToken(refreshToken, 'refresh');
+            }
+            if (accessToken) {
+                tokensBlacklisted += await this.blacklistToken(accessToken, 'access');
+            }
+
+            this.deps.logger.info('User logged out', { tokensBlacklisted });
+            await this.logAuditEvent('USER_LOGGED_OUT', { tokensBlacklisted });
+
+            return { success: true, message: 'Logged out successfully', tokensBlacklisted };
+        } catch (error) {
+            this.deps.logger.error('Logout failed', {
+                error: error instanceof Error ? error.message : String(error)
+            });
+            return { success: false, message: 'Logout failed' };
+        }
+    }
+
+    /**
+     * Blacklist a single token until its natural expiry
+     * @returns 1 if the token was blacklisted, 0 if it was invalid/expired or blacklisting failed
+     */
+    private async blacklistToken(token: string, expectedType: TokenType): Promise<number> {
+        try {
+            const payload = this.deps.tokenService.verifyToken(token, expectedType);
+            if (!payload) {
+                // Invalid or expired tokens don't need blacklisting
+                return 0;
+            }
+
+            const hash = this.deps.tokenService.hashTokenForStorage(token);
+            const ttl = this.remainingTtlSeconds(payload, expectedType);
+            const result = await this.deps.cache.setex(`${this.JWT_BLACKLIST_PREFIX}${hash}`, ttl, '1');
+            return result?.success ? 1 : 0;
+        } catch (error) {
+            this.deps.logger.warn('Failed to blacklist token', {
+                error: error instanceof Error ? error.message : String(error)
+            });
+            return 0;
+        }
+    }
+
+    /** Remaining TTL (seconds) for the token, clamped to [60, type max TTL] */
+    private remainingTtlSeconds(payload: TokenPayload, expectedType: TokenType): number {
+        const maxTtl = expectedType === 'refresh' ? this.REFRESH_TOKEN_TTL : this.ACCESS_TOKEN_TTL;
+        const nowSec = Math.floor(Date.now() / 1000);
+        const remaining = (payload.exp ?? 0) - nowSec;
+        return Math.min(Math.max(remaining, 60), maxTtl);
+    }
+
+    /** Check whether a token was previously blacklisted (logout / invalidation) */
+    private async isTokenBlacklisted(token: string): Promise<boolean> {
+        try {
+            const hash = this.deps.tokenService.hashTokenForStorage(token);
+            const result = await this.deps.cache.get(`${this.JWT_BLACKLIST_PREFIX}${hash}`);
+            return Boolean(result?.success && result.data);
+        } catch (error) {
+            // Fail open: a cache outage should not lock out every request
+            this.deps.logger.debug('Blacklist check failed, treating token as valid', {
+                error: error instanceof Error ? error.message : String(error)
+            });
+            return false;
         }
     }
 

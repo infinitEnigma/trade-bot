@@ -1,9 +1,7 @@
 /** @format */
 
 import { passwordWorkerPool, hashPassword, comparePassword } from '../../src/workers/password-worker';
-import logger from '../../src/core/logging/logger.service';
 
-// Mock logger to avoid actual logging during tests
 jest.mock('../../src/core/logging/logger.service');
 
 describe('Background Workers Integration Tests', () => {
@@ -36,50 +34,37 @@ describe('Background Workers Integration Tests', () => {
 
     describe('Password Worker Pool', () => {
         it('should hash passwords without blocking event loop', async () => {
-            try {
-                const testPassword = 'test-password-123';
+            const testPassword = 'test-password-123';
 
-                const startTime = Date.now();
-                //console.log("should hash passwords without blocking event loop", startTime);
-                const hash = await hashPassword(testPassword);
-                const duration = Date.now() - startTime;
-                //console.log("should hash passwords without blocking event loop", duration);
-                // Password hashing should complete in reasonable time
-                expect(duration).toBeLessThan(5000); // Should complete within 5 seconds
-                expect(hash).toBeDefined();
-                expect(typeof hash).toBe('string');
-                expect(hash.length).toBeGreaterThan(50); // bcrypt hashes are typically 60 chars
-                //console.log("should hash passwords without blocking event loop", hash);
-            } catch { }
+            const startTime = Date.now();
+            const hash = await hashPassword(testPassword);
+            const duration = Date.now() - startTime;
 
+            // Password hashing should complete in reasonable time
+            expect(duration).toBeLessThan(5000); // Should complete within 5 seconds
+            expect(hash).toBeDefined();
+            expect(typeof hash).toBe('string');
+            expect(hash.length).toBeGreaterThan(50); // bcrypt hashes are typically 60 chars
         }, 5000);
 
         it('should compare passwords correctly', async () => {
-            //console.log("should compare passwords correctly");
-            try {
-                const testPassword = 'test-password-456';
+            const testPassword = 'test-password-456';
 
-                const startTime = Date.now();
-                //console.log("should compare passwords correctly", testPassword, startTime);
-                const hash = await hashPassword(testPassword);
-                const duration = Date.now() - startTime;
-                //console.log("should compare passwords correctly", duration);
-                expect(duration).toBeLessThan(3000); // Should complete within 5 seconds
-                // Test correct password
-                expect(hash).toBeDefined();
-                expect(typeof hash).toBe('string');
-                const isValid = await comparePassword(testPassword, hash);
-                expect(isValid).toBeDefined();
-                expect(isValid).toBe(true);
+            const startTime = Date.now();
+            const hash = await hashPassword(testPassword);
+            const duration = Date.now() - startTime;
+            expect(duration).toBeLessThan(3000); // Should complete within 5 seconds
+            // Test correct password
+            expect(hash).toBeDefined();
+            expect(typeof hash).toBe('string');
+            const isValid = await comparePassword(testPassword, hash);
+            expect(isValid).toBeDefined();
+            expect(isValid).toBe(true);
 
-                // Test incorrect password
-                const isInvalid = await comparePassword('wrong-password', hash);
-                expect(isInvalid).toBeDefined();
-                expect(isInvalid).toBe(false);
-                //console.log("should compare passwords correctly", isValid);
-            } catch (error) {
-                logger.warn("password compare error", error)
-            }
+            // Test incorrect password
+            const isInvalid = await comparePassword('wrong-password', hash);
+            expect(isInvalid).toBeDefined();
+            expect(isInvalid).toBe(false);
         }, 10000); // 8 second timeout for password operations
 
         it('should handle multiple concurrent password operations', async () => {
@@ -119,23 +104,15 @@ describe('Background Workers Integration Tests', () => {
         it('should handle worker thread failures gracefully', async () => {
             // This test verifies that the worker pool can handle worker failures
             const testPassword = 'test-password-789';
-            //console.log("should handle worker thread failures gracefully", testPassword);
-            try {
-                const hash = await hashPassword(testPassword);
-                expect(hash).toBeDefined();
-                expect(typeof hash).toBe('string');
-                expect(hash.length).toBeGreaterThan(50);
 
-                // Verify password comparison still works after potential worker issues
-                const isValid = await comparePassword(testPassword, hash);
-                expect(isValid).toBe(true);
-            } catch (error) {
-                // If there's an error, it should be handled gracefully
-                expect(error).toBeDefined();
-                logger.warn('Password worker test handled gracefully', {
-                    error: error instanceof Error ? error.message : String(error)
-                });
-            }
+            const hash = await hashPassword(testPassword);
+            expect(hash).toBeDefined();
+            expect(typeof hash).toBe('string');
+            expect(hash.length).toBeGreaterThan(50);
+
+            // Verify password comparison still works after potential worker issues
+            const isValid = await comparePassword(testPassword, hash);
+            expect(isValid).toBe(true);
         }, 15000); // 15 second timeout for worker failure test (increased from 12s)
 
         it('should provide pool statistics', async () => {
@@ -266,31 +243,23 @@ describe('Background Workers Integration Tests', () => {
         it('should recover from password worker failures', async () => {
             // Test that the worker pool can recover from failures
             const testPassword = 'test-recovery';
-            //console.log('should recover from password worker failures', testPassword)
-            try {
-                // Perform multiple operations to test stability with timeout protection
-                const operations = Array(5).fill(null).map(async (_, index) => {
-                    const password = `${testPassword}-${index}`;
-                    const hash = await hashPassword(password);
-                    expect(hash).toBeDefined();
-                    expect(typeof hash).toBe('string');
-                    expect(hash.length).toBeGreaterThan(50);
-                    return await comparePassword(password, hash);
-                });
 
-                const results = await Promise.all(operations);
+            // Perform multiple operations to test stability with timeout protection
+            const operations = Array(5).fill(null).map(async (_, index) => {
+                const password = `${testPassword}-${index}`;
+                const hash = await hashPassword(password);
+                expect(hash).toBeDefined();
+                expect(typeof hash).toBe('string');
+                expect(hash.length).toBeGreaterThan(50);
+                return await comparePassword(password, hash);
+            });
 
-                // All operations should succeed
-                results.forEach(isValid => {
-                    expect(isValid).toBe(true);
-                });
-                //console.log('should handle high load on password worker pool', results.toString())
-            } catch (error) {
-                // If there's an error, it should be handled gracefully
-                logger.warn('Password worker recovery test handled gracefully', {
-                    error: error instanceof Error ? error.message : String(error)
-                });
-            }
+            const results = await Promise.all(operations);
+
+            // All operations should succeed
+            results.forEach(isValid => {
+                expect(isValid).toBe(true);
+            });
         }, 10000); // 10 second timeout for recovery test (increased from 5s)
 
         it('should handle high load on password worker pool', async () => {
@@ -299,47 +268,34 @@ describe('Background Workers Integration Tests', () => {
             const passwords = Array(concurrentOperations).fill(null).map((_, index) =>
                 `high-load-password-${index}`
             );
-            //console.log('should handle high load on password worker pool - passwords', passwords.toString())
             const startTime = Date.now();
 
-            try {
-                // Hash all passwords concurrently with timeout protection
-                const hashPromises = passwords.map(async (password) => {
-                    const hash = await hashPassword(password);
-                    expect(hash).toBeDefined();
-                    expect(typeof hash).toBe('string');
-                    expect(hash.length).toBeGreaterThan(50);
-                    return hash;
-                });
-                //console.log('should handle high load on password worker pool - hashPromises', hashPromises.toString())
-                const hashes = await Promise.all(hashPromises);
-                expect(hashes).toBeDefined();
-                //console.log('should handle high load on password worker pool - hashes', hashes.toString())
-                // Compare all passwords concurrently with timeout protection
-                const comparePromises = passwords.map((password, index) =>
-                    comparePassword(password, hashes[index])
-                );
+            // Hash all passwords concurrently with timeout protection
+            const hashPromises = passwords.map(async (password) => {
+                const hash = await hashPassword(password);
+                expect(hash).toBeDefined();
+                expect(typeof hash).toBe('string');
+                expect(hash.length).toBeGreaterThan(50);
+                return hash;
+            });
+            const hashes = await Promise.all(hashPromises);
+            expect(hashes).toBeDefined();
+            // Compare all passwords concurrently with timeout protection
+            const comparePromises = passwords.map((password, index) =>
+                comparePassword(password, hashes[index])
+            );
 
-                const comparisons = await Promise.all(comparePromises);
-                expect(comparisons).toBeDefined();
-                // Verify all comparisons succeeded
-                expect(comparisons).toHaveLength(concurrentOperations);
-                comparisons.forEach(isValid => {
-                    expect(isValid).toBe(true);
-                });
+            const comparisons = await Promise.all(comparePromises);
+            expect(comparisons).toBeDefined();
+            // Verify all comparisons succeeded
+            expect(comparisons).toHaveLength(concurrentOperations);
+            comparisons.forEach(isValid => {
+                expect(isValid).toBe(true);
+            });
 
-                const duration = Date.now() - startTime;
-                console.log('should handle high load on password worker pool', comparisons.toString())
-                // Should complete within reasonable time even under load
-                expect(duration).toBeLessThan(30000); // 30 seconds (increased from 20s)
-
-            } catch (error) {
-                // If there's an error under load, it should be handled gracefully
-                logger.warn('High load password worker test handled gracefully', {
-                    error: error instanceof Error ? error.message : String(error),
-                    concurrentOperations
-                });
-            }
+            const duration = Date.now() - startTime;
+            // Should complete within reasonable time even under load
+            expect(duration).toBeLessThan(30000); // 30 seconds (increased from 20s)
         }, 30000); // 30 second timeout for this test (increased from 10s)
     });
 });

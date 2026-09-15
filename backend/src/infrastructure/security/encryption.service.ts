@@ -255,6 +255,10 @@ function _scryptSync(
 export class EncryptionService {
   private masterKey: string;
   private queryFn: typeof query;
+  // Current version used to encrypt NEW data. Advanced by rotateEncryptionKeys().
+  private currentKeyVersion: number = CURRENT_KEY_VERSION;
+  // In-memory cache of rotated key material loaded from the encryption_keys table
+  private versionedKeyCache: Map<number, string> = new Map();
 
   constructor(queryFunction: typeof query = query) {
     // NO DEFAULTS - Fail fast if not configured
@@ -337,8 +341,9 @@ export class EncryptionService {
   /**
    * Encrypt data with version information for key rotation support
    */
-  async encryptWithVersion(plaintext: string, version: number = CURRENT_KEY_VERSION): Promise<string> {
-    const key = await this.getVersionedKey(version);
+  async encryptWithVersion(plaintext: string, version?: number): Promise<string> {
+    const v = version ?? this.currentKeyVersion;
+    const key = await this.getVersionedKey(v);
     const salt = randomBytes(SALT_LENGTH);
     const derivedKey = await scryptAsync(key, salt, 32) as Buffer;
     const iv = randomBytes(IV_LENGTH);
@@ -350,7 +355,7 @@ export class EncryptionService {
 
     // Format: version(1) + salt(32) + iv(16) + tag(16) + encrypted_data
     const versionBuffer = Buffer.alloc(1);
-    versionBuffer.writeUInt8(version);
+    versionBuffer.writeUInt8(v);
 
     const result = Buffer.concat([
       versionBuffer,
@@ -392,18 +397,39 @@ export class EncryptionService {
 
   /**
    * Get the appropriate encryption key for a given version
+   *
+   * Version mapping:
+   * - 1: original master key (legacy envelope format)
+   * - 2: legacy "rotated" version - historically aliased to the master key,
+   *      kept for backward compatibility with data encrypted before rotation
+   *      was implemented
+   * - >= 3: real rotated keys, wrapped under the master key and stored in the
+   *      encryption_keys table (encrypted_key column, version-1 envelope)
    */
   private async getVersionedKey(version: number): Promise<string> {
-    if (version === 1) {
-      // Version 1: Original master key
+    if (version === 1 || version === 2) {
+      // Versions 1 and 2 map to the master key (v2 is a legacy alias)
       return this.masterKey;
-    } else if (version === 2) {
-      // Version 2: Rotated key (could be derived from master key + rotation data)
-      // For now, we'll use the same key but this could be enhanced
-      return this.masterKey;
-    } else {
-      throw new Error(`Unsupported encryption version: ${version}`);
     }
+
+    const cached = this.versionedKeyCache.get(version);
+    if (cached) {
+      return cached;
+    }
+
+    const result = await this.queryFn<{ encrypted_key: string }>(
+      "SELECT encrypted_key FROM encryption_keys WHERE version = $1",
+      [version]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error(`No encryption key found for version ${version}`);
+    }
+
+    // The stored key is wrapped under the master key (version-1 envelope)
+    const key = await this.decryptWithVersion(result.rows[0].encrypted_key);
+    this.versionedKeyCache.set(version, key);
+    return key;
   }
 
   /**
@@ -436,36 +462,102 @@ export class EncryptionService {
   }
 
   /**
-   * Perform key rotation (create new encryption key version)
+   * Perform key rotation
+   *
+   * Business Logic:
+   * 1. Determine the next key version from the database (highest stored version + 1)
+   * 2. Generate new key material and store it wrapped under the master key
+   *    (version-1 envelope) in the encryption_keys table
+   * 3. Make the new version current for this instance so new data uses it
+   * 4. Re-encrypt all existing credentials under the new version
+   *
+   * @returns the new key version
    */
   async rotateEncryptionKeys(): Promise<void> {
     try {
       logger.info("Starting encryption key rotation");
 
-      // Generate new key material (in production, this should be securely generated)
-      const newKey = randomBytes(32).toString("hex");
+      // Determine next version from the highest stored version
+      const maxResult = await this.queryFn<{ max_version: number | null }>(
+        "SELECT MAX(version) AS max_version FROM encryption_keys"
+      );
+      const highestStored = maxResult?.rows?.[0]?.max_version ?? 0;
+      const previousVersion = Math.max(highestStored, CURRENT_KEY_VERSION);
+      const newVersion = previousVersion + 1;
 
-      // Store new key in database (encrypted with master key)
-      const encryptedNewKey = await this.encryptWithVersion(newKey);
+      // Generate new key material and store it wrapped under the master key
+      // (version-1 envelope) so it can be recovered by getVersionedKey()
+      const newKey = randomBytes(32).toString("hex");
+      const encryptedNewKey = await this.encryptWithVersion(newKey, 1);
 
       await this.queryFn(
         "INSERT INTO encryption_keys (version, encrypted_key, created_at) VALUES ($1, $2, NOW())",
-        [CURRENT_KEY_VERSION, encryptedNewKey]
+        [newVersion, encryptedNewKey]
       );
 
-      // Update current version
-      const newVersion = CURRENT_KEY_VERSION + 1;
+      // Make the new version current for this instance
+      this.currentKeyVersion = newVersion;
+      this.versionedKeyCache.set(newVersion, newKey);
+
+      logger.info("New encryption key stored", {
+        newVersion,
+        previousVersion,
+      });
+
+      // Re-encrypt existing credentials under the new version
+      const credentials = await this.queryFn<{
+        id: string;
+        api_key_encrypted: string;
+        secret_key_encrypted: string;
+        encryption_version: number | null;
+      }>(
+        "SELECT id, api_key_encrypted, secret_key_encrypted, encryption_version FROM kodiak_credentials WHERE encryption_version IS NULL OR encryption_version < $1",
+        [newVersion]
+      );
+
+      const rows = credentials?.rows ?? [];
+      logger.info("Re-encrypting credentials under new key version", {
+        count: rows.length,
+        newVersion,
+      });
+
+      for (const cred of rows) {
+        try {
+          // Rows without an encryption_version hold legacy (non-versioned) ciphertext
+          const apiKey =
+            cred.encryption_version == null
+              ? this.decryptApiKey(cred.api_key_encrypted)
+              : await this.decryptWithVersion(cred.api_key_encrypted);
+          const secretKey =
+            cred.encryption_version == null
+              ? this.decryptSecretKey(cred.secret_key_encrypted)
+              : await this.decryptWithVersion(cred.secret_key_encrypted);
+
+          const newApiKeyEncrypted = await this.encryptWithVersion(apiKey, newVersion);
+          const newSecretKeyEncrypted = await this.encryptWithVersion(secretKey, newVersion);
+
+          await this.queryFn(
+            "UPDATE kodiak_credentials SET api_key_encrypted = $1, secret_key_encrypted = $2, encryption_version = $3 WHERE id = $4",
+            [newApiKeyEncrypted, newSecretKeyEncrypted, newVersion, cred.id]
+          );
+
+          logger.debug("Re-encrypted credential during rotation", {
+            credentialId: cred.id,
+          });
+        } catch (error) {
+          // One credential failing must not abort the whole rotation;
+          // it stays on the old version and is still decryptable
+          logger.error("Failed to re-encrypt credential during rotation", error as Error, {
+            credentialId: cred.id,
+            error: (error as Error).message,
+          });
+        }
+      }
 
       logger.info("Encryption key rotation completed", {
         newVersion,
-        previousVersion: CURRENT_KEY_VERSION,
+        previousVersion,
       });
-
-      // Note: In a production system, you would:
-      // 1. Re-encrypt existing data with new key
-      // 2. Update application configuration
-      // 3. Schedule old key deletion after grace period
-
     } catch (error) {
       logger.error("Encryption key rotation failed", error as Error, {
         error: (error as Error).message,
@@ -486,8 +578,9 @@ export class EncryptionService {
         id: string;
         api_key_encrypted: string;
         secret_key_encrypted: string;
+        encryption_version: number | null;
       }>(
-        "SELECT id, api_key_encrypted, secret_key_encrypted FROM kodiak_credentials WHERE encryption_version IS NULL OR encryption_version < $1",
+        "SELECT id, api_key_encrypted, secret_key_encrypted, encryption_version FROM kodiak_credentials WHERE encryption_version IS NULL OR encryption_version < $1",
         [CURRENT_KEY_VERSION]
       );
 
@@ -497,9 +590,15 @@ export class EncryptionService {
 
       for (const cred of credentials.rows) {
         try {
-          // Decrypt with old method
-          const apiKey = this.decryptApiKey(cred.api_key_encrypted);
-          const secretKey = this.decryptSecretKey(cred.secret_key_encrypted);
+          // Rows without an encryption_version hold legacy (non-versioned) ciphertext
+          const apiKey =
+            cred.encryption_version == null
+              ? this.decryptApiKey(cred.api_key_encrypted)
+              : await this.decryptWithVersion(cred.api_key_encrypted);
+          const secretKey =
+            cred.encryption_version == null
+              ? this.decryptSecretKey(cred.secret_key_encrypted)
+              : await this.decryptWithVersion(cred.secret_key_encrypted);
 
           // Re-encrypt with new versioned method
           const newApiKeyEncrypted = await this.encryptWithVersion(apiKey);

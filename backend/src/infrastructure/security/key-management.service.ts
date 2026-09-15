@@ -49,6 +49,9 @@ export class KeyManagementService {
   private derivedKeys: Map<KeyPurpose, Buffer> = new Map();
   private keyVersions: Map<KeyPurpose, number> = new Map();
   private initialized = false;
+  // Tracks in-flight initialization so failures surface to callers of
+  // ensureInitialized() instead of becoming unhandled promise rejections
+  private initializationPromise: Promise<void> | null = null;
 
   // For testing purposes, allow overriding crypto functions
   private hkdf = hkdfAsync;
@@ -56,11 +59,17 @@ export class KeyManagementService {
 
   constructor() {
     this.initializeMasterKey();
-    // Initialize keys synchronously by waiting for promise
-    this.derivePurposeKeys().catch(error => {
-      logger.error("Key management service initialization failed", error);
-      throw error;
-    });
+    // Start key derivation; callers must await ensureInitialized() before use
+    this.initializationPromise = this.derivePurposeKeys()
+      .then(() => {
+        this.initialized = true;
+      })
+      .catch(error => {
+        // Allow a later ensureInitialized() call to retry derivation
+        this.initializationPromise = null;
+        logger.error("Key management service initialization failed", error);
+        throw error;
+      });
   }
 
   // For testing purposes only
@@ -75,15 +84,20 @@ export class KeyManagementService {
 
   /**
    * Ensure keys are fully derived before any operation
+   * Throws if key derivation failed - callers must not proceed with
+   * partially initialized keys.
    */
   private async ensureInitialized(): Promise<void> {
     if (this.initialized && this.derivedKeys.size === Object.values(KeyPurpose).length) {
       return;
     }
-    // If keys aren't derived yet, wait for them
-    if (this.derivedKeys.size === 0) {
-      await this.derivePurposeKeys();
+    // If keys aren't derived yet (or derivation failed), (re)start derivation
+    if (!this.initializationPromise) {
+      this.initializationPromise = this.derivePurposeKeys().then(() => {
+        this.initialized = true;
+      });
     }
+    await this.initializationPromise;
     this.initialized = true;
   }
 

@@ -6,6 +6,7 @@
  */
 
 import { Router, Request, Response, NextFunction } from "express";
+import { timingSafeEqual } from "crypto";
 import { query } from "../../../database/pool";
 // Bot services have been removed - using direct database operations instead
 import { serviceProvider } from "../../../core/service-provider";
@@ -60,7 +61,13 @@ const botEngineAuth = (req: Request, res: Response, next: NextFunction) => {
         });
     }
 
-    if (apiKey !== expectedKey) {
+    // Constant-time comparison to prevent timing attacks on the API key
+    const expected = Buffer.from(expectedKey, "utf8");
+    const provided = Buffer.from(apiKey, "utf8");
+    const isValid =
+        expected.length === provided.length && timingSafeEqual(expected, provided);
+
+    if (!isValid) {
         logger.warn("Invalid bot engine API key provided", {
             path: req.path,
             ip: req.ip,

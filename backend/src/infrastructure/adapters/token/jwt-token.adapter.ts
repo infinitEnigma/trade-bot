@@ -10,7 +10,7 @@
 
 import jwt from 'jsonwebtoken';
 import { createHash } from 'crypto';
-import { ITokenService, TokenPayload } from '@trade-bot/shared';
+import { ITokenService, TokenPayload, TokenType } from '@trade-bot/shared';
 
 /**
  * JWT Token Adapter
@@ -32,10 +32,12 @@ export class JwtTokenAdapter implements ITokenService {
 
     /**
      * Generate access token
+     *
+     * Embeds a `type: 'access'` claim so the token can only be verified on the access path.
      */
     generateAccessToken(payload: TokenPayload): string {
         try {
-            return jwt.sign(payload, this.JWT_SECRET, {
+            return jwt.sign({ ...payload, type: 'access' as const }, this.JWT_SECRET, {
                 expiresIn: this.ACCESS_TOKEN_EXPIRY
             });
         } catch (error) {
@@ -45,10 +47,12 @@ export class JwtTokenAdapter implements ITokenService {
 
     /**
      * Generate refresh token
+     *
+     * Embeds a `type: 'refresh'` claim so the token can only be verified on the refresh path.
      */
     generateRefreshToken(payload: TokenPayload): string {
         try {
-            return jwt.sign(payload, this.JWT_REFRESH_SECRET, {
+            return jwt.sign({ ...payload, type: 'refresh' as const }, this.JWT_REFRESH_SECRET, {
                 expiresIn: this.REFRESH_TOKEN_EXPIRY
             });
         } catch (error) {
@@ -59,23 +63,26 @@ export class JwtTokenAdapter implements ITokenService {
     /**
      * Verify and decode token
      *
-     * This method tries both access and refresh token secrets to verify the token.
-     * Returns null if token is invalid or expired.
+     * Verifies the token against the secret that matches the expected token type
+     * and enforces the `type` claim. Tokens signed with the other secret, or
+     * carrying the wrong `type` claim, are rejected.
+     *
+     * @param token - JWT token to verify
+     * @param expectedType - Which token type is acceptable at this call site (default: 'access')
+     * @returns TokenPayload if valid and of the expected type; null otherwise
      */
-    verifyToken(token: string): TokenPayload | null {
+    verifyToken(token: string, expectedType: TokenType = 'access'): TokenPayload | null {
         try {
-            // Try to verify as access token first
-            try {
-                return jwt.verify(token, this.JWT_SECRET) as TokenPayload;
-            } catch (_accessTokenError) {
-                // If access token verification fails, try refresh token
-                try {
-                    return jwt.verify(token, this.JWT_REFRESH_SECRET) as TokenPayload;
-                } catch (_refreshTokenError) {
-                    // Both verifications failed
-                    return null;
-                }
+            const secret = expectedType === 'refresh' ? this.JWT_REFRESH_SECRET : this.JWT_SECRET;
+            const payload = jwt.verify(token, secret) as TokenPayload;
+
+            // Enforce the type claim: a refresh token must never authenticate as an
+            // access token (and vice versa), even if both secrets were ever leaked.
+            if (payload?.type !== expectedType) {
+                return null;
             }
+
+            return payload;
         } catch (_error) {
             return null;
         }
@@ -96,7 +103,7 @@ export class JwtTokenAdapter implements ITokenService {
         authService: any
     ): Promise<TokenPayload | null> {
         try {
-            const payload = this.verifyToken(token);
+            const payload = this.verifyToken(token, 'access');
             if (!payload) {
                 return null;
             }

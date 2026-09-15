@@ -339,7 +339,6 @@ describe('Auth Middleware', () => {
     (req as any).cookies.accessToken = token;
     (req as any).cookies.refreshToken = 'valid-refresh-token';
     (req as any).path = '/api/user/profile'; // Use a non-lightweight endpoint
-    console.log("should handle token refresh retry logic", token);
     // Mock token validation to throw TokenExpiredError (triggers refresh)
     (mockAuthService.validateToken as jest.Mock)
       .mockRejectedValueOnce(new jwt.TokenExpiredError('Token expired', new Date()))

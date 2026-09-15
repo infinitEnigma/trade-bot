@@ -264,8 +264,16 @@ export interface ITokenService {
 
     /**
      * Verify and decode token
+     *
+     * Verifies the token against the secret matching the expected token type and
+     * enforces the `type` claim. A refresh token is never accepted as an access
+     * token and vice versa.
+     *
+     * @param token - JWT token to verify
+     * @param expectedType - Which token type is acceptable at this call site (default: 'access')
+     * @returns TokenPayload if valid, of the expected type, and unexpired; null otherwise
      */
-    verifyToken(token: string): TokenPayload | null;
+    verifyToken(token: string, expectedType?: TokenType): TokenPayload | null;
 
     /**
      * Verify token with database validation
@@ -460,10 +468,14 @@ export interface IBotPerformanceService {
 
 import { UserLevel } from '../index';
 
+export type TokenType = 'access' | 'refresh';
+
 export interface TokenPayload {
     userId: string;
     email: string;
     userLevel: UserLevel;
+    /** Token type claim - prevents refresh tokens from being accepted as access tokens (and vice versa) */
+    type?: TokenType;
     exp?: number;
     iat?: number;
 }

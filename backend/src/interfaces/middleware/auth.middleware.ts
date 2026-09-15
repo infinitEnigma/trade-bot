@@ -1,16 +1,16 @@
 /** @format */
 
 import { Request, Response, NextFunction } from "express";
+import { randomBytes } from "crypto";
 import { AuthResult, LegacyAuthResult, AuthService } from "../../core/auth/auth.service.pure";
 import { jwtTokenAdapter } from "../../infrastructure/adapters/token/jwt-token.adapter";
 import Tokens from "csrf";
+import { serviceProvider } from "../../core/service-provider";
 
-// Lazy service resolution (avoids circular imports; pure service is authoritative)
-const authService: AuthService = (
-  require("../../infrastructure/dependency-injection.container") as {
-    diContainer: { authService: AuthService };
-  }
-).diContainer.authService;
+// Lazy service resolution (avoids circular imports; pure service is authoritative).
+// Resolved through the service provider at call time instead of a require() grab.
+const getAuthService = (): AuthService => serviceProvider.getAuthService();
+
 import { redisService } from "../../infrastructure/cache/redis.service";
 import { setUserContext } from "../../shared/utils/context";
 //import { roleManagementService } from "../../core/auth/role-management.service";
@@ -19,6 +19,38 @@ import { progressiveAuthLimiter } from "../../infrastructure/security/rate-limit
 
 // Initialize CSRF tokens for refresh
 const csrfTokens = new Tokens();
+
+// ============================================
+// CONSTANTS
+// ============================================
+
+// Cookie lifetimes (ms)
+const ACCESS_COOKIE_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours
+const REFRESH_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const CSRF_COOKIE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// Endpoints served without loading full user data/roles (performance optimization).
+// Keep this list integration-scoped (not exchange-scoped) so new exchanges do not
+// require changes to the auth middleware.
+const LIGHTWEIGHT_ENDPOINT_PREFIXES = [
+  "/api/user/kodiak/status",
+  "/api/user/kodiak/trades",
+  "/api/user/kodiak/positions",
+  "/api/user/kodiak/balance",
+];
+
+const isLightweightEndpoint = (path: string): boolean =>
+  LIGHTWEIGHT_ENDPOINT_PREFIXES.some((prefix) => path.startsWith(prefix));
+
+// Atomic mutex release: only the owner may delete the key. Prevents releasing
+// a lock that has expired and already been re-acquired by another request.
+const RELEASE_LOCK_SCRIPT = `
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+else
+  return 0
+end
+`;
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -45,13 +77,15 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
   }
 
   const mutexKey = userId ? `mutex:refresh:${userId}` : null;
+  // Random owner token so only this request can release its own lock
+  const mutexToken = randomBytes(16).toString("hex");
   let lockAcquired = false;
 
   // Try to acquire mutex if we have a userId
   if (mutexKey) {
     try {
       // Use SETNX (set if not exists) with short TTL for mutex
-      const lockResult = await redisService.getClient().set(mutexKey, "1", {
+      const lockResult = await redisService.getClient().set(mutexKey, mutexToken, {
         NX: true,
         EX: 30, // 30 second lock
       });
@@ -86,7 +120,7 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
           lockAcquired,
         });
 
-        const result = await authService.refreshToken(refreshToken);
+        const result = await getAuthService().refreshToken(refreshToken);
 
         if (result.success && result.tokens) {
           authLogger.info(`Token refresh succeeded on attempt ${attempt + 1}`, {
@@ -151,7 +185,11 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
     // Always release the mutex if we acquired it
     if (lockAcquired && mutexKey) {
       try {
-        await redisService.del(mutexKey);
+        // Atomic compare-and-delete: only release the lock we still own
+        await redisService.getClient().eval(RELEASE_LOCK_SCRIPT, {
+          keys: [mutexKey],
+          arguments: [mutexToken],
+        });
         authLogger.debug("Released token refresh mutex", {
           userId,
           mutexKey,
@@ -165,6 +203,149 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
       }
     }
   }
+}
+
+/**
+ * Respond to a failed token refresh with the appropriate error body.
+ * Preserves the "refresh already in progress" contract for concurrent requests.
+ */
+function respondToFailedRefresh(res: Response, message?: string): void {
+  if (message === "Token refresh already in progress") {
+    res.status(401).json({
+      success: false,
+      code: -1004,
+      message: "Token refresh already in progress",
+    });
+  } else {
+    res.status(401).json({
+      success: false,
+      code: -1004,
+      message: "Unauthorized - token refresh failed after multiple attempts",
+    });
+  }
+}
+
+/**
+ * Apply the results of a successful token refresh to the request/response:
+ * set new cookies, rotate CSRF, load user data, and continue down the chain.
+ * Responds (and returns without calling next()) if session hydration fails.
+ */
+async function finalizeRefreshedSession(
+  req: AuthenticatedRequest,
+  res: Response,
+  refreshResult: AuthResult | LegacyAuthResult,
+  next: NextFunction
+): Promise<void> {
+  const tokens = refreshResult.tokens;
+  if (!tokens) {
+    respondToFailedRefresh(res, refreshResult.message);
+    return;
+  }
+
+  authLogger.info("Token automatically refreshed", {
+    userId: refreshResult.user?.id,
+    email: refreshResult.user?.email,
+  });
+
+  // Set new httpOnly cookies
+  res.cookie("accessToken", tokens.accessToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: ACCESS_COOKIE_MAX_AGE_MS,
+  });
+
+  res.cookie("refreshToken", tokens.refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: REFRESH_COOKIE_MAX_AGE_MS,
+  });
+
+  // Refresh CSRF token and secret
+  const newCsrfSecret = csrfTokens.secretSync();
+  const newCsrfToken = csrfTokens.create(newCsrfSecret);
+
+  res.cookie("csrfSecret", newCsrfSecret, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: CSRF_COOKIE_MAX_AGE_MS,
+  });
+
+  res.cookie("csrfToken", newCsrfToken, {
+    httpOnly: false, // Client needs to read this
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: CSRF_COOKIE_MAX_AGE_MS,
+  });
+
+  // Verify the new access token and set user on request
+  const newPayload = await getAuthService().validateToken(tokens.accessToken);
+  if (!newPayload) {
+    authLogger.error(
+      "New access token validation failed after refresh",
+      new Error("Token validation failed")
+    );
+    res.status(500).json({
+      success: false,
+      code: -1005,
+      message: "Token refresh succeeded but validation failed",
+    });
+    return;
+  }
+
+  if (isLightweightEndpoint(req.path)) {
+    // For lightweight endpoints, just verify user exists without loading full data
+    const userExists = await getAuthService().getUserById(newPayload.userId);
+    if (!userExists) {
+      authLogger.error("Refreshed user not found for lightweight endpoint", undefined, {
+        userId: newPayload.userId,
+        endpoint: req.path,
+      });
+      res.status(401).json({
+        success: false,
+        code: -1008,
+        message: "Unauthorized - refreshed user not found",
+      });
+      return;
+    }
+
+    req.user = {
+      ...newPayload,
+      userLevel: userExists.userLevel,
+      roles: [] // Lightweight endpoints don't need roles
+    };
+  } else {
+    // Load complete user data for refreshed token (N+1 optimization)
+    const refreshedUserData = await getAuthService().getAuthenticatedUserData(newPayload.userId);
+    if (!refreshedUserData) {
+      authLogger.error("Failed to load refreshed user data - user not found", undefined, {
+        userId: newPayload.userId,
+      });
+      res.status(401).json({
+        success: false,
+        code: -1008,
+        message: "Unauthorized - refreshed user data not found",
+      });
+      return;
+    }
+
+    req.user = {
+      ...newPayload,
+      userLevel: refreshedUserData.user.userLevel, // Always use current userLevel from database
+      roles: refreshedUserData.roles
+    };
+  }
+
+  // Set user context for logging and tracing
+  setUserContext(newPayload.userId, newPayload.userLevel);
+
+  // Clear failure counter on successful auth
+  const identifier = `ip:${req.ip}`;
+  await progressiveAuthLimiter.recordSuccess(identifier);
+
+  next();
 }
 
 export async function authMiddleware(
@@ -208,140 +389,15 @@ export async function authMiddleware(
         try {
           const refreshResult = await retryTokenRefresh(refreshToken, req);
           if (!refreshResult.success || !refreshResult.tokens) {
-            if (refreshResult.message === "Token refresh already in progress") {
-              authLogger.debug("Token refresh already in progress", {
-                userId: req.user?.userId || 'unknown',
-              });
-              res.status(401).json({
-                success: false,
-                code: -1004,
-                message: "Token refresh already in progress",
-              });
-            } else {
-              authLogger.error("Token refresh failed after retries", undefined, {
-                message: refreshResult.message,
-                userId: req.user?.userId || 'unknown',
-              });
-              res.status(401).json({
-                success: false,
-                code: -1004,
-                message: "Unauthorized - token refresh failed after multiple attempts",
-              });
-            }
-            return;
-          }
-
-          authLogger.info("Token automatically refreshed", {
-            userId: refreshResult.user?.id,
-            email: refreshResult.user?.email,
-          });
-
-          // Set new httpOnly cookies
-          res.cookie("accessToken", refreshResult.tokens.accessToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            maxAge: 4 * 60 * 60 * 1000, // 4 hours
-          });
-
-          res.cookie("refreshToken", refreshResult.tokens.refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-          });
-
-          // Refresh CSRF token and secret
-          const newCsrfSecret = csrfTokens.secretSync();
-          const newCsrfToken = csrfTokens.create(newCsrfSecret);
-
-          res.cookie('csrfSecret', newCsrfSecret, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: 24 * 60 * 60 * 1000, // 24 hours
-          });
-
-          res.cookie('csrfToken', newCsrfToken, {
-            httpOnly: false,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: 24 * 60 * 60 * 1000, // 24 hours
-          });
-
-          // Verify the new access token and set user on request
-          const newPayload = await authService.validateToken(
-            refreshResult.tokens.accessToken
-          );
-          if (!newPayload) {
-            authLogger.error("New access token validation failed after refresh", new Error("Token validation failed"));
-            res.status(500).json({
-              success: false,
-              code: -1005,
-              message: "Token refresh succeeded but validation failed",
+            authLogger.error("Token refresh failed after retries", undefined, {
+              message: refreshResult.message,
+              userId: req.user?.userId || 'unknown',
             });
+            respondToFailedRefresh(res, refreshResult.message);
             return;
           }
 
-          // Check if this is a lightweight endpoint for refreshed token too
-          const isLightweightEndpointRefresh = req.path.startsWith('/api/user/kodiak/status') ||
-            req.path.startsWith('/api/user/kodiak/trades') ||
-            req.path.startsWith('/api/user/kodiak/positions') ||
-            req.path.startsWith('/api/user/kodiak/balance');
-
-          if (isLightweightEndpointRefresh) {
-            // For lightweight endpoints, just verify user exists without loading full data
-            const userExists = await authService.getUserById(newPayload.userId);
-            if (!userExists) {
-              authLogger.error("Refreshed user not found for lightweight endpoint", undefined, {
-                userId: newPayload.userId,
-                endpoint: req.path,
-              });
-              res.status(401).json({
-                success: false,
-                code: -1008,
-                message: "Unauthorized - refreshed user not found",
-              });
-              return;
-            }
-
-            req.user = {
-              ...newPayload,
-              userLevel: userExists.userLevel,
-              roles: [] // Lightweight endpoints don't need roles
-            };
-          } else {
-            // Load complete user data for refreshed token (N+1 optimization)
-            const refreshedUserData = await authService.getAuthenticatedUserData(newPayload.userId);
-            if (!refreshedUserData) {
-              authLogger.error("Failed to load refreshed user data - user not found", undefined, {
-                userId: newPayload.userId,
-              });
-              res.status(401).json({
-                success: false,
-                code: -1008,
-                message: "Unauthorized - refreshed user data not found",
-              });
-              return;
-            }
-
-            const refreshedUserRoles = refreshedUserData.roles;
-
-            req.user = {
-              ...newPayload,
-              userLevel: refreshedUserData.user.userLevel, // Always use current userLevel from database
-              roles: refreshedUserRoles
-            };
-          }
-
-          // Set user context for logging and tracing
-          setUserContext(newPayload.userId, newPayload.userLevel);
-
-          // Clear failure counter on successful auth
-          const identifier = `ip:${req.ip}`;
-          await progressiveAuthLimiter.recordSuccess(identifier);
-
-          next();
+          await finalizeRefreshedSession(req, res, refreshResult, next);
           return;
         } catch (refreshError) {
           authLogger.error("Token refresh process failed", refreshError instanceof Error ? refreshError : undefined, {
@@ -372,7 +428,7 @@ export async function authMiddleware(
     }
 
     // Verify token
-    const payload = await authService.validateToken(token);
+    const payload = await getAuthService().validateToken(token);
     if (!payload) {
       res.status(403).json({
         success: false,
@@ -383,14 +439,9 @@ export async function authMiddleware(
     }
 
     // Check if this is a lightweight endpoint that doesn't need full user data
-    const isLightweightEndpoint = req.path.startsWith('/api/user/kodiak/status') ||
-      req.path.startsWith('/api/user/kodiak/trades') ||
-      req.path.startsWith('/api/user/kodiak/positions') ||
-      req.path.startsWith('/api/user/kodiak/balance');
-
-    if (isLightweightEndpoint) {
+    if (isLightweightEndpoint(req.path)) {
       // For lightweight endpoints, just verify user exists without loading full data
-      const userExists = await authService.getUserById(payload.userId);
+      const userExists = await getAuthService().getUserById(payload.userId);
       if (!userExists) {
         authLogger.warn("User not found for lightweight endpoint", {
           userId: payload.userId,
@@ -411,7 +462,7 @@ export async function authMiddleware(
       };
     } else {
       // Load complete user data with roles and credentials for complex endpoints
-      const userData = await authService.getAuthenticatedUserData(payload.userId);
+      const userData = await getAuthService().getAuthenticatedUserData(payload.userId);
       if (!userData) {
         authLogger.warn("User data not found, using token payload only", {
           userId: payload.userId,
@@ -467,140 +518,15 @@ export async function authMiddleware(
         // Attempt to refresh the token with exponential backoff retry
         const refreshResult = await retryTokenRefresh(refreshToken, req);
         if (!refreshResult.success || !refreshResult.tokens) {
-          if (refreshResult.message === "Token refresh already in progress") {
-            authLogger.debug("Token refresh already in progress", {
-              userId: req.user?.userId || 'unknown',
-            });
-            res.status(401).json({
-              success: false,
-              code: -1004,
-              message: "Token refresh already in progress",
-            });
-          } else {
-            authLogger.error("Token refresh failed after retries", undefined, {
-              message: refreshResult.message,
-              userId: req.user?.userId || 'unknown',
-            });
-            res.status(401).json({
-              success: false,
-              code: -1004,
-              message: "Unauthorized - token refresh failed after multiple attempts",
-            });
-          }
-          return;
-        }
-
-        authLogger.info("Token automatically refreshed", {
-          userId: refreshResult.user?.id,
-          email: refreshResult.user?.email,
-        });
-
-        // Set new httpOnly cookies
-        res.cookie("accessToken", refreshResult.tokens.accessToken, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "strict",
-          maxAge: 4 * 60 * 60 * 1000, // 4 hours
-        });
-
-        res.cookie("refreshToken", refreshResult.tokens.refreshToken, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "strict",
-          maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-        });
-
-        // Refresh CSRF token and secret
-        const newCsrfSecret = csrfTokens.secretSync();
-        const newCsrfToken = csrfTokens.create(newCsrfSecret);
-
-        res.cookie('csrfSecret', newCsrfSecret, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
-          maxAge: 24 * 60 * 60 * 1000, // 24 hours
-        });
-
-        res.cookie('csrfToken', newCsrfToken, {
-          httpOnly: false,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
-          maxAge: 24 * 60 * 60 * 1000, // 24 hours
-        });
-
-        // Verify the new access token and set user on request
-        const newPayload = await authService.validateToken(
-          refreshResult.tokens.accessToken
-        );
-        if (!newPayload) {
-          authLogger.error("New access token validation failed after refresh", new Error("Token validation failed"));
-          res.status(500).json({
-            success: false,
-            code: -1005,
-            message: "Token refresh succeeded but validation failed",
+          authLogger.error("Token refresh failed after retries", undefined, {
+            message: refreshResult.message,
+            userId: req.user?.userId || 'unknown',
           });
+          respondToFailedRefresh(res, refreshResult.message);
           return;
         }
 
-        // Check if this is a lightweight endpoint for refreshed token too
-        const isLightweightEndpointRefresh = req.path.startsWith('/api/user/kodiak/status') ||
-          req.path.startsWith('/api/user/kodiak/trades') ||
-          req.path.startsWith('/api/user/kodiak/positions') ||
-          req.path.startsWith('/api/user/kodiak/balance');
-
-        if (isLightweightEndpointRefresh) {
-          // For lightweight endpoints, just verify user exists without loading full data
-          const userExists = await authService.getUserById(newPayload.userId);
-          if (!userExists) {
-            authLogger.error("Refreshed user not found for lightweight endpoint", undefined, {
-              userId: newPayload.userId,
-              endpoint: req.path,
-            });
-            res.status(401).json({
-              success: false,
-              code: -1008,
-              message: "Unauthorized - refreshed user not found",
-            });
-            return;
-          }
-
-          req.user = {
-            ...newPayload,
-            userLevel: userExists.userLevel,
-            roles: [] // Lightweight endpoints don't need roles
-          };
-        } else {
-          // Load complete user data for refreshed token (N+1 optimization)
-          const refreshedUserData = await authService.getAuthenticatedUserData(newPayload.userId);
-          if (!refreshedUserData) {
-            authLogger.error("Failed to load refreshed user data - user not found", undefined, {
-              userId: newPayload.userId,
-            });
-            res.status(401).json({
-              success: false,
-              code: -1008,
-              message: "Unauthorized - refreshed user data not found",
-            });
-            return;
-          }
-
-          const refreshedUserRoles = refreshedUserData.roles;
-
-          req.user = {
-            ...newPayload,
-            userLevel: refreshedUserData.user.userLevel, // Always use current userLevel from database
-            roles: refreshedUserRoles
-          };
-        }
-
-        // Set user context for logging and tracing
-        setUserContext(newPayload.userId, newPayload.userLevel);
-
-        // Clear failure counter on successful auth
-        const identifier = `ip:${req.ip}`;
-        await progressiveAuthLimiter.recordSuccess(identifier);
-
-        next();
+        await finalizeRefreshedSession(req, res, refreshResult, next);
       } catch (refreshError) {
         authLogger.error("Token refresh process failed", refreshError instanceof Error ? refreshError : undefined, {
           error:

@@ -274,6 +274,36 @@ Based on architectural review, the following issues are tracked:
 | **Shared Package Scope** | `@trade-bot/shared` has become a god package containing protocol types, domain models, API contracts, error classes, and logging types. Should be split. |
 | **Dead Code Cleanup** | ✅ Fixed: Removed the dormant Orderly `market-stream` subsystem, the superseded `BotReconciliationWorker`, the `service-selector` rollout shim, unused WebSocket/DI getters, unused frontend `QuickActions`, and one-off Redis debug scripts. |
 
+### 🔐 Security Review Findings (2026-09-15)
+
+Findings from a security-focused code review, prioritized per severity:
+
+#### 🔴 Critical (P0)
+
+| Issue | Description | Status |
+|-------|-------------|--------|
+| **Refresh tokens accepted as access tokens** | `JwtTokenAdapter.verifyToken()` fell back to verifying with `JWT_REFRESH_SECRET` after `JWT_SECRET` failed, and `validateToken()` (guarding every API route and WebSocket auth) used it. A stolen 30-day refresh token presented in the `Authorization` header produced a valid session, bypassing the 4h access-token TTL and refresh rotation entirely. | ✅ Fixed: Tokens now carry a `type` claim (`access`/`refresh`); verification is secret- and claim-strict per call site — the access path never accepts refresh tokens and vice versa. Note: previously issued tokens without the `type` claim are rejected; users must re-authenticate after deploy. (`jwt-token.adapter.ts`, `shared/types/infrastructure.ts`) |
+| **Logout did not invalidate tokens** | The logout route had a TODO relying on natural expiry, and `invalidateUserTokens()` blacklisted nothing. The `jwt:blacklist:{hash}` cache keys existed but were never written or checked. Combined with the issue above, a logged-out refresh token remained a fully functional credential for 30 days. | ✅ Fixed: Logout now blacklists the presented refresh + access token hashes (TTL = remaining token lifetime), `refreshToken()` rejects blacklisted refresh tokens, and `validateToken()` rejects blacklisted access tokens. Blacklist lookups fail open during cache outages. (`auth.service.pure.ts`, `interfaces/http/auth/index.ts`) |
+| **Encryption key rotation was a no-op that corrupted versioning** | `rotateEncryptionKeys()` inserted the new key under the *old* `CURRENT_KEY_VERSION`, computed the new version locally without persisting or applying it, and never re-encrypted existing credentials — risking PK conflicts and unrecoverable exchange credentials. `getVersionedKey()` also had no real version-3+ support. | ✅ Fixed: Rotation derives the next version from `MAX(version)` in `encryption_keys`, stores the new key wrapped under the master key (version-1 envelope), bumps the instance's current version, and re-encrypts all existing credentials (legacy non-versioned rows handled separately). Versions 1/2 keep their legacy master-key aliasing for backward compatibility. (`encryption.service.ts`) |
+
+#### 🟠 High (P1)
+
+| Issue | Description | Status |
+|-------|-------------|--------|
+| **Engine API key compared with `!==`** | `botEngineAuth` middleware used a non-constant-time string comparison. | ✅ Fixed: Uses `crypto.timingSafeEqual` on length-checked buffers. (`interfaces/http/bots/engine.ts`) |
+| **`KeyManagementService` async init fire-and-forget** | Constructor kicked off async key derivation and rethrew inside `.catch()` — an unhandled promise rejection; callers could race against partial initialization. | ✅ Fixed: Derivation is tracked in an `initializationPromise`; `ensureInitialized()` awaits it and surfaces failures with retry support instead of swallowing them. (`key-management.service.ts`) |
+| **Broken test suite** | `database-migrate.test.ts` failed to compile (imported a deleted `src/database/migrate` module). | ✅ Fixed: Stale test removed (the module was replaced by the ledger-tracked `scripts/run-migrations.js` runner). |
+| **Tests that cannot fail** | `workers.test.ts` wrapped assertions in `try { … } catch { }` / logged-and-ignored catches — tests passed even when assertions failed. | ✅ Fixed: Swallowing try/catch wrappers removed; assertions now propagate. Also removed a test `console.log` printing a token (`middleware.auth.test.ts`). |
+
+#### 🟡 Medium (P2) — remaining from the review
+
+| Issue | Description | Status |
+|-------|-------------|--------|
+| **God files / duplicated auth logic** | `redis.service.ts` (1,385 lines), `kodiak-integration.service.ts` (1,184), `market.ts` (954) should be decomposed. `auth.middleware.ts` duplicated the refresh handling (~100 lines) and used a `require()` to dodge a circular DI import. | 🟨 Partially Fixed: auth middleware deduplicated into `finalizeRefreshedSession`/`respondToFailedRefresh` helpers (-1004/-1008/-1005 contracts preserved) and the `require()` circular-import dodge replaced with a lazy `serviceProvider` lookup. Service-file decomposition still open. |
+| **Docs not version-controlled** | `.gitignore` ignores all of `docs/`, so instructions and durable documentation are invisible to repo consumers. | ⬜ Open (needs a decision on what to track) |
+| **Non-atomic Redis mutex release** | Token-refresh mutex was released with plain `DEL` (no owner token), so an expired lock could be released by a non-owner. | ✅ Fixed: Locks are acquired with a random owner token and released via a compare-and-delete Lua script (`eval(RELEASE_LOCK_SCRIPT, { keys, arguments })`). |
+| **Hardcoded lightweight-endpoint paths** | The `/api/user/kodiak/*` path list was inlined 3× in `auth.middleware.ts`, breaking exchange-agnosticism. | ✅ Fixed: Centralized in a `LIGHTWEIGHT_ENDPOINT_PREFIXES` constant with an `isLightweightEndpoint()` helper. |
+
 ---
 
 ## Roadmap

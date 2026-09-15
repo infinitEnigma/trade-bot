@@ -224,11 +224,10 @@ describe('KeyManagementService', () => {
         });
 
         it('should handle key derivation failure', async () => {
-            // Test key derivation failure by mocking the instance method
+            // Spy on the prototype BEFORE constructing so the constructor's
+            // initialization promise itself rejects
+            const spy = jest.spyOn(KeyManagementService.prototype as any, 'derivePurposeKeys').mockRejectedValue(new Error('Key derivation failed'));
             const keyManagement = new KeyManagementService();
-
-            // Spy on the instance method and make it reject
-            const spy = jest.spyOn(keyManagement as any, 'derivePurposeKeys').mockRejectedValue(new Error('Key derivation failed'));
 
             await expect(keyManagement.encrypt('test')).rejects.toThrow('Key derivation failed');
 

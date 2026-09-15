@@ -290,7 +290,7 @@ describe('AuthService', () => {
             expect(result.tokens?.accessToken).toEqual(testAccessToken);
             expect(result.tokens?.refreshToken).toEqual(testNewRefreshToken);
 
-            expect(deps.tokenService.verifyToken).toHaveBeenCalledWith(testRefreshToken);
+            expect(deps.tokenService.verifyToken).toHaveBeenCalledWith(testRefreshToken, 'refresh');
             expect(deps.userRepository.findById).toHaveBeenCalledWith(testUserId);
             expect(deps.tokenService.generateAccessToken).toHaveBeenCalled();
             expect(deps.tokenService.generateRefreshToken).toHaveBeenCalled();
@@ -338,6 +338,103 @@ describe('AuthService', () => {
             expect(result.success).toBe(false);
             expect(result.message).toEqual('Invalid refresh token');
             expect(deps.logger.error).toHaveBeenCalled();
+        });
+
+        it('should verify refresh tokens with the refresh token type', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            (deps.tokenService.verifyToken as jest.Mock).mockReturnValue(null);
+
+            await authService.refreshToken('some-refresh-token');
+
+            // The refresh path must only accept refresh tokens - never access tokens
+            expect(deps.tokenService.verifyToken).toHaveBeenCalledWith('some-refresh-token', 'refresh');
+        });
+
+        it('should fail to refresh a blacklisted refresh token', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            (deps.tokenService.hashTokenForStorage as jest.Mock).mockReturnValue('blacklisted-hash');
+            (deps.cache.get as jest.Mock).mockResolvedValue({ success: true, data: '1' });
+
+            const result = await authService.refreshToken('blacklisted-refresh-token');
+
+            expect(result.success).toBe(false);
+            expect(result.message).toEqual('Invalid refresh token');
+            // Blacklisted tokens must be rejected before any verification work
+            expect(deps.tokenService.verifyToken).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('Logout', () => {
+        it('should blacklist refresh and access tokens on logout', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            const exp = Math.floor(Date.now() / 1000) + 3600;
+            (deps.tokenService.verifyToken as jest.Mock).mockImplementation((_token, expectedType) =>
+                expectedType === 'refresh'
+                    ? { userId: 'user-123', type: 'refresh', exp }
+                    : { userId: 'user-123', type: 'access', exp }
+            );
+            (deps.tokenService.hashTokenForStorage as jest.Mock).mockReturnValue('tokenhash');
+            (deps.cache.setex as jest.Mock).mockResolvedValue({ success: true });
+
+            const result = await authService.logout('refresh-token', 'access-token');
+
+            expect(result.success).toBe(true);
+            expect(result.tokensBlacklisted).toEqual(2);
+            expect(deps.cache.setex).toHaveBeenCalledTimes(2);
+            expect(deps.cache.setex).toHaveBeenCalledWith('jwt:blacklist:tokenhash', expect.any(Number), '1');
+            expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
+                expect.objectContaining({ action: 'USER_LOGGED_OUT' })
+            );
+        });
+
+        it('should skip blacklisting invalid tokens', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            (deps.tokenService.verifyToken as jest.Mock).mockReturnValue(null);
+
+            const result = await authService.logout('invalid-refresh-token');
+
+            expect(result.success).toBe(true);
+            expect(result.tokensBlacklisted).toEqual(0);
+            expect(deps.cache.setex).not.toHaveBeenCalled();
+        });
+
+        it('should reject a blacklisted access token during validation', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            (deps.tokenService.hashTokenForStorage as jest.Mock).mockReturnValue('tokenhash');
+            (deps.cache.get as jest.Mock).mockResolvedValue({ success: true, data: '1' });
+
+            const result = await authService.validateToken('blacklisted-access-token');
+
+            expect(result).toBeNull();
+            expect(deps.tokenService.verifyTokenWithDatabaseValidation).not.toHaveBeenCalled();
+        });
+
+        it('should accept a non-blacklisted access token during validation', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            (deps.tokenService.hashTokenForStorage as jest.Mock).mockReturnValue('tokenhash');
+            (deps.cache.get as jest.Mock).mockResolvedValue({ success: true, data: null });
+            (deps.tokenService.verifyTokenWithDatabaseValidation as jest.Mock).mockResolvedValue({
+                userId: 'user-123',
+                email: 'test@example.com',
+                userLevel: UserLevel.VERIFIED,
+            });
+
+            const result = await authService.validateToken('valid-access-token');
+
+            expect(result).not.toBeNull();
+            expect(deps.tokenService.verifyTokenWithDatabaseValidation).toHaveBeenCalled();
         });
     });
 

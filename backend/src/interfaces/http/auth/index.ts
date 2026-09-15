@@ -230,15 +230,24 @@ router.post(
 // POST /api/auth/logout
 router.post("/logout", async (req: Request, res: Response) => {
   try {
-    // Get refresh token from cookie or body
+    // Get tokens from cookies or body
     const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+    const accessToken =
+      req.cookies?.accessToken ||
+      req.body?.accessToken ||
+      req.headers.authorization?.split(" ")[1];
 
-    // TODO: Implement token blacklisting in pure auth service
-    // For now, we rely on token expiration for security
-    // This provides basic logout functionality while maintaining security through short token lifetimes
-    if (refreshToken) {
-      authLogger.info("Logout requested - tokens will expire naturally", {
-        hasRefreshToken: true,
+    // Blacklist the tokens so they cannot be used again (refresh via
+    // refreshToken(), access via validateToken()) until their natural expiry
+    const logoutResult = await authService.logout(refreshToken, accessToken);
+
+    if (!logoutResult.success) {
+      authLogger.warn("Logout token blacklisting failed", {
+        message: logoutResult.message,
+      });
+    } else {
+      authLogger.info("Logout requested - tokens blacklisted", {
+        tokensBlacklisted: logoutResult.tokensBlacklisted,
       });
     }
 

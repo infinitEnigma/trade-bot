@@ -203,7 +203,7 @@ describe('EncryptionService', () => {
             });
 
             it('should throw error for unsupported version', async () => {
-                await expect(encryptionService.encryptWithVersion('text', 99)).rejects.toThrow('Unsupported encryption version: 99');
+                await expect(encryptionService.encryptWithVersion('text', 99)).rejects.toThrow('No encryption key found for version 99');
             });
         });
 
