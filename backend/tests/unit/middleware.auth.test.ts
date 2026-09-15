@@ -18,8 +18,11 @@ jest.mock('../../src/core/auth/auth.service.pure', () => ({
   })),
 }));
 
-jest.mock('../../src/core/service-selector', () => ({
-  selectAuthService: jest.fn(() => mockAuthService),
+// Mock the DI container so the middleware resolves the mock auth service
+jest.mock('../../src/infrastructure/dependency-injection.container', () => ({
+  diContainer: {
+    authService: mockAuthService,
+  },
 }));
 
 import { authMiddleware, AuthenticatedRequest } from '../../src/interfaces/middleware';
@@ -69,7 +72,6 @@ jest.mock('@noble/ed25519', () => ({
   verifyAsync: jest.fn(),
 }));
 
-import { selectAuthService } from '../../src/core/service-selector';
 import { redisService } from '../../src/infrastructure/cache/redis.service';
 
 describe('Auth Middleware', () => {

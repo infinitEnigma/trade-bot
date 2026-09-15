@@ -6,7 +6,7 @@
  */
 
 import { userLogger } from "../../core/logging";
-import { selectAuthService } from "../service-selector";
+import type { AuthService } from "../auth/auth.service.pure";
 import { ICacheService, IPasswordService, IUserRepository, IAuditLogRepository } from "@trade-bot/shared";
 
 export interface ProfileUpdateData {
@@ -147,7 +147,11 @@ export class UserProfileService {
                 walletAddress
             });
 
-            const authService = selectAuthService();
+            const authService = (
+                require("../../infrastructure/dependency-injection.container") as {
+                    diContainer: { authService: { verifyWalletOwnership: Function } };
+                }
+            ).diContainer.authService;
             const result = await authService.verifyWalletOwnership(
                 userId,
                 walletAddress,

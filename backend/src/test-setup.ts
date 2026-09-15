@@ -4,7 +4,6 @@
  */
 
 import { passwordWorkerPool } from './workers/password-worker';
-import { botReconciliationWorker } from './workers/bot-reconciliation';
 import { credentialCacheService } from './infrastructure/cache/credential-cache.service';
 import { errorNotificationService } from './core/notifications/error-notification.service';
 import { memoryRateLimiter } from './infrastructure/security/rate-limiter/memory-rate-limiter';
@@ -44,7 +43,6 @@ if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
         try {
             // Cleanup worker pools first
             //await passwordWorkerPool.cleanupForTests();
-            botReconciliationWorker.cleanupForTests();
 
             // Cleanup other services
             (credentialCacheService as any).cleanupForTests();
@@ -73,7 +71,6 @@ if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
         try {
             // Final cleanup sequence
             await passwordWorkerPool.cleanupForTests();
-            botReconciliationWorker.cleanupForTests();
             (credentialCacheService as any).cleanupForTests();
             errorNotificationService.cleanupForTests();
             memoryRateLimiter.cleanupForTests();
@@ -97,31 +94,8 @@ if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
 async function cleanupAdditionalServices(): Promise<void> {
     try {
         // Import services that need cleanup
-        const { marketStreamService } = await import('./infrastructure/messaging/market-stream');
-        const { botReconciliationWorker } = await import('./workers/bot-reconciliation');
         const { getAsyncOperationManager } = await import('./infrastructure/async/async-operation-manager.service');
         const { redisService } = await import('./infrastructure/cache/redis.service');
-
-        // Cleanup each service with enhanced error handling
-        if (marketStreamService) {
-            try {
-                logger.debug('Cleaning up MarketStreamService...');
-                marketStreamService.cleanupForTests();
-                logger.debug('MarketStreamService cleanup completed');
-            } catch (error) {
-                logger.error('❌ Error cleaning up MarketStreamService:', error as Error);
-            }
-        }
-
-        if (botReconciliationWorker) {
-            try {
-                logger.debug('Cleaning up BotReconciliationWorker...');
-                botReconciliationWorker.cleanupForTests();
-                logger.debug('BotReconciliationWorker cleanup completed');
-            } catch (error) {
-                logger.error('❌ Error cleaning up BotReconciliationWorker:', error as Error);
-            }
-        }
 
         if (getAsyncOperationManager) {
             try {
@@ -176,12 +150,8 @@ async function cleanupAdditionalServices(): Promise<void> {
             }
         }
 
-        // Additional forceful cleanup for WebSocketManager interval
-        // This is a safety net in case the marketStreamService cleanup fails
+        // Force-clear any remaining intervals and timeouts (aggressive, test-only)
         try {
-            const { WebSocketManager } = await import('./infrastructure/messaging/market-stream/websocket-manager');
-            // Note: We can't directly access the singleton's wsManager instance
-            // But we can try to force clear any remaining intervals
             logger.debug('Attempting forceful interval cleanup...');
 
             // Force clear all intervals (this is aggressive but necessary for tests)

@@ -15,6 +15,8 @@ describe('WalletQualificationService', () => {
                 updateProfile: jest.fn(),
                 getAuthenticatedUserData: jest.fn(),
                 getWalletAddress: jest.fn(),
+                setWalletAddress: jest.fn(),
+                clearWalletAddress: jest.fn(),
             },
             externalApi: {
                 validateWalletChain: jest.fn(),

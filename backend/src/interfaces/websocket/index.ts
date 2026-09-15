@@ -1,7 +1,6 @@
 /** @format */
 
 import { UserLevel, User, TokenPayload } from "@trade-bot/shared";
-import { TickData } from "../../infrastructure/messaging/market-stream/types";
 
 /**
  * WebSocket Service Interface
@@ -166,14 +165,6 @@ export interface WebSocketConfig {
  * WebSocket Service Dependencies
  * Interfaces for service dependencies (dependency injection)
  */
-export interface IMarketStreamService {
-    subscribe(clientId: string, topic: string): void;
-    unsubscribe(clientId: string, topic: string): void;
-    getLatestTick(symbol: string): Promise<TickData | null>;
-    connectToOrderly(symbols: string[]): Promise<void>;
-    setSocketServer(io: Server): void;
-}
-
 export interface IAuthService {
     validateToken(token: string): Promise<TokenPayload | null>;
     getUserById(userId: string): Promise<User | null>;

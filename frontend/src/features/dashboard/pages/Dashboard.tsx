@@ -402,21 +402,19 @@ const Dashboard: React.FC = () => {
               </Link>
             </div>
 
-            {/* Wallet Status Widget - only for registered users */}
-            {(user?.userLevel === "REGISTERED" ||
-              user?.userLevel === "VERIFIED") && (
-              <div className="mt-6 pt-6 border-t border-white/5">
-                <Suspense
-                  fallback={
-                    <div className="flex items-center justify-center py-4">
-                      <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                    </div>
-                  }
-                >
-                  <WalletConnectDialog />
-                </Suspense>
-              </div>
-            )}
+            {/* Wallet Status Widget - visible for all authenticated users (BASIC and above).
+                BASIC users connect + sign here to upgrade to REGISTERED. */}
+            <div className="mt-6 pt-6 border-t border-white/5">
+              <Suspense
+                fallback={
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  </div>
+                }
+              >
+                <WalletConnectDialog />
+              </Suspense>
+            </div>
 
             <div className="mt-6 pt-6 border-t border-white/5">
               <h3 className="text-sm font-medium text-textMuted mb-3">

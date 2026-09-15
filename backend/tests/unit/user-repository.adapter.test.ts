@@ -505,13 +505,30 @@ describe('UserRepositoryAdapter', () => {
     });
 
     describe('getWalletAddress', () => {
-        it('should get user wallet address from credentials', async () => {
+        it('should get linked wallet address from wallet_addresses', async () => {
             const mockUserId = 'test-user-id';
             const mockWalletAddress = '0x1234567890123456789012345678901234567890';
 
             (query as jest.Mock).mockResolvedValue({
                 rows: [{ wallet_address: mockWalletAddress }]
             });
+
+            const walletAddress = await userRepository.getWalletAddress(mockUserId);
+
+            expect(query).toHaveBeenCalledWith(
+                "SELECT wallet_address FROM wallet_addresses WHERE user_id = $1",
+                [mockUserId]
+            );
+            expect(walletAddress).toBe(mockWalletAddress);
+        });
+
+        it('should fall back to kodiak_credentials for legacy rows', async () => {
+            const mockUserId = 'test-user-id';
+            const mockWalletAddress = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
+
+            (query as jest.Mock)
+                .mockResolvedValueOnce({ rows: [] })
+                .mockResolvedValueOnce({ rows: [{ wallet_address: mockWalletAddress }] });
 
             const walletAddress = await userRepository.getWalletAddress(mockUserId);
 
@@ -542,6 +559,61 @@ describe('UserRepositoryAdapter', () => {
 
             await expect(userRepository.getWalletAddress(mockUserId)).rejects.toThrow(
                 'Failed to get wallet address: Database error'
+            );
+        });
+    });
+
+    describe('setWalletAddress', () => {
+        it('should link wallet address (upsert)', async () => {
+            const mockUserId = 'test-user-id';
+            const mockWalletAddress = '0x1234567890123456789012345678901234567890';
+
+            (query as jest.Mock).mockResolvedValue({ rowCount: 1, rows: [] });
+
+            const result = await userRepository.setWalletAddress(mockUserId, mockWalletAddress);
+
+            expect(query).toHaveBeenCalledWith(
+                expect.stringContaining('INSERT INTO wallet_addresses'),
+                [mockUserId, mockWalletAddress]
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should throw error when setWalletAddress fails', async () => {
+            (query as jest.Mock).mockRejectedValue(new Error('Database error'));
+
+            await expect(userRepository.setWalletAddress('u', '0xabc')).rejects.toThrow(
+                'Failed to set wallet address: Database error'
+            );
+        });
+    });
+
+    describe('clearWalletAddress', () => {
+        it('should remove linked wallet', async () => {
+            (query as jest.Mock).mockResolvedValue({ rowCount: 1, rows: [] });
+
+            const result = await userRepository.clearWalletAddress('test-user-id');
+
+            expect(query).toHaveBeenCalledWith(
+                "DELETE FROM wallet_addresses WHERE user_id = $1",
+                ['test-user-id']
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should return false when no wallet was linked', async () => {
+            (query as jest.Mock).mockResolvedValue({ rowCount: 0, rows: [] });
+
+            const result = await userRepository.clearWalletAddress('test-user-id');
+
+            expect(result).toBe(false);
+        });
+
+        it('should throw error when clearWalletAddress fails', async () => {
+            (query as jest.Mock).mockRejectedValue(new Error('Database error'));
+
+            await expect(userRepository.clearWalletAddress('u')).rejects.toThrow(
+                'Failed to clear wallet address: Database error'
             );
         });
     });

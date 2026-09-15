@@ -1,7 +1,7 @@
 /** @format */
 
 import { Socket } from "socket.io";
-import { WebSocketClient, IMarketStreamService, IRateLimiter, ILogger } from "../../../interfaces/websocket";
+import { WebSocketClient, IRateLimiter, ILogger } from "../../../interfaces/websocket";
 import { WebSocketError, WebSocketErrorCode, WEBSOCKET_CONSTANTS, WebSocketUtils } from "./types";
 import { externalTrafficObserver } from "../../external/external-traffic-observer";
 
@@ -11,7 +11,6 @@ import { externalTrafficObserver } from "../../external/external-traffic-observe
  */
 export class WebSocketEventHandlers {
     constructor(
-        private marketStreamService: IMarketStreamService,
         private rateLimiter: IRateLimiter,
         private logger: ILogger
     ) { }
@@ -202,232 +201,42 @@ export class WebSocketEventHandlers {
     }
 
     /**
-     * Handle market data subscription
+     * Handle market data subscription (market streaming not available)
+     * Market data is currently served over HTTP (Kodiak REST + cache).
+     * Kept as a stub so clients get an explicit, typed error.
      */
     async handleMarketSubscribe(socket: Socket, symbol: string): Promise<void> {
-        const client = (socket as unknown as { client: WebSocketClient }).client;
+        const client = (socket as unknown as { client?: WebSocketClient }).client;
         const correlationId = WebSocketUtils.generateCorrelationId();
 
-        try {
-            this.logger.debug("Processing market subscribe request", {
-                socketId: socket.id,
-                userId: client.userId,
-                symbol,
-                correlationId,
-            });
+        this.logger.warn("Market data subscription requested but market streaming is not available", {
+            socketId: socket.id,
+            userId: client?.userId,
+            symbol,
+            correlationId,
+        });
 
-            // Rate limiting check (market subscriptions cost more)
-            if (!(await this.checkRateLimit(client.userId, "subscribe_market"))) {
-                throw new WebSocketError(
-                    "Rate limit exceeded for market subscription",
-                    WebSocketErrorCode.RATE_LIMIT_EXCEEDED,
-                    429,
-                    { userId: client.userId, symbol, correlationId }
-                );
-            }
-
-            // Validate symbol format
-            if (!WebSocketUtils.isValidSymbol(symbol)) {
-                throw new WebSocketError(
-                    "Invalid market symbol format",
-                    WebSocketErrorCode.INVALID_SUBSCRIPTION,
-                    400,
-                    { symbol, expectedFormat: "PERP_SYMBOL_USDC", correlationId }
-                );
-            }
-
-            const room = `market:${symbol}`;
-
-            // Check subscription limits
-            if (client.subscriptions.size >= WEBSOCKET_CONSTANTS.SUBSCRIPTIONS.MAX_PER_USER) {
-                throw new WebSocketError(
-                    "Subscription limit exceeded",
-                    WebSocketErrorCode.SUBSCRIPTION_LIMIT_EXCEEDED,
-                    429,
-                    {
-                        currentSubscriptions: client.subscriptions.size,
-                        maxSubscriptions: WEBSOCKET_CONSTANTS.SUBSCRIPTIONS.MAX_PER_USER,
-                        correlationId,
-                    }
-                );
-            }
-
-            // Join market room
-            socket.join(room);
-            client.subscriptions.add(room);
-            client.lastActivity = new Date();
-
-            // Send latest tick immediately if available
-            try {
-                const tick = await this.marketStreamService.getLatestTick(symbol);
-                if (tick) {
-                    socket.emit(room, tick);
-                    this.logger.debug("Sent initial tick to subscriber", {
-                        socketId: socket.id,
-                        symbol,
-                        tick,
-                        correlationId,
-                    });
-                }
-            } catch (tickError) {
-                this.logger.warn("Failed to send initial tick", {
-                    socketId: socket.id,
-                    symbol,
-                    error: (tickError as Error).message,
-                    correlationId,
-                });
-                // Don't fail the subscription for this
-            }
-
-            // Connect to Orderly if not already connected
-            externalTrafficObserver.recordMarketSubscription(client.userId, symbol);
-            try {
-                await this.marketStreamService.connectToOrderly([symbol]);
-                this.logger.debug("Connected to Orderly market stream", {
-                    symbol,
-                    correlationId,
-                });
-            } catch (connectError) {
-                this.logger.warn("Failed to connect to Orderly", {
-                    symbol,
-                    error: (connectError as Error).message,
-                    correlationId,
-                });
-                // Subscription still succeeds, data just won't be real-time
-            }
-
-            this.logger.info("Client subscribed to market data", {
-                socketId: socket.id,
-                userId: client.userId,
-                symbol,
-                room,
-                totalSubscriptions: client.subscriptions.size,
-                correlationId,
-            });
-
-        } catch (error) {
-            if (error instanceof WebSocketError) {
-                this.logger.warn("Market subscription failed", {
-                    socketId: socket.id,
-                    userId: client.userId,
-                    symbol,
-                    error: error.message,
-                    code: error.code,
-                    correlationId,
-                });
-
-                socket.emit("error", {
-                    event: "subscribe_market",
-                    error: error.message,
-                    code: error.code,
-                    correlationId,
-                });
-            } else {
-                const errorObj = error instanceof Error ? error : new Error(String(error));
-                this.logger.error("Unexpected market subscription error", {
-                    socketId: socket.id,
-                    userId: client.userId,
-                    symbol,
-                    correlationId,
-                    error: errorObj,
-                });
-
-                socket.emit("error", {
-                    event: "subscribe_market",
-                    error: "Market subscription failed",
-                    code: WebSocketErrorCode.INTERNAL_ERROR,
-                    correlationId,
-                });
-            }
-        }
+        socket.emit("error", {
+            event: "subscribe_market",
+            error: "Market data streaming is not available; market data is served over HTTP",
+            code: WebSocketErrorCode.MARKET_DATA_UNAVAILABLE,
+            correlationId,
+        });
     }
 
     /**
-     * Handle market data unsubscription
+     * Handle market data unsubscription (market streaming not available)
      */
     async handleMarketUnsubscribe(socket: Socket, symbol: string): Promise<void> {
-        const client = (socket as unknown as { client: WebSocketClient }).client;
+        const client = (socket as unknown as { client?: WebSocketClient }).client;
         const correlationId = WebSocketUtils.generateCorrelationId();
 
-        try {
-            this.logger.debug("Processing market unsubscribe request", {
-                socketId: socket.id,
-                userId: client.userId,
-                symbol,
-                correlationId,
-            });
-
-            // Validate symbol format
-            if (!WebSocketUtils.isValidSymbol(symbol)) {
-                throw new WebSocketError(
-                    "Invalid market symbol format",
-                    WebSocketErrorCode.INVALID_SUBSCRIPTION,
-                    400,
-                    { symbol, expectedFormat: "PERP_SYMBOL_USDC", correlationId }
-                );
-            }
-
-            const room = `market:${symbol}`;
-
-            // Check if client is actually subscribed
-            if (!client.subscriptions.has(room)) {
-                throw new WebSocketError(
-                    "Not subscribed to this market data",
-                    WebSocketErrorCode.INVALID_SUBSCRIPTION,
-                    400,
-                    { symbol, correlationId }
-                );
-            }
-
-            // Leave market room
-            socket.leave(room);
-            client.subscriptions.delete(room);
-            client.lastActivity = new Date();
-
-            this.logger.info("Client unsubscribed from market data", {
-                socketId: socket.id,
-                userId: client.userId,
-                symbol,
-                room,
-                remainingSubscriptions: client.subscriptions.size,
-                correlationId,
-            });
-
-        } catch (error) {
-            if (error instanceof WebSocketError) {
-                this.logger.warn("Market unsubscribe failed", {
-                    socketId: socket.id,
-                    userId: client.userId,
-                    symbol,
-                    error: error.message,
-                    code: error.code,
-                    correlationId,
-                });
-
-                socket.emit("error", {
-                    event: "unsubscribe_market",
-                    error: error.message,
-                    code: error.code,
-                    correlationId,
-                });
-            } else {
-                const errorObj = error instanceof Error ? error : new Error(String(error));
-                this.logger.error("Unexpected market unsubscribe error", {
-                    socketId: socket.id,
-                    userId: client.userId,
-                    symbol,
-                    correlationId,
-                    error: errorObj,
-                });
-
-                socket.emit("error", {
-                    event: "unsubscribe_market",
-                    error: "Market unsubscribe failed",
-                    code: WebSocketErrorCode.INTERNAL_ERROR,
-                    correlationId,
-                });
-            }
-        }
+        this.logger.debug("Market data unsubscribe requested (no-op, streaming not available)", {
+            socketId: socket.id,
+            userId: client?.userId,
+            symbol,
+            correlationId,
+        });
     }
 
     /**

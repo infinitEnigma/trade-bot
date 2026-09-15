@@ -10,11 +10,6 @@ jest.mock('../../src/infrastructure', () => ({
         disconnect: jest.fn().mockResolvedValue(true),
         cleanupForTests: jest.fn(),
         setex: jest.fn().mockResolvedValue({ success: true })
-    },
-    marketStreamService: {
-        disconnectAll: jest.fn().mockResolvedValue(true),
-        setSocketServer: jest.fn(),
-        connectToOrderly: jest.fn().mockResolvedValue(undefined)
     }
 }));
 jest.mock('../../src/infrastructure/dependency-injection.container', () => ({
@@ -532,11 +527,6 @@ describe('Application Entry Point (index.ts)', () => {
                     cleanupForTests: jest.fn(),
                     setex: jest.fn().mockResolvedValue({ success: true })
                 },
-                marketStreamService: {
-                    disconnectAll: jest.fn().mockResolvedValue(true),
-                    setSocketServer: jest.fn(),
-                    connectToOrderly: jest.fn().mockResolvedValue(undefined)
-                }
             }));
 
             const httpModule = require('http');
@@ -580,11 +570,6 @@ describe('Application Entry Point (index.ts)', () => {
                     cleanupForTests: jest.fn(),
                     setex: jest.fn().mockResolvedValue({ success: true })
                 },
-                marketStreamService: {
-                    disconnectAll: jest.fn().mockResolvedValue(true),
-                    setSocketServer: jest.fn(),
-                    connectToOrderly: jest.fn().mockResolvedValue(undefined)
-                }
             }));
 
             const httpModule = require('http');
@@ -624,77 +609,6 @@ describe('Application Entry Point (index.ts)', () => {
 
             expect(contextLogger.error).toHaveBeenCalledWith(
                 expect.stringContaining('Error closing Redis connection'),
-                expect.anything()
-            );
-
-            process.exitCode = originalExitCode;
-            httpModule.createServer = originalCreateServer;
-        });
-
-        it('should handle market stream disconnection errors during shutdown', async () => {
-            // Clear module cache
-            jest.resetModules();
-
-            // Override dependencies
-            jest.mock('../../src/database/pool', () => ({
-                initializePool: jest.fn().mockImplementation(() => { }),
-                closePool: jest.fn().mockResolvedValue(true)
-            }));
-
-            jest.mock('../../src/infrastructure', () => ({
-                ...jest.requireActual('../../src/infrastructure'),
-                redisService: {
-                    connect: jest.fn().mockResolvedValue(true),
-                    disconnect: jest.fn().mockResolvedValue(true),
-                    cleanupForTests: jest.fn(),
-                    setex: jest.fn().mockResolvedValue({ success: true })
-                },
-                marketStreamService: {
-                    disconnectAll: jest.fn().mockImplementation(() => {
-                        throw new Error('Market stream disconnection failed');
-                    }),
-                    setSocketServer: jest.fn(),
-                    connectToOrderly: jest.fn().mockResolvedValue(undefined)
-                }
-            }));
-
-            const httpModule = require('http');
-            const originalCreateServer = httpModule.createServer;
-            const serverMock = {
-                listen: jest.fn().mockImplementation((port, callback) => {
-                    // Add a 'listening' listener to simulate server is running
-                    serverMock.listeners = jest.fn().mockReturnValue([jest.fn()]);
-                    callback();
-                }),
-                close: jest.fn().mockImplementation(callback => callback()),
-                listeners: jest.fn().mockReturnValue([]), // Initially no listeners
-                on: jest.fn(),
-                off: jest.fn(),
-                emit: jest.fn(),
-                removeAllListeners: jest.fn()
-            };
-            httpModule.createServer = jest.fn().mockReturnValue(serverMock);
-
-            const { startServer } = await import('../../src/index');
-            await startServer();
-
-            const { contextLogger } = require('../../src/core/logging');
-            contextLogger.error = jest.fn();
-
-            // Call gracefulShutdown directly (which calls stopServer and then disconnections)
-            // We need to mock process.exitCode to prevent test failure
-            const originalExitCode = process.exitCode;
-            process.exitCode = 0;
-
-            await new Promise<void>((resolve) => {
-                process.once('SIGTERM', () => {
-                    setTimeout(resolve, 0);
-                });
-                process.emit('SIGTERM');
-            });
-
-            expect(contextLogger.error).toHaveBeenCalledWith(
-                expect.stringContaining('Error closing market stream connections'),
                 expect.anything()
             );
 

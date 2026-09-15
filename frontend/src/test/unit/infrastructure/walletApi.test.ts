@@ -76,4 +76,27 @@ describe("walletApi", () => {
             await expect(walletApi.verifyWallet(walletData)).rejects.toThrow(errorMessage);
         });
     });
+
+    describe("unlinkWallet", () => {
+        it("should call unlink wallet endpoint", async () => {
+            const mockResponse = {
+                success: true,
+                message: "Wallet unlinked from your account.",
+            };
+
+            mockPost.mockResolvedValue({ data: mockResponse });
+
+            const result = await walletApi.unlinkWallet();
+
+            expect(httpClient.getClient).toHaveBeenCalled();
+            expect(mockPost).toHaveBeenCalledWith("/api/user/unlink-wallet");
+            expect(result).toEqual(mockResponse);
+        });
+
+        it("should handle unlink wallet errors", async () => {
+            mockPost.mockRejectedValue(new Error("No linked wallet found"));
+
+            await expect(walletApi.unlinkWallet()).rejects.toThrow("No linked wallet found");
+        });
+    });
 });

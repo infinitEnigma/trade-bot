@@ -1,7 +1,6 @@
 /** @format */
 
 import { passwordWorkerPool, hashPassword, comparePassword } from '../../src/workers/password-worker';
-import { botReconciliationWorker } from '../../src/workers/bot-reconciliation';
 import logger from '../../src/core/logging/logger.service';
 
 // Mock logger to avoid actual logging during tests
@@ -17,19 +16,7 @@ describe('Background Workers Integration Tests', () => {
         // Enhanced cleanup workers after each test with debug logging
         //console.log('🧹 Starting worker cleanup for test...');
 
-        /*try {
-            //await passwordWorkerPool.cleanupForTests();
-            //console.log('✅ Password worker pool cleaned up');
-        } catch (error) {
-            //console.error('❌ Password worker cleanup failed:', error);
-        }
-
-        try {
-            //botReconciliationWorker.cleanupForTests();
-            //console.log('✅ Bot reconciliation worker cleaned up');
-        } catch (error) {
-            //console.error('❌ Bot reconciliation worker cleanup failed:', error);
-        }*/
+        // Worker pools are managed per-test; global cleanup happens in test-setup.ts
 
         // Additional cleanup to ensure test isolation
         /*try {
@@ -222,98 +209,6 @@ describe('Background Workers Integration Tests', () => {
         }, 8000); // 8 second timeout for edge cases test
     });
 
-    describe('Bot Reconciliation Worker', () => {
-        it('should start and stop worker gracefully', async () => {
-            // Start the worker
-            await botReconciliationWorker.start();
-            //console.log("Bot Reconciliation Worker");
-            const status = botReconciliationWorker.getStatus();
-            expect(status.isRunning).toBe(true);
-
-            // Stop the worker
-            await botReconciliationWorker.stop();
-
-            const stoppedStatus = botReconciliationWorker.getStatus();
-            expect(stoppedStatus.isRunning).toBe(false);
-        });
-
-        it('should handle reconciliation without active bots', async () => {
-            // Start worker
-            await botReconciliationWorker.start();
-            //console.log('should handle reconciliation without active bots')
-            // Wait a moment for initial reconciliation
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            // Stop worker
-            await botReconciliationWorker.stop();
-
-            // Should complete without errors even with no active bots
-            expect(botReconciliationWorker.getStatus().isRunning).toBe(false);
-        });
-
-        it('should handle reconciliation errors gracefully', async () => {
-            // Start worker
-            await botReconciliationWorker.start();
-            //console.log('should handle reconciliation errors gracefully')
-            // The worker should handle errors internally without crashing
-            // This test verifies that the worker continues running despite errors
-
-            const status = botReconciliationWorker.getStatus();
-            expect(status.isRunning).toBe(true);
-
-            // Stop worker
-            await botReconciliationWorker.stop();
-        });
-
-        it('should provide worker status information', () => {
-            const status = botReconciliationWorker.getStatus();
-            //console.log('should provide worker status information', status.isRunning)
-            expect(status).toHaveProperty('isRunning');
-            expect(typeof status.isRunning).toBe('boolean');
-
-            // lastReconciliationTime might be undefined if no reconciliation has run yet
-            if (status.lastReconciliationTime) {
-                expect(status.lastReconciliationTime).toBeInstanceOf(Date);
-            }
-        });
-
-        it('should handle concurrent reconciliation cycles', async () => {
-            // Start worker
-            await botReconciliationWorker.start();
-            //console.log('should handle concurrent reconciliation cycles')
-            // Trigger multiple reconciliation cycles
-            const reconciliationPromises = Array(3).fill(null).map(async (_, index) => {
-                // Wait a bit between cycles
-                await new Promise(resolve => setTimeout(resolve, index * 100));
-                return botReconciliationWorker.getStatus();
-            });
-
-            const results = await Promise.all(reconciliationPromises);
-
-            // All should complete without errors
-            results.forEach(status => {
-                expect(status.isRunning).toBe(true);
-            });
-
-            // Stop worker
-            await botReconciliationWorker.stop();
-        });
-
-        it('should handle worker cleanup properly', async () => {
-            // Start worker
-            //console.log('should handle worker cleanup properly')
-            await botReconciliationWorker.start();
-            expect(botReconciliationWorker.getStatus().isRunning).toBe(true);
-
-            // Cleanup should stop the worker
-            botReconciliationWorker.cleanupForTests();
-
-            // Status should reflect stopped state
-            const status = botReconciliationWorker.getStatus();
-            expect(status.isRunning).toBe(false);
-        });
-    });
-
     describe('Worker Coordination', () => {
         it('should handle graceful shutdown of all workers', async () => {
             // Test that password worker can operate independently
@@ -330,23 +225,14 @@ describe('Background Workers Integration Tests', () => {
         }, 8000); // 8 second timeout for graceful shutdown test (increased from 3s)
 
         it('should handle worker lifecycle without interfering with each other', async () => {
-            // Test that starting/stopping one worker doesn't affect the other
+            // Password operations before/after repeated lifecycle use
             //console.log('should handle worker lifecycle without interfering with each other')
-            // Start bot worker
-            await botReconciliationWorker.start();
-            expect(botReconciliationWorker.getStatus().isRunning).toBe(true);
-
-            // Password operations should work while bot worker is running
             const hash1 = await hashPassword('test-lifecycle-1');
             expect(hash1).toBeDefined();
             expect(typeof hash1).toBe('string');
             expect(hash1.length).toBeGreaterThan(50);
 
-            // Stop bot worker
-            await botReconciliationWorker.stop();
-            expect(botReconciliationWorker.getStatus().isRunning).toBe(false);
-
-            // Password operations should still work after bot worker stops
+            // Password operations should still work after repeated use
             const hash2 = await hashPassword('test-lifecycle-2');
             expect(hash2).toBeDefined();
             expect(typeof hash2).toBe('string');
@@ -361,16 +247,10 @@ describe('Background Workers Integration Tests', () => {
             // This test verifies that cleanup methods work properly
             // and don't leave resources hanging
             //console.log('should handle resource cleanup on test completion')
-            // Start workers
-            await botReconciliationWorker.start();
             const hash = await hashPassword('test-cleanup');
             expect(hash).toBeDefined();
             expect(typeof hash).toBe('string');
             expect(hash.length).toBeGreaterThan(50);
-
-            // Cleanup should work without errors
-            botReconciliationWorker.cleanupForTests();
-            //await passwordWorkerPool.cleanupForTests();
 
             // After cleanup, password operations should still work
             // (worker pool will be recreated on next use)
@@ -412,30 +292,6 @@ describe('Background Workers Integration Tests', () => {
                 });
             }
         }, 10000); // 10 second timeout for recovery test (increased from 5s)
-
-        it('should handle bot reconciliation failures without crashing', async () => {
-            // Start worker
-            await botReconciliationWorker.start();
-            //console.log('should handle bot reconciliation failures without crashing')
-            try {
-                // The worker should handle internal errors gracefully
-                // This test verifies that the worker continues running
-                // even when encountering errors during reconciliation
-
-                const status = botReconciliationWorker.getStatus();
-                expect(status.isRunning).toBe(true);
-
-                // Wait for potential reconciliation cycles
-                await new Promise(resolve => setTimeout(resolve, 500));
-
-                const finalStatus = botReconciliationWorker.getStatus();
-                expect(finalStatus.isRunning).toBe(true);
-                //console.log('should handle bot reconciliation failures without crashing', finalStatus)
-            } finally {
-                // Always stop the worker
-                await botReconciliationWorker.stop();
-            }
-        });
 
         it('should handle high load on password worker pool', async () => {
             // Test the worker pool under moderate load (reduced from 50 to 8 for test stability)

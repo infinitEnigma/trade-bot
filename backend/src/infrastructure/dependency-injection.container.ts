@@ -35,8 +35,6 @@ import { botInstanceRepositoryAdapter } from './adapters/repositories/bot-instan
 
 // Pure Services
 import { BotManagementService } from '../core/bots/bot-management.service';
-import { WebSocketService } from '../infrastructure/messaging/websocket.service';
-import { MarketStreamService, marketStreamService } from '../infrastructure/messaging/market-stream';
 import { WebSocketRateLimiter, webSocketRateLimiter } from '../infrastructure/security/rate-limiter/websocket-rate-limiter.adapter';
 
 // Pure Services
@@ -387,17 +385,6 @@ export class DependencyInjectionContainer {
     }
 
     /**
-     * WebSocket Service - Real-time communication management
-     */
-    get webSocketService(): WebSocketService {
-        return new WebSocketService(
-            marketStreamService,
-            this.authService,
-            this.loggerService
-        );
-    }
-
-    /**
      * Redis Stream Operations - For engine-backend communication
      */
     get redisStreamOperations() {
@@ -555,7 +542,6 @@ export const getUserKodiakService = () => diContainer.userKodiakService;
 export const getRoleManagementService = () => diContainer.roleManagementService;
 
 // WebSocket Services
-export const getWebSocketService = () => diContainer.webSocketService;
 export const getWebSocketRateLimiter = () => diContainer.webSocketRateLimiter;
 
 // Redis Stream Operations

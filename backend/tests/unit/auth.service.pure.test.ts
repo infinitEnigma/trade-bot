@@ -16,6 +16,8 @@ describe('AuthService', () => {
                 updateUserLevel: jest.fn(),
                 updateProfile: jest.fn(),
                 getWalletAddress: jest.fn(),
+                setWalletAddress: jest.fn(),
+                clearWalletAddress: jest.fn(),
             },
             cache: {
                 get: jest.fn(),
@@ -710,8 +712,8 @@ describe('AuthService', () => {
         });
     });
 
-    describe('Wallet Verification', () => {
-        it('should verify wallet ownership', async () => {
+    describe('Wallet Verification (BASIC -> REGISTERED)', () => {
+        it('should verify wallet ownership and upgrade BASIC user to REGISTERED', async () => {
             const deps = createMockDependencies();
             const authService = new AuthService(deps);
 
@@ -723,20 +725,57 @@ describe('AuthService', () => {
             // Mock signature verification
             (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(true);
 
-            // Mock getting the stored wallet address
-            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(testWalletAddress);
+            // No wallet linked yet
+            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(null);
 
-            // Mock updating user level
+            // Mock current user as BASIC
+            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+                id: testUserId,
+                email: 'test@example.com',
+                userLevel: UserLevel.BASIC,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            });
+
+            // Mock wallet persistence + level update
+            (deps.userRepository.setWalletAddress as jest.Mock).mockResolvedValue(true);
             (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(true);
             (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
 
             const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
 
             expect(result.success).toBe(true);
-            expect(result.message).toEqual('Wallet ownership verified. Your account has been upgraded to VERIFIED level.');
+            expect(result.message).toEqual('Wallet ownership verified. Your account has been upgraded to REGISTERED level.');
             expect(deps.logger.info).toHaveBeenCalled();
             expect(deps.userRepository.getWalletAddress).toHaveBeenCalledWith(testUserId);
-            expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(testUserId, UserLevel.VERIFIED);
+            expect(deps.userRepository.setWalletAddress).toHaveBeenCalledWith(testUserId, testWalletAddress.toLowerCase());
+            expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(testUserId, UserLevel.REGISTERED);
+        });
+
+        it('should re-verify wallet for already REGISTERED user without level change', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            const testUserId = 'user-123';
+            const testWalletAddress = '0x742d35Cc6634C0532925a3b88650D7A3e5554A0';
+            const testSignature = '0x1234...';
+            const testMessage = 'Please sign this message to verify your wallet ownership';
+
+            (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(true);
+            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(testWalletAddress);
+            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+                id: testUserId,
+                email: 'test@example.com',
+                userLevel: UserLevel.REGISTERED,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            });
+
+            const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
+
+            expect(result.success).toBe(true);
+            expect(result.message).toEqual('Wallet ownership verified.');
+            expect(deps.userRepository.updateUserLevel).not.toHaveBeenCalled();
         });
 
         it('should fail verification when signature does not match wallet address', async () => {
@@ -761,7 +800,7 @@ describe('AuthService', () => {
             expect(deps.logger.warn).toHaveBeenCalled();
         });
 
-        it('should fail verification when no verified Kodiak credentials are found', async () => {
+        it('should fail verification when wallet persistence fails', async () => {
             const deps = createMockDependencies();
             const authService = new AuthService(deps);
 
@@ -773,17 +812,25 @@ describe('AuthService', () => {
             // Mock signature verification
             (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(true);
 
-            // Mock getting the stored wallet address - return null (no credentials)
+            // No wallet linked yet, persistence fails
             (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(null);
+            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+                id: testUserId,
+                email: 'test@example.com',
+                userLevel: UserLevel.BASIC,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            });
+            (deps.userRepository.setWalletAddress as jest.Mock).mockResolvedValue(false);
 
             const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
 
             expect(result.success).toBe(false);
-            expect(result.message).toEqual('No verified Kodiak credentials found. Please connect your Kodiak account first.');
-            expect(deps.logger.warn).toHaveBeenCalled();
+            expect(result.message).toEqual('Wallet signature valid but failed to link wallet to account');
+            expect(deps.logger.error).toHaveBeenCalled();
         });
 
-        it('should fail verification when wallet address does not match Kodiak credentials', async () => {
+        it('should fail verification when wallet address does not match linked wallet', async () => {
             const deps = createMockDependencies();
             const authService = new AuthService(deps);
 
@@ -801,7 +848,7 @@ describe('AuthService', () => {
             const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
 
             expect(result.success).toBe(false);
-            expect(result.message).toEqual('Wallet address does not match the address associated with your Kodiak account');
+            expect(result.message).toEqual('Wallet address does not match the wallet linked to your account');
             expect(deps.logger.warn).toHaveBeenCalled();
         });
 
@@ -817,11 +864,20 @@ describe('AuthService', () => {
             // Mock signature verification
             (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(true);
 
-            // Mock getting the stored wallet address
-            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(testWalletAddress);
+            // No wallet linked yet; level update fails
+            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(null);
+            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+                id: testUserId,
+                email: 'test@example.com',
+                userLevel: UserLevel.BASIC,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            });
+            (deps.userRepository.setWalletAddress as jest.Mock).mockResolvedValue(true);
 
             // Mock user level update failing
             (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(false);
+            (deps.cache.delete as jest.Mock).mockResolvedValue({ success: false });
 
             const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
 
@@ -849,6 +905,98 @@ describe('AuthService', () => {
             expect(result.success).toBe(false);
             expect(result.message).toEqual('Failed to verify wallet ownership');
             expect(deps.logger.error).toHaveBeenCalled();
+        });
+    });
+
+    describe('Wallet Unlink (downgrade)', () => {
+        const testUserId = 'user-123';
+        const baseUser = {
+            id: testUserId,
+            email: 'test@example.com',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        };
+
+        it('should unlink wallet and downgrade REGISTERED user to BASIC', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+                ...baseUser,
+                userLevel: UserLevel.REGISTERED,
+            });
+            (deps.userRepository.clearWalletAddress as jest.Mock).mockResolvedValue(true);
+            (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(true);
+            (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
+
+            const result = await authService.unlinkWallet(testUserId);
+
+            expect(result.success).toBe(true);
+            expect(deps.userRepository.clearWalletAddress).toHaveBeenCalledWith(testUserId);
+            expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(testUserId, UserLevel.BASIC);
+        });
+
+        it('should downgrade VERIFIED user without Kodiak to BASIC', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+                ...baseUser,
+                userLevel: UserLevel.VERIFIED,
+            });
+            (deps.userRepository.clearWalletAddress as jest.Mock).mockResolvedValue(true);
+            (deps.userRepository.getAuthenticatedUserData as jest.Mock).mockResolvedValue({
+                user: { ...baseUser, userLevel: UserLevel.VERIFIED },
+                roles: [],
+                hasCredentials: false,
+            });
+            (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(true);
+            (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
+
+            const result = await authService.unlinkWallet(testUserId);
+
+            expect(result.success).toBe(true);
+            expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(testUserId, UserLevel.BASIC);
+        });
+
+        it('should downgrade VERIFIED user with Kodiak to REGISTERED', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+                ...baseUser,
+                userLevel: UserLevel.VERIFIED,
+            });
+            (deps.userRepository.clearWalletAddress as jest.Mock).mockResolvedValue(true);
+            (deps.userRepository.getAuthenticatedUserData as jest.Mock).mockResolvedValue({
+                user: { ...baseUser, userLevel: UserLevel.VERIFIED },
+                roles: [],
+                hasCredentials: true,
+            });
+            (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(true);
+            (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
+
+            const result = await authService.unlinkWallet(testUserId);
+
+            expect(result.success).toBe(true);
+            expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(testUserId, UserLevel.REGISTERED);
+        });
+
+        it('should fail when no linked wallet exists', async () => {
+            const deps = createMockDependencies();
+            const authService = new AuthService(deps);
+
+            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+                ...baseUser,
+                userLevel: UserLevel.REGISTERED,
+            });
+            (deps.userRepository.clearWalletAddress as jest.Mock).mockResolvedValue(false);
+
+            const result = await authService.unlinkWallet(testUserId);
+
+            expect(result.success).toBe(false);
+            expect(result.message).toEqual('No linked wallet found');
+            expect(deps.userRepository.updateUserLevel).not.toHaveBeenCalled();
         });
     });
 

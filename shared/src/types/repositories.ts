@@ -70,9 +70,19 @@ export interface IUserRepository {
     } | null>;
 
     /**
-     * Get user's wallet address from credentials
+     * Get user's linked wallet address
      */
     getWalletAddress(userId: string): Promise<string | null>;
+
+    /**
+     * Link a wallet address to a user (upsert)
+     */
+    setWalletAddress(userId: string, walletAddress: string): Promise<boolean>;
+
+    /**
+     * Remove the wallet linked to a user
+     */
+    clearWalletAddress(userId: string): Promise<boolean>;
 }
 
 // ===========================================

@@ -1,12 +1,16 @@
 /** @format */
 
 import { Request, Response, NextFunction } from "express";
-import { selectAuthService } from "../../core/service-selector";
-import { AuthResult, LegacyAuthResult } from "../../core/auth/auth.service.pure";
+import { AuthResult, LegacyAuthResult, AuthService } from "../../core/auth/auth.service.pure";
 import { jwtTokenAdapter } from "../../infrastructure/adapters/token/jwt-token.adapter";
 import Tokens from "csrf";
 
-const authService = selectAuthService();
+// Lazy service resolution (avoids circular imports; pure service is authoritative)
+const authService: AuthService = (
+  require("../../infrastructure/dependency-injection.container") as {
+    diContainer: { authService: AuthService };
+  }
+).diContainer.authService;
 import { redisService } from "../../infrastructure/cache/redis.service";
 import { setUserContext } from "../../shared/utils/context";
 //import { roleManagementService } from "../../core/auth/role-management.service";

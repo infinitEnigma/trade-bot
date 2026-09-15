@@ -29,8 +29,5 @@ export * from './websocket/auth';
 export * from './websocket/handlers';
 export * from './websocket/types';
 
-// Export market streaming infrastructure
-export { marketStreamService } from './market-stream';
-
 // Export messaging types and interfaces
 export * from '../../interfaces/websocket';

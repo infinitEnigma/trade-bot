@@ -25,6 +25,7 @@ jest.mock('@noble/ed25519', () => ({
 jest.mock('../../../src/core/service-provider', () => ({
     serviceProvider: {
         getUserProfileService: jest.fn(),
+        getAuthService: jest.fn(),
     },
 }));
 
@@ -33,6 +34,11 @@ const mockUserProfileService = {
     getUserProfile: jest.fn(),
     updateUserProfile: jest.fn(),
     verifyWalletOwnership: jest.fn(),
+};
+
+// Mock auth service (wallet unlink)
+const mockAuthService = {
+    unlinkWallet: jest.fn(),
 };
 
 describe('User Profile Controller', () => {
@@ -58,6 +64,7 @@ describe('User Profile Controller', () => {
 
         // Set up service provider mock
         (serviceProvider.getUserProfileService as jest.Mock).mockReturnValue(mockUserProfileService);
+        (serviceProvider.getAuthService as jest.Mock).mockReturnValue(mockAuthService);
 
         // Mock authenticated user
         req.user = {
@@ -316,6 +323,59 @@ describe('User Profile Controller', () => {
             expect(res.status).toHaveBeenCalledWith(400);
             expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
                 success: false,
+            }));
+        });
+    });
+
+    describe('POST /api/user/unlink-wallet', () => {
+        it('should unlink wallet', async () => {
+            const mockUnlinkResult = {
+                success: true,
+                message: 'Wallet unlinked from your account.',
+            };
+
+            mockAuthService.unlinkWallet.mockResolvedValue(mockUnlinkResult);
+
+            const unlinkRoute = userProfileRoutes.stack.find((route: any) =>
+                route.route && route.route.path === '/unlink-wallet' && route.route.methods.post
+            );
+
+            if (!unlinkRoute || !unlinkRoute.route) {
+                throw new Error('Unlink wallet route not found');
+            }
+
+            const unlinkHandler = unlinkRoute.route.stack[1].handle; // Skip auth middleware
+
+            await unlinkHandler(req as Request, res as Response, next);
+
+            expect(mockAuthService.unlinkWallet).toHaveBeenCalledWith('user-123');
+            expect(res.json).toHaveBeenCalledWith(mockUnlinkResult);
+        });
+
+        it('should handle wallet unlink errors', async () => {
+            const mockUnlinkResult = {
+                success: false,
+                message: 'No linked wallet found',
+            };
+
+            mockAuthService.unlinkWallet.mockResolvedValue(mockUnlinkResult);
+
+            const unlinkRoute = userProfileRoutes.stack.find((route: any) =>
+                route.route && route.route.path === '/unlink-wallet' && route.route.methods.post
+            );
+
+            if (!unlinkRoute || !unlinkRoute.route) {
+                throw new Error('Unlink wallet route not found');
+            }
+
+            const unlinkHandler = unlinkRoute.route.stack[1].handle; // Skip auth middleware
+
+            await unlinkHandler(req as Request, res as Response, next);
+
+            expect(res.status).toHaveBeenCalledWith(400);
+            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+                success: false,
+                error: 'No linked wallet found',
             }));
         });
     });

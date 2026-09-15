@@ -178,4 +178,44 @@ router.post("/verify-wallet", authMiddleware, async (req: AuthenticatedRequest, 
     }
 });
 
+// POST /api/user/unlink-wallet
+// Removes the linked wallet. REGISTERED users drop back to BASIC;
+// VERIFIED users drop to REGISTERED (or BASIC if Kodiak is also gone).
+// A plain wagmi "Disconnect" in the browser does NOT call this — it only
+// ends the local session. This endpoint is the explicit, audited downgrade.
+router.post("/unlink-wallet", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+        if (!req.user) {
+            throw new Error("User not authenticated");
+        }
+
+        const userId = req.user.userId as string;
+        const authService = serviceProvider.getAuthService();
+        const result = await authService.unlinkWallet(userId);
+
+        if (!result.success) {
+            return res.status(400).json({
+                success: false,
+                error: result.message,
+            });
+        }
+
+        res.json({
+            success: true,
+            message: result.message,
+        });
+
+    } catch (error) {
+        logger.error("Wallet unlink error", error as Error, {
+            ...createErrorResponse(error instanceof Error ? error : new Error(String(error)), getCorrelationId()),
+            userId: req.user?.userId,
+        });
+
+        res.status(500).json({
+            success: false,
+            error: "Failed to unlink wallet",
+        });
+    }
+});
+
 export { router as userProfileRoutes };

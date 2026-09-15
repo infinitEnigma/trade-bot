@@ -37,16 +37,16 @@ export const UserProgressCard: React.FC = () => {
     },
     {
       id: 'registered',
-      label: 'Trading Verified',
-      description: 'Connected and verified Kodiak trading account',
+      label: 'Wallet Connected',
+      description: 'Connected wallet and signed welcome message',
       completed: user.userLevel === UserLevel.REGISTERED || user.userLevel === UserLevel.VERIFIED,
       current: user.userLevel === UserLevel.BASIC,
       icon: <Wallet className="w-4 h-4" />
     },
     {
       id: 'verified',
-      label: 'Wallet Verified',
-      description: 'Wallet address verified and linked to account',
+      label: 'Trading Verified',
+      description: 'Kodiak trading account connected and verified',
       completed: user.userLevel === UserLevel.VERIFIED,
       current: user.userLevel === UserLevel.REGISTERED,
       icon: <CheckCircle className="w-4 h-4" />
@@ -212,10 +212,29 @@ const NextActionPrompt: React.FC<{ user: User }> = ({ user }) => {
           <div>
             <h4 className="font-medium text-blue-400">Next: Connect Trading Account</h4>
             <p className="text-sm text-textMuted mb-2">
-              Set up your Kodiak trading account to access strategies and start trading.
+              Add your Kodiak API credentials in Settings to reach VERIFIED status and unlock trading.
             </p>
             <button className="text-sm bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-3 py-1 rounded transition-colors">
               Go to Settings →
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (user.userLevel === UserLevel.BASIC) {
+    return (
+      <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+        <div className="flex items-center gap-3">
+          <TrendingUp className="w-5 h-5 text-blue-400" />
+          <div>
+            <h4 className="font-medium text-blue-400">Next: Connect Your Wallet</h4>
+            <p className="text-sm text-textMuted mb-2">
+              Connect your wallet on the Dashboard and sign the welcome message to reach REGISTERED status.
+            </p>
+            <button className="text-sm bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-3 py-1 rounded transition-colors">
+              Go to Dashboard →
             </button>
           </div>
         </div>
@@ -237,7 +256,7 @@ const getNextStepLabel = (user: User): string => {
     return "Wallet Verification";
   }
   if (user.userLevel === UserLevel.BASIC) {
-    return "Trading Setup";
+    return "Wallet Setup";
   }
   return "Account Setup";
 };

@@ -203,11 +203,6 @@ describe('Dependency Injection Container', () => {
     });
 
     describe('WebSocket Services', () => {
-        it('should provide web socket service', () => {
-            expect(diContainer.webSocketService).toBeDefined();
-            expect(typeof diContainer.webSocketService).toBe('object');
-        });
-
         it('should provide web socket rate limiter', () => {
             expect(diContainer.webSocketRateLimiter).toBeDefined();
             expect(typeof diContainer.webSocketRateLimiter).toBe('object');
@@ -401,12 +396,7 @@ describe('Dependency Injection Container', () => {
         });
 
         it('should export websocket service convenience functions', async () => {
-            const { getWebSocketService, getWebSocketRateLimiter } = await import('../../src/infrastructure/dependency-injection.container');
-
-            expect(getWebSocketService).toBeDefined();
-            expect(typeof getWebSocketService).toBe('function');
-            expect(getWebSocketService()).toBeDefined();
-            expect(typeof getWebSocketService()).toBe('object');
+            const { getWebSocketRateLimiter } = await import('../../src/infrastructure/dependency-injection.container');
 
             expect(getWebSocketRateLimiter).toBeDefined();
             expect(typeof getWebSocketRateLimiter).toBe('function');

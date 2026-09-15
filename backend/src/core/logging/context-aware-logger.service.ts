@@ -372,7 +372,6 @@ export class OperationTimer {
 
 
 // Create singleton instances for common components
-export const marketStreamLogger = new ContextAwareLogger('market-stream');
 export const positionSyncLogger = new ContextAwareLogger('position-sync');
 export const redisLogger = new ContextAwareLogger('redis');
 export const websocketLogger = new ContextAwareLogger('websocket');

@@ -36,6 +36,8 @@ describe('RoleQualificationService', () => {
                 updateProfile: jest.fn(),
                 getAuthenticatedUserData: jest.fn(),
                 getWalletAddress: jest.fn(),
+                setWalletAddress: jest.fn(),
+                clearWalletAddress: jest.fn(),
             },
             cache: {
                 get: jest.fn(),

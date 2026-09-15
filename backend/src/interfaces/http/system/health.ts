@@ -5,7 +5,6 @@ import { getHealthService } from "../../../core/service-provider";
 import { getPool, getPoolMetrics } from "../../../database/pool";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { keyManagementService } from "../../../infrastructure/security/key-management.service";
-import { getServiceStatus } from "../../../core/service-selector";
 import { externalTrafficObserver } from "../../../infrastructure/external/external-traffic-observer";
 import { httpLogger, logger as contextLogger } from "../../../core/logging";
 
@@ -360,10 +359,18 @@ router.get("/live", (req: Request, res: Response) => {
   contextLogger.debug("Liveness probe passed");
 });
 
-// Service implementation status endpoint (Phase 5: Gradual Replacement)
+// Service implementation status endpoint
+// All services are pure implementations — the gradual-replacement migration is complete.
 router.get("/health/services", (req: Request, res: Response) => {
   try {
-    const serviceStatus = getServiceStatus();
+    const serviceStatus = {
+      balance: { implementation: "pure", enabled: true },
+      auth: { implementation: "pure", enabled: true },
+      position: { implementation: "pure", enabled: true },
+      botStatus: { implementation: "pure", enabled: true },
+      trading: { implementation: "pure", enabled: true },
+      botManagement: { implementation: "pure", enabled: true },
+    };
 
     // Determine overall service health
     const allServicesHealthy = Object.values(serviceStatus).every(service =>

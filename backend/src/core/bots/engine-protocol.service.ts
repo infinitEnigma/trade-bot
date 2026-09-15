@@ -329,6 +329,6 @@ export class EngineProtocolService {
 // SINGLETON
 // ===========================================
 
-// Singleton instance (same pattern as botReconciliationWorker)
+// Singleton instance
 export const engineProtocolService = new EngineProtocolService();
 

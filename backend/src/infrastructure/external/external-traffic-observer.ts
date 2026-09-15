@@ -14,11 +14,7 @@ export interface ExternalTrafficSnapshot {
     kodiakCacheMisses: number;
     kodiakErrors: number;
     kodiak429: number;
-    orderlyConnections: number;
-    orderlyConnectionFailures: number;
     privilegedConnections: number;
-    marketSubscriptions: number;
-    markPriceRefreshes: number;
 }
 
 interface TaggedCounter {
@@ -34,11 +30,7 @@ export class ExternalTrafficObserver {
     private kodiakCacheMisses = 0;
     private kodiakErrors = 0;
     private kodiak429 = 0;
-    private orderlyConnections = 0;
-    private orderlyConnectionFailures = 0;
     private privilegedConnections = 0;
-    private marketSubscriptions = 0;
-    private markPriceRefreshes = 0;
     private readonly tagged = new Map<string, TaggedCounter>();
 
     recordKodiakRequest(operation: string, userId = 'unknown'): void {
@@ -62,29 +54,9 @@ export class ExternalTrafficObserver {
         this.bumpTag(`kodiak-error:${operation}:${status ?? 'unknown'}`);
     }
 
-    recordOrderlyConnection(symbols: string[], accountPresent: boolean): void {
-        this.orderlyConnections += 1;
-        this.bumpTag(`orderly-connect:${symbols.length}:${accountPresent ? 'account' : 'missing-account'}`);
-    }
-
-    recordOrderlyConnectionFailure(symbols: string[]): void {
-        this.orderlyConnectionFailures += 1;
-        this.bumpTag(`orderly-failure:${symbols.length}`);
-    }
-
     recordPrivilegedConnection(userId: string, userLevel: string, socketId: string): void {
         this.privilegedConnections += 1;
         this.bumpTag(`privileged-ws:${userLevel}:${userId}:${socketId}`);
-    }
-
-    recordMarketSubscription(userId: string, symbol: string): void {
-        this.marketSubscriptions += 1;
-        this.bumpTag(`market-subscribe:${userId}:${symbol}`);
-    }
-
-    recordMarkPriceRefresh(symbol: string): void {
-        this.markPriceRefreshes += 1;
-        this.bumpTag(`markprice-refresh:${symbol}`);
     }
 
     snapshot(): ExternalTrafficSnapshot {
@@ -94,11 +66,7 @@ export class ExternalTrafficObserver {
             kodiakCacheMisses: this.kodiakCacheMisses,
             kodiakErrors: this.kodiakErrors,
             kodiak429: this.kodiak429,
-            orderlyConnections: this.orderlyConnections,
-            orderlyConnectionFailures: this.orderlyConnectionFailures,
             privilegedConnections: this.privilegedConnections,
-            marketSubscriptions: this.marketSubscriptions,
-            markPriceRefreshes: this.markPriceRefreshes,
         };
     }
 

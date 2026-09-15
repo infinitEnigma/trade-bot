@@ -27,10 +27,6 @@ jest.mock('../../../src/infrastructure/security/key-management.service', () => (
     },
 }));
 
-jest.mock('../../../src/core/service-selector', () => ({
-    getServiceStatus: jest.fn(),
-}));
-
 jest.mock('../../../src/core/logging', () => ({
     httpLogger: {
         http: jest.fn(),
@@ -48,7 +44,6 @@ const mockGetPool = require('../../../src/database/pool').getPool;
 const mockGetPoolMetrics = require('../../../src/database/pool').getPoolMetrics;
 const mockRedisService = require('../../../src/infrastructure/cache/redis.service').redisService;
 const mockKeyManagementService = require('../../../src/infrastructure/security/key-management.service').keyManagementService;
-const mockGetServiceStatus = require('../../../src/core/service-selector').getServiceStatus;
 
 // Create a test app
 function createTestApp(): Express {
@@ -515,55 +510,23 @@ describe('Health Controller', () => {
     });
 
     describe('GET /health/services', () => {
-        it('should return service status information', async () => {
-            const mockServiceStatus = {
-                service1: { implementation: 'pure', enabled: true },
-                service2: { implementation: 'pure', enabled: true },
-                service3: { implementation: 'legacy', enabled: false },
-            };
-
-            mockGetServiceStatus.mockReturnValue(mockServiceStatus);
-
-            const response = await request(app)
-                .get('/health/services')
-                .expect(200);
-
-            expect(response.body.status).toBe('transitioning');
-            expect(response.body.services).toEqual(mockServiceStatus);
-            expect(response.body.summary.pureServicesEnabled).toBe(2);
-            expect(response.body.summary.totalServices).toBe(3);
-        });
-
-        it('should return healthy status when all services are migrated', async () => {
-            const mockServiceStatus = {
-                service1: { implementation: 'pure', enabled: true },
-                service2: { implementation: 'pure', enabled: true },
-                service3: { implementation: 'pure', enabled: true },
-            };
-
-            mockGetServiceStatus.mockReturnValue(mockServiceStatus);
-
+        it('should return service status information with all services pure and enabled', async () => {
             const response = await request(app)
                 .get('/health/services')
                 .expect(200);
 
             expect(response.body.status).toBe('healthy');
-            expect(response.body.summary.pureServicesEnabled).toBe(3);
-        });
-
-        it('should handle service status retrieval failure', async () => {
-            const errorMessage = 'Service status unavailable';
-            mockGetServiceStatus.mockImplementation(() => {
-                throw new Error(errorMessage);
+            expect(response.body.services).toEqual({
+                balance: { implementation: 'pure', enabled: true },
+                auth: { implementation: 'pure', enabled: true },
+                position: { implementation: 'pure', enabled: true },
+                botStatus: { implementation: 'pure', enabled: true },
+                trading: { implementation: 'pure', enabled: true },
+                botManagement: { implementation: 'pure', enabled: true },
             });
-
-            const response = await request(app)
-                .get('/health/services')
-                .expect(500);
-
-            expect(response.body.status).toBe('error');
-            expect(response.body.error).toBe('Failed to get service status');
-            expect(response.body.message).toBe(errorMessage);
+            expect(response.body.summary.pureServicesEnabled).toBe(6);
+            expect(response.body.summary.totalServices).toBe(6);
+            expect(response.body.summary.migrationProgress).toBe('6/6 services migrated');
         });
     });
 

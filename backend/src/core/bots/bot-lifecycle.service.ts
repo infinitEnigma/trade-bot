@@ -407,5 +407,5 @@ export class BotLifecycleService {
 // SINGLETON
 // ===========================================
 
-// Singleton instance (same pattern as botReconciliationWorker)
+// Singleton instance
 export const botLifecycleService = new BotLifecycleService(engineProtocolService);

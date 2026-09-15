@@ -21,7 +21,6 @@ export { default as logger } from '../logging/logger.service';
 export {
     ContextAwareLogger,
     contextLogger,
-    marketStreamLogger,
     positionSyncLogger,
     redisLogger,
     websocketLogger,

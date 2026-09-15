@@ -9,7 +9,6 @@ import { createErrorResponse, ExternalServiceError, DataFreshnessUtils, Freshnes
 import { getCorrelationId } from "../../../shared/utils/context";
 import { ContextAwareLogger } from "../../../core/logging/"; // ✅ Import context-aware logger
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
-import { marketStreamService } from "../../../infrastructure/messaging";
 import { getCacheConfig, getFullCacheConfig } from "../../../config/cache.config"; // ✅ Import centralized cache config
 import { AxiosError } from "axios";
 
@@ -142,58 +141,73 @@ router.get(
       const intervalStr = (interval as string) || "1h";
       const limitNum = parseInt(limit as string) || 500;
 
-      // Get kline data from WebSocket cache
-      const klines = await marketStreamService.getKlines(
+      // Map frontend interval to TradingView resolution
+      const resolutionMap: Record<string, string> = {
+        "1m": "1",
+        "5m": "5",
+        "15m": "15",
+        "30m": "30",
+        "1h": "60",
+        "2h": "120",
+        "4h": "240",
+        "1d": "D",
+        "1w": "W",
+      };
+      const resolution = resolutionMap[intervalStr] || intervalStr;
+
+      // Interval duration in seconds (for the history window)
+      const intervalSeconds: Record<string, number> = {
+        "1m": 60, "5m": 300, "15m": 900, "30m": 1800,
+        "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800,
+      };
+      const step = intervalSeconds[intervalStr] || 3600;
+      const to = Math.floor(Date.now() / 1000);
+      const from = to - step * limitNum;
+
+      // Fetch candle data from Kodiak (REST + Redis cache)
+      const response = await kodiakIntegrationService.getTradingViewHistory(
         symbolStr,
-        intervalStr,
-        limitNum
+        resolution,
+        from,
+        to
       );
 
-      // Check for duplicate timestamps before returning
-      const timestamps = klines.map(k => k.startTime);
-      const uniqueTimestamps = new Set(timestamps);
-      const hasDuplicates = timestamps.length !== uniqueTimestamps.size;
-
-      marketLogger.debug("Klines endpoint returning data", {
-        symbol: symbolStr,
-        interval: intervalStr,
-        requestedLimit: limitNum,
-        actualCount: klines.length,
-        hasDuplicates,
-        firstCandle: klines[0],
-        secondCandle: klines[1], // Check second candle for duplicates
-        lastCandle: klines[klines.length - 1],
-        allTimestamps: timestamps.slice(0, 10), // First 10 timestamps
-      });
-
-      if (klines.length > 0) {
-        res.json({
-          success: true,
-          data: klines,
-          timestamp: Date.now(),
-          source: "websocket_cache",
-        });
-
-        marketLogger.debug("Klines served from WebSocket cache", {
-          symbol: symbolStr,
-          interval: intervalStr,
-          count: klines.length,
-        });
-      } else {
-        // No cached data yet - WebSocket might still be connecting
+      if (!response.success || !response.data || response.data.s !== "ok") {
         res.json({
           success: true,
           data: [],
           timestamp: Date.now(),
-          message: "Kline data not available yet - WebSocket connecting",
-          source: "websocket_cache",
+          message: "Kline data temporarily unavailable",
+          source: "kodiak_rest",
         });
-
-        marketLogger.debug("Klines requested but no cached data available", {
-          symbol: symbolStr,
-          interval: intervalStr,
-        });
+        return;
       }
+
+      const history = response.data;
+      const klines = history.t.map((time, i) => ({
+        startTime: time,
+        time,
+        open: history.o[i],
+        high: history.h[i],
+        low: history.l[i],
+        close: history.c[i],
+        volume: history.v[i] ?? 0,
+      })).slice(-limitNum);
+
+      marketLogger.debug("Klines endpoint returning data", {
+        symbol: symbolStr,
+        interval: intervalStr,
+        resolution,
+        requestedLimit: limitNum,
+        actualCount: klines.length,
+      });
+
+      res.json({
+        success: true,
+        data: klines,
+        timestamp: Date.now(),
+        source: "kodiak_rest",
+      });
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       marketLogger.error("Klines endpoint error", undefined, {
@@ -203,7 +217,7 @@ router.get(
         error: errorMessage,
         operation: "klines_endpoint",
       });
-      const externalError = new ExternalServiceError("Market Stream Service", { service: "WebSocket", operation: "get_klines" });
+      const externalError = new ExternalServiceError("Kodiak API", { service: "Kodiak", operation: "get_klines" });
       res.status(externalError.statusCode).json(
         createErrorResponse(externalError, getCorrelationId())
       );
@@ -343,33 +357,43 @@ router.get(
       const { symbol } = req.params;
       const symbolStr = symbol as string;
 
-      // Get mark price from market stream service (includes WebSocket subscription)
-      const markPriceData =
-        await marketStreamService.getLatestMarkPrice(symbolStr);
+      // Get mark price from Kodiak ticker (REST + Redis cache)
+      const response = await kodiakIntegrationService.getMarketTicker(symbolStr);
 
-      if (markPriceData) {
-        res.json({
-          success: true,
-          data: markPriceData,
-          timestamp: Date.now(),
-          cached: true, // Always from cache/WebSocket
-        });
-        marketLogger.debug("Mark price served from cache", {
-          symbol,
-          price: markPriceData.price,
-        });
-      } else {
-        // No cached data yet - WebSocket might still be connecting
-        res.json({
-          success: true,
-          data: null,
-          timestamp: Date.now(),
-          message: "Mark price data not available yet - WebSocket connecting",
-        });
-        marketLogger.debug("Mark price requested but no cached data available", {
-          symbol,
-        });
+      if (response.success && response.data) {
+        const markPrice = parseFloat(
+          (response.data as { mark_price?: string | number }).mark_price?.toString() || "0"
+        );
+
+        if (markPrice > 0) {
+          res.json({
+            success: true,
+            data: {
+              symbol: symbolStr,
+              price: markPrice.toString(),
+              timestamp: Date.now(),
+            },
+            timestamp: Date.now(),
+            cached: true, // Served from Kodiak integration cache
+          });
+          marketLogger.debug("Mark price served from Kodiak", {
+            symbol,
+            price: markPrice,
+          });
+          return;
+        }
       }
+
+      // No mark price available
+      res.json({
+        success: true,
+        data: null,
+        timestamp: Date.now(),
+        message: "Mark price data temporarily unavailable",
+      });
+      marketLogger.debug("Mark price requested but no data available", {
+        symbol,
+      });
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       marketLogger.error("Mark price endpoint error", undefined, {

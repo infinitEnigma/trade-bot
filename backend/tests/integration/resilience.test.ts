@@ -5,7 +5,6 @@ import { ContextAwareLogger } from '../../src/core/logging/context-aware-logger.
 import { ErrorSeverity, ErrorCategory } from '../../src/core/notifications/error-notification.service';
 import { QueryTimeout } from '../../src/database/pool';
 import { passwordWorkerPool } from '../../src/workers/password-worker';
-import { botReconciliationWorker } from '../../src/workers/bot-reconciliation';
 import logger from '../../src/core/logging/logger.service';
 
 // Mock logger to avoid actual logging during tests
@@ -26,7 +25,6 @@ describe('Error Recovery & Resilience Tests', () => {
         // Cleanup after each test
         errorNotificationService.resetThrottleCounters();
         //await passwordWorkerPool.cleanupForTests();
-        botReconciliationWorker.cleanupForTests();
     });
 
     describe('Circuit Breaker Pattern', () => {
@@ -327,17 +325,17 @@ describe('Error Recovery & Resilience Tests', () => {
             expect(stats.throttledErrors).toBeGreaterThan(0);
         });
 
-        it('should handle bot reconciliation failures', async () => {
-            // Test handling of bot reconciliation worker failures
+        it('should handle engine lifecycle failures', async () => {
+            // Test handling of engine lifecycle background-task failures
 
-            const botError = new Error('Bot reconciliation failed');
+            const botError = new Error('Engine lifecycle reconciliation failed');
             await errorNotificationService.notifyError(
                 botError,
-                { category: ErrorCategory.BACKGROUND_TASK, operation: 'bot-reconciliation' },
+                { category: ErrorCategory.BACKGROUND_TASK, operation: 'engine-lifecycle-reconciliation' },
                 ErrorSeverity.MEDIUM
             );
 
-            // Should handle bot reconciliation failures gracefully
+            // Should handle engine lifecycle failures gracefully
             const stats = errorNotificationService.getStats();
             expect(stats.throttledErrors).toBeGreaterThan(0);
         });

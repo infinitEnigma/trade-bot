@@ -16,10 +16,13 @@ jest.mock('../../src/core/logging', () => ({
     }
 }));
 
-jest.mock('../../src/core/service-selector', () => ({
-    selectAuthService: jest.fn().mockReturnValue({
-        verifyWalletOwnership: jest.fn()
-    })
+// Mock the DI container so verifyWalletOwnership resolves a controllable mock
+jest.mock('../../src/infrastructure/dependency-injection.container', () => ({
+    diContainer: {
+        authService: {
+            verifyWalletOwnership: jest.fn()
+        }
+    }
 }));
 
 describe('UserProfileService', () => {
@@ -163,7 +166,7 @@ describe('UserProfileService', () => {
                 message: 'Wallet ownership verified'
             };
 
-            const mockAuthService = require('../../src/core/service-selector').selectAuthService();
+            const mockAuthService = require('../../src/infrastructure/dependency-injection.container').diContainer.authService;
             mockAuthService.verifyWalletOwnership.mockResolvedValue(mockResult);
 
             const result = await service.verifyWalletOwnership(
@@ -188,7 +191,7 @@ describe('UserProfileService', () => {
                 message: 'Invalid signature'
             };
 
-            const mockAuthService = require('../../src/core/service-selector').selectAuthService();
+            const mockAuthService = require('../../src/infrastructure/dependency-injection.container').diContainer.authService;
             mockAuthService.verifyWalletOwnership.mockResolvedValue(mockResult);
 
             const result = await service.verifyWalletOwnership(
@@ -204,7 +207,7 @@ describe('UserProfileService', () => {
         it('should handle errors during wallet verification', async () => {
             const testError = new Error('Server error');
 
-            const mockAuthService = require('../../src/core/service-selector').selectAuthService();
+            const mockAuthService = require('../../src/infrastructure/dependency-injection.container').diContainer.authService;
             mockAuthService.verifyWalletOwnership.mockRejectedValue(testError);
 
             const result = await service.verifyWalletOwnership(

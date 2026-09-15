@@ -17,4 +17,3 @@
 
 // Export worker modules
 export { hashPassword, comparePassword } from './password-worker';
-export { botReconciliationWorker } from './bot-reconciliation';

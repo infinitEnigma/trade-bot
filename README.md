@@ -18,10 +18,30 @@ Trade Bot is a **full-stack, chain-agnostic automated trading platform** for per
 | **Exchange** | Multi-exchange (Kodiak, + extensible) | ✅ Extensible | - |
 | **Frontend** | React 19 + Vite + Tailwind CSS | ✅ Functional | [📖 Frontend Docs](frontend/README.md) |
 | **Backend** | Express.js + PostgreSQL + Redis | ✅ Functional | [📖 Backend Docs](backend/README.md) |
-| **Trading Engine** | TypeScript (Node.js) | ⚠️ In Development | [📖 Engine Docs](engine/kodiak/README.md) |
+| **Trading Engine** | TypeScript (Node.js) | ⚠️ In Development | [📖 Engine Docs](engine/README.md) |
 | **Shared Contracts** | TypeScript types | ✅ Functional | - |
 
 > **Maturity Assessment**: The architecture is a **chain- and exchange-agnostic distributed system** with proper backend-engine coordination. The Backend ↔ Engine protocol (Redis Streams, explicit state transitions, ACKs, correlation IDs, engine epochs, heartbeats) is the strongest architectural area. However, several critical correctness and operational issues remain before this can be considered production-grade. See [Known Issues & Priorities](#known-issues--priorities) below.
+
+---
+
+## User Access Tiers
+
+Users progress through three access levels. Progression is enforced server-side and reflected in the authenticated session profile.
+
+| Level | How it is reached | Access |
+|-------|-------------------|--------|
+| **BASIC** | Email + password registration and login (no email verification) | Public-source market data (prices, charts) and general dashboard pages |
+| **REGISTERED** | Connect a wallet on the Dashboard and sign the welcome message (ownership verified by the backend) | Wallet-linked features; exchange credential setup (Settings) becomes available |
+| **VERIFIED** | Add exchange (Kodiak) API credentials in Settings and have them verified by the backend | Trading strategies, bot configuration, exchange-specific and private data |
+
+```
+BASIC ──connect wallet + sign message──▶ REGISTERED ──verify exchange keys──▶ VERIFIED
+```
+
+- Wallet signatures are verified server-side (`POST /api/user/verify-wallet`). The linked wallet is stored independently of exchange credentials (see the `wallet_addresses` migration).
+- Unlinking a wallet (`POST /api/user/unlink-wallet`) is an explicit, audited action that downgrades the account: `VERIFIED → REGISTERED`, `REGISTERED → BASIC`. Disconnecting the browser wallet session alone does **not** change the account level.
+- BASIC users receive data from public sources only; REGISTERED and VERIFIED users additionally receive exchange-specific and private data.
 
 ---
 
@@ -213,6 +233,7 @@ npm run format          # Format all packages
 - ✅ **Helmet Security Headers**
 - ✅ **Password Hashing** (bcrypt)
 - ✅ **Encrypted credential storage** for Kodiak API keys
+- ✅ **Wallet ownership verification** through signed messages, with audited link/unlink and level downgrade
 - ✅ **API key authentication** for engine-to-backend communication
 
 ---
@@ -232,7 +253,7 @@ Based on architectural review, the following issues are tracked:
 
 | Issue | Description |
 |-------|-------------|
-| **Reconciliation Worker Disabled** | ✅ Fixed: Replaced by a lifecycle-aware reconciler (`LifecycleReconciliationService`) that repairs desired/actual drift through `BotLifecycleService` only, with bounded stop-reissues, stuck-transition degradation to UNKNOWN, audit events, and CAS-safe transitions. The legacy worker is never started (route-module side-effect startup removed). |
+| **Reconciliation Worker Disabled** | ✅ Fixed: Replaced by a lifecycle-aware reconciler (`LifecycleReconciliationService`) that repairs desired/actual drift through `BotLifecycleService` only, with bounded stop-reissues, stuck-transition degradation to UNKNOWN, audit events, and CAS-safe transitions. The superseded `BotReconciliationWorker` has been deleted. |
 
 ### 🟠 High (P1)
 
@@ -248,7 +269,7 @@ Based on architectural review, the following issues are tracked:
 |-------|-------------|
 | **Legacy Bot Status Models** | ✅ Fixed: Consolidated around canonical `BotActualState` from `@trade-bot/shared/src/protocol`. Removed duplicate enums and inline status strings. |
 | **Shared Package Scope** | `@trade-bot/shared` has become a god package containing protocol types, domain models, API contracts, error classes, and logging types. Should be split. |
-| **Dead Code Cleanup** | Backend contains commented-out transitional code and unused imports that should be removed. |
+| **Dead Code Cleanup** | ✅ Fixed: Removed the dormant Orderly `market-stream` subsystem, the superseded `BotReconciliationWorker`, the `service-selector` rollout shim, unused WebSocket/DI getters, unused frontend `QuickActions`, and one-off Redis debug scripts. |
 
 ---
 
@@ -260,6 +281,10 @@ Based on architectural review, the following issues are tracked:
 - [x] Define explicit control-plane behavior when Redis is unavailable
 - [x] Refactor engine into modular, exchange-agnostic architecture
 - [x] Replace legacy reconciliation worker with lifecycle-aware reconciler (drift repair + attribution instrumentation)
+- [x] Remove superseded legacy `BotReconciliationWorker` and its tests
+- [x] Retire the dormant Orderly `market-stream` subsystem (market data served over HTTP)
+- [x] Consolidate on a single DI container (`service-selector` rollout shim removed)
+- [x] Wallet-first onboarding: wallet verification no longer requires exchange credentials
 
 ### Near-Term
 - [x] Consolidate old/new bot status models in shared package
@@ -330,4 +355,4 @@ Apache License 2.0 - See [LICENSE](LICENSE) for details
 
 ---
 
-**Status**: In Development | **Version**: 1.0.0 | **Updated**: September 12, 2026
+**Status**: In Development | **Version**: 1.0.0 | **Updated**: September 14, 2026

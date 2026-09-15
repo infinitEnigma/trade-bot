@@ -7,7 +7,6 @@ import {
     WebSocketClient,
     WebSocketMetrics,
     WebSocketConnection,
-    IMarketStreamService,
     IAuthService,
     ILogger,
     Server,
@@ -40,13 +39,11 @@ export class WebSocketService implements IWebSocketService {
     };
 
     constructor(
-        private marketStreamService: IMarketStreamService,
         private authService: IAuthService,
         private logger: ILogger
     ) {
         this.authMiddleware = new WebSocketAuthMiddleware(authService, logger);
         this.eventHandlers = new WebSocketEventHandlers(
-            marketStreamService,
             webSocketRateLimiter,
             logger
         );
@@ -225,12 +222,9 @@ export class WebSocketService implements IWebSocketService {
                 activeConnections: this.clients.size,
             });
 
-            // connectToOrderly requires a user accountId — only available for REGISTERED/VERIFIED users.
-            // BASIC users connect via WebSocket to receive any ongoing broadcasts,
-            // but they cannot initiate the Orderly stream themselves.
+            // Privileged connection tracking (REGISTERED/VERIFIED users)
             if (client.userLevel === "REGISTERED" || client.userLevel === "VERIFIED") {
                 externalTrafficObserver.recordPrivilegedConnection(client.userId, client.userLevel, socket.id);
-                await this.marketStreamService.connectToOrderly(["PERP_BTC_USDC", "PERP_ETH_USDC"]);
             }
 
             // Set up event handlers

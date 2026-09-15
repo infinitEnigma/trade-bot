@@ -454,11 +454,13 @@ export class AuthService {
     }
 
     /**
-     * Verify wallet ownership for user verification
+     * Verify wallet ownership for user registration (BASIC -> REGISTERED)
      *
      * Business Logic:
-     * - Verify that a user owns a specific wallet address
-     * - Used for wallet verification and security features
+     * - Verify that a user owns a specific wallet address via signed message
+     * - BASIC users: persist wallet address and upgrade to REGISTERED
+     * - REGISTERED+ users: re-verify ownership against stored address (no level change)
+     * - No Kodiak credentials required (wallet connect precedes Kodiak setup)
      */
     async verifyWalletOwnership(
         userId: string,
@@ -490,56 +492,88 @@ export class AuthService {
                 };
             }
 
-            // Get the stored wallet address from user's verified Kodiak credentials
-            const storedWalletAddress = await this.deps.userRepository.getWalletAddress(userId);
-
-            if (!storedWalletAddress) {
-                this.deps.logger.warn('Wallet verification failed - no verified Kodiak credentials found', {
-                    userId
-                });
-                return {
-                    success: false,
-                    message: 'No verified Kodiak credentials found. Please connect your Kodiak account first.'
-                };
-            }
-
-            // Compare with stored wallet address
             const normalizedProvided = walletAddress.toLowerCase().trim();
-            const normalizedStored = storedWalletAddress.toLowerCase().trim();
 
-            if (normalizedProvided !== normalizedStored) {
-                this.deps.logger.warn('Wallet verification failed - address does not match Kodiak credentials', {
+            // Get the stored wallet address (if any)
+            const storedWalletAddress = await this.deps.userRepository.getWalletAddress(userId);
+            const normalizedStored = storedWalletAddress?.toLowerCase().trim();
+
+            // If a wallet is already linked, the signature must match the linked address
+            if (normalizedStored && normalizedProvided !== normalizedStored) {
+                this.deps.logger.warn('Wallet verification failed - address does not match linked wallet', {
                     userId,
                     providedAddress: walletAddress,
-                    storedAddress: storedWalletAddress
                 });
                 return {
                     success: false,
-                    message: 'Wallet address does not match the address associated with your Kodiak account'
+                    message: 'Wallet address does not match the wallet linked to your account'
                 };
             }
 
-            // Update user level to VERIFIED
-            const success = await this.updateUserLevel(userId, UserLevel.VERIFIED);
-
-            if (!success) {
-                this.deps.logger.error('Failed to update user level to VERIFIED', {
-                    userId
-                });
+            // Get current user to decide on level transition
+            const currentUser = await this.deps.userRepository.findById(userId);
+            if (!currentUser) {
                 return {
                     success: false,
-                    message: 'Wallet verification succeeded but failed to update user level'
+                    message: 'User not found'
                 };
             }
 
-            this.deps.logger.info('Wallet ownership verified and user level updated to VERIFIED', {
+            // First-time wallet link: persist the address
+            if (!normalizedStored) {
+                const persisted = await this.deps.userRepository.setWalletAddress(userId, normalizedProvided);
+                if (!persisted) {
+                    this.deps.logger.error('Failed to persist wallet address', {
+                        userId
+                    });
+                    return {
+                        success: false,
+                        message: 'Wallet signature valid but failed to link wallet to account'
+                    };
+                }
+            }
+
+            // BASIC users graduate to REGISTERED on wallet verification
+            if (currentUser.userLevel === UserLevel.BASIC) {
+                const success = await this.updateUserLevel(userId, UserLevel.REGISTERED);
+
+                if (!success) {
+                    this.deps.logger.error('Failed to update user level to REGISTERED', {
+                        userId
+                    });
+                    return {
+                        success: false,
+                        message: 'Wallet verification succeeded but failed to update user level'
+                    };
+                }
+
+                await this.logAuditEvent('WALLET_VERIFIED', {
+                    userId,
+                    walletAddress: normalizedProvided,
+                    previousLevel: UserLevel.BASIC,
+                    newLevel: UserLevel.REGISTERED
+                });
+
+                this.deps.logger.info('Wallet ownership verified and user level updated to REGISTERED', {
+                    userId,
+                    walletAddress
+                });
+
+                return {
+                    success: true,
+                    message: 'Wallet ownership verified. Your account has been upgraded to REGISTERED level.'
+                };
+            }
+
+            // Already REGISTERED+: re-verification succeeds, no level change
+            await this.logAuditEvent('WALLET_REVERIFIED', {
                 userId,
-                walletAddress
+                walletAddress: normalizedProvided,
             });
 
             return {
                 success: true,
-                message: 'Wallet ownership verified. Your account has been upgraded to VERIFIED level.'
+                message: 'Wallet ownership verified.'
             };
         } catch (error) {
             this.deps.logger.error('Wallet ownership verification failed', {
@@ -550,6 +584,72 @@ export class AuthService {
             return {
                 success: false,
                 message: 'Failed to verify wallet ownership'
+            };
+        }
+    }
+
+    /**
+     * Unlink wallet from user account (REGISTERED -> BASIC)
+     *
+     * Business Logic:
+     * - Removes the stored wallet address (proof of ownership is gone)
+     * - Downgrades REGISTERED users back to BASIC with audit trail
+     * - VERIFIED users keep their level only if they still hold Kodiak
+     *   credentials; otherwise they drop to BASIC as well
+     */
+    async unlinkWallet(
+        userId: string
+    ): Promise<{ success: boolean; message: string }> {
+        try {
+            this.deps.logger.info('Wallet unlink requested', { userId });
+
+            const currentUser = await this.deps.userRepository.findById(userId);
+            if (!currentUser) {
+                return {
+                    success: false,
+                    message: 'User not found'
+                };
+            }
+
+            const removed = await this.deps.userRepository.clearWalletAddress(userId);
+            if (!removed) {
+                return {
+                    success: false,
+                    message: 'No linked wallet found'
+                };
+            }
+
+            if (currentUser.userLevel === UserLevel.REGISTERED) {
+                await this.updateUserLevel(userId, UserLevel.BASIC);
+            } else if (currentUser.userLevel === UserLevel.VERIFIED) {
+                const authData = await this.deps.userRepository.getAuthenticatedUserData(userId);
+                // Wallet gone but Kodiak remains -> back to REGISTERED;
+                // neither -> BASIC
+                await this.updateUserLevel(
+                    userId,
+                    authData?.hasCredentials ? UserLevel.REGISTERED : UserLevel.BASIC
+                );
+            }
+
+            await this.logAuditEvent('WALLET_UNLINKED', {
+                userId,
+                previousLevel: currentUser.userLevel,
+            });
+
+            this.deps.logger.info('Wallet unlinked successfully', { userId });
+
+            return {
+                success: true,
+                message: 'Wallet unlinked from your account.'
+            };
+        } catch (error) {
+            this.deps.logger.error('Wallet unlink failed', {
+                userId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            return {
+                success: false,
+                message: 'Failed to unlink wallet'
             };
         }
     }

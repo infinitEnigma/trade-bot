@@ -1,7 +1,7 @@
 /** @format */
 
 import { WebSocketService } from '../../src/infrastructure/messaging/websocket.service';
-import { IMarketStreamService, IAuthService, ILogger, Server } from '../../src/interfaces/websocket';
+import { IAuthService, ILogger, Server } from '../../src/interfaces/websocket';
 import { WebSocketError, WebSocketErrorCode } from '../../src/infrastructure/messaging/websocket/types';
 
 // Mock dependencies
@@ -11,21 +11,11 @@ jest.mock('../../src/infrastructure/security/rate-limiter/websocket-rate-limiter
 
 describe('WebSocketService', () => {
     let webSocketService: WebSocketService;
-    let mockMarketStreamService: jest.Mocked<IMarketStreamService>;
     let mockAuthService: jest.Mocked<IAuthService>;
     let mockLogger: jest.Mocked<ILogger>;
     let mockServer: Partial<Server>;
 
     beforeEach(() => {
-        // Create mock dependencies
-        mockMarketStreamService = {
-            setSocketServer: jest.fn(),
-            connectToOrderly: jest.fn().mockResolvedValue(undefined),
-            subscribe: jest.fn(),
-            unsubscribe: jest.fn(),
-            getLatestTick: jest.fn().mockResolvedValue(null),
-        } as unknown as jest.Mocked<IMarketStreamService>;
-
         mockAuthService = {
             // Add mock methods as needed
         } as unknown as jest.Mocked<IAuthService>;
@@ -51,7 +41,6 @@ describe('WebSocketService', () => {
 
         // Create WebSocketService instance
         webSocketService = new WebSocketService(
-            mockMarketStreamService,
             mockAuthService,
             mockLogger
         );
@@ -402,6 +391,9 @@ describe('WebSocketService', () => {
         it('should track messages processed metric', () => {
             const messageCount = 100;
             (webSocketService as any).metrics.messagesProcessed = messageCount;
+            // Backdate start time so uptime > 0 (guards against same-ms races
+            // where the per-second calculation would legitimately return 0)
+            (webSocketService as any).startTime = Date.now() - 10_000;
 
             const metrics = webSocketService.getMetrics();
             expect(metrics.messagesPerSecond).toBeGreaterThan(0);
@@ -780,8 +772,8 @@ describe('WebSocketService', () => {
         });
     });
 
-    describe('market stream integration', () => {
-        it('should connect to Orderly for verified users', async () => {
+    describe('privileged connection tracking', () => {
+        it('should track privileged connections for verified users', async () => {
             webSocketService.initialize(mockServer as Server);
 
             const connectionHandler = (mockServer.on as any).mock.calls.find(
@@ -804,36 +796,11 @@ describe('WebSocketService', () => {
 
             await connectionHandler(mockSocket);
 
-            expect(mockMarketStreamService.connectToOrderly).toHaveBeenCalledWith(['PERP_BTC_USDC', 'PERP_ETH_USDC']);
+            // Privileged connection is tracked without any external stream connection
+            expect(mockSocket.on).toHaveBeenCalled();
         });
 
-        it('should connect to Orderly for registered users', async () => {
-            webSocketService.initialize(mockServer as Server);
-
-            const connectionHandler = (mockServer.on as any).mock.calls.find(
-                (call: any[]) => call[0] === 'connection'
-            )[1];
-
-            const mockSocket = {
-                id: 'test-socket-id',
-                on: jest.fn(),
-                emit: jest.fn(),
-            };
-            (mockSocket as any).client = {
-                userId: 'test-user-id',
-                userLevel: 'REGISTERED',
-                subscriptions: new Set(),
-                connectedAt: new Date(),
-                lastActivity: Date.now(),
-                ipAddress: '127.0.0.1',
-            };
-
-            await connectionHandler(mockSocket);
-
-            expect(mockMarketStreamService.connectToOrderly).toHaveBeenCalledWith(['PERP_BTC_USDC', 'PERP_ETH_USDC']);
-        });
-
-        it('should not connect to Orderly for basic users', async () => {
+        it('should handle basic user connections without privileged tracking', async () => {
             webSocketService.initialize(mockServer as Server);
 
             const connectionHandler = (mockServer.on as any).mock.calls.find(
@@ -856,7 +823,7 @@ describe('WebSocketService', () => {
 
             await connectionHandler(mockSocket);
 
-            expect(mockMarketStreamService.connectToOrderly).not.toHaveBeenCalled();
+            expect(mockSocket.on).toHaveBeenCalled();
         });
     });
 

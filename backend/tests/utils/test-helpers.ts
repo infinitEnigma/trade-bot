@@ -2,7 +2,6 @@
 
 import { PoolClient } from 'pg';
 import { passwordWorkerPool } from '../../src/workers/password-worker';
-import { botReconciliationWorker } from '../../src/workers/bot-reconciliation';
 import { errorNotificationService } from '../../src/core/notifications/error-notification.service';
 import { ContextAwareLogger } from '../../src/core/logging/context-aware-logger.service';
 import { ErrorSeverity, ErrorCategory } from '../../src/core/notifications/error-notification.service';
@@ -114,7 +113,6 @@ export async function setupIntegrationTest(): Promise<{
     const cleanup = async () => {
         // Cleanup workers
         await passwordWorkerPool.cleanupForTests();
-        botReconciliationWorker.cleanupForTests();
 
         // Reset error notification service
         errorNotificationService.resetThrottleCounters();
@@ -251,19 +249,6 @@ export async function testWorkerPoolHealth(): Promise<boolean> {
 }
 
 /**
- * Test bot reconciliation worker health
- */
-export function testBotWorkerHealth(): boolean {
-    try {
-        const status = botReconciliationWorker.getStatus();
-        return status.isRunning === false; // Worker should not be running by default
-    } catch (error) {
-        console.warn('Bot worker health check failed:', error);
-        return false;
-    }
-}
-
-/**
  * Test error notification service health
  */
 export function testErrorNotificationHealth(): boolean {
@@ -282,21 +267,18 @@ export function testErrorNotificationHealth(): boolean {
 export async function runHealthCheck(): Promise<{
     database: boolean;
     workers: boolean;
-    botWorker: boolean;
     errorNotification: boolean;
     allHealthy: boolean;
 }> {
     const database = await testDatabaseConnection();
     const workers = await testWorkerPoolHealth();
-    const botWorker = testBotWorkerHealth();
     const errorNotification = testErrorNotificationHealth();
 
-    const allHealthy = database && workers && botWorker && errorNotification;
+    const allHealthy = database && workers && errorNotification;
 
     return {
         database,
         workers,
-        botWorker,
         errorNotification,
         allHealthy
     };
@@ -348,7 +330,6 @@ export async function cleanupAllTestResources(): Promise<void> {
     try {
         // Cleanup workers
         await passwordWorkerPool.cleanupForTests();
-        botReconciliationWorker.cleanupForTests();
 
         // Reset error notification service
         errorNotificationService.resetThrottleCounters();

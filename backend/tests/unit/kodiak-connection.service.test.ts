@@ -2,7 +2,6 @@
 
 import { KodiakConnectionService } from '../../src/infrastructure/external/kodiak-connection.service';
 import { query } from '../../src/database/pool';
-import { selectAuthService } from '../../src/core/service-selector';
 import { kodiakIntegrationService } from '../../src/infrastructure/external/kodiak-integration.service';
 import { encryptionService } from '../../src/infrastructure/security/encryption.service';
 import { contextLogger } from '../../src/core/logging/context-aware-logger.service';
@@ -10,7 +9,14 @@ import { UserLevel } from '@trade-bot/shared';
 
 // Mock dependencies
 jest.mock('../../src/database/pool');
-jest.mock('../../src/core/service-selector');
+// Mock the DI container so getAuthService() resolves a controllable mock
+jest.mock('../../src/infrastructure/dependency-injection.container', () => ({
+    diContainer: {
+        authService: {
+            verifyWalletOwnership: jest.fn(),
+        },
+    },
+}));
 jest.mock('../../src/infrastructure/external/kodiak-integration.service');
 jest.mock('../../src/infrastructure/security/encryption.service');
 jest.mock('../../src/infrastructure/cache/redis.service', () => ({
@@ -114,16 +120,16 @@ describe('KodiakConnectionService', () => {
             walletSignature: 'test-signature',
         };
 
-        it('should successfully connect and verify Kodiak credentials', async () => {
+        it('should successfully connect and verify Kodiak credentials (REGISTERED -> VERIFIED)', async () => {
             const mockAuthService = {
                 getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.BASIC,
+                    userLevel: UserLevel.REGISTERED,
                 }),
                 updateUserLevel: jest.fn().mockResolvedValue(undefined),
                 invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
             };
 
-            (selectAuthService as jest.Mock).mockReturnValue(mockAuthService);
+            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
             (kodiakIntegrationService.testConnectivity as jest.Mock).mockResolvedValue({
                 success: true,
             });
@@ -136,7 +142,7 @@ describe('KodiakConnectionService', () => {
             expect(result.success).toBe(true);
             expect(result.message).toBe('Kodiak credentials connected and verified successfully');
             expect(result.data?.verified).toBe(true);
-            expect(result.data?.userLevel).toBe('REGISTERED');
+            expect(result.data?.userLevel).toBe('VERIFIED');
 
             // Verify database operations
             expect(query).toHaveBeenCalledWith(
@@ -155,15 +161,15 @@ describe('KodiakConnectionService', () => {
                 [true, 'test-user-id']
             );
 
-            // Verify user level update
+            // Verify user level update (REGISTERED -> VERIFIED)
             expect(mockAuthService.updateUserLevel).toHaveBeenCalledWith(
                 'test-user-id',
-                UserLevel.REGISTERED
+                UserLevel.VERIFIED
             );
             expect(mockAuthService.invalidateUserDataCache).toHaveBeenCalledWith('test-user-id');
         });
 
-        it('should store credentials but mark as unverified when verification fails', async () => {
+        it('should reject Kodiak connection for BASIC users (wallet first)', async () => {
             const mockAuthService = {
                 getUserById: jest.fn().mockResolvedValue({
                     userLevel: UserLevel.BASIC,
@@ -172,7 +178,25 @@ describe('KodiakConnectionService', () => {
                 invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
             };
 
-            (selectAuthService as jest.Mock).mockReturnValue(mockAuthService);
+            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
+
+            const result = await service.connectKodiak('test-user-id', mockConnectionData);
+
+            expect(result.success).toBe(false);
+            expect(result.message).toBe('Please connect and verify your wallet on the Dashboard first.');
+            expect(mockAuthService.updateUserLevel).not.toHaveBeenCalled();
+        });
+
+        it('should store credentials but mark as unverified when verification fails', async () => {
+            const mockAuthService = {
+                getUserById: jest.fn().mockResolvedValue({
+                    userLevel: UserLevel.REGISTERED,
+                }),
+                updateUserLevel: jest.fn().mockResolvedValue(undefined),
+                invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
+            };
+
+            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
             (kodiakIntegrationService.testConnectivity as jest.Mock).mockResolvedValue({
                 success: false,
                 error: 'Invalid API key',
@@ -223,13 +247,13 @@ describe('KodiakConnectionService', () => {
         it('should handle database errors gracefully', async () => {
             const mockAuthService = {
                 getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.BASIC,
+                    userLevel: UserLevel.REGISTERED,
                 }),
                 updateUserLevel: jest.fn().mockResolvedValue(undefined),
                 invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
             };
 
-            (selectAuthService as jest.Mock).mockReturnValue(mockAuthService);
+            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
             (kodiakIntegrationService.testConnectivity as jest.Mock).mockResolvedValue({
                 success: true,
             });
@@ -251,13 +275,13 @@ describe('KodiakConnectionService', () => {
         it('should fetch and store wallet address from Kodiak API', async () => {
             const mockAuthService = {
                 getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.BASIC,
+                    userLevel: UserLevel.REGISTERED,
                 }),
                 updateUserLevel: jest.fn().mockResolvedValue(undefined),
                 invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
             };
 
-            (selectAuthService as jest.Mock).mockReturnValue(mockAuthService);
+            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
             (kodiakIntegrationService.testConnectivity as jest.Mock).mockResolvedValue({
                 success: true,
             });
@@ -289,13 +313,13 @@ describe('KodiakConnectionService', () => {
         it('should handle wallet address fetching errors gracefully', async () => {
             const mockAuthService = {
                 getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.BASIC,
+                    userLevel: UserLevel.REGISTERED,
                 }),
                 updateUserLevel: jest.fn().mockResolvedValue(undefined),
                 invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
             };
 
-            (selectAuthService as jest.Mock).mockReturnValue(mockAuthService);
+            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
             (kodiakIntegrationService.testConnectivity as jest.Mock).mockResolvedValue({
                 success: true,
             });
@@ -320,16 +344,16 @@ describe('KodiakConnectionService', () => {
     });
 
     describe('disconnectKodiak', () => {
-        it('should successfully disconnect Kodiak and downgrade user level', async () => {
+        it('should successfully disconnect Kodiak and downgrade VERIFIED user to REGISTERED', async () => {
             const mockAuthService = {
                 getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.REGISTERED,
+                    userLevel: UserLevel.VERIFIED,
                 }),
                 updateUserLevel: jest.fn().mockResolvedValue(undefined),
                 invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
             };
 
-            (selectAuthService as jest.Mock).mockReturnValue(mockAuthService);
+            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
             (query as jest.Mock).mockResolvedValue({ rows: [] });
 
             const result = await service.disconnectKodiak('test-user-id');
@@ -343,12 +367,61 @@ describe('KodiakConnectionService', () => {
                 ['test-user-id']
             );
 
-            // Verify user level downgrade
+            // Verify user level downgrade (VERIFIED -> REGISTERED, wallet stays)
+            expect(mockAuthService.updateUserLevel).toHaveBeenCalledWith(
+                'test-user-id',
+                UserLevel.REGISTERED
+            );
+            expect(mockAuthService.invalidateUserDataCache).toHaveBeenCalledWith('test-user-id');
+        });
+
+        it('should keep REGISTERED user at REGISTERED when wallet is still linked', async () => {
+            const mockAuthService = {
+                getUserById: jest.fn().mockResolvedValue({
+                    userLevel: UserLevel.REGISTERED,
+                }),
+                updateUserLevel: jest.fn().mockResolvedValue(undefined),
+                invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
+            };
+
+            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
+            // DELETE succeeds, wallet_addresses lookup finds a linked wallet
+            (query as jest.Mock)
+                .mockResolvedValueOnce({ rows: [] })
+                .mockResolvedValueOnce({ rows: [{ wallet_address: '0xabc' }] });
+
+            const result = await service.disconnectKodiak('test-user-id');
+
+            expect(result.success).toBe(true);
+            expect(mockAuthService.updateUserLevel).toHaveBeenCalledWith(
+                'test-user-id',
+                UserLevel.REGISTERED
+            );
+        });
+
+        it('should downgrade REGISTERED user without wallet to BASIC', async () => {
+            const mockAuthService = {
+                getUserById: jest.fn().mockResolvedValue({
+                    userLevel: UserLevel.REGISTERED,
+                }),
+                updateUserLevel: jest.fn().mockResolvedValue(undefined),
+                invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
+            };
+
+            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
+            // DELETE succeeds, no linked wallet, no legacy wallet
+            (query as jest.Mock)
+                .mockResolvedValueOnce({ rows: [] })
+                .mockResolvedValueOnce({ rows: [] })
+                .mockResolvedValueOnce({ rows: [] });
+
+            const result = await service.disconnectKodiak('test-user-id');
+
+            expect(result.success).toBe(true);
             expect(mockAuthService.updateUserLevel).toHaveBeenCalledWith(
                 'test-user-id',
                 UserLevel.BASIC
             );
-            expect(mockAuthService.invalidateUserDataCache).toHaveBeenCalledWith('test-user-id');
         });
 
         it('should handle database errors during disconnection', async () => {
@@ -360,7 +433,7 @@ describe('KodiakConnectionService', () => {
                 invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
             };
 
-            (selectAuthService as jest.Mock).mockReturnValue(mockAuthService);
+            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
             (query as jest.Mock).mockRejectedValue(new Error('Database error'));
 
             const result = await service.disconnectKodiak('test-user-id');
@@ -600,7 +673,7 @@ describe('KodiakConnectionService', () => {
                 updateUserLevel: jest.fn().mockResolvedValue(undefined),
             };
 
-            (selectAuthService as jest.Mock).mockReturnValue(mockAuthService);
+            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
 
             await (service as any).updateUserLevel('test-user-id', UserLevel.REGISTERED);
 
@@ -621,7 +694,7 @@ describe('KodiakConnectionService', () => {
                 updateUserLevel: jest.fn().mockResolvedValue(undefined),
             };
 
-            (selectAuthService as jest.Mock).mockReturnValue(mockAuthService);
+            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
 
             await (service as any).updateUserLevel('test-user-id', UserLevel.REGISTERED);
 
@@ -639,7 +712,7 @@ describe('KodiakConnectionService', () => {
                 updateUserLevel: jest.fn().mockResolvedValue(undefined),
             };
 
-            (selectAuthService as jest.Mock).mockReturnValue(mockAuthService);
+            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
 
             await expect(
                 (service as any).updateUserLevel('test-user-id', UserLevel.BASIC)

@@ -27,7 +27,7 @@ shared/src/
     ├── infrastructure.ts # Infrastructure contracts
     ├── errors.ts         # Error classes
     ├── logging.ts        # Logging types
-    ├── repositories.ts   # Repository interfaces
+    ├── repositories.ts   # Repository interfaces (users, wallets, bots, etc.)
     ├── role-management.ts # Role types
     ├── engine-contract.ts # Engine integration contract
     └── frontend-backend-contract.ts # API DTOs
@@ -98,6 +98,31 @@ interface EngineHeartbeatEventPayload {
 
 ---
 
+## Repository Interfaces
+
+`types/repositories.ts` defines the persistence contracts implemented by the backend's repository adapters.
+
+### Wallet Linking (`IUserRepository`)
+
+A user's linked wallet is stored independently of exchange credentials, so a wallet can be linked (and ownership proven) before any exchange keys exist:
+
+```typescript
+interface IUserRepository {
+    /** Get user's linked wallet address */
+    getWalletAddress(userId: string): Promise<string | null>;
+
+    /** Link a wallet address to a user (upsert) */
+    setWalletAddress(userId: string, walletAddress: string): Promise<boolean>;
+
+    /** Remove the wallet linked to a user */
+    clearWalletAddress(userId: string): Promise<boolean>;
+}
+```
+
+This backs the `BASIC → REGISTERED` upgrade: the wallet is persisted on its own, separate from `kodiak_credentials`. Reads fall back to a legacy Kodiak-stored address where present, so existing users are unaffected.
+
+---
+
 ## Usage
 
 ```typescript
@@ -143,4 +168,4 @@ npm run test     # Run tests
 
 ---
 
-**Shared Status**: Functional | **Version**: 1.0.0 | **Updated**: September 12, 2026
+**Shared Status**: Functional | **Version**: 1.0.0 | **Updated**: September 14, 2026

@@ -2,14 +2,13 @@
 
 import { WebSocketEventHandlers } from '../../src/infrastructure/messaging/websocket/handlers';
 import { WebSocketError, WebSocketErrorCode, WebSocketUtils } from '../../src/infrastructure/messaging/websocket/types';
-import { IMarketStreamService, IRateLimiter, ILogger } from '../../src/interfaces/websocket';
+import { IRateLimiter, ILogger } from '../../src/interfaces/websocket';
 
 // Mock external dependencies
 jest.mock('../../src/core/logging/logger.service');
 
 describe('WebSocketEventHandlers', () => {
     let handlers: WebSocketEventHandlers;
-    let mockMarketStreamService: jest.Mocked<IMarketStreamService>;
     let mockRateLimiter: jest.Mocked<IRateLimiter>;
     let mockLogger: jest.Mocked<ILogger>;
     let mockSocket: any;
@@ -19,11 +18,6 @@ describe('WebSocketEventHandlers', () => {
         jest.clearAllMocks();
 
         // Create mock instances
-        mockMarketStreamService = {
-            getLatestTick: jest.fn().mockResolvedValue(null),
-            connectToOrderly: jest.fn().mockResolvedValue(undefined)
-        } as any;
-
         mockRateLimiter = {
             canSubscribe: jest.fn().mockResolvedValue(true)
         } as any;
@@ -54,7 +48,6 @@ describe('WebSocketEventHandlers', () => {
 
         // Create handlers instance
         handlers = new WebSocketEventHandlers(
-            mockMarketStreamService,
             mockRateLimiter,
             mockLogger
         );
@@ -220,184 +213,25 @@ describe('WebSocketEventHandlers', () => {
         });
     });
 
-    describe('handleMarketSubscribe', () => {
-        it('should subscribe to valid market symbol', async () => {
-            const validSymbol = 'PERP_BTC_USDC';
-
-            await handlers.handleMarketSubscribe(mockSocket, validSymbol);
-
-            expect(mockRateLimiter.canSubscribe).toHaveBeenCalled();
-            expect(mockSocket.join).toHaveBeenCalledWith(`market:${validSymbol}`);
-            expect(mockSocket.client.subscriptions.has(`market:${validSymbol}`)).toBe(true);
-            expect(mockMarketStreamService.getLatestTick).toHaveBeenCalledWith(validSymbol);
-            expect(mockMarketStreamService.connectToOrderly).toHaveBeenCalledWith([validSymbol]);
-            expect(mockLogger.info).toHaveBeenCalled();
-        });
-
-        it('should send initial tick when available', async () => {
-            const validSymbol = 'PERP_BTC_USDC';
-            const mockTick = {
-                symbol: validSymbol,
-                price: 50000,
-                timestamp: Date.now(),
-                volume: 1000,
-                bid: 49999,
-                ask: 50001,
-                change24h: 2.5
-            };
-            mockMarketStreamService.getLatestTick.mockResolvedValue(mockTick);
-
-            await handlers.handleMarketSubscribe(mockSocket, validSymbol);
-
-            expect(mockSocket.emit).toHaveBeenCalledWith(`market:${validSymbol}`, mockTick);
-            expect(mockLogger.debug).toHaveBeenCalled();
-        });
-
-        it('should handle failure to get initial tick', async () => {
-            const validSymbol = 'PERP_BTC_USDC';
-            const error = new Error('Market data unavailable');
-            mockMarketStreamService.getLatestTick.mockRejectedValue(error);
-
-            await handlers.handleMarketSubscribe(mockSocket, validSymbol);
-
-            expect(mockLogger.warn).toHaveBeenCalled();
-            expect(mockSocket.emit).not.toHaveBeenCalledWith(`market:${validSymbol}`, expect.anything());
-        });
-
-        it('should handle failure to connect to Orderly', async () => {
-            const validSymbol = 'PERP_BTC_USDC';
-            const error = new Error('Connection failed');
-            mockMarketStreamService.connectToOrderly.mockRejectedValue(error);
-
-            await handlers.handleMarketSubscribe(mockSocket, validSymbol);
-
-            expect(mockLogger.warn).toHaveBeenCalled();
-            expect(mockSocket.client.subscriptions.has(`market:${validSymbol}`)).toBe(true);
-        });
-
-        it('should reject subscription to invalid market symbol format', async () => {
-            const invalidSymbol = 'BTC-USD';
-
-            await handlers.handleMarketSubscribe(mockSocket, invalidSymbol);
-
-            expect(mockRateLimiter.canSubscribe).toHaveBeenCalled();
-            expect(mockSocket.join).not.toHaveBeenCalled();
-            expect(mockSocket.client.subscriptions.has(`market:${invalidSymbol}`)).toBe(false);
-            expect(mockSocket.emit).toHaveBeenCalledWith('error', expect.anything());
-            expect(mockLogger.warn).toHaveBeenCalled();
-        });
-
-        it('should reject market subscription when rate limit is exceeded', async () => {
-            mockRateLimiter.canSubscribe.mockResolvedValue(false);
-            const validSymbol = 'PERP_BTC_USDC';
-
-            await handlers.handleMarketSubscribe(mockSocket, validSymbol);
-
-            expect(mockSocket.join).not.toHaveBeenCalled();
-            expect(mockSocket.client.subscriptions.has(`market:${validSymbol}`)).toBe(false);
-            expect(mockSocket.emit).toHaveBeenCalledWith('error', expect.anything());
-            expect(mockLogger.warn).toHaveBeenCalled();
-        });
-
-        it('should reject market subscription when limit is exceeded', async () => {
-            for (let i = 0; i < 50; i++) {
-                mockSocket.client.subscriptions.add(`market:PERP_${i}_USDC`);
-            }
-
-            await handlers.handleMarketSubscribe(mockSocket, 'PERP_NEW_USDC');
-
-            expect(mockSocket.join).not.toHaveBeenCalled();
-            expect(mockSocket.client.subscriptions.has('market:PERP_NEW_USDC')).toBe(false);
-            expect(mockSocket.emit).toHaveBeenCalledWith('error', expect.anything());
-            expect(mockLogger.warn).toHaveBeenCalled();
-        });
-
-        it('should handle non-WebSocketError during market subscribe', async () => {
-            const nonWebSocketError = new Error('Unexpected system error');
-            // To trigger the catch block in handleMarketSubscribe, we need to throw the error after checkRateLimit
-            mockRateLimiter.canSubscribe.mockResolvedValue(true);
-            mockSocket.join.mockImplementation(() => { throw nonWebSocketError; });
-
+    describe('handleMarketSubscribe (market streaming not available)', () => {
+        it('should emit a MARKET_DATA_UNAVAILABLE error for any symbol', async () => {
             await handlers.handleMarketSubscribe(mockSocket, 'PERP_BTC_USDC');
 
-            expect(mockRateLimiter.canSubscribe).toHaveBeenCalled();
-            expect(mockLogger.error).toHaveBeenCalled();
-            expect(mockSocket.emit).toHaveBeenCalledWith('error', expect.anything());
-            expect(mockSocket.client.subscriptions.has('market:PERP_BTC_USDC')).toBe(false);
-        });
-
-        it('should handle non-Error object errors during market subscribe', async () => {
-            const nonError = { custom: 'error' };
-            // To trigger the catch block in handleMarketSubscribe, we need to throw the error after checkRateLimit
-            mockRateLimiter.canSubscribe.mockResolvedValue(true);
-            mockSocket.join.mockImplementation(() => { throw nonError; });
-
-            await handlers.handleMarketSubscribe(mockSocket, 'PERP_BTC_USDC');
-
-            expect(mockRateLimiter.canSubscribe).toHaveBeenCalled();
-            expect(mockLogger.error).toHaveBeenCalled();
-            expect(mockSocket.emit).toHaveBeenCalledWith('error', expect.anything());
-            expect(mockSocket.client.subscriptions.has('market:PERP_BTC_USDC')).toBe(false);
+            expect(mockSocket.join).not.toHaveBeenCalled();
+            expect(mockSocket.emit).toHaveBeenCalledWith('error', expect.objectContaining({
+                event: 'subscribe_market',
+                code: WebSocketErrorCode.MARKET_DATA_UNAVAILABLE,
+            }));
+            expect(mockLogger.warn).toHaveBeenCalled();
         });
     });
 
-    describe('handleMarketUnsubscribe', () => {
-        it('should unsubscribe from existing market symbol', async () => {
-            const symbol = 'PERP_BTC_USDC';
-            const room = `market:${symbol}`;
-            mockSocket.client.subscriptions.add(room);
-
-            await handlers.handleMarketUnsubscribe(mockSocket, symbol);
-
-            expect(mockSocket.leave).toHaveBeenCalledWith(room);
-            expect(mockSocket.client.subscriptions.has(room)).toBe(false);
-            expect(mockLogger.info).toHaveBeenCalled();
-        });
-
-        it('should reject unsubscribe from invalid market symbol format', async () => {
-            const invalidSymbol = 'BTC-USD';
-
-            await handlers.handleMarketUnsubscribe(mockSocket, invalidSymbol);
+    describe('handleMarketUnsubscribe (market streaming not available)', () => {
+        it('should be a no-op without error', async () => {
+            await handlers.handleMarketUnsubscribe(mockSocket, 'PERP_BTC_USDC');
 
             expect(mockSocket.leave).not.toHaveBeenCalled();
-            expect(mockSocket.emit).toHaveBeenCalledWith('error', expect.anything());
-            expect(mockLogger.warn).toHaveBeenCalled();
-        });
-
-        it('should reject unsubscribe from non-subscribed market', async () => {
-            const symbol = 'PERP_BTC_USDC';
-
-            await handlers.handleMarketUnsubscribe(mockSocket, symbol);
-
-            expect(mockSocket.leave).not.toHaveBeenCalled();
-            expect(mockSocket.emit).toHaveBeenCalledWith('error', expect.anything());
-            expect(mockLogger.warn).toHaveBeenCalled();
-        });
-
-        it('should handle unexpected errors during market unsubscribe', async () => {
-            const error = new Error('Unexpected error');
-            const symbol = 'PERP_BTC_USDC';
-            const room = `market:${symbol}`;
-            mockSocket.client.subscriptions.add(room);
-            mockSocket.leave.mockImplementation(() => { throw error; });
-
-            await handlers.handleMarketUnsubscribe(mockSocket, symbol);
-
-            expect(mockSocket.emit).toHaveBeenCalledWith('error', expect.anything());
-            expect(mockLogger.error).toHaveBeenCalled();
-        });
-
-        it('should handle non-Error object errors during market unsubscribe', async () => {
-            const nonError = { message: 'Custom error object' };
-            const symbol = 'PERP_BTC_USDC';
-            const room = `market:${symbol}`;
-            mockSocket.client.subscriptions.add(room);
-            mockSocket.leave.mockImplementation(() => { throw nonError; });
-
-            await handlers.handleMarketUnsubscribe(mockSocket, symbol);
-
-            expect(mockSocket.emit).toHaveBeenCalledWith('error', expect.anything());
-            expect(mockLogger.error).toHaveBeenCalled();
+            expect(mockSocket.emit).not.toHaveBeenCalled();
         });
     });
 

@@ -269,23 +269,76 @@ export class UserRepositoryAdapter implements IUserRepository {
     }
 
     /**
-     * Get user's wallet address from credentials
+     * Get user's linked wallet address
+     *
+     * Reads from wallet_addresses (linked via signed-message verification).
+     * Falls back to kodiak_credentials for legacy rows created before the
+     * wallet-first flow (addresses fetched from the Kodiak API).
      */
     async getWalletAddress(userId: string): Promise<string | null> {
         try {
             const result = await query<{ wallet_address: string }>(
+                "SELECT wallet_address FROM wallet_addresses WHERE user_id = $1",
+                [userId]
+            );
+
+            if (result.rows.length > 0 && result.rows[0].wallet_address) {
+                return result.rows[0].wallet_address;
+            }
+
+            // Legacy fallback: wallets stored alongside Kodiak credentials
+            const legacy = await query<{ wallet_address: string }>(
                 "SELECT wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
                 [userId]
             );
 
-            if (result.rows.length === 0) {
+            if (legacy.rows.length === 0) {
                 return null;
             }
 
-            return result.rows[0].wallet_address;
+            return legacy.rows[0].wallet_address;
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to get wallet address: ${errorMessage}`);
+        }
+    }
+
+    /**
+     * Link a wallet address to a user (upsert)
+     */
+    async setWalletAddress(userId: string, walletAddress: string): Promise<boolean> {
+        try {
+            const result = await query(
+                `INSERT INTO wallet_addresses (user_id, wallet_address, verified, updated_at)
+         VALUES ($1, $2, true, CURRENT_TIMESTAMP)
+         ON CONFLICT (user_id) DO UPDATE SET
+           wallet_address = EXCLUDED.wallet_address,
+           verified = true,
+           updated_at = CURRENT_TIMESTAMP`,
+                [userId, walletAddress]
+            );
+
+            return (result.rowCount ?? 0) > 0;
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            throw new Error(`Failed to set wallet address: ${errorMessage}`);
+        }
+    }
+
+    /**
+     * Remove the wallet linked to a user
+     */
+    async clearWalletAddress(userId: string): Promise<boolean> {
+        try {
+            const result = await query(
+                "DELETE FROM wallet_addresses WHERE user_id = $1",
+                [userId]
+            );
+
+            return (result.rowCount ?? 0) > 0;
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            throw new Error(`Failed to clear wallet address: ${errorMessage}`);
         }
     }
 

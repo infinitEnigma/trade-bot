@@ -17,8 +17,9 @@ The backend is an Express.js API server that serves the frontend, manages user a
 - **REST API** for frontend communication (auth, users, bots, strategies, wallet)
 - **Bot Lifecycle Management** - desired/actual state machine with PostgreSQL persistence
 - **Engine Protocol** - Redis Streams control plane for engine coordination
-- **WebSocket Server** - real-time updates to frontend (bot state changes, market data)
+- **WebSocket Server** - real-time bot state updates to the frontend (market data is served over HTTP)
 - **Credential Management** - encrypted storage of Kodiak API keys
+- **User Access Progression** - BASIC → REGISTERED (wallet signature) → VERIFIED (exchange credentials)
 
 ---
 
@@ -61,13 +62,29 @@ core/
 └── wallet/        # Balance management, qualification checks
 ```
 
+### User Access Tiers
+
+User level is owned by the auth domain and enforced on every privileged route.
+
+```
+BASIC ──connect wallet + sign message──▶ REGISTERED ──verify Kodiak keys──▶ VERIFIED
+```
+
+| Level | Requirement | Notes |
+|-------|-------------|-------|
+| **BASIC** | Email + password | Public-source data only |
+| **REGISTERED** | Linked wallet, ownership proven by a signed message | Exchange credential setup (Settings) is unlocked |
+| **VERIFIED** | Verified Kodiak API credentials | Strategies, bot configuration, private data |
+
+Wallet linking is stored in its own `wallet_addresses` table (migration `010_wallet_addresses.sql`), independent of `kodiak_credentials`, so a wallet can be linked without supplying exchange keys. `POST /api/user/unlink-wallet` is an explicit, audited action that downgrades the account (`VERIFIED → REGISTERED`, `REGISTERED → BASIC`).
+
 ### Infrastructure
 
 ```
 infrastructure/
 ├── cache/         # Redis caching, streams, connection management
 ├── external/      # Kodiak API integration
-├── messaging/     # WebSocket, market data streaming
+├── messaging/     # Socket.IO server (auth middleware + bot state bridge)
 ├── security/      # Encryption, rate limiting, key management
 └── adapters/      # Repository implementations, external service adapters
 ```
@@ -189,6 +206,12 @@ npm run build && npm start
 - `POST /api/bot/stop` - Stop a bot (returns 202 Accepted)
 - `GET /api/bot/status/:botId` - Get bot status
 
+### User Profile & Access Tiers
+- `GET /api/user/profile` - Authenticated user profile (includes `userLevel`)
+- `POST /api/user/profile/update` - Update profile fields
+- `POST /api/user/verify-wallet` - Verify a signed message and link the wallet (`BASIC → REGISTERED`)
+- `POST /api/user/unlink-wallet` - Unlink the wallet (audited); downgrades the level (`VERIFIED → REGISTERED`, `REGISTERED → BASIC`)
+
 ### Engine (internal)
 - `GET /api/bot/engine/credentials/:botId` - Engine fetches credentials out-of-band
 
@@ -203,9 +226,9 @@ npm run build && npm start
 
 | Priority | Issue | Description |
 |----------|-------|-------------|
-| 🔴 P0 | Reconciliation Disabled | ✅ Fixed: `LifecycleReconciliationService` now repairs desired/actual drift (bounded stop reissues, stuck->UNKNOWN via CAS, audit events). Legacy `BotReconciliationWorker` is superseded and never started (route-module startup removed). |
+| 🔴 P0 | Reconciliation Disabled | ✅ Fixed: `LifecycleReconciliationService` now repairs desired/actual drift (bounded stop reissues, stuck->UNKNOWN via CAS, audit events). The superseded `BotReconciliationWorker` has been deleted (along with its tests and route-module startup hooks). |
 | 🟠 P1 | Redis Failure Semantics | ✅ Fixed: Bot start/stop endpoints return 503 when Redis unavailable. Health endpoint includes `controlPlane` status. |
-| 🟡 P2 | Dead Code | Contains commented-out transitional code and unused imports. |
+| 🟡 P2 | Dead Code | ✅ Fixed: Removed the dormant Orderly `market-stream` subsystem, the superseded `BotReconciliationWorker`, the `service-selector` rollout shim, unused WebSocket/DI getters, and one-off Redis debug scripts. |
 
 ### ✅ Recently Fixed
 
@@ -225,4 +248,4 @@ npm run build && npm start
 
 ---
 
-**Backend Status**: Functional | **Architecture**: Chain & Exchange Agnostic | **Version**: 1.0.0 | **Updated**: September 12, 2026
+**Backend Status**: Functional | **Architecture**: Chain & Exchange Agnostic | **Version**: 1.0.0 | **Updated**: September 14, 2026

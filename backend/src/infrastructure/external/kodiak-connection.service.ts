@@ -7,14 +7,19 @@
  */
 
 import { query } from "../../database/pool";
-import { selectAuthService } from "../../core/service-selector";
+import type { AuthService } from "../../core/auth/auth.service.pure";
 import { kodiakIntegrationService } from "./kodiak-integration.service";
 import { encryptionService } from "../../infrastructure/security";
 import { contextLogger } from "../../core/logging/context-aware-logger.service";
 import { UserLevel, KodiakConnectionRequest } from "@trade-bot/shared";
 
 // Get authService when needed to support proper mocking in tests
-const getAuthService = () => selectAuthService();
+const getAuthService = (): AuthService =>
+  (
+    require("../../infrastructure/dependency-injection.container") as {
+      diContainer: { authService: AuthService };
+    }
+  ).diContainer.authService;
 
 export type KodiakConnectionData = KodiakConnectionRequest;
 
@@ -42,10 +47,30 @@ export interface KodiakConnectionStatus {
 export class KodiakConnectionService {
     /**
      * Connect user to Kodiak exchange with credential validation
+     * (REGISTERED -> VERIFIED upgrade step)
      */
     async connectKodiak(userId: string, connectionData: KodiakConnectionData): Promise<KodiakConnectionResult> {
         try {
             contextLogger.info("Starting Kodiak connection process", { userId, accountId: connectionData.accountId });
+
+            // Wallet-first flow: only REGISTERED users (wallet linked) may
+            // submit Kodiak credentials
+            const requestingUser = await getAuthService().getUserById(userId);
+            if (!requestingUser) {
+                return {
+                    success: false,
+                    message: "User not found",
+                    error: "User not found",
+                };
+            }
+            if (requestingUser.userLevel === UserLevel.BASIC) {
+                contextLogger.warn("Kodiak connection rejected - wallet not linked", { userId });
+                return {
+                    success: false,
+                    message: "Please connect and verify your wallet on the Dashboard first.",
+                    error: "Wallet verification required",
+                };
+            }
 
             // Validate input data
             const validation = this.validateConnectionData(connectionData);
@@ -82,10 +107,12 @@ export class KodiakConnectionService {
             }
 
             // Fetch and store wallet address from Kodiak account info
+            // (informational only — the linked wallet in wallet_addresses
+            // remains the source of truth for REGISTERED status)
             await this.fetchAndStoreWalletAddress(userId, connectionData);
 
-            // Update user level to REGISTERED (after Kodiak connection)
-            await this.updateUserLevel(userId, UserLevel.REGISTERED);
+            // Update user level to VERIFIED (after Kodiak connection)
+            await this.updateUserLevel(userId, UserLevel.VERIFIED);
 
             // Invalidate cached user data so frontend gets updated level immediately
             await getAuthService().invalidateUserDataCache(userId);
@@ -105,7 +132,7 @@ export class KodiakConnectionService {
                 data: {
                     accountId: connectionData.accountId,
                     verified: true,
-                    userLevel: UserLevel.REGISTERED, // Return the actual level that was set
+                    userLevel: UserLevel.VERIFIED, // Return the actual level that was set
                 },
             };
 
@@ -339,18 +366,60 @@ export class KodiakConnectionService {
     }
 
     /**
-     * Update user level for disconnection (always downgrade to BASIC)
+     * Update user level for disconnection.
+     * VERIFIED -> REGISTERED (wallet link remains, Kodiak gone).
+     * REGISTERED with no wallet -> BASIC; otherwise stays REGISTERED.
      */
     private async updateUserLevelForDisconnect(userId: string): Promise<void> {
         try {
-            // Always downgrade to BASIC on disconnect, regardless of current level
-            await getAuthService().updateUserLevel(userId, UserLevel.BASIC);
-            contextLogger.info("User level downgraded to BASIC after Kodiak disconnection", { userId });
+            const user = await getAuthService().getUserById(userId);
+            if (!user) {
+                throw new Error("User not found");
+            }
+
+            if (user.userLevel === UserLevel.VERIFIED) {
+                await getAuthService().updateUserLevel(userId, UserLevel.REGISTERED);
+                contextLogger.info("User level downgraded to REGISTERED after Kodiak disconnection", { userId });
+                return;
+            }
+
+            if (user.userLevel === UserLevel.REGISTERED) {
+                const walletAddress = await this.getLinkedWalletAddress(userId);
+                const targetLevel = walletAddress ? UserLevel.REGISTERED : UserLevel.BASIC;
+                await getAuthService().updateUserLevel(userId, targetLevel);
+                contextLogger.info(`User level ${targetLevel} after Kodiak disconnection`, { userId });
+            }
         } catch (error) {
             contextLogger.error("Failed to update user level during disconnection", error instanceof Error ? error : new Error(String(error)), {
                 userId,
             });
             throw error;
+        }
+    }
+
+    /**
+     * Get the linked wallet address (wallet_addresses table first,
+     * kodiak_credentials as legacy fallback)
+     */
+    private async getLinkedWalletAddress(userId: string): Promise<string | null> {
+        try {
+            const result = await query<{ wallet_address: string }>(
+                "SELECT wallet_address FROM wallet_addresses WHERE user_id = $1",
+                [userId]
+            );
+            if (result.rows.length > 0 && result.rows[0].wallet_address) {
+                return result.rows[0].wallet_address;
+            }
+            const legacy = await query<{ wallet_address: string }>(
+                "SELECT wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
+                [userId]
+            );
+            if (legacy.rows.length === 0) {
+                return null;
+            }
+            return legacy.rows[0].wallet_address;
+        } catch {
+            return null;
         }
     }
 

@@ -1,8 +1,13 @@
 /** @format */
 
-import React, { useState, useEffect } from "react";
-import { useAccount, useConnect, useDisconnect, useSignMessage } from "wagmi";
-import { injected } from "wagmi/connectors";
+import React, { useState } from "react";
+import {
+  useConnection,
+  useConnect,
+  useConnectors,
+  useDisconnect,
+  useSignMessage,
+} from "wagmi";
 import { toast } from "sonner";
 import { walletApi } from "../../infrastructure/api";
 import { useAuth } from "../../features/auth";
@@ -17,25 +22,79 @@ export const WalletConnectDialog: React.FC<WalletConnectDialogProps> = ({
   onClose,
 }) => {
   const { user, refreshUser } = useAuth();
-  const { address, isConnected } = useAccount();
-  const { connect } = useConnect();
-  const { disconnect } = useDisconnect();
-  const { signMessageAsync } = useSignMessage();
+  const { address, isConnected, connector: activeConnector } = useConnection();
+  // wagmi v3 deprecated the `connectAsync` / `disconnect` / `signMessageAsync`
+  // aliases in favour of the TanStack mutation API; alias `mutate*` back to the
+  // names used below so the call sites stay readable.
+  const {
+    mutateAsync: connectAsync,
+    isPending: isConnecting,
+    error: connectError,
+  } = useConnect();
+  const connectors = useConnectors();
+  const { mutate: disconnect } = useDisconnect();
+  const { mutateAsync: signMessageAsync } = useSignMessage();
 
   const [isVerifying, setIsVerifying] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
+  const [isUnlinking, setIsUnlinking] = useState(false);
+  const [connectFailed, setConnectFailed] = useState<string | null>(null);
 
-  // Force re-render when wallet state changes
-  useEffect(() => {
-    // This effect ensures the component re-renders when wallet state changes
-  }, [isConnected, address]);
+  // Prefer the currently-active connector, else the first available one
+  // (e.g. the injected browser wallet from WalletProvider config).
+  const targetConnector =
+    connectors.find(c => activeConnector && c.id === activeConnector.id) ??
+    connectors[0];
 
-  const handleConnect = () => {
-    connect({ connector: injected() });
+  const handleConnect = async () => {
+    setConnectFailed(null);
+    if (!targetConnector) {
+      const msg =
+        "No wallet connector available. Please install a browser wallet (e.g. MetaMask) and refresh.";
+      setConnectFailed(msg);
+      toast.error(msg);
+      return;
+    }
+    try {
+      await connectAsync({ connector: targetConnector });
+    } catch (error) {
+      // User rejection is the common case — surface it quietly, log the rest
+      const message =
+        error instanceof Error ? error.message : "Wallet connection failed.";
+      const isUserRejection =
+        /rejected|denied|cancelled|canceled|user closed/i.test(message);
+      if (!isUserRejection) {
+        console.error("Wallet connection failed:", error);
+      }
+      setConnectFailed(message);
+      if (!isUserRejection) {
+        toast.error(message);
+      }
+    }
   };
 
+  // Local-only disconnect: ends the browser wallet session WITHOUT
+  // touching the backend. Linked wallet + user level stay intact, so a
+  // page refresh / reconnect resumes where the user left off.
   const handleDisconnect = () => {
     disconnect();
+  };
+
+  // Explicit, audited downgrade: unlinks the wallet on the backend.
+  // REGISTERED -> BASIC; VERIFIED -> REGISTERED (or BASIC if Kodiak gone).
+  const handleUnlinkWallet = async () => {
+    setIsUnlinking(true);
+    try {
+      await walletApi.unlinkWallet();
+      disconnect();
+      toast.success("Wallet unlinked from your account.");
+      await refreshUser();
+    } catch (error) {
+      console.error("Wallet unlink failed:", error);
+      toast.error("Failed to unlink wallet. Please try again.");
+    } finally {
+      setIsUnlinking(false);
+    }
   };
 
   const handleVerifyWallet = async () => {
@@ -70,8 +129,8 @@ export const WalletConnectDialog: React.FC<WalletConnectDialogProps> = ({
     }
   };
 
+  const isBasic = user?.userLevel === "BASIC";
   const isVerified = user?.userLevel === "VERIFIED";
-  const hasKodiakConnection = user?.userLevel === "REGISTERED" || isVerified;
 
   // If modal mode (isOpen provided), render as modal
   if (isOpen !== undefined) {
@@ -93,16 +152,16 @@ export const WalletConnectDialog: React.FC<WalletConnectDialogProps> = ({
           </div>
 
           <div className="space-y-4">
-            {!hasKodiakConnection && (
-              <div className="bg-yellow-900 border border-yellow-700 rounded p-3">
-                <p className="text-yellow-200 text-sm">
-                  You need to connect your Kodiak account first before verifying
-                  your wallet.
+            {isBasic && (
+              <div className="bg-blue-900 border border-blue-700 rounded p-3">
+                <p className="text-blue-200 text-sm">
+                  Connect your wallet and sign the welcome message to upgrade to
+                  REGISTERED status.
                 </p>
               </div>
             )}
 
-            {hasKodiakConnection && isVerified && (
+            {isVerified && (
               <div className="bg-green-900 border border-green-700 rounded p-3">
                 <p className="text-green-200 text-sm">
                   ✓ Your wallet is already verified! You have full access to all
@@ -111,20 +170,41 @@ export const WalletConnectDialog: React.FC<WalletConnectDialogProps> = ({
               </div>
             )}
 
-            {hasKodiakConnection && !isVerified && (
+            {/* Available to every non-VERIFIED user (BASIC and REGISTERED):
+                BASIC connects + signs here to become REGISTERED. */}
+            {!isVerified && (
               <>
                 {!isConnected ? (
                   <div className="text-center">
                     <p className="text-gray-300 mb-4">
-                      Connect your wallet to verify ownership and unlock full
-                      platform access.
+                      {isBasic
+                        ? "Connect your wallet to verify ownership and upgrade to REGISTERED status."
+                        : "Connect your wallet to confirm ownership. To become VERIFIED, add your Kodiak API keys in Settings."}
                     </p>
                     <button
                       onClick={handleConnect}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                      disabled={
+                        isConnecting ||
+                        (!targetConnector && connectors.length === 0)
+                      }
+                      className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-6 py-2 rounded-lg font-medium transition-colors"
                     >
-                      Connect Wallet
+                      {isConnecting ? "Connecting..." : "Connect Wallet"}
                     </button>
+                    {(connectFailed || connectError) && (
+                      <p className="text-red-400 text-xs mt-2">
+                        {connectFailed ??
+                          (connectError instanceof Error
+                            ? connectError.message
+                            : "Wallet connection failed.")}
+                      </p>
+                    )}
+                    {!targetConnector && (
+                      <p className="text-yellow-400 text-xs mt-2">
+                        No wallet detected. Install a browser wallet (e.g.
+                        MetaMask) and refresh.
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -137,8 +217,9 @@ export const WalletConnectDialog: React.FC<WalletConnectDialogProps> = ({
 
                     <div className="text-center">
                       <p className="text-gray-300 mb-4">
-                        Sign a message to prove wallet ownership and get
-                        VERIFIED status.
+                        {isBasic
+                          ? "Sign the welcome message to prove wallet ownership and get REGISTERED status."
+                          : "Re-sign to confirm wallet ownership. To become VERIFIED, add your Kodiak API keys in Settings."}
                       </p>
                       <div className="flex gap-3">
                         <button
@@ -150,10 +231,13 @@ export const WalletConnectDialog: React.FC<WalletConnectDialogProps> = ({
                             ? "Signing..."
                             : isVerifying
                               ? "Verifying..."
-                              : "Verify Wallet"}
+                              : isBasic
+                                ? "Sign & Upgrade to REGISTERED"
+                                : "Verify Wallet"}
                         </button>
                         <button
                           onClick={handleDisconnect}
+                          title="Disconnect wallet locally (account status unchanged)"
                           className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
                         >
                           Disconnect
@@ -171,8 +255,8 @@ export const WalletConnectDialog: React.FC<WalletConnectDialogProps> = ({
                 configuration
               </p>
               <p>
-                • Wallet verification ensures you own the connected Kodiak
-                account
+                • BASIC users: connect + sign to become REGISTERED, then add
+                Kodiak keys in Settings to become VERIFIED
               </p>
             </div>
           </div>
@@ -195,99 +279,125 @@ export const WalletConnectDialog: React.FC<WalletConnectDialogProps> = ({
         ></div>
       </div>
 
-      {hasKodiakConnection ? (
+      {isVerified ? (
         <div className="space-y-3">
-          {isVerified ? (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-green-500/20 flex items-center justify-center">
-                  <span className="text-green-400 text-xs">✓</span>
-                </div>
-                <span className="text-sm text-green-400">Wallet Verified</span>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded-full bg-green-500/20 flex items-center justify-center">
+                <span className="text-green-400 text-xs">✓</span>
               </div>
-              {isConnected ? (
-                <div className="flex items-center justify-between">
-                  <div className="bg-bg-surface rounded px-2 py-1">
-                    <p className="text-text-primary font-mono text-xs">
-                      {address?.slice(0, 6)}...{address?.slice(-4)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleDisconnect}
-                    className="text-text-tertiary hover:text-red-400 text-xs px-2 py-1 rounded hover:bg-red-500/10 transition-colors"
-                    title="Disconnect Wallet"
-                  >
-                    Disconnect
-                  </button>
-                </div>
-              ) : (
-                <div className="text-center">
-                  <p className="text-text-tertiary text-sm mb-2">
-                    Reconnect wallet
+              <span className="text-sm text-green-400">Wallet Verified</span>
+            </div>
+            {isConnected ? (
+              <div className="flex items-center justify-between">
+                <div className="bg-bg-surface rounded px-2 py-1">
+                  <p className="text-text-primary font-mono text-xs">
+                    {address?.slice(0, 6)}...{address?.slice(-4)}
                   </p>
-                  <button
-                    onClick={handleConnect}
-                    className="w-full bg-primary hover:bg-primary/80 text-white px-3 py-2 rounded-lg font-medium text-sm transition-colors"
-                  >
-                    Connect Wallet
-                  </button>
                 </div>
+                <button
+                  onClick={handleDisconnect}
+                  className="text-text-tertiary hover:text-red-400 text-xs px-2 py-1 rounded hover:bg-red-500/10 transition-colors"
+                  title="Disconnect wallet locally (account status unchanged)"
+                >
+                  Disconnect
+                </button>
+              </div>
+            ) : (
+              <div className="text-center">
+                <p className="text-text-tertiary text-sm mb-2">
+                  Wallet linked — reconnect to sign transactions
+                </p>
+                <button
+                  onClick={handleConnect}
+                  disabled={isConnecting}
+                  className="w-full bg-primary hover:bg-primary/80 disabled:bg-gray-600 text-white px-3 py-2 rounded-lg font-medium text-sm transition-colors"
+                >
+                  {isConnecting ? "Connecting..." : "Reconnect Wallet"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {!isConnected ? (
+            <div className="text-center">
+              <p className="text-text-tertiary text-sm mb-3">
+                {isBasic
+                  ? "Connect wallet to upgrade to REGISTERED"
+                  : "Connect wallet to verify ownership"}
+              </p>
+              <button
+                onClick={handleConnect}
+                disabled={
+                  isConnecting || (!targetConnector && connectors.length === 0)
+                }
+                className="w-full bg-primary hover:bg-primary/80 disabled:bg-gray-600 text-white px-3 py-2 rounded-lg font-medium text-sm transition-colors"
+              >
+                {isConnecting ? "Connecting..." : "Connect Wallet"}
+              </button>
+              {(connectFailed || connectError) && (
+                <p className="text-red-400 text-xs mt-2">
+                  {connectFailed ??
+                    (connectError instanceof Error
+                      ? connectError.message
+                      : "Wallet connection failed.")}
+                </p>
               )}
             </div>
           ) : (
-            <>
-              {!isConnected ? (
-                <div className="text-center">
-                  <p className="text-text-tertiary text-sm mb-3">
-                    Connect wallet to verify ownership
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="bg-bg-surface rounded p-2">
+                  <p className="text-text-tertiary text-xs mb-1">Connected:</p>
+                  <p className="text-text-primary font-mono text-xs">
+                    {address?.slice(0, 6)}...{address?.slice(-4)}
                   </p>
-                  <button
-                    onClick={handleConnect}
-                    className="w-full bg-primary hover:bg-primary/80 text-white px-3 py-2 rounded-lg font-medium text-sm transition-colors"
-                  >
-                    Connect Wallet
-                  </button>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="bg-bg-surface rounded p-2">
-                      <p className="text-text-tertiary text-xs mb-1">
-                        Connected:
-                      </p>
-                      <p className="text-text-primary font-mono text-xs">
-                        {address?.slice(0, 6)}...{address?.slice(-4)}
-                      </p>
-                    </div>
-                    <button
-                      onClick={handleDisconnect}
-                      className="text-text-tertiary hover:text-red-400 text-xs px-2 py-1 rounded hover:bg-red-500/10 transition-colors self-start mt-2"
-                      title="Disconnect Wallet"
-                    >
-                      Disconnect
-                    </button>
-                  </div>
-                  <button
-                    onClick={handleVerifyWallet}
-                    disabled={isSigning || isVerifying}
-                    className="w-full bg-accent hover:bg-accent/80 disabled:bg-gray-600 text-white px-3 py-2 rounded-lg font-medium text-sm transition-colors"
-                  >
-                    {isSigning
-                      ? "Signing..."
-                      : isVerifying
-                        ? "Verifying..."
-                        : "Verify Wallet"}
-                  </button>
-                </div>
+                <button
+                  onClick={handleDisconnect}
+                  className="text-text-tertiary hover:text-red-400 text-xs px-2 py-1 rounded hover:bg-red-500/10 transition-colors self-start mt-2"
+                  title="Disconnect wallet locally (account status unchanged)"
+                >
+                  Disconnect
+                </button>
+              </div>
+              <button
+                onClick={handleVerifyWallet}
+                disabled={isSigning || isVerifying}
+                className="w-full bg-accent hover:bg-accent/80 disabled:bg-gray-600 text-white px-3 py-2 rounded-lg font-medium text-sm transition-colors"
+              >
+                {isSigning
+                  ? "Signing..."
+                  : isVerifying
+                    ? "Verifying..."
+                    : isBasic
+                      ? "Sign & Upgrade to REGISTERED"
+                      : "Confirm Wallet Ownership"}
+              </button>
+              {!isBasic && (
+                <button
+                  onClick={handleUnlinkWallet}
+                  disabled={isUnlinking}
+                  className="w-full text-text-tertiary hover:text-red-400 disabled:opacity-50 text-xs px-3 py-2 rounded-lg hover:bg-red-500/10 transition-colors"
+                  title="Remove the linked wallet (downgrades account status)"
+                >
+                  {isUnlinking ? "Unlinking..." : "Unlink wallet"}
+                </button>
               )}
-            </>
+            </div>
           )}
-        </div>
-      ) : (
-        <div className="text-center">
-          <p className="text-text-tertiary text-sm">
-            Connect Kodiak account first
-          </p>
+          {isBasic && (
+            <p className="text-text-tertiary text-xs text-center">
+              Signing the welcome message upgrades you to REGISTERED.
+            </p>
+          )}
+          {!isBasic && !isVerified && (
+            <p className="text-text-tertiary text-xs text-center">
+              To reach VERIFIED, add your Kodiak API keys in Settings.
+            </p>
+          )}
         </div>
       )}
     </div>

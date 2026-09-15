@@ -16,7 +16,6 @@
  */
 
 // Export wallet-related services
-export { selectBalanceService } from "../service-selector";
 export { WalletQualificationService, createWalletQualificationService } from './wallet-qualification.service.pure';
 
 // Export types

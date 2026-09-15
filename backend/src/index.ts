@@ -144,9 +144,9 @@ import { redisService } from "./infrastructure";
 import { diContainer } from "./infrastructure/dependency-injection.container";
 
 // 🤖 Bot Reconciliation Worker (legacy) - SUPERSEDED by lifecycle reconciliation
-// The legacy worker is never started: its SQL predates desired/actual lifecycle
-// state and its only external-call paths are placeholders. Kept for tests only.
-//import { botReconciliationWorker as _botReconciliationWorker } from "./workers/bot-reconciliation";
+// The legacy worker was removed: its SQL predates desired/actual lifecycle
+// state and its only external-call paths were placeholders. Reconciliation is
+// handled by lifecycleReconciliationService.
 
 // 🩺 Lifecycle Reconciliation (authoritative desired/actual drift repair)
 import { lifecycleReconciliationService } from "./core/bots/lifecycle-reconciliation.service";
@@ -364,7 +364,6 @@ app.use(handleErrors);
 
 // 📡 Real-time Services
 import { WebSocketService } from "./infrastructure/messaging";
-import { marketStreamService } from "./infrastructure";
 
 
 //webSocketService.initialize(io);
@@ -397,12 +396,10 @@ export const startServer = (): Promise<typeof httpServer> => {
 
             // Initialize WebSocket service with Socket.IO server
             const webSocketService = new WebSocketService(
-                marketStreamService,
                 diContainer.authService,
                 logger
             );
             webSocketService.initialize(io);
-            marketStreamService.setSocketServer(io);
             logger.info("📡 WebSocket service initialized");
 
             // ✅ START ENGINE PROTOCOL LISTENER (Redis Streams control plane)
@@ -464,7 +461,6 @@ export const stopServer = (...args: any[]): Promise<void> => {
         try {
             // In test/mock environments, this check may fail, so we'll try to close directly
             // with error handling
-            //marketStreamService.disconnectAll();
             httpServer.close((err) => {
                 if (err) {
                     // If error is about server not running, just resolve
@@ -556,14 +552,6 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
 
         // Phase 2: Close external service connections
         logger.info("Phase 2: Closing external connections");
-
-        // Disconnect market stream WebSockets
-        try {
-            marketStreamService.disconnectAll();
-            logger.info("Market stream connections closed");
-        } catch (error) {
-            logger.error("Error closing market stream connections", error instanceof Error ? error : new Error(String(error)));
-        }
 
         // Disconnect Redis
         try {

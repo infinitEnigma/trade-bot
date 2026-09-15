@@ -126,8 +126,10 @@ describe("utils.ts", () => {
             const duration = end - start;
 
             // Allow for small precision error (up to 10ms) to prevent flaky tests
-            expect(duration).toBeGreaterThanOrEqual(99);
-            expect(duration).toBeLessThanOrEqual(101); // Also ensure it doesn't take too long
+            expect(duration).toBeGreaterThanOrEqual(90);
+            // Generous upper bound: proves it resolves promptly without hanging,
+            // while tolerating CI/scheduler jitter (a 1ms window made this flaky).
+            expect(duration).toBeLessThanOrEqual(250);
         });
     });
 

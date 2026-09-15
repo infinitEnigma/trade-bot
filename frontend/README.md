@@ -15,13 +15,37 @@ The frontend is a modern React 19 single-page application (SPA) built with Vite,
 
 ### Key Features
 
-- **Real-Time Updates** - WebSocket connection for live bot state changes and market data
+- **Real-Time Bot Updates** - Socket.IO connection for live bot state changes (market data is fetched over HTTP)
 - **Bot Management** - Start/stop bots with desired-state semantics (202 Accepted pattern)
 - **Strategy Configuration** - Visual strategy parameter configuration
-- **Market Data** - Real-time price feeds and market statistics
+- **Market Data** - Price feeds, TradingView history, and market statistics sourced from Kodiak public endpoints
 - **Authentication** - Secure JWT-based user authentication with refresh tokens
+- **Wallet Authentication** - Connect a browser wallet and sign the welcome message (wagmi + viem) to upgrade `BASIC → REGISTERED`
 - **Responsive Design** - Mobile-first design with Tailwind CSS
-- **Role-Based Access** - Admin dashboard, qualified user features
+- **Tiered Access** - BASIC / REGISTERED / VERIFIED gating, plus an admin dashboard for admins
+
+---
+
+## User Access Tiers
+
+The UI adapts to the authenticated user's access level, which is enforced server-side:
+
+| Level | How it is reached | What the UI exposes |
+|-------|-------------------|---------------------|
+| **BASIC** | Email + password sign-up / sign-in | Public market data, charts, dashboard pages. The Dashboard wallet widget is shown to every level so BASIC users can start the upgrade. |
+| **REGISTERED** | Connect a wallet in the Dashboard widget and sign the welcome message | Kodiak credential form in Settings becomes active |
+| **VERIFIED** | Provide exchange (Kodiak) API credentials in Settings; the backend verifies them | Trading strategies, bot configuration, private/exchange-specific data |
+
+```
+BASIC ─connect wallet + sign message──▶ REGISTERED ──verify exchange keys in Settings──▶ VERIFIED
+```
+
+The Dashboard wallet widget (`shared/components/WalletConnectDialog.tsx`) is rendered for **all** authenticated users; in `BASIC` it drives the connect-and-sign upgrade, and in `REGISTERED`/`VERIFIED` it acts as an ownership-confirmation and status widget.
+
+Two distinct wallet actions are intentionally separated:
+
+- **Disconnect** - ends the browser wallet session only (wagmi `useDisconnect`). It does **not** change the account level.
+- **Unlink wallet** - an explicit, audited call to `POST /api/user/unlink-wallet` that removes the linked wallet and downgrades the account level (`VERIFIED → REGISTERED`, `REGISTERED → BASIC`).
 
 ---
 
@@ -44,7 +68,8 @@ frontend/src/
 │   ├── cache/             # Memory caching
 │   └── config.ts          # App configuration
 ├── shared/                # Reusable UI components
-│   ├── components/        # UI components (charts, forms, layout)
+│   ├── components/        # UI components (charts, forms, layout, wallet)
+│   │   └── WalletConnectDialog.tsx  # Tier upgrade: connect + sign, unlink, status
 │   ├── hooks/             # Shared React hooks
 │   ├── services/          # Balance, analytics managers
 │   └── utils/             # Utility functions
@@ -59,9 +84,11 @@ frontend/src/
 
 ### WebSocket Integration
 
-The WebSocket is only initialized for authenticated `VERIFIED` users. It receives:
-- `bot.stateChanged` - Real-time bot lifecycle updates
-- Market data streaming (when subscribed)
+The Socket.IO connection is established for **any authenticated user** (the access token is sent during the handshake). Per-event authorization is applied server-side, so lower tiers simply receive no privileged events. It carries:
+
+- `bot.stateChanged` - Real-time bot lifecycle updates (only emitted for bots the user owns)
+
+Market data is **not** streamed over the WebSocket. Prices, TradingView history, and statistics are fetched over HTTP from Kodiak public endpoints (via TanStack Query polling). The legacy Orderly `market-stream` client has been removed.
 
 ---
 
@@ -113,14 +140,18 @@ npm run preview
 ### Testing
 
 ```bash
-# Run tests
+# Run the full suite once (CI-style, non-interactive)
+npx vitest run
+
+# Run in watch mode
 npm test
 
-# Run tests in watch mode
-npm run test:watch
+# Run a single test file
+npx vitest run src/test/unit/infrastructure/walletApi.test.ts
 
-# Run tests with coverage
-npm run test:coverage
+# Lint and formatting checks
+npm run lint
+npm run format:check
 ```
 
 ---
@@ -143,6 +174,11 @@ npm run test:coverage
 - **TanStack Query** - Powerful data fetching and caching
 - **Axios** - HTTP client with interceptors
 - **Socket.IO Client** - Real-time WebSocket communication
+
+### Wallet / Web3
+- **wagmi 3** - React hooks for Ethereum wallet connection, signing, and account state
+- **viem** - Low-level Ethereum client used by wagmi
+- **WalletConnectDialog** - Connects an injected browser wallet and signs the welcome message to upgrade the account from `BASIC` to `REGISTERED`; also exposes audited wallet unlinking
 
 ### Charts & Visualization
 - **Lightweight Charts** - High-performance financial charts
@@ -189,4 +225,4 @@ Frontend                    Backend                     Engine
 
 ---
 
-**Frontend Status**: Functional | **React Version**: 19.2 | **Build Tool**: Vite 7 | **Updated**: September 12, 2026
+**Frontend Status**: Functional | **React Version**: 19.2 | **Build Tool**: Vite 7 | **Updated**: September 14, 2026

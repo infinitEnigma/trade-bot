@@ -1,6 +1,7 @@
 /** @format */
 
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth, useKodiakStatus, useConnectKodiak, useDisconnectKodiak } from "../../auth/hooks";
 import { kodiakApi } from "../../../infrastructure/api/kodiak";
 import {
@@ -250,6 +251,9 @@ const Settings: React.FC = () => {
                         ✓ Credentials verified and active
                       </p>
                     )}
+                    <p className="text-sm text-textMuted mt-1">
+                      Disconnecting Kodiak drops VERIFIED users back to REGISTERED (wallet link stays).
+                    </p>
                   </div>
                   <button
                     onClick={handleDisconnect}
@@ -270,6 +274,23 @@ const Settings: React.FC = () => {
                   <p className="text-success font-medium">
                     Kodiak Credentials Verified
                   </p>
+                </div>
+              </div>
+            ) : !hasKodiakAccess ? (
+              /* BASIC users: wallet step comes first */
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 p-4 rounded-lg bg-info/10 border border-info/20">
+                  <AlertCircle className="w-4 h-4 text-info" />
+                  <div className="text-sm">
+                    <p className="text-info font-medium">Connect your wallet first</p>
+                    <p className="text-textMuted mt-1">
+                      Kodiak credentials unlock at REGISTERED level. Head to the{" "}
+                      <Link to="/dashboard" className="text-primary hover:underline">
+                        Dashboard
+                      </Link>{" "}
+                      and connect + sign with your wallet to upgrade.
+                    </p>
+                  </div>
                 </div>
               </div>
             ) : (

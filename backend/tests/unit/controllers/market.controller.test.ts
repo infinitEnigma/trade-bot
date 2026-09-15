@@ -16,13 +16,6 @@ jest.mock('../../../src/infrastructure/external/kodiak-integration.service', () 
     },
 }));
 
-jest.mock('../../../src/infrastructure/messaging/market-stream', () => ({
-    marketStreamService: {
-        getKlines: jest.fn(),
-        getLatestMarkPrice: jest.fn(),
-    },
-}));
-
 jest.mock('../../../src/infrastructure/cache/redis.service', () => ({
     redisService: {
         get: jest.fn().mockResolvedValue({ success: false }),
@@ -72,7 +65,6 @@ jest.mock('../../../src/shared/utils/context', () => ({
 
 // Get mock services
 const mockKodiakService = require('../../../src/infrastructure/external/kodiak-integration.service').kodiakIntegrationService;
-const mockMarketStreamService = require('../../../src/infrastructure/messaging/market-stream').marketStreamService;
 const mockRedisService = require('../../../src/infrastructure/cache/redis.service').redisService;
 const mockQuery = require('../../../src/database/pool').query;
 
@@ -221,24 +213,36 @@ describe('Market Controller', () => {
     });
 
     describe('GET /api/market/klines', () => {
-        it('should return kline data from WebSocket cache', async () => {
-            const mockKlines = [
-                { startTime: Date.now() - 3600000, open: 45000, high: 46000, low: 44000, close: 45500, volume: 100 },
-            ];
-
-            mockMarketStreamService.getKlines.mockResolvedValue(mockKlines);
+        it('should return kline data from Kodiak', async () => {
+            const mockHistory = {
+                s: 'ok',
+                t: [1700000000, 1700003600],
+                o: [45000, 45500],
+                h: [46000, 46500],
+                l: [44000, 45000],
+                c: [45500, 46000],
+                v: [100, 120],
+            };
+            mockKodiakService.getTradingViewHistory.mockResolvedValue({
+                success: true,
+                data: mockHistory,
+            });
 
             const response = await request(app)
                 .get('/api/market/klines')
                 .expect(200);
 
             expect(response.body.success).toBe(true);
-            expect(response.body.data.length).toBe(1);
-            expect(response.body.source).toBe('websocket_cache');
+            expect(response.body.data.length).toBe(2);
+            expect(response.body.data[0]).toMatchObject({ open: 45000, close: 45500 });
+            expect(response.body.source).toBe('kodiak_rest');
         });
 
-        it('should return empty data when no klines available', async () => {
-            mockMarketStreamService.getKlines.mockResolvedValue([]);
+        it('should return empty data when Kodiak has no candles', async () => {
+            mockKodiakService.getTradingViewHistory.mockResolvedValue({
+                success: true,
+                data: { s: 'no_data', t: [], o: [], h: [], l: [], c: [], v: [] },
+            });
 
             const response = await request(app)
                 .get('/api/market/klines')
@@ -246,11 +250,10 @@ describe('Market Controller', () => {
 
             expect(response.body.success).toBe(true);
             expect(response.body.data).toEqual([]);
-            expect(response.body.message).toContain('Kline data not available yet');
         });
 
         it('should handle kline API failure', async () => {
-            mockMarketStreamService.getKlines.mockRejectedValue(new Error('Service error'));
+            mockKodiakService.getTradingViewHistory.mockRejectedValue(new Error('Service error'));
 
             const response = await request(app)
                 .get('/api/market/klines')
@@ -353,24 +356,29 @@ describe('Market Controller', () => {
     });
 
     describe('GET /api/market/markprice/:symbol', () => {
-        it('should return mark price from cache', async () => {
+        it('should return mark price from Kodiak ticker', async () => {
             const symbol = 'PERP_BTC_USDC';
-            const mockPrice = { price: 45000, timestamp: Date.now() };
 
-            mockMarketStreamService.getLatestMarkPrice.mockResolvedValue(mockPrice);
+            mockKodiakService.getMarketTicker.mockResolvedValue({
+                success: true,
+                data: { symbol, mark_price: '45000.5' },
+            });
 
             const response = await request(app)
                 .get(`/api/market/markprice/${symbol}`)
                 .expect(200);
 
             expect(response.body.success).toBe(true);
-            expect(response.body.data).toEqual(mockPrice);
+            expect(response.body.data).toMatchObject({ symbol, price: '45000.5' });
         });
 
         it('should handle no mark price available', async () => {
             const symbol = 'PERP_BTC_USDC';
 
-            mockMarketStreamService.getLatestMarkPrice.mockResolvedValue(null);
+            mockKodiakService.getMarketTicker.mockResolvedValue({
+                success: false,
+                error: 'API error',
+            });
 
             const response = await request(app)
                 .get(`/api/market/markprice/${symbol}`)
@@ -378,7 +386,6 @@ describe('Market Controller', () => {
 
             expect(response.body.success).toBe(true);
             expect(response.body.data).toBeNull();
-            expect(response.body.message).toContain('Mark price data not available yet');
         });
     });
 
