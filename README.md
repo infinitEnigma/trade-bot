@@ -63,8 +63,11 @@ npm install
 cp .env.example .env
 # Edit .env with your database, Redis, and API credentials
 
-# Run database migrations
+# Run database migrations (ledger-tracked runner)
 npm run db:migrate
+
+# Check migration status (ledger vs. files)
+npm run db:status
 
 # Start all services
 npm run dev

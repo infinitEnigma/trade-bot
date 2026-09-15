@@ -184,8 +184,11 @@ FRONTEND_URL=http://localhost:5173
 # Start with auto-reload
 npm run dev
 
-# Run database migrations
+# Run database migrations (scripts/run-migrations.js, ledger-tracked)
 npm run db:migrate
+
+# Validate schema for runtime query validation (does not run migrations)
+npm run db:validate
 
 # Build for production
 npm run build && npm start
