@@ -145,19 +145,22 @@ export class RedisCacheManager {
             }
 
             const dataResult = await this.get<T>(key);
-            if (dataResult.success && dataResult.data !== null) {
-                // Add version to the data object
-                const baseData = dataResult.data as Record<string, unknown>;
-                const dataWithVersion = { ...baseData, version } as T & { version?: number };
+            if (!dataResult.success) {
+                // Propagate parse/IO errors with their original message
+                return { success: false, error: dataResult.error, version };
+            }
+
+            if (dataResult.data !== null) {
+                // Return data untouched; version is exposed as a separate field
                 return {
                     success: true,
-                    data: dataWithVersion,
+                    data: dataResult.data,
                     version,
                     fromCache: dataResult.fromCache
                 };
             }
 
-            return { success: false, error: 'Cache miss or data not found' };
+            return { success: false, error: 'Cache miss or data not found', version };
         } catch (error) {
             const errorMessage = (error as Error).message;
             logger.error("Cache getWithVersion error", error as Error, { key, versionKey, error: errorMessage });

@@ -54,20 +54,16 @@ describe('RedisAtomicOperations', () => {
             const mockIncrement = 5;
             const mockFinalValue = 10;
 
-            // Mock transaction success
-            mockTransactions.watchMultiExec.mockResolvedValue({
-                success: true,
-                result: mockIncrement
-            });
-
-            // Mock get final value
-            (mockConnectionManager.getClient().get as jest.Mock).mockResolvedValue(mockFinalValue.toString());
+            // Canonical contract: direct INCRBY (no WATCH/MULTI needed)
+            const mockClient = mockConnectionManager.getClient();
+            (mockClient.incrBy as jest.Mock).mockResolvedValue(mockFinalValue);
 
             const result = await atomicOperations.atomicIncrementWithExpiry(mockKey, mockIncrement);
 
             expect(result.success).toBe(true);
             expect(result.data).toBe(mockFinalValue);
-            expect(mockTransactions.watchMultiExec).toHaveBeenCalled();
+            expect(mockClient.incrBy).toHaveBeenCalledWith(mockKey, mockIncrement);
+            expect(mockTransactions.watchMultiExec).not.toHaveBeenCalled();
         });
 
         it('should perform atomic increment successfully with expiry', async () => {
@@ -76,30 +72,30 @@ describe('RedisAtomicOperations', () => {
             const mockFinalValue = 10;
             const mockTtlMs = 60000;
 
-            // Mock transaction success
-            mockTransactions.watchMultiExec.mockResolvedValue({
-                success: true,
-                result: mockIncrement
-            });
-
-            // Mock get final value
-            (mockConnectionManager.getClient().get as jest.Mock).mockResolvedValue(mockFinalValue.toString());
+            // Canonical contract: single MULTI pipeline (incrBy + expiry script)
+            const mockClient = mockConnectionManager.getClient();
+            const mockMulti = {
+                incrBy: jest.fn().mockReturnThis(),
+                eval: jest.fn().mockReturnThis(),
+                exec: jest.fn().mockResolvedValue([mockFinalValue, mockFinalValue]),
+            };
+            mockClient.multi = jest.fn().mockReturnValue(mockMulti);
 
             const result = await atomicOperations.atomicIncrementWithExpiry(mockKey, mockIncrement, mockTtlMs);
 
             expect(result.success).toBe(true);
             expect(result.data).toBe(mockFinalValue);
-            expect(mockTransactions.watchMultiExec).toHaveBeenCalled();
+            expect(mockMulti.incrBy).toHaveBeenCalledWith(mockKey, mockIncrement);
+            expect(mockMulti.eval).toHaveBeenCalled();
+            expect(mockTransactions.watchMultiExec).not.toHaveBeenCalled();
         });
 
         it('should handle atomic increment failure', async () => {
             const mockKey = 'test-key';
-            const mockError = 'Transaction failed';
+            const mockError = 'Connection error';
 
-            mockTransactions.watchMultiExec.mockResolvedValue({
-                success: false,
-                error: mockError
-            });
+            const mockClient = mockConnectionManager.getClient();
+            (mockClient.incrBy as jest.Mock).mockRejectedValue(new Error(mockError));
 
             const result = await atomicOperations.atomicIncrementWithExpiry(mockKey);
 

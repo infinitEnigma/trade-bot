@@ -206,7 +206,7 @@ describe('RedisCacheManager', () => {
             const result = await cacheManager.getWithVersion('test-key', 'test-key-version');
 
             expect(result.success).toBe(true);
-            expect(result.data).toEqual({ ...testData, version: 1 });
+            expect(result.data).toEqual(testData);
             expect(result.version).toBe(1);
         });
 

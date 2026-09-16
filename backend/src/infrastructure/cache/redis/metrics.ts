@@ -98,13 +98,17 @@ export class RedisMetrics {
      */
     async getCacheStats(): Promise<CacheStats> {
         try {
-            const isConnected = await this.connectionManager.isHealthy();
-
-            if (!isConnected) {
-                return { connected: false, error: 'Redis not connected' };
-            }
-
             const client = this.connectionManager.getClient();
+
+            const isConnected = await this.connectionManager.isHealthy();
+            if (!isConnected) {
+                // Legacy fallback: verify via a direct ping — cached health
+                // flags may be stale (facade contract relies on ping()).
+                const pong = await client.ping();
+                if (pong !== 'PONG') {
+                    throw new Error('Redis ping failed');
+                }
+            }
 
             // Get database size (number of keys)
             const dbSize = await client.dbSize();

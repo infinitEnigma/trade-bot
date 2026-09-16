@@ -92,6 +92,13 @@ export class RedisTransactions {
             }
         );
     }
+
+    /**
+     * Recovery-manager stats passthrough (used by the redis.service facade).
+     */
+    getRecoveryStats() {
+        return this.transactionRecoveryManager.getRecoveryStats();
+    }
 }
 
 /**
@@ -539,6 +546,3 @@ class TransactionRecoveryManager {
         };
     }
 }
-
-// Import for internal use (avoid circular dependency)
-import { redisService } from "../redis.service";

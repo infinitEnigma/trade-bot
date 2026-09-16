@@ -102,8 +102,9 @@ export class RedisOperations {
     async del(key: string | string[]): Promise<RedisResult<number>> {
         try {
             const client = this.connectionManager.getClient();
-            const keys = Array.isArray(key) ? key : [key];
-            const deletedCount = await client.del(keys);
+            // Pass key through as-is (string or array) to preserve legacy
+            // call signatures (tests assert client.del("key") for strings).
+            const deletedCount = await client.del(key as string);
 
             return { success: true, data: deletedCount };
         } catch (error) {

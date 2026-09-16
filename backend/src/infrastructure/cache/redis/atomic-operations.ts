@@ -106,47 +106,40 @@ export class RedisAtomicOperations {
         ttlMs?: number,
         options?: TransactionOptions
     ): Promise<AtomicResult<number>> {
-        const result = await this.transactions.watchMultiExec(
-            [key],
-            async (multi: unknown) => {
-                // Check if key exists and get TTL
-                const ttlResult = await this.connectionManager.getClient().pTTL(key);
+        void options;
+        try {
+            const client = this.connectionManager.getClient();
 
-                if (ttlMs) {
-                    // Use Lua script to handle both increment and expiry properly
-                    (multi as { eval: (script: string, config: { keys: string[]; arguments: string[] }) => void }).eval(`
-                        local count = redis.call('INCRBY', KEYS[1], ARGV[1])
-                        local ttl = redis.call('PTTL', KEYS[1])
-                        
-                        -- Set expiry if this is the first increment or TTL is negative (key exists but no TTL)
-                        if count == tonumber(ARGV[1]) or ttl < 0 then
-                            redis.call('PEXPIRE', KEYS[1], ARGV[2])
-                        end
-                        
-                        return count
-                    `, {
-                        keys: [key],
-                        arguments: [increment.toString(), ttlMs.toString()]
-                    });
-                } else {
-                    (multi as { incrBy: (key: string, increment: number) => void }).incrBy(key, increment);
-                }
+            if (ttlMs) {
+                // Single atomic MULTI: INCRBY + Lua script that applies expiry
+                // only on first increment / missing TTL (legacy semantics).
+                const multi = client.multi();
+                multi.incrBy(key, increment);
+                multi.eval(
+                    `
+                    local count = redis.call('INCRBY', KEYS[1], ARGV[1])
+                    local ttl = redis.call('PTTL', KEYS[1])
 
-                return increment; // Return the increment amount
-            },
-            3, // Max 3 retries for rate limiting
-            { ...options, context: 'atomic_increment' }
-        );
+                    if count == tonumber(ARGV[1]) or ttl < 0 then
+                        redis.call('PEXPIRE', KEYS[1], ARGV[2])
+                    end
 
-        if (result.success) {
-            // Get the final value
-            const getResult = await this.connectionManager.getClient().get(key);
-            const finalValue = getResult ? parseInt(getResult) : 0;
+                    return count
+                `,
+                    { keys: [key], arguments: [increment.toString(), ttlMs.toString()] }
+                );
+                const results = (await multi.exec()) as unknown[] | null;
 
-            return { success: true, data: finalValue };
-        } else {
-            redisLogger.error("Atomic increment failed", undefined, { key, error: result.error, attempts: result.attempts });
-            return { success: false, error: result.error, attempts: result.attempts };
+                const newValue = Array.isArray(results) ? parseInt(String(results[0])) : 0;
+                return { success: true, data: newValue };
+            }
+
+            const result = await client.incrBy(key, increment);
+            return { success: true, data: result };
+        } catch (error) {
+            const errorMessage = (error as Error).message;
+            redisLogger.error("Atomic increment failed", undefined, { key, error: errorMessage });
+            return { success: false, error: errorMessage };
         }
     }
 

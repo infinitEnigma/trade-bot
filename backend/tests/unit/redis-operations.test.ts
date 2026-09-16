@@ -183,7 +183,7 @@ describe('RedisOperations', () => {
 
             const result = await operations.del(testKey);
 
-            expect(mockClient.del).toHaveBeenCalledWith([testKey]);
+            expect(mockClient.del).toHaveBeenCalledWith(testKey);
             expect(result.success).toBe(true);
             expect(result.data).toBe(deletedCount);
             expect(result.error).toBeUndefined();
@@ -209,7 +209,7 @@ describe('RedisOperations', () => {
 
             const result = await operations.del(testKey);
 
-            expect(mockClient.del).toHaveBeenCalledWith([testKey]);
+            expect(mockClient.del).toHaveBeenCalledWith(testKey);
             expect(result.success).toBe(false);
             expect(result.data).toBe(0);
             expect(result.error).toBe(testError.message);
