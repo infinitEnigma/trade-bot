@@ -214,6 +214,24 @@ export const useAuth = () => {
     return useAuthStore();
 };
 
+// Module-level listener: the HTTP client (infrastructure/api/client.ts) fires
+// these events when the session is definitively dead (-1002) or a redirect to
+// /login is imminent. Registered once at module scope — no component effects.
+// Without this, the persisted zustand store rehydrated a stale "authenticated"
+// user after redirects (wallet-signing bug: settings still showed BASIC).
+if (typeof window !== "undefined") {
+    const handleSessionInvalidated = () => {
+        console.warn("Auth state invalidated by session-expired event");
+        useAuthStore.setState({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+        });
+    };
+    window.addEventListener("auth:session-expired", handleSessionInvalidated);
+    window.addEventListener("auth:logout", handleSessionInvalidated);
+}
+
 /**
  * Utility function to update user data in the auth store
  * Used by mutations that change user state without making API calls

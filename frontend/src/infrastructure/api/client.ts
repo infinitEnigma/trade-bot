@@ -6,6 +6,28 @@ const API_BASE_URL = import.meta.env.VITE_API_URL;
 console.log("API_BASE_URL:", API_BASE_URL);
 
 /**
+ * Force a clean re-authentication: drop the persisted auth store (zustand
+ * persist would otherwise rehydrate a stale user after the redirect) and
+ * send the user to /login.
+ *
+ * Triggered when the backend reports a definitively-dead session
+ * (401 + code -1002 = refresh token invalid/legacy, retrying is futile).
+ */
+const forceReauthentication = (reason: string): void => {
+    console.warn("Forcing re-authentication:", reason);
+    // Notify any in-app listeners BEFORE navigating (they may flush state)
+    window.dispatchEvent(new CustomEvent("auth:session-expired"));
+    // Clear the persisted zustand auth store so /login doesn't rehydrate
+    // a stale "authenticated" user (root cause of the wallet-signing bug
+    // where the settings page reloaded still showing BASIC).
+    localStorage.removeItem("auth-storage");
+    window.dispatchEvent(new CustomEvent("auth:logout"));
+    if (window.location.pathname !== "/login") {
+        window.location.href = "/login";
+    }
+};
+
+/**
  * Base HTTP client for API communication
  * Handles authentication, error handling, and request/response interceptors
  */
@@ -93,8 +115,23 @@ class HttpClient {
                 // Handle connection errors (server unreachable)
                 if (!error.response && error.code === "ERR_NETWORK") {
                     console.error("Server connection failed - redirecting to login");
-                    window.dispatchEvent(new CustomEvent("auth:logout"));
-                    window.location.href = "/login";
+                    forceReauthentication("network error");
+                    return Promise.reject(error);
+                }
+
+                // Definitive session death: 401 + code -1002 means the refresh
+                // token is invalid/legacy (backend already cleared the session
+                // cookies). Retrying or refreshing the page cannot help — clear
+                // auth state and force a clean re-login. Applies to ALL
+                // endpoints (the old code only redirected on auth/profile 401s,
+                // which is how verify-wallet 401s got silently swallowed).
+                const isLoginRequest = originalRequest.url?.includes("/api/auth/login");
+                if (
+                    error.response?.status === 401 &&
+                    error.response.data?.code === -1002 &&
+                    !isLoginRequest
+                ) {
+                    forceReauthentication("session definitively expired (-1002)");
                     return Promise.reject(error);
                 }
 
@@ -117,8 +154,7 @@ class HttpClient {
                     );
                     originalRequest._retry = true;
 
-                    window.dispatchEvent(new CustomEvent("auth:logout"));
-                    window.location.href = "/login";
+                    forceReauthentication("401 on auth endpoint");
                     return Promise.reject(error);
                 }
 
@@ -146,8 +182,7 @@ class HttpClient {
                     (isAuthEndpoint || isUserProfileEndpoint)
                 ) {
                     console.error("Auth system server error - redirecting to login");
-                    window.dispatchEvent(new CustomEvent("auth:logout"));
-                    window.location.href = "/login";
+                    forceReauthentication("auth server error");
                 }
 
                 return Promise.reject(error);
