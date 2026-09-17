@@ -90,6 +90,8 @@ describe('Auth Middleware', () => {
     res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
+      // Needed by clearSessionCookies() on definitive refresh failures (-1002)
+      clearCookie: jest.fn().mockReturnThis(),
     };
     next = jest.fn();
 
@@ -457,11 +459,55 @@ describe('Auth Middleware', () => {
 
     expect(mockAuthService.refreshToken).toHaveBeenCalled(); // Should not attempt refresh due to mutex
     expect(res.status).toHaveBeenCalledWith(401);
+    // 'Invalid refresh token' (leaked mock) is a definitive failure → -1002 + cookie clear
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      code: -1002,
+      message: 'Session expired - please log in again',
+    });
+    expect(res.clearCookie).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('should respond -1002 and clear session cookies on definitive refresh failure', async () => {
+    (req as any).cookies.refreshToken = 'refresh-token';
+
+    (mockAuthService.refreshToken as jest.Mock).mockResolvedValue({
+      success: false,
+      message: 'Token refresh failed - invalid token',
+    });
+
+    await authMiddleware(req as Request, res as Response, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      code: -1002,
+      message: 'Session expired - please log in again',
+    });
+    for (const cookieName of ['accessToken', 'refreshToken', 'csrfSecret', 'csrfToken']) {
+      expect(res.clearCookie).toHaveBeenCalledWith(cookieName, expect.anything());
+    }
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('should respond -1004 without clearing cookies on transient refresh failure', async () => {
+    (req as any).cookies.refreshToken = 'refresh-token';
+
+    (mockAuthService.refreshToken as jest.Mock).mockResolvedValue({
+      success: false,
+      message: 'Redis temporarily unavailable',
+    });
+
+    await authMiddleware(req as Request, res as Response, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({
       success: false,
       code: -1004,
       message: 'Unauthorized - token refresh failed after multiple attempts',
     });
+    expect(res.clearCookie).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 });

@@ -93,8 +93,10 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
           return result;
         }
 
-        // If it's a validation error, don't retry
-        if (result.message?.includes('invalid') || result.message?.includes('expired') || result.message?.includes('invalidated')) {
+        // If the token is definitively dead (invalid/expired/revoked/legacy),
+        // don't retry — return the original failure message so
+        // respondToFailedRefresh can classify it as -1002.
+        if (isDefinitiveRefreshFailure(result.message)) {
           authLogger.debug("Token validation error, not retrying", {
             message: result.message,
             attempt: attempt + 1,
@@ -160,13 +162,26 @@ function respondToFailedRefresh(res: Response, message?: string): void {
   if (message === "Token refresh already in progress") {
     res.status(401).json({
       success: false,
-      code: -1004,
+      code: AUTH_ERROR_CODES.REFRESH_FAILED,
       message: "Token refresh already in progress",
+    });
+  } else if (isDefinitiveRefreshFailure(message)) {
+    // Refresh token is definitively invalid/legacy (e.g. issued before the
+    // `type`-claim security hardening). Tell the client to discard auth state
+    // and re-login, and stop the browser from resubmitting the dead cookie.
+    authLogger.warn("Definitive refresh failure - clearing session cookies", {
+      message,
+    });
+    clearSessionCookies(res);
+    res.status(401).json({
+      success: false,
+      code: AUTH_ERROR_CODES.REFRESH_INVALID_DEFINITIVE,
+      message: "Session expired - please log in again",
     });
   } else {
     res.status(401).json({
       success: false,
-      code: -1004,
+      code: AUTH_ERROR_CODES.REFRESH_FAILED,
       message: "Unauthorized - token refresh failed after multiple attempts",
     });
   }
@@ -206,7 +221,7 @@ async function finalizeRefreshedSession(
     );
     res.status(500).json({
       success: false,
-      code: -1005,
+      code: AUTH_ERROR_CODES.REFRESH_VALIDATION_FAILED,
       message: "Token refresh succeeded but validation failed",
     });
     return;
@@ -220,7 +235,7 @@ async function finalizeRefreshedSession(
     });
     res.status(401).json({
       success: false,
-      code: -1008,
+      code: AUTH_ERROR_CODES.USER_NOT_FOUND,
       message: hydration.failure === "USER_NOT_FOUND"
         ? "Unauthorized - refreshed user not found"
         : "Unauthorized - refreshed user data not found",
