@@ -23,8 +23,10 @@ jest.mock('../../../src/infrastructure/cache/redis.service', () => ({
     },
 }));
 
-jest.mock('../../../src/database/pool', () => ({
-    query: jest.fn(),
+jest.mock('../../../src/infrastructure/adapters/repositories/kodiak-credentials-repository.adapter', () => ({
+    kodiakCredentialsRepositoryAdapter: {
+        getCredentials: jest.fn(),
+    },
 }));
 
 jest.mock('../../../src/interfaces/middleware/auth.middleware', () => ({
@@ -66,7 +68,7 @@ jest.mock('../../../src/shared/utils/context', () => ({
 // Get mock services
 const mockKodiakService = require('../../../src/infrastructure/external/kodiak-integration.service').kodiakIntegrationService;
 const mockRedisService = require('../../../src/infrastructure/cache/redis.service').redisService;
-const mockQuery = require('../../../src/database/pool').query;
+const mockCredsRepo = require('../../../src/infrastructure/adapters/repositories/kodiak-credentials-repository.adapter').kodiakCredentialsRepositoryAdapter;
 
 // Create a test app
 function createTestApp(): Express {
@@ -457,8 +459,8 @@ describe('Market Controller', () => {
 
     describe('GET /api/market/ws-url (protected)', () => {
         it('should return WebSocket URL for authenticated user', async () => {
-            mockQuery.mockResolvedValue({
-                rows: [{ account_id: 'test-account-id' }],
+            mockCredsRepo.getCredentials.mockResolvedValue({
+                accountId: 'test-account-id',
             });
 
             const response = await request(app)
@@ -470,9 +472,7 @@ describe('Market Controller', () => {
         });
 
         it('should reject request without Kodiak credentials', async () => {
-            mockQuery.mockResolvedValue({
-                rows: [],
-            });
+            mockCredsRepo.getCredentials.mockResolvedValue(null);
 
             const response = await request(app)
                 .get('/api/market/ws-url')
@@ -549,8 +549,8 @@ describe('Market Controller', () => {
 
     describe('GET /api/market/kline-history (protected)', () => {
         it('should return historical kline data', async () => {
-            mockQuery.mockResolvedValue({
-                rows: [{ id: '1' }],
+            mockCredsRepo.getCredentials.mockResolvedValue({
+                accountId: 'test-account-id',
             });
 
             const mockHistory = {
@@ -578,9 +578,7 @@ describe('Market Controller', () => {
         });
 
         it('should reject request without Kodiak credentials', async () => {
-            mockQuery.mockResolvedValue({
-                rows: [],
-            });
+            mockCredsRepo.getCredentials.mockResolvedValue(null);
 
             const response = await request(app)
                 .get('/api/market/kline-history')
@@ -592,8 +590,8 @@ describe('Market Controller', () => {
         });
 
         it('should handle no data available', async () => {
-            mockQuery.mockResolvedValue({
-                rows: [{ id: '1' }],
+            mockCredsRepo.getCredentials.mockResolvedValue({
+                accountId: 'test-account-id',
             });
 
             mockKodiakService.getTradingViewHistory.mockResolvedValue({

@@ -1,56 +1,42 @@
 /** @format */
 
 import { Request, Response, NextFunction } from "express";
-import { randomBytes } from "crypto";
 import { AuthResult, LegacyAuthResult, AuthService } from "../../core/auth/auth.service.pure";
 import { jwtTokenAdapter } from "../../infrastructure/adapters/token/jwt-token.adapter";
-import Tokens from "csrf";
 import { serviceProvider } from "../../core/service-provider";
 
 // Lazy service resolution (avoids circular imports; pure service is authoritative).
 // Resolved through the service provider at call time instead of a require() grab.
 const getAuthService = (): AuthService => serviceProvider.getAuthService();
 
-import { redisService } from "../../infrastructure/cache/redis.service";
 import { setUserContext } from "../../shared/utils/context";
 //import { roleManagementService } from "../../core/auth/role-management.service";
 import { authLogger } from "../../core/logging";
 import { progressiveAuthLimiter } from "../../infrastructure/security/rate-limiter.service";
+import {
+    acquireRefreshMutex,
+    releaseRefreshMutex,
+} from "./auth-refresh-mutex";
+import {
+    clearSessionCookies,
+    setRefreshedSessionCookies,
+} from "./auth-session-cookies";
+import {
+    hydrateSessionUser,
+    isLightweightEndpoint,
+} from "./auth-session-hydrator";
+import {
+    AUTH_ERROR_CODES,
+    isDefinitiveRefreshFailure,
+} from "./auth-error-codes";
 
-// Initialize CSRF tokens for refresh
-const csrfTokens = new Tokens();
-
-// ============================================
-// CONSTANTS
-// ============================================
-
-// Cookie lifetimes (ms)
-const ACCESS_COOKIE_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours
-const REFRESH_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const CSRF_COOKIE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-// Endpoints served without loading full user data/roles (performance optimization).
-// Keep this list integration-scoped (not exchange-scoped) so new exchanges do not
-// require changes to the auth middleware.
-const LIGHTWEIGHT_ENDPOINT_PREFIXES = [
-  "/api/user/kodiak/status",
-  "/api/user/kodiak/trades",
-  "/api/user/kodiak/positions",
-  "/api/user/kodiak/balance",
-];
-
-const isLightweightEndpoint = (path: string): boolean =>
-  LIGHTWEIGHT_ENDPOINT_PREFIXES.some((prefix) => path.startsWith(prefix));
-
-// Atomic mutex release: only the owner may delete the key. Prevents releasing
-// a lock that has expired and already been re-acquired by another request.
-const RELEASE_LOCK_SCRIPT = `
-if redis.call("GET", KEYS[1]) == ARGV[1] then
-  return redis.call("DEL", KEYS[1])
-else
-  return 0
-end
-`;
+// Re-export the extracted helpers so existing deep imports keep working.
+export {
+    isLightweightEndpoint,
+    LIGHTWEIGHT_ENDPOINT_PREFIXES,
+} from "./auth-session-hydrator";
+export { RELEASE_LOCK_SCRIPT } from "./auth-refresh-mutex";
+export { AUTH_ERROR_CODES } from "./auth-error-codes";
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -76,40 +62,17 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
     });
   }
 
-  const mutexKey = userId ? `mutex:refresh:${userId}` : null;
-  // Random owner token so only this request can release its own lock
-  const mutexToken = randomBytes(16).toString("hex");
-  let lockAcquired = false;
+  const mutex = await acquireRefreshMutex(userId);
+  const mutexKey = mutex.key;
+  const mutexToken = mutex.token;
+  const lockAcquired = mutex.acquired;
 
-  // Try to acquire mutex if we have a userId
-  if (mutexKey) {
-    try {
-      // Use SETNX (set if not exists) with short TTL for mutex
-      const lockResult = await redisService.getClient().set(mutexKey, mutexToken, {
-        NX: true,
-        EX: 30, // 30 second lock
-      });
-      lockAcquired = lockResult === "OK";
-
-      if (!lockAcquired) {
-        authLogger.debug("Token refresh mutex already held, queuing request", {
-          userId,
-          mutexKey,
-        });
-        // Return early - another request is already refreshing
-        return {
-          success: false,
-          message: "Token refresh already in progress",
-        };
-      }
-    } catch (lockError) {
-      authLogger.warn("Failed to acquire token refresh mutex", {
-        error: lockError instanceof Error ? lockError.message : String(lockError),
-        userId,
-        mutexKey,
-      });
-      // Continue without mutex - better to allow refresh than block
-    }
+  // Another request is already refreshing — preserve the concurrency contract
+  if (mutexKey && !lockAcquired) {
+    return {
+      success: false,
+      message: "Token refresh already in progress",
+    };
   }
 
   try {
@@ -184,23 +147,7 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
   } finally {
     // Always release the mutex if we acquired it
     if (lockAcquired && mutexKey) {
-      try {
-        // Atomic compare-and-delete: only release the lock we still own
-        await redisService.getClient().eval(RELEASE_LOCK_SCRIPT, {
-          keys: [mutexKey],
-          arguments: [mutexToken],
-        });
-        authLogger.debug("Released token refresh mutex", {
-          userId,
-          mutexKey,
-        });
-      } catch (unlockError) {
-        authLogger.warn("Failed to release token refresh mutex", {
-          error: unlockError instanceof Error ? unlockError.message : String(unlockError),
-          userId,
-          mutexKey,
-        });
-      }
+      await releaseRefreshMutex({ key: mutexKey, acquired: lockAcquired, token: mutexToken }, userId);
     }
   }
 }
@@ -247,38 +194,8 @@ async function finalizeRefreshedSession(
     email: refreshResult.user?.email,
   });
 
-  // Set new httpOnly cookies
-  res.cookie("accessToken", tokens.accessToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge: ACCESS_COOKIE_MAX_AGE_MS,
-  });
-
-  res.cookie("refreshToken", tokens.refreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge: REFRESH_COOKIE_MAX_AGE_MS,
-  });
-
-  // Refresh CSRF token and secret
-  const newCsrfSecret = csrfTokens.secretSync();
-  const newCsrfToken = csrfTokens.create(newCsrfSecret);
-
-  res.cookie("csrfSecret", newCsrfSecret, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge: CSRF_COOKIE_MAX_AGE_MS,
-  });
-
-  res.cookie("csrfToken", newCsrfToken, {
-    httpOnly: false, // Client needs to read this
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge: CSRF_COOKIE_MAX_AGE_MS,
-  });
+  // Set rotated session cookies (access/refresh + fresh CSRF pair)
+  setRefreshedSessionCookies(res, tokens);
 
   // Verify the new access token and set user on request
   const newPayload = await getAuthService().validateToken(tokens.accessToken);
@@ -295,48 +212,27 @@ async function finalizeRefreshedSession(
     return;
   }
 
-  if (isLightweightEndpoint(req.path)) {
-    // For lightweight endpoints, just verify user exists without loading full data
-    const userExists = await getAuthService().getUserById(newPayload.userId);
-    if (!userExists) {
-      authLogger.error("Refreshed user not found for lightweight endpoint", undefined, {
-        userId: newPayload.userId,
-        endpoint: req.path,
-      });
-      res.status(401).json({
-        success: false,
-        code: -1008,
-        message: "Unauthorized - refreshed user not found",
-      });
-      return;
-    }
-
-    req.user = {
-      ...newPayload,
-      userLevel: userExists.userLevel,
-      roles: [] // Lightweight endpoints don't need roles
-    };
-  } else {
-    // Load complete user data for refreshed token (N+1 optimization)
-    const refreshedUserData = await getAuthService().getAuthenticatedUserData(newPayload.userId);
-    if (!refreshedUserData) {
-      authLogger.error("Failed to load refreshed user data - user not found", undefined, {
-        userId: newPayload.userId,
-      });
-      res.status(401).json({
-        success: false,
-        code: -1008,
-        message: "Unauthorized - refreshed user data not found",
-      });
-      return;
-    }
-
-    req.user = {
-      ...newPayload,
-      userLevel: refreshedUserData.user.userLevel, // Always use current userLevel from database
-      roles: refreshedUserData.roles
-    };
+  const hydration = await hydrateSessionUser(newPayload.userId, isLightweightEndpoint(req.path));
+  if ("failure" in hydration) {
+    authLogger.error("Refreshed user not found for hydrator endpoint", undefined, {
+      userId: newPayload.userId,
+      endpoint: req.path,
+    });
+    res.status(401).json({
+      success: false,
+      code: -1008,
+      message: hydration.failure === "USER_NOT_FOUND"
+        ? "Unauthorized - refreshed user not found"
+        : "Unauthorized - refreshed user data not found",
+    });
+    return;
   }
+
+  req.user = {
+    ...newPayload,
+    userLevel: hydration.user.userLevel,
+    roles: hydration.user.roles,
+  };
 
   // Set user context for logging and tracing
   setUserContext(newPayload.userId, newPayload.userLevel);
@@ -438,51 +334,34 @@ export async function authMiddleware(
       return;
     }
 
-    // Check if this is a lightweight endpoint that doesn't need full user data
-    if (isLightweightEndpoint(req.path)) {
-      // For lightweight endpoints, just verify user exists without loading full data
-      const userExists = await getAuthService().getUserById(payload.userId);
-      if (!userExists) {
-        authLogger.warn("User not found for lightweight endpoint", {
-          userId: payload.userId,
-          endpoint: req.path,
-        });
-        res.status(401).json({
-          success: false,
-          code: -1007,
-          message: "Unauthorized - user not found",
-        });
-        return;
-      }
-
-      req.user = {
-        ...payload,
-        userLevel: userExists.userLevel,
-        roles: [] // Lightweight endpoints don't need roles
-      };
-    } else {
-      // Load complete user data with roles and credentials for complex endpoints
-      const userData = await getAuthService().getAuthenticatedUserData(payload.userId);
-      if (!userData) {
-        authLogger.warn("User data not found, using token payload only", {
-          userId: payload.userId,
-        });
-        // Fall back to token payload for user data
-        req.user = {
-          ...payload,
-          userLevel: payload.userLevel || 'REGISTERED', // Default to REGISTERED if not in token
-          roles: [] // No roles available
-        };
-      } else {
-        const userRoles = userData.roles;
-
-        req.user = {
-          ...payload,
-          userLevel: userData.user.userLevel, // Always use current userLevel from database
-          roles: userRoles
-        };
-      }
+    // Check if this is a lightweight endpoint that doesn't need full user data.
+    // The token-payload fallback preserves the legacy fresh-token behavior
+    // (default REGISTERED) for backwards compatibility.
+    const freshHydration = await hydrateSessionUser(
+      payload.userId,
+      isLightweightEndpoint(req.path),
+      { userId: payload.userId, userLevel: payload.userLevel },
+    );
+    if ("failure" in freshHydration) {
+      authLogger.warn("User not found for hydrator endpoint", {
+        userId: payload.userId,
+        endpoint: req.path,
+      });
+      res.status(401).json({
+        success: false,
+        code: AUTH_ERROR_CODES.USER_NOT_FOUND,
+        message: freshHydration.failure === "USER_NOT_FOUND"
+          ? "Unauthorized - user not found"
+          : "Unauthorized - refreshed user data not found",
+      });
+      return;
     }
+
+    req.user = {
+      ...payload,
+      userLevel: freshHydration.user.userLevel,
+      roles: freshHydration.user.roles,
+    };
 
     // Set user context for logging and tracing
     setUserContext(payload.userId, payload.userLevel);
