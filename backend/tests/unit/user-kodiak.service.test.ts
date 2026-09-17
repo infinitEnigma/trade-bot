@@ -72,11 +72,11 @@ describe('UserKodiakService', () => {
             expect(result).toEqual(mockResult);
             expect(mockCache.getCachedResult).toHaveBeenCalledWith(mockUserId, mockConnectionData.accountId);
             expect(mockKodiakConnectionService.connectKodiak).toHaveBeenCalledWith(mockUserId, mockConnectionData);
+            // Only successful connections are cached
             expect(mockCache.setCachedResult).toHaveBeenCalledWith(
                 mockUserId,
                 mockConnectionData.accountId,
-                true,
-                undefined
+                true
             );
         });
 
@@ -108,12 +108,9 @@ describe('UserKodiakService', () => {
             const result = await service.linkKodiakAccount(mockUserId, mockConnectionData);
 
             expect(result).toEqual(mockResult);
-            expect(mockCache.setCachedResult).toHaveBeenCalledWith(
-                mockUserId,
-                mockConnectionData.accountId,
-                false,
-                'Invalid credentials'
-            );
+            // Failures are NOT cached - the user must be able to retry
+            // immediately with corrected credentials
+            expect(mockCache.setCachedResult).not.toHaveBeenCalled();
         });
 
         it('should handle errors during linking process', async () => {

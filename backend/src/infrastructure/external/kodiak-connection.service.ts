@@ -95,9 +95,20 @@ export class KodiakConnectionService {
                     reason: verificationResult.error,
                 });
 
+                // Roll back the stored credentials - verification failed, so
+                // the connection must not appear as "connected" in status
+                // checks (all-or-nothing connect semantics).
+                try {
+                    await query("DELETE FROM kodiak_credentials WHERE user_id = $1", [userId]);
+                } catch (rollbackError) {
+                    contextLogger.error("Failed to roll back unverified Kodiak credentials", rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError)), {
+                        userId,
+                    });
+                }
+
                 return {
                     success: false,
-                    message: "Kodiak credentials stored but verification failed. Please check your credentials.",
+                    message: "Kodiak credential verification failed. Please check your credentials.",
                     data: {
                         accountId: connectionData.accountId,
                         verified: false,

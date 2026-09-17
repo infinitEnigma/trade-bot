@@ -119,23 +119,33 @@ const Settings: React.FC = () => {
       return;
     }
 
-    // Show loading state
-    SmartToast.loading("Connecting to Kodiak...");
+    // Show loading state. Capture the toast id - SmartToast.loading renders
+    // with duration: Infinity, so it must be explicitly dismissed when the
+    // mutation settles (previously the "Connecting..." toast stuck forever).
+    const loadingToastId = SmartToast.loading("Connecting to Kodiak...");
+    const dismissLoading = () => SmartToast.dismiss(loadingToastId);
 
     connectMutation.mutate(formData, {
       onSuccess: (response: KodiakConnectResponse) => {
+        dismissLoading();
+        if (!response.success) {
+          // Backend reported a handled failure via HTTP 200.
+          SmartToast.error(response.error || response.message || "Kodiak credential verification failed. Please check your credentials.");
+          return;
+        }
         // Clear form on success
         setFormData({ accountId: "", apiKey: "", secretKey: "" });
-        SmartToast.success("Kodiak account connected successfully! Your user level has been upgraded to REGISTERED.");
+        SmartToast.success(response.message || "Kodiak account connected successfully! Your user level has been upgraded to VERIFIED.");
 
         // Show additional info about verification
         if (response.data?.verified) {
           setTimeout(() => {
-            SmartToast.info("Your credentials have been verified and your wallet address has been stored.");
+            SmartToast.info("Your credentials have been verified and your user level upgraded.");
           }, 2000);
         }
       },
       onError: (error: Error) => {
+        dismissLoading();
         const axiosError = error as ApiError;
         const errorMessage = axiosError?.response?.data?.error ||
                            axiosError?.response?.data?.message ||

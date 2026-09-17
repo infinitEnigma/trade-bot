@@ -209,7 +209,18 @@ export class KodiakIntegrationService {
                 ed25519Lib.utils.sha512Sync = sha512Hash;
             }
 
-            const privateKey = bs58Module.default.decode(secretKey);
+            // Normalize the secret key before decoding. Orderly exports the
+            // ed25519 secret in several accepted formats:
+            //   - "ed25519:<base58>" (the canonical export format)
+            //   - "0x<hex>"          (raw hex, e.g. MetaMask-style export)
+            //   - plain base58       (legacy)
+            const normalizedKey = secretKey.trim().replace(/^ed25519:/i, "");
+            let privateKey: Uint8Array;
+            if (/^0x[0-9a-fA-F]+$/.test(normalizedKey)) {
+                privateKey = new Uint8Array(Buffer.from(normalizedKey.slice(2), "hex"));
+            } else {
+                privateKey = bs58Module.default.decode(normalizedKey);
+            }
             const messageBytes = new TextEncoder().encode(message);
             const signature = await ed25519Lib.sign?.(messageBytes, privateKey) || Promise.resolve(new Uint8Array());
             const signatureResult = await (signature instanceof Promise ? signature : Promise.resolve(signature));

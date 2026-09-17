@@ -108,13 +108,17 @@ export class UserKodiakService {
             // Delegate to infrastructure service for actual connection
             const result = await this.deps.kodiakConnectionService.connectKodiak(userId, connectionData);
 
-            // Cache the result
-            await this.deps.cache.setCachedResult(
-                userId,
-                connectionData.accountId,
-                result.success,
-                result.error
-            );
+            // Cache only successful results. Caching failures (previous
+            // behavior: failureTtlSeconds = 300) blocked immediate retries -
+            // a user fixing a pasted key would still get the cached
+            // "Connection failed" for up to 5 minutes.
+            if (result.success) {
+                await this.deps.cache.setCachedResult(
+                    userId,
+                    connectionData.accountId,
+                    true
+                );
+            }
 
             if (result.success) {
                 timer.success({

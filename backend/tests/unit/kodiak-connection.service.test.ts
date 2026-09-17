@@ -208,11 +208,12 @@ describe('KodiakConnectionService', () => {
             const result = await service.connectKodiak('test-user-id', mockConnectionData);
 
             expect(result.success).toBe(false);
-            expect(result.message).toBe('Kodiak credentials stored but verification failed. Please check your credentials.');
+            expect(result.message).toBe('Kodiak credential verification failed. Please check your credentials.');
             expect(result.data?.verified).toBe(false);
             expect(result.error).toBe('Invalid API key');
 
-            // Verify credentials were stored but marked as unverified
+            // Verify credentials were stored (then rolled back) - unverified
+            // credentials must not remain in the table
             expect(query).toHaveBeenCalledWith(
                 expect.stringContaining('INSERT INTO kodiak_credentials'),
                 expect.arrayContaining([
@@ -223,6 +224,12 @@ describe('KodiakConnectionService', () => {
                     'test-signature',
                     false, // verified = false
                 ])
+            );
+
+            // Rollback: the unverified credentials are removed again
+            expect(query).toHaveBeenCalledWith(
+                expect.stringContaining('DELETE FROM kodiak_credentials'),
+                ['test-user-id']
             );
 
             // User level should not be updated
