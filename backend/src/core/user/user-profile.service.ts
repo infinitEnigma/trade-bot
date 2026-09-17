@@ -160,6 +160,17 @@ export class UserProfileService {
             );
 
             timer.success();
+
+            // The auth service updates the user level (BASIC -> REGISTERED) and
+            // invalidates its own auth cache, but NOT this service's profile cache.
+            // Without invalidating it here, GET /profile keeps serving the stale
+            // BASIC profile until CACHE_TTL expires - and since the body is
+            // unchanged, Express responds 304 and the client never sees the
+            // promotion.
+            if (result.success) {
+                await this.invalidateUserProfileCache(userId);
+            }
+
             return result;
         } catch (error) {
             userLogger.error("Wallet verification error", error instanceof Error ? error : undefined, {
@@ -301,9 +312,11 @@ export class UserProfileService {
     }
 
     /**
-     * Invalidate user profile cache after updates
+     * Invalidate user profile cache after updates.
+     * Public: routes that change the user level outside this service
+     * (e.g. unlink-wallet) must invalidate the cached profile too.
      */
-    private async invalidateUserProfileCache(userId: string): Promise<void> {
+    async invalidateUserProfileCache(userId: string): Promise<void> {
         const cacheKey = `user:profile:${userId}`;
         try {
             await this.deps.cache.delete(cacheKey);

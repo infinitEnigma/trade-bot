@@ -200,6 +200,11 @@ router.post("/unlink-wallet", authMiddleware, async (req: AuthenticatedRequest, 
             });
         }
 
+        // unlinkWallet downgrades the user level but does not touch the
+        // profile cache - clear it so GET /profile reflects the downgrade
+        // instead of serving a stale 304.
+        await serviceProvider.getUserProfileService().invalidateUserProfileCache(userId);
+
         res.json({
             success: true,
             message: result.message,
