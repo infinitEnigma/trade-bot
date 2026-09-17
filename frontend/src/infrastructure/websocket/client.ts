@@ -40,6 +40,8 @@ export class WebSocketClient {
     /** Slow retry cadence once the fast attempts are exhausted (never give up). */
     private slowReconnectDelay: number = 30_000;
     private reconnectTimer: NodeJS.Timeout | null = null;
+    /** Fires once per failure episode so re-auth is requested exactly once. */
+    private authFailureNotified: boolean = false;
     /** Single-flight guard: at most one connection attempt in progress. */
     private connectPromise: Promise<Socket> | null = null;
     /** Deferred settle hooks for the in-flight connect() promise. */
@@ -145,6 +147,7 @@ export class WebSocketClient {
 
         this.status = WebSocketStatus.DISCONNECTED;
         this.reconnectAttempts = 0;
+        this.authFailureNotified = false;
         this.notifyStatusChange();
         console.log("📡 WebSocket disconnected");
     }
@@ -337,6 +340,7 @@ export class WebSocketClient {
             console.log("📡 WebSocket connected successfully");
             this.status = WebSocketStatus.CONNECTED;
             this.reconnectAttempts = 0;
+            this.authFailureNotified = false;
             // Settle the single-flight connect() promise first so concurrent
             // callers unblock, then notify listeners and resubscribe.
             this.pendingConnect?.resolve(this.socket!);
@@ -364,6 +368,32 @@ export class WebSocketClient {
         });
 
         this.socket.on("connect_error", (error) => {
+            const wsError = error as Error & { data?: { code?: string; definitive?: boolean } };
+
+            // Definitive auth failure (dead/expired cookie, unknown user): retrying
+            // the same handshake can never succeed. Stop the reconnect loop and ask
+            // the app to re-authenticate (HTTP refresh or re-login) instead.
+            if (wsError.data?.definitive) {
+                console.error("📡 WebSocket auth failure is definitive - stopping reconnection:", wsError.message);
+                if (this.reconnectTimer) {
+                    clearTimeout(this.reconnectTimer);
+                    this.reconnectTimer = null;
+                }
+                this.status = WebSocketStatus.ERROR;
+                this.pendingConnect?.reject(error instanceof Error ? error : new Error(String(error)));
+                this.pendingConnect = null;
+                this.connectPromise = null;
+                this.notifyStatusChange();
+                if (!this.authFailureNotified) {
+                    this.authFailureNotified = true;
+                    if (typeof window !== "undefined") {
+                        window.dispatchEvent(new CustomEvent("auth:session-expired"));
+                    }
+                }
+                this.notifyError(error);
+                return;
+            }
+
             console.error("📡 WebSocket connection error", error);
             this.status = WebSocketStatus.ERROR;
             // Settle the single-flight promise; a retry is scheduled by

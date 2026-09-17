@@ -11,7 +11,7 @@ import {
     ILogger,
     Server,
 } from "../../interfaces/websocket";
-import { WebSocketAuthMiddleware } from "./websocket/auth";
+import { WebSocketAuthMiddleware, isDefinitiveWsAuthCode } from "./websocket/auth";
 import { WebSocketEventHandlers } from "./websocket/handlers";
 import { WebSocketError, WEBSOCKET_CONSTANTS } from "./websocket/types";
 import { webSocketRateLimiter } from "../security/rate-limiter/websocket-rate-limiter.adapter";
@@ -178,26 +178,33 @@ export class WebSocketService implements IWebSocketService {
                 next();
             } catch (error) {
                 if (error instanceof WebSocketError) {
-                    this.logger.error("WebSocket authentication failed - service", {
+                    const definitive = isDefinitiveWsAuthCode(error.code);
+                    this.logger[definitive ? "warn" : "error"]("WebSocket authentication failed - service", {
                         socketId: socket.id,
                         error: error.message,
                         code: error.code,
+                        definitive,
                         ip: socket.handshake.address,
                     });
 
-                    // Emit auth error before disconnecting
-                    /*socket.emit("auth_error", {
-                        error: error.message,
-                        code: error.code,
-                    });*/
-                } else {
-                    const errorObj = error instanceof Error ? error : new Error(String(error));
-                    this.logger.error("Unexpected authentication error", {
-                        socketId: socket.id,
-                        ip: socket.handshake.address,
-                        error: errorObj,
-                    });
+                    this.metrics.errorsCount++;
+                    // Surface the failure to the client with machine-readable data so it
+                    // can stop retrying a handshake that cannot succeed (dead cookie,
+                    // expired access token, deleted user) and re-authenticate instead.
+                    const clientError = new Error(error.message) as Error & {
+                        data?: { code: string; definitive: boolean };
+                    };
+                    clientError.data = { code: error.code, definitive };
+                    next(clientError);
+                    return;
                 }
+
+                const errorObj = error instanceof Error ? error : new Error(String(error));
+                this.logger.error("Unexpected authentication error", {
+                    socketId: socket.id,
+                    ip: socket.handshake.address,
+                    error: errorObj,
+                });
 
                 this.metrics.errorsCount++;
                 next(new Error(error instanceof Error ? error.message : "Authentication failed"));

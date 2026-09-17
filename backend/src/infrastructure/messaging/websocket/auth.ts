@@ -5,6 +5,22 @@ import { WebSocketClient, IAuthService, ILogger } from "../../../interfaces/webs
 import { WebSocketError, WebSocketErrorCode } from "./types";
 
 /**
+ * Auth failure codes that cannot be resolved by retrying the same handshake:
+ * - missing token (user not logged in)
+ * - invalid/expired access token (requires HTTP-layer refresh or re-login)
+ * - unknown user (deleted/deactivated account)
+ * Only INTERNAL_ERROR (unexpected backend failure) is considered transient.
+ */
+export function isDefinitiveWsAuthCode(code: WebSocketErrorCode): boolean {
+    return (
+        code === WebSocketErrorCode.AUTHENTICATION_FAILED ||
+        code === WebSocketErrorCode.INVALID_TOKEN ||
+        code === WebSocketErrorCode.USER_NOT_FOUND
+    );
+}
+
+
+/**
  * WebSocket Authentication Middleware
  * Handles JWT authentication and user verification for WebSocket connections
  */
