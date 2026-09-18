@@ -3,7 +3,7 @@
 **Automated Perpetual Futures Trading Platform**
 
 [![License: Apache](https://img.shields.io/badge/License-Apache-yellow.svg)](LICENSE)
-[![Node Version](https://img.shields.io/badge/node-%3E%3D25.0.0-brightgreen)](package.json)
+[![Node Version](https://img.shields.io/badge/node-%3E%3D24.15.0-brightgreen)](package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](tsconfig.json)
 
 ---
@@ -48,7 +48,7 @@ BASIC ──connect wallet + sign message──▶ REGISTERED ──verify excha
 ## Quick Start
 
 ### Prerequisites
-- Node.js ≥ 25.0.9
+- Node.js ≥ 24.15.0 (LTS "Krypton" line; see `.nvmrc`)
 - PostgreSQL 14+
 - Redis 5.0+
 
