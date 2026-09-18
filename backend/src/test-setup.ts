@@ -33,7 +33,7 @@ if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
             // Initialize database pool for tests with test-specific configuration
             initializePool();
 
-        } catch (error) {
+        } catch (_error) {
             // Don't throw here as tests may skip DB operations
         }
     });
@@ -82,7 +82,7 @@ if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
             // Final cleanup for any remaining resources
             await finalCleanup();
 
-        } catch (error) {
+        } catch (_error) {
             // Don't throw here as it might interfere with test results
         }
     });
@@ -155,24 +155,28 @@ async function cleanupAdditionalServices(): Promise<void> {
             logger.debug('Attempting forceful interval cleanup...');
 
             // Force clear all intervals (this is aggressive but necessary for tests)
-            const timers = require('timers');
-            const intervalIds = (timers as any)._getActiveIds ? (timers as any)._getActiveIds() : [];
-            intervalIds.forEach((id: any) => {
+            // Note: timers._getActiveIds() is a no-op probe — returns [] on
+            // stock Node, so the loops below are inert unless the runtime
+            // exposes that internal. Kept as a defensive hook.
+            const timers = await import('timers');
+            const intervalIds: unknown[] = (timers as unknown as { _getActiveIds?: () => unknown[] })._getActiveIds
+                ? (timers as unknown as { _getActiveIds: () => unknown[] })._getActiveIds()
+                : [];
+            intervalIds.forEach((id: unknown) => {
                 try {
-                    clearInterval(id);
-                    logger.debug(`Cleared interval: ${id}`);
-                } catch (error) {
+                    clearInterval(id as NodeJS.Timeout);
+                    logger.debug(`Cleared interval: ${String(id)}`);
+                } catch (_error) {
                     // Ignore errors when clearing intervals
                 }
             });
 
             // Also clear all timeouts
-            const timeoutIds = (timers as any)._getActiveIds ? (timers as any)._getActiveIds() : [];
-            timeoutIds.forEach((id: any) => {
+            intervalIds.forEach((id: unknown) => {
                 try {
-                    clearTimeout(id);
-                    logger.debug(`Cleared timeout: ${id}`);
-                } catch (error) {
+                    clearTimeout(id as NodeJS.Timeout);
+                    logger.debug(`Cleared timeout: ${String(id)}`);
+                } catch (_error) {
                     // Ignore errors when clearing timeouts
                 }
             });
@@ -191,13 +195,11 @@ async function cleanupAdditionalServices(): Promise<void> {
  */
 async function finalCleanup(): Promise<void> {
     try {
-        // Force cleanup of any remaining intervals and timeouts
-        const timers = global as any;
-        if (timers && timers.clearInterval && timers.clearTimeout) {
-            // Clear any remaining intervals (this is a bit aggressive but necessary for tests)
-            const originalClearInterval = timers.clearInterval;
-            const originalClearTimeout = timers.clearTimeout;
-
+        // Defensive no-op probe: touch the globals so a missing/broken
+        // timer global surfaces here, then rely on GC if exposed.
+        // (There is no enumeration of live timers on stock Node —
+        // per-handle cleanup happens in the service-specific cleaners.)
+        if (typeof globalThis.clearInterval === 'function' && typeof globalThis.clearTimeout === 'function') {
             // Get all active timers (this is a Node.js internal, use with caution)
             if (global.gc) {
                 global.gc(); // Force garbage collection if available
@@ -213,7 +215,7 @@ async function finalCleanup(): Promise<void> {
         // Cleanup any remaining Redis connections
         await cleanupRedisConnections();
 
-    } catch (error) {
+    } catch (_error) {
         // Don't throw here as it might interfere with test results
     }
 }
@@ -223,8 +225,9 @@ async function finalCleanup(): Promise<void> {
  */
 async function cleanupWebSocketConnections(): Promise<void> {
     try {
-        // Import WebSocket service if available
-        const { WebSocketService } = await import('./infrastructure/messaging/websocket.service');
+        // Touch the module so a broken websocket service surfaces here;
+        // instances are tracked via globals (the class itself holds none).
+        await import('./infrastructure/messaging/websocket.service');
 
         // Note: WebSocketService is a class, not an instance
         // We need to find any instantiated WebSocket services and clean them up
@@ -259,15 +262,12 @@ async function cleanupWebSocketConnections(): Promise<void> {
  */
 async function cleanupDatabaseConnections(): Promise<void> {
     try {
-        // Force cleanup of database pool
+        // Force cleanup of database pool (the pool module owns the live
+        // handles; there is no direct instance to reach from here).
         await cleanupDatabasePool();
 
-        // Cleanup any remaining PostgreSQL client connections
-        const { Pool } = await import('pg');
-        // Note: We can't directly access the pool instance here, but the cleanupForTests should handle it
-
-    } catch (error) {
-        logger.error('❌ Error cleaning up database connections:', error as Error);
+    } catch (_error) {
+        logger.error('❌ Error cleaning up database connections:', _error as Error);
     }
 }
 
@@ -289,8 +289,8 @@ async function cleanupRedisConnections(): Promise<void> {
                 if (client && typeof client.disconnect === 'function') {
                     try {
                         await client.disconnect();
-                    } catch (error) {
-                        console.warn('Warning: Failed to disconnect Redis client:', error);
+                    } catch (_error) {
+                        console.warn('Warning: Failed to disconnect Redis client:', _error);
                     }
                 }
             }
@@ -304,8 +304,8 @@ async function cleanupRedisConnections(): Promise<void> {
                 if (client && typeof client.end === 'function') {
                     try {
                         await client.end();
-                    } catch (error) {
-                        console.warn('Warning: Failed to end database client:', error);
+                    } catch (_error) {
+                        console.warn('Warning: Failed to end database client:', _error);
                     }
                 }
             }
@@ -322,9 +322,9 @@ async function cleanupRedisConnections(): Promise<void> {
  */
 async function cleanupRemainingResources(): Promise<void> {
     try {
-        // Cleanup any remaining timers
-        const timers = global as any;
-        if (timers && timers.clearInterval && timers.clearTimeout) {
+        // Defensive no-op probe (see finalCleanup): no live-timer
+        // enumeration on stock Node; GC if exposed.
+        if (typeof globalThis.clearInterval === 'function' && typeof globalThis.clearTimeout === 'function') {
             // Force cleanup of any remaining timers
             if (global.gc) {
                 global.gc(); // Force garbage collection
@@ -338,7 +338,7 @@ async function cleanupRemainingResources(): Promise<void> {
             eventsToRemove.forEach(event => {
                 try {
                     process.removeAllListeners(event);
-                } catch (error) {
+                } catch (_error) {
                     // Ignore errors during cleanup
                 }
             });
@@ -355,7 +355,7 @@ async function cleanupRemainingResources(): Promise<void> {
             global.dbClients = [];
         }
 
-    } catch (error) {
+    } catch (_error) {
         // Don't throw here as it might interfere with test results
     }
 }
