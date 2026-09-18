@@ -48,7 +48,7 @@
     "format:check:shared": "cd shared && npm run format:check"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.5",
     "prettier": "^3.4.2"
   },
   "engines": {
