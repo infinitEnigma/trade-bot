@@ -62,5 +62,14 @@
     "bot"
   ],
   "author": "infinitEnigma",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "allowScripts": {
+    "@parcel/watcher@2.6.0": true,
+    "esbuild@0.27.2": true,
+    "msw@2.15.0": true,
+    "unrs-resolver@1.12.2": true
+  },
+  "overrides": {
+    "@types/node": "~24.13.5"
+  }
 }

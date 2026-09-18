@@ -423,7 +423,7 @@ describe('Application Entry Point (index.ts)', () => {
             contextLogger.error = jest.fn();
 
             const testReason = new Error('Test unhandled rejection');
-            process.emit('unhandledRejection', testReason);
+            process.emit('unhandledRejection', testReason, Promise.resolve(testReason));
 
             expect(contextLogger.error).toHaveBeenCalledWith(
                 expect.stringContaining('Unhandled promise rejection'),
