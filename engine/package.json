@@ -16,20 +16,20 @@
   "dependencies": {
     "@noble/ed25519": "^3.0.0",
     "@noble/hashes": "^2.0.1",
-    "@trade-bot/shared": "^1.0.0",
+    "@trade-bot/shared": "file:../shared",
     "axios": "^1.13.2",
     "bs58": "^6.0.0",
-    "dotenv": "^17.2.3",
+    "dotenv": "^18.0.0",
     "node-cron": "^4.2.1",
     "pg": "^8.17.0",
     "redis": "^5.10.0",
-    "uuid": "^13.0.0",
+    "uuid": "^14.0.2",
     "winston": "^3.19.0",
-    "ws": "^8.19.0"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^25.0.9",
+    "@types/node": "^24.13.5",
     "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.16.0",
     "@types/ws": "^8.18.1",
@@ -42,6 +42,6 @@
     "typescript": "^5.9.3"
   },
   "engines": {
-    "node": ">=25.0.9"
+    "node": "^24.15.0"
   }
 }

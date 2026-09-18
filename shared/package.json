@@ -24,7 +24,7 @@
     "types"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": "^24.15.0"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.53.0",
