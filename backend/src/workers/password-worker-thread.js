@@ -154,7 +154,7 @@ parentPort.on('message', async (message) => {
         parentPort.postMessage({
           id,
           success: false,
-          error: 'Unknown action: ' + action,
+          error: `Unknown action: ${  action}`,
           timestamp: Date.now()
         });
     }

@@ -271,7 +271,7 @@ export class PositionSyncService {
      */
     async syncAllUserPositions(): Promise<{ totalUsers: number; successfulSyncs: number; errors: string[] }> {
         const errors: string[] = [];
-        let successfulSyncs = 0;
+        const successfulSyncs = 0;
 
         try {
             // For now, we'll return a default response since we don't have the method

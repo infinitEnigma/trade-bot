@@ -13,13 +13,12 @@ import { encryptionService } from "../../infrastructure/security";
 import { contextLogger } from "../../core/logging/context-aware-logger.service";
 import { UserLevel, KodiakConnectionRequest } from "@trade-bot/shared";
 
-// Get authService when needed to support proper mocking in tests
-const getAuthService = (): AuthService =>
-  (
-    require("../../infrastructure/dependency-injection.container") as {
-      diContainer: { authService: AuthService };
-    }
-  ).diContainer.authService;
+// Get authService when needed to support proper mocking in tests.
+// Lazy import (not top-level) to dodge the circular DI import.
+async function getAuthService(): Promise<AuthService> {
+    const { diContainer } = await import('../../infrastructure/dependency-injection.container');
+    return diContainer.authService;
+}
 
 export type KodiakConnectionData = KodiakConnectionRequest;
 
@@ -55,7 +54,7 @@ export class KodiakConnectionService {
 
             // Wallet-first flow: only REGISTERED users (wallet linked) may
             // submit Kodiak credentials
-            const requestingUser = await getAuthService().getUserById(userId);
+            const requestingUser = await (await getAuthService()).getUserById(userId);
             if (!requestingUser) {
                 return {
                     success: false,
@@ -126,7 +125,7 @@ export class KodiakConnectionService {
             await this.updateUserLevel(userId, UserLevel.VERIFIED);
 
             // Invalidate cached user data so frontend gets updated level immediately
-            await getAuthService().invalidateUserDataCache(userId);
+            await (await getAuthService()).invalidateUserDataCache(userId);
 
             // Log successful connection
             await this.logConnectionEvent(userId, connectionData.accountId, true);
@@ -173,7 +172,7 @@ export class KodiakConnectionService {
             await this.updateUserLevelForDisconnect(userId);
 
             // Invalidate cached user data so frontend gets updated level immediately
-            await getAuthService().invalidateUserDataCache(userId);
+            await (await getAuthService()).invalidateUserDataCache(userId);
 
             // Log disconnection
             await this.logConnectionEvent(userId, null, false);
@@ -349,7 +348,7 @@ export class KodiakConnectionService {
     private async updateUserLevel(userId: string, newLevel: UserLevel): Promise<void> {
         try {
             // Get current user level first
-            const user = await getAuthService().getUserById(userId);
+            const user = await (await getAuthService()).getUserById(userId);
             if (!user) {
                 throw new Error("User not found");
             }
@@ -365,7 +364,7 @@ export class KodiakConnectionService {
                 throw new Error(`Invalid user level transition from ${user.userLevel} to ${newLevel}`);
             }
 
-            await getAuthService().updateUserLevel(userId, newLevel);
+            await (await getAuthService()).updateUserLevel(userId, newLevel);
             contextLogger.info(`User level updated from ${user.userLevel} to ${newLevel}`, { userId });
         } catch (error) {
             contextLogger.error("Failed to update user level", error instanceof Error ? error : new Error(String(error)), {
@@ -383,13 +382,13 @@ export class KodiakConnectionService {
      */
     private async updateUserLevelForDisconnect(userId: string): Promise<void> {
         try {
-            const user = await getAuthService().getUserById(userId);
+            const user = await (await getAuthService()).getUserById(userId);
             if (!user) {
                 throw new Error("User not found");
             }
 
             if (user.userLevel === UserLevel.VERIFIED) {
-                await getAuthService().updateUserLevel(userId, UserLevel.REGISTERED);
+                await (await getAuthService()).updateUserLevel(userId, UserLevel.REGISTERED);
                 contextLogger.info("User level downgraded to REGISTERED after Kodiak disconnection", { userId });
                 return;
             }
@@ -397,7 +396,7 @@ export class KodiakConnectionService {
             if (user.userLevel === UserLevel.REGISTERED) {
                 const walletAddress = await this.getLinkedWalletAddress(userId);
                 const targetLevel = walletAddress ? UserLevel.REGISTERED : UserLevel.BASIC;
-                await getAuthService().updateUserLevel(userId, targetLevel);
+                await (await getAuthService()).updateUserLevel(userId, targetLevel);
                 contextLogger.info(`User level ${targetLevel} after Kodiak disconnection`, { userId });
             }
         } catch (error) {

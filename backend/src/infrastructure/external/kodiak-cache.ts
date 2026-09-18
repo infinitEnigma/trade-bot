@@ -276,7 +276,7 @@ export class KodiakCache<T = unknown> {
             logger.debug("Checking entry for eviction", {
                 key,
                 lastAccessed: entry.lastAccessed,
-                oldestAccess: oldestAccess
+                oldestAccess
             });
             if (entry.lastAccessed < oldestAccess) {
                 oldestAccess = entry.lastAccessed;

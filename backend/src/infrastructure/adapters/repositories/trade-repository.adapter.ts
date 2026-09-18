@@ -203,10 +203,10 @@ export class TradeRepositoryAdapter implements ITradeRepository {
                 orderId: row.order_id,
                 symbol: row.symbol,
                 side: row.side,
-                quantity: quantity,
-                price: price,
-                fee: fee,
-                pnl: pnl,
+                quantity,
+                price,
+                fee,
+                pnl,
                 status: OrderStatus.FILLED,
                 executedAt: new Date(row.executed_at)
             };

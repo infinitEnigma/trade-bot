@@ -6,7 +6,6 @@
  */
 
 import { userLogger } from "../../core/logging";
-import type { AuthService } from "../auth/auth.service.pure";
 import { ICacheService, IPasswordService, IUserRepository, IAuditLogRepository } from "@trade-bot/shared";
 
 export interface ProfileUpdateData {
@@ -147,11 +146,10 @@ export class UserProfileService {
                 walletAddress
             });
 
-            const authService = (
-                require("../../infrastructure/dependency-injection.container") as {
-                    diContainer: { authService: { verifyWalletOwnership: Function } };
-                }
-            ).diContainer.authService;
+            // Lazy import (not top-level) to dodge the circular DI import,
+            // resolved at call time so tests can re-mock the container.
+            const { diContainer } = await import('../../infrastructure/dependency-injection.container');
+            const authService = diContainer.authService;
             const result = await authService.verifyWalletOwnership(
                 userId,
                 walletAddress,

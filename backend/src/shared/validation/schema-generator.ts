@@ -171,7 +171,7 @@ export class SchemaGenerator {
 
             case 'DECIMAL':
             case 'NUMERIC': {
-                let numberSchema = Joi.number();
+                const numberSchema = Joi.number();
                 if (precision !== undefined) {
                     if (scale !== undefined && scale > 0) {
                         // For decimal places, create strict validation for both number and string
@@ -186,7 +186,7 @@ export class SchemaGenerator {
                                 if (decimalPart.length > scale) {
                                     return helpers.error('number.precision', {
                                         limit: scale,
-                                        value: value,
+                                        value,
                                         label: helpers.state.path ? helpers.state.path.join('.') : 'value'
                                     });
                                 }

@@ -259,7 +259,7 @@ export class BlockchainService {
             const result: TokenBalance = {
                 address: walletAddress,
                 tokenAddress,
-                tokenSymbol: tokenSymbol,
+                tokenSymbol,
                 tokenBalance: balance.toString(),
                 tokenBalanceFormatted: balanceFormatted,
                 decimals: tokenDecimals,
