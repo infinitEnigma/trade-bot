@@ -7,12 +7,12 @@
  * @format
  */
 
-import { BotActualState, BotCommand, StartBotCommandPayload, StopBotCommandPayload } from '@trade-bot/shared';
+import { BotActualState } from '@trade-bot/shared';
 import { GridTradingStrategy } from '../strategies/grid';
-import { createOrderlyClient, OrderlyClient } from '../exchanges/kodiak/client';
+import { createOrderlyClient } from '../exchanges/kodiak/client';
 import { RedisStreamOperations } from '../infrastructure/redis/streams';
 import { logger } from '../utils/logger';
-import { BotRuntime, FetchCredentialsResult, EngineIdentity } from '../domain/bot-runtime';
+import { BotRuntime, EngineIdentity } from '../domain/bot-runtime';
 import { publishEvent, publishAccepted, publishFailed } from '../protocol/event-publisher';
 import { fetchCredentials } from '../protocol/credential-fetcher';
 import { CommandError } from './command-error';

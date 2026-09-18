@@ -9,7 +9,6 @@
  */
 
 import {
-    BotEvent,
     BotEventType,
     BotActualState,
     createBotEvent,

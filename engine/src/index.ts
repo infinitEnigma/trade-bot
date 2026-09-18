@@ -34,8 +34,8 @@ async function main(): Promise<void> {
         // Create bot manager
         activeBotManager = new BotManager(identity);
 
-        // Start heartbeat
-        const stopHeartbeat = startHeartbeat(
+        // Start heartbeat (stop function reserved for shutdown wiring)
+        startHeartbeat(
             streamOps,
             identity.engineId,
             identity.epoch,

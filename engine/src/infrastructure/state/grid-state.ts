@@ -22,7 +22,7 @@ export function getSnapshotDir(): string {
 }
 
 function snapshotFile(botId: string): string {
-    return path.join(getSnapshotDir(), botId + '.json');
+    return path.join(getSnapshotDir(), `${botId  }.json`);
 }
 
 /**

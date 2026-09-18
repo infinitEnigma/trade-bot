@@ -4,14 +4,6 @@ import {
     EngineCommand,
     EngineEvent,
     ProtocolMessage,
-    isEngineCommand,
-    isEngineEvent,
-    isStartEngineCommand,
-    isStopEngineCommand,
-    isStartBotCommand,
-    isStopBotCommand,
-    isEmergencyStopCommand,
-    isUpdateStrategyConfigCommand
 } from '@trade-bot/shared';
 
 // Stream names (lifecycle control plane - see shared/src/protocol)
@@ -232,8 +224,7 @@ export class RedisStreamOperations {
      */
     async trim(stream: string, maxLength: number, approximate: boolean = true): Promise<{ success: boolean; trimmedCount?: number; error?: string }> {
         try {
-            // @ts-ignore - Redis XTRIM API type issue
-            const trimmedCount = await this.client.xTrim(stream, 'MAXLEN', approximate ? '~' + maxLength : maxLength);
+            const trimmedCount = await this.client.xTrim(stream, 'MAXLEN', approximate ? `~${  maxLength}` : maxLength);
 
             logger.debug('Stream trimmed', { stream, maxLength, trimmedCount });
             return { success: true, trimmedCount };

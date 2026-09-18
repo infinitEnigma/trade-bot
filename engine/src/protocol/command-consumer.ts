@@ -177,7 +177,7 @@ async function checkPendingInsight(streamOps: RedisStreamOperations): Promise<vo
         if (insight.poisonIds.length > 0) {
             logger.warn('Poison commands detected', { poisonIds: insight.poisonIds });
         }
-    } catch (error) {
+    } catch (_error) {
         logger.debug('Pending insight check failed');
     }
 }

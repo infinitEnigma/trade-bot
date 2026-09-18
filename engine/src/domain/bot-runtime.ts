@@ -7,7 +7,7 @@
  * @format
  */
 
-import { BotActualState, BotCommand } from '@trade-bot/shared';
+import { BotActualState } from '@trade-bot/shared';
 import { GridTradingStrategy } from '../strategies/grid';
 import { OrderlyClient } from '../exchanges/kodiak/client';
 
