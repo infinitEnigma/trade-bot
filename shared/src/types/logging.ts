@@ -314,7 +314,7 @@ export function parseStackTrace(stack?: string): StackFrame[] {
                 if (frame) {
                     frames.push(frame);
                 }
-            } catch (error) {
+            } catch (_error) {
                 // Skip malformed stack lines
                 continue;
             }
@@ -654,6 +654,6 @@ export function createEnhancedErrorInfo(error: Error, options?: {
         isOperational: options?.isOperational,
         timestamp: Date.now(),
         context: options?.context,
-        stackFrames: stackFrames,
+        stackFrames,
     };
 }
