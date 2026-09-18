@@ -328,11 +328,9 @@ export class PositionSyncService {
             }
 
             // Check for stale data (older than 5 minutes)
-            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-            const stalePositions = dbPositions.filter(p => {
-                // Since Position domain model doesn't have lastUpdated, we'll skip this check for now
-                return false;
-            });
+            // NOTE: Position domain model has no lastUpdated field, so this
+            // check is skipped until the model gains one.
+            const stalePositions: typeof dbPositions = [];
             if (stalePositions.length > 0) {
                 issues.push(`${stalePositions.length} positions are stale (>5 minutes old)`);
             }

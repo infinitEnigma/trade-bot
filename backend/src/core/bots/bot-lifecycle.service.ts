@@ -21,7 +21,7 @@
  * @format
  */
 
-import { assertTransition, BotActualState, BotDesiredState, BotEvent } from "@trade-bot/shared";
+import { assertTransition, BotEvent } from "@trade-bot/shared";
 import { contextLogger as logger } from "../logging";
 import { EngineProtocolService, engineProtocolService } from "./engine-protocol.service";
 import { BotCommandDispatcher } from "./lifecycle/bot-command-dispatcher";

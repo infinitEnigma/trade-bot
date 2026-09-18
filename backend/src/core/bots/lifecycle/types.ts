@@ -100,7 +100,7 @@ export function getTimeoutReason(commandType: string, botState: BotActualState):
 /**
  * Determine the target state for a timed-out command based on the timeout reason.
  */
-export function getTimeoutTargetState(reason: TimeoutReason, commandType: string): BotActualState {
+export function getTimeoutTargetState(reason: TimeoutReason, _commandType: string): BotActualState {
     switch (reason) {
         case TimeoutReason.STATE_MISMATCH:
             // Bot is in an unexpected state - mark as UNKNOWN for reconciliation

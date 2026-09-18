@@ -17,7 +17,7 @@
 
 import { userLogger } from "../../core/logging";
 import { KodiakConnectionData, KodiakConnectionResult, KodiakConnectionStatus } from "../../infrastructure/external/kodiak-connection.service";
-import { ICacheService, UserLevel, KodiakCredentials, KodiakConnectionRequest } from "@trade-bot/shared";
+import { UserLevel, KodiakCredentials, KodiakConnectionRequest } from "@trade-bot/shared";
 
 // Simple in-memory cache for Kodiak status
 interface KodiakStatusCache {

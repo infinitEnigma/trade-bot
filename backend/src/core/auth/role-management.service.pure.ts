@@ -6,7 +6,6 @@ import {
     RoleDetails,
     UserRoleAssignment,
     RoleHierarchy,
-    RoleQualificationResult,
     IRoleQualificationService
 } from '@trade-bot/shared';
 import { IRoleRepository, IAuditLogger, ICacheService, ILogger } from '@trade-bot/shared';

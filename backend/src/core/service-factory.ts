@@ -31,7 +31,6 @@ import { HealthService } from './system/health.service.pure';
 import { PositionValidatorService } from './strategies/position-validator.service.pure';
 import { PositionSyncService } from './strategies/position-sync.service.pure';
 import { EngineManager } from './strategies/engine-manager.service.pure';
-import { IPasswordService, IUserRepository } from '@trade-bot/shared';
 import { kodiakConnectionService } from '../infrastructure/external/kodiak-connection.service';
 import { connectionCache } from '../infrastructure/cache/connection-cache.service';
 import { contextLogger } from './logging';
