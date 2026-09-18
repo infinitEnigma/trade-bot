@@ -171,8 +171,8 @@ class PasswordWorkerPool extends EventEmitter {
             this.handleWorkerError(worker, error as Error);
         });
 
-        worker.on('exit', (code, signal) => {
-            logger.warn('Password worker exited', { code, signal });
+        worker.on('exit', (code) => {
+            logger.warn('Password worker exited', { code });
             this.handleWorkerExit(worker, code);
         });
 
