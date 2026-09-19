@@ -113,7 +113,7 @@ export class KodiakRequestQueue {
         // Initialize queue only when first request is received
         this.initialize();
 
-        const userId = (req as AuthenticatedRequest).user?.userId || 'anonymous';
+    const userId = (req as AuthenticatedRequest).user?.userId || "anonymous";
         const endpoint = this.getEndpointType(req.path);
 
         // Check queue size limits
@@ -146,7 +146,9 @@ export class KodiakRequestQueue {
         };
 
         // Insert with priority (lower number = higher priority)
-        const insertIndex = this.queue.findIndex(item => item.priority > queuedRequest.priority);
+    const insertIndex = this.queue.findIndex(
+      item => item.priority > queuedRequest.priority
+    );
         if (insertIndex === -1) {
             this.queue.push(queuedRequest);
         } else {
@@ -177,7 +179,7 @@ export class KodiakRequestQueue {
 
         this.processing = true;
         logger.debug("Started Kodiak request queue processing", {
-            queueSize: this.queue.length
+      queueSize: this.queue.length,
         });
 
         try {
@@ -231,12 +233,15 @@ export class KodiakRequestQueue {
                         // Reset interval if successful
                         this.config.minIntervalMs = 4000; // Reset to base interval
                     }
-
                 } catch (error) {
-                    logger.error("Error processing queued Kodiak request", error as Error, {
+          logger.error(
+            "Error processing queued Kodiak request",
+            error as Error,
+            {
                         requestId: nextRequest.id,
                         userId: nextRequest.userId,
-                    });
+            }
+          );
                 }
             }
         } finally {
@@ -248,12 +253,12 @@ export class KodiakRequestQueue {
     /**
      * Get endpoint type for priority assignment
      */
-    private getEndpointType(path: string): keyof QueueConfig['priorityLevels'] {
-        if (path.includes('/account-info')) return 'accountInfo';
-        if (path.includes('/positions')) return 'positions';
-        if (path.includes('/trades')) return 'trades';
-        if (path.includes('/balance')) return 'balance';
-        return 'accountInfo'; // Default to highest priority
+  private getEndpointType(path: string): keyof QueueConfig["priorityLevels"] {
+    if (path.includes("/account-info")) return "accountInfo";
+    if (path.includes("/positions")) return "positions";
+    if (path.includes("/trades")) return "trades";
+    if (path.includes("/balance")) return "balance";
+    return "accountInfo"; // Default to highest priority
     }
 
     /**

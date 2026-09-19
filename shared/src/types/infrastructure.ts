@@ -11,9 +11,9 @@
 // DOMAIN TYPE IMPORTS (from main index)
 // ===========================================
 
-import { Balance, Position } from './domain';
-import { Trade } from '../index';
-import { BotActualState } from '../protocol/bot-state';
+import { Balance, Position } from "./domain";
+import { Trade } from "../index";
+import { BotActualState } from "../protocol/bot-state";
 
 // ===========================================
 // CACHE INFRASTRUCTURE
@@ -28,7 +28,11 @@ export interface ICacheService {
     /**
      * Set a value in cache with optional TTL
      */
-    set<T>(key: string, value: T, ttlSeconds?: number): Promise<CacheResult<boolean>>;
+  set<T>(
+    key: string,
+    value: T,
+    ttlSeconds?: number
+  ): Promise<CacheResult<boolean>>;
 
     /**
      * Delete a value from cache
@@ -43,7 +47,11 @@ export interface ICacheService {
     /**
      * Set a value with TTL (convenience method)
      */
-    setex<T>(key: string, ttlSeconds: number, value: T): Promise<CacheResult<boolean>>;
+  setex<T>(
+    key: string,
+    ttlSeconds: number,
+    value: T
+  ): Promise<CacheResult<boolean>>;
 
     /**
      * Get multiple values by keys
@@ -53,7 +61,10 @@ export interface ICacheService {
     /**
      * Set multiple values
      */
-    mset<T>(keyValues: Record<string, T>, ttlSeconds?: number): Promise<CacheResult<boolean>>;
+  mset<T>(
+    keyValues: Record<string, T>,
+    ttlSeconds?: number
+  ): Promise<CacheResult<boolean>>;
 
     /**
      * Atomic conditional update - only set if key doesn't exist or matches expected value
@@ -99,7 +110,9 @@ export interface IExternalApiService {
     /**
      * Test connectivity to external API
      */
-    testConnectivity(credentials: ExternalCredentials): Promise<ApiResult<boolean>>;
+  testConnectivity(
+    credentials: ExternalCredentials
+  ): Promise<ApiResult<boolean>>;
 
     /**
      * Invalidate cached data for a user
@@ -114,12 +127,19 @@ export interface IExternalApiService {
     /**
      * Check NFT ownership
      */
-    checkNFTOwnership(walletAddress: string, contractAddress: string): Promise<boolean>;
+  checkNFTOwnership(
+    walletAddress: string,
+    contractAddress: string
+  ): Promise<boolean>;
 
     /**
      * Check token balance
      */
-    checkTokenBalance(walletAddress: string, tokenAddress: string, minAmount: bigint): Promise<boolean>;
+  checkTokenBalance(
+    walletAddress: string,
+    tokenAddress: string,
+    minAmount: bigint
+  ): Promise<boolean>;
 }
 
 export interface ApiResult<T = unknown> {
@@ -142,17 +162,28 @@ export interface IHttpClient {
     /**
      * Make a POST request
      */
-    post<T = unknown>(url: string, data?: unknown, config?: HttpConfig): Promise<HttpResponse<T>>;
+  post<T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: HttpConfig
+  ): Promise<HttpResponse<T>>;
 
     /**
      * Make a PUT request
      */
-    put<T = unknown>(url: string, data?: unknown, config?: HttpConfig): Promise<HttpResponse<T>>;
+  put<T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: HttpConfig
+  ): Promise<HttpResponse<T>>;
 
     /**
      * Make a DELETE request
      */
-    delete<T = unknown>(url: string, config?: HttpConfig): Promise<HttpResponse<T>>;
+  delete<T = unknown>(
+    url: string,
+    config?: HttpConfig
+  ): Promise<HttpResponse<T>>;
 }
 
 export interface HttpConfig {
@@ -285,7 +316,10 @@ export interface ITokenService {
      * @param authService - Auth service instance to check user existence
      * @returns TokenPayload if valid and user exists, null otherwise
      */
-    verifyTokenWithDatabaseValidation(token: string, authService: any): Promise<TokenPayload | null>;
+  verifyTokenWithDatabaseValidation(
+    token: string,
+    authService: any
+  ): Promise<TokenPayload | null>;
 
     /**
      * Hash token for storage (not for security, just for key length)
@@ -340,17 +374,26 @@ export interface IBotStatusService {
     /**
      * Start a bot instance
      */
-    startBot(botId: string, userId: string): Promise<{ success: boolean; error?: string }>;
+  startBot(
+    botId: string,
+    userId: string
+  ): Promise<{ success: boolean; error?: string }>;
 
     /**
      * Stop a bot instance
      */
-    stopBot(botId: string, userId: string): Promise<{ success: boolean; error?: string }>;
+  stopBot(
+    botId: string,
+    userId: string
+  ): Promise<{ success: boolean; error?: string }>;
 
     /**
      * Get comprehensive bot status information
      */
-    getBotStatusInfo(botId: string, userId: string): Promise<{
+  getBotStatusInfo(
+    botId: string,
+    userId: string
+  ): Promise<{
         status: BotActualState;
         lastHeartbeat?: number;
         errorMessage?: string;
@@ -364,22 +407,28 @@ export interface IBotStatusService {
     /**
      * Send heartbeat for bot health monitoring
      */
-    sendBotHeartbeat(botId: string, statusInfo?: {
+  sendBotHeartbeat(
+    botId: string,
+    statusInfo?: {
         timestamp?: number;
         memoryUsage?: number;
         cpuUsage?: number;
         [key: string]: unknown;
-    }): Promise<{ success: boolean; error?: string }>;
+    }
+  ): Promise<{ success: boolean; error?: string }>;
 
     /**
      * Validate bot status and perform reconciliation
      */
-    validateBotStatus(botData: {
+  validateBotStatus(
+    botData: {
         id: string;
         status: string;
         lastHeartbeat?: number;
         [key: string]: unknown;
-    }, currentTime: number): Promise<{
+    },
+    currentTime: number
+  ): Promise<{
         updatedStatus: string;
         errorMessage: string | null;
         isStale: boolean;
@@ -409,7 +458,11 @@ export interface ISignatureVerificationService {
      * @param message - The message that was signed
      * @returns Promise<boolean> - True if the signature is valid, false otherwise
      */
-    verifySignature(walletAddress: string, signature: string, message: string): Promise<boolean>;
+  verifySignature(
+    walletAddress: string,
+    signature: string,
+    message: string
+  ): Promise<boolean>;
 }
 
 // ===========================================
@@ -420,20 +473,26 @@ export interface IBotPerformanceService {
     /**
      * Record trade execution for performance tracking
      */
-    recordTrade(botId: string, tradeData: {
+  recordTrade(
+    botId: string,
+    tradeData: {
         symbol: string;
-        side: 'BUY' | 'SELL';
+      side: "BUY" | "SELL";
         quantity: number;
         price: number;
         pnl: number;
         fee: number;
         timestamp: number;
-    }): Promise<void>;
+    }
+  ): Promise<void>;
 
     /**
      * Get bot performance metrics
      */
-    getBotPerformance(botId: string, timeframe: '1h' | '24h' | '7d' | '30d'): Promise<{
+  getBotPerformance(
+    botId: string,
+    timeframe: "1h" | "24h" | "7d" | "30d"
+  ): Promise<{
         totalTrades: number;
         totalVolume: number;
         totalPnl: number;
@@ -466,9 +525,9 @@ export interface IBotPerformanceService {
     }>;
 }
 
-import { UserLevel } from '../index';
+import { UserLevel } from "../index";
 
-export type TokenType = 'access' | 'refresh';
+export type TokenType = "access" | "refresh";
 
 export interface TokenPayload {
     userId: string;
@@ -488,7 +547,10 @@ export interface IDatabaseConnection {
     /**
      * Execute a query
      */
-    query<T = unknown>(sql: string, params?: unknown[]): Promise<DatabaseResult<T>>;
+  query<T = unknown>(
+    sql: string,
+    params?: unknown[]
+  ): Promise<DatabaseResult<T>>;
 }
 
 export interface DatabaseField {

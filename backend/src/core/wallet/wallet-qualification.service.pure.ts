@@ -12,7 +12,11 @@
  * @format
  */
 
-import { IUserRepository, IExternalApiService, ILogger } from '@trade-bot/shared';
+import {
+  IUserRepository,
+  IExternalApiService,
+  ILogger,
+} from "@trade-bot/shared";
 
 // Qualification criteria configuration
 export const ALPHA_QUALIFICATION_CONFIG = {
@@ -20,20 +24,26 @@ export const ALPHA_QUALIFICATION_CONFIG = {
     requirements: [
         // NFT ownership requirement
         {
-            type: 'nft' as const,
-            contractAddress: process.env.ALPHA_NFT_CONTRACT || '0x1234567890123456789012345678901234567890',
-            name: 'TradeBot Alpha Tester NFT'
+      type: "nft" as const,
+      contractAddress:
+        process.env.ALPHA_NFT_CONTRACT ||
+        "0x1234567890123456789012345678901234567890",
+      name: "TradeBot Alpha Tester NFT",
         },
         // Token balance requirement
         {
-            type: 'token' as const,
-            contractAddress: process.env.ALPHA_TOKEN_CONTRACT || '0x0987654321098765432109876543210987654321',
-            minAmount: BigInt(process.env.ALPHA_MIN_TOKEN_AMOUNT || '1000000000000000000'), // 1 token in wei
-            name: 'TradeBot Alpha Test Token'
-        }
+      type: "token" as const,
+      contractAddress:
+        process.env.ALPHA_TOKEN_CONTRACT ||
+        "0x0987654321098765432109876543210987654321",
+      minAmount: BigInt(
+        process.env.ALPHA_MIN_TOKEN_AMOUNT || "1000000000000000000"
+      ), // 1 token in wei
+      name: "TradeBot Alpha Test Token",
+    },
     ],
     // Logic: 'AND' requires all criteria, 'OR' requires any one
-    logic: 'OR' as 'AND' | 'OR'
+  logic: "OR" as "AND" | "OR",
 };
 
 export interface QualificationResult {
@@ -47,17 +57,18 @@ export interface QualificationResult {
     reasons: string[];
 }
 
-export type QualificationStatus = 'pending' | 'qualified' | 'disqualified' | 'expired';
+export type QualificationStatus =
+  "pending" | "qualified" | "disqualified" | "expired";
 
 export interface WalletRequirements {
     chainId: number;
     requirements: Array<{
-        type: 'nft' | 'token';
+    type: "nft" | "token";
         contractAddress: string;
         name: string;
         minAmount?: bigint;
     }>;
-    logic: 'AND' | 'OR';
+  logic: "AND" | "OR";
 }
 
 export interface WalletQualificationServiceDependencies {
@@ -84,12 +95,13 @@ export class WalletQualificationService {
             walletConnected: false,
             chainValid: false,
             criteria: { nft: false, tokens: [] },
-            reasons: []
+      reasons: [],
         };
 
         try {
             // Get user's wallet address from repository (injected dependency)
-            const walletAddress = await this.deps.userRepository.getWalletAddress(userId);
+      const walletAddress =
+        await this.deps.userRepository.getWalletAddress(userId);
 
             if (!walletAddress) {
                 result.reasons.push("No verified Kodiak credentials found");
@@ -97,39 +109,59 @@ export class WalletQualificationService {
             }
 
             result.walletConnected = true;
-            this.deps.logger.info("Checking alpha qualification", { userId, walletAddress });
+      this.deps.logger.info("Checking alpha qualification", {
+        userId,
+        walletAddress,
+      });
 
             // Validate wallet is on correct chain using external API (injected dependency)
-            const chainValid = await this.deps.externalApi.validateWalletChain(walletAddress, ALPHA_QUALIFICATION_CONFIG.chainId);
+      const chainValid = await this.deps.externalApi.validateWalletChain(
+        walletAddress,
+        ALPHA_QUALIFICATION_CONFIG.chainId
+      );
             result.chainValid = chainValid;
 
             if (!chainValid) {
-                result.reasons.push(`Wallet not connected to required chain (Base/${ALPHA_QUALIFICATION_CONFIG.chainId})`);
+        result.reasons.push(
+          `Wallet not connected to required chain (Base/${ALPHA_QUALIFICATION_CONFIG.chainId})`
+        );
                 return result;
             }
 
             // Check qualification criteria
-            const nftQualified = await this.deps.externalApi.checkNFTOwnership(walletAddress, ALPHA_QUALIFICATION_CONFIG.requirements[0].contractAddress);
+      const nftQualified = await this.deps.externalApi.checkNFTOwnership(
+        walletAddress,
+        ALPHA_QUALIFICATION_CONFIG.requirements[0].contractAddress
+      );
             result.criteria.nft = nftQualified;
 
             const tokenRequirement = ALPHA_QUALIFICATION_CONFIG.requirements[1];
-            const tokenQualified = tokenRequirement.type === 'token' && tokenRequirement.minAmount
-                ? await this.deps.externalApi.checkTokenBalance(walletAddress, tokenRequirement.contractAddress, tokenRequirement.minAmount)
+      const tokenQualified =
+        tokenRequirement.type === "token" && tokenRequirement.minAmount
+          ? await this.deps.externalApi.checkTokenBalance(
+              walletAddress,
+              tokenRequirement.contractAddress,
+              tokenRequirement.minAmount
+            )
                 : false;
             result.criteria.tokens = [tokenQualified];
 
             // Determine qualification based on logic
-            if (ALPHA_QUALIFICATION_CONFIG.logic === 'OR') {
+      if (ALPHA_QUALIFICATION_CONFIG.logic === "OR") {
                 result.qualified = nftQualified || tokenQualified;
             } else {
                 result.qualified = nftQualified && tokenQualified;
             }
 
             if (!result.qualified) {
-                if (ALPHA_QUALIFICATION_CONFIG.logic === 'OR') {
-                    result.reasons.push("Must own Alpha Tester NFT or hold minimum test tokens");
+        if (ALPHA_QUALIFICATION_CONFIG.logic === "OR") {
+          result.reasons.push(
+            "Must own Alpha Tester NFT or hold minimum test tokens"
+          );
                 } else {
-                    result.reasons.push("Must own Alpha Tester NFT AND hold minimum test tokens");
+          result.reasons.push(
+            "Must own Alpha Tester NFT AND hold minimum test tokens"
+          );
                 }
             }
 
@@ -138,15 +170,14 @@ export class WalletQualificationService {
                 walletAddress,
                 qualified: result.qualified,
                 criteria: result.criteria,
-                reasons: result.reasons
+        reasons: result.reasons,
             });
 
             return result;
-
         } catch (error) {
             this.deps.logger.error("Alpha qualification check failed", {
                 userId,
-                error: (error as Error).message
+        error: (error as Error).message,
             });
             result.reasons.push("Qualification check failed due to system error");
             return result;
@@ -163,14 +194,16 @@ export class WalletQualificationService {
                 type: req.type,
                 name: req.name,
                 contractAddress: req.contractAddress,
-                minAmount: req.type === 'token' ? req.minAmount.toString() : undefined
+        minAmount: req.type === "token" ? req.minAmount.toString() : undefined,
             })),
-            logic: ALPHA_QUALIFICATION_CONFIG.logic
+      logic: ALPHA_QUALIFICATION_CONFIG.logic,
         };
     }
 }
 
 // Export factory function for creating service instances
-export function createWalletQualificationService(deps: WalletQualificationServiceDependencies): WalletQualificationService {
+export function createWalletQualificationService(
+  deps: WalletQualificationServiceDependencies
+): WalletQualificationService {
     return new WalletQualificationService(deps);
 }

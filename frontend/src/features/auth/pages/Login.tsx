@@ -29,9 +29,9 @@ const Login: React.FC = () => {
   const navigate = useNavigate();
 
   const [validation, setValidation] = useState<SimpleValidationState>({
-    email: { isValid: false, message: '', touched: false },
-    password: { isValid: true, message: '', touched: false },
-    form: { isValid: false }
+    email: { isValid: false, message: "", touched: false },
+    password: { isValid: true, message: "", touched: false },
+    form: { isValid: false },
   });
 
   // Redirect when authentication succeeds
@@ -43,28 +43,32 @@ const Login: React.FC = () => {
 
   // Update email validation when email changes
   useEffect(() => {
-    const isValidEmail = email.includes('@') && email.includes('.');
-    const emailMessage = email && !isValidEmail ? 'Please enter a valid email address' : '';
+    const isValidEmail = email.includes("@") && email.includes(".");
+    const emailMessage =
+      email && !isValidEmail ? "Please enter a valid email address" : "";
 
     // Basic password validation (at least 6 characters)
     const isValidPassword = password.length >= 6;
-    const passwordMessage = password && !isValidPassword ? 'Password must be at least 6 characters' : '';
+    const passwordMessage =
+      password && !isValidPassword
+        ? "Password must be at least 6 characters"
+        : "";
 
     setValidation(prev => ({
       ...prev,
       email: {
         isValid: isValidEmail,
         message: emailMessage,
-        touched: email.length > 0
+        touched: email.length > 0,
       },
       password: {
         isValid: isValidPassword,
         message: passwordMessage,
-        touched: password.length > 0
+        touched: password.length > 0,
       },
       form: {
-        isValid: isValidEmail && isValidPassword
-      }
+        isValid: isValidEmail && isValidPassword,
+      },
     }));
   }, [email, password]);
 

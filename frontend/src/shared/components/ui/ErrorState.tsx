@@ -32,9 +32,6 @@ const getIconComponent = (iconName: string) => {
   return iconMap[iconName] || <AlertTriangle className="w-8 h-8" />;
 };
 
-
-
-
 export const ErrorState: React.FC<ErrorStateProps> = ({
   type = "unknown",
   title,
@@ -74,7 +71,7 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
     if (showHome || type === "not-found") {
       defaultActions.push({
         label: "Go Home",
-        onClick: () => window.location.href = "/",
+        onClick: () => (window.location.href = "/"),
         icon: <Home className="w-4 h-4" />,
         variant: "secondary",
       });
@@ -90,15 +87,19 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
     sm: "p-4",
     md: "p-6",
     lg: "p-8",
-    xl: "p-12"
+    xl: "p-12",
   };
 
   return (
     <div className={`max-w-2xl mx-auto ${className}`}>
-      <Card className={`${config.bgColor} ${config.borderColor} border-2 ${sizeClasses[size]}`}>
+      <Card
+        className={`${config.bgColor} ${config.borderColor} border-2 ${sizeClasses[size]}`}
+      >
         <div className="text-center">
           <div className="flex justify-center mb-4">
-            <div className={`w-16 h-16 rounded-full ${config.bgColor} flex items-center justify-center`}>
+            <div
+              className={`w-16 h-16 rounded-full ${config.bgColor} flex items-center justify-center`}
+            >
               {getIconComponent(config.icon)}
             </div>
           </div>
@@ -107,9 +108,7 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
             {finalConfig.title}
           </h2>
 
-          <p className="text-textMuted mb-4">
-            {finalConfig.message}
-          </p>
+          <p className="text-textMuted mb-4">{finalConfig.message}</p>
 
           {finalConfig.description && (
             <p className="text-sm text-textMuted mb-6">
@@ -124,8 +123,8 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
                   key={index}
                   onClick={action.onClick}
                   disabled={action.disabled}
-                  className={`btn-${action.variant || 'primary'} flex items-center gap-2 ${
-                    action.disabled ? 'opacity-50 cursor-not-allowed' : ''
+                  className={`btn-${action.variant || "primary"} flex items-center gap-2 ${
+                    action.disabled ? "opacity-50 cursor-not-allowed" : ""
                   }`}
                 >
                   {action.icon}
@@ -152,7 +151,12 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
               <button
                 onClick={() => {
                   // In a real app, this would open a support ticket or feedback form
-                  console.log("Error reported:", { type, title, message, description });
+                  console.log("Error reported:", {
+                    type,
+                    title,
+                    message,
+                    description,
+                  });
                 }}
                 className="text-xs text-primary hover:text-primary/80 underline"
               >
@@ -167,12 +171,13 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
 };
 
 // Page-level error component
-export const PageError: React.FC<ErrorStateProps & { fullHeight?: boolean }> = ({
-  fullHeight = true,
-  ...props
-}) => {
+export const PageError: React.FC<
+  ErrorStateProps & { fullHeight?: boolean }
+> = ({ fullHeight = true, ...props }) => {
   return (
-    <div className={`${fullHeight ? "min-h-screen flex items-center justify-center" : ""} px-4`}>
+    <div
+      className={`${fullHeight ? "min-h-screen flex items-center justify-center" : ""} px-4`}
+    >
       <ErrorState {...props} size="lg" />
     </div>
   );
@@ -187,7 +192,9 @@ export const InlineError: React.FC<{
   const config = errorConfigs[type];
 
   return (
-    <div className={`flex items-center gap-3 p-3 rounded-lg ${config.bgColor} border ${config.borderColor} ${className}`}>
+    <div
+      className={`flex items-center gap-3 p-3 rounded-lg ${config.bgColor} border ${config.borderColor} ${className}`}
+    >
       <div className={`shrink-0 ${config.color}`}>
         <div className="w-4 h-4 flex items-center justify-center">
           <AlertCircle className="w-4 h-4" />
@@ -242,7 +249,12 @@ export class ErrorBoundary extends React.Component<
     if (this.state.hasError) {
       if (this.props.fallback) {
         const FallbackComponent = this.props.fallback;
-        return <FallbackComponent error={this.state.error} resetError={this.resetError} />;
+        return (
+          <FallbackComponent
+            error={this.state.error}
+            resetError={this.resetError}
+          />
+        );
       }
 
       return (
@@ -260,7 +272,7 @@ export class ErrorBoundary extends React.Component<
             },
             {
               label: "Go Home",
-              onClick: () => window.location.href = "/",
+              onClick: () => (window.location.href = "/"),
               icon: <Home className="w-4 h-4" />,
               variant: "secondary",
             },

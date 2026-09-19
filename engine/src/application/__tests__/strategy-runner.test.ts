@@ -1,15 +1,15 @@
-import { StrategyRunner } from '../strategy-runner';
+import { StrategyRunner } from "../strategy-runner";
 
-describe('StrategyRunner', () => {
+describe("StrategyRunner", () => {
     afterEach(() => {
         jest.useRealTimers();
     });
 
-    it('runs the tick handler on the configured interval', async () => {
+  it("runs the tick handler on the configured interval", async () => {
         jest.useFakeTimers();
 
         const handler = jest.fn(() => Promise.resolve());
-        const runner = new StrategyRunner('bot-1', 100, handler, {});
+    const runner = new StrategyRunner("bot-1", 100, handler, {});
         runner.start();
 
         await jest.advanceTimersByTimeAsync(100);
@@ -21,7 +21,7 @@ describe('StrategyRunner', () => {
         runner.stop();
     });
 
-    it('never executes a tick while a previous tick is still running (single-flight)', async () => {
+  it("never executes a tick while a previous tick is still running (single-flight)", async () => {
         jest.useFakeTimers();
 
         let running = 0;
@@ -33,7 +33,7 @@ describe('StrategyRunner', () => {
             running += 1;
             maxRunning = Math.max(maxRunning, running);
             ticks += 1;
-            return new Promise<void>((resolve) => {
+      return new Promise<void>(resolve => {
                 releases.push(() => {
                     running -= 1;
                     resolve();
@@ -42,7 +42,7 @@ describe('StrategyRunner', () => {
         };
 
         const onSkip = jest.fn();
-        const runner = new StrategyRunner('bot-1', 100, slowHandler, { onSkip });
+    const runner = new StrategyRunner("bot-1", 100, slowHandler, { onSkip });
         runner.start();
 
         // Fire the first tick at t=100; it becomes long-running.
@@ -73,21 +73,21 @@ describe('StrategyRunner', () => {
         runner.stop();
     });
 
-    it('surfaces tick errors through the onError callback without breaking the loop', async () => {
+  it("surfaces tick errors through the onError callback without breaking the loop", async () => {
         jest.useFakeTimers();
 
         const onError = jest.fn();
         let calls = 0;
         const handler = jest.fn(() => {
             calls += 1;
-            if (calls === 1) return Promise.reject(new Error('boom'));
+      if (calls === 1) return Promise.reject(new Error("boom"));
             return Promise.resolve();
         });
-        const runner = new StrategyRunner('bot-1', 100, handler, { onError });
+    const runner = new StrategyRunner("bot-1", 100, handler, { onError });
         runner.start();
 
         await jest.advanceTimersByTimeAsync(100);
-        expect(onError).toHaveBeenCalledWith(expect.any(Error), 'bot-1');
+    expect(onError).toHaveBeenCalledWith(expect.any(Error), "bot-1");
 
         await jest.advanceTimersByTimeAsync(100);
         expect(handler).toHaveBeenCalledTimes(2);

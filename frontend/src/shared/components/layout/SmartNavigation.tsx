@@ -4,14 +4,7 @@ import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../../features/auth";
 import { UserRole } from "../../types";
-import {
-  Home,
-  Zap,
-  BarChart3,
-  Settings,
-  Lock,
-  Shield
-} from "lucide-react";
+import { Home, Zap, BarChart3, Settings, Lock, Shield } from "lucide-react";
 
 interface NavItemProps {
   path: string;
@@ -30,7 +23,7 @@ const NavItem: React.FC<NavItemProps> = ({
   available,
   current,
   requires,
-  description
+  description,
 }) => {
   if (!available) {
     return (
@@ -56,7 +49,8 @@ const NavItem: React.FC<NavItemProps> = ({
       to={path}
       className={`
         flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 hover-lift
-        ${current
+        ${
+          current
           ? "bg-primary/20 text-primary border border-primary/30"
           : "text-text-secondary hover:text-text-primary hover:bg-white/5"
         }
@@ -77,43 +71,49 @@ export const SmartNavigation: React.FC = () => {
 
   const navItems = [
     {
-      path: '/dashboard',
-      label: 'Dashboard',
+      path: "/dashboard",
+      label: "Dashboard",
       icon: <Home className="w-4 h-4" />,
       available: true,
-      description: 'Overview of your trading activity'
+      description: "Overview of your trading activity",
     },
     {
-      path: '/strategies',
-      label: 'Strategies',
+      path: "/strategies",
+      label: "Strategies",
       icon: <Zap className="w-4 h-4" />,
-      available: user?.userLevel === 'VERIFIED',
-      requires: 'VERIFIED',
-      description: 'Create and manage trading strategies'
+      available: user?.userLevel === "VERIFIED",
+      requires: "VERIFIED",
+      description: "Create and manage trading strategies",
     },
     {
-      path: '/analytics',
-      label: 'Analytics',
+      path: "/analytics",
+      label: "Analytics",
       icon: <BarChart3 className="w-4 h-4" />,
-      available: user?.userLevel === 'VERIFIED' && user?.roles?.includes(UserRole.QUALIFIED_ALPHA) || false,
-      requires: 'QUALIFIED_ALPHA',
-      description: 'Advanced trading analytics and insights'
+      available:
+        (user?.userLevel === "VERIFIED" &&
+          user?.roles?.includes(UserRole.QUALIFIED_ALPHA)) ||
+        false,
+      requires: "QUALIFIED_ALPHA",
+      description: "Advanced trading analytics and insights",
     },
     {
-      path: '/admin',
-      label: 'Admin',
+      path: "/admin",
+      label: "Admin",
       icon: <Shield className="w-4 h-4" />,
-      available: user?.userLevel === 'VERIFIED' && user?.roles?.includes(UserRole.SYSTEM_ADMIN) || false,
-      requires: 'SYSTEM_ADMIN',
-      description: 'System administration and monitoring'
+      available:
+        (user?.userLevel === "VERIFIED" &&
+          user?.roles?.includes(UserRole.SYSTEM_ADMIN)) ||
+        false,
+      requires: "SYSTEM_ADMIN",
+      description: "System administration and monitoring",
     },
     {
-      path: '/settings',
-      label: 'Settings',
+      path: "/settings",
+      label: "Settings",
       icon: <Settings className="w-4 h-4" />,
       available: true,
-      description: 'Configure your trading preferences'
-    }
+      description: "Configure your trading preferences",
+    },
   ];
 
   return (

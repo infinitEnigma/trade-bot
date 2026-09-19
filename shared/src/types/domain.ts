@@ -38,14 +38,14 @@ export class Balance {
     /**
      * Create a zero balance for a currency
      */
-    static zero(currency: string = 'USD'): Balance {
+  static zero(currency: string = "USD"): Balance {
         return new Balance(0, 0, 0, currency, new Date());
     }
 
     /**
      * Create balance from total amount (all available)
      */
-    static fromTotal(total: number, currency: string = 'USD'): Balance {
+  static fromTotal(total: number, currency: string = "USD"): Balance {
         return new Balance(total, total, 0, currency, new Date());
     }
 
@@ -81,7 +81,7 @@ export class Balance {
      */
     lock(amount: number): Balance {
         if (!this.canWithdraw(amount)) {
-            throw new Error('Insufficient available balance');
+      throw new Error("Insufficient available balance");
         }
 
         return new Balance(
@@ -98,7 +98,7 @@ export class Balance {
      */
     unlock(amount: number): Balance {
         if (this.locked < amount) {
-            throw new Error('Insufficient locked balance');
+      throw new Error("Insufficient locked balance");
         }
 
         return new Balance(
@@ -128,7 +128,7 @@ export class Balance {
      */
     subtract(amount: number): Balance {
         if (this.available < amount) {
-            throw new Error('Insufficient available balance');
+      throw new Error("Insufficient available balance");
         }
 
         return new Balance(
@@ -156,7 +156,7 @@ export class Balance {
 
     private validate(): void {
         if (!this.isValid()) {
-            throw new Error('Invalid balance state');
+      throw new Error("Invalid balance state");
         }
     }
 }
@@ -168,7 +168,7 @@ export class Balance {
 export class Position {
     constructor(
         public symbol: string,
-        public side: 'LONG' | 'SHORT',
+    public side: "LONG" | "SHORT",
         public quantity: number,
         public entryPrice: number,
         public markPrice: number,
@@ -184,28 +184,22 @@ export class Position {
      */
     static fromOrder(
         symbol: string,
-        side: 'BUY' | 'SELL',
+    side: "BUY" | "SELL",
         quantity: number,
         price: number,
         leverage: number = 1
     ): Position {
-        const positionSide = side === 'BUY' ? 'LONG' : 'SHORT';
+    const positionSide = side === "BUY" ? "LONG" : "SHORT";
 
-        return new Position(
-            symbol,
-            positionSide,
-            quantity,
-            price,
-            price,
-            leverage
-        );
+    return new Position(symbol, positionSide, quantity, price, price, leverage);
     }
 
     /**
      * Calculate current unrealized PnL
      */
     calculatePnL(): number {
-        const priceDiff = this.side === 'LONG'
+    const priceDiff =
+      this.side === "LONG"
             ? this.markPrice - this.entryPrice
             : this.entryPrice - this.markPrice;
 
@@ -260,7 +254,7 @@ export class Position {
 
         const threshold = this.liquidationPrice * 0.05; // 5% threshold
 
-        if (this.side === 'LONG') {
+    if (this.side === "LONG") {
             return this.markPrice <= this.liquidationPrice + threshold;
         } else {
             return this.markPrice >= this.liquidationPrice - threshold;
@@ -299,7 +293,7 @@ export class Position {
 
     private validate(): void {
         if (!this.isValid()) {
-            throw new Error('Invalid position data');
+      throw new Error("Invalid position data");
         }
     }
 }
@@ -314,7 +308,7 @@ export class Trade {
         public userId: string,
         public orderId: string,
         public symbol: string,
-        public side: 'BUY' | 'SELL',
+    public side: "BUY" | "SELL",
         public quantity: number,
         public price: number,
         public fee: number = 0,
@@ -362,7 +356,7 @@ export class Trade {
 
     private validate(): void {
         if (!this.isValid()) {
-            throw new Error('Invalid trade data');
+      throw new Error("Invalid trade data");
         }
     }
 }
@@ -375,8 +369,8 @@ export class Order {
     constructor(
         public orderId: string,
         public symbol: string,
-        public side: 'BUY' | 'SELL',
-        public type: 'LIMIT' | 'MARKET' | 'IOC' | 'FOK' | 'POST_ONLY',
+    public side: "BUY" | "SELL",
+    public type: "LIMIT" | "MARKET" | "IOC" | "FOK" | "POST_ONLY",
         public quantity: number,
         public price?: number,
         public clientOrderId?: string,
@@ -396,14 +390,14 @@ export class Order {
      * Check if order is market order
      */
     isMarketOrder(): boolean {
-        return this.type === 'MARKET';
+    return this.type === "MARKET";
     }
 
     /**
      * Check if order is limit order
      */
     isLimitOrder(): boolean {
-        return this.type === 'LIMIT';
+    return this.type === "LIMIT";
     }
 
     /**
@@ -414,13 +408,13 @@ export class Order {
             this.orderId.length > 0 &&
             this.symbol.length > 0 &&
             this.quantity > 0 &&
-            (this.type === 'MARKET' || (this.price !== undefined && this.price > 0))
+      (this.type === "MARKET" || (this.price !== undefined && this.price > 0))
         );
     }
 
     private validate(): void {
         if (!this.isValid()) {
-            throw new Error('Invalid order data');
+      throw new Error("Invalid order data");
         }
     }
 }
@@ -434,7 +428,7 @@ export class Strategy {
         public id: string,
         public userId: string,
         public name: string,
-        public type: 'GRID' | 'TREND_FOLLOWING' | 'ARBITRAGE',
+    public type: "GRID" | "TREND_FOLLOWING" | "ARBITRAGE",
         public symbol: string,
         public config: StrategyConfig,
         public isActive: boolean = false
@@ -453,12 +447,12 @@ export class Strategy {
     /**
      * Get strategy risk level
      */
-    getRiskLevel(): 'LOW' | 'MEDIUM' | 'HIGH' {
+  getRiskLevel(): "LOW" | "MEDIUM" | "HIGH" {
         // Simple risk assessment based on leverage
         const leverage = this.config.leverage || 1;
-        if (leverage <= 2) return 'LOW';
-        if (leverage <= 5) return 'MEDIUM';
-        return 'HIGH';
+    if (leverage <= 2) return "LOW";
+    if (leverage <= 5) return "MEDIUM";
+    return "HIGH";
     }
 
     /**
@@ -483,11 +477,11 @@ export class Strategy {
 
         // Strategy-specific validation
         switch (this.type) {
-            case 'GRID':
+      case "GRID":
                 return !!(config.gridSize && config.gridRange);
-            case 'TREND_FOLLOWING':
+      case "TREND_FOLLOWING":
                 return !!(config.entryThreshold && config.exitThreshold);
-            case 'ARBITRAGE':
+      case "ARBITRAGE":
                 return true; // Basic validation for now
             default:
                 return false;
@@ -496,7 +490,7 @@ export class Strategy {
 
     private validate(): void {
         if (!this.isValid()) {
-            throw new Error('Invalid strategy configuration');
+      throw new Error("Invalid strategy configuration");
         }
     }
 }
@@ -519,7 +513,7 @@ export interface StrategyConfig {
 export interface User {
     id: string;
     email: string;
-    userLevel: 'BASIC' | 'REGISTERED' | 'VERIFIED';
+  userLevel: "BASIC" | "REGISTERED" | "VERIFIED";
     roles?: string[];
     createdAt: Date;
     updatedAt: Date;
@@ -545,20 +539,20 @@ export class Money {
         public currency: string
     ) { }
 
-    static zero(currency: string = 'USD'): Money {
+  static zero(currency: string = "USD"): Money {
         return new Money(0, currency);
     }
 
     add(other: Money): Money {
         if (this.currency !== other.currency) {
-            throw new Error('Cannot add money with different currencies');
+      throw new Error("Cannot add money with different currencies");
         }
         return new Money(this.amount + other.amount, this.currency);
     }
 
     subtract(other: Money): Money {
         if (this.currency !== other.currency) {
-            throw new Error('Cannot subtract money with different currencies');
+      throw new Error("Cannot subtract money with different currencies");
         }
         return new Money(this.amount - other.amount, this.currency);
     }

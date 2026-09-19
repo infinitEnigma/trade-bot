@@ -12,9 +12,9 @@ import {
     IUserRepository,
     User,
     UserLevel,
-    UserRegistration
-} from '@trade-bot/shared';
-import { query } from '../../../database/pool';
+  UserRegistration,
+} from "@trade-bot/shared";
+import { query } from "../../../database/pool";
 
 /**
  * Database row interface for user data
@@ -34,14 +34,13 @@ interface UserRow {
  * Provides user data access with proper error handling and type safety.
  */
 export class UserRepositoryAdapter implements IUserRepository {
-
     /**
      * Find user by email address
      */
     async findByEmail(email: string): Promise<User | null> {
         try {
             const result = await query(
-                'SELECT id, email, user_level, created_at, updated_at FROM users WHERE email = $1',
+        "SELECT id, email, user_level, created_at, updated_at FROM users WHERE email = $1",
                 [email]
             );
 
@@ -52,7 +51,8 @@ export class UserRepositoryAdapter implements IUserRepository {
             const row = result.rows[0] as UserRow;
             return this.mapRowToUser(row);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to find user by email: ${errorMessage}`);
         }
     }
@@ -60,10 +60,12 @@ export class UserRepositoryAdapter implements IUserRepository {
     /**
      * Find user by email with password hash for authentication
      */
-    async findByEmailWithPassword(email: string): Promise<(User & { passwordHash: string }) | null> {
+  async findByEmailWithPassword(
+    email: string
+  ): Promise<(User & { passwordHash: string }) | null> {
         try {
             const result = await query(
-                'SELECT id, email, password_hash, user_level, created_at, updated_at FROM users WHERE email = $1',
+        "SELECT id, email, password_hash, user_level, created_at, updated_at FROM users WHERE email = $1",
                 [email]
             );
 
@@ -74,11 +76,14 @@ export class UserRepositoryAdapter implements IUserRepository {
             const row = result.rows[0] as UserRow & { password_hash?: string };
             return {
                 ...this.mapRowToUser(row),
-                passwordHash: row.password_hash || ''
+        passwordHash: row.password_hash || "",
             };
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to find user by email with password: ${errorMessage}`);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Failed to find user by email with password: ${errorMessage}`
+      );
         }
     }
 
@@ -88,7 +93,7 @@ export class UserRepositoryAdapter implements IUserRepository {
     async findById(id: string): Promise<User | null> {
         try {
             const result = await query(
-                'SELECT id, email, user_level, created_at, updated_at FROM users WHERE id = $1',
+        "SELECT id, email, user_level, created_at, updated_at FROM users WHERE id = $1",
                 [id]
             );
 
@@ -99,7 +104,8 @@ export class UserRepositoryAdapter implements IUserRepository {
             const row = result.rows[0] as UserRow;
             return this.mapRowToUser(row);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to find user by ID: ${errorMessage}`);
         }
     }
@@ -110,22 +116,26 @@ export class UserRepositoryAdapter implements IUserRepository {
     async create(userData: UserRegistration): Promise<User> {
         try {
             const result = await query(
-                'INSERT INTO users (email, password_hash, user_level, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id, email, user_level, created_at, updated_at',
+        "INSERT INTO users (email, password_hash, user_level, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id, email, user_level, created_at, updated_at",
                 [userData.email, userData.password, UserLevel.BASIC]
             );
 
             if (result.rows.length === 0) {
-                throw new Error('User creation failed - no rows returned');
+        throw new Error("User creation failed - no rows returned");
             }
 
             const row = result.rows[0] as UserRow;
             return this.mapRowToUser(row);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
 
             // Handle unique constraint violation
-            if (errorMessage.includes('duplicate key') || errorMessage.includes('unique constraint')) {
-                throw new Error('Email already exists');
+      if (
+        errorMessage.includes("duplicate key") ||
+        errorMessage.includes("unique constraint")
+      ) {
+        throw new Error("Email already exists");
             }
 
             throw new Error(`Failed to create user: ${errorMessage}`);
@@ -138,13 +148,14 @@ export class UserRepositoryAdapter implements IUserRepository {
     async updateUserLevel(id: string, level: UserLevel): Promise<boolean> {
         try {
             const result = await query(
-                'UPDATE users SET user_level = $1, updated_at = NOW() WHERE id = $2',
+        "UPDATE users SET user_level = $1, updated_at = NOW() WHERE id = $2",
                 [level, id]
             );
 
             return result.rowCount > 0;
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to update user level: ${errorMessage}`);
         }
     }
@@ -152,7 +163,10 @@ export class UserRepositoryAdapter implements IUserRepository {
     /**
      * Update user profile information
      */
-    async updateProfile(id: string, updates: Partial<{ email: string; userLevel: UserLevel }>): Promise<User | null> {
+  async updateProfile(
+    id: string,
+    updates: Partial<{ email: string; userLevel: UserLevel }>
+  ): Promise<User | null> {
         try {
             // Build update query dynamically based on provided fields
             const updateFields: string[] = [];
@@ -175,7 +189,7 @@ export class UserRepositoryAdapter implements IUserRepository {
             updateValues.push(id); // For the WHERE clause
 
             const result = await query(
-                `UPDATE users SET ${updateFields.join(', ')} WHERE id = $${valueIndex} RETURNING id, email, user_level, created_at, updated_at`,
+        `UPDATE users SET ${updateFields.join(", ")} WHERE id = $${valueIndex} RETURNING id, email, user_level, created_at, updated_at`,
                 updateValues
             );
 
@@ -186,11 +200,15 @@ export class UserRepositoryAdapter implements IUserRepository {
             const row = result.rows[0] as UserRow;
             return this.mapRowToUser(row);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
 
             // Handle unique constraint violation for email
-            if (errorMessage.includes('duplicate key') || errorMessage.includes('unique constraint')) {
-                throw new Error('Email already exists');
+      if (
+        errorMessage.includes("duplicate key") ||
+        errorMessage.includes("unique constraint")
+      ) {
+        throw new Error("Email already exists");
             }
 
             throw new Error(`Failed to update user profile: ${errorMessage}`);
@@ -208,7 +226,8 @@ export class UserRepositoryAdapter implements IUserRepository {
         kodiakVerified?: boolean;
     } | null> {
         try {
-            const result = await query(`
+      const result = await query(
+        `
                 SELECT
                     u.id,
                     u.email,
@@ -230,7 +249,9 @@ export class UserRepositoryAdapter implements IUserRepository {
                 LEFT JOIN kodiak_credentials kc ON u.id = kc.user_id
                 WHERE u.id = $1
                 GROUP BY u.id, u.email, u.user_level, u.created_at, u.updated_at, kc.id, kc.account_id, kc.verified
-            `, [id]);
+            `,
+        [id]
+      );
 
             if (result.rows.length === 0) {
                 return null;
@@ -252,7 +273,7 @@ export class UserRepositoryAdapter implements IUserRepository {
                 email: row.email,
                 user_level: row.user_level,
                 created_at: row.created_at,
-                updated_at: row.updated_at
+        updated_at: row.updated_at,
             });
 
             return {
@@ -260,10 +281,11 @@ export class UserRepositoryAdapter implements IUserRepository {
                 roles: row.roles || [],
                 hasCredentials: row.has_credentials || false,
                 kodiakAccountId: row.kodiak_account_id,
-                kodiakVerified: row.kodiak_verified
+        kodiakVerified: row.kodiak_verified,
             };
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to get authenticated user data: ${errorMessage}`);
         }
     }
@@ -298,7 +320,8 @@ export class UserRepositoryAdapter implements IUserRepository {
 
             return legacy.rows[0].wallet_address;
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to get wallet address: ${errorMessage}`);
         }
     }
@@ -306,7 +329,10 @@ export class UserRepositoryAdapter implements IUserRepository {
     /**
      * Link a wallet address to a user (upsert)
      */
-    async setWalletAddress(userId: string, walletAddress: string): Promise<boolean> {
+  async setWalletAddress(
+    userId: string,
+    walletAddress: string
+  ): Promise<boolean> {
         try {
             const result = await query(
                 `INSERT INTO wallet_addresses (user_id, wallet_address, verified, updated_at)
@@ -320,7 +346,8 @@ export class UserRepositoryAdapter implements IUserRepository {
 
             return (result.rowCount ?? 0) > 0;
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to set wallet address: ${errorMessage}`);
         }
     }
@@ -337,7 +364,8 @@ export class UserRepositoryAdapter implements IUserRepository {
 
             return (result.rowCount ?? 0) > 0;
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to clear wallet address: ${errorMessage}`);
         }
     }
@@ -351,7 +379,7 @@ export class UserRepositoryAdapter implements IUserRepository {
             email: row.email,
             userLevel: row.user_level as UserLevel,
             createdAt: new Date(row.created_at),
-            updatedAt: new Date(row.updated_at)
+      updatedAt: new Date(row.updated_at),
         };
     }
 }

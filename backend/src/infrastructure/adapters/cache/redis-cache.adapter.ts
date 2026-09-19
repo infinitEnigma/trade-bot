@@ -8,11 +8,8 @@
  * @format
  */
 
-import {
-    ICacheService,
-    CacheResult
-} from '@trade-bot/shared';
-import { redisService } from '../../cache/redis.service';
+import { ICacheService, CacheResult } from "@trade-bot/shared";
+import { redisService } from "../../cache/redis.service";
 
 /**
  * Redis Cache Adapter
@@ -21,7 +18,6 @@ import { redisService } from '../../cache/redis.service';
  * Provides a clean abstraction layer for caching operations.
  */
 export class RedisCacheAdapter implements ICacheService {
-
     /**
      * Get a value from cache
      */
@@ -35,26 +31,27 @@ export class RedisCacheAdapter implements ICacheService {
                     const parsedData = JSON.parse(result.data) as T;
                     return {
                         success: true,
-                        data: parsedData
+            data: parsedData,
                     };
                 } catch (_parseError) {
                     // If parsing fails, return as string
                     return {
                         success: true,
-                        data: result.data as unknown as T
+            data: result.data as unknown as T,
                     };
                 }
             } else {
                 return {
                     success: false,
-                    error: result.error || 'Cache miss'
+          error: result.error || "Cache miss",
                 };
             }
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             return {
                 success: false,
-                error: `Cache get failed: ${errorMessage}`
+        error: `Cache get failed: ${errorMessage}`,
             };
         }
     }
@@ -62,7 +59,11 @@ export class RedisCacheAdapter implements ICacheService {
     /**
      * Set a value in cache with optional TTL
      */
-    async set<T>(key: string, value: T, ttlSeconds?: number): Promise<CacheResult<boolean>> {
+  async set<T>(
+    key: string,
+    value: T,
+    ttlSeconds?: number
+  ): Promise<CacheResult<boolean>> {
         try {
             const serializedValue = JSON.stringify(value);
 
@@ -76,19 +77,20 @@ export class RedisCacheAdapter implements ICacheService {
             if (result.success) {
                 return {
                     success: true,
-                    data: true
+          data: true,
                 };
             } else {
                 return {
                     success: false,
-                    error: result.error || 'Cache set failed'
+          error: result.error || "Cache set failed",
                 };
             }
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             return {
                 success: false,
-                error: `Cache set failed: ${errorMessage}`
+        error: `Cache set failed: ${errorMessage}`,
             };
         }
     }
@@ -103,19 +105,20 @@ export class RedisCacheAdapter implements ICacheService {
             if (result.success) {
                 return {
                     success: true,
-                    data: true
+          data: true,
                 };
             } else {
                 return {
                     success: false,
-                    error: result.error || 'Cache delete failed'
+          error: result.error || "Cache delete failed",
                 };
             }
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             return {
                 success: false,
-                error: `Cache delete failed: ${errorMessage}`
+        error: `Cache delete failed: ${errorMessage}`,
             };
         }
     }
@@ -130,19 +133,20 @@ export class RedisCacheAdapter implements ICacheService {
             if (result.success) {
                 return {
                     success: true,
-                    data: result.data
+          data: result.data,
                 };
             } else {
                 return {
                     success: false,
-                    error: result.error || 'Cache exists check failed'
+          error: result.error || "Cache exists check failed",
                 };
             }
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             return {
                 success: false,
-                error: `Cache exists check failed: ${errorMessage}`
+        error: `Cache exists check failed: ${errorMessage}`,
             };
         }
     }
@@ -150,7 +154,11 @@ export class RedisCacheAdapter implements ICacheService {
     /**
      * Set a value with TTL (convenience method)
      */
-    async setex<T>(key: string, ttlSeconds: number, value: T): Promise<CacheResult<boolean>> {
+  async setex<T>(
+    key: string,
+    ttlSeconds: number,
+    value: T
+  ): Promise<CacheResult<boolean>> {
         return this.set(key, value, ttlSeconds);
     }
 
@@ -171,14 +179,17 @@ export class RedisCacheAdapter implements ICacheService {
 
         return {
             success: true,
-            data: results
+      data: results,
         };
     }
 
     /**
      * Set multiple values
      */
-    async mset<T>(keyValues: Record<string, T>, ttlSeconds?: number): Promise<CacheResult<boolean>> {
+  async mset<T>(
+    keyValues: Record<string, T>,
+    ttlSeconds?: number
+  ): Promise<CacheResult<boolean>> {
         // Use Redis multi-set operation if available, otherwise individual sets
         const operations = Object.entries(keyValues).map(([key, value]) =>
             this.set(key, value, ttlSeconds)
@@ -190,17 +201,17 @@ export class RedisCacheAdapter implements ICacheService {
         if (allSuccessful) {
             return {
                 success: true,
-                data: true
+        data: true,
             };
         } else {
             const errors = results
                 .filter(result => !result.success)
                 .map(result => result.error)
-                .join('; ');
+        .join("; ");
 
             return {
                 success: false,
-                error: `Some cache sets failed: ${errors}`
+        error: `Some cache sets failed: ${errors}`,
             };
         }
     }
@@ -223,19 +234,20 @@ export class RedisCacheAdapter implements ICacheService {
             if (result.success) {
                 return {
                     success: true,
-                    data: result.updated
+          data: result.updated,
                 };
             } else {
                 return {
                     success: false,
-                    error: result.error || 'Atomic conditional update failed'
+          error: result.error || "Atomic conditional update failed",
                 };
             }
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             return {
                 success: false,
-                error: `Atomic conditional update failed: ${errorMessage}`
+        error: `Atomic conditional update failed: ${errorMessage}`,
             };
         }
     }

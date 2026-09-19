@@ -29,7 +29,7 @@ export const LIGHTWEIGHT_ENDPOINT_PREFIXES = [
 
 /** Lightweight endpoints: existence check only, no roles loaded. */
 export const isLightweightEndpoint = (path: string): boolean =>
-    LIGHTWEIGHT_ENDPOINT_PREFIXES.some((prefix) => path.startsWith(prefix));
+  LIGHTWEIGHT_ENDPOINT_PREFIXES.some(prefix => path.startsWith(prefix));
 
 export type HydrationFailureReason = "USER_NOT_FOUND" | "USER_DATA_NOT_FOUND";
 
@@ -52,8 +52,10 @@ export interface HydrationUserFallback {
 export const hydrateSessionUser = async (
     userId: string,
     lightweight: boolean,
-    fallbackPayload?: HydrationUserFallback,
-): Promise<{ user: HydratedSessionUser } | { failure: HydrationFailureReason }> => {
+  fallbackPayload?: HydrationUserFallback
+): Promise<
+  { user: HydratedSessionUser } | { failure: HydrationFailureReason }
+> => {
     const authService = serviceProvider.getAuthService();
     if (lightweight) {
         // For lightweight endpoints, just verify user exists without loading full data

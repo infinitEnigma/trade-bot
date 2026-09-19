@@ -5,5 +5,5 @@ export {
     validatePasswordStrength,
     validatePasswordRequirements,
     validatePasswordConfirmation,
-    type FieldValidation
+  type FieldValidation,
 } from "./validation";

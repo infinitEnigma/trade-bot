@@ -12,12 +12,7 @@
  * @format
  */
 
-import {
-    ILogger,
-    ICacheService,
-    CacheResult,
-    Trade
-} from '@trade-bot/shared';
+import { ILogger, ICacheService, CacheResult, Trade } from "@trade-bot/shared";
 
 // Bot-specific trade interface extending the base Trade type
 export interface BotTrade extends Trade {
@@ -30,7 +25,7 @@ export interface IBotPerformanceRepository {
     recordTrade(tradeData: {
         botId: string;
         symbol: string;
-        side: 'BUY' | 'SELL';
+    side: "BUY" | "SELL";
         quantity: number;
         price: number;
         pnl?: number;
@@ -38,7 +33,10 @@ export interface IBotPerformanceRepository {
         timestamp: number;
     }): Promise<boolean>;
 
-    getTrades(botId: string, timeframe: '1h' | '24h' | '7d' | '30d'): Promise<BotTrade[]>;
+  getTrades(
+    botId: string,
+    timeframe: "1h" | "24h" | "7d" | "30d"
+  ): Promise<BotTrade[]>;
 
     getAllTrades(userId: string): Promise<BotTrade[]>;
 
@@ -80,7 +78,7 @@ export interface LegacyBotPerformance {
  */
 export class BotPerformanceService {
     private readonly CACHE_TTL = 600; // 10 minutes for performance data
-    private readonly CACHE_PREFIX = 'bot:perf';
+  private readonly CACHE_PREFIX = "bot:perf";
 
     constructor(private deps: BotPerformanceServiceDependencies) { }
 
@@ -97,7 +95,7 @@ export class BotPerformanceService {
     async recordTrade(tradeData: {
         botId: string;
         symbol: string;
-        side: 'BUY' | 'SELL';
+    side: "BUY" | "SELL";
         quantity: number;
         price: number;
         pnl?: number;
@@ -105,35 +103,35 @@ export class BotPerformanceService {
         timestamp: number;
     }): Promise<void> {
         try {
-            this.deps.logger.debug('Recording trade for performance tracking', {
+      this.deps.logger.debug("Recording trade for performance tracking", {
                 botId: tradeData.botId,
                 symbol: tradeData.symbol,
-                pnl: tradeData.pnl
+        pnl: tradeData.pnl,
             });
 
             // Validate trade data
             this.validateTradeData(tradeData);
 
             // Record trade in repository
-            const success = await this.deps.botPerformanceRepository.recordTrade(tradeData);
+      const success =
+        await this.deps.botPerformanceRepository.recordTrade(tradeData);
             if (!success) {
-                throw new Error('Failed to record trade in repository');
+        throw new Error("Failed to record trade in repository");
             }
 
             // Invalidate performance caches for this bot
             await this.invalidateBotPerformanceCache(tradeData.botId);
 
-            this.deps.logger.info('Trade recorded successfully', {
+      this.deps.logger.info("Trade recorded successfully", {
                 botId: tradeData.botId,
                 symbol: tradeData.symbol,
                 pnl: tradeData.pnl,
-                fee: tradeData.fee
+        fee: tradeData.fee,
             });
-
         } catch (error) {
-            this.deps.logger.error('Failed to record trade', {
+      this.deps.logger.error("Failed to record trade", {
                 botId: tradeData.botId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
@@ -149,23 +147,36 @@ export class BotPerformanceService {
      * 4. Cache result for future requests
      * 5. Return formatted metrics
      */
-    async getBotPerformance(botId: string, timeframe: '1h' | '24h' | '7d' | '30d'): Promise<LegacyBotPerformance | null> {
+  async getBotPerformance(
+    botId: string,
+    timeframe: "1h" | "24h" | "7d" | "30d"
+  ): Promise<LegacyBotPerformance | null> {
         try {
             const cacheKey = `${this.CACHE_PREFIX}:${botId}:${timeframe}`;
 
             // Try cache first
-            const cachedResult: CacheResult<LegacyBotPerformance> = await this.deps.cache.get(cacheKey);
+      const cachedResult: CacheResult<LegacyBotPerformance> =
+        await this.deps.cache.get(cacheKey);
             if (cachedResult.success && cachedResult.data) {
-                this.deps.logger.debug('Bot performance cache hit', { botId, timeframe });
+        this.deps.logger.debug("Bot performance cache hit", {
+          botId,
+          timeframe,
+        });
                 return this.shouldReturnLegacyFormat()
                     ? this.convertToLegacyFormat(cachedResult.data)
                     : cachedResult.data;
             }
 
             // Cache miss - calculate performance
-            this.deps.logger.debug('Bot performance cache miss, calculating', { botId, timeframe });
+      this.deps.logger.debug("Bot performance cache miss, calculating", {
+        botId,
+        timeframe,
+      });
 
-            const trades = await this.deps.botPerformanceRepository.getTrades(botId, timeframe);
+      const trades = await this.deps.botPerformanceRepository.getTrades(
+        botId,
+        timeframe
+      );
             if (trades.length === 0) {
                 // Cache empty result for short time
                 await this.deps.cache.setex(cacheKey, 60, null); // 1 minute
@@ -175,31 +186,34 @@ export class BotPerformanceService {
             const performance = this.calculatePerformanceMetrics(trades);
 
             // Cache the result
-            const cacheResult = await this.deps.cache.setex(cacheKey, this.CACHE_TTL, performance);
+      const cacheResult = await this.deps.cache.setex(
+        cacheKey,
+        this.CACHE_TTL,
+        performance
+      );
             if (!cacheResult.success) {
-                this.deps.logger.warn('Failed to cache bot performance', {
+        this.deps.logger.warn("Failed to cache bot performance", {
                     botId,
                     timeframe,
-                    error: cacheResult.error
+          error: cacheResult.error,
                 });
             }
 
-            this.deps.logger.debug('Bot performance calculated and cached', {
+      this.deps.logger.debug("Bot performance calculated and cached", {
                 botId,
                 timeframe,
                 totalTrades: performance.totalTrades,
-                totalPnl: performance.totalPnl
+        totalPnl: performance.totalPnl,
             });
 
             return this.shouldReturnLegacyFormat()
                 ? this.convertToLegacyFormat(performance)
                 : performance;
-
         } catch (error) {
-            this.deps.logger.error('Failed to get bot performance', {
+      this.deps.logger.error("Failed to get bot performance", {
                 botId,
                 timeframe,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return null;
         }
@@ -223,17 +237,18 @@ export class BotPerformanceService {
         worstPerformingBot: string;
     }> {
         try {
-            this.deps.logger.debug('Getting performance summary', { userId });
+      this.deps.logger.debug("Getting performance summary", { userId });
 
-            const allTrades = await this.deps.botPerformanceRepository.getAllTrades(userId);
+      const allTrades =
+        await this.deps.botPerformanceRepository.getAllTrades(userId);
             if (allTrades.length === 0) {
                 return {
                     totalBots: 0,
                     activeBots: 0,
                     totalPnl: 0,
                     totalVolume: 0,
-                    bestPerformingBot: '',
-                    worstPerformingBot: ''
+          bestPerformingBot: "",
+          worstPerformingBot: "",
                 };
             }
 
@@ -242,8 +257,8 @@ export class BotPerformanceService {
 
             let totalPnl = 0;
             let totalVolume = 0;
-            let bestBot = '';
-            let worstBot = '';
+      let bestBot = "";
+      let worstBot = "";
             let bestPnl = -Infinity;
             let worstPnl = Infinity;
 
@@ -269,16 +284,15 @@ export class BotPerformanceService {
                 totalPnl,
                 totalVolume,
                 bestPerformingBot: bestBot,
-                worstPerformingBot: worstBot
+        worstPerformingBot: worstBot,
             };
 
-            this.deps.logger.debug('Performance summary calculated', summary);
+      this.deps.logger.debug("Performance summary calculated", summary);
             return summary;
-
         } catch (error) {
-            this.deps.logger.error('Failed to get performance summary', {
+      this.deps.logger.error("Failed to get performance summary", {
                 userId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
@@ -300,17 +314,20 @@ export class BotPerformanceService {
         expectedShortfall: number;
     }> {
         try {
-            this.deps.logger.debug('Calculating risk metrics', { botId });
+      this.deps.logger.debug("Calculating risk metrics", { botId });
 
             // Get all trades for comprehensive risk analysis
-            const trades = await this.deps.botPerformanceRepository.getTrades(botId, '30d');
+      const trades = await this.deps.botPerformanceRepository.getTrades(
+        botId,
+        "30d"
+      );
             if (trades.length < 10) {
                 // Need minimum trades for meaningful risk metrics
                 return {
                     volatility: 0,
                     maxDrawdown: 0,
                     valueAtRisk: 0,
-                    expectedShortfall: 0
+          expectedShortfall: 0,
                 };
             }
 
@@ -327,22 +344,27 @@ export class BotPerformanceService {
             const valueAtRisk = this.calculateValueAtRisk(dailyReturns, 0.95);
 
             // Calculate Expected Shortfall (95% confidence)
-            const expectedShortfall = this.calculateExpectedShortfall(dailyReturns, 0.95);
+      const expectedShortfall = this.calculateExpectedShortfall(
+        dailyReturns,
+        0.95
+      );
 
             const riskMetrics = {
                 volatility,
                 maxDrawdown,
                 valueAtRisk,
-                expectedShortfall
+        expectedShortfall,
             };
 
-            this.deps.logger.debug('Risk metrics calculated', { botId, ...riskMetrics });
+      this.deps.logger.debug("Risk metrics calculated", {
+        botId,
+        ...riskMetrics,
+      });
             return riskMetrics;
-
         } catch (error) {
-            this.deps.logger.error('Failed to calculate risk metrics', {
+      this.deps.logger.error("Failed to calculate risk metrics", {
                 botId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
@@ -361,16 +383,23 @@ export class BotPerformanceService {
         maxDrawdown: number;
     } {
         const totalTrades = trades.length;
-        const totalVolume = trades.reduce((sum, trade) => sum + (trade.quantity * trade.price), 0);
+    const totalVolume = trades.reduce(
+      (sum, trade) => sum + trade.quantity * trade.price,
+      0
+    );
         const totalPnl = trades.reduce((sum, trade) => sum + (trade.pnl || 0), 0);
 
         const winningTrades = trades.filter(trade => (trade.pnl || 0) > 0);
-        const winRate = totalTrades > 0 ? (winningTrades.length / totalTrades) * 100 : 0;
+    const winRate =
+      totalTrades > 0 ? (winningTrades.length / totalTrades) * 100 : 0;
         const averageTrade = totalTrades > 0 ? totalPnl / totalTrades : 0;
 
         // Calculate Sharpe ratio (requires daily returns)
         const dailyReturns = this.calculateDailyReturns(trades);
-        const sharpeRatio = dailyReturns.length > 1 ? this.calculateSharpeRatio(dailyReturns) : undefined;
+    const sharpeRatio =
+      dailyReturns.length > 1
+        ? this.calculateSharpeRatio(dailyReturns)
+        : undefined;
 
         // Calculate maximum drawdown
         const maxDrawdown = this.calculateMaxDrawdown(trades);
@@ -382,7 +411,7 @@ export class BotPerformanceService {
             winRate,
             averageTrade,
             sharpeRatio,
-            maxDrawdown
+      maxDrawdown,
         };
     }
 
@@ -394,7 +423,7 @@ export class BotPerformanceService {
         const dailyPnL = new Map<string, number>();
 
         for (const trade of trades) {
-            const day = new Date(trade.timestamp).toISOString().split('T')[0];
+      const day = new Date(trade.timestamp).toISOString().split("T")[0];
             dailyPnL.set(day, (dailyPnL.get(day) || 0) + (trade.pnl || 0));
         }
 
@@ -408,7 +437,9 @@ export class BotPerformanceService {
         if (returns.length < 2) return 0;
 
         const mean = returns.reduce((sum, r) => sum + r, 0) / returns.length;
-        const variance = returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (returns.length - 1);
+    const variance =
+      returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) /
+      (returns.length - 1);
         return Math.sqrt(variance);
     }
 
@@ -455,7 +486,10 @@ export class BotPerformanceService {
     /**
      * Calculate Value at Risk (VaR) at given confidence level
      */
-    private calculateValueAtRisk(returns: number[], confidenceLevel: number): number {
+  private calculateValueAtRisk(
+    returns: number[],
+    confidenceLevel: number
+  ): number {
         if (returns.length < 10) return 0;
 
         // Sort returns in ascending order
@@ -467,7 +501,10 @@ export class BotPerformanceService {
     /**
      * Calculate Expected Shortfall (ES) at given confidence level
      */
-    private calculateExpectedShortfall(returns: number[], confidenceLevel: number): number {
+  private calculateExpectedShortfall(
+    returns: number[],
+    confidenceLevel: number
+  ): number {
         if (returns.length < 10) return 0;
 
         const varValue = this.calculateValueAtRisk(returns, confidenceLevel);
@@ -481,13 +518,16 @@ export class BotPerformanceService {
      * Group trades by bot ID
      */
     private groupTradesByBot(trades: BotTrade[]): Record<string, BotTrade[]> {
-        return trades.reduce((groups, trade) => {
+    return trades.reduce(
+      (groups, trade) => {
             if (!groups[trade.botId]) {
                 groups[trade.botId] = [];
             }
             groups[trade.botId].push(trade);
             return groups;
-        }, {} as Record<string, BotTrade[]>);
+      },
+      {} as Record<string, BotTrade[]>
+    );
     }
 
     /**
@@ -496,7 +536,7 @@ export class BotPerformanceService {
     private validateTradeData(tradeData: {
         botId: string;
         symbol: string;
-        side: 'BUY' | 'SELL';
+    side: "BUY" | "SELL";
         quantity: number;
         price: number;
         pnl?: number;
@@ -504,19 +544,19 @@ export class BotPerformanceService {
         timestamp: number;
     }): void {
         if (!tradeData.botId || !tradeData.symbol) {
-            throw new Error('Bot ID and symbol are required');
+      throw new Error("Bot ID and symbol are required");
         }
 
         if (tradeData.quantity <= 0 || tradeData.price <= 0) {
-            throw new Error('Quantity and price must be positive');
+      throw new Error("Quantity and price must be positive");
         }
 
-        if (!['BUY', 'SELL'].includes(tradeData.side)) {
-            throw new Error('Side must be BUY or SELL');
+    if (!["BUY", "SELL"].includes(tradeData.side)) {
+      throw new Error("Side must be BUY or SELL");
         }
 
         if (tradeData.timestamp <= 0) {
-            throw new Error('Valid timestamp is required');
+      throw new Error("Valid timestamp is required");
         }
     }
 
@@ -525,7 +565,7 @@ export class BotPerformanceService {
      */
     private async invalidateBotPerformanceCache(botId: string): Promise<void> {
         // Invalidate all timeframe caches for this bot
-        const timeframes = ['1h', '24h', '7d', '30d'];
+    const timeframes = ["1h", "24h", "7d", "30d"];
         const cachePromises = timeframes.map(timeframe => {
             const cacheKey = `${this.CACHE_PREFIX}:${botId}:${timeframe}`;
             return this.deps.cache.delete(cacheKey);
@@ -533,14 +573,14 @@ export class BotPerformanceService {
 
         await Promise.all(cachePromises);
 
-        this.deps.logger.debug('Bot performance caches invalidated', { botId });
+    this.deps.logger.debug("Bot performance caches invalidated", { botId });
     }
 
     /**
      * Check if legacy API format should be returned
      */
     private shouldReturnLegacyFormat(): boolean {
-        return process.env.LEGACY_TRADING_API === 'true';
+    return process.env.LEGACY_TRADING_API === "true";
     }
 
     /**
@@ -562,12 +602,14 @@ export class BotPerformanceService {
             winRate: performance.winRate,
             averageTrade: performance.averageTrade,
             sharpeRatio: performance.sharpeRatio,
-            maxDrawdown: performance.maxDrawdown
+      maxDrawdown: performance.maxDrawdown,
         };
     }
 }
 
 // Export factory function for creating service instances
-export function createBotPerformanceService(deps: BotPerformanceServiceDependencies): BotPerformanceService {
+export function createBotPerformanceService(
+  deps: BotPerformanceServiceDependencies
+): BotPerformanceService {
     return new BotPerformanceService(deps);
 }

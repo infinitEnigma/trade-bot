@@ -115,7 +115,8 @@ export class OrderlyClient {
       return Buffer.from(signature).toString("base64url");
     } catch (error) {
       throw new Error(
-        `Failed to generate Kodiak signature: ${error instanceof Error ? error.message : String(error)
+        `Failed to generate Kodiak signature: ${
+          error instanceof Error ? error.message : String(error)
         }`
       );
     }

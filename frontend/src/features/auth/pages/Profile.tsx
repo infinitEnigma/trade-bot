@@ -32,7 +32,7 @@ import {
   Settings as SettingsIcon,
   Save,
   AlertTriangle,
-  Loader2
+  Loader2,
 } from "lucide-react";
 
 const Profile: React.FC = () => {
@@ -40,39 +40,42 @@ const Profile: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [validation] = useState<SimpleValidationState>({
-    email: { isValid: true, message: '', touched: false },
-    currentPassword: { isValid: true, message: '', touched: false },
-    newPassword: { isValid: true, message: '', touched: false },
-    confirmPassword: { isValid: true, message: '', touched: false },
-    form: { isValid: true }
+    email: { isValid: true, message: "", touched: false },
+    currentPassword: { isValid: true, message: "", touched: false },
+    newPassword: { isValid: true, message: "", touched: false },
+    confirmPassword: { isValid: true, message: "", touched: false },
+    form: { isValid: true },
   });
 
   const [formData, setFormData] = useState({
-    email: user?.email || '',
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
+    email: user?.email || "",
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
   });
 
   // Reset form when canceling edit
   const handleCancelEdit = () => {
     setFormData({
-      email: user?.email || '',
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: ''
+      email: user?.email || "",
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
     });
     setIsEditing(false);
   };
 
   const handleSave = async () => {
     // Simple validation
-    if (isEditing && (!formData.email || !formData.email.includes('@'))) {
+    if (isEditing && (!formData.email || !formData.email.includes("@"))) {
       SmartToast.error("Please enter a valid email address");
       return;
     }
 
-    if (formData.newPassword && formData.newPassword !== formData.confirmPassword) {
+    if (
+      formData.newPassword &&
+      formData.newPassword !== formData.confirmPassword
+    ) {
       SmartToast.error("Passwords do not match");
       return;
     }
@@ -83,7 +86,6 @@ const Profile: React.FC = () => {
       // Simple update logic - just show success for now
       SmartToast.success("Profile updated successfully!");
       setIsEditing(false);
-
     } catch {
       SmartToast.error("Failed to update profile. Please try again.");
     } finally {
@@ -96,11 +98,11 @@ const Profile: React.FC = () => {
   return (
     <Container
         size={{
-          default: 'lg',
-          xl: 'xl',
-          '2xl': '2xl',
-          '3xl': '3xl',
-          '4xl': '4xl'
+        default: "lg",
+        xl: "xl",
+        "2xl": "2xl",
+        "3xl": "3xl",
+        "4xl": "4xl",
         }}
         className="py-2 space-y-4"
       >
@@ -110,14 +112,14 @@ const Profile: React.FC = () => {
             <div className="flex items-center gap-6">
               <div className="relative">
                 <div className="w-20 h-20 rounded-full bg-linear-to-br from-primary to-accent flex items-center justify-center text-2xl font-bold text-white">
-                  {user.email?.[0]?.toUpperCase() || 'U'}
+                {user.email?.[0]?.toUpperCase() || "U"}
                 </div>
                 <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full border-2 border-bg-surface bg-green-500"></div>
               </div>
 
               <div className="flex-1">
                 <h2 className="text-2xl font-bold text-text mb-1">
-                  {user.email?.split('@')[0] || 'User'}
+                {user.email?.split("@")[0] || "User"}
                 </h2>
                 <p className="text-textMuted mb-2">{user.email}</p>
 
@@ -133,7 +135,7 @@ const Profile: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <Key className="w-5 h-5 text-amber-400" />
                       <span className="text-sm font-medium text-amber-400">
-                        {user.roles.join(', ')}
+                      {user.roles.join(", ")}
                       </span>
                     </div>
                   )}
@@ -150,12 +152,14 @@ const Profile: React.FC = () => {
             subtitle="Update your basic account details"
             actions={
               <button
-                onClick={() => isEditing ? handleCancelEdit() : setIsEditing(true)}
+              onClick={() =>
+                isEditing ? handleCancelEdit() : setIsEditing(true)
+              }
                 className="btn-secondary flex items-center gap-2"
                 disabled={isSaving}
               >
                 <SettingsIcon className="w-4 h-4" />
-                {isEditing ? 'Cancel' : 'Edit Profile'}
+              {isEditing ? "Cancel" : "Edit Profile"}
               </button>
             }
           />
@@ -168,7 +172,7 @@ const Profile: React.FC = () => {
                     label="Email Address"
                     type="email"
                     value={formData.email}
-                    onChange={(value) => setFormData({...formData, email: value})}
+                  onChange={value => setFormData({ ...formData, email: value })}
                     validation={validation.email}
                     placeholder="Enter your email address"
                   />
@@ -199,14 +203,18 @@ const Profile: React.FC = () => {
 
               {isEditing && (
                 <div className="pt-6 border-t border-white/5">
-                  <h3 className="text-lg font-semibold text-text mb-4">Change Password</h3>
+                <h3 className="text-lg font-semibold text-text mb-4">
+                  Change Password
+                </h3>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <ValidatedInput
                       label="Current Password"
                       type="password"
                       value={formData.currentPassword}
-                      onChange={(value) => setFormData({...formData, currentPassword: value})}
+                    onChange={value =>
+                      setFormData({ ...formData, currentPassword: value })
+                    }
                       validation={validation.currentPassword}
                       placeholder="Enter current password"
                       required
@@ -216,7 +224,9 @@ const Profile: React.FC = () => {
                       label="New Password"
                       type="password"
                       value={formData.newPassword}
-                      onChange={(value) => setFormData({...formData, newPassword: value})}
+                    onChange={value =>
+                      setFormData({ ...formData, newPassword: value })
+                    }
                       validation={validation.newPassword}
                       placeholder="Enter new password"
                       required
@@ -226,7 +236,9 @@ const Profile: React.FC = () => {
                       label="Confirm Password"
                       type="password"
                       value={formData.confirmPassword}
-                      onChange={(value) => setFormData({...formData, confirmPassword: value})}
+                    onChange={value =>
+                      setFormData({ ...formData, confirmPassword: value })
+                    }
                       validation={validation.confirmPassword}
                       placeholder="Confirm new password"
                       required
@@ -247,7 +259,7 @@ const Profile: React.FC = () => {
                     ) : (
                       <Save className="w-4 h-4" />
                     )}
-                    {isSaving ? 'Saving...' : 'Save Changes'}
+                  {isSaving ? "Saving..." : "Save Changes"}
                   </button>
                 </div>
               )}
@@ -284,8 +296,16 @@ const Profile: React.FC = () => {
 
                 <div className="flex justify-between items-center">
                   <span className="text-textMuted">Strategies Access</span>
-                  <span className={user.userLevel === 'VERIFIED' ? 'text-green-400' : 'text-red-400'}>
-                    {user.userLevel === 'VERIFIED' ? '✓ Available' : '✗ Requires VERIFIED'}
+                <span
+                  className={
+                    user.userLevel === "VERIFIED"
+                      ? "text-green-400"
+                      : "text-red-400"
+                  }
+                >
+                  {user.userLevel === "VERIFIED"
+                    ? "✓ Available"
+                    : "✗ Requires VERIFIED"}
                   </span>
                 </div>
               </div>
@@ -302,14 +322,16 @@ const Profile: React.FC = () => {
                   user.roles.map((role: string) => (
                     <div key={role} className="flex justify-between items-center">
                       <span className="text-textMuted capitalize">
-                        {role.replace('_', ' ').toLowerCase()}
+                      {role.replace("_", " ").toLowerCase()}
                       </span>
                       <span className="text-amber-400 font-medium">✓ Active</span>
                     </div>
                   ))
                 ) : (
                   <div className="text-center py-4">
-                    <p className="text-textMuted text-sm">No special roles assigned</p>
+                  <p className="text-textMuted text-sm">
+                    No special roles assigned
+                  </p>
                     <p className="text-textMuted text-xs mt-1">
                       Roles are granted through qualification checks
                     </p>
@@ -318,8 +340,16 @@ const Profile: React.FC = () => {
 
                 <div className="flex justify-between items-center pt-2 border-t border-white/5">
                   <span className="text-textMuted">Analytics Access</span>
-                  <span className={user.roles?.includes(UserRole.QUALIFIED_ALPHA) ? 'text-green-400' : 'text-red-400'}>
-                    {user.roles?.includes(UserRole.QUALIFIED_ALPHA) ? '✓ Available' : '✗ Requires Qualification'}
+                <span
+                  className={
+                    user.roles?.includes(UserRole.QUALIFIED_ALPHA)
+                      ? "text-green-400"
+                      : "text-red-400"
+                  }
+                >
+                  {user.roles?.includes(UserRole.QUALIFIED_ALPHA)
+                    ? "✓ Available"
+                    : "✗ Requires Qualification"}
                   </span>
                 </div>
               </div>
@@ -332,10 +362,14 @@ const Profile: React.FC = () => {
           <div className="flex items-start gap-4">
             <AlertTriangle className="w-6 h-6 text-amber-400 mt-0.5" />
             <div>
-              <h3 className="text-lg font-semibold text-text mb-2">Security Information</h3>
+            <h3 className="text-lg font-semibold text-text mb-2">
+              Security Information
+            </h3>
               <div className="space-y-2 text-sm text-textMuted">
                 <p>• Your password is encrypted and securely stored</p>
-                <p>• Two-factor authentication is recommended for enhanced security</p>
+              <p>
+                • Two-factor authentication is recommended for enhanced security
+              </p>
                 <p>• Account roles and permissions are regularly audited</p>
                 <p>• All profile changes are logged for security purposes</p>
               </div>

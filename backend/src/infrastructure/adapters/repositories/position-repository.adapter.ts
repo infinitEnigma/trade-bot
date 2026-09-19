@@ -8,12 +8,9 @@
  * @format
  */
 
-import {
-    IPositionRepository,
-    Position
-} from '@trade-bot/shared';
-import { query } from '../../../database/pool';
-import { databaseLogger as logger } from '../../../core/logging/context-aware-logger.service';
+import { IPositionRepository, Position } from "@trade-bot/shared";
+import { query } from "../../../database/pool";
+import { databaseLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 /**
  * Position Repository Adapter
@@ -22,7 +19,6 @@ import { databaseLogger as logger } from '../../../core/logging/context-aware-lo
  * Provides position data access with proper error handling and type safety.
  */
 export class PositionRepositoryAdapter implements IPositionRepository {
-
     /**
      * Get all positions for a user
      */
@@ -44,9 +40,12 @@ export class PositionRepositoryAdapter implements IPositionRepository {
                 [userId]
             );
 
-            return result.rows.map(row => this.mapRowToPosition(row)).filter(Boolean) as Position[];
+      return result.rows
+        .map(row => this.mapRowToPosition(row))
+        .filter(Boolean) as Position[];
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to get positions: ${errorMessage}`);
         }
     }
@@ -77,7 +76,8 @@ export class PositionRepositoryAdapter implements IPositionRepository {
 
             return this.mapRowToPosition(result.rows[0]);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to get position: ${errorMessage}`);
         }
     }
@@ -89,9 +89,12 @@ export class PositionRepositoryAdapter implements IPositionRepository {
         try {
             // This would typically update the position in the database
             // For now, positions are synced from external APIs
-            logger.info(`Position update for user ${userId}, symbol ${position.symbol}`);
+      logger.info(
+        `Position update for user ${userId}, symbol ${position.symbol}`
+      );
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to update position: ${errorMessage}`);
         }
     }
@@ -105,7 +108,8 @@ export class PositionRepositoryAdapter implements IPositionRepository {
             // For now, positions are managed by external APIs
             logger.info(`Position close for user ${userId}, symbol ${symbol}`);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to close position: ${errorMessage}`);
         }
     }
@@ -116,17 +120,17 @@ export class PositionRepositoryAdapter implements IPositionRepository {
     private mapRowToPosition(row: PositionRow): Position | null {
         try {
             const symbol = row.symbol;
-            const quantity = parseFloat(row.quantity || '0');
-            const entryPrice = parseFloat(row.entryPrice || '0');
-            const markPrice = parseFloat(row.markPrice || '0');
-            const leverage = parseInt(row.leverage || '1');
+      const quantity = parseFloat(row.quantity || "0");
+      const entryPrice = parseFloat(row.entryPrice || "0");
+      const markPrice = parseFloat(row.markPrice || "0");
+      const leverage = parseInt(row.leverage || "1");
 
             if (!symbol || quantity === 0 || entryPrice === 0) {
                 return null;
             }
 
             // Determine side based on quantity (positive = LONG, negative = SHORT)
-            const side = quantity > 0 ? 'LONG' : 'SHORT';
+      const side = quantity > 0 ? "LONG" : "SHORT";
 
             return new Position(
                 symbol,
@@ -135,11 +139,14 @@ export class PositionRepositoryAdapter implements IPositionRepository {
                 entryPrice,
                 markPrice,
                 leverage,
-                parseFloat(row.imr || '0'), // margin ratio
+        parseFloat(row.imr || "0"), // margin ratio
                 row.liquidationPrice ? parseFloat(row.liquidationPrice) : undefined
             );
         } catch (error) {
-            logger.error(`Failed to map position row to domain object: ${error}`, error as Error);
+      logger.error(
+        `Failed to map position row to domain object: ${error}`,
+        error as Error
+      );
             return null;
         }
     }

@@ -6,7 +6,7 @@ import { AuthenticatedRequest } from "../interfaces/middleware";
 import { UserLevel } from "@trade-bot/shared";
 
 // Create context-aware logger instance for middleware operations
-const middlewareLogger = new ContextAwareLogger('middleware-config');
+const middlewareLogger = new ContextAwareLogger("middleware-config");
 
 /**
  * Express Layer type for middleware stack validation
@@ -65,26 +65,30 @@ export class MiddlewareConfig {
         enableActivityTracking: true,
     };
 
-
     /**
      * Configure CSRF token generation for all API routes
      */
     private static async configureCsrfProtection(app: Express): Promise<void> {
-        const { csrfTokenMiddleware } = await import("../interfaces/middleware/csrf.middleware");
+    const { csrfTokenMiddleware } =
+      await import("../interfaces/middleware/csrf.middleware");
 
         // CSRF token generation for all API routes
         app.use("/api", csrfTokenMiddleware);
 
-        middlewareLogger.debug("CSRF token generation configured for all API routes", {
+    middlewareLogger.debug(
+      "CSRF token generation configured for all API routes",
+      {
             operation: "csrf_token_setup",
-        });
+      }
+    );
     }
 
     /**
      * Configure CSRF validation for state-changing operations
      */
     private static async configureCsrfValidation(app: Express): Promise<void> {
-        const { csrfMiddleware } = await import("../interfaces/middleware/csrf.middleware");
+    const { csrfMiddleware } =
+      await import("../interfaces/middleware/csrf.middleware");
 
         // CSRF validation for ALL state-changing operations (browser routes)
         // Note: Bot engine routes are excluded because they use API key auth
@@ -99,9 +103,12 @@ export class MiddlewareConfig {
         app.use("/api/wallet", csrfMiddleware);
         app.use("/api/security", csrfMiddleware);
 
-        middlewareLogger.debug("CSRF validation configured for state-changing routes", {
+    middlewareLogger.debug(
+      "CSRF validation configured for state-changing routes",
+      {
             operation: "csrf_validation_setup",
-        });
+      }
+    );
     }
 
     /**
@@ -123,7 +130,7 @@ export class MiddlewareConfig {
         // 👤 User management endpoints (moderate limits)
         // EXCLUDE /api/user/kodiak/* routes - they use specialized protection
         app.use("/api/user", (req, res, next) => {
-            if (req.path.startsWith('/kodiak/')) {
+      if (req.path.startsWith("/kodiak/")) {
                 return next(); // Skip general rate limiting for Kodiak routes
             }
             RateLimiters.public(req, res, next);
@@ -143,17 +150,22 @@ export class MiddlewareConfig {
         // 🛡️ Security & monitoring (moderate limits)
         app.use("/api/security", RateLimiters.public);
 
-        middlewareLogger.debug("Per-endpoint rate limiting configured (auth routes excluded from general limits)", {
+    middlewareLogger.debug(
+      "Per-endpoint rate limiting configured (auth routes excluded from general limits)",
+      {
             operation: "rate_limiting_setup",
-        });
+      }
+    );
     }
 
     /**
      * Configure specialized Kodiak API protection
      */
     private static async configureKodiakProtection(app: Express): Promise<void> {
-        const { kodiakRequestQueue } = await import("../infrastructure/external/kodiak-queue");
-        const { authMiddleware } = await import("../interfaces/middleware/auth.middleware");
+    const { kodiakRequestQueue } =
+      await import("../infrastructure/external/kodiak-queue");
+    const { authMiddleware } =
+      await import("../interfaces/middleware/auth.middleware");
         // 🎯 KODIAK-SPECIFIC PROTECTION: Request queuing + rate limiting for trading routes ONLY
         // EXCLUDE chart/market data routes - they need fast updates for real-time charts
         const kodiakRoutes = [
@@ -163,7 +175,7 @@ export class MiddlewareConfig {
             //"/api/user/kodiak/trades",       // ✅ Trading data - needs protection
             "/api/user/kodiak/balance",      // ✅ Trading data - needs protection
             "/api/user/kodiak/account-info", // ✅ Trading data - needs protection            
-            "/api/balance/current"           // ✅ Trading data - needs protection
+      "/api/balance/current", // ✅ Trading data - needs protection
             // ❌ EXCLUDED: /api/market/* routes (charts need real-time updates)
         ];
 
@@ -173,7 +185,7 @@ export class MiddlewareConfig {
                 // Queue requests to comply with Orderly rate limits
                 // Wrap next function in Promise to match QueueMiddleware type
                 const queued = kodiakRequestQueue.enqueue(req, res, async () => {
-                    return new Promise<void>((resolve) => {
+          return new Promise<void>(resolve => {
                         next();
                         resolve();
                     });
@@ -188,24 +200,29 @@ export class MiddlewareConfig {
             app.use(route, async (req, res, next) => {
                 // Use connection-specific rate limiter for connect endpoint
                 // Use data-specific rate limiter for other endpoints
-                const rateLimiter = route === "/api/user/kodiak/connect"
+        const rateLimiter =
+          route === "/api/user/kodiak/connect"
                     ? await this.createKodiakConnectionRateLimiter()
                     : await this.createKodiakRateLimiter();
                 rateLimiter(req, res, next);
             });
         });
 
-        middlewareLogger.debug("Kodiak API protection configured for specific routes", {
+    middlewareLogger.debug(
+      "Kodiak API protection configured for specific routes",
+      {
             routesProtected: kodiakRoutes.length,
             operation: "kodiak_protection_setup",
-        });
+      }
+    );
     }
 
     /**
      * Create specialized rate limiter for Kodiak routes
      */
     private static async createKodiakRateLimiter() {
-        const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service");
+    const { createRateLimiter } =
+      await import("../infrastructure/security/rate-limiter.service");
 
         return createRateLimiter("kodiak-data", {
             max: 60,                   // 60 requests per minute per user (1 req/sec)
@@ -226,7 +243,8 @@ export class MiddlewareConfig {
      * Create status-specific rate limiter with higher limits
      */
     private static async createKodiakStatusRateLimiter() {
-        const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service");
+    const { createRateLimiter } =
+      await import("../infrastructure/security/rate-limiter.service");
 
         return createRateLimiter("kodiak-status", {
             max: 300,                  // 300 requests per minute for status checks
@@ -247,7 +265,8 @@ export class MiddlewareConfig {
      * Create connection-specific rate limiter with moderate limits
      */
     private static async createKodiakConnectionRateLimiter() {
-        const { createRateLimiter } = await import("../infrastructure/security/rate-limiter.service");
+    const { createRateLimiter } =
+      await import("../infrastructure/security/rate-limiter.service");
 
         return createRateLimiter("kodiak-connection", {
             max: 30,                   // 60 requests per minute for connection operations
@@ -311,7 +330,10 @@ export class MiddlewareConfig {
     /**
      * Configure all middleware for the Express application
      */
-    static async configure(app: Express, options: MiddlewareConfigOptions = {}): Promise<void> {
+  static async configure(
+    app: Express,
+    options: MiddlewareConfigOptions = {}
+  ): Promise<void> {
         const config = { ...this.DEFAULT_OPTIONS, ...options };
 
         // Reset configured middleware tracking
@@ -360,7 +382,10 @@ export class MiddlewareConfig {
     /**
      * Validate middleware configuration
      */
-    static validateConfiguration(app: Express): { isValid: boolean; issues: string[] } {
+  static validateConfiguration(app: Express): {
+    isValid: boolean;
+    issues: string[];
+  } {
         const issues: string[] = [];
 
         if (!this.configuredMiddleware.csrf) {

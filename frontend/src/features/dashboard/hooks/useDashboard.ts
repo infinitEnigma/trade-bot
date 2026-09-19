@@ -43,8 +43,9 @@ export const useDashboard = () => {
             ]);
 
             return {
-                positions: positionsResult.status === 'fulfilled' ? positionsResult.value : [],
-                trades: tradesResult.status === 'fulfilled' ? tradesResult.value : [],
+        positions:
+          positionsResult.status === "fulfilled" ? positionsResult.value : [],
+        trades: tradesResult.status === "fulfilled" ? tradesResult.value : [],
             };
         },
         enabled: hasAutomaticKodiakAccess, // Only automatic for VERIFIED users
@@ -63,24 +64,29 @@ export const useDashboard = () => {
     // Process data from combined query
     const positions: Position[] = kodiakData?.positions || [];
     const trades: Trade[] = kodiakData?.trades || [];
-    const profitablePositions = dashboardService.getProfitablePositionsCount(positions);
+  const profitablePositions =
+    dashboardService.getProfitablePositionsCount(positions);
 
     // Create balance object
-    const balance: BalanceData | null = balanceData ? {
+  const balance: BalanceData | null = balanceData
+    ? {
         walletBalance: balanceData.walletBalance || 0,
         accountBalance: balanceData.accountBalance || 0,
         availableBalance: balanceData.availableBalance || 0,
         totalAssets: balanceData.totalAssets || 0,
-    } : null;
+      }
+    : null;
 
     // Create portfolio data
-    const portfolio = balance ? {
+  const portfolio = balance
+    ? {
         totalBalance: balance.accountBalance,
         pnl: 0, // TODO: Calculate from trades
         pnlPercent: 0, // TODO: Calculate percentage
         dailyVolume: 0, // TODO: Add volume tracking
         totalTrades: trades.length,
-    } : null;
+      }
+    : null;
 
     // Calculate performance data
     const performanceData = dashboardService.calculatePortfolioPerformance(

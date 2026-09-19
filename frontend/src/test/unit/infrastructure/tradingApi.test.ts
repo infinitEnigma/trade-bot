@@ -104,10 +104,16 @@ describe("tradingApi", () => {
 
                 mockPut.mockResolvedValue({ data: mockResponse });
 
-                const result = await tradingApi.updateStrategy(strategyId, strategyData);
+        const result = await tradingApi.updateStrategy(
+          strategyId,
+          strategyData
+        );
 
                 expect(httpClient.getClient).toHaveBeenCalled();
-                expect(mockPut).toHaveBeenCalledWith(`/api/strategies/${strategyId}`, strategyData);
+        expect(mockPut).toHaveBeenCalledWith(
+          `/api/strategies/${strategyId}`,
+          strategyData
+        );
                 expect(result).toEqual(mockResponse);
             });
         });
@@ -125,7 +131,9 @@ describe("tradingApi", () => {
                 const result = await tradingApi.deleteStrategy(strategyId);
 
                 expect(httpClient.getClient).toHaveBeenCalled();
-                expect(mockDelete).toHaveBeenCalledWith(`/api/strategies/${strategyId}`);
+        expect(mockDelete).toHaveBeenCalledWith(
+          `/api/strategies/${strategyId}`
+        );
                 expect(result).toEqual(mockResponse);
             });
         });

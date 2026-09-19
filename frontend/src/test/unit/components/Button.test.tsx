@@ -120,7 +120,10 @@ describe("Button component", () => {
       const ariaLabel = "Action button";
       render(<Button aria-label={ariaLabel}>Button</Button>);
       
-      expect(screen.getByRole("button")).toHaveAttribute("aria-label", ariaLabel);
+      expect(screen.getByRole("button")).toHaveAttribute(
+        "aria-label",
+        ariaLabel
+      );
     });
   });
 });

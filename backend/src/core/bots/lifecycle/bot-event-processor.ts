@@ -14,15 +14,28 @@
  * @format
  */
 
-import { BotActualState, BotEvent, assertTransition, canTransition } from "@trade-bot/shared";
+import {
+  BotActualState,
+  BotEvent,
+  assertTransition,
+  canTransition,
+} from "@trade-bot/shared";
 import { contextLogger as logger } from "../../logging";
 import { BotLifecycleRepository } from "./bot-lifecycle.repository";
 import { BotLifecycleNotifier } from "./bot-lifecycle-notifier";
-import { BOT_COMMAND_TIMEOUT_MS, getTimeoutReason, getTimeoutTargetState, TimeoutReason } from "./types";
+import {
+  BOT_COMMAND_TIMEOUT_MS,
+  getTimeoutReason,
+  getTimeoutTargetState,
+  TimeoutReason,
+} from "./types";
 
 export type EngineLifecycleEventHandler = (event: BotEvent) => Promise<boolean>;
 /** Validates that (engineId, epoch) is the authoritative engine process. */
-export type EngineAuthorityChecker = (engineId: string, epoch?: number) => Promise<boolean>;
+export type EngineAuthorityChecker = (
+  engineId: string,
+  epoch?: number
+) => Promise<boolean>;
 
 export class BotEventProcessor {
     private engineLifecycleHandler: EngineLifecycleEventHandler | null = null;
@@ -54,13 +67,23 @@ export class BotEventProcessor {
      * message stays unacked for redelivery); unproven authority returns false
      * (the event is stale/dropped and the message is acked).
      */
-    private async isAuthoritativeEvent(engineId: string, engineEpoch: unknown): Promise<boolean> {
+  private async isAuthoritativeEvent(
+    engineId: string,
+    engineEpoch: unknown
+  ): Promise<boolean> {
         if (!this.authorityChecker) {
-            logger.error("No engine authority checker wired - rejecting runtime event", undefined, { engineId, engineEpoch });
+      logger.error(
+        "No engine authority checker wired - rejecting runtime event",
+        undefined,
+        { engineId, engineEpoch }
+      );
             return false;
         }
         if (typeof engineEpoch !== "number") {
-            logger.warn("Runtime event without engineEpoch - rejecting", { engineId, engineEpoch });
+      logger.warn("Runtime event without engineEpoch - rejecting", {
+        engineId,
+        engineEpoch,
+      });
             return false;
         }
         return this.authorityChecker(engineId, engineEpoch);
@@ -75,7 +98,10 @@ export class BotEventProcessor {
      */
     async handleEngineEvent(event: BotEvent): Promise<void> {
         // Engine registration/heartbeat events go to the registry (if wired).
-        if ((event.type === "ENGINE_REGISTER" || event.type === "ENGINE_HEARTBEAT") && this.engineLifecycleHandler) {
+    if (
+      (event.type === "ENGINE_REGISTER" || event.type === "ENGINE_HEARTBEAT") &&
+      this.engineLifecycleHandler
+    ) {
             const handled = await this.engineLifecycleHandler(event);
             if (handled) {
                 return;
@@ -92,7 +118,10 @@ export class BotEventProcessor {
                 await this.handleStateChanged(event);
                 break;
             default:
-                logger.warn("Unknown bot event type", { type: event.type, messageId: event.messageId });
+        logger.warn("Unknown bot event type", {
+          type: event.type,
+          messageId: event.messageId,
+        });
         }
     }
 
@@ -102,12 +131,19 @@ export class BotEventProcessor {
      * event is from a superseded lifecycle operation and must be ignored.
      * Untracked correlationIds (legacy commands, status snapshots) pass through.
      */
-    private async isStaleGeneration(botId: string, correlationId: string): Promise<boolean> {
+  private async isStaleGeneration(
+    botId: string,
+    correlationId: string
+  ): Promise<boolean> {
         const tracked = await this.repository.findTrackedCommand(correlationId);
         if (!tracked) {
             return false;
         }
-        if (tracked.bot_id !== botId || tracked.state === "TIMED_OUT" || tracked.state === "FAILED") {
+    if (
+      tracked.bot_id !== botId ||
+      tracked.state === "TIMED_OUT" ||
+      tracked.state === "FAILED"
+    ) {
             logger.warn("Engine event from stale lifecycle generation - ignoring", {
                 botId,
                 correlationId,
@@ -120,9 +156,16 @@ export class BotEventProcessor {
     }
 
     private async handleCommandAccepted(event: BotEvent): Promise<void> {
-        const payload = event.payload as { botId: string; commandType: string; engineId: string; engineEpoch?: number };
+    const payload = event.payload as {
+      botId: string;
+      commandType: string;
+      engineId: string;
+      engineEpoch?: number;
+    };
 
-        if (!(await this.isAuthoritativeEvent(payload.engineId, payload.engineEpoch))) {
+    if (
+      !(await this.isAuthoritativeEvent(payload.engineId, payload.engineEpoch))
+    ) {
             return;
         }
 
@@ -148,7 +191,14 @@ export class BotEventProcessor {
     }
 
     private async handleCommandFailed(event: BotEvent): Promise<void> {
-        const payload = event.payload as { botId: string; commandType: string; engineId: string; engineEpoch?: number; errorCode: string; message: string };
+    const payload = event.payload as {
+      botId: string;
+      commandType: string;
+      engineId: string;
+      engineEpoch?: number;
+      errorCode: string;
+      message: string;
+    };
         logger.error("Command failed in engine", undefined, {
             botId: payload.botId,
             commandType: payload.commandType,
@@ -157,7 +207,9 @@ export class BotEventProcessor {
             correlationId: event.correlationId,
         });
 
-        if (!(await this.isAuthoritativeEvent(payload.engineId, payload.engineEpoch))) {
+    if (
+      !(await this.isAuthoritativeEvent(payload.engineId, payload.engineEpoch))
+    ) {
             return;
         }
 
@@ -167,7 +219,9 @@ export class BotEventProcessor {
 
         const bot = await this.repository.findBot(payload.botId);
         if (!bot) {
-            logger.warn("Command failed for unknown bot - ignoring", { botId: payload.botId });
+      logger.warn("Command failed for unknown bot - ignoring", {
+        botId: payload.botId,
+      });
             return;
         }
 
@@ -184,16 +238,24 @@ export class BotEventProcessor {
                 bot.actual_state
             );
             if (!persisted) {
-                logger.warn("Command failed processed against stale bot state - skipping", {
+        logger.warn(
+          "Command failed processed against stale bot state - skipping",
+          {
                     botId: bot.id,
                     actualState: bot.actual_state,
                     correlationId: event.correlationId,
-                });
+          }
+        );
                 return;
             }
         }
 
-        await this.repository.resolveCommand(event.correlationId, "FAILED", payload.errorCode, payload.message);
+    await this.repository.resolveCommand(
+      event.correlationId,
+      "FAILED",
+      payload.errorCode,
+      payload.message
+    );
 
         await this.repository.recordLifecycleEvent(bot.id, {
             eventType: "COMMAND_FAILED",
@@ -201,34 +263,62 @@ export class BotEventProcessor {
             toState: "ERROR",
             correlationId: event.correlationId,
             messageId: event.messageId,
-            metadata: { commandType: payload.commandType, errorCode: payload.errorCode, message: payload.message },
+      metadata: {
+        commandType: payload.commandType,
+        errorCode: payload.errorCode,
+        message: payload.message,
+      },
         });
 
-        this.notifier.emitStateChanged(bot.id, bot.user_id, bot.actual_state, "ERROR", event.correlationId);
+    this.notifier.emitStateChanged(
+      bot.id,
+      bot.user_id,
+      bot.actual_state,
+      "ERROR",
+      event.correlationId
+    );
     }
 
     private async handleStateChanged(event: BotEvent): Promise<void> {
-        const payload = event.payload as { botId: string; engineId: string; engineEpoch?: number; from: BotActualState; to: BotActualState; reason?: string };
+    const payload = event.payload as {
+      botId: string;
+      engineId: string;
+      engineEpoch?: number;
+      from: BotActualState;
+      to: BotActualState;
+      reason?: string;
+    };
 
-        if (!(await this.isAuthoritativeEvent(payload.engineId, payload.engineEpoch))) {
+    if (
+      !(await this.isAuthoritativeEvent(payload.engineId, payload.engineEpoch))
+    ) {
             return;
         }
 
         const bot = await this.repository.findBot(payload.botId);
         if (!bot) {
-            logger.warn("State changed for unknown bot - ignoring", { botId: payload.botId });
+      logger.warn("State changed for unknown bot - ignoring", {
+        botId: payload.botId,
+      });
             return;
         }
 
         // Duplicate/delayed events: nothing to do.
         if (bot.actual_state === payload.to) {
-            logger.debug("State change matches current state - no-op", { botId: payload.botId, state: payload.to });
+      logger.debug("State change matches current state - no-op", {
+        botId: payload.botId,
+        state: payload.to,
+      });
             return;
         }
 
         // Reject events from a superseded engine process (Engine A crashed,
         // Engine B took over, A's delayed event arrives).
-        if (bot.engine_id && payload.engineId && bot.engine_id !== payload.engineId) {
+    if (
+      bot.engine_id &&
+      payload.engineId &&
+      bot.engine_id !== payload.engineId
+    ) {
             logger.warn("State change from non-authoritative engine - ignoring", {
                 botId: payload.botId,
                 registeredEngineId: bot.engine_id,
@@ -274,12 +364,15 @@ export class BotEventProcessor {
             bot.actual_state
         );
         if (!persisted) {
-            logger.warn("State changed event processed against stale bot state - skipping", {
+      logger.warn(
+        "State changed event processed against stale bot state - skipping",
+        {
                 botId: bot.id,
                 from: bot.actual_state,
                 to: payload.to,
                 correlationId: event.correlationId,
-            });
+        }
+      );
             return;
         }
 
@@ -299,7 +392,13 @@ export class BotEventProcessor {
             correlationId: event.correlationId,
         });
 
-        this.notifier.emitStateChanged(bot.id, bot.user_id, bot.actual_state, payload.to, event.correlationId);
+    this.notifier.emitStateChanged(
+      bot.id,
+      bot.user_id,
+      bot.actual_state,
+      payload.to,
+      event.correlationId
+    );
     }
 
     // ===========================================
@@ -336,11 +435,21 @@ export class BotEventProcessor {
                     messageId: null,
                     metadata: { engineId },
                 });
-                this.notifier.emitStateChanged(bot.id, bot.user_id, bot.actual_state, "UNKNOWN", `engine-offline-${engineId}`);
-                logger.error("Bot marked UNKNOWN after engine heartbeat loss", undefined, {
+        this.notifier.emitStateChanged(
+          bot.id,
+          bot.user_id,
+          bot.actual_state,
+          "UNKNOWN",
+          `engine-offline-${engineId}`
+        );
+        logger.error(
+          "Bot marked UNKNOWN after engine heartbeat loss",
+          undefined,
+          {
                     botId: bot.id,
                     engineId,
-                });
+          }
+        );
             }
         }
 
@@ -358,11 +467,15 @@ export class BotEventProcessor {
      *   warning only (the backend may be mid-transition; a BOT_STATUS_REQUEST
      *   resolves it authoritatively).
      */
-    async reconcileHeartbeatInventory(engineId: string, activeBotIds: string[]): Promise<{ unlisted: number; drift: number }> {
+  async reconcileHeartbeatInventory(
+    engineId: string,
+    activeBotIds: string[]
+  ): Promise<{ unlisted: number; drift: number }> {
         const activeSet = new Set(activeBotIds);
 
         // 1) Backend RUNNING bots missing from the engine's inventory.
-        const runningBots = await this.repository.findRunningBotsForEngine(engineId);
+    const runningBots =
+      await this.repository.findRunningBotsForEngine(engineId);
         let unlisted = 0;
         for (const bot of runningBots) {
             if (activeSet.has(bot.id)) {
@@ -388,11 +501,21 @@ export class BotEventProcessor {
                     messageId: null,
                     metadata: { engineId, activeBotIds },
                 });
-                this.notifier.emitStateChanged(bot.id, bot.user_id, bot.actual_state, "UNKNOWN", `heartbeat-reconcile-${engineId}`);
-                logger.error("Bot marked UNKNOWN via heartbeat inventory reconciliation", undefined, {
+        this.notifier.emitStateChanged(
+          bot.id,
+          bot.user_id,
+          bot.actual_state,
+          "UNKNOWN",
+          `heartbeat-reconcile-${engineId}`
+        );
+        logger.error(
+          "Bot marked UNKNOWN via heartbeat inventory reconciliation",
+          undefined,
+          {
                     botId: bot.id,
                     engineId,
-                });
+          }
+        );
             }
         }
 
@@ -403,13 +526,21 @@ export class BotEventProcessor {
         let drift = 0;
         for (const botId of listed) {
             const backend = backendById.get(botId);
-            if (!backend || (backend.actual_state !== "RUNNING" && backend.actual_state !== "STARTING" && backend.actual_state !== "STOPPING")) {
+      if (
+        !backend ||
+        (backend.actual_state !== "RUNNING" &&
+          backend.actual_state !== "STARTING" &&
+          backend.actual_state !== "STOPPING")
+      ) {
                 drift++;
-                logger.warn("Heartbeat inventory drift: engine reports active bot the backend does not track as running", {
+        logger.warn(
+          "Heartbeat inventory drift: engine reports active bot the backend does not track as running",
+          {
                     engineId,
                     botId,
                     backendState: backend?.actual_state ?? "not-found",
-                });
+          }
+        );
             }
         }
 
@@ -431,7 +562,9 @@ export class BotEventProcessor {
 
         for (const cmd of pending) {
             // Claim the command first so concurrent sweeps cannot double-process.
-            const claimed = await this.repository.claimTimedOutCommand(cmd.correlation_id);
+      const claimed = await this.repository.claimTimedOutCommand(
+        cmd.correlation_id
+      );
             if (!claimed) {
                 continue;
             }
@@ -439,7 +572,10 @@ export class BotEventProcessor {
 
             const bot = await this.repository.findBot(cmd.bot_id);
             if (!bot) {
-                logger.warn("Timed-out command references unknown bot", { botId: cmd.bot_id, correlationId: cmd.correlation_id });
+        logger.warn("Timed-out command references unknown bot", {
+          botId: cmd.bot_id,
+          correlationId: cmd.correlation_id,
+        });
                 continue;
             }
 
@@ -448,13 +584,18 @@ export class BotEventProcessor {
             const targetState = getTimeoutTargetState(reason, cmd.command_type);
 
             // Handle based on bot state and timeout reason
-            if (bot.actual_state === "STARTING" || bot.actual_state === "STOPPING" || bot.actual_state === "RUNNING") {
+      if (
+        bot.actual_state === "STARTING" ||
+        bot.actual_state === "STOPPING" ||
+        bot.actual_state === "RUNNING"
+      ) {
                 // Validate the transition is legal
                 if (canTransition(bot.actual_state, targetState)) {
                     const persisted = await this.repository.persistTransition(
                         bot.id,
                         {
-                            desiredState: targetState === "UNKNOWN" ? bot.desired_state : "STOPPED",
+              desiredState:
+                targetState === "UNKNOWN" ? bot.desired_state : "STOPPED",
                             actualState: targetState,
                             errorCode: `COMMAND_TIMEOUT_${reason}`,
                             errorMessage: this.formatTimeoutMessage(cmd, reason),
@@ -462,7 +603,13 @@ export class BotEventProcessor {
                         bot.actual_state
                     );
                     if (persisted) {
-                        this.notifier.emitStateChanged(bot.id, bot.user_id, bot.actual_state, targetState, cmd.correlation_id);
+            this.notifier.emitStateChanged(
+              bot.id,
+              bot.user_id,
+              bot.actual_state,
+              targetState,
+              cmd.correlation_id
+            );
                     }
                 }
             }
@@ -493,7 +640,10 @@ export class BotEventProcessor {
         return timedOut;
     }
 
-    private formatTimeoutMessage(cmd: { command_type: string }, reason: TimeoutReason): string {
+  private formatTimeoutMessage(
+    cmd: { command_type: string },
+    reason: TimeoutReason
+  ): string {
         const seconds = Math.round(BOT_COMMAND_TIMEOUT_MS / 1000);
         switch (reason) {
             case TimeoutReason.STATE_MISMATCH:

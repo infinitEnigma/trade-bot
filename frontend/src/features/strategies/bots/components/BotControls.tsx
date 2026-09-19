@@ -33,7 +33,10 @@ import {
 import { tradingApi, authApi } from "../../../../infrastructure/api";
 import { useAuth } from "../../../auth";
 import { OperationToasts } from "../../../../shared/utils/toast";
-import { useBotState, BOT_INSTANCES_QUERY_KEY } from "../../../bots/hooks/useBotLifecycle";
+import {
+  useBotState,
+  BOT_INSTANCES_QUERY_KEY,
+} from "../../../bots/hooks/useBotLifecycle";
 import { BotInstance } from "../../../strategies/types/strategies.types";
 
 interface BotControlsProps {
@@ -48,17 +51,27 @@ interface BotControlsProps {
 const ActionButton: React.FC<{
   icon: React.ReactNode;
   label: string;
-  variant: 'success' | 'danger' | 'warning' | 'info';
+  variant: "success" | "danger" | "warning" | "info";
   loading?: boolean;
   disabled?: boolean;
   onClick: () => void;
   fullWidth?: boolean;
-}> = ({ icon, label, variant, loading, disabled, onClick, fullWidth = false }) => {
+}> = ({
+  icon,
+  label,
+  variant,
+  loading,
+  disabled,
+  onClick,
+  fullWidth = false,
+}) => {
   const variantStyles = {
-    success: "bg-green-500/20 text-green-400 border-green-500/30 hover:bg-green-500/30",
+    success:
+      "bg-green-500/20 text-green-400 border-green-500/30 hover:bg-green-500/30",
     danger: "bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30",
-    warning: "bg-orange-500/20 text-orange-400 border-orange-500/30 hover:bg-orange-500/30",
-    info: "bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500/30"
+    warning:
+      "bg-orange-500/20 text-orange-400 border-orange-500/30 hover:bg-orange-500/30",
+    info: "bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500/30",
   };
 
   return (
@@ -69,16 +82,12 @@ const ActionButton: React.FC<{
         flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium
         border transition-all duration-200 hover-lift
         ${variantStyles[variant]}
-        ${fullWidth ? 'w-full' : ''}
-        ${(disabled || loading) ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-lg'}
+        ${fullWidth ? "w-full" : ""}
+        ${disabled || loading ? "opacity-50 cursor-not-allowed" : "hover:shadow-lg"}
       `}
     >
-      {loading ? (
-        <Loader2 className="w-4 h-4 animate-spin" />
-      ) : (
-        icon
-      )}
-      <span className="text-sm">{loading ? 'Processing...' : label}</span>
+      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : icon}
+      <span className="text-sm">{loading ? "Processing..." : label}</span>
     </button>
   );
 };
@@ -115,13 +124,17 @@ const QualificationCheckButton: React.FC = () => {
         OperationToasts.qualificationSuccess();
         window.location.reload(); // Refresh to update UI
       } else {
-        OperationToasts.qualificationFailed(response.data?.reasons?.[0] || "Qualification check failed");
+        OperationToasts.qualificationFailed(
+          response.data?.reasons?.[0] || "Qualification check failed"
+        );
       }
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error
+      const errorMessage =
+        error instanceof Error
         ? error.message
-        : typeof error === 'object' && error !== null && 'response' in error
-          ? (error as { response: { data: { error: string } } }).response.data.error
+          : typeof error === "object" && error !== null && "response" in error
+            ? (error as { response: { data: { error: string } } }).response.data
+                .error
           : "Failed to check qualification";
       OperationToasts.qualificationFailed(errorMessage);
     } finally {
@@ -157,7 +170,9 @@ export const BotControls: React.FC<BotControlsProps> = ({
   const hasQualification = user?.roles?.includes(UserRole.QUALIFIED_ALPHA);
 
   // Use the bot lifecycle hook for authoritative server state
-  const { actualState, isTransitional, isConnectionLost } = useBotState(bot?.id ?? strategyId);
+  const { actualState, isTransitional, isConnectionLost } = useBotState(
+    bot?.id ?? strategyId
+  );
 
   // Invalidate query cache when mutations succeed
   const invalidateCache = () => {
@@ -173,10 +188,12 @@ export const BotControls: React.FC<BotControlsProps> = ({
       invalidateCache();
     },
     onError: (error: unknown) => {
-      const errorMessage = error instanceof Error
+      const errorMessage =
+        error instanceof Error
         ? error.message
-        : typeof error === 'object' && error !== null && 'response' in error
-          ? (error as { response: { data: { error: string } } }).response.data.error
+          : typeof error === "object" && error !== null && "response" in error
+            ? (error as { response: { data: { error: string } } }).response.data
+                .error
           : "Unknown error";
       OperationToasts.botError("start", errorMessage);
     },
@@ -190,10 +207,12 @@ export const BotControls: React.FC<BotControlsProps> = ({
       invalidateCache();
     },
     onError: (error: unknown) => {
-      const errorMessage = error instanceof Error
+      const errorMessage =
+        error instanceof Error
         ? error.message
-        : typeof error === 'object' && error !== null && 'response' in error
-          ? (error as { response: { data: { error: string } } }).response.data.error
+          : typeof error === "object" && error !== null && "response" in error
+            ? (error as { response: { data: { error: string } } }).response.data
+                .error
           : "Unknown error";
       OperationToasts.botError("stop", errorMessage);
     },
@@ -207,17 +226,20 @@ export const BotControls: React.FC<BotControlsProps> = ({
       invalidateCache();
     },
     onError: (error: unknown) => {
-      const errorMessage = error instanceof Error
+      const errorMessage =
+        error instanceof Error
         ? error.message
-        : typeof error === 'object' && error !== null && 'response' in error
-          ? (error as { response: { data: { error: string } } }).response.data.error
+          : typeof error === "object" && error !== null && "response" in error
+            ? (error as { response: { data: { error: string } } }).response.data
+                .error
           : "Unknown error";
       OperationToasts.botError("emergency stop", errorMessage);
     },
   });
 
   // Determine loading state from server state (not local assumptions)
-  const isLoading = isTransitional || startMutation.isPending || stopMutation.isPending;
+  const isLoading =
+    isTransitional || startMutation.isPending || stopMutation.isPending;
 
   // Check if user has alpha qualification
   if (!hasQualification) {
@@ -299,9 +321,11 @@ export const BotControls: React.FC<BotControlsProps> = ({
             variant="warning"
             loading={emergencyStopMutation.isPending}
             onClick={() => {
-              if (window.confirm(
+              if (
+                window.confirm(
                 "🚨 EMERGENCY STOP\n\nThis will immediately cancel ALL open orders and stop trading.\n\nAre you sure?"
-              )) {
+                )
+              ) {
                 emergencyStopMutation.mutate();
               }
             }}
@@ -309,7 +333,10 @@ export const BotControls: React.FC<BotControlsProps> = ({
         </div>
         <div className="text-xs text-textMuted text-center flex items-center justify-center gap-1">
           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-          <span>Trading Active • {bot.total_trades} trades • ${(bot.total_pnl || 0).toFixed(2)} P&L</span>
+          <span>
+            Trading Active • {bot.total_trades} trades • $
+            {(bot.total_pnl || 0).toFixed(2)} P&L
+          </span>
         </div>
       </div>
     );

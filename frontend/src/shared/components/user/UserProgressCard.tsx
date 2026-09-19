@@ -10,7 +10,7 @@ import {
   Wallet,
   TrendingUp,
   Award,
-  UserCheck
+  UserCheck,
 } from "lucide-react";
 
 interface ProgressStep {
@@ -29,36 +29,44 @@ export const UserProgressCard: React.FC = () => {
 
   const steps: ProgressStep[] = [
     {
-      id: 'basic',
-      label: 'Account Created',
-      description: 'Successfully registered and verified email',
-      completed: user.userLevel === UserLevel.BASIC || user.userLevel === UserLevel.REGISTERED || user.userLevel === UserLevel.VERIFIED,
-      icon: <UserCheck className="w-4 h-4" />
+      id: "basic",
+      label: "Account Created",
+      description: "Successfully registered and verified email",
+      completed:
+        user.userLevel === UserLevel.BASIC ||
+        user.userLevel === UserLevel.REGISTERED ||
+        user.userLevel === UserLevel.VERIFIED,
+      icon: <UserCheck className="w-4 h-4" />,
     },
     {
-      id: 'registered',
-      label: 'Wallet Connected',
-      description: 'Connected wallet and signed welcome message',
-      completed: user.userLevel === UserLevel.REGISTERED || user.userLevel === UserLevel.VERIFIED,
+      id: "registered",
+      label: "Wallet Connected",
+      description: "Connected wallet and signed welcome message",
+      completed:
+        user.userLevel === UserLevel.REGISTERED ||
+        user.userLevel === UserLevel.VERIFIED,
       current: user.userLevel === UserLevel.BASIC,
-      icon: <Wallet className="w-4 h-4" />
+      icon: <Wallet className="w-4 h-4" />,
     },
     {
-      id: 'verified',
-      label: 'Trading Verified',
-      description: 'Kodiak trading account connected and verified',
+      id: "verified",
+      label: "Trading Verified",
+      description: "Kodiak trading account connected and verified",
       completed: user.userLevel === UserLevel.VERIFIED,
       current: user.userLevel === UserLevel.REGISTERED,
-      icon: <CheckCircle className="w-4 h-4" />
+      icon: <CheckCircle className="w-4 h-4" />,
     },
     {
-      id: 'qualified_alpha',
-      label: 'Alpha Access',
-      description: 'Qualified for private testing features',
-      completed: (user.roles && user.roles.includes(UserRole.QUALIFIED_ALPHA)) || false,
-      current: user.userLevel === UserLevel.VERIFIED && (!user.roles || !user.roles.includes(UserRole.QUALIFIED_ALPHA)),
-      icon: <Shield className="w-4 h-4" />
-    }
+      id: "qualified_alpha",
+      label: "Alpha Access",
+      description: "Qualified for private testing features",
+      completed:
+        (user.roles && user.roles.includes(UserRole.QUALIFIED_ALPHA)) || false,
+      current:
+        user.userLevel === UserLevel.VERIFIED &&
+        (!user.roles || !user.roles.includes(UserRole.QUALIFIED_ALPHA)),
+      icon: <Shield className="w-4 h-4" />,
+    },
   ];
 
   const completedSteps = steps.filter(step => step.completed).length;
@@ -69,10 +77,14 @@ export const UserProgressCard: React.FC = () => {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-semibold text-text">Account Progress</h3>
-          <p className="text-sm text-textMuted">Your journey to advanced trading</p>
+          <p className="text-sm text-textMuted">
+            Your journey to advanced trading
+          </p>
         </div>
         <div className="text-right">
-          <div className="text-2xl font-bold text-primary">{completedSteps}/{steps.length}</div>
+          <div className="text-2xl font-bold text-primary">
+            {completedSteps}/{steps.length}
+          </div>
           <div className="text-xs text-textMuted">Steps completed</div>
         </div>
       </div>
@@ -115,15 +127,18 @@ const ProgressStepItem: React.FC<{
   <div className="flex items-start gap-4">
     {/* Step Indicator */}
     <div className="flex flex-col items-center">
-      <div className={`
+      <div
+        className={`
         w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all
-        ${step.completed
-          ? 'bg-green-500 border-green-500 text-white'
+        ${
+          step.completed
+            ? "bg-green-500 border-green-500 text-white"
           : step.current
-            ? 'bg-primary border-primary text-white animate-pulse'
-            : 'bg-surface border-textMuted text-textMuted'
+              ? "bg-primary border-primary text-white animate-pulse"
+              : "bg-surface border-textMuted text-textMuted"
         }
-      `}>
+      `}
+      >
         {step.completed ? (
           <CheckCircle className="w-4 h-4" />
         ) : step.current ? (
@@ -133,25 +148,30 @@ const ProgressStepItem: React.FC<{
         )}
       </div>
       {!isLast && (
-        <div className={`
+        <div
+          className={`
           w-0.5 h-8 mt-2 transition-colors
-          ${step.completed ? 'bg-green-500' : 'bg-textMuted/30'}
-        `} />
+          ${step.completed ? "bg-green-500" : "bg-textMuted/30"}
+        `}
+        />
       )}
     </div>
 
     {/* Step Content */}
     <div className="flex-1 min-w-0">
       <div className="flex items-center gap-2 mb-1">
-        <h4 className={`
+        <h4
+          className={`
           font-medium transition-colors
-          ${step.completed
-            ? 'text-green-400'
+          ${
+            step.completed
+              ? "text-green-400"
             : step.current
-              ? 'text-primary'
-              : 'text-textMuted'
+                ? "text-primary"
+                : "text-textMuted"
           }
-        `}>
+        `}
+        >
           {step.label}
         </h4>
         {step.current && (
@@ -160,10 +180,12 @@ const ProgressStepItem: React.FC<{
           </span>
         )}
       </div>
-      <p className={`
+      <p
+        className={`
         text-sm transition-colors
-        ${step.completed || step.current ? 'text-text' : 'text-textMuted'}
-      `}>
+        ${step.completed || step.current ? "text-text" : "text-textMuted"}
+      `}
+      >
         {step.description}
       </p>
     </div>
@@ -177,8 +199,12 @@ const NextActionPrompt: React.FC<{ user: User }> = ({ user }) => {
         <div className="flex items-center gap-3">
           <Award className="w-5 h-5 text-green-400" />
           <div>
-            <h4 className="font-medium text-green-400">Alpha Access Granted!</h4>
-            <p className="text-sm text-textMuted">You have full access to advanced trading features.</p>
+            <h4 className="font-medium text-green-400">
+              Alpha Access Granted!
+            </h4>
+            <p className="text-sm text-textMuted">
+              You have full access to advanced trading features.
+            </p>
           </div>
         </div>
       </div>
@@ -191,7 +217,9 @@ const NextActionPrompt: React.FC<{ user: User }> = ({ user }) => {
         <div className="flex items-center gap-3">
           <Shield className="w-5 h-5 text-amber-400" />
           <div>
-            <h4 className="font-medium text-amber-400">Ready for Alpha Access</h4>
+            <h4 className="font-medium text-amber-400">
+              Ready for Alpha Access
+            </h4>
             <p className="text-sm text-textMuted mb-2">
               Check your wallet qualification to unlock advanced bot controls.
             </p>
@@ -210,9 +238,12 @@ const NextActionPrompt: React.FC<{ user: User }> = ({ user }) => {
         <div className="flex items-center gap-3">
           <TrendingUp className="w-5 h-5 text-blue-400" />
           <div>
-            <h4 className="font-medium text-blue-400">Next: Connect Trading Account</h4>
+            <h4 className="font-medium text-blue-400">
+              Next: Connect Trading Account
+            </h4>
             <p className="text-sm text-textMuted mb-2">
-              Add your Kodiak API credentials in Settings to reach VERIFIED status and unlock trading.
+              Add your Kodiak API credentials in Settings to reach VERIFIED
+              status and unlock trading.
             </p>
             <button className="text-sm bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-3 py-1 rounded transition-colors">
               Go to Settings →
@@ -229,9 +260,12 @@ const NextActionPrompt: React.FC<{ user: User }> = ({ user }) => {
         <div className="flex items-center gap-3">
           <TrendingUp className="w-5 h-5 text-blue-400" />
           <div>
-            <h4 className="font-medium text-blue-400">Next: Connect Your Wallet</h4>
+            <h4 className="font-medium text-blue-400">
+              Next: Connect Your Wallet
+            </h4>
             <p className="text-sm text-textMuted mb-2">
-              Connect your wallet on the Dashboard and sign the welcome message to reach REGISTERED status.
+              Connect your wallet on the Dashboard and sign the welcome message
+              to reach REGISTERED status.
             </p>
             <button className="text-sm bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-3 py-1 rounded transition-colors">
               Go to Dashboard →

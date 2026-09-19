@@ -1,11 +1,8 @@
 /** @format */
 
-import {
-    IAuditLogger,
-    AuditEvent
-} from '@trade-bot/shared';
-import { query } from '../../../database/pool';
-import { securityLogger as logger } from '../../../core/logging/context-aware-logger.service';
+import { IAuditLogger, AuditEvent } from "@trade-bot/shared";
+import { query } from "../../../database/pool";
+import { securityLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 /**
  * Audit Logger Adapter - Clean Architecture Implementation
@@ -14,7 +11,6 @@ import { securityLogger as logger } from '../../../core/logging/context-aware-lo
  * This adapter provides structured audit logging for security and compliance.
  */
 export class AuditLoggerAdapter implements IAuditLogger {
-
     /**
      * Log an audit event to the database
      */
@@ -30,15 +26,15 @@ export class AuditLoggerAdapter implements IAuditLogger {
             logger.debug("Audit event logged", {
                 userId: event.userId,
                 action: event.action,
-                details: event.details
+        details: event.details,
             });
-
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             logger.error("Failed to log audit event", error as Error, {
                 userId: event.userId,
                 action: event.action,
-                error: errorMessage
+        error: errorMessage,
             });
             // Don't throw - audit logging should not fail business operations
         }
@@ -52,12 +48,20 @@ export class AuditLoggerAdapter implements IAuditLogger {
 
         try {
             // Use parameterized query for batch insertion to prevent SQL injection
-            const placeholders = events.map((_, index) =>
+      const placeholders = events
+        .map(
+          (_, index) =>
                 `($${index * 3 + 1}, $${index * 3 + 2}, $${index * 3 + 3})`
-            ).join(', ');
+        )
+        .join(", ");
 
             const values: unknown[] = events.reduce((acc: unknown[], event) => {
-                return [...acc, event.userId, event.action, JSON.stringify(event.details)];
+        return [
+          ...acc,
+          event.userId,
+          event.action,
+          JSON.stringify(event.details),
+        ];
             }, []);
 
             await query(
@@ -66,14 +70,14 @@ export class AuditLoggerAdapter implements IAuditLogger {
             );
 
             logger.debug("Batch audit events logged", {
-                count: events.length
+        count: events.length,
             });
-
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             logger.error("Failed to log batch audit events", error as Error, {
                 count: events.length,
-                error: errorMessage
+        error: errorMessage,
             });
             // Don't throw - audit logging should not fail business operations
         }
@@ -82,7 +86,10 @@ export class AuditLoggerAdapter implements IAuditLogger {
     /**
      * Get audit events for a user (admin function)
      */
-    async getUserAuditEvents(userId: string, limit: number = 100): Promise<AuditEvent[]> {
+  async getUserAuditEvents(
+    userId: string,
+    limit: number = 100
+  ): Promise<AuditEvent[]> {
         try {
             const result = await query(
                 "SELECT action, details, created_at FROM audit_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
@@ -108,15 +115,15 @@ export class AuditLoggerAdapter implements IAuditLogger {
                 return {
                     userId,
                     action: typedRow.action,
-                    details
+          details,
                 };
             });
-
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             logger.error("Failed to get user audit events", error as Error, {
                 userId,
-                error: errorMessage
+        error: errorMessage,
             });
             return [];
         }
@@ -125,7 +132,10 @@ export class AuditLoggerAdapter implements IAuditLogger {
     /**
      * Get audit events by action type (admin function)
      */
-    async getAuditEventsByAction(action: string, limit: number = 100): Promise<AuditEvent[]> {
+  async getAuditEventsByAction(
+    action: string,
+    limit: number = 100
+  ): Promise<AuditEvent[]> {
         try {
             const result = await query(
                 "SELECT user_id, details, created_at FROM audit_logs WHERE action = $1 ORDER BY created_at DESC LIMIT $2",
@@ -151,15 +161,15 @@ export class AuditLoggerAdapter implements IAuditLogger {
                 return {
                     userId: typedRow.user_id,
                     action,
-                    details
+          details,
                 };
             });
-
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             logger.error("Failed to get audit events by action", error as Error, {
                 action,
-                error: errorMessage
+        error: errorMessage,
             });
             return [];
         }

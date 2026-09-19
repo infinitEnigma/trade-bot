@@ -29,7 +29,7 @@ export interface RefreshedSessionCookies {
  */
 export const setRefreshedSessionCookies = (
     res: Response,
-    tokens: RefreshedSessionCookies,
+  tokens: RefreshedSessionCookies
 ): { csrfSecret: string; csrfToken: string } => {
     // Set new httpOnly cookies
     res.cookie("accessToken", tokens.accessToken, {
@@ -73,7 +73,12 @@ export const setRefreshedSessionCookies = (
  * frontend can force a clean re-login.
  */
 export const clearSessionCookies = (res: Response): void => {
-    for (const name of ["accessToken", "refreshToken", "csrfSecret", "csrfToken"]) {
+  for (const name of [
+    "accessToken",
+    "refreshToken",
+    "csrfSecret",
+    "csrfToken",
+  ]) {
         res.clearCookie(name, {
             httpOnly: name !== "csrfToken",
             secure: secureCookies(),

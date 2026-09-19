@@ -41,7 +41,7 @@ class MemoryRateLimiter {
 
     constructor() {
         // Only start cleanup interval in production environment
-        if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
+    if (process.env.NODE_ENV !== "test" && !process.env.JEST_WORKER_ID) {
             // Clean up expired entries every 10 seconds (more aggressive for memory efficiency)
             this.cleanupInterval = setInterval(() => {
                 this.cleanup();
@@ -57,11 +57,7 @@ class MemoryRateLimiter {
      * @param windowMs - Time window in milliseconds
      * @returns Rate limit check result
      */
-    check(
-        key: string,
-        maxRequests: number,
-        windowMs: number
-    ): RateLimitResult {
+  check(key: string, maxRequests: number, windowMs: number): RateLimitResult {
         const now = Date.now();
         const limit = this.limits.get(key);
 

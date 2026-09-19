@@ -25,9 +25,18 @@ export class BotLifecycleNotifier {
         this.socketServer = io;
     }
 
-    emitStateChanged(botId: string, userId: string, from: BotActualState, to: BotActualState, correlationId: string): void {
+  emitStateChanged(
+    botId: string,
+    userId: string,
+    from: BotActualState,
+    to: BotActualState,
+    correlationId: string
+  ): void {
         if (!this.socketServer) {
-            logger.debug("No Socket.IO server registered - state change not broadcast", { botId });
+      logger.debug(
+        "No Socket.IO server registered - state change not broadcast",
+        { botId }
+      );
             return;
         }
         this.socketServer.to(`user:${userId}`).emit("bot.stateChanged", {

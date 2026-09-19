@@ -45,7 +45,7 @@ import {
     createUserContextInfo,
     parseStackTrace,
     classifyError,
-    createEnhancedErrorInfo
+  createEnhancedErrorInfo,
 } from "@trade-bot/shared";
 
 // Re-export for backward compatibility
@@ -67,7 +67,7 @@ export {
     createUserContextInfo,
     parseStackTrace,
     classifyError,
-    createEnhancedErrorInfo
+  createEnhancedErrorInfo,
 };
 
 /**
@@ -88,7 +88,7 @@ export class ContextAwareLogger {
     } = {
             contextRef: undefined,
             cachedInfo: undefined,
-            generation: 0
+    generation: 0,
         };
 
     constructor(componentName: string = "unknown") {
@@ -115,8 +115,8 @@ export class ContextAwareLogger {
             currentContext !== this.contextCache.contextRef ||
             currentCorrelationId !== this.contextCache.cachedInfo?.correlationId ||
             currentUserId !== this.contextCache.cachedInfo?.userId ||
-            (currentContext?.userLevel !== this.contextCache.cachedInfo?.userLevel) ||
-            (currentContext?.requestId !== this.contextCache.cachedInfo?.requestId);
+      currentContext?.userLevel !== this.contextCache.cachedInfo?.userLevel ||
+      currentContext?.requestId !== this.contextCache.cachedInfo?.requestId;
 
         if (shouldInvalidate) {
             this.contextCache.generation++;
@@ -124,7 +124,6 @@ export class ContextAwareLogger {
         }
         return this.contextCache.generation;
     }
-
 
     /**
      * Get current context information for logging with caching optimization.
@@ -141,14 +140,17 @@ export class ContextAwareLogger {
         const currentGeneration = this.checkContextChange();
 
         // Build or reuse the *pure* context (no per-call meta)
-        if (!this.contextCache.cachedInfo || this.contextCache.generation !== currentGeneration) {
+    if (
+      !this.contextCache.cachedInfo ||
+      this.contextCache.generation !== currentGeneration
+    ) {
             const correlationId = getCorrelationId();
             const userId = getCurrentUserId();
             const context = getCurrentContext();
 
             const pureContextInfo: LogContext = {
-                correlationId: correlationId || 'unknown',
-                userId: userId || 'unknown',
+        correlationId: correlationId || "unknown",
+        userId: userId || "unknown",
                 component: this.componentName,
                 ...this.additionalMeta, // instance-level meta only (set via child())
             };
@@ -167,7 +169,7 @@ export class ContextAwareLogger {
         // Compute operationDuration fresh on every call (time-sensitive)
         const context = getCurrentContext();
         const operationDuration =
-            context?.startTime && typeof context.startTime === 'number'
+      context?.startTime && typeof context.startTime === "number"
                 ? Date.now() - context.startTime
                 : undefined;
 
@@ -204,11 +206,18 @@ export class ContextAwareLogger {
     /**
      * Type-safe error logging with structured error information
      */
-    errorWithInfo(message: string, errorInfo: ErrorInfo, meta?: Record<string, unknown>): void {
-        logger.error(message, this.getContextInfo({
+  errorWithInfo(
+    message: string,
+    errorInfo: ErrorInfo,
+    meta?: Record<string, unknown>
+  ): void {
+    logger.error(
+      message,
+      this.getContextInfo({
             errorInfo,
-            ...meta
-        }));
+        ...meta,
+      })
+    );
     }
 
     /**
@@ -236,8 +245,13 @@ export class ContextAwareLogger {
     /**
      * Create child logger for sub-operations
      */
-    child(operationName: string, additionalMeta?: Record<string, unknown>): ContextAwareLogger {
-        const childLogger = new ContextAwareLogger(`${this.componentName}:${operationName}`);
+  child(
+    operationName: string,
+    additionalMeta?: Record<string, unknown>
+  ): ContextAwareLogger {
+    const childLogger = new ContextAwareLogger(
+      `${this.componentName}:${operationName}`
+    );
 
         // Store additional metadata in child logger
         childLogger.additionalMeta = additionalMeta || {};
@@ -257,16 +271,24 @@ export class ContextAwareLogger {
     /**
      * Start operation timing
      */
-    startOperation(operationName: string, meta?: Record<string, unknown>): OperationTimer {
+  startOperation(
+    operationName: string,
+    meta?: Record<string, unknown>
+  ): OperationTimer {
         return new OperationTimer(this, operationName, meta);
     }
 
     /**
      * Log performance metrics
      */
-    performance(operation: string, duration: number, success: boolean, meta?: Record<string, unknown>): void {
-        const level = success ? 'debug' : 'warn';
-        const status = success ? 'completed' : 'failed';
+  performance(
+    operation: string,
+    duration: number,
+    success: boolean,
+    meta?: Record<string, unknown>
+  ): void {
+    const level = success ? "debug" : "warn";
+    const status = success ? "completed" : "failed";
 
         this.log(level, `Operation ${status}: ${operation}`, {
             operation,
@@ -280,23 +302,27 @@ export class ContextAwareLogger {
     /**
      * Generic log method
      */
-    private log(level: string, message: string, meta?: Record<string, unknown>): void {
+  private log(
+    level: string,
+    message: string,
+    meta?: Record<string, unknown>
+  ): void {
         const contextInfo = this.getContextInfo(meta);
 
         switch (level) {
-            case 'info':
+      case "info":
                 logger.info(message, contextInfo);
                 break;
-            case 'error':
+      case "error":
                 logger.error(message, contextInfo);
                 break;
-            case 'warn':
+      case "warn":
                 logger.warn(message, contextInfo);
                 break;
-            case 'debug':
+      case "debug":
                 logger.debug(message, contextInfo);
                 break;
-            case 'http':
+      case "http":
                 logger.http(message, contextInfo);
                 break;
             default:
@@ -315,7 +341,11 @@ export class OperationTimer {
     private operationName: string;
     private meta?: Record<string, unknown>;
 
-    constructor(logger: ContextAwareLogger, operationName: string, meta?: Record<string, unknown>) {
+  constructor(
+    logger: ContextAwareLogger,
+    operationName: string,
+    meta?: Record<string, unknown>
+  ) {
         this.startTime = Date.now();
         this.logger = logger;
         this.operationName = operationName;
@@ -323,7 +353,7 @@ export class OperationTimer {
 
         this.logger.debug(`Starting operation: ${operationName}`, {
             operation: operationName,
-            operationType: 'start',
+      operationType: "start",
             ...meta,
         });
     }
@@ -354,7 +384,7 @@ export class OperationTimer {
         if (error) {
             this.logger.error(`Operation failed: ${this.operationName}`, error, {
                 operation: this.operationName,
-                operationType: 'error',
+        operationType: "error",
                 duration,
                 ...this.meta,
                 ...errorMeta,
@@ -370,35 +400,35 @@ export class OperationTimer {
     }
 }
 
-
 // Create singleton instances for common components
-export const positionSyncLogger = new ContextAwareLogger('position-sync');
-export const redisLogger = new ContextAwareLogger('redis');
-export const websocketLogger = new ContextAwareLogger('websocket');
+export const positionSyncLogger = new ContextAwareLogger("position-sync");
+export const redisLogger = new ContextAwareLogger("redis");
+export const websocketLogger = new ContextAwareLogger("websocket");
 
 // Infrastructure Layer Loggers
-export const httpLogger = new ContextAwareLogger('http');
-export const databaseLogger = new ContextAwareLogger('database');
-export const cacheLogger = new ContextAwareLogger('cache');
+export const httpLogger = new ContextAwareLogger("http");
+export const databaseLogger = new ContextAwareLogger("database");
+export const cacheLogger = new ContextAwareLogger("cache");
 
 // Core Domain Loggers
-export const tradingLogger = new ContextAwareLogger('trading');
-export const walletLogger = new ContextAwareLogger('wallet');
-export const authLogger = new ContextAwareLogger('auth');
-export const userLogger = new ContextAwareLogger('user');
+export const tradingLogger = new ContextAwareLogger("trading");
+export const walletLogger = new ContextAwareLogger("wallet");
+export const authLogger = new ContextAwareLogger("auth");
+export const userLogger = new ContextAwareLogger("user");
 
 // Cross-cutting Concern Loggers
-export const securityLogger = new ContextAwareLogger('security');
-export const validationLogger = new ContextAwareLogger('validation');
-export const performanceLogger = new ContextAwareLogger('performance');
-export const integrationLogger = new ContextAwareLogger('integration');
+export const securityLogger = new ContextAwareLogger("security");
+export const validationLogger = new ContextAwareLogger("validation");
+export const performanceLogger = new ContextAwareLogger("performance");
+export const integrationLogger = new ContextAwareLogger("integration");
 
 // Default instance
-export const contextLogger = new ContextAwareLogger('application');
+export const contextLogger = new ContextAwareLogger("application");
 
 // Test instance
-export const testsLogger = new ContextAwareLogger('tests');
+export const testsLogger = new ContextAwareLogger("tests");
 
 // Re-export ErrorCodes from shared for backward compatibility
 //export { SharedErrorCodes };
-export type ErrorCodes = typeof SharedErrorCodes[keyof typeof SharedErrorCodes];
+export type ErrorCodes =
+  (typeof SharedErrorCodes)[keyof typeof SharedErrorCodes];

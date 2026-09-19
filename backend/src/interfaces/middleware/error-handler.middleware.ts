@@ -6,7 +6,7 @@ import {
     SharedErrorCodes,
     createErrorResponse,
     getErrorStatusCode,
-    isOperationalError
+  isOperationalError,
 } from "@trade-bot/shared";
 import { securityLogger as logger } from "../../core/logging/context-aware-logger.service";
 
@@ -50,7 +50,9 @@ export interface ErrorHandlerConfig {
     errorTransformers?: Array<(error: Error) => Error>;
 
     /** Custom response transformers */
-    responseTransformers?: Array<(response: Record<string, unknown>, error: Error) => Record<string, unknown>>;
+  responseTransformers?: Array<
+    (response: Record<string, unknown>, error: Error) => Record<string, unknown>
+  >;
 }
 
 /**
@@ -72,7 +74,12 @@ export class ErrorHandlerMiddleware {
     /**
      * Main error handling middleware
      */
-    handle = (error: Error, req: Request, res: Response, _next: NextFunction): void => {
+  handle = (
+    error: Error,
+    req: Request,
+    res: Response,
+    _next: NextFunction
+  ): void => {
         // Skip if response already sent
         if (res.headersSent) {
             return;
@@ -99,7 +106,10 @@ export class ErrorHandlerMiddleware {
         }
 
         // Create structured error response
-        const errorResponse = this.createErrorResponse(processedError, correlationId);
+    const errorResponse = this.createErrorResponse(
+      processedError,
+      correlationId
+    );
 
         // Apply response transformers
         let finalResponse = errorResponse;
@@ -119,7 +129,10 @@ export class ErrorHandlerMiddleware {
     /**
      * Create structured error response
      */
-    private createErrorResponse(error: Error, correlationId?: string): Record<string, unknown> {
+  private createErrorResponse(
+    error: Error,
+    correlationId?: string
+  ): Record<string, unknown> {
         if (error instanceof AppError) {
             // Use AppError's built-in response method
             return error.toResponse(correlationId);
@@ -133,14 +146,15 @@ export class ErrorHandlerMiddleware {
      * Extract correlation ID from request
      */
     private extractCorrelationId(req: Request): string | undefined {
-        const correlationId = req.headers['x-correlation-id'];
-        const requestId = req.headers['x-request-id'];
-        const customCorrelationId = (req as unknown as { correlationId?: string }).correlationId;
+    const correlationId = req.headers["x-correlation-id"];
+    const requestId = req.headers["x-request-id"];
+    const customCorrelationId = (req as unknown as { correlationId?: string })
+      .correlationId;
 
         return (
-            (typeof correlationId === 'string' ? correlationId : undefined) ||
+      (typeof correlationId === "string" ? correlationId : undefined) ||
             customCorrelationId ||
-            (typeof requestId === 'string' ? requestId : undefined)
+      (typeof requestId === "string" ? requestId : undefined)
         );
     }
 
@@ -162,7 +176,7 @@ export class ErrorHandlerMiddleware {
             name: error.name,
             method: req.method,
             url: req.url,
-            userAgent: req.get('User-Agent'),
+      userAgent: req.get("User-Agent"),
             ip: req.ip,
             userId: (req as unknown as { user?: { userId?: string } }).user?.userId,
             isOperational,
@@ -182,7 +196,9 @@ export class ErrorHandlerMiddleware {
 /**
  * Factory function for creating error handler middleware
  */
-export function createErrorHandler(config?: ErrorHandlerConfig): ErrorHandlerMiddleware {
+export function createErrorHandler(
+  config?: ErrorHandlerConfig
+): ErrorHandlerMiddleware {
     return new ErrorHandlerMiddleware(config);
 }
 
@@ -203,7 +219,9 @@ export class ErrorHandlerUtils {
     /**
      * Wrap async route handlers to catch errors
      */
-    static asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => unknown) {
+  static asyncHandler(
+    fn: (req: Request, res: Response, next: NextFunction) => unknown
+  ) {
         return (req: Request, res: Response, next: NextFunction) => {
             Promise.resolve(fn(req, res, next)).catch(next);
         };
@@ -242,28 +260,28 @@ export class ErrorHandlerUtils {
     /**
      * Get error severity level for monitoring
      */
-    static getSeverity(error: Error): 'low' | 'medium' | 'high' | 'critical' {
+  static getSeverity(error: Error): "low" | "medium" | "high" | "critical" {
         if (error instanceof AppError) {
             switch (error.code) {
                 case SharedErrorCodes.INTERNAL_ERROR:
                 case SharedErrorCodes.DATABASE_ERROR:
                 case SharedErrorCodes.CONFIGURATION_ERROR:
-                    return 'critical';
+          return "critical";
 
                 case SharedErrorCodes.EXTERNAL_SERVICE_ERROR:
                 case SharedErrorCodes.CONNECTION_ERROR:
-                    return 'high';
+          return "high";
 
                 case SharedErrorCodes.UNAUTHENTICATED:
                 case SharedErrorCodes.INSUFFICIENT_PERMISSIONS:
-                    return 'medium';
+          return "medium";
 
                 default:
-                    return 'low';
+          return "low";
             }
         }
 
         // Unknown errors are potentially critical
-        return 'high';
+    return "high";
     }
 }

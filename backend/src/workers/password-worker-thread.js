@@ -5,8 +5,8 @@
  * password hashing and comparison operations in worker threads.
  */
 
-const { parentPort } = require('worker_threads');
-const bcrypt = require('bcryptjs');
+const { parentPort } = require("worker_threads");
+const bcrypt = require("bcryptjs");
 
 // Worker state tracking
 let isHealthy = true;
@@ -20,32 +20,34 @@ const healthCheckInterval = setInterval(() => {
   const now = Date.now();
   const idleTime = now - lastActivity;
   
-  if (idleTime > 60000) { // No activity for 1 minute
-    console.warn('Worker: No activity for 60 seconds, sending heartbeat');
+  if (idleTime > 60000) {
+    // No activity for 1 minute
+    console.warn("Worker: No activity for 60 seconds, sending heartbeat");
     try {
       parentPort.postMessage({
-        type: 'heartbeat',
+        type: "heartbeat",
         timestamp: now,
-        idleTime
+        idleTime,
       });
     } catch (error) {
-      console.error('Worker: Failed to send heartbeat', error);
+      console.error("Worker: Failed to send heartbeat", error);
     }
   }
   
   // Force garbage collection if available to prevent memory leaks
-  if (idleTime > 120000 && global.gc) { // 2 minutes
+  if (idleTime > 120000 && global.gc) {
+    // 2 minutes
     try {
       global.gc();
     } catch (error) {
-      console.warn('Worker: GC not available or failed', error);
+      console.warn("Worker: GC not available or failed", error);
     }
   }
 }, 30000); // Check every 30 seconds
 
-parentPort.on('message', async (message) => {
+parentPort.on("message", async message => {
   if (isShuttingDown) {
-    console.warn('Worker: Received message while shutting down, ignoring');
+    console.warn("Worker: Received message while shutting down, ignoring");
     return;
   }
 
@@ -54,28 +56,37 @@ parentPort.on('message', async (message) => {
 
   try {
     switch (action) {
-      case 'hash': {
+      case "hash": {
         const { password, rounds } = data;
         
         // Validate input with enhanced validation
-        if (!password || typeof password !== 'string' || password.length === 0) {
-          throw new Error('Invalid password: must be a non-empty string');
+        if (
+          !password ||
+          typeof password !== "string" ||
+          password.length === 0
+        ) {
+          throw new Error("Invalid password: must be a non-empty string");
         }
-        if (!rounds || typeof rounds !== 'number' || rounds < 4 || rounds > 20) {
-          throw new Error('Invalid rounds: must be a number between 4 and 20');
+        if (
+          !rounds ||
+          typeof rounds !== "number" ||
+          rounds < 4 ||
+          rounds > 20
+        ) {
+          throw new Error("Invalid rounds: must be a number between 4 and 20");
         }
 
         // Enhanced timeout protection for bcrypt operations
         const hashPromise = bcrypt.hash(password, rounds);
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Hash operation timeout')), 25000); // Reduced to 25s for better responsiveness
+          setTimeout(() => reject(new Error("Hash operation timeout")), 25000); // Reduced to 25s for better responsiveness
         });
 
         const hash = await Promise.race([hashPromise, timeoutPromise]);
         
         // Validate result
-        if (!hash || typeof hash !== 'string' || hash.length < 50) {
-          throw new Error('Invalid hash result from bcrypt');
+        if (!hash || typeof hash !== "string" || hash.length < 50) {
+          throw new Error("Invalid hash result from bcrypt");
         }
         
         parentPort.postMessage({ 
@@ -83,33 +94,42 @@ parentPort.on('message', async (message) => {
           success: true, 
           result: hash,
           timestamp: Date.now(),
-          duration: Date.now() - lastActivity
+          duration: Date.now() - lastActivity,
         });
         break;
       }
 
-      case 'compare': {
+      case "compare": {
         const { password: comparePassword, hash } = data;
         
         // Validate input with enhanced validation
-        if (!comparePassword || typeof comparePassword !== 'string' || comparePassword.length === 0) {
-          throw new Error('Invalid password: must be a non-empty string');
+        if (
+          !comparePassword ||
+          typeof comparePassword !== "string" ||
+          comparePassword.length === 0
+        ) {
+          throw new Error("Invalid password: must be a non-empty string");
         }
-        if (!hash || typeof hash !== 'string' || hash.length < 50) {
-          throw new Error('Invalid hash: must be a non-empty string with minimum length');
+        if (!hash || typeof hash !== "string" || hash.length < 50) {
+          throw new Error(
+            "Invalid hash: must be a non-empty string with minimum length"
+          );
         }
 
         // Enhanced timeout protection for bcrypt operations
         const comparePromise = bcrypt.compare(comparePassword, hash);
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Compare operation timeout')), 25000); // Reduced to 25s for better responsiveness
+          setTimeout(
+            () => reject(new Error("Compare operation timeout")),
+            25000
+          ); // Reduced to 25s for better responsiveness
         });
 
         const isValid = await Promise.race([comparePromise, timeoutPromise]);
         
         // Validate result
-        if (typeof isValid !== 'boolean') {
-          throw new Error('Invalid comparison result from bcrypt');
+        if (typeof isValid !== "boolean") {
+          throw new Error("Invalid comparison result from bcrypt");
         }
         
         parentPort.postMessage({ 
@@ -117,12 +137,12 @@ parentPort.on('message', async (message) => {
           success: true, 
           result: isValid,
           timestamp: Date.now(),
-          duration: Date.now() - lastActivity
+          duration: Date.now() - lastActivity,
         });
         break;
       }
 
-      case 'healthCheck': {
+      case "healthCheck": {
         parentPort.postMessage({
           id,
           success: true,
@@ -131,21 +151,21 @@ parentPort.on('message', async (message) => {
             lastActivity,
             uptime: process.uptime(),
             memoryUsage: process.memoryUsage(),
-            isShuttingDown
+            isShuttingDown,
           },
-          timestamp: Date.now()
+          timestamp: Date.now(),
         });
         break;
       }
 
-      case 'shutdown': {
+      case "shutdown": {
         // Graceful shutdown request
         isShuttingDown = true;
         parentPort.postMessage({
           id,
           success: true,
-          result: 'Worker shutting down gracefully',
-          timestamp: Date.now()
+          result: "Worker shutting down gracefully",
+          timestamp: Date.now(),
         });
         break;
       }
@@ -210,8 +230,8 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Handle worker termination gracefully
-process.on('SIGTERM', () => {
-  console.log('Worker: Received SIGTERM, shutting down gracefully');
+process.on("SIGTERM", () => {
+  console.log("Worker: Received SIGTERM, shutting down gracefully");
   isShuttingDown = true;
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
@@ -219,8 +239,8 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-process.on('SIGINT', () => {
-  console.log('Worker: Received SIGINT, shutting down gracefully');
+process.on("SIGINT", () => {
+  console.log("Worker: Received SIGINT, shutting down gracefully");
   isShuttingDown = true;
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
@@ -231,12 +251,12 @@ process.on('SIGINT', () => {
 // Handle worker initialization with enhanced error handling
 try {
   parentPort.postMessage({
-    type: 'initialized',
+    type: "initialized",
     timestamp: Date.now(),
     pid: process.pid,
-    uptime: process.uptime()
+    uptime: process.uptime(),
   });
 } catch (error) {
-  console.error('Worker: Failed to send initialization message:', error);
+  console.error("Worker: Failed to send initialization message:", error);
   process.exit(1);
 }

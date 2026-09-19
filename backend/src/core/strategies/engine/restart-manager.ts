@@ -24,10 +24,10 @@
 import { performanceLogger as logger } from "../../logging/context-aware-logger.service";
 
 export enum RestartPolicy {
-    IMMEDIATE = 'immediate',         // Restart immediately on failure
-    EXPONENTIAL_BACKOFF = 'backoff', // Wait longer between attempts
-    MANUAL_ONLY = 'manual',          // Require manual intervention
-    TIME_WINDOWED = 'windowed',      // Only restart during trading hours
+  IMMEDIATE = "immediate", // Restart immediately on failure
+  EXPONENTIAL_BACKOFF = "backoff", // Wait longer between attempts
+  MANUAL_ONLY = "manual", // Require manual intervention
+  TIME_WINDOWED = "windowed", // Only restart during trading hours
 }
 
 export interface RestartAttempt {
@@ -72,8 +72,8 @@ export class RestartManager {
             backoffMultiplier: 2,
             jitterFactor: 0.1, // 10% jitter
             tradingHoursOnly: false,
-            tradingHoursStart: '09:30',
-            tradingHoursEnd: '16:00',
+      tradingHoursStart: "09:30",
+      tradingHoursEnd: "16:00",
             ...config,
         };
     }
@@ -115,7 +115,7 @@ export class RestartManager {
             const remainingDelay = backoffDelay - (now - this.lastRestartAttempt);
             return {
                 success: false,
-                error: 'Still in backoff period',
+        error: "Still in backoff period",
                 attemptNumber,
                 totalAttempts: this.restartHistory.length,
                 nextRetryIn: remainingDelay,
@@ -160,7 +160,6 @@ export class RestartManager {
                 attemptNumber,
                 totalAttempts: this.restartHistory.length,
             };
-
         } catch (error) {
             logger.error("Intelligent restart failed", error as Error, {
                 attemptNumber,
@@ -172,7 +171,10 @@ export class RestartManager {
                 error: error instanceof Error ? error.message : String(error),
                 attemptNumber,
                 totalAttempts: this.restartHistory.length,
-                nextRetryIn: attemptNumber < this.config.maxAttempts ? this.calculateBackoffDelay(attemptNumber + 1) : undefined,
+        nextRetryIn:
+          attemptNumber < this.config.maxAttempts
+            ? this.calculateBackoffDelay(attemptNumber + 1)
+            : undefined,
             };
         }
     }
@@ -190,7 +192,11 @@ export class RestartManager {
     /**
      * Check if restart is allowed based on current policy
      */
-    private checkRestartPolicy(now: number): { allowed: boolean; reason?: string; nextRetryIn?: number } {
+  private checkRestartPolicy(now: number): {
+    allowed: boolean;
+    reason?: string;
+    nextRetryIn?: number;
+  } {
         switch (this.config.policy) {
             case RestartPolicy.IMMEDIATE:
                 return { allowed: true };
@@ -201,7 +207,7 @@ export class RestartManager {
             case RestartPolicy.MANUAL_ONLY:
                 return {
                     allowed: false,
-                    reason: 'Manual restart required - automatic restarts disabled',
+          reason: "Manual restart required - automatic restarts disabled",
                 };
 
             case RestartPolicy.TIME_WINDOWED:
@@ -218,7 +224,11 @@ export class RestartManager {
     /**
      * Check if current time is within trading hours for TIME_WINDOWED policy
      */
-    private checkTradingHoursPolicy(now: number): { allowed: boolean; reason?: string; nextRetryIn?: number } {
+  private checkTradingHoursPolicy(now: number): {
+    allowed: boolean;
+    reason?: string;
+    nextRetryIn?: number;
+  } {
         if (!this.config.tradingHoursOnly) {
             return { allowed: true };
         }
@@ -228,12 +238,17 @@ export class RestartManager {
         const currentMinute = currentTime.getMinutes();
         const currentMinutes = currentHour * 60 + currentMinute;
 
-        const [startHour, startMinute] = this.config.tradingHoursStart.split(':').map(Number);
-        const [endHour, endMinute] = this.config.tradingHoursEnd.split(':').map(Number);
+    const [startHour, startMinute] = this.config.tradingHoursStart
+      .split(":")
+      .map(Number);
+    const [endHour, endMinute] = this.config.tradingHoursEnd
+      .split(":")
+      .map(Number);
         const startMinutes = startHour * 60 + startMinute;
         const endMinutes = endHour * 60 + endMinute;
 
-        const isWithinTradingHours = currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+    const isWithinTradingHours =
+      currentMinutes >= startMinutes && currentMinutes <= endMinutes;
 
         if (isWithinTradingHours) {
             return { allowed: true };
@@ -260,13 +275,16 @@ export class RestartManager {
         }
 
         // Exponential backoff: base * (multiplier ^ (attempt - 1))
-        const exponentialDelay = this.config.baseBackoffMs * Math.pow(this.config.backoffMultiplier, attemptNumber - 1);
+    const exponentialDelay =
+      this.config.baseBackoffMs *
+      Math.pow(this.config.backoffMultiplier, attemptNumber - 1);
 
         // Cap at maximum backoff
         const cappedDelay = Math.min(exponentialDelay, this.config.maxBackoffMs);
 
         // Add jitter to prevent thundering herd
-        const jitter = cappedDelay * this.config.jitterFactor * (Math.random() * 2 - 1); // ±jitterFactor
+    const jitter =
+      cappedDelay * this.config.jitterFactor * (Math.random() * 2 - 1); // ±jitterFactor
         const finalDelay = Math.max(0, cappedDelay + jitter);
 
         return Math.round(finalDelay);
@@ -287,12 +305,17 @@ export class RestartManager {
         canAttemptRestart: boolean;
     } {
         const totalAttempts = this.restartHistory.length;
-        const successfulAttempts = this.restartHistory.filter(a => a.success).length;
+    const successfulAttempts = this.restartHistory.filter(
+      a => a.success
+    ).length;
         const failedAttempts = totalAttempts - successfulAttempts;
-        const successRate = totalAttempts > 0 ? successfulAttempts / totalAttempts : 0;
+    const successRate =
+      totalAttempts > 0 ? successfulAttempts / totalAttempts : 0;
 
-        const averageBackoffDelay = totalAttempts > 0
-            ? this.restartHistory.reduce((sum, a) => sum + a.backoffDelay, 0) / totalAttempts
+    const averageBackoffDelay =
+      totalAttempts > 0
+        ? this.restartHistory.reduce((sum, a) => sum + a.backoffDelay, 0) /
+          totalAttempts
             : 0;
 
         const currentBackoffDelay = this.calculateBackoffDelay(totalAttempts + 1);
@@ -361,17 +384,17 @@ export class RestartManager {
     shouldAttemptRestartForReason(reason: string): boolean {
         // Define which failure reasons should trigger restarts
         const restartableReasons = [
-            'process_crash',
-            'process_unhealthy',
-            'health_check_failed',
-            'connection_lost',
+      "process_crash",
+      "process_unhealthy",
+      "health_check_failed",
+      "connection_lost",
         ];
 
         const nonRestartableReasons = [
-            'manual_shutdown',
-            'configuration_error',
-            'insufficient_permissions',
-            'out_of_memory',
+      "manual_shutdown",
+      "configuration_error",
+      "insufficient_permissions",
+      "out_of_memory",
         ];
 
         if (nonRestartableReasons.includes(reason)) {
@@ -383,7 +406,9 @@ export class RestartManager {
         }
 
         // For unknown reasons, default to allowing restart
-        logger.warn("Unknown failure reason, defaulting to allow restart", { reason });
+    logger.warn("Unknown failure reason, defaulting to allow restart", {
+      reason,
+    });
         return true;
     }
 
@@ -391,41 +416,50 @@ export class RestartManager {
      * Get detailed restart analysis
      */
     getRestartAnalysis(): {
-        statistics: ReturnType<RestartManager['getRestartStatistics']>;
+    statistics: ReturnType<RestartManager["getRestartStatistics"]>;
         recentAttempts: RestartAttempt[];
         recommendations: string[];
-        healthStatus: 'healthy' | 'degraded' | 'critical';
+    healthStatus: "healthy" | "degraded" | "critical";
     } {
         const statistics = this.getRestartStatistics();
         const recentAttempts = this.restartHistory.slice(-5); // Last 5 attempts
         const recommendations: string[] = [];
 
         // Determine health status
-        let healthStatus: 'healthy' | 'degraded' | 'critical' = 'healthy';
+    let healthStatus: "healthy" | "degraded" | "critical" = "healthy";
 
         if (statistics.failedAttempts > statistics.successfulAttempts) {
-            healthStatus = 'degraded';
+      healthStatus = "degraded";
         }
 
         if (statistics.failedAttempts >= 3 || !statistics.canAttemptRestart) {
-            healthStatus = 'critical';
+      healthStatus = "critical";
         }
 
         // Generate recommendations
         if (!statistics.canAttemptRestart) {
-            recommendations.push("Maximum restart attempts reached - manual intervention required");
+      recommendations.push(
+        "Maximum restart attempts reached - manual intervention required"
+      );
         }
 
         if (statistics.successRate < 0.5 && statistics.totalAttempts >= 3) {
-            recommendations.push("Low success rate - investigate root cause before further attempts");
+      recommendations.push(
+        "Low success rate - investigate root cause before further attempts"
+      );
         }
 
-        if (statistics.averageBackoffDelay > 60000) { // 1 minute
-            recommendations.push("High average backoff delay - consider adjusting restart policy");
+    if (statistics.averageBackoffDelay > 60000) {
+      // 1 minute
+      recommendations.push(
+        "High average backoff delay - consider adjusting restart policy"
+      );
         }
 
         if (this.config.policy === RestartPolicy.MANUAL_ONLY) {
-            recommendations.push("Manual restart policy active - automatic recovery disabled");
+      recommendations.push(
+        "Manual restart policy active - automatic recovery disabled"
+      );
         }
 
         return {

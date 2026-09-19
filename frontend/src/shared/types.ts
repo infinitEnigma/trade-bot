@@ -33,11 +33,11 @@ export class Balance {
         public lastUpdated: Date
     ) { }
 
-    static zero(currency: string = 'USD'): Balance {
+  static zero(currency: string = "USD"): Balance {
         return new Balance(0, 0, 0, currency, new Date());
     }
 
-    static fromTotal(total: number, currency: string = 'USD'): Balance {
+  static fromTotal(total: number, currency: string = "USD"): Balance {
         return new Balance(total, total, 0, currency, new Date());
     }
 
@@ -61,7 +61,7 @@ export class Balance {
 
     lock(amount: number): Balance {
         if (!this.canWithdraw(amount)) {
-            throw new Error('Insufficient available balance');
+      throw new Error("Insufficient available balance");
         }
 
         return new Balance(
@@ -75,7 +75,7 @@ export class Balance {
 
     unlock(amount: number): Balance {
         if (this.locked < amount) {
-            throw new Error('Insufficient locked balance');
+      throw new Error("Insufficient locked balance");
         }
 
         return new Balance(
@@ -99,7 +99,7 @@ export class Balance {
 
     subtract(amount: number): Balance {
         if (this.available < amount) {
-            throw new Error('Insufficient available balance');
+      throw new Error("Insufficient available balance");
         }
 
         return new Balance(
@@ -124,7 +124,7 @@ export class Balance {
 export enum StrategyType {
     GRID = "GRID",
     TREND_FOLLOWING = "TREND_FOLLOWING",
-    ARBITRAGE = "ARBITRAGE"
+  ARBITRAGE = "ARBITRAGE",
 }
 
 // Strategy class for frontend use
@@ -143,11 +143,11 @@ export class Strategy {
         return currentPrice > 0;
     }
 
-    getRiskLevel(): 'LOW' | 'MEDIUM' | 'HIGH' {
+  getRiskLevel(): "LOW" | "MEDIUM" | "HIGH" {
         const leverage = this.config.leverage || 1;
-        if (leverage <= 2) return 'LOW';
-        if (leverage <= 5) return 'MEDIUM';
-        return 'HIGH';
+    if (leverage <= 2) return "LOW";
+    if (leverage <= 5) return "MEDIUM";
+    return "HIGH";
     }
 
     isValid(): boolean {
@@ -163,14 +163,32 @@ export class Strategy {
     private isValidConfig(): boolean {
         const config = this.config;
 
-        if (config.leverage !== undefined && (config.leverage <= 0 || typeof config.leverage !== 'number')) return false;
-        if (config.orderQuantity !== undefined && (config.orderQuantity <= 0 || typeof config.orderQuantity !== 'number')) return false;
+    if (
+      config.leverage !== undefined &&
+      (config.leverage <= 0 || typeof config.leverage !== "number")
+    )
+      return false;
+    if (
+      config.orderQuantity !== undefined &&
+      (config.orderQuantity <= 0 || typeof config.orderQuantity !== "number")
+    )
+      return false;
 
         switch (this.type) {
             case StrategyType.GRID:
-                return !!(config.gridSize && config.gridRange && config.gridSize > 0 && config.gridRange > 0);
+        return !!(
+          config.gridSize &&
+          config.gridRange &&
+          config.gridSize > 0 &&
+          config.gridRange > 0
+        );
             case StrategyType.TREND_FOLLOWING:
-                return !!(config.entryThreshold && config.exitThreshold && Math.abs(config.entryThreshold) > 0 && Math.abs(config.exitThreshold) > 0);
+        return !!(
+          config.entryThreshold &&
+          config.exitThreshold &&
+          Math.abs(config.entryThreshold) > 0 &&
+          Math.abs(config.exitThreshold) > 0
+        );
             case StrategyType.ARBITRAGE:
                 return true;
             default:
@@ -192,4 +210,11 @@ export interface StrategyConfig {
 }
 
 // Re-export from monorepo shared package for consistency
-export type { UserRole as SharedUserRole, UserLevel as SharedUserLevel, User as SharedUser, StrategyType as SharedStrategyType, Strategy as SharedStrategy, StrategyConfig as SharedStrategyConfig } from "@trade-bot/shared";
+export type {
+  UserRole as SharedUserRole,
+  UserLevel as SharedUserLevel,
+  User as SharedUser,
+  StrategyType as SharedStrategyType,
+  Strategy as SharedStrategy,
+  StrategyConfig as SharedStrategyConfig,
+} from "@trade-bot/shared";

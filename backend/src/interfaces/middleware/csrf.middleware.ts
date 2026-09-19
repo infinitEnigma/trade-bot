@@ -12,19 +12,24 @@ export interface CSRFRequest extends Request {
 }
 
 // CSRF middleware for protecting state-changing operations
-export function csrfMiddleware(req: CSRFRequest, res: Response, next: NextFunction): void {
+export function csrfMiddleware(
+  req: CSRFRequest,
+  res: Response,
+  next: NextFunction
+): void {
     try {
         // Skip CSRF protection for safe methods
-        const safeMethods = ['GET', 'HEAD', 'OPTIONS'];
+    const safeMethods = ["GET", "HEAD", "OPTIONS"];
         if (safeMethods.includes(req.method)) {
             return next();
         }
 
         // Get CSRF token from various sources
-        let token = req.headers['x-csrf-token'] as string ||
-            req.headers['csrf-token'] as string ||
+    let token =
+      (req.headers["x-csrf-token"] as string) ||
+      (req.headers["csrf-token"] as string) ||
             req.body?._csrf ||
-            req.query._csrf as string;
+      (req.query._csrf as string);
 
         // Also check for token in cookies (less secure but supported)
         if (!token) {
@@ -36,7 +41,7 @@ export function csrfMiddleware(req: CSRFRequest, res: Response, next: NextFuncti
                 method: req.method,
                 path: req.path,
                 ip: req.ip,
-                userAgent: req.get('User-Agent'),
+        userAgent: req.get("User-Agent"),
             });
             res.status(403).json({
                 success: false,
@@ -101,16 +106,20 @@ export function csrfMiddleware(req: CSRFRequest, res: Response, next: NextFuncti
 }
 
 // Middleware to set CSRF token and secret in response
-export function csrfTokenMiddleware(req: CSRFRequest, res: Response, next: NextFunction): void {
+export function csrfTokenMiddleware(
+  req: CSRFRequest,
+  res: Response,
+  next: NextFunction
+): void {
     try {
         // Generate a new secret for this session
         const secret = tokens.secretSync();
 
         // Set the secret in httpOnly cookie
-        res.cookie('csrfSecret', secret, {
+    res.cookie("csrfSecret", secret, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
             maxAge: 24 * 60 * 60 * 1000, // 24 hours
         });
 
@@ -118,10 +127,10 @@ export function csrfTokenMiddleware(req: CSRFRequest, res: Response, next: NextF
         const token = tokens.create(secret);
 
         // Set token in non-httpOnly cookie for client access
-        res.cookie('csrfToken', token, {
+    res.cookie("csrfToken", token, {
             httpOnly: false, // Client needs to read this
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
             maxAge: 24 * 60 * 60 * 1000, // 24 hours
         });
 

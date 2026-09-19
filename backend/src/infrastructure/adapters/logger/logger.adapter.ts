@@ -9,12 +9,17 @@
  * @format
  */
 
-import { ILogger } from '@trade-bot/shared';
-import { ContextAwareLogger, createErrorInfo, createEnhancedErrorInfo, createPerformanceMetrics, ErrorCodes } from '../../../core/logging/context-aware-logger.service';
+import { ILogger } from "@trade-bot/shared";
+import {
+  ContextAwareLogger,
+  createErrorInfo,
+  createEnhancedErrorInfo,
+  createPerformanceMetrics,
+  ErrorCodes,
+} from "../../../core/logging/context-aware-logger.service";
 
 // Import OperationTimer for performance tracking
-import { OperationTimer } from '../../../core/logging/context-aware-logger.service';
-
+import { OperationTimer } from "../../../core/logging/context-aware-logger.service";
 
 /**
  * Log context interface for typed logging context
@@ -74,7 +79,9 @@ export class LoggerAdapter implements ILogger {
 
     constructor(componentName?: string) {
         // Initialize with context-aware logger, using component name if provided
-        this.contextAwareLogger = new ContextAwareLogger(componentName || 'logger-adapter');
+    this.contextAwareLogger = new ContextAwareLogger(
+      componentName || "logger-adapter"
+    );
     }
 
     /**
@@ -118,31 +125,41 @@ export class LoggerAdapter implements ILogger {
         if (meta?.error instanceof Error) {
             const error = meta.error as Error;
             const enhancedErrorInfo = createEnhancedErrorInfo(error, {
-                context: (meta?.details && typeof meta.details === 'object') ? meta.details as Record<string, unknown> : undefined
+        context:
+          meta?.details && typeof meta.details === "object"
+            ? (meta.details as Record<string, unknown>)
+            : undefined,
             });
 
             this.contextAwareLogger.errorWithInfo(message, enhancedErrorInfo, {
                 ...this.context,
                 ...meta,
-                errorInfo: enhancedErrorInfo
+        errorInfo: enhancedErrorInfo,
             });
         } else {
             // Standard error logging with automatic error classification if error message provided
             if (meta?.error) {
-                const errorMessage = typeof meta.error === 'string' ? meta.error : String(meta.error);
+        const errorMessage =
+          typeof meta.error === "string" ? meta.error : String(meta.error);
                 const error = new Error(errorMessage);
                 const enhancedErrorInfo = createEnhancedErrorInfo(error, {
-                    context: (meta?.details && typeof meta.details === 'object') ? meta.details as Record<string, unknown> : undefined
+          context:
+            meta?.details && typeof meta.details === "object"
+              ? (meta.details as Record<string, unknown>)
+              : undefined,
                 });
 
                 this.contextAwareLogger.errorWithInfo(message, enhancedErrorInfo, {
                     ...this.context,
                     ...meta,
-                    errorInfo: enhancedErrorInfo
+          errorInfo: enhancedErrorInfo,
                 });
             } else {
                 // Standard error logging without error object
-                this.contextAwareLogger.error(message, undefined, { ...this.context, ...meta });
+        this.contextAwareLogger.error(message, undefined, {
+          ...this.context,
+          ...meta,
+        });
             }
         }
     }
@@ -174,7 +191,10 @@ export class LoggerAdapter implements ILogger {
      * @returns OperationTimer instance for tracking the operation
      */
     startOperation(operationName: string, meta?: LogMetadata): OperationTimer {
-        return this.contextAwareLogger.startOperation(operationName, { ...this.context, ...meta });
+    return this.contextAwareLogger.startOperation(operationName, {
+      ...this.context,
+      ...meta,
+    });
     }
 }
 

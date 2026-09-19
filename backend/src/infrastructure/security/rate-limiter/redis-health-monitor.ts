@@ -59,10 +59,14 @@ class RedisHealthMonitor {
         } catch (error) {
             // On error, mark as unhealthy if previously healthy
             if (this.healthy) {
-                logger.error("Redis health check failed, switching to in-memory fallback", error as Error, {
+        logger.error(
+          "Redis health check failed, switching to in-memory fallback",
+          error as Error,
+          {
                     error: error instanceof Error ? error.message : String(error),
                     timestamp: new Date().toISOString(),
-                });
+          }
+        );
                 this.healthy = false;
             }
             return false;

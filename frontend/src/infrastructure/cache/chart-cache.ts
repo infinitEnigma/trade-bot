@@ -100,7 +100,9 @@ class ChartDataLRUCache {
 
         this.cache.set(key, entry);
 
-        console.log(`📊 Chart cache: Set ${key} (${limitedData.length} points, ${this.cache.size}/${this.options.maxEntries} entries)`);
+    console.log(
+      `📊 Chart cache: Set ${key} (${limitedData.length} points, ${this.cache.size}/${this.options.maxEntries} entries)`
+    );
     }
 
     // Check if key exists in cache
@@ -136,10 +138,23 @@ class ChartDataLRUCache {
     // Get cache statistics
     getStats() {
         const entries = Array.from(this.cache.values());
-        const totalDataPoints = entries.reduce((sum, entry) => sum + entry.data.length, 0);
-        const totalAccessCount = entries.reduce((sum, entry) => sum + entry.accessCount, 0);
-        const averageAge = entries.length > 0
-            ? entries.reduce((sum, entry) => sum + (Date.now() - entry.timestamp), 0) / entries.length / 1000 / 60
+    const totalDataPoints = entries.reduce(
+      (sum, entry) => sum + entry.data.length,
+      0
+    );
+    const totalAccessCount = entries.reduce(
+      (sum, entry) => sum + entry.accessCount,
+      0
+    );
+    const averageAge =
+      entries.length > 0
+        ? entries.reduce(
+            (sum, entry) => sum + (Date.now() - entry.timestamp),
+            0
+          ) /
+          entries.length /
+          1000 /
+          60
             : 0;
 
         return {
@@ -178,7 +193,9 @@ class ChartDataLRUCache {
         this.adaptiveCleanup();
 
         if (expiredCount > 0 || evictedCount > 0) {
-            console.log(`🧹 Chart cache: Cleaned up ${expiredCount} expired, ${evictedCount} LRU entries`);
+      console.log(
+        `🧹 Chart cache: Cleaned up ${expiredCount} expired, ${evictedCount} LRU entries`
+      );
         }
     }
 
@@ -197,7 +214,7 @@ class ChartDataLRUCache {
         }, this.options.cleanupIntervalMs);
 
         // Also cleanup when page becomes hidden
-        document.addEventListener('visibilitychange', this.handleVisibilityChange);
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
     }
 
     // Stop cleanup timer
@@ -206,7 +223,10 @@ class ChartDataLRUCache {
             clearInterval(this.cleanupTimer);
             this.cleanupTimer = null;
         }
-        document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+    document.removeEventListener(
+      "visibilitychange",
+      this.handleVisibilityChange
+    );
     }
 
     // Evict least recently used entry
@@ -231,12 +251,12 @@ class ChartDataLRUCache {
     private checkMemoryPressure(): { pressure: number; isHigh: boolean } {
         try {
             // Use Performance.memory if available (Chrome/Edge)
-            if ('memory' in performance) {
+      if ("memory" in performance) {
                 const memInfo = performance.memory as unknown as MemoryInfo;
                 const usedPercent = memInfo.usedJSHeapSize / memInfo.totalJSHeapSize;
                 return {
                     pressure: usedPercent,
-                    isHigh: usedPercent > this.options.memoryPressureThreshold
+          isHigh: usedPercent > this.options.memoryPressureThreshold,
                 };
             }
 
@@ -245,7 +265,7 @@ class ChartDataLRUCache {
             const pressure = Math.min(estimatedSize / (50 * 1024 * 1024), 1); // Assume 50MB limit
             return {
                 pressure,
-                isHigh: pressure > this.options.memoryPressureThreshold
+        isHigh: pressure > this.options.memoryPressureThreshold,
             };
         } catch {
             // If memory detection fails, assume no pressure
@@ -258,7 +278,9 @@ class ChartDataLRUCache {
         const { isHigh, pressure } = this.checkMemoryPressure();
 
         if (isHigh && this.options.adaptiveCleanup) {
-            console.warn(`🚨 High memory pressure detected (${Math.round(pressure * 100)}%), aggressive cleanup`);
+      console.warn(
+        `🚨 High memory pressure detected (${Math.round(pressure * 100)}%), aggressive cleanup`
+      );
 
             // Aggressive cleanup under memory pressure
             const targetSize = Math.floor(this.options.maxEntries * 0.5); // Reduce to 50% capacity
@@ -272,11 +294,13 @@ class ChartDataLRUCache {
             for (const [, entry] of entries) {
                 // If entry is older than 5 minutes, reduce TTL
                 if (Date.now() - entry.timestamp > 5 * 60 * 1000) {
-                    entry.timestamp = Date.now() - (this.options.ttlMs * 0.5); // Reduce effective TTL by half
+          entry.timestamp = Date.now() - this.options.ttlMs * 0.5; // Reduce effective TTL by half
                 }
             }
 
-            console.log(`🧹 Adaptive cleanup: Reduced cache to ${this.cache.size} entries under memory pressure`);
+      console.log(
+        `🧹 Adaptive cleanup: Reduced cache to ${this.cache.size} entries under memory pressure`
+      );
         }
     }
 

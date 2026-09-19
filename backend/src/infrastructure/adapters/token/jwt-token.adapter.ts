@@ -8,9 +8,9 @@
  * @format
  */
 
-import jwt from 'jsonwebtoken';
-import { createHash } from 'crypto';
-import { ITokenService, TokenPayload, TokenType } from '@trade-bot/shared';
+import jwt from "jsonwebtoken";
+import { createHash } from "crypto";
+import { ITokenService, TokenPayload, TokenType } from "@trade-bot/shared";
 
 /**
  * JWT Token Adapter
@@ -21,8 +21,8 @@ import { ITokenService, TokenPayload, TokenType } from '@trade-bot/shared';
 export class JwtTokenAdapter implements ITokenService {
     private readonly JWT_SECRET: string;
     private readonly JWT_REFRESH_SECRET: string;
-    private readonly ACCESS_TOKEN_EXPIRY = '4h';
-    private readonly REFRESH_TOKEN_EXPIRY = '30d';
+  private readonly ACCESS_TOKEN_EXPIRY = "4h";
+  private readonly REFRESH_TOKEN_EXPIRY = "30d";
 
     constructor() {
         // Initialize secrets with validation
@@ -37,11 +37,17 @@ export class JwtTokenAdapter implements ITokenService {
      */
     generateAccessToken(payload: TokenPayload): string {
         try {
-            return jwt.sign({ ...payload, type: 'access' as const }, this.JWT_SECRET, {
-                expiresIn: this.ACCESS_TOKEN_EXPIRY
-            });
+      return jwt.sign(
+        { ...payload, type: "access" as const },
+        this.JWT_SECRET,
+        {
+          expiresIn: this.ACCESS_TOKEN_EXPIRY,
+        }
+      );
         } catch (error) {
-            throw new Error(`Failed to generate access token: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to generate access token: ${error instanceof Error ? error.message : String(error)}`
+      );
         }
     }
 
@@ -52,11 +58,17 @@ export class JwtTokenAdapter implements ITokenService {
      */
     generateRefreshToken(payload: TokenPayload): string {
         try {
-            return jwt.sign({ ...payload, type: 'refresh' as const }, this.JWT_REFRESH_SECRET, {
-                expiresIn: this.REFRESH_TOKEN_EXPIRY
-            });
+      return jwt.sign(
+        { ...payload, type: "refresh" as const },
+        this.JWT_REFRESH_SECRET,
+        {
+          expiresIn: this.REFRESH_TOKEN_EXPIRY,
+        }
+      );
         } catch (error) {
-            throw new Error(`Failed to generate refresh token: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to generate refresh token: ${error instanceof Error ? error.message : String(error)}`
+      );
         }
     }
 
@@ -71,9 +83,13 @@ export class JwtTokenAdapter implements ITokenService {
      * @param expectedType - Which token type is acceptable at this call site (default: 'access')
      * @returns TokenPayload if valid and of the expected type; null otherwise
      */
-    verifyToken(token: string, expectedType: TokenType = 'access'): TokenPayload | null {
+  verifyToken(
+    token: string,
+    expectedType: TokenType = "access"
+  ): TokenPayload | null {
         try {
-            const secret = expectedType === 'refresh' ? this.JWT_REFRESH_SECRET : this.JWT_SECRET;
+      const secret =
+        expectedType === "refresh" ? this.JWT_REFRESH_SECRET : this.JWT_SECRET;
             const payload = jwt.verify(token, secret) as TokenPayload;
 
             // Enforce the type claim: a refresh token must never authenticate as an
@@ -103,7 +119,7 @@ export class JwtTokenAdapter implements ITokenService {
         authService: any
     ): Promise<TokenPayload | null> {
         try {
-            const payload = this.verifyToken(token, 'access');
+      const payload = this.verifyToken(token, "access");
             if (!payload) {
                 return null;
             }
@@ -132,15 +148,14 @@ export class JwtTokenAdapter implements ITokenService {
      */
     hashTokenForStorage(token: string): string {
         try {
-            if (!token || token.trim() === '') {
-                throw new Error('Token cannot be empty');
+      if (!token || token.trim() === "") {
+        throw new Error("Token cannot be empty");
             }
-            return createHash('sha256')
-                .update(token)
-                .digest('hex')
-                .substring(0, 16); // First 16 characters for reasonable key length
+      return createHash("sha256").update(token).digest("hex").substring(0, 16); // First 16 characters for reasonable key length
         } catch (error) {
-            throw new Error(`Failed to hash token for storage: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to hash token for storage: ${error instanceof Error ? error.message : String(error)}`
+      );
         }
     }
 
@@ -150,10 +165,12 @@ export class JwtTokenAdapter implements ITokenService {
     private getJwtSecret(): string {
         const secret = process.env.JWT_SECRET;
         if (!secret) {
-            throw new Error('JWT_SECRET environment variable is required');
+      throw new Error("JWT_SECRET environment variable is required");
         }
-        if (process.env.NODE_ENV === 'production' && secret.length < 32) {
-            throw new Error('JWT_SECRET must be at least 32 characters in production');
+    if (process.env.NODE_ENV === "production" && secret.length < 32) {
+      throw new Error(
+        "JWT_SECRET must be at least 32 characters in production"
+      );
         }
         return secret;
     }
@@ -164,10 +181,12 @@ export class JwtTokenAdapter implements ITokenService {
     private getJwtRefreshSecret(): string {
         const secret = process.env.JWT_REFRESH_SECRET;
         if (!secret) {
-            throw new Error('JWT_REFRESH_SECRET environment variable is required');
+      throw new Error("JWT_REFRESH_SECRET environment variable is required");
         }
-        if (process.env.NODE_ENV === 'production' && secret.length < 32) {
-            throw new Error('JWT_REFRESH_SECRET must be at least 32 characters in production');
+    if (process.env.NODE_ENV === "production" && secret.length < 32) {
+      throw new Error(
+        "JWT_REFRESH_SECRET must be at least 32 characters in production"
+      );
         }
         return secret;
     }
@@ -181,7 +200,7 @@ export class JwtTokenAdapter implements ITokenService {
     } {
         return {
             accessTokenExpiry: this.ACCESS_TOKEN_EXPIRY,
-            refreshTokenExpiry: this.REFRESH_TOKEN_EXPIRY
+      refreshTokenExpiry: this.REFRESH_TOKEN_EXPIRY,
         };
     }
 

@@ -2,7 +2,10 @@
 import { Router, Response } from "express";
 import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
 import { AxiosError } from "axios";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
+import {
+  authMiddleware,
+  AuthenticatedRequest,
+} from "../../middleware/auth.middleware";
 import { DEFAULT_SYMBOL, errMessage, marketLogger } from "./market-helpers";
 import { requireVerifiedCredentials, toVerifiedKlines } from "./market-cache";
 
@@ -38,11 +41,16 @@ klineHistoryRoutes.get(
                     hasVerifiedCredentials: true,
                 }
             );
-            const response = await kodiakIntegrationService.getTradingViewHistory(symbolStr, resolutionStr, fromNum, toNum);
+      const response = await kodiakIntegrationService.getTradingViewHistory(
+        symbolStr,
+        resolutionStr,
+        fromNum,
+        toNum
+      );
             if (!response.success) {
                 return res.status(400).json({
                     success: false,
-                    error: response.error || "Failed to fetch historical kline data"
+          error: response.error || "Failed to fetch historical kline data",
                 });
             }
             marketLogger.debug("Historical kline data response received", {
@@ -52,23 +60,30 @@ klineHistoryRoutes.get(
             });
             const tvData = response.data!;
             if (typeof tvData !== "object") {
-                marketLogger.error("Invalid TradingView response - not an object", undefined, {
+        marketLogger.error(
+          "Invalid TradingView response - not an object",
+          undefined,
+          {
                     dataType: typeof tvData,
                     operation: "tv_data_validation",
-                });
+          }
+        );
                 return res.status(500).json({
                     success: false,
                     error: "Market data API returned invalid format",
                 });
             }
             if (tvData.s === "no_data" || !tvData.t || tvData.t.length === 0) {
-                marketLogger.debug("No historical data available for the requested period", {
+        marketLogger.debug(
+          "No historical data available for the requested period",
+          {
                     symbol: symbolStr,
                     resolution: resolutionStr,
                     from: fromNum,
                     to: toNum,
                     status: tvData.s,
-                });
+          }
+        );
                 return res.json({
                     success: true,
                     data: [],
@@ -127,7 +142,10 @@ klineHistoryRoutes.get(
                     retryAfter: axiosError.response.headers?.["retry-after"] || 10,
                 });
             }
-            if (axiosError.code === "ECONNABORTED" || axiosError.code === "ENOTFOUND") {
+      if (
+        axiosError.code === "ECONNABORTED" ||
+        axiosError.code === "ENOTFOUND"
+      ) {
                 return res.status(503).json({
                     success: false,
                     error:

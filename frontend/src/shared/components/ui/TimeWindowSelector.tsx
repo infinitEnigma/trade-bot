@@ -22,7 +22,7 @@ export const TimeWindowSelector: React.FC<TimeWindowSelectorProps> = ({
     <div className={`flex items-center gap-2 ${className}`}>
       <span className="text-sm text-textMuted font-medium">Time Range:</span>
       <div className="flex gap-1">
-        {timeWindows.map((window) => (
+        {timeWindows.map(window => (
           <button
             key={window.value}
             onClick={() => onWindowChange(window)}

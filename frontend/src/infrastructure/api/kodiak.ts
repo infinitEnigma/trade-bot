@@ -71,8 +71,12 @@ class KodiakApi {
      * Connect Kodiak credentials
      * Frontend sends encrypted credentials to backend for validation and storage
      */
-    async connectKodiak(credentials: KodiakCredentials): Promise<KodiakConnectResponse> {
-        const response = await httpClient.getClient().post('/api/user/kodiak/connect', credentials);
+  async connectKodiak(
+    credentials: KodiakCredentials
+  ): Promise<KodiakConnectResponse> {
+    const response = await httpClient
+      .getClient()
+      .post("/api/user/kodiak/connect", credentials);
         return response.data;
     }
 
@@ -81,7 +85,9 @@ class KodiakApi {
      * Backend handles credential removal and user level downgrade
      */
     async disconnectKodiak(): Promise<KodiakDisconnectResponse> {
-        const response = await httpClient.getClient().delete('/api/user/kodiak/disconnect');
+    const response = await httpClient
+      .getClient()
+      .delete("/api/user/kodiak/disconnect");
         return response.data;
     }
 
@@ -89,8 +95,14 @@ class KodiakApi {
      * Get Kodiak connection status
      * Backend returns encrypted status information
      */
-    async getKodiakStatus(): Promise<{ success: boolean; data?: KodiakStatus; error?: string }> {
-        const response = await httpClient.getClient().get('/api/user/kodiak/status');
+  async getKodiakStatus(): Promise<{
+    success: boolean;
+    data?: KodiakStatus;
+    error?: string;
+  }> {
+    const response = await httpClient
+      .getClient()
+      .get("/api/user/kodiak/status");
         return response.data;
     }
 
@@ -106,12 +118,17 @@ class KodiakApi {
             "kodiak:balance",
             async () => {
                 try {
-                    const response = await httpClient.getClient().get("/api/user/kodiak/balance");
+          const response = await httpClient
+            .getClient()
+            .get("/api/user/kodiak/balance");
                     return response.data;
                 } catch (error: unknown) {
                     // Return empty data instead of throwing for missing credentials
                     const apiError = error as ApiError;
-                    if (apiError.response?.status === 403 || apiError.response?.status === 400) {
+          if (
+            apiError.response?.status === 403 ||
+            apiError.response?.status === 400
+          ) {
                         return {
                             success: true,
                             data: null,
@@ -131,12 +148,17 @@ class KodiakApi {
             "kodiak:positions",
             async () => {
                 try {
-                    const response = await httpClient.getClient().get("/api/user/kodiak/positions");
+          const response = await httpClient
+            .getClient()
+            .get("/api/user/kodiak/positions");
                     return response.data;
                 } catch (error: unknown) {
                     // Return empty data instead of throwing for missing credentials
                     const apiError = error as ApiError;
-                    if (apiError.response?.status === 403 || apiError.response?.status === 400) {
+          if (
+            apiError.response?.status === 403 ||
+            apiError.response?.status === 400
+          ) {
                         return {
                             success: true,
                             data: { rows: [] },
@@ -155,12 +177,17 @@ class KodiakApi {
             `kodiak:trades:${limit}`,
             async () => {
                 try {
-                    const response = await httpClient.getClient().get(`/api/user/kodiak/trades?limit=${limit}`);
+          const response = await httpClient
+            .getClient()
+            .get(`/api/user/kodiak/trades?limit=${limit}`);
                     return response.data;
                 } catch (error: unknown) {
                     // Return empty data instead of throwing for missing credentials
                     const apiError = error as ApiError;
-                    if (apiError.response?.status === 403 || apiError.response?.status === 400) {
+          if (
+            apiError.response?.status === 403 ||
+            apiError.response?.status === 400
+          ) {
                         return {
                             success: true,
                             data: { rows: [] },
@@ -196,7 +223,10 @@ class KodiakApi {
         }
 
         // Basic format validation
-        if (credentials.accountId && !/^[a-zA-Z0-9_-]+$/.test(credentials.accountId)) {
+    if (
+      credentials.accountId &&
+      !/^[a-zA-Z0-9_-]+$/.test(credentials.accountId)
+    ) {
             errors.push("Account ID contains invalid characters");
         }
 

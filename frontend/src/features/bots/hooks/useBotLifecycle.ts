@@ -19,11 +19,23 @@
  */
 
 import { useEffect, useCallback, useState } from "react";
-import { useQuery, useQueryClient, UseQueryResult } from "@tanstack/react-query";
-import { websocketClient, BotStateChangedEventData, WebSocketStatus } from "../../../infrastructure/websocket/client";
+import {
+  useQuery,
+  useQueryClient,
+  UseQueryResult,
+} from "@tanstack/react-query";
+import {
+  websocketClient,
+  BotStateChangedEventData,
+  WebSocketStatus,
+} from "../../../infrastructure/websocket/client";
 import { tradingApi } from "../../../infrastructure/api";
 import { BotInstance } from "../../strategies/types/strategies.types";
-import { BotActualState, ConnectionStatus, STATE_DISPLAY_INFO } from "../types/bot-lifecycle.types";
+import {
+  BotActualState,
+  ConnectionStatus,
+  STATE_DISPLAY_INFO,
+} from "../types/bot-lifecycle.types";
 
 /**
  * Query key for bot instances cache.
@@ -51,7 +63,15 @@ export function isTransitionalState(state: BotActualState): boolean {
  * @returns Single bot lifecycle state.
  */
 export function useBotState(botId: string) {
-    const { bot, actualState, isTransitional, isConnectionLost, connectionStatus, isConnected, getStateDisplayInfo } = useBotLifecycle(botId);
+  const {
+    bot,
+    actualState,
+    isTransitional,
+    isConnectionLost,
+    connectionStatus,
+    isConnected,
+    getStateDisplayInfo,
+  } = useBotLifecycle(botId);
 
     const displayInfo = actualState ? getStateDisplayInfo(actualState) : null;
 
@@ -74,20 +94,39 @@ export function useBotState(botId: string) {
  */
 export function useBotLifecycle(botId?: string) {
     const queryClient = useQueryClient();
-    const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected");
+  const [connectionStatus, setConnectionStatus] =
+    useState<ConnectionStatus>("disconnected");
 
     const fetchBotInstances = async (): Promise<BotInstance[]> => {
         const response = await tradingApi.getBotInstances();
         if (response.success && response.data) {
-            return response.data.map((bot: { strategy_id: string; status: string; total_trades: number; total_pnl: number; last_updated: string; config?: unknown }) => ({
+      return response.data.map(
+        (bot: {
+          strategy_id: string;
+          status: string;
+          total_trades: number;
+          total_pnl: number;
+          last_updated: string;
+          config?: unknown;
+        }) => ({
                 id: bot.strategy_id,
                 strategy_id: bot.strategy_id,
                 status: bot.status as BotInstance["status"],
                 total_trades: bot.total_trades,
                 total_pnl: bot.total_pnl,
                 last_updated: bot.last_updated,
-                config: bot.config || { type: "GRID" as const, config: { symbol: "", leverage: 1, gridSize: 10, gridRange: 5, orderQuantity: 1 } },
-            }));
+          config: bot.config || {
+            type: "GRID" as const,
+            config: {
+              symbol: "",
+              leverage: 1,
+              gridSize: 10,
+              gridRange: 5,
+              orderQuantity: 1,
+            },
+          },
+        })
+      );
         }
         return [];
     };
@@ -102,18 +141,23 @@ export function useBotLifecycle(botId?: string) {
         // (STARTING/STOPPING), poll the authoritative server state. A
         // `bot.stateChanged` event missed during a WebSocket outage can
         // otherwise leave the UI stuck on "Starting..."/"Stopping..." forever.
-        refetchInterval: (query) => {
+    refetchInterval: query => {
             const bots = query.state.data ?? [];
-            const hasTransitional = bots.some(b => isTransitionalState(b.status as BotActualState));
+      const hasTransitional = bots.some(b =>
+        isTransitionalState(b.status as BotActualState)
+      );
             return hasTransitional ? 3_000 : false;
         },
     });
 
-    const updateBotStateInCache = useCallback((data: BotStateChangedEventData) => {
-        queryClient.setQueryData<BotInstance[]>([BOT_INSTANCES_QUERY_KEY], (oldData) => {
+  const updateBotStateInCache = useCallback(
+    (data: BotStateChangedEventData) => {
+      queryClient.setQueryData<BotInstance[]>(
+        [BOT_INSTANCES_QUERY_KEY],
+        oldData => {
             if (!oldData) return oldData;
 
-            return oldData.map((bot) => {
+          return oldData.map(bot => {
                 if (bot.id === data.botId || bot.strategy_id === data.botId) {
                     return {
                         ...bot,
@@ -123,19 +167,30 @@ export function useBotLifecycle(botId?: string) {
                 }
                 return bot;
             });
-        });
-    }, [queryClient]);
+        }
+      );
+    },
+    [queryClient]
+  );
 
-    const handleBotStateChanged = useCallback((data: BotStateChangedEventData) => {
-        console.log(`📡 Bot state changed: ${data.botId} ${data.from} -> ${data.to}`);
+  const handleBotStateChanged = useCallback(
+    (data: BotStateChangedEventData) => {
+      console.log(
+        `📡 Bot state changed: ${data.botId} ${data.from} -> ${data.to}`
+      );
         updateBotStateInCache(data);
-    }, [updateBotStateInCache]);
+    },
+    [updateBotStateInCache]
+  );
 
-    const handleStatusChange = useCallback((status: WebSocketStatus) => {
+  const handleStatusChange = useCallback(
+    (status: WebSocketStatus) => {
         switch (status) {
             case WebSocketStatus.CONNECTED:
                 setConnectionStatus("connected");
-                queryClient.invalidateQueries({ queryKey: [BOT_INSTANCES_QUERY_KEY] });
+          queryClient.invalidateQueries({
+            queryKey: [BOT_INSTANCES_QUERY_KEY],
+          });
                 break;
             case WebSocketStatus.CONNECTING:
                 setConnectionStatus("connecting");
@@ -150,7 +205,9 @@ export function useBotLifecycle(botId?: string) {
                 setConnectionStatus("error");
                 break;
         }
-    }, [queryClient]);
+    },
+    [queryClient]
+  );
 
     useEffect(() => {
         websocketClient.onBotStateChanged(handleBotStateChanged);
@@ -165,10 +222,14 @@ export function useBotLifecycle(botId?: string) {
         };
     }, [handleBotStateChanged, handleStatusChange]);
 
-    const bot = botId ? botsQuery.data?.find((b) => b.id === botId || b.strategy_id === botId) : undefined;
-    const actualState: BotActualState | undefined = bot?.status as BotActualState | undefined;
+  const bot = botId
+    ? botsQuery.data?.find(b => b.id === botId || b.strategy_id === botId)
+    : undefined;
+  const actualState: BotActualState | undefined = bot?.status as
+    BotActualState | undefined;
     const isTransitional = actualState ? isTransitionalState(actualState) : false;
-    const isConnectionLost = connectionStatus === "disconnected" || connectionStatus === "error";
+  const isConnectionLost =
+    connectionStatus === "disconnected" || connectionStatus === "error";
 
     return {
         bots: botsQuery.data ?? [],
@@ -187,4 +248,3 @@ export function useBotLifecycle(botId?: string) {
         getStateDisplayInfo,
     };
 }
-

@@ -42,7 +42,8 @@ export class ProcessSpawner {
 
     constructor(enginePort = 4000, enginePath?: string) {
         this.enginePort = enginePort;
-        this.enginePath = enginePath || path.join(__dirname, "../../../engine/kodiak");
+    this.enginePath =
+      enginePath || path.join(__dirname, "../../../engine/kodiak");
     }
 
     /**
@@ -85,7 +86,9 @@ export class ProcessSpawner {
 
                 // Handle process events
                 this.engineProcess.on("error", () => {
-                    logger.warn("Engine process spawn error", { error: "Process spawn failed" });
+          logger.warn("Engine process spawn error", {
+            error: "Process spawn failed",
+          });
                     this.engineProcess = null;
                     reject(new Error("Process spawn failed"));
                 });
@@ -106,7 +109,6 @@ export class ProcessSpawner {
                         reject(new Error("Process failed to start within timeout"));
                     }
                 }, 3000);
-
             } catch (error) {
                 logger.error("Failed to spawn engine process", error as Error, {
                     error: "Process spawning failed",
@@ -148,22 +150,32 @@ export class ProcessSpawner {
                 }
             } catch (error) {
                 // Engine not ready yet, continue waiting
-                logger.error(`Engine not ready, attempt ${attempt}/${finalConfig.maxAttempts}`, error as Error);
+        logger.error(
+          `Engine not ready, attempt ${attempt}/${finalConfig.maxAttempts}`,
+          error as Error
+        );
             }
 
             // Wait before next attempt
             if (attempt < finalConfig.maxAttempts) {
-                await new Promise(resolve => setTimeout(resolve, finalConfig.attemptInterval));
+        await new Promise(resolve =>
+          setTimeout(resolve, finalConfig.attemptInterval)
+        );
             }
         }
 
-        throw new Error(`Engine failed to become ready after ${finalConfig.maxAttempts} attempts`);
+    throw new Error(
+      `Engine failed to become ready after ${finalConfig.maxAttempts} attempts`
+    );
     }
 
     /**
      * Terminate the process gracefully, with force kill fallback
      */
-    async kill(signal: NodeJS.Signals | string = "SIGTERM", forceKillTimeout = 10000): Promise<void> {
+  async kill(
+    signal: NodeJS.Signals | string = "SIGTERM",
+    forceKillTimeout = 10000
+  ): Promise<void> {
         if (!this.engineProcess) {
             logger.debug("No engine process to kill");
             return;
@@ -179,7 +191,7 @@ export class ProcessSpawner {
         this.engineProcess.kill(signal as NodeJS.Signals);
 
         // Wait for graceful exit or force kill
-        const exitPromise = new Promise<void>((resolve) => {
+    const exitPromise = new Promise<void>(resolve => {
             const timeout = setTimeout(() => {
                 logger.warn("Engine did not exit gracefully, force killing", {
                     pid: this.engineProcess?.pid,
@@ -246,7 +258,7 @@ export class ProcessSpawner {
 
         // Log stdout for debugging
         if (this.engineProcess.stdout) {
-            this.engineProcess.stdout.on("data", (data) => {
+      this.engineProcess.stdout.on("data", data => {
                 const output = data.toString().trim();
                 if (output) {
                     logger.debug("Engine stdout", { output });
@@ -256,7 +268,7 @@ export class ProcessSpawner {
 
         // Log stderr as warnings
         if (this.engineProcess.stderr) {
-            this.engineProcess.stderr.on("data", (data) => {
+      this.engineProcess.stderr.on("data", data => {
                 const output = data.toString().trim();
                 if (output) {
                     logger.warn("Engine stderr", { output });

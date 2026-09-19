@@ -13,7 +13,10 @@ import { marketLogger } from "./market-helpers";
  * Redis get → JSON.parse helper. Returns the parsed payload on hit, `null` on
  * miss, and warns + returns `null` on read failure (caller falls back to API).
  */
-export const readCache = async <T>(cacheKey: string, debugContext: Record<string, unknown> = {}): Promise<T | null> => {
+export const readCache = async <T>(
+  cacheKey: string,
+  debugContext: Record<string, unknown> = {}
+): Promise<T | null> => {
     const cacheResult = await redisService.get(cacheKey);
     if (cacheResult.success && cacheResult.data) {
         return JSON.parse(cacheResult.data) as T;
@@ -29,7 +32,11 @@ export const readCache = async <T>(cacheKey: string, debugContext: Record<string
 };
 
 /** Best-effort Redis setex (failures surface via the caller's error path). */
-export const writeCache = async (cacheKey: string, ttlSeconds: number, payload: unknown): Promise<void> => {
+export const writeCache = async (
+  cacheKey: string,
+  ttlSeconds: number,
+  payload: unknown
+): Promise<void> => {
     await redisService.setex(cacheKey, ttlSeconds, JSON.stringify(payload));
 };
 
@@ -44,17 +51,19 @@ export const writeCache = async (cacheKey: string, ttlSeconds: number, payload: 
  */
 export const requireVerifiedCredentials = async (
     userId: string | undefined,
-    res: Response,
+  res: Response
 ): Promise<{ accountId: string | null } | null> => {
     if (!userId) {
         res.status(401).json({ success: false, error: "Authentication required" });
         return null;
     }
-    const credentials = await kodiakCredentialsRepositoryAdapter.getCredentials(userId);
+  const credentials =
+    await kodiakCredentialsRepositoryAdapter.getCredentials(userId);
     if (!credentials) {
         res.status(403).json({
             success: false,
-            error: "Kodiak credentials required. Please connect your trading account.",
+      error:
+        "Kodiak credentials required. Please connect your trading account.",
         });
         return null;
     }
@@ -72,7 +81,10 @@ export interface KlineCandle {
 }
 
 /** `/klines` shape: TradingView column arrays → candle rows (seconds kept). */
-export const toKlines = (history: KodiakTradingViewHistory, limit: number): KlineCandle[] =>
+export const toKlines = (
+  history: KodiakTradingViewHistory,
+  limit: number
+): KlineCandle[] =>
     history.t
         .map((time, i) => ({
             startTime: time,
@@ -98,13 +110,16 @@ export interface VerifiedKlineCandle extends Omit<KlineCandle, "time"> {
 export const toVerifiedKlines = (
     tvData: KodiakTradingViewHistory,
     symbol: string,
-    resolution: string,
+  resolution: string
 ): VerifiedKlineCandle[] => {
     if (tvData.s === "no_data" || !tvData.t || tvData.t.length === 0) {
         return [];
     }
     if (!tvData.t || !tvData.o || !tvData.h || !tvData.l || !tvData.c) {
-        marketLogger.error("Missing required OHLC arrays in TradingView response", undefined, {
+    marketLogger.error(
+      "Missing required OHLC arrays in TradingView response",
+      undefined,
+      {
             hasTimestamps: !!tvData.t,
             hasOpens: !!tvData.o,
             hasHighs: !!tvData.h,
@@ -112,7 +127,8 @@ export const toVerifiedKlines = (
             hasCloses: !!tvData.c,
             hasVolumes: !!tvData.v,
             operation: "ohlc_validation",
-        });
+      }
+    );
         throw new Error("Market data API returned incomplete OHLC data");
     }
     const length = tvData.t.length;
@@ -146,4 +162,4 @@ export const toVerifiedKlines = (
         });
     }
     return out;
-}
+};

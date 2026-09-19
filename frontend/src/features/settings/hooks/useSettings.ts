@@ -21,11 +21,11 @@ export const useSettings = () => {
         secretKey: "",
     });
 
-
     // Connect Kodiak mutation
     const connectMutation = useMutation({
-        mutationFn: (credentials: KodiakCredentials) => settingsService.connectKodiak(credentials),
-        onSuccess: async (response) => {
+    mutationFn: (credentials: KodiakCredentials) =>
+      settingsService.connectKodiak(credentials),
+    onSuccess: async response => {
             queryClient.invalidateQueries({ queryKey: ["kodiak-status"] });
             queryClient.invalidateQueries({ queryKey: ["profile"] });
             // Refresh user data to update user level
@@ -65,7 +65,9 @@ export const useSettings = () => {
     };
 
     const handleDisconnect = () => {
-        if (confirm("Are you sure you want to disconnect your Kodiak credentials?")) {
+    if (
+      confirm("Are you sure you want to disconnect your Kodiak credentials?")
+    ) {
             disconnectMutation.mutate();
         }
     };

@@ -9,12 +9,14 @@ import { twMerge } from "tailwind-merge";
  */
 export function cn(...inputs: ClassValue[]) {
   // Dedupe classes before merging
-  const dedupedInputs = new Set(inputs.flatMap(input => {
+  const dedupedInputs = new Set(
+    inputs.flatMap(input => {
     if (typeof input === "string") {
       return input.split(" ").filter(Boolean);
     }
     return [];
-  }));
+    })
+  );
 
   return twMerge(clsx(Array.from(dedupedInputs)));
 }
@@ -124,7 +126,8 @@ export function truncateText(
  */
 export function generateId(length: number = 8): string {
   let id = "";
-  const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const characters =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const charsLength = characters.length;
 
   for (let i = 0; i < length; i++) {

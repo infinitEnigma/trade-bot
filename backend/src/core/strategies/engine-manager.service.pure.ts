@@ -11,15 +11,15 @@
  * @format
  */
 
-import { IBotInstanceRepository, ILogger } from '@trade-bot/shared';
+import { IBotInstanceRepository, ILogger } from "@trade-bot/shared";
 import {
     ProcessSpawner,
     HealthMonitor,
     RestartManager,
     CircuitBreaker,
     ProcessSupervisor,
-} from './engine';
-import { RedisStreamOperations } from '../../infrastructure/cache/redis';
+} from "./engine";
+import { RedisStreamOperations } from "../../infrastructure/cache/redis";
 
 interface EngineStatus {
     running: boolean;
@@ -61,7 +61,10 @@ export class EngineManager {
     private engineId: string | null = null;
     private isListening = false;
 
-    constructor(private deps: EngineManagerServiceDependencies, enginePort = 4000) {
+  constructor(
+    private deps: EngineManagerServiceDependencies,
+    enginePort = 4000
+  ) {
         this.enginePort = enginePort;
         this.streamOperations = deps.redisStreamOperations;
 
@@ -86,14 +89,16 @@ export class EngineManager {
      * Ensure engine is running (backward compatibility)
      */
     async ensureEngineRunning(): Promise<void> {
-        const result = await this.circuitBreaker.executeWithCircuitBreaker(async () => {
+    const result = await this.circuitBreaker.executeWithCircuitBreaker(
+      async () => {
             await this.processSpawner.spawn();
             await this.processSpawner.waitForReady();
             this.processSupervisor.startSupervision();
-        });
+      }
+    );
 
         if (!result.success) {
-            throw new Error(result.error || 'Failed to start engine');
+      throw new Error(result.error || "Failed to start engine");
         }
     }
 
@@ -102,7 +107,7 @@ export class EngineManager {
      */
     async getEngineStatus(): Promise<EngineStatus> {
         try {
-            const axios = await import('axios');
+      const axios = await import("axios");
             const response = await axios.default.get(
                 `http://localhost:${this.enginePort}/api/engine/health`,
                 { timeout: 2000 }
@@ -122,14 +127,17 @@ export class EngineManager {
      */
     async stopEngineIfNoActiveBots(): Promise<void> {
         try {
-            const activeBots = await this.deps.botInstanceRepository.getActiveBotInstances();
+      const activeBots =
+        await this.deps.botInstanceRepository.getActiveBotInstances();
             const activeBotCount = activeBots.length;
 
             if (activeBotCount === 0) {
                 this.deps.logger.info("No active bots, stopping engine");
-                await this.processSpawner.kill('SIGTERM');
+        await this.processSpawner.kill("SIGTERM");
             } else {
-                this.deps.logger.debug(`Engine kept running for ${activeBotCount} active bots`);
+        this.deps.logger.debug(
+          `Engine kept running for ${activeBotCount} active bots`
+        );
             }
         } catch {
             this.deps.logger.error("Error checking for engine shutdown", {
@@ -142,7 +150,7 @@ export class EngineManager {
      * Force stop engine (backward compatibility)
      */
     async forceStopEngine(): Promise<void> {
-        await this.processSpawner.kill('SIGKILL');
+    await this.processSpawner.kill("SIGKILL");
     }
 
     /**
@@ -173,7 +181,10 @@ export class EngineManager {
     /**
      * Enhanced ensure engine running with circuit breaker
      */
-    async ensureEngineRunningWithSupervision(): Promise<{ success: boolean; error?: string }> {
+  async ensureEngineRunningWithSupervision(): Promise<{
+    success: boolean;
+    error?: string;
+  }> {
         return this.circuitBreaker.executeWithCircuitBreaker(async () => {
             await this.ensureEngineRunning();
             this.startProcessSupervision();
@@ -189,7 +200,8 @@ export class EngineManager {
             circuitBreakerState: this.circuitBreaker.getState(),
             restartAttempts: this.restartManager.getRestartStatistics().totalAttempts,
             consecutiveFailures: 0, // Legacy - not used in new system
-            lastRestartAttempt: this.restartManager.getRestartStatistics().nextRetryIn || 0,
+      lastRestartAttempt:
+        this.restartManager.getRestartStatistics().nextRetryIn || 0,
             restartHistory: this.restartManager.getRestartAnalysis().recentAttempts,
             healthCheckLayers: {
                 processLiveness: true,
@@ -211,14 +223,16 @@ export class EngineManager {
     /**
      * Emergency stop with supervision
      */
-    async emergencyStop(reason: string = 'emergency_stop'): Promise<void> {
+  async emergencyStop(reason: string = "emergency_stop"): Promise<void> {
         await this.processSupervisor.emergencyStop(reason);
     }
 
     /**
      * Manual restart with supervision
      */
-    async manualRestart(reason: string = 'manual_restart'): Promise<{ success: boolean; error?: string }> {
+  async manualRestart(
+    reason: string = "manual_restart"
+  ): Promise<{ success: boolean; error?: string }> {
         return this.processSupervisor.manualRestart(reason);
     }
 
@@ -238,15 +252,18 @@ export class EngineManager {
      */
     async startListeningForEvents(): Promise<void> {
         if (this.isListening) {
-            this.deps.logger.debug('Already listening for engine events');
+      this.deps.logger.debug("Already listening for engine events");
             return;
         }
 
         this.isListening = true;
-        this.deps.logger.info('Starting to listen for engine events');
+    this.deps.logger.info("Starting to listen for engine events");
 
         // Create consumer group if it doesn't exist
-        await this.streamOperations.createConsumerGroup('engine:events', 'backend-group');
+    await this.streamOperations.createConsumerGroup(
+      "engine:events",
+      "backend-group"
+    );
 
         // Start event listener loop
         this.listenForEventsLoop();
@@ -257,7 +274,7 @@ export class EngineManager {
      */
     stopListeningForEvents(): void {
         this.isListening = false;
-        this.deps.logger.info('Stopped listening for engine events');
+    this.deps.logger.info("Stopped listening for engine events");
     }
 
     /**
@@ -266,11 +283,11 @@ export class EngineManager {
     private async listenForEventsLoop(): Promise<void> {
         while (this.isListening) {
             try {
-                const result = await this.streamOperations.read('engine:events', {
+        const result = await this.streamOperations.read("engine:events", {
                     block: 1000, // Reduced block time for faster shutdown
                     count: 10,
-                    consumerGroup: 'backend-group',
-                    consumerName: 'backend-consumer'
+          consumerGroup: "backend-group",
+          consumerName: "backend-consumer",
                 });
 
                 if (result.success && result.messages && result.messages.length > 0) {
@@ -279,8 +296,8 @@ export class EngineManager {
                     }
                 }
             } catch (error) {
-                this.deps.logger.error('Error reading engine events', {
-                    error: error instanceof Error ? error.message : String(error)
+        this.deps.logger.error("Error reading engine events", {
+          error: error instanceof Error ? error.message : String(error),
                 });
             }
         }
@@ -291,48 +308,48 @@ export class EngineManager {
      */
     private handleEngineEvent(event: any): void {
         try {
-            this.deps.logger.debug('Received engine event', {
+      this.deps.logger.debug("Received engine event", {
                 type: event.type,
                 engineId: event.engineId,
-                timestamp: event.timestamp
+        timestamp: event.timestamp,
             });
 
             switch (event.type) {
-                case 'ENGINE_STARTED':
+        case "ENGINE_STARTED":
                     this.handleEngineStarted(event);
                     break;
-                case 'ENGINE_STOPPED':
+        case "ENGINE_STOPPED":
                     this.handleEngineStopped(event);
                     break;
-                case 'BOT_STARTED':
+        case "BOT_STARTED":
                     this.handleBotStarted(event);
                     break;
-                case 'BOT_STOPPED':
+        case "BOT_STOPPED":
                     this.handleBotStopped(event);
                     break;
-                case 'BOT_HEARTBEAT':
+        case "BOT_HEARTBEAT":
                     this.handleBotHeartbeat(event);
                     break;
-                case 'ENGINE_ERROR':
+        case "ENGINE_ERROR":
                     this.handleEngineError(event);
                     break;
-                case 'TRADE_EXECUTED':
+        case "TRADE_EXECUTED":
                     this.handleTradeExecuted(event);
                     break;
-                case 'POSITION_UPDATED':
+        case "POSITION_UPDATED":
                     this.handlePositionUpdated(event);
                     break;
-                case 'PERFORMANCE_SNAPSHOT':
+        case "PERFORMANCE_SNAPSHOT":
                     this.handlePerformanceSnapshot(event);
                     break;
                 default:
-                    this.deps.logger.warn('Unknown engine event type', {
-                        type: event.type
+          this.deps.logger.warn("Unknown engine event type", {
+            type: event.type,
                     });
             }
         } catch (error) {
-            this.deps.logger.error('Error handling engine event', {
-                error: error instanceof Error ? error.message : String(error)
+      this.deps.logger.error("Error handling engine event", {
+        error: error instanceof Error ? error.message : String(error),
             });
         }
     }
@@ -345,15 +362,15 @@ export class EngineManager {
         this.engineStatus = {
             running: true,
             health: {
-                status: 'HEALTHY',
+        status: "HEALTHY",
                 bots: 0,
-                uptime: event.uptime
-            }
+        uptime: event.uptime,
+      },
         };
 
-        this.deps.logger.info('Engine started successfully', {
+    this.deps.logger.info("Engine started successfully", {
             engineId: event.engineId,
-            uptime: event.uptime
+      uptime: event.uptime,
         });
     }
 
@@ -362,10 +379,10 @@ export class EngineManager {
      */
     private handleEngineStopped(event: any): void {
         this.engineStatus.running = false;
-        this.deps.logger.info('Engine stopped', {
+    this.deps.logger.info("Engine stopped", {
             engineId: event.engineId,
             reason: event.reason,
-            uptime: event.uptime
+      uptime: event.uptime,
         });
     }
 
@@ -373,11 +390,11 @@ export class EngineManager {
      * Handle bot started event
      */
     private handleBotStarted(event: any): void {
-        this.deps.logger.info('Bot started', {
+    this.deps.logger.info("Bot started", {
             botId: event.botId,
             strategyId: event.strategyId,
             symbol: event.symbol,
-            strategyType: event.strategyType
+      strategyType: event.strategyType,
         });
     }
 
@@ -385,9 +402,9 @@ export class EngineManager {
      * Handle bot stopped event
      */
     private handleBotStopped(event: any): void {
-        this.deps.logger.info('Bot stopped', {
+    this.deps.logger.info("Bot stopped", {
             botId: event.botId,
-            reason: event.reason
+      reason: event.reason,
         });
     }
 
@@ -395,12 +412,12 @@ export class EngineManager {
      * Handle bot heartbeat event
      */
     private handleBotHeartbeat(event: any): void {
-        this.deps.logger.debug('Bot heartbeat received', {
+    this.deps.logger.debug("Bot heartbeat received", {
             botId: event.botId,
             status: event.status,
             currentPrice: event.currentPrice,
             totalTrades: event.totalTrades,
-            totalPnl: event.totalPnl
+      totalPnl: event.totalPnl,
         });
     }
 
@@ -408,10 +425,10 @@ export class EngineManager {
      * Handle engine error event
      */
     private handleEngineError(event: any): void {
-        this.deps.logger.error('Engine error', {
+    this.deps.logger.error("Engine error", {
             botId: event.botId,
             error: event.error,
-            stack: event.stack
+      stack: event.stack,
         });
     }
 
@@ -419,7 +436,7 @@ export class EngineManager {
      * Handle trade executed event
      */
     private handleTradeExecuted(event: any): void {
-        this.deps.logger.info('Trade executed', {
+    this.deps.logger.info("Trade executed", {
             botId: event.botId,
             symbol: event.symbol,
             side: event.side,
@@ -427,7 +444,7 @@ export class EngineManager {
             quantity: event.quantity,
             fee: event.fee,
             pnl: event.pnl,
-            orderId: event.orderId
+      orderId: event.orderId,
         });
     }
 
@@ -435,14 +452,14 @@ export class EngineManager {
      * Handle position updated event
      */
     private handlePositionUpdated(event: any): void {
-        this.deps.logger.debug('Position updated', {
+    this.deps.logger.debug("Position updated", {
             botId: event.botId,
             symbol: event.symbol,
             side: event.side,
             quantity: event.quantity,
             entryPrice: event.entryPrice,
             markPrice: event.markPrice,
-            pnl: event.pnl
+      pnl: event.pnl,
         });
     }
 
@@ -450,9 +467,9 @@ export class EngineManager {
      * Handle performance snapshot event
      */
     private handlePerformanceSnapshot(event: any): void {
-        this.deps.logger.debug('Performance snapshot received', {
+    this.deps.logger.debug("Performance snapshot received", {
             botId: event.botId,
-            metrics: event.metrics
+      metrics: event.metrics,
         });
     }
 
@@ -461,18 +478,21 @@ export class EngineManager {
      */
     async sendStartEngineCommand(): Promise<void> {
         const command = {
-            type: 'START_ENGINE',
-            engineId: this.engineId || 'default-engine',
-            timestamp: Date.now()
+      type: "START_ENGINE",
+      engineId: this.engineId || "default-engine",
+      timestamp: Date.now(),
         };
 
-        const result = await this.streamOperations.publish('engine:commands', command);
+    const result = await this.streamOperations.publish(
+      "engine:commands",
+      command
+    );
 
         if (result.success) {
-            this.deps.logger.info('Start engine command sent');
+      this.deps.logger.info("Start engine command sent");
         } else {
-            this.deps.logger.error('Failed to send start engine command', {
-                error: result.error
+      this.deps.logger.error("Failed to send start engine command", {
+        error: result.error,
             });
         }
     }
@@ -482,18 +502,21 @@ export class EngineManager {
      */
     async sendStopEngineCommand(): Promise<void> {
         const command = {
-            type: 'STOP_ENGINE',
-            engineId: this.engineId || 'default-engine',
-            timestamp: Date.now()
+      type: "STOP_ENGINE",
+      engineId: this.engineId || "default-engine",
+      timestamp: Date.now(),
         };
 
-        const result = await this.streamOperations.publish('engine:commands', command);
+    const result = await this.streamOperations.publish(
+      "engine:commands",
+      command
+    );
 
         if (result.success) {
-            this.deps.logger.info('Stop engine command sent');
+      this.deps.logger.info("Stop engine command sent");
         } else {
-            this.deps.logger.error('Failed to send stop engine command', {
-                error: result.error
+      this.deps.logger.error("Failed to send stop engine command", {
+        error: result.error,
             });
         }
     }
@@ -501,29 +524,37 @@ export class EngineManager {
     /**
      * Send start bot command
      */
-    async sendStartBotCommand(botId: string, strategyId: string, config: any, credentials: any): Promise<void> {
+  async sendStartBotCommand(
+    botId: string,
+    strategyId: string,
+    config: any,
+    credentials: any
+  ): Promise<void> {
         const command = {
-            type: 'START_BOT',
-            engineId: this.engineId || 'default-engine',
+      type: "START_BOT",
+      engineId: this.engineId || "default-engine",
             botId,
             strategyId,
             config,
             credentials,
-            timestamp: Date.now()
+      timestamp: Date.now(),
         };
 
-        const result = await this.streamOperations.publish('engine:commands', command);
+    const result = await this.streamOperations.publish(
+      "engine:commands",
+      command
+    );
 
         if (result.success) {
-            this.deps.logger.info('Start bot command sent', {
+      this.deps.logger.info("Start bot command sent", {
                 botId,
-                strategyId
+        strategyId,
             });
         } else {
-            this.deps.logger.error('Failed to send start bot command', {
+      this.deps.logger.error("Failed to send start bot command", {
                 botId,
                 strategyId,
-                error: result.error
+        error: result.error,
             });
         }
     }
@@ -533,22 +564,25 @@ export class EngineManager {
      */
     async sendStopBotCommand(botId: string): Promise<void> {
         const command = {
-            type: 'STOP_BOT',
-            engineId: this.engineId || 'default-engine',
+      type: "STOP_BOT",
+      engineId: this.engineId || "default-engine",
             botId,
-            timestamp: Date.now()
+      timestamp: Date.now(),
         };
 
-        const result = await this.streamOperations.publish('engine:commands', command);
+    const result = await this.streamOperations.publish(
+      "engine:commands",
+      command
+    );
 
         if (result.success) {
-            this.deps.logger.info('Stop bot command sent', {
-                botId
+      this.deps.logger.info("Stop bot command sent", {
+        botId,
             });
         } else {
-            this.deps.logger.error('Failed to send stop bot command', {
+      this.deps.logger.error("Failed to send stop bot command", {
                 botId,
-                error: result.error
+        error: result.error,
             });
         }
     }
@@ -556,27 +590,33 @@ export class EngineManager {
     /**
      * Send emergency stop command
      */
-    async sendEmergencyStopCommand(botId: string, action: 'CANCEL_ALL_ORDERS' | 'CLOSE_POSITIONS' | 'FULL_SHUTDOWN'): Promise<void> {
+  async sendEmergencyStopCommand(
+    botId: string,
+    action: "CANCEL_ALL_ORDERS" | "CLOSE_POSITIONS" | "FULL_SHUTDOWN"
+  ): Promise<void> {
         const command = {
-            type: 'EMERGENCY_STOP',
-            engineId: this.engineId || 'default-engine',
+      type: "EMERGENCY_STOP",
+      engineId: this.engineId || "default-engine",
             botId,
             action,
-            timestamp: Date.now()
+      timestamp: Date.now(),
         };
 
-        const result = await this.streamOperations.publish('engine:commands', command);
+    const result = await this.streamOperations.publish(
+      "engine:commands",
+      command
+    );
 
         if (result.success) {
-            this.deps.logger.warn('Emergency stop command sent', {
+      this.deps.logger.warn("Emergency stop command sent", {
                 botId,
-                action
+        action,
             });
         } else {
-            this.deps.logger.error('Failed to send emergency stop command', {
+      this.deps.logger.error("Failed to send emergency stop command", {
                 botId,
                 action,
-                error: result.error
+        error: result.error,
             });
         }
     }
@@ -584,31 +624,40 @@ export class EngineManager {
     /**
      * Send update strategy config command
      */
-    async sendUpdateStrategyConfigCommand(botId: string, config: any): Promise<void> {
+  async sendUpdateStrategyConfigCommand(
+    botId: string,
+    config: any
+  ): Promise<void> {
         const command = {
-            type: 'UPDATE_STRATEGY_CONFIG',
-            engineId: this.engineId || 'default-engine',
+      type: "UPDATE_STRATEGY_CONFIG",
+      engineId: this.engineId || "default-engine",
             botId,
             config,
-            timestamp: Date.now()
+      timestamp: Date.now(),
         };
 
-        const result = await this.streamOperations.publish('engine:commands', command);
+    const result = await this.streamOperations.publish(
+      "engine:commands",
+      command
+    );
 
         if (result.success) {
-            this.deps.logger.info('Update strategy config command sent', {
-                botId
+      this.deps.logger.info("Update strategy config command sent", {
+        botId,
             });
         } else {
-            this.deps.logger.error('Failed to send update strategy config command', {
+      this.deps.logger.error("Failed to send update strategy config command", {
                 botId,
-                error: result.error
+        error: result.error,
             });
         }
     }
 }
 
 // Export factory function for creating service instances
-export function createEngineManager(deps: EngineManagerServiceDependencies, enginePort?: number): EngineManager {
+export function createEngineManager(
+  deps: EngineManagerServiceDependencies,
+  enginePort?: number
+): EngineManager {
     return new EngineManager(deps, enginePort);
 }

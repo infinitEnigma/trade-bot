@@ -25,10 +25,11 @@ export const useAnalytics = ({
     const subscriptionIdRef = useRef<string | null>(null);
 
     // Generate unique subscription ID using user data for stability and meaning
-    const subscriptionId = `analytics-${user?.id || 'anonymous'}-${symbol}-${timeWindow.value}`;
+  const subscriptionId = `analytics-${user?.id || "anonymous"}-${symbol}-${timeWindow.value}`;
 
     // Callback for analytics data updates
-    const handleAnalyticsUpdate = useCallback((newData: AnalyticsData | null, errorMessage?: string) => {
+  const handleAnalyticsUpdate = useCallback(
+    (newData: AnalyticsData | null, errorMessage?: string) => {
         if (errorMessage) {
             setError(errorMessage);
             setLoading(false);
@@ -44,7 +45,9 @@ export const useAnalytics = ({
             setLoading(false);
             setProgress(0);
         }
-    }, []);
+    },
+    []
+  );
 
     // Subscribe to global analytics manager
     useEffect(() => {
@@ -79,7 +82,14 @@ export const useAnalytics = ({
             unsubscribe();
             subscriptionIdRef.current = null;
         };
-    }, [symbol, timeWindow, enabled, userLevel, subscriptionId, handleAnalyticsUpdate]);
+  }, [
+    symbol,
+    timeWindow,
+    enabled,
+    userLevel,
+    subscriptionId,
+    handleAnalyticsUpdate,
+  ]);
 
     // Get time windows
     const timeWindows = analyticsService.getTimeWindows();
@@ -95,7 +105,9 @@ export const useAnalytics = ({
         try {
             await globalAnalyticsManager.forceRefresh(symbol, timeWindow, userLevel);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to refresh analytics');
+      setError(
+        err instanceof Error ? err.message : "Failed to refresh analytics"
+      );
             setLoading(false);
         }
     }, [symbol, timeWindow, userLevel, enabled]);

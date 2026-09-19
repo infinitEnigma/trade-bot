@@ -45,7 +45,9 @@ describe("AuthService", () => {
 
             (authApi.login as Mock).mockRejectedValue(new Error(errorMessage));
 
-            await expect(authService.login(email, password)).rejects.toThrow(errorMessage);
+      await expect(authService.login(email, password)).rejects.toThrow(
+        errorMessage
+      );
         });
     });
 
@@ -73,7 +75,9 @@ describe("AuthService", () => {
 
             (authApi.register as Mock).mockRejectedValue(new Error(errorMessage));
 
-            await expect(authService.register(email, password)).rejects.toThrow(errorMessage);
+      await expect(authService.register(email, password)).rejects.toThrow(
+        errorMessage
+      );
         });
     });
 
@@ -119,9 +123,13 @@ describe("AuthService", () => {
 
         it("should handle checkQualification errors", async () => {
             const errorMessage = "Failed to check qualification";
-            (authApi.checkQualification as Mock).mockRejectedValue(new Error(errorMessage));
+      (authApi.checkQualification as Mock).mockRejectedValue(
+        new Error(errorMessage)
+      );
 
-            await expect(authService.checkQualification()).rejects.toThrow(errorMessage);
+      await expect(authService.checkQualification()).rejects.toThrow(
+        errorMessage
+      );
         });
     });
 
@@ -142,9 +150,13 @@ describe("AuthService", () => {
 
         it("should handle getQualificationConfig errors", async () => {
             const errorMessage = "Failed to get qualification config";
-            (authApi.getQualificationConfig as Mock).mockRejectedValue(new Error(errorMessage));
+      (authApi.getQualificationConfig as Mock).mockRejectedValue(
+        new Error(errorMessage)
+      );
 
-            await expect(authService.getQualificationConfig()).rejects.toThrow(errorMessage);
+      await expect(authService.getQualificationConfig()).rejects.toThrow(
+        errorMessage
+      );
         });
     });
 });

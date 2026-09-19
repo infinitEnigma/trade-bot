@@ -12,7 +12,9 @@
 import { contextLogger as logger } from "../logging";
 import { botLifecycleService } from "./bot-lifecycle.service";
 
-const SWEEP_INTERVAL_MS = Number(process.env.BOT_COMMAND_SWEEP_INTERVAL_MS ?? 5_000);
+const SWEEP_INTERVAL_MS = Number(
+  process.env.BOT_COMMAND_SWEEP_INTERVAL_MS ?? 5_000
+);
 
 export class CommandTimeoutSweeper {
     private intervalId: NodeJS.Timeout | null = null;
@@ -37,7 +39,9 @@ export class CommandTimeoutSweeper {
         }, SWEEP_INTERVAL_MS);
         // Do not keep the process alive just for the sweeper.
         this.intervalId.unref();
-        logger.info("Command timeout sweeper started", { intervalMs: SWEEP_INTERVAL_MS });
+    logger.info("Command timeout sweeper started", {
+      intervalMs: SWEEP_INTERVAL_MS,
+    });
     }
 
     stop(): void {
@@ -49,7 +53,10 @@ export class CommandTimeoutSweeper {
     }
 
     getStatus(): { isRunning: boolean; intervalMs: number } {
-        return { isRunning: this.intervalId !== null, intervalMs: SWEEP_INTERVAL_MS };
+    return {
+      isRunning: this.intervalId !== null,
+      intervalMs: SWEEP_INTERVAL_MS,
+    };
     }
 }
 

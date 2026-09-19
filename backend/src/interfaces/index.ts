@@ -17,10 +17,10 @@
  */
 
 // Export HTTP interfaces
-export * from './http/index';
+export * from "./http/index";
 
 // Export middleware interfaces
-export * from './middleware/index';
+export * from "./middleware/index";
 
 // Export WebSocket interfaces
-export * from './websocket/index';
+export * from "./websocket/index";

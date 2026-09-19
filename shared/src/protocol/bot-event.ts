@@ -80,7 +80,11 @@ import { generateMessageId } from "./bot-command";
 /**
  * Build a protocol event envelope.
  */
-export function createBotEvent<P extends BotEventPayload>(type: BotEventType, payload: P, correlationId: string): ProtocolMessage<P> {
+export function createBotEvent<P extends BotEventPayload>(
+  type: BotEventType,
+  payload: P,
+  correlationId: string
+): ProtocolMessage<P> {
     return {
         version: 1,
         messageId: generateMessageId(),
@@ -100,18 +104,44 @@ import { isProtocolMessage } from "./bot-command";
 export function isBotEvent(obj: unknown): obj is BotEvent {
     return (
         isProtocolMessage(obj) &&
-        (["COMMAND_ACCEPTED", "COMMAND_FAILED", "STATE_CHANGED", "ENGINE_REGISTER", "ENGINE_HEARTBEAT"] as string[]).includes(obj.type)
+    (
+      [
+        "COMMAND_ACCEPTED",
+        "COMMAND_FAILED",
+        "STATE_CHANGED",
+        "ENGINE_REGISTER",
+        "ENGINE_HEARTBEAT",
+      ] as string[]
+    ).includes(obj.type)
     );
 }
 
-export function isCommandAcceptedEvent(obj: unknown): obj is ProtocolMessage<CommandAcceptedEventPayload> {
-    return isProtocolMessage(obj) && obj.type === "COMMAND_ACCEPTED" && typeof (obj.payload as CommandAcceptedEventPayload)?.botId === "string";
+export function isCommandAcceptedEvent(
+  obj: unknown
+): obj is ProtocolMessage<CommandAcceptedEventPayload> {
+  return (
+    isProtocolMessage(obj) &&
+    obj.type === "COMMAND_ACCEPTED" &&
+    typeof (obj.payload as CommandAcceptedEventPayload)?.botId === "string"
+  );
 }
 
-export function isCommandFailedEvent(obj: unknown): obj is ProtocolMessage<CommandFailedEventPayload> {
-    return isProtocolMessage(obj) && obj.type === "COMMAND_FAILED" && typeof (obj.payload as CommandFailedEventPayload)?.botId === "string";
+export function isCommandFailedEvent(
+  obj: unknown
+): obj is ProtocolMessage<CommandFailedEventPayload> {
+  return (
+    isProtocolMessage(obj) &&
+    obj.type === "COMMAND_FAILED" &&
+    typeof (obj.payload as CommandFailedEventPayload)?.botId === "string"
+  );
 }
 
-export function isStateChangedEvent(obj: unknown): obj is ProtocolMessage<StateChangedEventPayload> {
-    return isProtocolMessage(obj) && obj.type === "STATE_CHANGED" && typeof (obj.payload as StateChangedEventPayload)?.botId === "string";
+export function isStateChangedEvent(
+  obj: unknown
+): obj is ProtocolMessage<StateChangedEventPayload> {
+  return (
+    isProtocolMessage(obj) &&
+    obj.type === "STATE_CHANGED" &&
+    typeof (obj.payload as StateChangedEventPayload)?.botId === "string"
+  );
 }

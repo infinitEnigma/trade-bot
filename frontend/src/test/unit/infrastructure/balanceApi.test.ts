@@ -39,7 +39,9 @@ describe("balanceApi", () => {
                 data: { balance: 1000, currency: "USD" },
             };
 
-            (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(mockResponse);
+      (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
+        mockResponse
+      );
 
             const result = await balanceApi.getCurrentBalance();
 
@@ -53,9 +55,13 @@ describe("balanceApi", () => {
 
         it("should handle errors when getting current balance", async () => {
             const errorMessage = "Failed to fetch balance";
-            (globalRequestManager.deduplicateRequest as Mock).mockRejectedValue(new Error(errorMessage));
+      (globalRequestManager.deduplicateRequest as Mock).mockRejectedValue(
+        new Error(errorMessage)
+      );
 
-            await expect(balanceApi.getCurrentBalance()).rejects.toThrow(errorMessage);
+      await expect(balanceApi.getCurrentBalance()).rejects.toThrow(
+        errorMessage
+      );
         });
     });
 
@@ -66,7 +72,9 @@ describe("balanceApi", () => {
                 data: { balance: 1500, currency: "USD" },
             };
 
-            (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(mockResponse);
+      (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue(
+        mockResponse
+      );
 
             const result = await balanceApi.refreshBalance();
 
@@ -80,7 +88,9 @@ describe("balanceApi", () => {
 
         it("should handle errors when refreshing balance", async () => {
             const errorMessage = "Refresh failed";
-            (globalRequestManager.deduplicateRequest as Mock).mockRejectedValue(new Error(errorMessage));
+      (globalRequestManager.deduplicateRequest as Mock).mockRejectedValue(
+        new Error(errorMessage)
+      );
 
             await expect(balanceApi.refreshBalance()).rejects.toThrow(errorMessage);
         });

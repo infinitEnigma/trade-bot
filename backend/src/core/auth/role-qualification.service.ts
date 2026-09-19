@@ -4,9 +4,14 @@ import {
     IRoleQualificationService,
     RoleQualificationResult,
     UserRole,
-    UserLevel
-} from '@trade-bot/shared';
-import { IUserRepository, ICacheService, ILogger, User } from '@trade-bot/shared';
+  UserLevel,
+} from "@trade-bot/shared";
+import {
+  IUserRepository,
+  ICacheService,
+  ILogger,
+  User,
+} from "@trade-bot/shared";
 
 /**
  * Role Qualification Service - Clean Architecture Implementation
@@ -46,7 +51,10 @@ export class RoleQualificationService implements IRoleQualificationService {
      * - Apply role-specific qualification rules
      * - Return qualification result with criteria
      */
-    async checkQualification(userId: string, role: UserRole): Promise<RoleQualificationResult> {
+  async checkQualification(
+    userId: string,
+    role: UserRole
+  ): Promise<RoleQualificationResult> {
         try {
             this.deps.logger.debug("Role qualification check", { userId, role });
 
@@ -55,7 +63,7 @@ export class RoleQualificationService implements IRoleQualificationService {
             if (!user) {
                 return {
                     qualified: false,
-                    reason: 'User not found'
+          reason: "User not found",
                 };
             }
 
@@ -68,19 +76,18 @@ export class RoleQualificationService implements IRoleQualificationService {
                 default:
                     return {
                         qualified: false,
-                        reason: `Unknown role: ${role}`
+            reason: `Unknown role: ${role}`,
                     };
             }
-
         } catch (error) {
             this.deps.logger.error("Role qualification check failed", {
                 userId,
                 role,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return {
                 qualified: false,
-                reason: 'Qualification check failed'
+        reason: "Qualification check failed",
             };
         }
     }
@@ -96,14 +103,14 @@ export class RoleQualificationService implements IRoleQualificationService {
                         userLevel: UserLevel.VERIFIED,
                         hasKodiakCredentials: true,
                         minimumAccountAge: 30, // days
-                        hasCompletedTrades: true
+            hasCompletedTrades: true,
                     };
                 case UserRole.SYSTEM_ADMIN:
                     return {
                         userLevel: UserLevel.VERIFIED,
                         hasAdminToken: true,
                         contractAddress: process.env.ADMIN_CONTRACT_ADDRESS,
-                        tokenId: process.env.ADMIN_TOKEN_ID
+            tokenId: process.env.ADMIN_TOKEN_ID,
                     };
                 default:
                     return null;
@@ -111,7 +118,7 @@ export class RoleQualificationService implements IRoleQualificationService {
         } catch (error) {
             this.deps.logger.error("Failed to get qualification criteria", {
                 role,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return null;
         }
@@ -122,7 +129,7 @@ export class RoleQualificationService implements IRoleQualificationService {
      */
     validateCriteria(criteria: unknown, role: UserRole): boolean {
         try {
-            if (!criteria || typeof criteria !== 'object') {
+      if (!criteria || typeof criteria !== "object") {
                 return false;
             }
 
@@ -139,7 +146,7 @@ export class RoleQualificationService implements IRoleQualificationService {
         } catch (error) {
             this.deps.logger.error("Failed to validate qualification criteria", {
                 role,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return false;
         }
@@ -148,16 +155,18 @@ export class RoleQualificationService implements IRoleQualificationService {
     /**
      * Check if user qualifies for SYSTEM_ADMIN role
      */
-    private async checkSystemAdminQualification(user: User): Promise<RoleQualificationResult> {
+  private async checkSystemAdminQualification(
+    user: User
+  ): Promise<RoleQualificationResult> {
         // Check basic user level
         if (user.userLevel !== UserLevel.VERIFIED) {
             return {
                 qualified: false,
-                reason: 'User must be verified',
+        reason: "User must be verified",
                 criteria: {
                     currentLevel: user.userLevel,
-                    requiredLevel: UserLevel.VERIFIED
-                }
+          requiredLevel: UserLevel.VERIFIED,
+        },
             };
         }
 
@@ -166,12 +175,12 @@ export class RoleQualificationService implements IRoleQualificationService {
         if (!hasAdminToken) {
             return {
                 qualified: false,
-                reason: 'User does not have admin token',
+        reason: "User does not have admin token",
                 criteria: {
                     hasAdminToken: false,
                     contractAddress: process.env.ADMIN_CONTRACT_ADDRESS,
-                    tokenId: process.env.ADMIN_TOKEN_ID
-                }
+          tokenId: process.env.ADMIN_TOKEN_ID,
+        },
             };
         }
 
@@ -182,20 +191,23 @@ export class RoleQualificationService implements IRoleQualificationService {
                 userLevel: user.userLevel,
                 hasAdminToken: true,
                 contractAddress: process.env.ADMIN_CONTRACT_ADDRESS,
-                tokenId: process.env.ADMIN_TOKEN_ID
-            }
+        tokenId: process.env.ADMIN_TOKEN_ID,
+      },
         };
     }
 
     /**
      * Validate SYSTEM_ADMIN criteria
      */
-    private validateSystemAdminCriteria(criteria: Record<string, unknown>): boolean {
+  private validateSystemAdminCriteria(
+    criteria: Record<string, unknown>
+  ): boolean {
         return (
             criteria.userLevel === UserLevel.VERIFIED &&
-            typeof criteria.hasAdminToken === 'boolean' &&
-            typeof criteria.contractAddress === 'string' &&
-            (typeof criteria.tokenId === 'string' || typeof criteria.tokenId === 'number')
+      typeof criteria.hasAdminToken === "boolean" &&
+      typeof criteria.contractAddress === "string" &&
+      (typeof criteria.tokenId === "string" ||
+        typeof criteria.tokenId === "number")
         );
     }
 
@@ -205,7 +217,8 @@ export class RoleQualificationService implements IRoleQualificationService {
     private async checkUserHasAdminToken(userId: string): Promise<boolean> {
         try {
             // Get user's wallet address from Kodiak credentials
-            const walletAddress = await this.deps.userRepository.getWalletAddress(userId);
+      const walletAddress =
+        await this.deps.userRepository.getWalletAddress(userId);
             if (!walletAddress) {
                 this.deps.logger.debug("User has no wallet address", { userId });
                 return false;
@@ -217,12 +230,15 @@ export class RoleQualificationService implements IRoleQualificationService {
             const chainId = process.env.ADMIN_CHAIN_ID;
 
             if (!apiKey || !contractAddress || !adminTokenId || !chainId) {
-                this.deps.logger.warn("Admin token verification configuration missing", {
+        this.deps.logger.warn(
+          "Admin token verification configuration missing",
+          {
                     hasApiKey: !!apiKey,
                     hasContractAddress: !!contractAddress,
                     hasTokenId: !!adminTokenId,
-                    hasChainId: !!chainId
-                });
+            hasChainId: !!chainId,
+          }
+        );
                 return false;
             }
 
@@ -238,15 +254,14 @@ export class RoleQualificationService implements IRoleQualificationService {
             this.deps.logger.debug("Admin token check result", {
                 userId,
                 walletAddress,
-                hasToken
+        hasToken,
             });
 
             return hasToken;
-
         } catch (error) {
             this.deps.logger.error("Failed to check admin token", {
                 userId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return false;
         }
@@ -269,16 +284,16 @@ export class RoleQualificationService implements IRoleQualificationService {
             if (!response.ok) {
                 this.deps.logger.warn("Etherscan API request failed", {
                     status: response.status,
-                    statusText: response.statusText
+          statusText: response.statusText,
                 });
                 return false;
             }
 
-            const data = await response.json() as any;
-            if (data.status !== '1' || !data.result || !Array.isArray(data.result)) {
+      const data = (await response.json()) as any;
+      if (data.status !== "1" || !data.result || !Array.isArray(data.result)) {
                 this.deps.logger.debug("Etherscan API response invalid", {
                     status: data.status,
-                    message: data.message
+          message: data.message,
                 });
                 return false;
             }
@@ -293,10 +308,9 @@ export class RoleQualificationService implements IRoleQualificationService {
             });
 
             return hasToken;
-
         } catch (error) {
             this.deps.logger.error("Etherscan API request failed", {
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return false;
         }
@@ -305,29 +319,33 @@ export class RoleQualificationService implements IRoleQualificationService {
     /**
      * Check if user qualifies for QUALIFIED_ALPHA role
      */
-    private async checkAlphaQualification(user: User): Promise<RoleQualificationResult> {
+  private async checkAlphaQualification(
+    user: User
+  ): Promise<RoleQualificationResult> {
         // Check basic user level
         if (user.userLevel !== UserLevel.VERIFIED) {
             return {
                 qualified: false,
-                reason: 'User must be verified',
+        reason: "User must be verified",
                 criteria: {
                     currentLevel: user.userLevel,
-                    requiredLevel: UserLevel.VERIFIED
-                }
+          requiredLevel: UserLevel.VERIFIED,
+        },
             };
         }
 
         // Check if user has Kodiak credentials (simplified check)
         // In a real implementation, this would check the kodiak_credentials table
-        const hasKodiakCredentials = await this.checkUserHasKodiakCredentials(user.id);
+    const hasKodiakCredentials = await this.checkUserHasKodiakCredentials(
+      user.id
+    );
         if (!hasKodiakCredentials) {
             return {
                 qualified: false,
-                reason: 'User must have Kodiak credentials',
+        reason: "User must have Kodiak credentials",
                 criteria: {
-                    hasKodiakCredentials: false
-                }
+          hasKodiakCredentials: false,
+        },
             };
         }
 
@@ -336,11 +354,11 @@ export class RoleQualificationService implements IRoleQualificationService {
         if (accountAgeDays < 30) {
             return {
                 qualified: false,
-                reason: 'Account must be at least 30 days old',
+        reason: "Account must be at least 30 days old",
                 criteria: {
                     accountAgeDays,
-                    minimumRequiredDays: 30
-                }
+          minimumRequiredDays: 30,
+        },
             };
         }
 
@@ -349,10 +367,10 @@ export class RoleQualificationService implements IRoleQualificationService {
         if (!hasCompletedTrades) {
             return {
                 qualified: false,
-                reason: 'User must have completed trades',
+        reason: "User must have completed trades",
                 criteria: {
-                    hasCompletedTrades: false
-                }
+          hasCompletedTrades: false,
+        },
             };
         }
 
@@ -363,8 +381,8 @@ export class RoleQualificationService implements IRoleQualificationService {
                 userLevel: user.userLevel,
                 hasKodiakCredentials: true,
                 accountAgeDays,
-                hasCompletedTrades: true
-            }
+        hasCompletedTrades: true,
+      },
         };
     }
 
@@ -374,9 +392,9 @@ export class RoleQualificationService implements IRoleQualificationService {
     private validateAlphaCriteria(criteria: Record<string, unknown>): boolean {
         return (
             criteria.userLevel === UserLevel.VERIFIED &&
-            typeof criteria.hasKodiakCredentials === 'boolean' &&
-            typeof criteria.minimumAccountAge === 'number' &&
-            typeof criteria.hasCompletedTrades === 'boolean'
+      typeof criteria.hasKodiakCredentials === "boolean" &&
+      typeof criteria.minimumAccountAge === "number" &&
+      typeof criteria.hasCompletedTrades === "boolean"
         );
     }
 
@@ -384,7 +402,9 @@ export class RoleQualificationService implements IRoleQualificationService {
      * Check if user has Kodiak credentials
      * This would normally query the kodiak_credentials table
      */
-    private async checkUserHasKodiakCredentials(userId: string): Promise<boolean> {
+  private async checkUserHasKodiakCredentials(
+    userId: string
+  ): Promise<boolean> {
         try {
             // This is a placeholder implementation
             // In reality, this would use a KodiakCredentialsRepository
@@ -393,7 +413,7 @@ export class RoleQualificationService implements IRoleQualificationService {
         } catch (error) {
             this.deps.logger.error("Failed to check Kodiak credentials", {
                 userId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return false;
         }
@@ -412,7 +432,7 @@ export class RoleQualificationService implements IRoleQualificationService {
         } catch (error) {
             this.deps.logger.error("Failed to check completed trades", {
                 userId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return false;
         }
@@ -429,6 +449,8 @@ export class RoleQualificationService implements IRoleQualificationService {
 }
 
 // Export factory function for creating service instances
-export function createRoleQualificationService(deps: RoleQualificationServiceDependencies): RoleQualificationService {
+export function createRoleQualificationService(
+  deps: RoleQualificationServiceDependencies
+): RoleQualificationService {
     return new RoleQualificationService(deps);
 }

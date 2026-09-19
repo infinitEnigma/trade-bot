@@ -71,7 +71,9 @@ export const SmartToast = {
 
     // Progress toast for operations with progress
     progress: (message: string, progress: number, options?: ToastOptions) => {
-        const progressBar = "█".repeat(Math.floor(progress / 10)) + "░".repeat(10 - Math.floor(progress / 10));
+    const progressBar =
+      "█".repeat(Math.floor(progress / 10)) +
+      "░".repeat(10 - Math.floor(progress / 10));
 
         return toast.loading(`${message}\n${progressBar} ${progress}%`, {
             ...options,
@@ -86,7 +88,11 @@ export const SmartToast = {
     },
 
     // Update existing toast
-    update: (id: string | number, message: string, options?: Partial<ToastOptions>) => {
+  update: (
+    id: string | number,
+    message: string,
+    options?: Partial<ToastOptions>
+  ) => {
         return toast(message, {
             ...options,
             id,
@@ -214,7 +220,9 @@ export class OperationProgress {
     update(progress: number, message?: string) {
         if (this.toastId) {
             SmartToast.update(this.toastId, message || `Progress: ${progress}%`, {
-                description: "█".repeat(Math.floor(progress / 10)) + "░".repeat(10 - Math.floor(progress / 10)),
+        description:
+          "█".repeat(Math.floor(progress / 10)) +
+          "░".repeat(10 - Math.floor(progress / 10)),
             });
         }
     }
@@ -222,7 +230,10 @@ export class OperationProgress {
     complete(success: boolean, message?: string) {
         if (this.toastId) {
             if (success) {
-                SmartToast.update(this.toastId, message || "Operation completed successfully!");
+        SmartToast.update(
+          this.toastId,
+          message || "Operation completed successfully!"
+        );
             } else {
                 SmartToast.update(this.toastId, message || "Operation failed");
             }

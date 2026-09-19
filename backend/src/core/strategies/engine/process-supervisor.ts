@@ -35,15 +35,18 @@ import { ProcessSpawner } from "./process-spawner";
 import { HealthMonitor, EngineHealth } from "./health-monitor";
 import { RestartManager } from "./restart-manager";
 import { CircuitBreaker } from "./circuit-breaker";
-import { ErrorCategory, ErrorSeverity } from "../../notifications/error-notification.service";
+import {
+  ErrorCategory,
+  ErrorSeverity,
+} from "../../notifications/error-notification.service";
 
 export enum ProcessState {
-    STOPPED = 'stopped',       // Process not running (terminal)
-    STARTING = 'starting',     // Process initialization in progress
-    RUNNING = 'running',       // Process operating normally
-    UNHEALTHY = 'unhealthy',   // Process detected issues
-    CRASHED = 'crashed',       // Process terminated unexpectedly
-    RECOVERING = 'recovering', // Process recovery in progress
+  STOPPED = "stopped", // Process not running (terminal)
+  STARTING = "starting", // Process initialization in progress
+  RUNNING = "running", // Process operating normally
+  UNHEALTHY = "unhealthy", // Process detected issues
+  CRASHED = "crashed", // Process terminated unexpectedly
+  RECOVERING = "recovering", // Process recovery in progress
 }
 
 export interface SupervisorConfig {
@@ -172,7 +175,6 @@ export class ProcessSupervisor {
                 healthScore: health.healthScore,
                 overallHealthy: health.overallHealthy,
             });
-
         } catch (error) {
             logger.error("Supervision cycle failed", error as Error, {
                 error: error instanceof Error ? error.message : String(error),
@@ -229,9 +231,15 @@ export class ProcessSupervisor {
         });
 
         // Update timing tracking
-        if (newState === ProcessState.RUNNING && oldState !== ProcessState.RUNNING) {
+    if (
+      newState === ProcessState.RUNNING &&
+      oldState !== ProcessState.RUNNING
+    ) {
             this.startTime = Date.now();
-        } else if (oldState === ProcessState.RUNNING && newState !== ProcessState.RUNNING) {
+    } else if (
+      oldState === ProcessState.RUNNING &&
+      newState !== ProcessState.RUNNING
+    ) {
             if (this.startTime > 0) {
                 this.totalUptime += Date.now() - this.startTime;
                 this.startTime = 0;
@@ -264,11 +272,12 @@ export class ProcessSupervisor {
         });
 
         // Notify about crash
-        await this.notifyProcessFailure('process_crash', health);
+    await this.notifyProcessFailure("process_crash", health);
 
         // Attempt restart if enabled
         if (this.config.enableAutoRestart) {
-            const restartResult = await this.restartManager.attemptIntelligentRestart('process_crash');
+      const restartResult =
+        await this.restartManager.attemptIntelligentRestart("process_crash");
 
             if (restartResult.success) {
                 this.state = ProcessState.RECOVERING;
@@ -278,7 +287,7 @@ export class ProcessSupervisor {
                     error: restartResult.error,
                     nextRetryIn: restartResult.nextRetryIn,
                 });
-                await this.handlePermanentFailure('Process crashed and restart failed');
+        await this.handlePermanentFailure("Process crashed and restart failed");
             }
         }
     }
@@ -295,12 +304,16 @@ export class ProcessSupervisor {
 
         // For unhealthy state, we can either monitor or attempt recovery
         // depending on severity and restart policy
-        if (this.config.enableAutoRestart &&
-            this.restartManager.shouldAttemptRestartForReason('process_unhealthy')) {
-
+    if (
+      this.config.enableAutoRestart &&
+      this.restartManager.shouldAttemptRestartForReason("process_unhealthy")
+    ) {
             this.state = ProcessState.RECOVERING;
 
-            const restartResult = await this.restartManager.attemptIntelligentRestart('process_unhealthy');
+      const restartResult =
+        await this.restartManager.attemptIntelligentRestart(
+          "process_unhealthy"
+        );
 
             if (restartResult.success) {
                 logger.info("Process restart initiated for unhealthy state");
@@ -369,16 +382,20 @@ export class ProcessSupervisor {
     /**
      * Notify about process failure
      */
-    private async notifyProcessFailure(reason: string, health: EngineHealth): Promise<void> {
+  private async notifyProcessFailure(
+    reason: string,
+    health: EngineHealth
+  ): Promise<void> {
         try {
             // Import notification service dynamically to avoid circular imports
-            const { errorNotificationService } = await import("../../notifications/error-notification.service");
+      const { errorNotificationService } =
+        await import("../../notifications/error-notification.service");
 
             await errorNotificationService.notifyError(
                 new Error(`Engine process failure: ${reason}`),
                 {
                     category: ErrorCategory.SYSTEM,
-                    operation: 'engine_supervision',
+          operation: "engine_supervision",
                     metadata: {
                         processState: this.state,
                         healthScore: health.healthScore,
@@ -402,13 +419,14 @@ export class ProcessSupervisor {
      */
     private async notifyProcessRecovery(): Promise<void> {
         try {
-            const { errorNotificationService } = await import("../../notifications/error-notification.service");
+      const { errorNotificationService } =
+        await import("../../notifications/error-notification.service");
 
             await errorNotificationService.notifyError(
                 new Error("Engine process recovered successfully"),
                 {
                     category: ErrorCategory.SYSTEM,
-                    operation: 'engine_recovery',
+          operation: "engine_recovery",
                     metadata: {
                         processState: this.state,
                         uptime: this.getUptime(),
@@ -431,23 +449,25 @@ export class ProcessSupervisor {
      */
     private async notifyPermanentFailure(reason: string): Promise<void> {
         try {
-            const { errorNotificationService } = await import("../../notifications/error-notification.service");
+      const { errorNotificationService } =
+        await import("../../notifications/error-notification.service");
 
             await errorNotificationService.notifyError(
                 new Error(`Engine permanent failure: ${reason}`),
                 {
                     category: ErrorCategory.SYSTEM,
-                    operation: 'engine_permanent_failure',
+          operation: "engine_permanent_failure",
                     metadata: {
                         reason,
                         processState: this.state,
-                        totalRestarts: this.restartManager.getRestartStatistics().totalAttempts,
+            totalRestarts:
+              this.restartManager.getRestartStatistics().totalAttempts,
                         supervisionCycles: this.supervisionCycles,
                     },
                 },
                 ErrorSeverity.CRITICAL,
                 undefined,
-                'Engine has failed permanently - manual intervention required'
+        "Engine has failed permanently - manual intervention required"
             );
         } catch (error) {
             logger.error("Failed to notify about permanent failure", error as Error, {
@@ -461,13 +481,14 @@ export class ProcessSupervisor {
      */
     private async notifySupervisionFailure(error: unknown): Promise<void> {
         try {
-            const { errorNotificationService } = await import("../../notifications/error-notification.service");
+      const { errorNotificationService } =
+        await import("../../notifications/error-notification.service");
 
             await errorNotificationService.notifyError(
                 new Error(`Supervision system failure: ${error}`),
                 {
                     category: ErrorCategory.SYSTEM,
-                    operation: 'supervision_failure',
+          operation: "supervision_failure",
                     metadata: {
                         error: error instanceof Error ? error.message : String(error),
                         processState: this.state,
@@ -476,13 +497,20 @@ export class ProcessSupervisor {
                 },
                 ErrorSeverity.CRITICAL,
                 undefined,
-                'Process supervision system has failed - critical system issue'
+        "Process supervision system has failed - critical system issue"
             );
         } catch (notifyError) {
-            logger.error("Failed to notify about supervision failure", notifyError as Error, {
+      logger.error(
+        "Failed to notify about supervision failure",
+        notifyError as Error,
+        {
                 originalError: error instanceof Error ? error.message : String(error),
-                notifyError: notifyError instanceof Error ? notifyError.message : String(notifyError),
-            });
+          notifyError:
+            notifyError instanceof Error
+              ? notifyError.message
+              : String(notifyError),
+        }
+      );
         }
     }
 
@@ -528,9 +556,9 @@ export class ProcessSupervisor {
     getSupervisorStatus(): {
         state: ProcessState;
         stats: SupervisorStats;
-        healthTrend: ReturnType<HealthMonitor['getHealthTrend']>;
-        restartAnalysis: ReturnType<RestartManager['getRestartAnalysis']>;
-        circuitBreakerAnalysis: ReturnType<CircuitBreaker['getAnalysis']>;
+    healthTrend: ReturnType<HealthMonitor["getHealthTrend"]>;
+    restartAnalysis: ReturnType<RestartManager["getRestartAnalysis"]>;
+    circuitBreakerAnalysis: ReturnType<CircuitBreaker["getAnalysis"]>;
         config: SupervisorConfig;
     } {
         return {
@@ -546,15 +574,21 @@ export class ProcessSupervisor {
     /**
      * Emergency stop - force termination
      */
-    async emergencyStop(reason: string = 'emergency_stop'): Promise<void> {
+  async emergencyStop(reason: string = "emergency_stop"): Promise<void> {
         logger.warn("Emergency stop initiated", { reason, state: this.state });
 
         this.state = ProcessState.STOPPED;
         this.stopSupervision();
 
         try {
-            await this.processSpawner.kill('SIGKILL', this.config.emergencyShutdownTimeout);
-            await this.notifyProcessFailure(reason, await this.healthMonitor.performMultiLayerHealthCheck());
+      await this.processSpawner.kill(
+        "SIGKILL",
+        this.config.emergencyShutdownTimeout
+      );
+      await this.notifyProcessFailure(
+        reason,
+        await this.healthMonitor.performMultiLayerHealthCheck()
+      );
         } catch (error) {
             logger.error("Emergency stop failed", error as Error, {
                 error: error instanceof Error ? error.message : String(error),
@@ -566,12 +600,17 @@ export class ProcessSupervisor {
     /**
      * Manual restart (for admin intervention)
      */
-    async manualRestart(reason: string = 'manual_restart'): Promise<{ success: boolean; error?: string }> {
-        logger.info("Manual restart initiated", { reason, currentState: this.state });
+  async manualRestart(
+    reason: string = "manual_restart"
+  ): Promise<{ success: boolean; error?: string }> {
+    logger.info("Manual restart initiated", {
+      reason,
+      currentState: this.state,
+    });
 
         try {
             // Force stop current process
-            await this.processSpawner.kill('SIGKILL');
+      await this.processSpawner.kill("SIGKILL");
 
             // Start new process
             await this.processSpawner.spawn();
@@ -585,10 +624,13 @@ export class ProcessSupervisor {
 
             logger.info("Manual restart completed successfully");
             return { success: true };
-
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error("Manual restart failed", error as Error, { error: errorMessage, reason });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Manual restart failed", error as Error, {
+        error: errorMessage,
+        reason,
+      });
 
             this.state = ProcessState.CRASHED;
             return { success: false, error: errorMessage };

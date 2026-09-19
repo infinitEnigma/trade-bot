@@ -2,7 +2,10 @@
 
 import { Router, Response } from "express";
 import Joi from "joi";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
+import {
+  authMiddleware,
+  AuthenticatedRequest,
+} from "../../middleware/auth.middleware";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import { diContainer } from "../../../infrastructure/dependency-injection.container";
 
@@ -35,7 +38,9 @@ router.get(
         throw new Error("User not authenticated");
       }
 
-      const strategies = await diContainer.strategyService.getStrategies(req.user.userId);
+      const strategies = await diContainer.strategyService.getStrategies(
+        req.user.userId
+      );
 
       res.json({
         success: true,
@@ -71,7 +76,10 @@ router.post(
           .json({ success: false, error: error.details[0].message });
       }
 
-      const strategy = await diContainer.strategyService.createStrategy(req.user.userId, value);
+      const strategy = await diContainer.strategyService.createStrategy(
+        req.user.userId,
+        value
+      );
 
       res.status(201).json({
         success: true,
@@ -101,7 +109,8 @@ router.get(
       }
 
       const strategyId = req.params.id as string;
-      const strategy = await diContainer.strategyService.getStrategy(strategyId);
+      const strategy =
+        await diContainer.strategyService.getStrategy(strategyId);
 
       if (!strategy) {
         return res
@@ -151,7 +160,8 @@ router.put(
 
       const strategyId = req.params.id as string;
       // Verify strategy exists and belongs to user
-      const existingStrategy = await diContainer.strategyService.getStrategy(strategyId);
+      const existingStrategy =
+        await diContainer.strategyService.getStrategy(strategyId);
       if (!existingStrategy) {
         return res
           .status(404)
@@ -164,7 +174,10 @@ router.put(
           .json({ success: false, error: "Strategy not found" });
       }
 
-      const updatedStrategy = await diContainer.strategyService.updateStrategy(strategyId, value);
+      const updatedStrategy = await diContainer.strategyService.updateStrategy(
+        strategyId,
+        value
+      );
 
       res.json({
         success: true,
@@ -196,7 +209,8 @@ router.delete(
 
       const strategyId = req.params.id as string;
       // Verify strategy exists and belongs to user
-      const existingStrategy = await diContainer.strategyService.getStrategy(strategyId);
+      const existingStrategy =
+        await diContainer.strategyService.getStrategy(strategyId);
       if (!existingStrategy) {
         return res
           .status(404)
@@ -241,7 +255,8 @@ router.get(
 
       const strategyId = req.params.id as string;
       // Verify strategy exists and belongs to user
-      const strategyResult = await diContainer.strategyService.getStrategy(strategyId);
+      const strategyResult =
+        await diContainer.strategyService.getStrategy(strategyId);
       if (!strategyResult) {
         return res
           .status(404)
@@ -255,7 +270,8 @@ router.get(
       }
 
       // Get strategy performance
-      const performance = await diContainer.strategyService.getStrategyPerformance(strategyId);
+      const performance =
+        await diContainer.strategyService.getStrategyPerformance(strategyId);
 
       res.json({
         success: true,

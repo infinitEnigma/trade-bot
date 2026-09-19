@@ -28,7 +28,7 @@ import { contextLogger, ContextAwareLogger } from "../../core/logging";
 export interface AsyncOperationOptions {
     userId?: string;
     userLevel?: string;
-    priority?: 'low' | 'normal' | 'high' | 'critical';
+  priority?: "low" | "normal" | "high" | "critical";
     timeout?: number;
     retries?: number;
     component?: string;
@@ -40,8 +40,8 @@ export interface BackgroundJob {
     function: () => Promise<void>;
     context: RequestContext | undefined;
     submittedAt: number;
-    status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
-    priority: 'low' | 'normal' | 'high' | 'critical';
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  priority: "low" | "normal" | "high" | "critical";
 }
 
 /**
@@ -65,7 +65,9 @@ export class AsyncOperationManager {
 
         if (!currentContext) {
             // No context to preserve, execute normally
-            contextLogger.debug(`Executing operation without context: ${operationName}`);
+      contextLogger.debug(
+        `Executing operation without context: ${operationName}`
+      );
             return operation();
         }
 
@@ -76,14 +78,16 @@ export class AsyncOperationManager {
         childContext.userId = options.userId || currentContext.userId;
         childContext.userLevel = options.userLevel || currentContext.userLevel;
 
-        const logger = new ContextAwareLogger(options.component || 'async-operation');
+    const logger = new ContextAwareLogger(
+      options.component || "async-operation"
+    );
 
         // Create a new AsyncLocalStorage instance for this operation
         const als = new AsyncLocalStorage<RequestContext>();
         return als.run(childContext, async () => {
             const timer = logger.startOperation(operationName, {
-                operationType: 'async',
-                priority: options.priority || 'normal',
+        operationType: "async",
+        priority: options.priority || "normal",
             });
 
             try {
@@ -96,14 +100,13 @@ export class AsyncOperationManager {
                 const result = await operation();
 
                 timer.success({
-                    operationType: 'async_complete',
+          operationType: "async_complete",
                 });
 
                 return result;
-
             } catch (error) {
                 timer.failure(error as Error, {
-                    operationType: 'async_error',
+          operationType: "async_error",
                 });
 
                 throw error;
@@ -119,7 +122,7 @@ export class AsyncOperationManager {
         jobFunction: () => Promise<void>,
         options: AsyncOperationOptions & { delayMs?: number } = {}
     ): string {
-        const jobId = `job_${Date.now()}_${randomBytes(4).toString('hex')}`;
+    const jobId = `job_${Date.now()}_${randomBytes(4).toString("hex")}`;
         const currentContext = getCurrentContext();
 
         const job: BackgroundJob = {
@@ -128,8 +131,8 @@ export class AsyncOperationManager {
             function: jobFunction,
             context: currentContext,
             submittedAt: Date.now(),
-            status: 'queued',
-            priority: options.priority || 'normal',
+      status: "queued",
+      priority: options.priority || "normal",
         };
 
         this.jobQueue.set(jobId, job);
@@ -182,23 +185,23 @@ export class AsyncOperationManager {
             return;
         }
 
-        job.status = 'running';
+    job.status = "running";
         this.activeJobs.set(job.id, job);
         this.jobQueue.delete(job.id);
 
-        const logger = new ContextAwareLogger('background-job');
+    const logger = new ContextAwareLogger("background-job");
 
         if (!job.context) {
             // No context to preserve, execute normally
             try {
                 await job.function();
-                job.status = 'completed';
+        job.status = "completed";
                 logger.info("Background job completed (no context)", {
                     jobId: job.id,
                     jobName: job.name,
                 });
             } catch (error) {
-                job.status = 'failed';
+        job.status = "failed";
                 logger.error("Background job failed (no context)", error as Error, {
                     jobId: job.id,
                     jobName: job.name,
@@ -214,7 +217,7 @@ export class AsyncOperationManager {
         await als.run(job.context, async () => {
             const timer = logger.startOperation(job.name, {
                 jobId: job.id,
-                operationType: 'background_job',
+        operationType: "background_job",
                 priority: job.priority,
             });
 
@@ -222,21 +225,20 @@ export class AsyncOperationManager {
                 logger.info("Background job started with context", {
                     jobId: job.id,
                     jobName: job.name,
-                    correlationId: job.context?.correlationId || 'unknown',
-                    userId: job.context?.userId || 'unknown',
+          correlationId: job.context?.correlationId || "unknown",
+          userId: job.context?.userId || "unknown",
                 });
 
                 await job.function();
 
-                job.status = 'completed';
+        job.status = "completed";
                 timer.success({
-                    operationType: 'background_job_complete',
+          operationType: "background_job_complete",
                 });
-
             } catch (error) {
-                job.status = 'failed';
+        job.status = "failed";
                 timer.failure(error as Error, {
-                    operationType: 'background_job_error',
+          operationType: "background_job_error",
                 });
             } finally {
                 this.activeJobs.delete(job.id);
@@ -262,14 +264,20 @@ export class AsyncOperationManager {
         const queuedJob = this.jobQueue.get(jobId);
         if (queuedJob) {
             this.jobQueue.delete(jobId);
-            contextLogger.info("Cancelled queued job", { jobId, jobName: queuedJob.name });
+      contextLogger.info("Cancelled queued job", {
+        jobId,
+        jobName: queuedJob.name,
+      });
             return true;
         }
 
         // Cannot cancel running jobs
         const activeJob = this.activeJobs.get(jobId);
         if (activeJob) {
-            contextLogger.warn("Cannot cancel running job", { jobId, jobName: activeJob.name });
+      contextLogger.warn("Cannot cancel running job", {
+        jobId,
+        jobName: activeJob.name,
+      });
             return false;
         }
 
@@ -281,9 +289,7 @@ export class AsyncOperationManager {
      * Get job status
      */
     getJobStatus(jobId: string): BackgroundJob | null {
-        return this.jobQueue.get(jobId) ||
-            this.activeJobs.get(jobId) ||
-            null;
+    return this.jobQueue.get(jobId) || this.activeJobs.get(jobId) || null;
     }
 
     /**
@@ -336,7 +342,8 @@ export class AsyncOperationManager {
     /**
      * Clean up completed jobs (for memory management)
      */
-    cleanupCompletedJobs(maxAge: number = 3600000): number { // 1 hour default
+  cleanupCompletedJobs(maxAge: number = 3600000): number {
+    // 1 hour default
         const _cutoffTime = Date.now() - maxAge;
         const cleaned = 0;
 
@@ -366,14 +373,14 @@ export class AsyncOperationManager {
             clearTimeout(timeout);
             const job = this.jobQueue.get(jobId);
             if (job) {
-                job.status = 'cancelled';
+        job.status = "cancelled";
             }
         }
         this.jobTimeouts.clear();
 
         // Wait for active jobs to complete or timeout
         if (this.activeJobs.size > 0) {
-            const shutdownPromise = new Promise<void>((resolve) => {
+      const shutdownPromise = new Promise<void>(resolve => {
                 const checkInterval = setInterval(() => {
                     if (this.activeJobs.size === 0) {
                         clearInterval(checkInterval);
@@ -382,7 +389,7 @@ export class AsyncOperationManager {
                 }, 100);
             });
 
-            const timeoutPromise = new Promise<void>((resolve) => {
+      const timeoutPromise = new Promise<void>(resolve => {
                 setTimeout(() => {
                     contextLogger.warn("Shutdown timeout reached, forcing exit", {
                         remainingJobs: this.activeJobs.size,
@@ -410,7 +417,7 @@ export class AsyncOperationManager {
                 clearTimeout(timeout);
                 const job = this.jobQueue.get(jobId);
                 if (job) {
-                    job.status = 'cancelled';
+          job.status = "cancelled";
                 }
             }
             this.jobTimeouts.clear();
@@ -431,7 +438,11 @@ export class AsyncOperationManager {
                 clearedQueue: this.jobQueue.size,
             });
         } catch (error) {
-            contextLogger.error("Error during async operation manager cleanup", error as Error, {});
+      contextLogger.error(
+        "Error during async operation manager cleanup",
+        error as Error,
+        {}
+      );
         }
     }
 }
@@ -469,7 +480,11 @@ export async function executeAsync<T>(
     operation: () => Promise<T>,
     options?: AsyncOperationOptions
 ): Promise<T> {
-    return asyncOperationManager.executeWithContext(operationName, operation, options);
+  return asyncOperationManager.executeWithContext(
+    operationName,
+    operation,
+    options
+  );
 }
 
 /**

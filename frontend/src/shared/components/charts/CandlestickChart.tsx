@@ -65,7 +65,15 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       isVisible,
       hasMarkPrice: !!markPriceData,
     });
-  }, [chartData, loading, chartError, connectionStatus, isVisible, markPriceData, symbol]);
+  }, [
+    chartData,
+    loading,
+    chartError,
+    connectionStatus,
+    isVisible,
+    markPriceData,
+    symbol,
+  ]);
 
   // Initialize chart
   useEffect(() => {

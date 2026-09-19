@@ -7,9 +7,9 @@
  * @format
  */
 
-import { BotActualState } from '@trade-bot/shared';
-import { GridTradingStrategy } from '../strategies/grid';
-import { OrderlyClient } from '../exchanges/kodiak/client';
+import { BotActualState } from "@trade-bot/shared";
+import { GridTradingStrategy } from "../strategies/grid";
+import { OrderlyClient } from "../exchanges/kodiak/client";
 
 /**
  * Runtime state for a running bot instance.

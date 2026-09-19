@@ -16,11 +16,11 @@ import { Socket } from "socket.io-client";
 interface MarketData {
     symbol: string;
     timestamp: number;
-    type: 'ticker' | 'kline' | 'orderbook' | 'markprice';
+  type: "ticker" | "kline" | "orderbook" | "markprice";
 }
 
 interface TickerData extends MarketData {
-    type: 'ticker';
+  type: "ticker";
     price: string;
     change24h: string;
     volume24h: string;
@@ -33,7 +33,7 @@ interface TickerData extends MarketData {
 }
 
 interface KlineData extends MarketData {
-    type: 'kline';
+  type: "kline";
     time: number;
     open: string;
     high: string;
@@ -44,14 +44,14 @@ interface KlineData extends MarketData {
 }
 
 interface OrderbookData extends MarketData {
-    type: 'orderbook';
+  type: "orderbook";
     bids: Array<[string, string]>; // [price, quantity]
     asks: Array<[string, string]>; // [price, quantity]
     timestamp: number;
 }
 
 interface MarkPriceData extends MarketData {
-    type: 'markprice';
+  type: "markprice";
     price: string;
     funding_rate: string;
     next_funding_time: number;
@@ -120,7 +120,9 @@ class WebSocketSubscriptionManager {
             subscription.isSubscribed = true;
         }
 
-        console.log(`📡 WebSocket: Subscribed to ${symbol} (${subscription.refCount} refs)`);
+    console.log(
+      `📡 WebSocket: Subscribed to ${symbol} (${subscription.refCount} refs)`
+    );
         return callbackId;
     }
 
@@ -141,7 +143,9 @@ class WebSocketSubscriptionManager {
             this.subscriptions.delete(symbol);
             console.log(`📡 WebSocket: Fully unsubscribed from ${symbol}`);
         } else {
-            console.log(`📡 WebSocket: Unsubscribed from ${symbol} (${subscription.refCount} refs remaining)`);
+      console.log(
+        `📡 WebSocket: Unsubscribed from ${symbol} (${subscription.refCount} refs remaining)`
+      );
         }
     }
 
@@ -197,20 +201,20 @@ class WebSocketSubscriptionManager {
         this.socket = null;
         this.connectionId = null;
 
-        console.log('📡 WebSocket: Subscription manager cleaned up');
+    console.log("📡 WebSocket: Subscription manager cleaned up");
     }
 
     // Private: Subscribe to WebSocket
     private socketSubscribe(symbol: string): void {
         if (this.socket) {
-            this.socket.emit('subscribe_market', symbol);
+      this.socket.emit("subscribe_market", symbol);
         }
     }
 
     // Private: Unsubscribe from WebSocket
     private socketUnsubscribe(symbol: string): void {
         if (this.socket) {
-            this.socket.emit('unsubscribe_market', symbol);
+      this.socket.emit("unsubscribe_market", symbol);
         }
     }
 

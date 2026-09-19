@@ -15,25 +15,25 @@
  * @format
  */
 
-import { diContainer } from '../infrastructure/dependency-injection.container';
-import { AuthService } from './auth/auth.service.pure';
-import { BalanceService } from './wallet/balance.service.pure';
-import { PositionService } from './strategies/position.service.pure';
-import { RoleManagementService } from './auth/role-management.service.pure';
-import { RoleQualificationService } from './auth/role-qualification.service';
-import { WalletQualificationService } from './wallet/wallet-qualification.service.pure';
-import { UserProfileService } from './user/user-profile.service';
-import { UserKodiakService } from './user/user-kodiak.service';
-import { BotManagementService } from './bots/bot-management.service';
-import { StrategyService } from './strategies/strategy.service';
-import { MarketService } from './market/market.service';
-import { HealthService } from './system/health.service.pure';
-import { PositionValidatorService } from './strategies/position-validator.service.pure';
-import { PositionSyncService } from './strategies/position-sync.service.pure';
-import { EngineManager } from './strategies/engine-manager.service.pure';
-import { kodiakConnectionService } from '../infrastructure/external/kodiak-connection.service';
-import { connectionCache } from '../infrastructure/cache/connection-cache.service';
-import { contextLogger } from './logging';
+import { diContainer } from "../infrastructure/dependency-injection.container";
+import { AuthService } from "./auth/auth.service.pure";
+import { BalanceService } from "./wallet/balance.service.pure";
+import { PositionService } from "./strategies/position.service.pure";
+import { RoleManagementService } from "./auth/role-management.service.pure";
+import { RoleQualificationService } from "./auth/role-qualification.service";
+import { WalletQualificationService } from "./wallet/wallet-qualification.service.pure";
+import { UserProfileService } from "./user/user-profile.service";
+import { UserKodiakService } from "./user/user-kodiak.service";
+import { BotManagementService } from "./bots/bot-management.service";
+import { StrategyService } from "./strategies/strategy.service";
+import { MarketService } from "./market/market.service";
+import { HealthService } from "./system/health.service.pure";
+import { PositionValidatorService } from "./strategies/position-validator.service.pure";
+import { PositionSyncService } from "./strategies/position-sync.service.pure";
+import { EngineManager } from "./strategies/engine-manager.service.pure";
+import { kodiakConnectionService } from "../infrastructure/external/kodiak-connection.service";
+import { connectionCache } from "../infrastructure/cache/connection-cache.service";
+import { contextLogger } from "./logging";
 
 /**
  * Service Factory Interface
@@ -159,9 +159,9 @@ export class ServiceFactory implements IServiceFactory {
     private readonly logger = contextLogger;
 
     constructor() {
-        this.logger.info('Service Factory initialized', {
-            implementation: 'clean-architecture',
-            pattern: 'factory'
+    this.logger.info("Service Factory initialized", {
+      implementation: "clean-architecture",
+      pattern: "factory",
         });
     }
 
@@ -171,15 +171,19 @@ export class ServiceFactory implements IServiceFactory {
     getAuthService(): AuthService | undefined {
         try {
             const authService = diContainer.authService;
-            this.logger.debug('Auth Service retrieved from container', {
-                service: 'AuthService',
-                implementation: 'pure'
+      this.logger.debug("Auth Service retrieved from container", {
+        service: "AuthService",
+        implementation: "pure",
             });
             return authService;
         } catch (error) {
-            this.logger.error('Failed to get Auth Service', error instanceof Error ? error : undefined, {
-                service: 'AuthService'
-            });
+      this.logger.error(
+        "Failed to get Auth Service",
+        error instanceof Error ? error : undefined,
+        {
+          service: "AuthService",
+        }
+      );
             return undefined;
         }
     }
@@ -190,15 +194,19 @@ export class ServiceFactory implements IServiceFactory {
     getBalanceService(): BalanceService | undefined {
         try {
             const balanceService = diContainer.balanceService;
-            this.logger.debug('Balance Service retrieved from container', {
-                service: 'BalanceService',
-                implementation: 'pure'
+      this.logger.debug("Balance Service retrieved from container", {
+        service: "BalanceService",
+        implementation: "pure",
             });
             return balanceService;
         } catch (error) {
-            this.logger.error('Failed to get Balance Service', error instanceof Error ? error : undefined, {
-                service: 'BalanceService'
-            });
+      this.logger.error(
+        "Failed to get Balance Service",
+        error instanceof Error ? error : undefined,
+        {
+          service: "BalanceService",
+        }
+      );
             return undefined;
         }
     }
@@ -209,15 +217,19 @@ export class ServiceFactory implements IServiceFactory {
     getPositionService(): PositionService | undefined {
         try {
             const positionService = diContainer.positionService;
-            this.logger.debug('Position Service retrieved from container', {
-                service: 'PositionService',
-                implementation: 'pure'
+      this.logger.debug("Position Service retrieved from container", {
+        service: "PositionService",
+        implementation: "pure",
             });
             return positionService;
         } catch (error) {
-            this.logger.error('Failed to get Position Service', error instanceof Error ? error : undefined, {
-                service: 'PositionService'
-            });
+      this.logger.error(
+        "Failed to get Position Service",
+        error instanceof Error ? error : undefined,
+        {
+          service: "PositionService",
+        }
+      );
             return undefined;
         }
     }
@@ -228,15 +240,19 @@ export class ServiceFactory implements IServiceFactory {
     getRoleManagementService(): RoleManagementService | undefined {
         try {
             const roleManagementService = diContainer.roleManagementService;
-            this.logger.debug('Role Management Service retrieved from container', {
-                service: 'RoleManagementService',
-                implementation: 'pure'
+      this.logger.debug("Role Management Service retrieved from container", {
+        service: "RoleManagementService",
+        implementation: "pure",
             });
             return roleManagementService;
         } catch (error) {
-            this.logger.error('Failed to get Role Management Service', error instanceof Error ? error : undefined, {
-                service: 'RoleManagementService'
-            });
+      this.logger.error(
+        "Failed to get Role Management Service",
+        error instanceof Error ? error : undefined,
+        {
+          service: "RoleManagementService",
+        }
+      );
             return undefined;
         }
     }
@@ -247,15 +263,19 @@ export class ServiceFactory implements IServiceFactory {
     getRoleQualificationService(): RoleQualificationService | undefined {
         try {
             const roleQualificationService = diContainer.roleQualificationService;
-            this.logger.debug('Role Qualification Service retrieved from container', {
-                service: 'RoleQualificationService',
-                implementation: 'pure'
+      this.logger.debug("Role Qualification Service retrieved from container", {
+        service: "RoleQualificationService",
+        implementation: "pure",
             });
             return roleQualificationService;
         } catch (error) {
-            this.logger.error('Failed to get Role Qualification Service', error instanceof Error ? error : undefined, {
-                service: 'RoleQualificationService'
-            });
+      this.logger.error(
+        "Failed to get Role Qualification Service",
+        error instanceof Error ? error : undefined,
+        {
+          service: "RoleQualificationService",
+        }
+      );
             return undefined;
         }
     }
@@ -266,15 +286,22 @@ export class ServiceFactory implements IServiceFactory {
     getWalletQualificationService(): WalletQualificationService | undefined {
         try {
             const walletQualificationService = diContainer.walletQualificationService;
-            this.logger.debug('Wallet Qualification Service retrieved from container', {
-                service: 'WalletQualificationService',
-                implementation: 'pure'
-            });
+      this.logger.debug(
+        "Wallet Qualification Service retrieved from container",
+        {
+          service: "WalletQualificationService",
+          implementation: "pure",
+        }
+      );
             return walletQualificationService;
         } catch (error) {
-            this.logger.error('Failed to get Wallet Qualification Service', error instanceof Error ? error : undefined, {
-                service: 'WalletQualificationService'
-            });
+      this.logger.error(
+        "Failed to get Wallet Qualification Service",
+        error instanceof Error ? error : undefined,
+        {
+          service: "WalletQualificationService",
+        }
+      );
             return undefined;
         }
     }
@@ -288,17 +315,26 @@ export class ServiceFactory implements IServiceFactory {
                 userRepository: diContainer.userRepository,
                 cache: diContainer.cacheService,
                 passwordService: diContainer.passwordService,
-                auditLogRepository: diContainer.auditLogRepository
+        auditLogRepository: diContainer.auditLogRepository,
             });
-            this.logger.debug('User Profile Service created with dependencies', {
-                service: 'UserProfileService',
-                dependencies: ['userRepository', 'cache', 'passwordService', 'auditLogRepository']
+      this.logger.debug("User Profile Service created with dependencies", {
+        service: "UserProfileService",
+        dependencies: [
+          "userRepository",
+          "cache",
+          "passwordService",
+          "auditLogRepository",
+        ],
             });
             return userProfileService;
         } catch (error) {
-            this.logger.error('Failed to create User Profile Service', error instanceof Error ? error : undefined, {
-                service: 'UserProfileService'
-            });
+      this.logger.error(
+        "Failed to create User Profile Service",
+        error instanceof Error ? error : undefined,
+        {
+          service: "UserProfileService",
+        }
+      );
             return undefined;
         }
     }
@@ -310,17 +346,21 @@ export class ServiceFactory implements IServiceFactory {
         try {
             const userKodiakService = new UserKodiakService({
                 kodiakConnectionService,
-                cache: connectionCache
+        cache: connectionCache,
             });
-            this.logger.debug('User Kodiak Service created with dependencies', {
-                service: 'UserKodiakService',
-                dependencies: ['kodiakConnectionService', 'connectionCache']
+      this.logger.debug("User Kodiak Service created with dependencies", {
+        service: "UserKodiakService",
+        dependencies: ["kodiakConnectionService", "connectionCache"],
             });
             return userKodiakService;
         } catch (error) {
-            this.logger.error('Failed to create User Kodiak Service', error instanceof Error ? error : undefined, {
-                service: 'UserKodiakService'
-            });
+      this.logger.error(
+        "Failed to create User Kodiak Service",
+        error instanceof Error ? error : undefined,
+        {
+          service: "UserKodiakService",
+        }
+      );
             return undefined;
         }
     }
@@ -331,15 +371,19 @@ export class ServiceFactory implements IServiceFactory {
     getBotManagementService(): BotManagementService | undefined {
         try {
             const botManagementService = diContainer.botManagementService;
-            this.logger.debug('Bot Management Service retrieved from container', {
-                service: 'BotManagementService',
-                implementation: 'pure'
+      this.logger.debug("Bot Management Service retrieved from container", {
+        service: "BotManagementService",
+        implementation: "pure",
             });
             return botManagementService;
         } catch (error) {
-            this.logger.error('Failed to get Bot Management Service', error instanceof Error ? error : undefined, {
-                service: 'BotManagementService'
-            });
+      this.logger.error(
+        "Failed to get Bot Management Service",
+        error instanceof Error ? error : undefined,
+        {
+          service: "BotManagementService",
+        }
+      );
             return undefined;
         }
     }
@@ -350,15 +394,19 @@ export class ServiceFactory implements IServiceFactory {
     getStrategyService(): StrategyService | undefined {
         try {
             const strategyService = diContainer.strategyService;
-            this.logger.debug('Strategy Service retrieved from container', {
-                service: 'StrategyService',
-                implementation: 'pure'
+      this.logger.debug("Strategy Service retrieved from container", {
+        service: "StrategyService",
+        implementation: "pure",
             });
             return strategyService;
         } catch (error) {
-            this.logger.error('Failed to get Strategy Service', error instanceof Error ? error : undefined, {
-                service: 'StrategyService'
-            });
+      this.logger.error(
+        "Failed to get Strategy Service",
+        error instanceof Error ? error : undefined,
+        {
+          service: "StrategyService",
+        }
+      );
             return undefined;
         }
     }
@@ -369,15 +417,19 @@ export class ServiceFactory implements IServiceFactory {
     getMarketService(): MarketService | undefined {
         try {
             const marketService = diContainer.marketService;
-            this.logger.debug('Market Service retrieved from container', {
-                service: 'MarketService',
-                implementation: 'pure'
+      this.logger.debug("Market Service retrieved from container", {
+        service: "MarketService",
+        implementation: "pure",
             });
             return marketService;
         } catch (error) {
-            this.logger.error('Failed to get Market Service', error instanceof Error ? error : undefined, {
-                service: 'MarketService'
-            });
+      this.logger.error(
+        "Failed to get Market Service",
+        error instanceof Error ? error : undefined,
+        {
+          service: "MarketService",
+        }
+      );
             return undefined;
         }
     }
@@ -388,15 +440,19 @@ export class ServiceFactory implements IServiceFactory {
     getPositionValidatorService(): PositionValidatorService | undefined {
         try {
             const positionValidatorService = diContainer.positionValidatorService;
-            this.logger.debug('Position Validator Service retrieved from container', {
-                service: 'PositionValidatorService',
-                implementation: 'pure'
+      this.logger.debug("Position Validator Service retrieved from container", {
+        service: "PositionValidatorService",
+        implementation: "pure",
             });
             return positionValidatorService;
         } catch (error) {
-            this.logger.error('Failed to get Position Validator Service', error instanceof Error ? error : undefined, {
-                service: 'PositionValidatorService'
-            });
+      this.logger.error(
+        "Failed to get Position Validator Service",
+        error instanceof Error ? error : undefined,
+        {
+          service: "PositionValidatorService",
+        }
+      );
             return undefined;
         }
     }
@@ -407,15 +463,19 @@ export class ServiceFactory implements IServiceFactory {
     getPositionSyncService(): PositionSyncService | undefined {
         try {
             const positionSyncService = diContainer.positionSyncService;
-            this.logger.debug('Position Sync Service retrieved from container', {
-                service: 'PositionSyncService',
-                implementation: 'pure'
+      this.logger.debug("Position Sync Service retrieved from container", {
+        service: "PositionSyncService",
+        implementation: "pure",
             });
             return positionSyncService;
         } catch (error) {
-            this.logger.error('Failed to get Position Sync Service', error instanceof Error ? error : undefined, {
-                service: 'PositionSyncService'
-            });
+      this.logger.error(
+        "Failed to get Position Sync Service",
+        error instanceof Error ? error : undefined,
+        {
+          service: "PositionSyncService",
+        }
+      );
             return undefined;
         }
     }
@@ -426,15 +486,19 @@ export class ServiceFactory implements IServiceFactory {
     getHealthService(): HealthService | undefined {
         try {
             const healthService = diContainer.healthService;
-            this.logger.debug('Health Service retrieved from container', {
-                service: 'HealthService',
-                implementation: 'pure'
+      this.logger.debug("Health Service retrieved from container", {
+        service: "HealthService",
+        implementation: "pure",
             });
             return healthService;
         } catch (error) {
-            this.logger.error('Failed to get Health Service', error instanceof Error ? error : undefined, {
-                service: 'HealthService'
-            });
+      this.logger.error(
+        "Failed to get Health Service",
+        error instanceof Error ? error : undefined,
+        {
+          service: "HealthService",
+        }
+      );
             return undefined;
         }
     }
@@ -445,15 +509,19 @@ export class ServiceFactory implements IServiceFactory {
     getEngineManager(): EngineManager | undefined {
         try {
             const engineManager = diContainer.engineManager;
-            this.logger.debug('Engine Manager retrieved from container', {
-                service: 'EngineManager',
-                implementation: 'pure'
+      this.logger.debug("Engine Manager retrieved from container", {
+        service: "EngineManager",
+        implementation: "pure",
             });
             return engineManager;
         } catch (error) {
-            this.logger.error('Failed to get Engine Manager', error instanceof Error ? error : undefined, {
-                service: 'EngineManager'
-            });
+      this.logger.error(
+        "Failed to get Engine Manager",
+        error instanceof Error ? error : undefined,
+        {
+          service: "EngineManager",
+        }
+      );
             return undefined;
         }
     }
@@ -490,10 +558,13 @@ export class ServiceFactory implements IServiceFactory {
                 strategyService: this.getStrategyService(),
                 marketService: this.getMarketService(),
                 healthService: this.getHealthService(),
-                engineManager: this.getEngineManager()
+        engineManager: this.getEngineManager(),
             };
         } catch (error) {
-            this.logger.error('Failed to get all services', error instanceof Error ? error : undefined);
+      this.logger.error(
+        "Failed to get all services",
+        error instanceof Error ? error : undefined
+      );
             // Return object with all services as undefined instead of throwing
             return {
                 authService: undefined,
@@ -508,7 +579,7 @@ export class ServiceFactory implements IServiceFactory {
                 strategyService: undefined,
                 marketService: undefined,
                 healthService: undefined,
-                engineManager: undefined
+        engineManager: undefined,
             };
         }
     }
@@ -535,7 +606,7 @@ export class ServiceFactory implements IServiceFactory {
                         services[serviceName] = false;
                         details[serviceName] = {
                             healthy: false,
-                            error: 'Service unavailable'
+              error: "Service unavailable",
                         };
                         continue;
                     }
@@ -544,14 +615,17 @@ export class ServiceFactory implements IServiceFactory {
                     services[serviceName] = service !== null;
                     details[serviceName] = {
                         healthy: services[serviceName],
-                        type: service?.constructor?.name || 'unknown'
+            type: service?.constructor?.name || "unknown",
                     };
                 } catch (serviceError) {
                     // Handle runtime errors for services that were instantiated but failed during health check
                     services[serviceName] = false;
                     details[serviceName] = {
                         healthy: false,
-                        error: serviceError instanceof Error ? serviceError.message : String(serviceError)
+            error:
+              serviceError instanceof Error
+                ? serviceError.message
+                : String(serviceError),
                     };
                 }
             }
@@ -561,16 +635,19 @@ export class ServiceFactory implements IServiceFactory {
             return {
                 healthy,
                 services,
-                details
+        details,
             };
         } catch (error) {
-            this.logger.error('Service factory health check failed', error instanceof Error ? error : undefined);
+      this.logger.error(
+        "Service factory health check failed",
+        error instanceof Error ? error : undefined
+      );
             return {
                 healthy: false,
                 services: {},
                 details: {
-                    error: error instanceof Error ? error.message : String(error)
-                }
+          error: error instanceof Error ? error.message : String(error),
+        },
             };
         }
     }

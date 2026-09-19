@@ -22,7 +22,10 @@ import {
     createBotCommand,
     isBotEvent,
 } from "@trade-bot/shared";
-import { RedisStreamOperations, RedisConnectionManager } from "../../infrastructure/cache/redis";
+import {
+  RedisStreamOperations,
+  RedisConnectionManager,
+} from "../../infrastructure/cache/redis";
 import { redisLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 // ===========================================
@@ -41,15 +44,25 @@ export const ENGINE_COMMANDS_CONSUMER_GROUP = "engine-workers";
 const DEDUP_SET_MAX_SIZE = 10_000;
 
 /** Minimum idle time before a pending event is claimed by XAUTOCLAIM. */
-export const PENDING_RECOVERY_MIN_IDLE_MS = Number(process.env.PENDING_RECOVERY_MIN_IDLE_MS ?? 60_000);
+export const PENDING_RECOVERY_MIN_IDLE_MS = Number(
+  process.env.PENDING_RECOVERY_MIN_IDLE_MS ?? 60_000
+);
 /** How often the event loop attempts a pending-event recovery pass. */
-const PENDING_RECOVERY_INTERVAL_MS = Number(process.env.PENDING_RECOVERY_INTERVAL_MS ?? 30_000);
+const PENDING_RECOVERY_INTERVAL_MS = Number(
+  process.env.PENDING_RECOVERY_INTERVAL_MS ?? 30_000
+);
 /** Pending entries idle at least this long count as "stuck" for backlog alerts. */
-export const PENDING_STUCK_ALERT_THRESHOLD_MS = Number(process.env.PENDING_STUCK_ALERT_THRESHOLD_MS ?? 30_000);
+export const PENDING_STUCK_ALERT_THRESHOLD_MS = Number(
+  process.env.PENDING_STUCK_ALERT_THRESHOLD_MS ?? 30_000
+);
 /** Number of stuck pending entries before a backlog warning is logged. */
-export const PENDING_ALERT_THRESHOLD = Number(process.env.PENDING_ALERT_THRESHOLD ?? 5);
+export const PENDING_ALERT_THRESHOLD = Number(
+  process.env.PENDING_ALERT_THRESHOLD ?? 5
+);
 /** Redelivery count at which a pending entry is flagged as a poison message. */
-export const PENDING_POISON_MAX_DELIVERIES = Number(process.env.PENDING_POISON_MAX_DELIVERIES ?? 10);
+export const PENDING_POISON_MAX_DELIVERIES = Number(
+  process.env.PENDING_POISON_MAX_DELIVERIES ?? 10
+);
 
 export interface EngineProtocolServiceDependencies {
     streamOperations?: RedisStreamOperations;
@@ -85,8 +98,11 @@ export class EngineProtocolService {
     private readonly dedupScope = "backend-engine-events";
 
     constructor(deps: EngineProtocolServiceDependencies = {}) {
-        this.connectionManager = deps.connectionManager ?? new RedisConnectionManager();
-        this.streamOperations = deps.streamOperations ?? new RedisStreamOperations(this.connectionManager);
+    this.connectionManager =
+      deps.connectionManager ?? new RedisConnectionManager();
+    this.streamOperations =
+      deps.streamOperations ??
+      new RedisStreamOperations(this.connectionManager);
         this.consumerName = deps.consumerName ?? "backend-consumer";
     }
 
@@ -107,7 +123,10 @@ export class EngineProtocolService {
         this.eventHandler = eventHandler;
 
         await this.connectionManager.connect();
-        await this.streamOperations.createConsumerGroup(BOT_EVENTS_STREAM, BACKEND_EVENTS_CONSUMER_GROUP);
+    await this.streamOperations.createConsumerGroup(
+      BOT_EVENTS_STREAM,
+      BACKEND_EVENTS_CONSUMER_GROUP
+    );
 
         this.isListening = true;
         // Fire-and-forget: the loop runs for the lifetime of the process.
@@ -136,10 +155,21 @@ export class EngineProtocolService {
      * Publish a lifecycle command to the engine.
      * Returns the envelope ids so callers can correlate acknowledgements.
      */
-    async sendCommand<P extends BotCommandPayload>(type: BotCommandType, payload: P, correlationId?: string): Promise<SendCommandResult> {
-        const command: ProtocolMessage<P> = createBotCommand<P>(type, payload, correlationId);
+  async sendCommand<P extends BotCommandPayload>(
+    type: BotCommandType,
+    payload: P,
+    correlationId?: string
+  ): Promise<SendCommandResult> {
+    const command: ProtocolMessage<P> = createBotCommand<P>(
+      type,
+      payload,
+      correlationId
+    );
 
-        const result = await this.streamOperations.publish(BOT_COMMANDS_STREAM, command);
+    const result = await this.streamOperations.publish(
+      BOT_COMMANDS_STREAM,
+      command
+    );
 
         if (!result.success) {
             logger.error("Failed to publish bot command", undefined, {
@@ -147,7 +177,11 @@ export class EngineProtocolService {
                 botId: (payload as { botId?: string }).botId,
                 error: result.error,
             });
-            return { success: false, error: result.error, correlationId: command.correlationId };
+      return {
+        success: false,
+        error: result.error,
+        correlationId: command.correlationId,
+      };
         }
 
         logger.info("Bot command published", {
@@ -179,7 +213,11 @@ export class EngineProtocolService {
                     consumerName: this.consumerName,
                 });
 
-                if (!result.success || !result.messages || result.messages.length === 0) {
+        if (
+          !result.success ||
+          !result.messages ||
+          result.messages.length === 0
+        ) {
                     await this.recoverPendingEvents(lastRecoveryAt).then(recovered => {
                         if (recovered) {
                             lastRecoveryAt = Date.now();
@@ -239,11 +277,19 @@ export class EngineProtocolService {
      */
     private async logPendingInsight(): Promise<void> {
         try {
-            const insight = await this.streamOperations.getPendingInsight(BOT_EVENTS_STREAM, BACKEND_EVENTS_CONSUMER_GROUP, {
+      const insight = await this.streamOperations.getPendingInsight(
+        BOT_EVENTS_STREAM,
+        BACKEND_EVENTS_CONSUMER_GROUP,
+        {
                 stuckThresholdMs: PENDING_STUCK_ALERT_THRESHOLD_MS,
                 poisonThreshold: PENDING_POISON_MAX_DELIVERIES,
+        }
+      );
+      logger.debug("Pending event queue insight", {
+        stream: BOT_EVENTS_STREAM,
+        consumerGroup: BACKEND_EVENTS_CONSUMER_GROUP,
+        ...insight,
             });
-            logger.debug("Pending event queue insight", { stream: BOT_EVENTS_STREAM, consumerGroup: BACKEND_EVENTS_CONSUMER_GROUP, ...insight });
             if (insight.stuckCount >= PENDING_ALERT_THRESHOLD) {
                 logger.warn("Pending event backlog detected", {
                     stream: BOT_EVENTS_STREAM,
@@ -254,12 +300,15 @@ export class EngineProtocolService {
                 });
             }
             if (insight.poisonIds.length > 0) {
-                logger.warn("Poison engine events detected (repeated redelivery without ACK)", {
+        logger.warn(
+          "Poison engine events detected (repeated redelivery without ACK)",
+          {
                     stream: BOT_EVENTS_STREAM,
                     consumerGroup: BACKEND_EVENTS_CONSUMER_GROUP,
                     poisonIds: insight.poisonIds,
                     maxDeliveries: insight.maxDeliveries,
-                });
+          }
+        );
             }
         } catch (error) {
             // Observability must never break the recovery loop.
@@ -269,7 +318,10 @@ export class EngineProtocolService {
         }
     }
 
-    private async processEventMessage(streamId: string, data: unknown): Promise<void> {
+  private async processEventMessage(
+    streamId: string,
+    data: unknown
+  ): Promise<void> {
         if (!isBotEvent(data)) {
             logger.warn("Ignoring malformed engine event", { streamId });
             await this.safeAck(streamId);
@@ -278,7 +330,10 @@ export class EngineProtocolService {
 
         // Durable deduplication (survives restarts, Redis-backed with TTL).
         if (await this.alreadyProcessed(data.messageId)) {
-            logger.debug("Duplicate engine event ignored", { messageId: data.messageId, type: data.type });
+      logger.debug("Duplicate engine event ignored", {
+        messageId: data.messageId,
+        type: data.type,
+      });
             await this.safeAck(streamId);
             return;
         }
@@ -292,12 +347,16 @@ export class EngineProtocolService {
 
             await this.safeAck(streamId);
         } catch (error) {
-            logger.error("Engine event handler failed, message left unacked for redelivery", undefined, {
+      logger.error(
+        "Engine event handler failed, message left unacked for redelivery",
+        undefined,
+        {
                 streamId,
                 messageId: data.messageId,
                 eventType: data.type,
                 error: error instanceof Error ? error.message : String(error),
-            });
+        }
+      );
         }
     }
 
@@ -312,15 +371,27 @@ export class EngineProtocolService {
     private async markProcessed(messageId: string): Promise<void> {
         this.processedMessageIds.add(messageId);
         if (this.processedMessageIds.size > DEDUP_SET_MAX_SIZE) {
-            this.processedMessageIds = new Set(Array.from(this.processedMessageIds).slice(-DEDUP_SET_MAX_SIZE / 2));
+      this.processedMessageIds = new Set(
+        Array.from(this.processedMessageIds).slice(-DEDUP_SET_MAX_SIZE / 2)
+      );
         }
-        await this.streamOperations.markMessageProcessed(this.dedupScope, messageId);
+    await this.streamOperations.markMessageProcessed(
+      this.dedupScope,
+      messageId
+    );
     }
 
     private async safeAck(streamId: string): Promise<void> {
-        const ackResult = await this.streamOperations.ack(BOT_EVENTS_STREAM, BACKEND_EVENTS_CONSUMER_GROUP, streamId);
+    const ackResult = await this.streamOperations.ack(
+      BOT_EVENTS_STREAM,
+      BACKEND_EVENTS_CONSUMER_GROUP,
+      streamId
+    );
         if (!ackResult.success) {
-            logger.warn("Failed to ack engine event", { streamId, error: ackResult.error });
+      logger.warn("Failed to ack engine event", {
+        streamId,
+        error: ackResult.error,
+      });
         }
     }
 }
@@ -331,4 +402,3 @@ export class EngineProtocolService {
 
 // Singleton instance
 export const engineProtocolService = new EngineProtocolService();
-

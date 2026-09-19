@@ -7,18 +7,26 @@
 
 import { Server } from "socket.io";
 import { redisService } from "./redis.service";
-import { CACHE_EVENTS, CacheEvent, CacheInvalidationEvent, CacheRefreshEvent, CacheClearEvent, CACHE_KEYS } from "../../config/cache.config";
+import {
+  CACHE_EVENTS,
+  CacheEvent,
+  CacheInvalidationEvent,
+  CacheRefreshEvent,
+  CacheClearEvent,
+  CACHE_KEYS,
+} from "../../config/cache.config";
 import { cacheLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 // Export types for infrastructure index
 export interface InvalidationRule {
     pattern: string;
     ttl: number;
-    priority: 'low' | 'normal' | 'high';
+  priority: "low" | "normal" | "high";
     cascade: boolean;
 }
 
-export type CacheStrategy = 'write-through' | 'write-behind' | 'write-around' | 'read-through';
+export type CacheStrategy =
+  "write-through" | "write-behind" | "write-around" | "read-through";
 
 export class CacheInvalidationService {
     private io: Server | null = null;
@@ -36,7 +44,7 @@ export class CacheInvalidationService {
      */
     async broadcastInvalidation(
         keys: string[],
-        reason: string = 'data_updated',
+    reason: string = "data_updated",
         userId?: string
     ): Promise<void> {
         if (!this.io) {
@@ -53,11 +61,11 @@ export class CacheInvalidationService {
         };
 
         // Broadcast to all connected clients
-        this.io.emit('cache:invalidation', event);
+    this.io.emit("cache:invalidation", event);
 
         // Also broadcast to specific user room if userId provided
         if (userId) {
-            this.io.to(`user:${userId}`).emit('cache:invalidation', event);
+      this.io.to(`user:${userId}`).emit("cache:invalidation", event);
         }
 
         logger.debug("Cache invalidation broadcasted", {
@@ -71,10 +79,7 @@ export class CacheInvalidationService {
     /**
      * Broadcast cache refresh event
      */
-    async broadcastRefresh(
-        keys: string[],
-        userId?: string
-    ): Promise<void> {
+  async broadcastRefresh(keys: string[], userId?: string): Promise<void> {
         if (!this.io) {
             logger.warn("Socket.IO not available for cache refresh broadcast");
             return;
@@ -88,11 +93,11 @@ export class CacheInvalidationService {
         };
 
         // Broadcast to all connected clients
-        this.io.emit('cache:refresh', event);
+    this.io.emit("cache:refresh", event);
 
         // Also broadcast to specific user room if userId provided
         if (userId) {
-            this.io.to(`user:${userId}`).emit('cache:refresh', event);
+      this.io.to(`user:${userId}`).emit("cache:refresh", event);
         }
 
         logger.debug("Cache refresh broadcasted", {
@@ -124,11 +129,11 @@ export class CacheInvalidationService {
         };
 
         // Broadcast to all connected clients
-        this.io.emit('cache:clear', event);
+    this.io.emit("cache:clear", event);
 
         // Also broadcast to specific user room if userId provided
         if (userId) {
-            this.io.to(`user:${userId}`).emit('cache:clear', event);
+      this.io.to(`user:${userId}`).emit("cache:clear", event);
         }
 
         logger.info("Cache clear broadcasted", {
@@ -143,7 +148,7 @@ export class CacheInvalidationService {
      */
     async invalidateWithBroadcast(
         keys: string[],
-        reason: string = 'data_updated',
+    reason: string = "data_updated",
         userId?: string
     ): Promise<{ success: boolean; keysInvalidated: number; error?: string }> {
         // First invalidate in Redis
@@ -161,7 +166,7 @@ export class CacheInvalidationService {
      * Smart invalidation based on data type
      */
     async invalidateByType(
-        dataType: 'market_data' | 'user_data' | 'bot_data' | 'balance_data',
+    dataType: "market_data" | "user_data" | "bot_data" | "balance_data",
         identifier: string,
         userId?: string
     ): Promise<void> {
@@ -169,20 +174,20 @@ export class CacheInvalidationService {
         const reason = `${dataType}_updated`;
 
         switch (dataType) {
-            case 'market_data':
+      case "market_data":
                 // Invalidate all market data for a symbol
                 keys = [
                     CACHE_KEYS.tick(identifier),
                     CACHE_KEYS.markPrice(identifier),
-                    CACHE_KEYS.kline(identifier, '1m'),
-                    CACHE_KEYS.kline(identifier, '5m'),
-                    CACHE_KEYS.kline(identifier, '15m'),
-                    CACHE_KEYS.kline(identifier, '30m'),
-                    CACHE_KEYS.kline(identifier, '1h'),
+          CACHE_KEYS.kline(identifier, "1m"),
+          CACHE_KEYS.kline(identifier, "5m"),
+          CACHE_KEYS.kline(identifier, "15m"),
+          CACHE_KEYS.kline(identifier, "30m"),
+          CACHE_KEYS.kline(identifier, "1h"),
                 ];
                 break;
 
-            case 'user_data':
+      case "user_data":
                 // Invalidate user-specific data
                 keys = [
                     CACHE_KEYS.session(identifier),
@@ -192,19 +197,14 @@ export class CacheInvalidationService {
                 ];
                 break;
 
-            case 'bot_data':
+      case "bot_data":
                 // Invalidate bot-specific data (would need bot ID)
-                keys = [
-                    `bot:status:${identifier}`,
-                    `bot:performance:${identifier}`,
-                ];
+        keys = [`bot:status:${identifier}`, `bot:performance:${identifier}`];
                 break;
 
-            case 'balance_data':
+      case "balance_data":
                 // Invalidate balance data
-                keys = [
-                    CACHE_KEYS.balance(identifier),
-                ];
+        keys = [CACHE_KEYS.balance(identifier)];
                 break;
         }
 
@@ -216,7 +216,9 @@ export class CacheInvalidationService {
     /**
      * Invalidate all market data (for system-wide updates)
      */
-    async invalidateAllMarketData(reason: string = 'system_update'): Promise<void> {
+  async invalidateAllMarketData(
+    reason: string = "system_update"
+  ): Promise<void> {
         // This is a simplified implementation
         // In a real system, you might use Redis SCAN to find all market keys
         logger.info("Invalidating all market data", { reason });
@@ -226,12 +228,12 @@ export class CacheInvalidationService {
         if (this.io) {
             const event: CacheInvalidationEvent = {
                 type: CACHE_EVENTS.INVALIDATED,
-                keys: ['market:*'], // Pattern matching
+        keys: ["market:*"], // Pattern matching
                 reason,
                 timestamp: Date.now(),
             };
 
-            this.io.emit('cache:invalidation', event);
+      this.io.emit("cache:invalidation", event);
         }
     }
 
@@ -241,7 +243,11 @@ export class CacheInvalidationService {
     async handleCacheEvent(event: CacheEvent): Promise<void> {
         switch (event.type) {
             case CACHE_EVENTS.INVALIDATED:
-                await this.broadcastInvalidation(event.keys, event.reason, event.userId);
+        await this.broadcastInvalidation(
+          event.keys,
+          event.reason,
+          event.userId
+        );
                 break;
 
             case CACHE_EVENTS.REFRESHED:
@@ -249,7 +255,11 @@ export class CacheInvalidationService {
                 break;
 
             case CACHE_EVENTS.CLEARED:
-                await this.broadcastClear(event.pattern, event.keysCleared, event.userId);
+        await this.broadcastClear(
+          event.pattern,
+          event.keysCleared,
+          event.userId
+        );
                 break;
 
             default:

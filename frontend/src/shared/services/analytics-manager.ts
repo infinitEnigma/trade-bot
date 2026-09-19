@@ -10,7 +10,10 @@
 
 import { UserLevel } from "../../shared/types";
 import { analyticsService } from "../../features/analytics/services/analyticsService";
-import { AnalyticsData, AnalyticsTimeWindow } from "../../features/analytics/types/analytics.types";
+import {
+  AnalyticsData,
+  AnalyticsTimeWindow,
+} from "../../features/analytics/types/analytics.types";
 
 interface AnalyticsSubscriber {
     callback: (data: AnalyticsData | null, error?: string) => void;
@@ -23,7 +26,10 @@ class GlobalAnalyticsManager {
     private static instance: GlobalAnalyticsManager;
     private subscribers = new Map<string, AnalyticsSubscriber>();
     private activeRequests = new Map<string, Promise<AnalyticsData>>();
-    private cachedResults = new Map<string, { data: AnalyticsData; timestamp: number; userLevel: UserLevel }>();
+  private cachedResults = new Map<
+    string,
+    { data: AnalyticsData; timestamp: number; userLevel: UserLevel }
+  >();
     private refreshTimer: NodeJS.Timeout | null = null;
     private pageVisibilityHandler: (() => void) | null = null;
 
@@ -70,7 +76,9 @@ class GlobalAnalyticsManager {
         userLevel: UserLevel,
         callback: (data: AnalyticsData | null, error?: string) => void
     ): () => void {
-        console.log(`📊 Global Analytics: Subscribing ${id} for ${symbol} ${timeWindow.value}`);
+    console.log(
+      `📊 Global Analytics: Subscribing ${id} for ${symbol} ${timeWindow.value}`
+    );
 
         // Apply user level limits to time window
         const limitedTimeWindow = this.applyUserLevelLimits(timeWindow, userLevel);
@@ -79,7 +87,7 @@ class GlobalAnalyticsManager {
             callback,
             id,
             symbol,
-            timeWindow: limitedTimeWindow
+      timeWindow: limitedTimeWindow,
         });
 
         // Start global timer if this is the first subscriber
@@ -120,25 +128,32 @@ class GlobalAnalyticsManager {
     /**
      * Apply user level limits to time window
      */
-    private applyUserLevelLimits(timeWindow: AnalyticsTimeWindow, userLevel: UserLevel): AnalyticsTimeWindow {
+  private applyUserLevelLimits(
+    timeWindow: AnalyticsTimeWindow,
+    userLevel: UserLevel
+  ): AnalyticsTimeWindow {
         const limits = this.USER_LIMITS[userLevel];
         const limitedDays = Math.min(timeWindow.days, limits.maxDays);
 
         return {
             ...timeWindow,
             days: limitedDays,
-            value: `${limitedDays}d`
+      value: `${limitedDays}d`,
         };
     }
 
     /**
      * Get cached analytics data if still fresh
      */
-    private getCachedData(symbol: string, timeWindow: AnalyticsTimeWindow, userLevel: UserLevel): AnalyticsData | null {
+  private getCachedData(
+    symbol: string,
+    timeWindow: AnalyticsTimeWindow,
+    userLevel: UserLevel
+  ): AnalyticsData | null {
         const cacheKey = this.getCacheKey(symbol, timeWindow, userLevel);
         const cached = this.cachedResults.get(cacheKey);
 
-        if (cached && (Date.now() - cached.timestamp) < this.CACHE_TTL) {
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
             return cached.data;
         }
 
@@ -164,17 +179,25 @@ class GlobalAnalyticsManager {
         // Check if request is already in progress
         const existingRequest = this.activeRequests.get(requestKey);
         if (existingRequest) {
-            console.log(`📊 Global Analytics: Reusing active request for ${requestKey}`);
+      console.log(
+        `📊 Global Analytics: Reusing active request for ${requestKey}`
+      );
             return existingRequest;
         }
 
         // Check concurrent request limit
         if (this.activeRequests.size >= this.MAX_CONCURRENT_REQUESTS) {
-            throw new Error('Too many concurrent analytics requests. Please try again later.');
+      throw new Error(
+        "Too many concurrent analytics requests. Please try again later."
+      );
         }
 
         // Create new request
-        const requestPromise = this.executeAnalyticsRequest(symbol, timeWindow, userLevel);
+    const requestPromise = this.executeAnalyticsRequest(
+      symbol,
+      timeWindow,
+      userLevel
+    );
         this.activeRequests.set(requestKey, requestPromise);
 
         try {
@@ -182,7 +205,7 @@ class GlobalAnalyticsManager {
             this.cachedResults.set(cacheKey, {
                 data: result,
                 timestamp: Date.now(),
-                userLevel
+        userLevel,
             });
             return result;
         } finally {
@@ -198,12 +221,16 @@ class GlobalAnalyticsManager {
         timeWindow: AnalyticsTimeWindow,
         userLevel: UserLevel
     ): Promise<AnalyticsData> {
-        console.log(`📊 Global Analytics: Loading ${symbol} ${timeWindow.value} for ${userLevel}`);
+    console.log(
+      `📊 Global Analytics: Loading ${symbol} ${timeWindow.value} for ${userLevel}`
+    );
 
         try {
             // Check page visibility - don't load if page is hidden
-            if (document.visibilityState === 'hidden') {
-                throw new Error('Page is not visible - skipping background analytics load');
+      if (document.visibilityState === "hidden") {
+        throw new Error(
+          "Page is not visible - skipping background analytics load"
+        );
             }
 
             const limits = this.USER_LIMITS[userLevel];
@@ -216,12 +243,14 @@ class GlobalAnalyticsManager {
 
             console.log(`📊 Global Analytics: Loaded ${symbol} successfully`);
             return result;
-
         } catch (error) {
             console.error(`📊 Global Analytics: Failed to load ${symbol}:`, error);
 
             // If it's a visibility error, don't throw - just return null data
-            if (error instanceof Error && error.message.includes('Page is not visible')) {
+      if (
+        error instanceof Error &&
+        error.message.includes("Page is not visible")
+      ) {
                 throw error;
             }
 
@@ -237,10 +266,12 @@ class GlobalAnalyticsManager {
         if (this.refreshTimer) return;
 
         const limits = this.USER_LIMITS[userLevel];
-        console.log(`📊 Global Analytics: Starting global timer (${limits.refreshInterval / 1000}s)`);
+    console.log(
+      `📊 Global Analytics: Starting global timer (${limits.refreshInterval / 1000}s)`
+    );
 
         this.refreshTimer = setInterval(() => {
-            if (document.visibilityState === 'visible') {
+      if (document.visibilityState === "visible") {
                 this.refreshAllActiveAnalytics();
             }
         }, limits.refreshInterval);
@@ -251,7 +282,7 @@ class GlobalAnalyticsManager {
      */
     private stopGlobalTimer(): void {
         if (this.refreshTimer) {
-            console.log('📊 Global Analytics: Stopping global timer');
+      console.log("📊 Global Analytics: Stopping global timer");
             clearInterval(this.refreshTimer);
             this.refreshTimer = null;
         }
@@ -263,7 +294,9 @@ class GlobalAnalyticsManager {
     private async refreshAllActiveAnalytics(): Promise<void> {
         if (this.subscribers.size === 0) return;
 
-        console.log(`📊 Global Analytics: Refreshing ${this.subscribers.size} active subscriptions`);
+    console.log(
+      `📊 Global Analytics: Refreshing ${this.subscribers.size} active subscriptions`
+    );
 
         // Group subscribers by symbol/timeWindow to avoid duplicate requests
         const requestGroups = new Map<string, AnalyticsSubscriber[]>();
@@ -279,7 +312,7 @@ class GlobalAnalyticsManager {
         // Process each unique request
         for (const [requestKey, subscribers] of requestGroups) {
             try {
-                const [symbol] = requestKey.split('-');
+        const [symbol] = requestKey.split("-");
                 const subscriber = subscribers[0]; // Use first subscriber for user level
 
                 const data = await this.loadAnalyticsData(
@@ -293,17 +326,22 @@ class GlobalAnalyticsManager {
                     try {
                         sub.callback(data);
                     } catch (error) {
-                        console.error(`📊 Global Analytics: Subscriber ${sub.id} callback failed:`, error);
+            console.error(
+              `📊 Global Analytics: Subscriber ${sub.id} callback failed:`,
+              error
+            );
                     }
                 });
-
             } catch (error) {
                 // Notify subscribers of error
                 subscribers.forEach(sub => {
                     try {
                         sub.callback(null, (error as Error).message);
                     } catch (callbackError) {
-                        console.error(`📊 Global Analytics: Error callback failed for ${sub.id}:`, callbackError);
+            console.error(
+              `📊 Global Analytics: Error callback failed for ${sub.id}:`,
+              callbackError
+            );
                     }
                 });
             }
@@ -314,31 +352,41 @@ class GlobalAnalyticsManager {
      * Setup page visibility listener
      */
     private setupPageVisibilityListener(): void {
-        if (typeof document !== 'undefined') {
+    if (typeof document !== "undefined") {
             this.pageVisibilityHandler = () => {
-                if (document.visibilityState === 'visible') {
-                    console.log('📊 Global Analytics: Page became visible, resuming analytics');
+        if (document.visibilityState === "visible") {
+          console.log(
+            "📊 Global Analytics: Page became visible, resuming analytics"
+          );
                     // Could trigger a refresh here if needed
                 } else {
-                    console.log('📊 Global Analytics: Page hidden, analytics paused');
+          console.log("📊 Global Analytics: Page hidden, analytics paused");
                 }
             };
 
-            document.addEventListener('visibilitychange', this.pageVisibilityHandler);
+      document.addEventListener("visibilitychange", this.pageVisibilityHandler);
         }
     }
 
     /**
      * Get cache key for analytics data
      */
-    private getCacheKey(symbol: string, timeWindow: AnalyticsTimeWindow, userLevel: UserLevel): string {
+  private getCacheKey(
+    symbol: string,
+    timeWindow: AnalyticsTimeWindow,
+    userLevel: UserLevel
+  ): string {
         return `analytics-${symbol}-${timeWindow.value}-${userLevel}`;
     }
 
     /**
      * Force refresh for specific analytics
      */
-    async forceRefresh(symbol: string, timeWindow: AnalyticsTimeWindow, userLevel: UserLevel): Promise<void> {
+  async forceRefresh(
+    symbol: string,
+    timeWindow: AnalyticsTimeWindow,
+    userLevel: UserLevel
+  ): Promise<void> {
         console.log(`📊 Global Analytics: Force refresh requested for ${symbol}`);
 
         const cacheKey = this.getCacheKey(symbol, timeWindow, userLevel);
@@ -365,14 +413,17 @@ class GlobalAnalyticsManager {
      * Cleanup all subscribers and timers
      */
     cleanup(): void {
-        console.log('📊 Global Analytics: Cleaning up');
+    console.log("📊 Global Analytics: Cleaning up");
         this.subscribers.clear();
         this.activeRequests.clear();
         this.cachedResults.clear();
         this.stopGlobalTimer();
 
         if (this.pageVisibilityHandler) {
-            document.removeEventListener('visibilitychange', this.pageVisibilityHandler);
+      document.removeEventListener(
+        "visibilitychange",
+        this.pageVisibilityHandler
+      );
         }
     }
 }

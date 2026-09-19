@@ -17,8 +17,8 @@ import {
     ICacheService,
     ILogger,
     IAuditLogRepository,
-    CacheResult
-} from '@trade-bot/shared';
+  CacheResult,
+} from "@trade-bot/shared";
 
 // Bot interface for repository operations
 export interface Bot {
@@ -59,7 +59,11 @@ export interface AuditDetails {
 export interface IBotRepository {
     findById(botId: string): Promise<Bot | null>;
     findByUserId(userId: string): Promise<Bot[]>;
-    updateStatus(botId: string, status: string, errorMessage?: string): Promise<boolean>;
+  updateStatus(
+    botId: string,
+    status: string,
+    errorMessage?: string
+  ): Promise<boolean>;
     updateHeartbeat(botId: string): Promise<boolean>;
     getActiveBots(): Promise<Bot[]>;
     getBotStats(): Promise<{
@@ -109,7 +113,7 @@ export interface LegacyBotStatusInfo {
 export class BotStatusService {
     private readonly CACHE_TTL = 300; // 5 minutes for bot status data
     private readonly HEARTBEAT_TIMEOUT_MS = 45000; // 45 seconds
-    private readonly CACHE_PREFIX = 'bot:status';
+  private readonly CACHE_PREFIX = "bot:status";
 
     constructor(private deps: BotStatusServiceDependencies) { }
 
@@ -122,45 +126,56 @@ export class BotStatusService {
      * 3. Update bot status to STARTING
      * 4. Log the operation
      */
-    async startBot(botId: string, userId: string): Promise<{ success: boolean; error?: string }> {
+  async startBot(
+    botId: string,
+    userId: string
+  ): Promise<{ success: boolean; error?: string }> {
         try {
-            this.deps.logger.debug('Starting bot', { botId, userId });
+      this.deps.logger.debug("Starting bot", { botId, userId });
 
             // Validate bot ownership
             const bot = await this.deps.botRepository.findById(botId);
             if (!bot || bot.user_id !== userId) {
-                this.deps.logger.warn('Bot not found or access denied', { botId, userId });
-                return { success: false, error: 'Bot not found or access denied' };
+        this.deps.logger.warn("Bot not found or access denied", {
+          botId,
+          userId,
+        });
+        return { success: false, error: "Bot not found or access denied" };
             }
 
             // Check if bot can be started
-            if (!this.canTransitionToStatus(bot.status, 'STARTING')) {
-                this.deps.logger.warn('Invalid status transition for bot start', {
+      if (!this.canTransitionToStatus(bot.status, "STARTING")) {
+        this.deps.logger.warn("Invalid status transition for bot start", {
                     botId,
-                    currentStatus: bot.status
+          currentStatus: bot.status,
                 });
-                return { success: false, error: 'Bot cannot be started in current state' };
+        return {
+          success: false,
+          error: "Bot cannot be started in current state",
+        };
             }
 
             // Update bot status
-            const success = await this.deps.botRepository.updateStatus(botId, 'STARTING');
+      const success = await this.deps.botRepository.updateStatus(
+        botId,
+        "STARTING"
+      );
             if (!success) {
-                return { success: false, error: 'Failed to update bot status' };
+        return { success: false, error: "Failed to update bot status" };
             }
 
             // Log audit event
-            await this.logAuditEvent('BOT_STARTED', { botId, userId });
+      await this.logAuditEvent("BOT_STARTED", { botId, userId });
 
-            this.deps.logger.info('Bot started successfully', { botId, userId });
+      this.deps.logger.info("Bot started successfully", { botId, userId });
             return { success: true };
-
         } catch (error) {
-            this.deps.logger.error('Failed to start bot', {
+      this.deps.logger.error("Failed to start bot", {
                 botId,
                 userId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
-            return { success: false, error: 'Failed to start bot' };
+      return { success: false, error: "Failed to start bot" };
         }
     }
 
@@ -173,48 +188,59 @@ export class BotStatusService {
      * 3. Clear any cached data
      * 4. Log the operation
      */
-    async stopBot(botId: string, userId: string): Promise<{ success: boolean; error?: string }> {
+  async stopBot(
+    botId: string,
+    userId: string
+  ): Promise<{ success: boolean; error?: string }> {
         try {
-            this.deps.logger.debug('Stopping bot', { botId, userId });
+      this.deps.logger.debug("Stopping bot", { botId, userId });
 
             // Validate bot ownership
             const bot = await this.deps.botRepository.findById(botId);
             if (!bot || bot.user_id !== userId) {
-                this.deps.logger.warn('Bot not found or access denied', { botId, userId });
-                return { success: false, error: 'Bot not found or access denied' };
+        this.deps.logger.warn("Bot not found or access denied", {
+          botId,
+          userId,
+        });
+        return { success: false, error: "Bot not found or access denied" };
             }
 
             // Check if bot can be stopped
-            if (!this.canTransitionToStatus(bot.status, 'STOPPED')) {
-                this.deps.logger.warn('Invalid status transition for bot stop', {
+      if (!this.canTransitionToStatus(bot.status, "STOPPED")) {
+        this.deps.logger.warn("Invalid status transition for bot stop", {
                     botId,
-                    currentStatus: bot.status
+          currentStatus: bot.status,
                 });
-                return { success: false, error: 'Bot cannot be stopped in current state' };
+        return {
+          success: false,
+          error: "Bot cannot be stopped in current state",
+        };
             }
 
             // Update bot status
-            const success = await this.deps.botRepository.updateStatus(botId, 'STOPPED');
+      const success = await this.deps.botRepository.updateStatus(
+        botId,
+        "STOPPED"
+      );
             if (!success) {
-                return { success: false, error: 'Failed to update bot status' };
+        return { success: false, error: "Failed to update bot status" };
             }
 
             // Clear cached data
             await this.invalidateBotCache(botId);
 
             // Log audit event
-            await this.logAuditEvent('BOT_STOPPED', { botId, userId });
+      await this.logAuditEvent("BOT_STOPPED", { botId, userId });
 
-            this.deps.logger.info('Bot stopped successfully', { botId, userId });
+      this.deps.logger.info("Bot stopped successfully", { botId, userId });
             return { success: true };
-
         } catch (error) {
-            this.deps.logger.error('Failed to stop bot', {
+      this.deps.logger.error("Failed to stop bot", {
                 botId,
                 userId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
-            return { success: false, error: 'Failed to stop bot' };
+      return { success: false, error: "Failed to stop bot" };
         }
     }
 
@@ -228,16 +254,20 @@ export class BotStatusService {
      * 4. Cache result for future requests
      * 5. Return formatted status information
      */
-    async getBotStatusInfo(botId: string, userId: string): Promise<LegacyBotStatusInfo | null> {
+  async getBotStatusInfo(
+    botId: string,
+    userId: string
+  ): Promise<LegacyBotStatusInfo | null> {
         try {
             const cacheKey = `${this.CACHE_PREFIX}:${botId}`;
 
             // Try cache first
-            const cachedResult: CacheResult<BotWithValidation> = await this.deps.cache.get(cacheKey);
+      const cachedResult: CacheResult<BotWithValidation> =
+        await this.deps.cache.get(cacheKey);
             if (cachedResult.success && cachedResult.data) {
                 // Validate cache is still for correct user
                 if (cachedResult.data.user_id === userId) {
-                    this.deps.logger.debug('Bot status cache hit', { botId });
+          this.deps.logger.debug("Bot status cache hit", { botId });
                     return this.shouldReturnLegacyFormat()
                         ? this.convertToLegacyFormat(cachedResult.data)
                         : cachedResult.data;
@@ -245,7 +275,9 @@ export class BotStatusService {
             }
 
             // Cache miss - query repository
-            this.deps.logger.debug('Bot status cache miss, querying repository', { botId });
+      this.deps.logger.debug("Bot status cache miss, querying repository", {
+        botId,
+      });
 
             const bot = await this.deps.botRepository.findById(botId);
             if (!bot || bot.user_id !== userId) {
@@ -274,31 +306,34 @@ export class BotStatusService {
                     engineHealth: {
                         running: true, // Placeholder - would need engine service
                         lastHealthCheck: Date.now(),
-                        status: 'healthy'
-                    }
-                }
+            status: "healthy",
+          },
+        },
             };
 
             // Cache the result
-            const cacheResult = await this.deps.cache.setex(cacheKey, this.CACHE_TTL, statusInfo);
+      const cacheResult = await this.deps.cache.setex(
+        cacheKey,
+        this.CACHE_TTL,
+        statusInfo
+      );
             if (!cacheResult.success) {
-                this.deps.logger.warn('Failed to cache bot status', {
+        this.deps.logger.warn("Failed to cache bot status", {
                     botId,
-                    error: cacheResult.error
+          error: cacheResult.error,
                 });
             }
 
-            this.deps.logger.debug('Bot status cached', { botId });
+      this.deps.logger.debug("Bot status cached", { botId });
 
             return this.shouldReturnLegacyFormat()
                 ? this.convertToLegacyFormat(statusInfo)
                 : statusInfo;
-
         } catch (error) {
-            this.deps.logger.error('Failed to get bot status info', {
+      this.deps.logger.error("Failed to get bot status info", {
                 botId,
                 userId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return null;
         }
@@ -313,48 +348,49 @@ export class BotStatusService {
      * 3. Handle status transitions based on heartbeat
      * 4. Log the operation
      */
-    async sendBotHeartbeat(botId: string): Promise<{ success: boolean; error?: string }> {
+  async sendBotHeartbeat(
+    botId: string
+  ): Promise<{ success: boolean; error?: string }> {
         try {
-            this.deps.logger.debug('Processing bot heartbeat', { botId });
+      this.deps.logger.debug("Processing bot heartbeat", { botId });
 
             // Update heartbeat in repository
             const success = await this.deps.botRepository.updateHeartbeat(botId);
             if (!success) {
-                return { success: false, error: 'Failed to update heartbeat' };
+        return { success: false, error: "Failed to update heartbeat" };
             }
 
             // Get current bot status
             const bot = await this.deps.botRepository.findById(botId);
             if (!bot) {
-                return { success: false, error: 'Bot not found' };
+        return { success: false, error: "Bot not found" };
             }
 
             // Handle status transitions
-            if (bot.status === 'RECOVERING') {
+      if (bot.status === "RECOVERING") {
                 // Bot recovered - move to running
-                await this.deps.botRepository.updateStatus(botId, 'RUNNING');
-                this.deps.logger.info('Bot recovered from error state', { botId });
-            } else if (bot.status === 'ERROR') {
+        await this.deps.botRepository.updateStatus(botId, "RUNNING");
+        this.deps.logger.info("Bot recovered from error state", { botId });
+      } else if (bot.status === "ERROR") {
                 // Check if error was due to heartbeat timeout
-                if (bot.last_error?.includes('heartbeat timeout')) {
+        if (bot.last_error?.includes("heartbeat timeout")) {
                     // Start recovery process
-                    await this.deps.botRepository.updateStatus(botId, 'RECOVERING');
-                    this.deps.logger.info('Bot entering recovery state', { botId });
+          await this.deps.botRepository.updateStatus(botId, "RECOVERING");
+          this.deps.logger.info("Bot entering recovery state", { botId });
                 }
             }
 
             // Invalidate cache to force fresh data
             await this.invalidateBotCache(botId);
 
-            this.deps.logger.debug('Bot heartbeat processed successfully', { botId });
+      this.deps.logger.debug("Bot heartbeat processed successfully", { botId });
             return { success: true };
-
         } catch (error) {
-            this.deps.logger.error('Failed to process bot heartbeat', {
+      this.deps.logger.error("Failed to process bot heartbeat", {
                 botId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
-            return { success: false, error: 'Failed to process heartbeat' };
+      return { success: false, error: "Failed to process heartbeat" };
         }
     }
 
@@ -366,30 +402,39 @@ export class BotStatusService {
      * - Validate status consistency
      * - Return validation results
      */
-    private async validateBotStatus(botData: Bot, currentTime: number): Promise<{
+  private async validateBotStatus(
+    botData: Bot,
+    currentTime: number
+  ): Promise<{
         updatedStatus: string;
         errorMessage: string | null;
         isStale: boolean;
         lastHeartbeatAge: number;
     }> {
-        const lastHeartbeat = botData.last_heartbeat ? new Date(botData.last_heartbeat).getTime() : 0;
+    const lastHeartbeat = botData.last_heartbeat
+      ? new Date(botData.last_heartbeat).getTime()
+      : 0;
         const heartbeatAge = currentTime - lastHeartbeat;
         const isStale = heartbeatAge > this.HEARTBEAT_TIMEOUT_MS;
 
         // If bot is running but heartbeat is stale, mark as error
-        if (botData.status === 'RUNNING' && isStale) {
+    if (botData.status === "RUNNING" && isStale) {
             return {
-                updatedStatus: 'ERROR',
-                errorMessage: 'Bot heartbeat timeout - status validation',
+        updatedStatus: "ERROR",
+        errorMessage: "Bot heartbeat timeout - status validation",
                 isStale: true,
                 lastHeartbeatAge: heartbeatAge,
             };
         }
 
         // If bot is in error state but heartbeat is recent, check if it recovered
-        if (botData.status === 'ERROR' && !isStale && botData.last_error?.includes('heartbeat timeout')) {
+    if (
+      botData.status === "ERROR" &&
+      !isStale &&
+      botData.last_error?.includes("heartbeat timeout")
+    ) {
             return {
-                updatedStatus: 'RUNNING',
+        updatedStatus: "RUNNING",
                 errorMessage: null,
                 isStale: false,
                 lastHeartbeatAge: heartbeatAge,
@@ -420,8 +465,8 @@ export class BotStatusService {
         try {
             return await this.deps.botRepository.getBotStats();
         } catch (error) {
-            this.deps.logger.error('Failed to get bot stats', {
-                error: error instanceof Error ? error.message : String(error)
+      this.deps.logger.error("Failed to get bot stats", {
+        error: error instanceof Error ? error.message : String(error),
             });
             return {
                 totalBots: 0,
@@ -435,15 +480,18 @@ export class BotStatusService {
     /**
      * Check if bot status transition is valid
      */
-    private canTransitionToStatus(currentStatus: string, newStatus: string): boolean {
+  private canTransitionToStatus(
+    currentStatus: string,
+    newStatus: string
+  ): boolean {
         const validTransitions: Record<string, string[]> = {
-            'STOPPED': ['STARTING'],
-            'STARTING': ['RUNNING', 'ERROR', 'STOPPED'],
-            'RUNNING': ['PAUSED', 'ERROR', 'FORCE_STOPPING', 'STOPPED'],
-            'PAUSED': ['RUNNING', 'STOPPED'],
-            'RECOVERING': ['RUNNING', 'ERROR', 'STOPPED'],
-            'ERROR': ['RECOVERING', 'STOPPED'],
-            'FORCE_STOPPING': ['STOPPED'],
+      STOPPED: ["STARTING"],
+      STARTING: ["RUNNING", "ERROR", "STOPPED"],
+      RUNNING: ["PAUSED", "ERROR", "FORCE_STOPPING", "STOPPED"],
+      PAUSED: ["RUNNING", "STOPPED"],
+      RECOVERING: ["RUNNING", "ERROR", "STOPPED"],
+      ERROR: ["RECOVERING", "STOPPED"],
+      FORCE_STOPPING: ["STOPPED"],
         };
 
         return validTransitions[currentStatus]?.includes(newStatus) ?? false;
@@ -457,11 +505,11 @@ export class BotStatusService {
         const result = await this.deps.cache.delete(cacheKey);
 
         if (result.success) {
-            this.deps.logger.debug('Bot cache invalidated', { botId });
+      this.deps.logger.debug("Bot cache invalidated", { botId });
         } else {
-            this.deps.logger.warn('Failed to invalidate bot cache', {
+      this.deps.logger.warn("Failed to invalidate bot cache", {
                 botId,
-                error: result.error
+        error: result.error,
             });
         }
     }
@@ -470,13 +518,15 @@ export class BotStatusService {
      * Check if legacy API format should be returned
      */
     private shouldReturnLegacyFormat(): boolean {
-        return process.env.LEGACY_TRADING_API === 'true';
+    return process.env.LEGACY_TRADING_API === "true";
     }
 
     /**
      * Convert status info to legacy format
      */
-    private convertToLegacyFormat(statusInfo: BotWithValidation): LegacyBotStatusInfo {
+  private convertToLegacyFormat(
+    statusInfo: BotWithValidation
+  ): LegacyBotStatusInfo {
         return {
             id: statusInfo.id,
             user_id: statusInfo.user_id,
@@ -486,25 +536,28 @@ export class BotStatusService {
             last_error: statusInfo.last_error,
             created_at: statusInfo.created_at,
             updated_at: statusInfo.updated_at,
-            statusValidation: statusInfo.statusValidation
+      statusValidation: statusInfo.statusValidation,
         };
     }
 
     /**
      * Log audit event if audit logger is available
      */
-    private async logAuditEvent(action: string, details: AuditDetails): Promise<void> {
+  private async logAuditEvent(
+    action: string,
+    details: AuditDetails
+  ): Promise<void> {
         if (this.deps.auditLogger) {
             try {
                 await this.deps.auditLogger.logEvent({
                     userId: details.userId || null, // Allow null instead of 'system'
                     action,
-                    details
+          details,
                 });
             } catch (error) {
-                this.deps.logger.warn('Failed to log audit event', {
+        this.deps.logger.warn("Failed to log audit event", {
                     action,
-                    error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
                 });
             }
         }
@@ -512,6 +565,8 @@ export class BotStatusService {
 }
 
 // Export factory function for creating service instances
-export function createBotStatusService(deps: BotStatusServiceDependencies): BotStatusService {
+export function createBotStatusService(
+  deps: BotStatusServiceDependencies
+): BotStatusService {
     return new BotStatusService(deps);
 }

@@ -7,16 +7,20 @@
  * @format
  */
 
-import { BotActualState } from '@trade-bot/shared';
-import { GridTradingStrategy } from '../strategies/grid';
-import { createOrderlyClient } from '../exchanges/kodiak/client';
-import { RedisStreamOperations } from '../infrastructure/redis/streams';
-import { logger } from '../utils/logger';
-import { BotRuntime, EngineIdentity } from '../domain/bot-runtime';
-import { publishEvent, publishAccepted, publishFailed } from '../protocol/event-publisher';
-import { fetchCredentials } from '../protocol/credential-fetcher';
-import { CommandError } from './command-error';
-import { StrategyRunner } from './strategy-runner';
+import { BotActualState } from "@trade-bot/shared";
+import { GridTradingStrategy } from "../strategies/grid";
+import { createOrderlyClient } from "../exchanges/kodiak/client";
+import { RedisStreamOperations } from "../infrastructure/redis/streams";
+import { logger } from "../utils/logger";
+import { BotRuntime, EngineIdentity } from "../domain/bot-runtime";
+import {
+  publishEvent,
+  publishAccepted,
+  publishFailed,
+} from "../protocol/event-publisher";
+import { fetchCredentials } from "../protocol/credential-fetcher";
+import { CommandError } from "./command-error";
+import { StrategyRunner } from "./strategy-runner";
 
 const TICK_INTERVAL_MS = 5000;
 
@@ -30,7 +34,10 @@ export class BotManager {
     constructor(identity: EngineIdentity) {
         this.engineId = identity.engineId;
         this.epoch = identity.epoch;
-        logger.info('BotManager initialized', { engineId: this.engineId, epoch: this.epoch });
+    logger.info("BotManager initialized", {
+      engineId: this.engineId,
+      epoch: this.epoch,
+    });
     }
 
     get activeBotIds(): string[] {
@@ -74,14 +81,19 @@ export class BotManager {
         correlationId: string,
         reason?: string
     ): Promise<void> {
-        await publishEvent(streamOps, 'STATE_CHANGED', {
+    await publishEvent(
+      streamOps,
+      "STATE_CHANGED",
+      {
             botId,
             engineId: this.engineId,
             engineEpoch: this.epoch,
             from,
             to,
-            reason: reason || '',
-        }, correlationId);
+        reason: reason || "",
+      },
+      correlationId
+    );
     }
 
     /**
@@ -93,7 +105,14 @@ export class BotManager {
         commandType: string,
         correlationId: string
     ): Promise<void> {
-        await publishAccepted(streamOps, botId, commandType, this.engineId, this.epoch, correlationId);
+    await publishAccepted(
+      streamOps,
+      botId,
+      commandType,
+      this.engineId,
+      this.epoch,
+      correlationId
+    );
     }
 
     /**
@@ -107,7 +126,16 @@ export class BotManager {
         message: string,
         correlationId: string
     ): Promise<void> {
-        await publishFailed(streamOps, botId, commandType, this.engineId, this.epoch, errorCode, message, correlationId);
+    await publishFailed(
+      streamOps,
+      botId,
+      commandType,
+      this.engineId,
+      this.epoch,
+      errorCode,
+      message,
+      correlationId
+    );
     }
 
     /**
@@ -123,13 +151,27 @@ export class BotManager {
     ): Promise<void> {
         // Race guard
         if (this.initializing.has(botId) || this.bots.has(botId)) {
-            logger.warn('Bot already initializing or running', { botId });
-            await this.publishFailed(streamOps, botId, 'BOT_START', 'BOT_ALREADY_RUNNING', 'Bot is already running', correlationId);
+      logger.warn("Bot already initializing or running", { botId });
+      await this.publishFailed(
+        streamOps,
+        botId,
+        "BOT_START",
+        "BOT_ALREADY_RUNNING",
+        "Bot is already running",
+        correlationId
+      );
             return;
         }
         this.initializing.add(botId);
         try {
-            await this.doStartBot(streamOps, botId, userId, strategyId, config, correlationId);
+      await this.doStartBot(
+        streamOps,
+        botId,
+        userId,
+        strategyId,
+        config,
+        correlationId
+      );
         } finally {
             this.initializing.delete(botId);
         }
@@ -145,19 +187,43 @@ export class BotManager {
     ): Promise<void> {
         const existing = this.bots.get(botId);
         if (!existing) {
-            logger.warn('Bot not found for stop', { botId });
-            await this.publishFailed(streamOps, botId, 'BOT_STOP', 'BOT_NOT_FOUND', 'Bot not found', correlationId);
+      logger.warn("Bot not found for stop", { botId });
+      await this.publishFailed(
+        streamOps,
+        botId,
+        "BOT_STOP",
+        "BOT_NOT_FOUND",
+        "Bot not found",
+        correlationId
+      );
             return;
         }
-        await this.publishStateChanged(streamOps, botId, 'RUNNING', 'STOPPING', correlationId, 'normal_stop');
+    await this.publishStateChanged(
+      streamOps,
+      botId,
+      "RUNNING",
+      "STOPPING",
+      correlationId,
+      "normal_stop"
+    );
         try {
             await existing.strategy.stop();
         } catch (error) {
-            logger.error('Strategy stop error', { botId, error: error instanceof Error ? error.message : String(error) });
+      logger.error("Strategy stop error", {
+        botId,
+        error: error instanceof Error ? error.message : String(error),
+      });
         }
         existing.stopTick();
         this.bots.delete(botId);
-        await this.publishStateChanged(streamOps, botId, 'STOPPING', 'STOPPED', correlationId, 'normal_stop');
+    await this.publishStateChanged(
+      streamOps,
+      botId,
+      "STOPPING",
+      "STOPPED",
+      correlationId,
+      "normal_stop"
+    );
     }
 
     /**
@@ -175,7 +241,13 @@ export class BotManager {
         const stopRunner = (): void => runner?.stop();
 
         try {
-            await this.publishStateChanged(streamOps, botId, 'STOPPED', 'STARTING', correlationId);
+      await this.publishStateChanged(
+        streamOps,
+        botId,
+        "STOPPED",
+        "STARTING",
+        correlationId
+      );
             this.throwIfCancelled(botId);
 
             // 1. Fetch credentials
@@ -187,20 +259,23 @@ export class BotManager {
                 credentials.accountId,
                 credentials.accessKey,
                 credentials.secretKey,
-                process.env.NODE_ENV !== 'production'
+        process.env.NODE_ENV !== "production"
             );
 
             // 3. Get market price
-            const symbol = String(config.symbol || '');
+      const symbol = String(config.symbol || "");
             if (!symbol) {
-                throw new CommandError(false, 'Strategy config is missing symbol');
+        throw new CommandError(false, "Strategy config is missing symbol");
             }
             this.throwIfCancelled(botId);
             const ticker = await orderlyClient.getTicker(symbol);
             this.throwIfCancelled(botId);
             const currentPrice = Number(ticker.mark_price || ticker.price);
             if (!currentPrice) {
-                throw new CommandError(false, `Could not resolve current price for ${symbol}`);
+        throw new CommandError(
+          false,
+          `Could not resolve current price for ${symbol}`
+        );
             }
 
             // 4. Create and start strategy
@@ -225,12 +300,13 @@ export class BotManager {
                 TICK_INTERVAL_MS,
                 () => gridStrategy.tick(),
                 {
-                    onError: (error) =>
-                        logger.error('Strategy tick error', {
+          onError: error =>
+            logger.error("Strategy tick error", {
                             botId,
                             error: error instanceof Error ? error.message : String(error),
                         }),
-                    onSkip: () => logger.warn('Previous tick still running, skipping', { botId }),
+          onSkip: () =>
+            logger.warn("Previous tick still running, skipping", { botId }),
                 }
             );
             runner.start();
@@ -240,19 +316,40 @@ export class BotManager {
                 botId,
                 strategyId,
                 userId,
-                state: 'RUNNING',
+        state: "RUNNING",
                 strategy: gridStrategy,
                 stopTick: stopRunner,
                 orderlyClient,
             });
 
-            await this.publishStateChanged(streamOps, botId, 'STARTING', 'RUNNING', correlationId, 'started');
+      await this.publishStateChanged(
+        streamOps,
+        botId,
+        "STARTING",
+        "RUNNING",
+        correlationId,
+        "started"
+      );
         } catch (error) {
             stopRunner();
             this.bots.delete(botId);
             const err = error instanceof Error ? error : new Error(String(error));
-            await this.publishFailed(streamOps, botId, 'BOT_START', 'INIT_FAILED', err.message, correlationId);
-            await this.publishStateChanged(streamOps, botId, 'STARTING', 'ERROR', correlationId, err.message);
+      await this.publishFailed(
+        streamOps,
+        botId,
+        "BOT_START",
+        "INIT_FAILED",
+        err.message,
+        correlationId
+      );
+      await this.publishStateChanged(
+        streamOps,
+        botId,
+        "STARTING",
+        "ERROR",
+        correlationId,
+        err.message
+      );
             throw error;
         }
     }
@@ -260,7 +357,7 @@ export class BotManager {
     private throwIfCancelled(botId: string): void {
         if (this.stopRequested.has(botId)) {
             this.stopRequested.delete(botId);
-            throw new CommandError(false, 'Bot initialization cancelled');
+      throw new CommandError(false, "Bot initialization cancelled");
         }
     }
 }

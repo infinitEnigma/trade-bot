@@ -16,8 +16,14 @@
  */
 
 // Export notification-related services
-export { errorNotificationService } from './error-notification.service';
+export { errorNotificationService } from "./error-notification.service";
 
 // Export types
-export type { NotificationConfig, ErrorAlert } from './error-notification.service';
-export type { NotificationSeverity, NotificationChannelType } from './error-notification.service';
+export type {
+  NotificationConfig,
+  ErrorAlert,
+} from "./error-notification.service";
+export type {
+  NotificationSeverity,
+  NotificationChannelType,
+} from "./error-notification.service";

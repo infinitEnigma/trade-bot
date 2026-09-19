@@ -3,7 +3,10 @@
 import { Router, Request, Response } from "express";
 //import Joi from "joi";
 import { serviceProvider } from "../../../core/service-provider";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
+import {
+  authMiddleware,
+  AuthenticatedRequest,
+} from "../../middleware/auth.middleware";
 import { UserRole, UserLevel } from "@trade-bot/shared";
 import { createErrorResponse, ValidationError } from "@trade-bot/shared";
 import { getCorrelationId } from "../../../shared/utils/context";
@@ -23,22 +26,29 @@ router.post(
   validators.register,
   async (req: Request, res: Response) => {
     try {
-      const result = await authService.register(req.body.email, req.body.password);
+      const result = await authService.register(
+        req.body.email,
+        req.body.password
+      );
 
       if (!result.success) {
-        const authError = new ValidationError(result.message || "Registration failed");
-        return res.status(authError.statusCode).json(
-          createErrorResponse(authError, getCorrelationId())
+        const authError = new ValidationError(
+          result.message || "Registration failed"
         );
+        return res
+          .status(authError.statusCode)
+          .json(createErrorResponse(authError, getCorrelationId()));
       }
 
       // Set httpOnly cookies for security
       if (!result.tokens) {
         authLogger.error("Registration successful but tokens missing");
-        const internalError = new ValidationError("Registration successful but tokens missing");
-        return res.status(internalError.statusCode).json(
-          createErrorResponse(internalError, getCorrelationId())
+        const internalError = new ValidationError(
+          "Registration successful but tokens missing"
         );
+        return res
+          .status(internalError.statusCode)
+          .json(createErrorResponse(internalError, getCorrelationId()));
       }
 
       res.cookie("accessToken", result.tokens.accessToken, {
@@ -60,25 +70,29 @@ router.post(
         data: { user: result.user },
       });
     } catch (err) {
-      authLogger.error("Registration error", err instanceof Error ? err : undefined, {
+      authLogger.error(
+        "Registration error",
+        err instanceof Error ? err : undefined,
+        {
         email: req.body?.email,
-      });
-      const internalError = new ValidationError("Registration failed");
-      res.status(internalError.statusCode).json(
-        createErrorResponse(internalError, getCorrelationId())
+        }
       );
+      const internalError = new ValidationError("Registration failed");
+      res
+        .status(internalError.statusCode)
+        .json(createErrorResponse(internalError, getCorrelationId()));
     }
   }
 );
 
 // POST /api/auth/login
-router.post(
-  "/login",
-  validators.login,
-  async (req: Request, res: Response) => {
+router.post("/login", validators.login, async (req: Request, res: Response) => {
     authLogger.info("Login attempt", { email: req.body?.email });
     try {
-      const result = await authService.login({ email: req.body.email, password: req.body.password });
+    const result = await authService.login({
+      email: req.body.email,
+      password: req.body.password,
+    });
       authLogger.info("Login result", {
         email: req.body.email,
         success: result.success,
@@ -86,15 +100,17 @@ router.post(
       });
 
       if (!result.success) {
-        const authError = new ValidationError(result.message || "Invalid credentials");
+      const authError = new ValidationError(
+        result.message || "Invalid credentials"
+      );
 
         // Record failed login attempt for progressive backoff
         // This will be handled by the rate limiter middleware automatically
         // when progressiveBackoff is enabled for auth endpoints
 
-        return res.status(authError.statusCode).json(
-          createErrorResponse(authError, getCorrelationId())
-        );
+      return res
+        .status(authError.statusCode)
+        .json(createErrorResponse(authError, getCorrelationId()));
       }
 
       authLogger.info("Login successful", {
@@ -109,39 +125,50 @@ router.post(
       // Set httpOnly cookies for security
       if (!result.tokens) {
         authLogger.error("Login successful but tokens missing");
-        const internalError = new ValidationError("Login successful but tokens missing");
-        return res.status(internalError.statusCode).json(
-          createErrorResponse(internalError, getCorrelationId())
+      const internalError = new ValidationError(
+        "Login successful but tokens missing"
         );
+      return res
+        .status(internalError.statusCode)
+        .json(createErrorResponse(internalError, getCorrelationId()));
       }
 
       // Check if user is VERIFIED and automatically check admin qualification
       if (result.user?.userLevel === UserLevel.VERIFIED) {
         try {
-          const roleQualificationService = serviceProvider.getRoleQualificationService();
-          const adminQualification = await roleQualificationService.checkQualification(
+        const roleQualificationService =
+          serviceProvider.getRoleQualificationService();
+        const adminQualification =
+          await roleQualificationService.checkQualification(
             result.user.id,
             UserRole.SYSTEM_ADMIN
           );
 
           if (adminQualification.qualified) {
-            const roleManagementService = serviceProvider.getRoleManagementService();
+          const roleManagementService =
+            serviceProvider.getRoleManagementService();
             await roleManagementService.assignRole(
               result.user.id,
               UserRole.SYSTEM_ADMIN,
-              'system',
+            "system",
               adminQualification.criteria as unknown as JSON
             );
 
-            authLogger.info("User automatically qualified for SYSTEM_ADMIN role on login", {
+          authLogger.info(
+            "User automatically qualified for SYSTEM_ADMIN role on login",
+            {
               userId: result.user.id,
-            });
+            }
+          );
           }
         } catch (error) {
-          authLogger.warn("Failed to automatically check admin qualification on login", {
+        authLogger.warn(
+          "Failed to automatically check admin qualification on login",
+          {
             userId: result.user?.id,
             error: error instanceof Error ? error.message : String(error),
-          });
+          }
+        );
         }
       }
 
@@ -168,12 +195,11 @@ router.post(
         email: req.body?.email,
       });
       const internalError = new ValidationError("Login failed");
-      res.status(internalError.statusCode).json(
-        createErrorResponse(internalError, getCorrelationId())
-      );
+    res
+      .status(internalError.statusCode)
+      .json(createErrorResponse(internalError, getCorrelationId()));
     }
-  }
-);
+});
 
 // POST /api/auth/refresh
 router.post(
@@ -184,19 +210,23 @@ router.post(
       const result = await authService.refreshToken(req.body.refreshToken);
 
       if (!result.success) {
-        const authError = new ValidationError(result.message || "Invalid refresh token");
-        return res.status(authError.statusCode).json(
-          createErrorResponse(authError, getCorrelationId())
+        const authError = new ValidationError(
+          result.message || "Invalid refresh token"
         );
+        return res
+          .status(authError.statusCode)
+          .json(createErrorResponse(authError, getCorrelationId()));
       }
 
       // Set httpOnly cookies for security
       if (!result.tokens) {
         authLogger.error("Token refresh successful but tokens missing");
-        const internalError = new ValidationError("Token refresh successful but tokens missing");
-        return res.status(internalError.statusCode).json(
-          createErrorResponse(internalError, getCorrelationId())
+        const internalError = new ValidationError(
+          "Token refresh successful but tokens missing"
         );
+        return res
+          .status(internalError.statusCode)
+          .json(createErrorResponse(internalError, getCorrelationId()));
       }
 
       res.cookie("accessToken", result.tokens.accessToken, {
@@ -218,11 +248,14 @@ router.post(
         data: { user: result.user },
       });
     } catch (err) {
-      authLogger.error("Token refresh error", err instanceof Error ? err : undefined);
-      const internalError = new ValidationError("Token refresh failed");
-      res.status(internalError.statusCode).json(
-        createErrorResponse(internalError, getCorrelationId())
+      authLogger.error(
+        "Token refresh error",
+        err instanceof Error ? err : undefined
       );
+      const internalError = new ValidationError("Token refresh failed");
+      res
+        .status(internalError.statusCode)
+        .json(createErrorResponse(internalError, getCorrelationId()));
     }
   }
 );
@@ -288,9 +321,9 @@ router.post("/logout", async (req: Request, res: Response) => {
   } catch (err) {
     authLogger.error("Logout error", err instanceof Error ? err : undefined);
     const internalError = new ValidationError("Logout failed");
-    res.status(internalError.statusCode).json(
-      createErrorResponse(internalError, getCorrelationId())
-    );
+    res
+      .status(internalError.statusCode)
+      .json(createErrorResponse(internalError, getCorrelationId()));
   }
 });
 
@@ -302,7 +335,9 @@ router.post(
     try {
       // Defensive check - user should be set by authMiddleware
       if (!req.user) {
-        authLogger.warn("Qualification check requested without authenticated user");
+        authLogger.warn(
+          "Qualification check requested without authenticated user"
+        );
         return res.status(401).json({
           success: false,
           error: "Unauthorized - user not authenticated",
@@ -314,29 +349,34 @@ router.post(
 
       // Only VERIFIED users can check qualifications
       if (userLevel !== UserLevel.VERIFIED) {
-        const authError = new ValidationError("Must be VERIFIED to check qualifications");
-        return res.status(authError.statusCode).json(
-          createErrorResponse(authError, getCorrelationId())
+        const authError = new ValidationError(
+          "Must be VERIFIED to check qualifications"
         );
+        return res
+          .status(authError.statusCode)
+          .json(createErrorResponse(authError, getCorrelationId()));
       }
 
       // Check qualification for QUALIFIED_ALPHA role
-      const walletQualificationService = serviceProvider.getWalletQualificationService();
-      const result = await walletQualificationService.checkAlphaQualification(userId);
+      const walletQualificationService =
+        serviceProvider.getWalletQualificationService();
+      const result =
+        await walletQualificationService.checkAlphaQualification(userId);
 
       if (result.qualified) {
         // Assign QUALIFIED_ALPHA role
-        const roleManagementService = serviceProvider.getRoleManagementService();
+        const roleManagementService =
+          serviceProvider.getRoleManagementService();
         await roleManagementService.assignRole(
           userId,
           UserRole.QUALIFIED_ALPHA,
-          'system',
+          "system",
           result.criteria as unknown as JSON
         );
 
         authLogger.info("User qualified for QUALIFIED_ALPHA role", {
           userId,
-          qualificationCriteria: result.criteria
+          qualificationCriteria: result.criteria,
         });
       }
 
@@ -347,17 +387,20 @@ router.post(
         chainValid: result.chainValid,
         criteria: result.criteria,
         reasons: result.reasons,
-        config: walletQualificationService.getQualificationConfig()
+        config: walletQualificationService.getQualificationConfig(),
       });
-
     } catch (error) {
-      authLogger.error("Qualification check error", error instanceof Error ? error : undefined, {
+      authLogger.error(
+        "Qualification check error",
+        error instanceof Error ? error : undefined,
+        {
         userId: req.user?.userId,
-      });
-      const internalError = new ValidationError("Qualification check failed");
-      res.status(internalError.statusCode).json(
-        createErrorResponse(internalError, getCorrelationId())
+        }
       );
+      const internalError = new ValidationError("Qualification check failed");
+      res
+        .status(internalError.statusCode)
+        .json(createErrorResponse(internalError, getCorrelationId()));
     }
   }
 );
@@ -370,27 +413,36 @@ router.get(
     try {
       // Defensive check - user should be set by authMiddleware
       if (!req.user) {
-        authLogger.warn("Qualification config requested without authenticated user");
+        authLogger.warn(
+          "Qualification config requested without authenticated user"
+        );
         return res.status(401).json({
           success: false,
           error: "Unauthorized - user not authenticated",
         });
       }
 
-      const walletQualificationService = serviceProvider.getWalletQualificationService();
+      const walletQualificationService =
+        serviceProvider.getWalletQualificationService();
       const config = walletQualificationService.getQualificationConfig();
       res.json({
         success: true,
-        config
+        config,
       });
     } catch (error) {
-      authLogger.error("Qualification config error", error instanceof Error ? error : undefined, {
-        userId: req.user?.userId
-      });
-      const internalError = new ValidationError("Failed to get qualification config");
-      res.status(internalError.statusCode).json(
-        createErrorResponse(internalError, getCorrelationId())
+      authLogger.error(
+        "Qualification config error",
+        error instanceof Error ? error : undefined,
+        {
+          userId: req.user?.userId,
+        }
       );
+      const internalError = new ValidationError(
+        "Failed to get qualification config"
+      );
+      res
+        .status(internalError.statusCode)
+        .json(createErrorResponse(internalError, getCorrelationId()));
     }
   }
 );
@@ -424,9 +476,9 @@ router.get(
 
       if (result.rows.length === 0) {
         const error = new ValidationError("User not found");
-        return res.status(error.statusCode).json(
-          createErrorResponse(error, getCorrelationId())
-        );
+        return res
+          .status(error.statusCode)
+          .json(createErrorResponse(error, getCorrelationId()));
       }
 
       const userRow = result.rows[0];
@@ -456,22 +508,26 @@ router.get(
       });
 
       // Prevent caching of user-specific data
-      res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.set('Pragma', 'no-cache');
-      res.set('Expires', '0');
+      res.set("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.set("Pragma", "no-cache");
+      res.set("Expires", "0");
 
       res.json({
         success: true,
-        data: user
+        data: user,
       });
     } catch (error) {
-      authLogger.error("Get me error", error instanceof Error ? error : undefined, {
+      authLogger.error(
+        "Get me error",
+        error instanceof Error ? error : undefined,
+        {
         userId: req.user?.userId,
-      });
-      const internalError = new ValidationError("Failed to get user data");
-      res.status(internalError.statusCode).json(
-        createErrorResponse(internalError, getCorrelationId())
+        }
       );
+      const internalError = new ValidationError("Failed to get user data");
+      res
+        .status(internalError.statusCode)
+        .json(createErrorResponse(internalError, getCorrelationId()));
     }
   }
 );
@@ -484,7 +540,9 @@ router.post(
     try {
       // Defensive check - user should be set by authMiddleware
       if (!req.user) {
-        authLogger.warn("Admin qualification check requested without authenticated user");
+        authLogger.warn(
+          "Admin qualification check requested without authenticated user"
+        );
         return res.status(401).json({
           success: false,
           error: "Unauthorized - user not authenticated",
@@ -496,29 +554,36 @@ router.post(
 
       // Only VERIFIED users can check admin qualifications
       if (userLevel !== UserLevel.VERIFIED) {
-        const authError = new ValidationError("Must be VERIFIED to check admin qualifications");
-        return res.status(authError.statusCode).json(
-          createErrorResponse(authError, getCorrelationId())
+        const authError = new ValidationError(
+          "Must be VERIFIED to check admin qualifications"
         );
+        return res
+          .status(authError.statusCode)
+          .json(createErrorResponse(authError, getCorrelationId()));
       }
 
       // Check qualification for SYSTEM_ADMIN role
-      const roleQualificationService = serviceProvider.getRoleQualificationService();
-      const result = await roleQualificationService.checkQualification(userId, UserRole.SYSTEM_ADMIN);
+      const roleQualificationService =
+        serviceProvider.getRoleQualificationService();
+      const result = await roleQualificationService.checkQualification(
+        userId,
+        UserRole.SYSTEM_ADMIN
+      );
 
       if (result.qualified) {
         // Assign SYSTEM_ADMIN role
-        const roleManagementService = serviceProvider.getRoleManagementService();
+        const roleManagementService =
+          serviceProvider.getRoleManagementService();
         await roleManagementService.assignRole(
           userId,
           UserRole.SYSTEM_ADMIN,
-          'system',
+          "system",
           result.criteria as unknown as JSON
         );
 
         authLogger.info("User qualified for SYSTEM_ADMIN role", {
           userId,
-          qualificationCriteria: result.criteria
+          qualificationCriteria: result.criteria,
         });
       }
 
@@ -526,17 +591,22 @@ router.post(
         success: true,
         qualified: result.qualified,
         criteria: result.criteria,
-        reason: result.reason
+        reason: result.reason,
       });
-
     } catch (error) {
-      authLogger.error("Admin qualification check error", error instanceof Error ? error : undefined, {
+      authLogger.error(
+        "Admin qualification check error",
+        error instanceof Error ? error : undefined,
+        {
         userId: req.user?.userId,
-      });
-      const internalError = new ValidationError("Admin qualification check failed");
-      res.status(internalError.statusCode).json(
-        createErrorResponse(internalError, getCorrelationId())
+        }
       );
+      const internalError = new ValidationError(
+        "Admin qualification check failed"
+      );
+      res
+        .status(internalError.statusCode)
+        .json(createErrorResponse(internalError, getCorrelationId()));
     }
   }
 );
@@ -569,17 +639,17 @@ router.get("/csrf-token", async (req: Request, res: Response) => {
         token = tokensInstance.create(secret);
 
         // Update cookies with new secret/token
-        res.cookie('csrfSecret', secret, {
+        res.cookie("csrfSecret", secret, {
           httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "strict",
           maxAge: 24 * 60 * 60 * 1000, // 24 hours
         });
 
-        res.cookie('csrfToken', token, {
+        res.cookie("csrfToken", token, {
           httpOnly: false, // Client needs to read this
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "strict",
           maxAge: 24 * 60 * 60 * 1000, // 24 hours
         });
 
@@ -593,17 +663,17 @@ router.get("/csrf-token", async (req: Request, res: Response) => {
       token = tokensInstance.create(secret);
 
       // Set cookies
-      res.cookie('csrfSecret', secret, {
+      res.cookie("csrfSecret", secret, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
       });
 
-      res.cookie('csrfToken', token, {
+      res.cookie("csrfToken", token, {
         httpOnly: false, // Client needs to read this
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
       });
 
@@ -615,13 +685,15 @@ router.get("/csrf-token", async (req: Request, res: Response) => {
       csrfToken: token,
       expiresIn: 24 * 60 * 60, // 24 hours in seconds
     });
-
   } catch (error) {
-    authLogger.error("CSRF token retrieval error", error instanceof Error ? error : undefined);
-    const internalError = new ValidationError("Failed to get CSRF token");
-    res.status(internalError.statusCode).json(
-      createErrorResponse(internalError, getCorrelationId())
+    authLogger.error(
+      "CSRF token retrieval error",
+      error instanceof Error ? error : undefined
     );
+    const internalError = new ValidationError("Failed to get CSRF token");
+    res
+      .status(internalError.statusCode)
+      .json(createErrorResponse(internalError, getCorrelationId()));
   }
 });
 

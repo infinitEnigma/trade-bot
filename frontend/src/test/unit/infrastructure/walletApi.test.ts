@@ -46,7 +46,10 @@ describe("walletApi", () => {
             const result = await walletApi.verifyWallet(walletData);
 
             expect(httpClient.getClient).toHaveBeenCalled();
-            expect(mockPost).toHaveBeenCalledWith("/api/user/verify-wallet", walletData);
+      expect(mockPost).toHaveBeenCalledWith(
+        "/api/user/verify-wallet",
+        walletData
+      );
             expect(result).toEqual(mockResponse);
         });
 
@@ -60,7 +63,9 @@ describe("walletApi", () => {
 
             mockPost.mockRejectedValue(new Error(errorMessage));
 
-            await expect(walletApi.verifyWallet(walletData)).rejects.toThrow(errorMessage);
+      await expect(walletApi.verifyWallet(walletData)).rejects.toThrow(
+        errorMessage
+      );
         });
 
         it("should handle invalid wallet address format", async () => {
@@ -73,7 +78,9 @@ describe("walletApi", () => {
 
             mockPost.mockRejectedValue(new Error(errorMessage));
 
-            await expect(walletApi.verifyWallet(walletData)).rejects.toThrow(errorMessage);
+      await expect(walletApi.verifyWallet(walletData)).rejects.toThrow(
+        errorMessage
+      );
         });
     });
 
@@ -96,7 +103,9 @@ describe("walletApi", () => {
         it("should handle unlink wallet errors", async () => {
             mockPost.mockRejectedValue(new Error("No linked wallet found"));
 
-            await expect(walletApi.unlinkWallet()).rejects.toThrow("No linked wallet found");
+      await expect(walletApi.unlinkWallet()).rejects.toThrow(
+        "No linked wallet found"
+      );
         });
     });
 });

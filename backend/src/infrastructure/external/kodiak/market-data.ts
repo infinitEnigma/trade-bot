@@ -31,13 +31,17 @@ export const marketDataMethods = {
     /**
      * Get market ticker data from Kodiak API
      */
-    async getMarketTicker(this: KodiakIntegrationService, symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<KodiakMarketTicker>> {
+  async getMarketTicker(
+    this: KodiakIntegrationService,
+    symbol: string = "PERP_BTC_USDC"
+  ): Promise<KodiakApiResponse<KodiakMarketTicker>> {
         return fetchPublicKodiak<KodiakMarketTicker>({
             path: `/v1/public/futures/${symbol}`,
             cacheKey: `kodiak:ticker:${symbol}`,
             ttlSeconds: 30,
-            extract: (responseData) =>
-                (responseData as { data?: { rows?: KodiakMarketTicker[] } }).data?.rows?.[0] ||
+      extract: responseData =>
+        (responseData as { data?: { rows?: KodiakMarketTicker[] } }).data
+          ?.rows?.[0] ||
                 (responseData as { data?: KodiakMarketTicker }).data ||
                 (responseData as KodiakMarketTicker),
             cacheHitLog: "Returning cached Kodiak ticker data",
@@ -51,7 +55,10 @@ export const marketDataMethods = {
     /**
      * Get orderbook data from Kodiak API
      */
-    async getOrderbook(this: KodiakIntegrationService, symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<KodiakOrderbook>> {
+  async getOrderbook(
+    this: KodiakIntegrationService,
+    symbol: string = "PERP_BTC_USDC"
+  ): Promise<KodiakApiResponse<KodiakOrderbook>> {
         return fetchPublicKodiak<KodiakOrderbook>({
             path: `/v1/public/orderbook?symbol=${symbol}`,
             cacheKey: `kodiak:orderbook:${symbol}`,
@@ -68,7 +75,9 @@ export const marketDataMethods = {
     /**
      * Get TradingView configuration from Kodiak API
      */
-    async getTradingViewConfig(this: KodiakIntegrationService): Promise<KodiakApiResponse<KodiakTradingViewConfig>> {
+  async getTradingViewConfig(
+    this: KodiakIntegrationService
+  ): Promise<KodiakApiResponse<KodiakTradingViewConfig>> {
         return fetchPublicKodiak<KodiakTradingViewConfig>({
             path: `/v1/tv/config`,
             cacheKey: `kodiak:tv:config`,
@@ -84,7 +93,10 @@ export const marketDataMethods = {
     /**
      * Get TradingView symbols from Kodiak API
      */
-    async getTradingViewSymbols(this: KodiakIntegrationService, symbol: string = "PERP_BTC_USDC"): Promise<KodiakApiResponse<KodiakTradingViewSymbols>> {
+  async getTradingViewSymbols(
+    this: KodiakIntegrationService,
+    symbol: string = "PERP_BTC_USDC"
+  ): Promise<KodiakApiResponse<KodiakTradingViewSymbols>> {
         return fetchPublicKodiak<KodiakTradingViewSymbols>({
             path: `/v1/tv/symbols?symbol=${symbol}`,
             cacheKey: `kodiak:tv:symbols:${symbol}`,
@@ -162,9 +174,9 @@ export const marketDataMethods = {
 
                     // Handle different response formats with proper type checking
                     let responseData: KodiakPublicAccountInfo = {};
-                    if (accountInfoData && typeof accountInfoData === 'object') {
+          if (accountInfoData && typeof accountInfoData === "object") {
                         const typedData = accountInfoData as Record<string, unknown>;
-                        if ('data' in typedData && typeof typedData.data === 'object') {
+            if ("data" in typedData && typeof typedData.data === "object") {
                             responseData = typedData.data as KodiakPublicAccountInfo;
                         } else {
                             responseData = accountInfoData as KodiakPublicAccountInfo;
@@ -177,18 +189,29 @@ export const marketDataMethods = {
                     };
 
                     // Cache the result
-                    await redisService.setex(cacheKey, this.CACHE_TTL_MEDIUM, JSON.stringify(result));
+          await redisService.setex(
+            cacheKey,
+            this.CACHE_TTL_MEDIUM,
+            JSON.stringify(result)
+          );
 
-                    logger.debug("Kodiak account info retrieved and cached (authenticated)", {
+          logger.debug(
+            "Kodiak account info retrieved and cached (authenticated)",
+            {
                         accountId,
                         address: result.data?.address,
-                    });
+            }
+          );
 
                     return result;
                 } catch (authError) {
-                    logger.error("Authenticated request failed, trying public request", authError as Error, {
+          logger.error(
+            "Authenticated request failed, trying public request",
+            authError as Error,
+            {
                         accountId,
-                    });
+            }
+          );
                 }
             }
 
@@ -201,12 +224,15 @@ export const marketDataMethods = {
                 baseUrl,
             });
 
-            const response = await fetch(requestUrl, this.createFetchOptions({
+      const response = await fetch(
+        requestUrl,
+        this.createFetchOptions({
                 headers: {
-                    "Accept": "application/json",
+            Accept: "application/json",
                     "User-Agent": "Mozilla/5.0 (compatible; TradeBot/1.0)",
                 },
-            }));
+        })
+      );
 
             logger.debug("Kodiak public account API response received", {
                 status: response.status,
@@ -222,22 +248,24 @@ export const marketDataMethods = {
                     statusText: response.statusText,
                     error: errorText,
                 });
-                throw new Error(`Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`);
+        throw new Error(
+          `Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`
+        );
             }
 
             const responseData = await response.json();
 
             // Validate response structure
-            if (!responseData || typeof responseData !== 'object') {
+      if (!responseData || typeof responseData !== "object") {
                 throw new Error("Invalid API response structure");
             }
 
             // Extract data safely with proper type checking
             let accountData: KodiakPublicAccountInfo = {};
             const typedResponse = responseData as Record<string, unknown>;
-            if ('data' in typedResponse && typeof typedResponse.data === 'object') {
+      if ("data" in typedResponse && typeof typedResponse.data === "object") {
                 accountData = typedResponse.data as KodiakPublicAccountInfo;
-            } else if (typeof typedResponse === 'object') {
+      } else if (typeof typedResponse === "object") {
                 accountData = typedResponse as KodiakPublicAccountInfo;
             } else {
                 throw new Error("Invalid account data structure");
@@ -249,7 +277,11 @@ export const marketDataMethods = {
             };
 
             // Cache the result
-            await redisService.setex(cacheKey, this.CACHE_TTL_MEDIUM, JSON.stringify(result));
+      await redisService.setex(
+        cacheKey,
+        this.CACHE_TTL_MEDIUM,
+        JSON.stringify(result)
+      );
 
             logger.debug("Kodiak account info retrieved and cached (public)", {
                 accountId,

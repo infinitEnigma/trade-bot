@@ -7,7 +7,10 @@
 
 import { Router, Response } from "express";
 import Joi from "joi";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
+import {
+  authMiddleware,
+  AuthenticatedRequest,
+} from "../../middleware/auth.middleware";
 import { serviceProvider } from "../../../core/service-provider";
 import { createErrorResponse } from "@trade-bot/shared";
 import { getCorrelationId } from "../../../shared/utils/context";
@@ -18,10 +21,10 @@ const router = Router();
 // Profile update validation schema
 const profileUpdateSchema = Joi.object({
     email: Joi.string().email().optional(),
-    currentPassword: Joi.string().when('newPassword', {
+  currentPassword: Joi.string().when("newPassword", {
         is: Joi.exist(),
         then: Joi.required(),
-        otherwise: Joi.forbidden()
+    otherwise: Joi.forbidden(),
     }),
     newPassword: Joi.string().min(8).optional(),
 });
@@ -34,7 +37,10 @@ const walletVerificationSchema = Joi.object({
 });
 
 // GET /api/user/profile
-router.get("/profile", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get(
+  "/profile",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Ensure user is authenticated (should always be true due to authMiddleware)
         if (!req.user) {
@@ -68,19 +74,26 @@ router.get("/profile", authMiddleware, async (req: AuthenticatedRequest, res: Re
         });
     } catch (error) {
         logger.error("Get profile error", error as Error, {
-            ...createErrorResponse(error instanceof Error ? error : new Error(String(error)), getCorrelationId()),
+        ...createErrorResponse(
+          error instanceof Error ? error : new Error(String(error)),
+          getCorrelationId()
+        ),
             userId: req.user?.userId,
         });
 
         res.status(500).json({
             success: false,
-            error: "Failed to get profile"
+        error: "Failed to get profile",
         });
     }
-});
+  }
+);
 
 // POST /api/user/profile/update
-router.post("/profile/update", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.post(
+  "/profile/update",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Ensure user is authenticated (should always be true due to authMiddleware)
         if (!req.user) {
@@ -92,7 +105,7 @@ router.post("/profile/update", authMiddleware, async (req: AuthenticatedRequest,
         if (error) {
             return res.status(400).json({
                 success: false,
-                error: error.details[0].message
+          error: error.details[0].message,
             });
         }
 
@@ -113,10 +126,12 @@ router.post("/profile/update", authMiddleware, async (req: AuthenticatedRequest,
             message: result.message,
             data: result.data,
         });
-
     } catch (error) {
         logger.error("Profile update error", error as Error, {
-            ...createErrorResponse(error instanceof Error ? error : new Error(String(error)), getCorrelationId()),
+        ...createErrorResponse(
+          error instanceof Error ? error : new Error(String(error)),
+          getCorrelationId()
+        ),
             userId: req.user?.userId,
         });
 
@@ -125,10 +140,14 @@ router.post("/profile/update", authMiddleware, async (req: AuthenticatedRequest,
             error: "Failed to update profile",
         });
     }
-});
+  }
+);
 
 // POST /api/user/verify-wallet
-router.post("/verify-wallet", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.post(
+  "/verify-wallet",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Ensure user is authenticated (should always be true due to authMiddleware)
         if (!req.user) {
@@ -164,10 +183,12 @@ router.post("/verify-wallet", authMiddleware, async (req: AuthenticatedRequest, 
             success: true,
             message: result.message,
         });
-
     } catch (error) {
         logger.error("Wallet verification error", error as Error, {
-            ...createErrorResponse(error instanceof Error ? error : new Error(String(error)), getCorrelationId()),
+        ...createErrorResponse(
+          error instanceof Error ? error : new Error(String(error)),
+          getCorrelationId()
+        ),
             userId: req.user?.userId,
         });
 
@@ -176,14 +197,18 @@ router.post("/verify-wallet", authMiddleware, async (req: AuthenticatedRequest, 
             error: "Failed to verify wallet",
         });
     }
-});
+  }
+);
 
 // POST /api/user/unlink-wallet
 // Removes the linked wallet. REGISTERED users drop back to BASIC;
 // VERIFIED users drop to REGISTERED (or BASIC if Kodiak is also gone).
 // A plain wagmi "Disconnect" in the browser does NOT call this — it only
 // ends the local session. This endpoint is the explicit, audited downgrade.
-router.post("/unlink-wallet", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.post(
+  "/unlink-wallet",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         if (!req.user) {
             throw new Error("User not authenticated");
@@ -203,16 +228,20 @@ router.post("/unlink-wallet", authMiddleware, async (req: AuthenticatedRequest, 
         // unlinkWallet downgrades the user level but does not touch the
         // profile cache - clear it so GET /profile reflects the downgrade
         // instead of serving a stale 304.
-        await serviceProvider.getUserProfileService().invalidateUserProfileCache(userId);
+      await serviceProvider
+        .getUserProfileService()
+        .invalidateUserProfileCache(userId);
 
         res.json({
             success: true,
             message: result.message,
         });
-
     } catch (error) {
         logger.error("Wallet unlink error", error as Error, {
-            ...createErrorResponse(error instanceof Error ? error : new Error(String(error)), getCorrelationId()),
+        ...createErrorResponse(
+          error instanceof Error ? error : new Error(String(error)),
+          getCorrelationId()
+        ),
             userId: req.user?.userId,
         });
 
@@ -221,6 +250,7 @@ router.post("/unlink-wallet", authMiddleware, async (req: AuthenticatedRequest, 
             error: "Failed to unlink wallet",
         });
     }
-});
+  }
+);
 
 export { router as userProfileRoutes };

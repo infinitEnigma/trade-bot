@@ -1,7 +1,10 @@
 /** @format */
 
 import { describe, it, expect, vi, beforeEach, Mock } from "vitest";
-import { kodiakApi, type KodiakCredentials } from "../../../infrastructure/api/kodiak";
+import {
+  kodiakApi,
+  type KodiakCredentials,
+} from "../../../infrastructure/api/kodiak";
 import { httpClient } from "../../../infrastructure/api/client";
 import { globalRequestManager } from "../../../infrastructure/request-manager";
 
@@ -231,7 +234,9 @@ describe("kodiakApi", () => {
                 },
             };
 
-            const spy = vi.spyOn(globalRequestManager, "deduplicateRequest").mockResolvedValue(mockResponse);
+      const spy = vi
+        .spyOn(globalRequestManager, "deduplicateRequest")
+        .mockResolvedValue(mockResponse);
 
             const result = await kodiakApi.getKodiakPositions();
 
@@ -249,11 +254,11 @@ describe("kodiakApi", () => {
                 response: { status: 403 },
             };
 
-            const spy = vi.spyOn(globalRequestManager, "deduplicateRequest").mockImplementation(
-                async () => {
+      const spy = vi
+        .spyOn(globalRequestManager, "deduplicateRequest")
+        .mockImplementation(async () => {
                     throw mockError;
-                }
-            );
+        });
 
             await expect(kodiakApi.getKodiakPositions()).rejects.toEqual(mockError);
             spy.mockRestore();
@@ -273,7 +278,9 @@ describe("kodiakApi", () => {
                 },
             };
 
-            const spy = vi.spyOn(globalRequestManager, "deduplicateRequest").mockResolvedValue(mockResponse);
+      const spy = vi
+        .spyOn(globalRequestManager, "deduplicateRequest")
+        .mockResolvedValue(mockResponse);
 
             const result = await kodiakApi.getKodiakTrades(limit);
 
@@ -292,11 +299,11 @@ describe("kodiakApi", () => {
                 response: { status: 400 },
             };
 
-            const spy = vi.spyOn(globalRequestManager, "deduplicateRequest").mockImplementation(
-                async () => {
+      const spy = vi
+        .spyOn(globalRequestManager, "deduplicateRequest")
+        .mockImplementation(async () => {
                     throw mockError;
-                }
-            );
+        });
 
             await expect(kodiakApi.getKodiakTrades(limit)).rejects.toEqual(mockError);
             spy.mockRestore();

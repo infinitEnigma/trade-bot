@@ -4,10 +4,10 @@ import {
     IRoleRepository,
     UserRole,
     RoleDetails,
-    UserRoleAssignment
-} from '@trade-bot/shared';
-import { query } from '../../../database/pool';
-import { databaseLogger as logger } from '../../../core/logging/context-aware-logger.service';
+  UserRoleAssignment,
+} from "@trade-bot/shared";
+import { query } from "../../../database/pool";
+import { databaseLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 /**
  * Role Repository Adapter - Clean Architecture Implementation
@@ -17,11 +17,15 @@ import { databaseLogger as logger } from '../../../core/logging/context-aware-lo
  * enabling dependency injection and testability for pure business logic.
  */
 export class RoleRepositoryAdapter implements IRoleRepository {
-
     /**
      * Assign a role to a user
      */
-    async assignRole(userId: string, role: UserRole, grantedBy: string, criteria?: unknown): Promise<void> {
+  async assignRole(
+    userId: string,
+    role: UserRole,
+    grantedBy: string,
+    criteria?: unknown
+  ): Promise<void> {
         try {
             // Check if role already exists
             const existingRole = await query(
@@ -45,16 +49,16 @@ export class RoleRepositoryAdapter implements IRoleRepository {
                 userId,
                 role,
                 grantedBy,
-                criteria
+        criteria,
             });
-
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             logger.error("Failed to assign role", error as Error, {
                 userId,
                 role,
                 grantedBy,
-                error: errorMessage
+        error: errorMessage,
             });
             throw error;
         }
@@ -79,13 +83,13 @@ export class RoleRepositoryAdapter implements IRoleRepository {
             }
 
             return removed;
-
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             logger.error("Failed to remove role", error as Error, {
                 userId,
                 role,
-                error: errorMessage
+        error: errorMessage,
             });
             throw error;
         }
@@ -103,11 +107,12 @@ export class RoleRepositoryAdapter implements IRoleRepository {
 
             return result.rows.length > 0;
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             logger.error("Failed to check user role", error as Error, {
                 userId,
                 role,
-                error: errorMessage
+        error: errorMessage,
             });
             return false;
         }
@@ -125,10 +130,11 @@ export class RoleRepositoryAdapter implements IRoleRepository {
 
             return result.rows.map(row => row.role);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             logger.error("Failed to get user roles", error as Error, {
                 userId,
-                error: errorMessage
+        error: errorMessage,
             });
             return [];
         }
@@ -137,7 +143,10 @@ export class RoleRepositoryAdapter implements IRoleRepository {
     /**
      * Get role details including grant information
      */
-    async getRoleDetails(userId: string, role: UserRole): Promise<RoleDetails | null> {
+  async getRoleDetails(
+    userId: string,
+    role: UserRole
+  ): Promise<RoleDetails | null> {
         try {
             const result = await query(
                 "SELECT granted_at, granted_by, criteria_met FROM user_roles WHERE user_id = $1 AND role = $2",
@@ -163,18 +172,14 @@ export class RoleRepositoryAdapter implements IRoleRepository {
                 }
             }
 
-            return new RoleDetails(
-                row.granted_at,
-                row.granted_by,
-                criteriaMet
-            );
-
+      return new RoleDetails(row.granted_at, row.granted_by, criteriaMet);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             logger.error("Failed to get role details", error as Error, {
                 userId,
                 role,
-                error: errorMessage
+        error: errorMessage,
             });
             return null;
         }
@@ -215,12 +220,12 @@ export class RoleRepositoryAdapter implements IRoleRepository {
                     criteriaMet
                 );
             });
-
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             logger.error("Failed to get users with role", error as Error, {
                 role,
-                error: errorMessage
+        error: errorMessage,
             });
             return [];
         }

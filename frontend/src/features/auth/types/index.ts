@@ -7,5 +7,5 @@ export type {
     AuthState,
     AuthActions,
     AuthContextType,
-    QualificationStatus
+  QualificationStatus,
 } from "./auth.types";

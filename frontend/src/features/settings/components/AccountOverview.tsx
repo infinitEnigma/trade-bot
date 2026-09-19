@@ -16,7 +16,7 @@ interface AccountOverviewProps {
  */
 export const AccountOverview: React.FC<AccountOverviewProps> = ({
   overview,
-  statusLoading
+  statusLoading,
 }) => {
   return (
     <Card>
@@ -38,9 +38,15 @@ export const AccountOverview: React.FC<AccountOverviewProps> = ({
         </div>
 
         <div className="flex items-center gap-3 p-4 rounded-lg bg-surface border border-white/5">
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-            statusLoading ? "bg-warning/10" : overview.kodiakConnected ? "bg-success/10" : "bg-warning/10"
-          }`}>
+          <div
+            className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+              statusLoading
+                ? "bg-warning/10"
+                : overview.kodiakConnected
+                  ? "bg-success/10"
+                  : "bg-warning/10"
+            }`}
+          >
             {statusLoading ? (
               <Loader2 className="w-4 h-4 animate-spin text-warning" />
             ) : overview.kodiakConnected ? (

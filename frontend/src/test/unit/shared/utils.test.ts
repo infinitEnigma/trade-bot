@@ -49,8 +49,15 @@ describe("utils.ts", () => {
 
     describe("shortenAddress function", () => {
         it("should shorten addresses", () => {
-            expect(shortenAddress("0x1234567890abcdef1234567890abcdef12345678")).toBe("0x12345...5678");
-            expect(shortenAddress("0x1234567890abcdef1234567890abcdef12345678", { startLength: 4, endLength: 2 })).toBe("0x12...78");
+      expect(shortenAddress("0x1234567890abcdef1234567890abcdef12345678")).toBe(
+        "0x12345...5678"
+      );
+      expect(
+        shortenAddress("0x1234567890abcdef1234567890abcdef12345678", {
+          startLength: 4,
+          endLength: 2,
+        })
+      ).toBe("0x12...78");
         });
     });
 
@@ -150,9 +157,15 @@ describe("utils.ts", () => {
 
     describe("getGradientClass function", () => {
         it("should generate gradient classes correctly", () => {
-            expect(getGradientClass("blue-500", "red-500")).toBe("bg-gradient-to-right from-blue-500 to-red-500");
-            expect(getGradientClass("green-500", "purple-500", "to bottom")).toBe("bg-gradient-to-bottom from-green-500 to-purple-500");
-            expect(getGradientClass("yellow-500", "orange-500", "to top-left")).toBe("bg-gradient-to-top-left from-yellow-500 to-orange-500");
+      expect(getGradientClass("blue-500", "red-500")).toBe(
+        "bg-gradient-to-right from-blue-500 to-red-500"
+      );
+      expect(getGradientClass("green-500", "purple-500", "to bottom")).toBe(
+        "bg-gradient-to-bottom from-green-500 to-purple-500"
+      );
+      expect(getGradientClass("yellow-500", "orange-500", "to top-left")).toBe(
+        "bg-gradient-to-top-left from-yellow-500 to-orange-500"
+      );
         });
     });
 
@@ -172,7 +185,7 @@ describe("utils.ts", () => {
 
         it("should copy text to clipboard using document.execCommand fallback", async () => {
             // Mock navigator.clipboard to be undefined to test fallback
-            Object.defineProperty(navigator, 'clipboard', {
+      Object.defineProperty(navigator, "clipboard", {
                 value: undefined,
                 writable: true,
             });
@@ -211,7 +224,7 @@ describe("utils.ts", () => {
 
         it("should return false when clipboard copy fails", async () => {
             // Mock navigator.clipboard to be undefined to test fallback failure
-            Object.defineProperty(navigator, 'clipboard', {
+      Object.defineProperty(navigator, "clipboard", {
                 value: undefined,
                 writable: true,
             });
@@ -253,7 +266,9 @@ describe("utils.ts", () => {
             expect(getValueColorClass(-5)).toBe("text-red-500");
             expect(getValueColorClass(0)).toBe("text-gray-400");
 
-            expect(getValueColorClass(10, { positive: "text-blue-500" })).toBe("text-blue-500");
+      expect(getValueColorClass(10, { positive: "text-blue-500" })).toBe(
+        "text-blue-500"
+      );
         });
     });
 
@@ -288,7 +303,9 @@ describe("utils.ts", () => {
             //const futureToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiO" + (Math.floor(Date.now() / 1000) + 3600);
 
             // Create a token that expired 1 hour ago
-            const expiredToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiO" + (Math.floor(Date.now() / 1000) - 3600);
+      const expiredToken =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiO" +
+        (Math.floor(Date.now() / 1000) - 3600);
 
             expect(isTokenExpired(expiredToken)).toBe(true);
         });

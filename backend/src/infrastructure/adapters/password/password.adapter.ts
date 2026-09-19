@@ -8,9 +8,12 @@
  * @format
  */
 
-import { IPasswordService } from '@trade-bot/shared';
-import { hashPassword, comparePassword } from '../../../workers/password-worker';
-import { securityLogger as logger } from '../../../core/logging/context-aware-logger.service';
+import { IPasswordService } from "@trade-bot/shared";
+import {
+  hashPassword,
+  comparePassword,
+} from "../../../workers/password-worker";
+import { securityLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 /**
  * Password Service Adapter
@@ -19,7 +22,6 @@ import { securityLogger as logger } from '../../../core/logging/context-aware-lo
  * password hashing system. Provides secure, non-blocking password operations.
  */
 export class PasswordAdapter implements IPasswordService {
-
     /**
      * Hash a password using bcrypt with worker threads (non-blocking)
      *
@@ -30,16 +32,17 @@ export class PasswordAdapter implements IPasswordService {
     async hash(password: string, rounds: number = 12): Promise<string> {
         try {
             if (!password || password.length === 0) {
-                throw new Error('Password cannot be empty');
+        throw new Error("Password cannot be empty");
             }
 
             if (rounds < 8 || rounds > 20) {
-                throw new Error('Bcrypt rounds must be between 8 and 20');
+        throw new Error("Bcrypt rounds must be between 8 and 20");
             }
 
             return await hashPassword(password, rounds);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Password hashing failed: ${errorMessage}`);
         }
     }
@@ -65,8 +68,12 @@ export class PasswordAdapter implements IPasswordService {
         } catch (error) {
             // For security, verification errors should return false
             // rather than throwing exceptions that could leak information
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error(`Password verification error: ${errorMessage}`, error as Error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(
+        `Password verification error: ${errorMessage}`,
+        error as Error
+      );
             return false;
         }
     }
@@ -78,7 +85,7 @@ export class PasswordAdapter implements IPasswordService {
      */
     getRecommendedRounds(): number {
         // Adjust based on environment and performance requirements
-        if (process.env.NODE_ENV === 'test') {
+    if (process.env.NODE_ENV === "test") {
             return 8; // Faster for tests
         }
 
@@ -94,23 +101,26 @@ export class PasswordAdapter implements IPasswordService {
      * @param password - Password to validate
      * @returns { valid: boolean, errors: string[] } - Validation result
      */
-    validatePasswordStrength(password: string): { valid: boolean; errors: string[] } {
+  validatePasswordStrength(password: string): {
+    valid: boolean;
+    errors: string[];
+  } {
         const errors: string[] = [];
 
         if (!password || password.length < 8) {
-            errors.push('Password must be at least 8 characters long');
+      errors.push("Password must be at least 8 characters long");
         }
 
         if (!/[A-Z]/.test(password)) {
-            errors.push('Password must contain at least one uppercase letter');
+      errors.push("Password must contain at least one uppercase letter");
         }
 
         if (!/[a-z]/.test(password)) {
-            errors.push('Password must contain at least one lowercase letter');
+      errors.push("Password must contain at least one lowercase letter");
         }
 
         if (!/\d/.test(password)) {
-            errors.push('Password must contain at least one number');
+      errors.push("Password must contain at least one number");
         }
 
         // Optional: Check for special characters
@@ -120,7 +130,7 @@ export class PasswordAdapter implements IPasswordService {
 
         return {
             valid: errors.length === 0,
-            errors
+      errors,
         };
     }
 }

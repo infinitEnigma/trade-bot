@@ -4,7 +4,13 @@ import { kodiakIntegrationService } from "../../../infrastructure/external/kodia
 import { createErrorResponse, ExternalServiceError } from "@trade-bot/shared";
 import { getCorrelationId } from "../../../shared/utils/context";
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
-import { DEFAULT_SYMBOL, errMessage, INTERVAL_SECONDS, marketLogger, RESOLUTION_MAP } from "./market-helpers";
+import {
+  DEFAULT_SYMBOL,
+  errMessage,
+  INTERVAL_SECONDS,
+  marketLogger,
+  RESOLUTION_MAP,
+} from "./market-helpers";
 import { toKlines } from "./market-cache";
 
 export const klinesRoutes = Router();
@@ -60,10 +66,13 @@ klinesRoutes.get(
                 error: errMessage(err),
                 operation: "klines_endpoint",
             });
-            const externalError = new ExternalServiceError("Kodiak API", { service: "Kodiak", operation: "get_klines" });
-            res.status(externalError.statusCode).json(
-                createErrorResponse(externalError, getCorrelationId())
-            );
+      const externalError = new ExternalServiceError("Kodiak API", {
+        service: "Kodiak",
+        operation: "get_klines",
+      });
+      res
+        .status(externalError.statusCode)
+        .json(createErrorResponse(externalError, getCorrelationId()));
         }
     }
 );

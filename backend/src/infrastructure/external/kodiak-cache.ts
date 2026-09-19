@@ -58,11 +58,11 @@ export interface CacheConfig {
 
     /** Endpoint-specific TTL overrides */
     endpointTtlMs: {
-        positions: 600000,   // ⬆️ 10min - was 30s (still reasonable for trading)
-        trades: 600000,      // ⬆️ 10min - was 30s (reduce API calls)
-        balance: 300000,     // ⬆️ 5min - was 15s (balance changes less frequently)
-        accountInfo: 1800000,// ⬆️ 30min - was 60s (account info is stable)
-        status: 300000,      // 5min - connection status (unchanged)
+    positions: 600000; // ⬆️ 10min - was 30s (still reasonable for trading)
+    trades: 600000; // ⬆️ 10min - was 30s (reduce API calls)
+    balance: 300000; // ⬆️ 5min - was 15s (balance changes less frequently)
+    accountInfo: 1800000; // ⬆️ 30min - was 60s (account info is stable)
+    status: 300000; // 5min - connection status (unchanged)
     };
 }
 
@@ -158,7 +158,7 @@ export class KodiakCache<T = unknown> {
             logger.debug("Cache eviction triggered", {
                 currentSize: this.cache.size,
                 maxSize: this.config.maxEntries,
-                keyToBeAdded: key
+        keyToBeAdded: key,
             });
             this.evictOldest();
         }
@@ -178,7 +178,7 @@ export class KodiakCache<T = unknown> {
         logger.debug("Cache entry added", {
             key,
             cacheSize: this.cache.size,
-            maxSize: this.config.maxEntries
+      maxSize: this.config.maxEntries,
         });
     }
 
@@ -223,13 +223,19 @@ export class KodiakCache<T = unknown> {
             ...this.stats,
             totalEntries: this.cache.size,
             hitRate: this.stats.hits / (this.stats.hits + this.stats.misses) || 0,
-            averageAge: entries.length > 0
-                ? entries.reduce((sum, entry) => sum + (now - entry.lastAccessed), 0) / entries.length
+      averageAge:
+        entries.length > 0
+          ? entries.reduce(
+              (sum, entry) => sum + (now - entry.lastAccessed),
+              0
+            ) / entries.length
                 : 0,
-            oldestEntry: entries.length > 0
+      oldestEntry:
+        entries.length > 0
                 ? Math.min(...entries.map(entry => now - entry.lastAccessed))
                 : 0,
-            newestEntry: entries.length > 0
+      newestEntry:
+        entries.length > 0
                 ? Math.max(...entries.map(entry => now - entry.lastAccessed))
                 : 0,
         };
@@ -239,7 +245,11 @@ export class KodiakCache<T = unknown> {
      * Get TTL for specific endpoint
      */
     private getTtlForEndpoint(endpoint: string): number {
-        return this.config.endpointTtlMs[endpoint as keyof typeof this.config.endpointTtlMs] || this.config.defaultTtlMs;
+    return (
+      this.config.endpointTtlMs[
+        endpoint as keyof typeof this.config.endpointTtlMs
+      ] || this.config.defaultTtlMs
+    );
     }
 
     /**
@@ -247,8 +257,8 @@ export class KodiakCache<T = unknown> {
      */
     private extractUserIdFromKey(key: string): string {
         // Key format: "endpoint:userId" or "endpoint:userId:extra"
-        const parts = key.split(':');
-        return parts.length >= 2 ? parts[1] : 'unknown';
+    const parts = key.split(":");
+    return parts.length >= 2 ? parts[1] : "unknown";
     }
 
     /**
@@ -256,8 +266,8 @@ export class KodiakCache<T = unknown> {
      */
     private extractEndpointFromKey(key: string): string {
         // Key format: "endpoint:userId" or "endpoint:userId:extra"
-        const parts = key.split(':');
-        return parts.length >= 1 ? parts[0] : 'unknown';
+    const parts = key.split(":");
+    return parts.length >= 1 ? parts[0] : "unknown";
     }
 
     /**
@@ -269,14 +279,14 @@ export class KodiakCache<T = unknown> {
 
         logger.debug("Starting eviction process", {
             currentSize: this.cache.size,
-            maxSize: this.config.maxEntries
+      maxSize: this.config.maxEntries,
         });
 
         for (const [key, entry] of this.cache.entries()) {
             logger.debug("Checking entry for eviction", {
                 key,
                 lastAccessed: entry.lastAccessed,
-                oldestAccess
+        oldestAccess,
             });
             if (entry.lastAccessed < oldestAccess) {
                 oldestAccess = entry.lastAccessed;
@@ -287,7 +297,7 @@ export class KodiakCache<T = unknown> {
         if (oldestKey) {
             logger.debug("Evicting oldest entry", {
                 key: oldestKey,
-                age: Date.now() - oldestAccess
+        age: Date.now() - oldestAccess,
             });
             this.cache.delete(oldestKey);
             this.stats.evictions++;

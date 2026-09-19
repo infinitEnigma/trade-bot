@@ -12,7 +12,8 @@ import { WEBSOCKET_CONSTANTS } from "../../messaging/websocket/types";
  */
 export class WebSocketRateLimiter implements IRateLimiter {
     private readonly WINDOW_MS = WEBSOCKET_CONSTANTS.RATE_LIMIT.WINDOW_MS;
-    private readonly MAX_REQUESTS = WEBSOCKET_CONSTANTS.RATE_LIMIT.TOKENS_PER_WINDOW;
+  private readonly MAX_REQUESTS =
+    WEBSOCKET_CONSTANTS.RATE_LIMIT.TOKENS_PER_WINDOW;
 
     constructor() {
         logger.debug("WebSocketRateLimiter initialized", {
@@ -130,7 +131,8 @@ export class WebSocketRateLimiter implements IRateLimiter {
                     if (currentResult.success && currentResult.data !== null) {
                         const used = parseInt(currentResult.data);
                         const remaining = Math.max(0, this.MAX_REQUESTS - used);
-                        const resetTime = now + (ttlResult.success ? ttlResult.ttl * 1000 : this.WINDOW_MS);
+            const resetTime =
+              now + (ttlResult.success ? ttlResult.ttl * 1000 : this.WINDOW_MS);
 
                         return {
                             used,
@@ -148,7 +150,11 @@ export class WebSocketRateLimiter implements IRateLimiter {
             }
 
             // Fallback to memory rate limiter
-            const memoryResult = memoryRateLimiter.check(key, this.MAX_REQUESTS, this.WINDOW_MS);
+      const memoryResult = memoryRateLimiter.check(
+        key,
+        this.MAX_REQUESTS,
+        this.WINDOW_MS
+      );
             const used = this.MAX_REQUESTS - memoryResult.remaining;
 
             return {

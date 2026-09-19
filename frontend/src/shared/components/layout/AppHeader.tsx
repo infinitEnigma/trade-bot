@@ -4,13 +4,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../../features/auth";
 import { SmartNavigation } from "./SmartNavigation";
-import {
-  LogOut,
-  User,
-  CreditCard,
-  Zap,
-  ChevronDown,
-} from "lucide-react";
+import { LogOut, User, CreditCard, Zap, ChevronDown } from "lucide-react";
 import { ThemeToggle } from "../ui/ThemeToggle";
 
 interface AppHeaderProps {

@@ -2,7 +2,10 @@
 
 import { kodiakApi } from "../../../infrastructure/api";
 import { KodiakCredentials, KodiakStatus } from "../types/settings.types";
-import { KodiakConnectResponse, KodiakDisconnectResponse } from "../../../infrastructure/api/kodiak";
+import {
+  KodiakConnectResponse,
+  KodiakDisconnectResponse,
+} from "../../../infrastructure/api/kodiak";
 
 /**
  * Settings Service
@@ -24,7 +27,9 @@ export class SettingsService {
      * Connect Kodiak credentials
      * Sends encrypted credentials to backend for validation and storage
      */
-    async connectKodiak(credentials: KodiakCredentials): Promise<KodiakConnectResponse> {
+  async connectKodiak(
+    credentials: KodiakCredentials
+  ): Promise<KodiakConnectResponse> {
         try {
             const response = await kodiakApi.connectKodiak(credentials);
             return response;
@@ -93,7 +98,10 @@ export class SettingsService {
         }
 
         // Basic format validation
-        if (credentials.accountId && !/^[a-zA-Z0-9_-]+$/.test(credentials.accountId)) {
+    if (
+      credentials.accountId &&
+      !/^[a-zA-Z0-9_-]+$/.test(credentials.accountId)
+    ) {
             errors.push("Account ID contains invalid characters");
         }
 

@@ -6,7 +6,10 @@
  */
 
 import { Router, Response } from "express";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
+import {
+  authMiddleware,
+  AuthenticatedRequest,
+} from "../../middleware/auth.middleware";
 import { databaseSecurityService } from "../../../infrastructure/security/database-security.service";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
@@ -19,7 +22,10 @@ const adminMiddleware = [authMiddleware];
  * GET /api/security/assessment
  * Get comprehensive database security assessment
  */
-router.get("/assessment", adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get(
+  "/assessment",
+  adminMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Defensive check - user should be set by authMiddleware
         if (!req.user) {
@@ -42,7 +48,6 @@ router.get("/assessment", adminMiddleware, async (req: AuthenticatedRequest, res
             data: assessment,
             generatedAt: new Date().toISOString(),
         });
-
     } catch (error) {
         logger.error("Security assessment failed", error as Error, {
             userId: req.user?.userId,
@@ -53,13 +58,17 @@ router.get("/assessment", adminMiddleware, async (req: AuthenticatedRequest, res
             error: "Failed to generate security assessment",
         });
     }
-});
+  }
+);
 
 /**
  * GET /api/security/metrics
  * Get security metrics for monitoring
  */
-router.get("/metrics", adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get(
+  "/metrics",
+  adminMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Defensive check - user should be set by authMiddleware
         if (!req.user) {
@@ -76,7 +85,6 @@ router.get("/metrics", adminMiddleware, async (req: AuthenticatedRequest, res: R
             success: true,
             data: metrics,
         });
-
     } catch (error) {
         logger.error("Security metrics retrieval failed", error as Error, {
             userId: req.user?.userId,
@@ -87,17 +95,23 @@ router.get("/metrics", adminMiddleware, async (req: AuthenticatedRequest, res: R
             error: "Failed to retrieve security metrics",
         });
     }
-});
+  }
+);
 
 /**
  * GET /api/security/audit-report
  * Generate and download security audit report
  */
-router.get("/audit-report", adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get(
+  "/audit-report",
+  adminMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Defensive check - user should be set by authMiddleware
         if (!req.user) {
-            logger.warn("Security audit report requested without authenticated user");
+        logger.warn(
+          "Security audit report requested without authenticated user"
+        );
             return res.status(401).json({
                 success: false,
                 error: "Unauthorized - user not authenticated",
@@ -109,14 +123,17 @@ router.get("/audit-report", adminMiddleware, async (req: AuthenticatedRequest, r
             userLevel: req.user.userLevel,
         });
 
-        const report = await databaseSecurityService.generateSecurityAuditReport();
+      const report =
+        await databaseSecurityService.generateSecurityAuditReport();
 
         // Set headers for file download
-        res.setHeader('Content-Type', 'text/plain');
-        res.setHeader('Content-Disposition', `attachment; filename="security-audit-${new Date().toISOString().split('T')[0]}.txt"`);
+      res.setHeader("Content-Type", "text/plain");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="security-audit-${new Date().toISOString().split("T")[0]}.txt"`
+      );
 
         res.send(report);
-
     } catch (error) {
         logger.error("Security audit report generation failed", error as Error, {
             userId: req.user?.userId,
@@ -127,13 +144,17 @@ router.get("/audit-report", adminMiddleware, async (req: AuthenticatedRequest, r
             error: "Failed to generate security audit report",
         });
     }
-});
+  }
+);
 
 /**
  * GET /api/security/migration-plan
  * Get encryption migration plan
  */
-router.get("/migration-plan", adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get(
+  "/migration-plan",
+  adminMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Defensive check - user should be set by authMiddleware
         if (!req.user) {
@@ -144,14 +165,14 @@ router.get("/migration-plan", adminMiddleware, async (req: AuthenticatedRequest,
             });
         }
 
-        const migrationPlan = await databaseSecurityService.generateEncryptionMigrationPlan();
+      const migrationPlan =
+        await databaseSecurityService.generateEncryptionMigrationPlan();
 
         res.json({
             success: true,
             data: migrationPlan,
             totalTables: migrationPlan.length,
         });
-
     } catch (error) {
         logger.error("Migration plan generation failed", error as Error, {
             userId: req.user?.userId,
@@ -162,17 +183,23 @@ router.get("/migration-plan", adminMiddleware, async (req: AuthenticatedRequest,
             error: "Failed to generate migration plan",
         });
     }
-});
+  }
+);
 
 /**
  * POST /api/security/migrate-table
  * Migrate encryption for a specific table
  */
-router.post("/migrate-table", adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.post(
+  "/migrate-table",
+  adminMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Defensive check - user should be set by authMiddleware
         if (!req.user) {
-            logger.warn("Table encryption migration requested without authenticated user");
+        logger.warn(
+          "Table encryption migration requested without authenticated user"
+        );
             return res.status(401).json({
                 success: false,
                 error: "Unauthorized - user not authenticated",
@@ -194,7 +221,10 @@ router.post("/migrate-table", adminMiddleware, async (req: AuthenticatedRequest,
             columns,
         });
 
-        const result = await databaseSecurityService.migrateTableEncryption(tableName, columns);
+      const result = await databaseSecurityService.migrateTableEncryption(
+        tableName,
+        columns
+      );
 
         if (!result.success) {
             return res.status(400).json({
@@ -209,7 +239,6 @@ router.post("/migrate-table", adminMiddleware, async (req: AuthenticatedRequest,
             message: `Successfully migrated ${result.migratedRows} records`,
             data: result,
         });
-
     } catch (error) {
         logger.error("Table encryption migration failed", error as Error, {
             userId: req.user?.userId,
@@ -221,17 +250,23 @@ router.post("/migrate-table", adminMiddleware, async (req: AuthenticatedRequest,
             error: "Failed to migrate table encryption",
         });
     }
-});
+  }
+);
 
 /**
  * POST /api/security/enable-encryption
  * Enable database-level encryption (PostgreSQL TDE)
  */
-router.post("/enable-encryption", adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.post(
+  "/enable-encryption",
+  adminMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Defensive check - user should be set by authMiddleware
         if (!req.user) {
-            logger.warn("Database encryption enable requested without authenticated user");
+        logger.warn(
+          "Database encryption enable requested without authenticated user"
+        );
             return res.status(401).json({
                 success: false,
                 error: "Unauthorized - user not authenticated",
@@ -257,7 +292,6 @@ router.post("/enable-encryption", adminMiddleware, async (req: AuthenticatedRequ
             message: result.message,
             requiresRestart: result.requiresRestart,
         });
-
     } catch (error) {
         logger.error("Database encryption enable failed", error as Error, {
             userId: req.user?.userId,
@@ -268,17 +302,23 @@ router.post("/enable-encryption", adminMiddleware, async (req: AuthenticatedRequ
             error: "Failed to enable database encryption",
         });
     }
-});
+  }
+);
 
 /**
  * POST /api/security/rotate-keys
  * Trigger encryption key rotation
  */
-router.post("/rotate-keys", adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.post(
+  "/rotate-keys",
+  adminMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Defensive check - user should be set by authMiddleware
         if (!req.user) {
-            logger.warn("Encryption key rotation requested without authenticated user");
+        logger.warn(
+          "Encryption key rotation requested without authenticated user"
+        );
             return res.status(401).json({
                 success: false,
                 error: "Unauthorized - user not authenticated",
@@ -309,7 +349,6 @@ router.post("/rotate-keys", adminMiddleware, async (req: AuthenticatedRequest, r
             message: "Encryption keys rotated successfully",
             rotated: true,
         });
-
     } catch (error) {
         logger.error("Encryption key rotation failed", error as Error, {
             userId: req.user?.userId,
@@ -320,6 +359,7 @@ router.post("/rotate-keys", adminMiddleware, async (req: AuthenticatedRequest, r
             error: "Failed to rotate encryption keys",
         });
     }
-});
+  }
+);
 
 export { router as securityRoutes };

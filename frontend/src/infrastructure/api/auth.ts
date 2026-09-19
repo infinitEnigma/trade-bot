@@ -1,7 +1,11 @@
 /** @format */
 
 import { httpClient } from "./client";
-import type { ApiResponse, LoginResponse, RegisterResponse } from "@trade-bot/shared";
+import type {
+  ApiResponse,
+  LoginResponse,
+  RegisterResponse,
+} from "@trade-bot/shared";
 
 /**
  * Authentication API endpoints
@@ -9,7 +13,10 @@ import type { ApiResponse, LoginResponse, RegisterResponse } from "@trade-bot/sh
  */
 export const authApi = {
     // Authentication endpoints
-    async register(email: string, password: string): Promise<ApiResponse<RegisterResponse>> {
+  async register(
+    email: string,
+    password: string
+  ): Promise<ApiResponse<RegisterResponse>> {
         const response = await httpClient.getClient().post("/api/auth/register", {
             email,
             password,
@@ -17,7 +24,10 @@ export const authApi = {
         return response.data;
     },
 
-    async login(email: string, password: string): Promise<ApiResponse<LoginResponse>> {
+  async login(
+    email: string,
+    password: string
+  ): Promise<ApiResponse<LoginResponse>> {
         console.log("API: Making login request for:", email);
         const response = await httpClient.getClient().post("/api/auth/login", {
             email,
@@ -28,7 +38,10 @@ export const authApi = {
     },
 
     async getMe(): Promise<ApiResponse<any>> {
-        console.log("🔍 API: getMe() called from:", new Error().stack?.split('\n')[2]?.trim());
+    console.log(
+      "🔍 API: getMe() called from:",
+      new Error().stack?.split("\n")[2]?.trim()
+    );
         const response = await httpClient.getClient().get("/api/auth/me");
         console.log("🔍 API: getMe() response:", response.data);
         return response.data;
@@ -36,25 +49,31 @@ export const authApi = {
 
     // Qualification endpoints
     async checkQualification(): Promise<ApiResponse<any>> {
-        const response = await httpClient.getClient().post("/api/auth/check-qualification");
+    const response = await httpClient
+      .getClient()
+      .post("/api/auth/check-qualification");
         return response.data;
     },
 
     async getQualificationConfig(): Promise<ApiResponse<any>> {
-        const response = await httpClient.getClient().get("/api/auth/qualification-config");
+    const response = await httpClient
+      .getClient()
+      .get("/api/auth/qualification-config");
         return response.data;
     },
 
     /**
      * Get user profile information
      */
-    async getProfile(): Promise<ApiResponse<{
+  async getProfile(): Promise<
+    ApiResponse<{
         user: any;
         kodiakStatus?: {
             accountId: string;
             verified: boolean;
         };
-    }>> {
+    }>
+  > {
         const response = await httpClient.getClient().get("/api/user/profile");
         return response.data;
     },
@@ -63,7 +82,9 @@ export const authApi = {
      * Check admin qualification
      */
     async checkAdminQualification(): Promise<ApiResponse<any>> {
-        const response = await httpClient.getClient().post("/api/auth/check-admin-qualification");
+    const response = await httpClient
+      .getClient()
+      .post("/api/auth/check-admin-qualification");
         return response.data;
     },
 };

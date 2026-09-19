@@ -12,11 +12,20 @@
 import { BotActualState } from "@trade-bot/shared";
 import { query } from "../../../database/pool";
 import { contextLogger as logger } from "../../logging";
-import { BOT_COMMAND_TIMEOUT_MS, BotRow, LifecycleEventInput, PersistTransitionInput, TrackedCommandRow } from "./types";
+import {
+  BOT_COMMAND_TIMEOUT_MS,
+  BotRow,
+  LifecycleEventInput,
+  PersistTransitionInput,
+  TrackedCommandRow,
+} from "./types";
 
 export class BotLifecycleRepository {
     async findBot(botId: string): Promise<BotRow | null> {
-        const result = await query<BotRow>("SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id FROM bot_instances WHERE id = $1", [botId]);
+    const result = await query<BotRow>(
+      "SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id FROM bot_instances WHERE id = $1",
+      [botId]
+    );
         return result.rows[0] ?? null;
     }
 
@@ -81,12 +90,23 @@ export class BotLifecycleRepository {
      * Append to the lifecycle audit trail. Audit failures never break the
      * lifecycle flow itself - they are logged and swallowed.
      */
-    async recordLifecycleEvent(botId: string, input: LifecycleEventInput): Promise<void> {
+  async recordLifecycleEvent(
+    botId: string,
+    input: LifecycleEventInput
+  ): Promise<void> {
         try {
             await query(
                 `INSERT INTO bot_lifecycle_events (bot_id, event_type, from_state, to_state, correlation_id, message_id, metadata)
                  VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                [botId, input.eventType, input.fromState, input.toState, input.correlationId, input.messageId, JSON.stringify(input.metadata)]
+        [
+          botId,
+          input.eventType,
+          input.fromState,
+          input.toState,
+          input.correlationId,
+          input.messageId,
+          JSON.stringify(input.metadata),
+        ]
             );
         } catch (error) {
             logger.error("Failed to record lifecycle event", undefined, {
@@ -106,7 +126,11 @@ export class BotLifecycleRepository {
      * this table to detect commands that Redis accepted but the engine never
      * processed (e.g. engine down), so bots cannot be stuck in STARTING/STOPPING.
      */
-    async recordPendingCommand(botId: string, correlationId: string, commandType: string): Promise<void> {
+  async recordPendingCommand(
+    botId: string,
+    correlationId: string,
+    commandType: string
+  ): Promise<void> {
         try {
             await query(
                 `INSERT INTO bot_commands (correlation_id, bot_id, command_type, state, expires_at)
@@ -130,7 +154,12 @@ export class BotLifecycleRepository {
      * Mark a tracked command resolved. Unknown correlationIds are ignored so
      * events for commands tracked before this feature keep working.
      */
-    async resolveCommand(correlationId: string, state: "ACCEPTED" | "FAILED", errorCode?: string, errorMessage?: string): Promise<void> {
+  async resolveCommand(
+    correlationId: string,
+    state: "ACCEPTED" | "FAILED",
+    errorCode?: string,
+    errorMessage?: string
+  ): Promise<void> {
         try {
             await query(
                 `UPDATE bot_commands
@@ -154,7 +183,9 @@ export class BotLifecycleRepository {
      * Look up a tracked command by correlationId - used for stale-generation
      * rejection of engine events (delayed events from superseded commands).
      */
-    async findTrackedCommand(correlationId: string): Promise<{ bot_id: string; state: string } | null> {
+  async findTrackedCommand(
+    correlationId: string
+  ): Promise<{ bot_id: string; state: string } | null> {
         const result = await query<{ bot_id: string; state: string }>(
             "SELECT bot_id, state FROM bot_commands WHERE correlation_id = $1",
             [correlationId]
@@ -215,19 +246,32 @@ export class BotLifecycleRepository {
     }
 
     /** Non-secret strategy configuration for the start command payload. */
-    async findStrategyConfig(strategyId: string): Promise<Record<string, unknown>> {
-        const result = await query<{ config: Record<string, unknown> | null }>("SELECT config FROM strategies WHERE id = $1", [strategyId]);
+  async findStrategyConfig(
+    strategyId: string
+  ): Promise<Record<string, unknown>> {
+    const result = await query<{ config: Record<string, unknown> | null }>(
+      "SELECT config FROM strategies WHERE id = $1",
+      [strategyId]
+    );
         return result.rows[0]?.config ?? {};
     }
 
     /** Whether a strategy exists and belongs to the user (createAndStart). */
-    async strategyExistsForUser(strategyId: string, userId: string): Promise<boolean> {
-        const result = await query<{ id: string }>("SELECT id FROM strategies WHERE id = $1 AND user_id = $2", [strategyId, userId]);
+  async strategyExistsForUser(
+    strategyId: string,
+    userId: string
+  ): Promise<boolean> {
+    const result = await query<{ id: string }>(
+      "SELECT id FROM strategies WHERE id = $1 AND user_id = $2",
+      [strategyId, userId]
+    );
         return result.rows.length > 0;
     }
 
     /** The active (STARTING/RUNNING) bot for a strategy, if any - one active bot per strategy. */
-    async findActiveBotForStrategy(strategyId: string): Promise<{ id: string } | null> {
+  async findActiveBotForStrategy(
+    strategyId: string
+  ): Promise<{ id: string } | null> {
         const result = await query<{ id: string }>(
             "SELECT id FROM bot_instances WHERE strategy_id = $1 AND actual_state IN ('STARTING', 'RUNNING')",
             [strategyId]

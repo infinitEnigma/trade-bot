@@ -30,7 +30,10 @@ export const useUser = () => {
         retry: (failureCount, error: Error) => {
             // Don't retry on 401/403 (auth errors)
             const apiError = error as ApiError;
-            if (apiError?.response?.status === 401 || apiError?.response?.status === 403) {
+      if (
+        apiError?.response?.status === 401 ||
+        apiError?.response?.status === 403
+      ) {
                 return false;
             }
             // Retry up to 2 times for other errors
@@ -49,7 +52,9 @@ export const useKodiakStatus = () => {
     const { data: userData } = useUser();
 
     // Follow existing pattern: only fetch for users who have Kodiak access
-    const hasKodiakAccess = user?.userLevel === UserLevel.REGISTERED || user?.userLevel === UserLevel.VERIFIED;
+  const hasKodiakAccess =
+    user?.userLevel === UserLevel.REGISTERED ||
+    user?.userLevel === UserLevel.VERIFIED;
     const queryResult = useQuery({
         queryKey: ["kodiak-status", user?.id],
         queryFn: () => kodiakApi.getKodiakStatus(),
@@ -62,7 +67,11 @@ export const useKodiakStatus = () => {
         retry: (failureCount, error: Error) => {
             // Don't retry auth errors
             const apiError = error as ApiError;
-            if (apiError?.response?.status === 401 || apiError?.response?.status === 403 || apiError?.response?.status === 429) {
+      if (
+        apiError?.response?.status === 401 ||
+        apiError?.response?.status === 403 ||
+        apiError?.response?.status === 429
+      ) {
                 return false;
             }
             return failureCount < 1; // Only retry once for Kodiak status
@@ -71,15 +80,18 @@ export const useKodiakStatus = () => {
 
     // For REGISTERED/VERIFIED users, assume Kodiak is connected if API fails
     // This ensures consistency between user level and Kodiak status display
-    const modifiedData = queryResult.data ? queryResult.data :
-        (hasKodiakAccess ? {
+  const modifiedData = queryResult.data
+    ? queryResult.data
+    : hasKodiakAccess
+      ? {
             data: {
                 connected: true,
                 verified: user?.userLevel === UserLevel.VERIFIED,
                 accountId: userData?.data?.kodiakStatus?.accountId, // Get accountId from user profile
-                connectedAt: undefined
+            connectedAt: undefined,
+          },
             }
-        } : null);
+      : null;
 
     return {
         ...queryResult,
@@ -95,9 +107,12 @@ export const useConnectKodiak = () => {
     const { user } = useAuth();
 
     return useMutation({
-        mutationFn: (credentials: { accountId: string; apiKey: string; secretKey: string }) =>
-            kodiakApi.connectKodiak(credentials),
-        onSuccess: (response) => {
+    mutationFn: (credentials: {
+      accountId: string;
+      apiKey: string;
+      secretKey: string;
+    }) => kodiakApi.connectKodiak(credentials),
+    onSuccess: response => {
             // Invalidate React Query caches with correct query keys (including user ID)
             queryClient.invalidateQueries({ queryKey: ["user", user?.id] });
             queryClient.invalidateQueries({ queryKey: ["kodiak-status", user?.id] });

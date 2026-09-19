@@ -19,8 +19,8 @@ import {
     IPositionRepository,
     ICacheService,
     IExternalApiService,
-    ILogger
-} from '@trade-bot/shared';
+  ILogger,
+} from "@trade-bot/shared";
 
 export interface PositionValidatorServiceDependencies {
     userRepository: IUserRepository;
@@ -69,7 +69,8 @@ export class PositionValidatorService {
     async getAccountLimits(userId: string): Promise<AccountLimits> {
         try {
             // Get account info from centralized service (uses caching)
-            const accountResponse = await this.deps.externalApi.getAccountInfo(userId);
+      const accountResponse =
+        await this.deps.externalApi.getAccountInfo(userId);
 
             if (!accountResponse.success || !accountResponse.data) {
                 throw new Error(accountResponse.error || "Failed to get account info");
@@ -83,7 +84,8 @@ export class PositionValidatorService {
             });
 
             // Get positions from centralized service
-            const positionsResponse = await this.deps.externalApi.getPositions(userId);
+      const positionsResponse =
+        await this.deps.externalApi.getPositions(userId);
 
             if (!positionsResponse.success || !positionsResponse.data) {
                 throw new Error(positionsResponse.error || "Failed to get positions");
@@ -185,7 +187,8 @@ export class PositionValidatorService {
         }
 
         // Check 4: Account leverage limit
-        const maxAccountExposure = accountLimits.balance * accountLimits.maxLeverage;
+    const maxAccountExposure =
+      accountLimits.balance * accountLimits.maxLeverage;
         if (notionalAmount > maxAccountExposure) {
             return {
                 isValid: false,
@@ -287,7 +290,6 @@ export class PositionValidatorService {
                 accountLimits,
                 maxExposurePercent
             );
-
         } catch (error: unknown) {
             const err = error instanceof Error ? error : new Error(String(error));
             this.deps.logger.error("Position validation failed", {
@@ -339,12 +341,14 @@ export class PositionValidatorService {
                 takerFeeRate: accountInfo.takerFeeRate,
                 makerFeeRate: accountInfo.makerFeeRate,
             };
-
         } catch (error) {
-            this.deps.logger.error("Failed to calculate account limits from positions", {
+      this.deps.logger.error(
+        "Failed to calculate account limits from positions",
+        {
                 userId,
                 error: error instanceof Error ? error.message : String(error),
-            });
+        }
+      );
             throw error;
         }
     }
@@ -370,7 +374,9 @@ export class PositionValidatorService {
             }
 
             // Fallback to default values if no account info available
-            this.deps.logger.warn("No account info found, using defaults", { userId });
+      this.deps.logger.warn("No account info found, using defaults", {
+        userId,
+      });
             const defaultAccountInfo = {
                 balance: 0,
                 maxLeverage: 1,
@@ -380,10 +386,13 @@ export class PositionValidatorService {
             };
 
             // Cache default values
-            await this.deps.cache.setex(cacheKey, this.CACHE_TTL, JSON.stringify(defaultAccountInfo));
+      await this.deps.cache.setex(
+        cacheKey,
+        this.CACHE_TTL,
+        JSON.stringify(defaultAccountInfo)
+      );
 
             return defaultAccountInfo;
-
         } catch (error) {
             this.deps.logger.error("Failed to get account info from cache", {
                 userId,
@@ -401,6 +410,8 @@ export class PositionValidatorService {
 }
 
 // Export factory function for creating service instances
-export function createPositionValidatorService(deps: PositionValidatorServiceDependencies): PositionValidatorService {
+export function createPositionValidatorService(
+  deps: PositionValidatorServiceDependencies
+): PositionValidatorService {
     return new PositionValidatorService(deps);
 }

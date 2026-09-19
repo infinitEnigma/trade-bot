@@ -20,7 +20,7 @@ import { redisLogger as logger } from "../../../core/logging/context-aware-logge
 
 export interface TransactionOptions {
     context?: string;        // Context for logging and analytics
-    priority?: 'low' | 'normal' | 'high' | 'critical';
+  priority?: "low" | "normal" | "high" | "critical";
     timeout?: number;        // Operation timeout in ms
     retryStrategy?: RetryStrategy;
 }
@@ -38,10 +38,10 @@ export interface SmartRetryResult<T> {
  * Intelligent retry strategies for Redis transactions
  */
 export enum RetryStrategy {
-    IMMEDIATE_RETRY = 'immediate',     // Critical ops: 10ms, 20ms, 30ms
-    EXPONENTIAL_BACKOFF = 'backoff',   // Standard ops: 100ms → 30s
-    CIRCUIT_BREAKER = 'circuit',       // High conflict: extended delays
-    ADAPTIVE_DELAY = 'adaptive',       // ML-based optimal delays
+  IMMEDIATE_RETRY = "immediate", // Critical ops: 10ms, 20ms, 30ms
+  EXPONENTIAL_BACKOFF = "backoff", // Standard ops: 100ms → 30s
+  CIRCUIT_BREAKER = "circuit", // High conflict: extended delays
+  ADAPTIVE_DELAY = "adaptive", // ML-based optimal delays
 }
 
 /**
@@ -50,7 +50,7 @@ export enum RetryStrategy {
 interface TransactionContext {
     maxRetries: number;
     context: string;
-    priority: 'low' | 'normal' | 'high' | 'critical';
+  priority: "low" | "normal" | "high" | "critical";
     timeout?: number;
 }
 
@@ -69,7 +69,9 @@ export class RedisTransactions {
     private transactionRecoveryManager: TransactionRecoveryManager;
 
     constructor(private connectionManager: RedisConnectionManager) {
-        this.transactionRecoveryManager = new TransactionRecoveryManager(this.connectionManager);
+    this.transactionRecoveryManager = new TransactionRecoveryManager(
+      this.connectionManager
+    );
     }
 
     /**
@@ -86,8 +88,8 @@ export class RedisTransactions {
             operation,
             {
                 maxRetries,
-                context: options?.context || 'unknown',
-                priority: options?.priority || 'normal',
+        context: options?.context || "unknown",
+        priority: options?.priority || "normal",
                 timeout: options?.timeout,
             }
         );
@@ -125,7 +127,7 @@ class TransactionRecoveryManager {
 
     private conflictHistory = new Map<string, ConflictStats>();
     private circuitBreakerFailures = 0;
-    private circuitBreakerState: 'closed' | 'open' | 'half_open' = 'closed';
+  private circuitBreakerState: "closed" | "open" | "half_open" = "closed";
     private circuitBreakerLastFailure = 0;
     private readonly CIRCUIT_BREAKER_THRESHOLD = 10;
     private readonly CIRCUIT_BREAKER_TIMEOUT = 60000; // 1 minute
@@ -176,17 +178,19 @@ class TransactionRecoveryManager {
             attempts++;
 
             // Check circuit breaker
-            if (this.circuitBreakerState === 'open') {
+      if (this.circuitBreakerState === "open") {
                 if (this.shouldResetCircuitBreaker()) {
-                    this.circuitBreakerState = 'half_open';
-                    logger.info("Circuit breaker transitioned to half-open", { keySignature });
+          this.circuitBreakerState = "half_open";
+          logger.info("Circuit breaker transitioned to half-open", {
+            keySignature,
+          });
                 } else {
                     return {
                         success: false,
-                        error: 'Circuit breaker open - transaction temporarily disabled',
+            error: "Circuit breaker open - transaction temporarily disabled",
                         attempts,
                         totalDelay,
-                        strategy
+            strategy,
                     };
                 }
             }
@@ -205,7 +209,7 @@ class TransactionRecoveryManager {
                         result: result.data,
                         attempts,
                         totalDelay,
-                        strategy
+            strategy,
                     };
                 } else {
                     // Transaction aborted - handle conflict
@@ -219,12 +223,17 @@ class TransactionRecoveryManager {
                             error: `Transaction aborted after ${attempts} attempts`,
                             attempts,
                             totalDelay,
-                            strategy
+              strategy,
                         };
                     }
 
                     // Calculate and apply backoff delay
-                    const delay = this.calculateDelay(strategy, keySignature, attempts, context);
+          const delay = this.calculateDelay(
+            strategy,
+            keySignature,
+            attempts,
+            context
+          );
                     totalDelay += delay;
 
                     logger.debug("Transaction conflict, applying backoff", {
@@ -232,24 +241,24 @@ class TransactionRecoveryManager {
                         attempt: attempts,
                         delay,
                         totalDelay,
-                        strategy
+            strategy,
                     });
 
                     await this.sleep(delay);
                     continue;
                 }
-
             } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
 
                 // Circuit breaker for non-conflict errors
                 this.circuitBreakerFailures++;
                 if (this.circuitBreakerFailures >= this.CIRCUIT_BREAKER_THRESHOLD) {
-                    this.circuitBreakerState = 'open';
+          this.circuitBreakerState = "open";
                     this.circuitBreakerLastFailure = Date.now();
                     logger.warn("Circuit breaker opened due to repeated errors", {
                         failures: this.circuitBreakerFailures,
-                        threshold: this.CIRCUIT_BREAKER_THRESHOLD
+            threshold: this.CIRCUIT_BREAKER_THRESHOLD,
                     });
                 }
 
@@ -258,17 +267,17 @@ class TransactionRecoveryManager {
                     error: errorMessage,
                     attempts,
                     totalDelay,
-                    strategy
+          strategy,
                 };
             }
         }
 
         return {
             success: false,
-            error: 'Max retries exceeded',
+      error: "Max retries exceeded",
             attempts: context.maxRetries,
             totalDelay,
-            strategy
+      strategy,
         };
     }
 
@@ -298,7 +307,6 @@ class TransactionRecoveryManager {
             }
 
             return { success: true, data: result };
-
         } finally {
             // Always unwatch keys
             try {
@@ -317,7 +325,7 @@ class TransactionRecoveryManager {
         _context: TransactionContext
     ): RetryStrategy {
         // High priority transactions get immediate retry
-        if (_context.priority === 'critical') {
+    if (_context.priority === "critical") {
             return RetryStrategy.IMMEDIATE_RETRY;
         }
 
@@ -373,7 +381,8 @@ class TransactionRecoveryManager {
         );
 
         // Add jitter to prevent thundering herd
-        const jitter = exponentialDelay * this.JITTER_FACTOR * (Math.random() * 2 - 1);
+    const jitter =
+      exponentialDelay * this.JITTER_FACTOR * (Math.random() * 2 - 1);
         const finalDelay = Math.max(10, exponentialDelay + jitter);
 
         return Math.round(finalDelay);
@@ -382,12 +391,17 @@ class TransactionRecoveryManager {
     /**
      * Calculate adaptive delay based on historical performance
      */
-    private calculateAdaptiveDelay(keySignature: string, _attempt: number): number {
+  private calculateAdaptiveDelay(
+    keySignature: string,
+    _attempt: number
+  ): number {
         const successRate = this.successRates.get(keySignature) || 0.5;
-        const optimalDelay = this.optimalDelays.get(keySignature) || this.BASE_DELAY;
+    const optimalDelay =
+      this.optimalDelays.get(keySignature) || this.BASE_DELAY;
 
         // For low success rates, increase delay more aggressively
-        const adaptiveMultiplier = successRate < 0.3 ? 3 : successRate < 0.7 ? 2 : 1.5;
+    const adaptiveMultiplier =
+      successRate < 0.3 ? 3 : successRate < 0.7 ? 2 : 1.5;
         const baseDelay = optimalDelay * adaptiveMultiplier;
 
         const exponentialDelay = Math.min(
@@ -407,13 +421,17 @@ class TransactionRecoveryManager {
         if (existing) {
             // Calculate recent conflicts (last 5 minutes)
             const recentThreshold = Date.now() - 5 * 60 * 1000;
-            const recentConflicts = existing.lastConflictTime > recentThreshold ? 1 : 0;
+      const recentConflicts =
+        existing.lastConflictTime > recentThreshold ? 1 : 0;
 
             return {
                 ...existing,
                 recentConflicts,
-                successRate: existing.totalConflicts > 0 ?
-                    (existing.totalConflicts - existing.recentConflicts) / existing.totalConflicts : 1
+        successRate:
+          existing.totalConflicts > 0
+            ? (existing.totalConflicts - existing.recentConflicts) /
+              existing.totalConflicts
+            : 1,
             };
         }
 
@@ -422,14 +440,18 @@ class TransactionRecoveryManager {
             recentConflicts: 0,
             successRate: 1,
             averageDelay: 0,
-            lastConflictTime: 0
+      lastConflictTime: 0,
         };
     }
 
     /**
      * Record successful transaction
      */
-    private recordSuccess(keySignature: string, attempts: number, totalDelay: number): void {
+  private recordSuccess(
+    keySignature: string,
+    attempts: number,
+    totalDelay: number
+  ): void {
         // Update adaptive learning
         const currentRate = this.successRates.get(keySignature) || 0.5;
         const newRate = currentRate * 0.9 + 0.1; // Slight increase on success
@@ -437,7 +459,8 @@ class TransactionRecoveryManager {
 
         // If success on first attempt, reduce optimal delay
         if (attempts === 1 && totalDelay < 1000) {
-            const currentOptimal = this.optimalDelays.get(keySignature) || this.BASE_DELAY;
+      const currentOptimal =
+        this.optimalDelays.get(keySignature) || this.BASE_DELAY;
             this.optimalDelays.set(keySignature, Math.max(50, currentOptimal * 0.9));
         }
 
@@ -445,7 +468,7 @@ class TransactionRecoveryManager {
             keySignature,
             attempts,
             totalDelay,
-            newSuccessRate: Math.round(newRate * 100) / 100
+      newSuccessRate: Math.round(newRate * 100) / 100,
         });
     }
 
@@ -465,8 +488,12 @@ class TransactionRecoveryManager {
 
         // Increase optimal delay on repeated conflicts
         if (stats.totalConflicts > 3) {
-            const currentOptimal = this.optimalDelays.get(keySignature) || this.BASE_DELAY;
-            this.optimalDelays.set(keySignature, Math.min(this.MAX_DELAY, currentOptimal * 1.1));
+      const currentOptimal =
+        this.optimalDelays.get(keySignature) || this.BASE_DELAY;
+      this.optimalDelays.set(
+        keySignature,
+        Math.min(this.MAX_DELAY, currentOptimal * 1.1)
+      );
         }
 
         this.conflictHistory.set(keySignature, stats);
@@ -474,26 +501,29 @@ class TransactionRecoveryManager {
         logger.debug("Transaction conflict recorded", {
             keySignature,
             totalConflicts: stats.totalConflicts,
-            newSuccessRate: Math.round(newRate * 100) / 100
+      newSuccessRate: Math.round(newRate * 100) / 100,
         });
     }
 
     /**
      * Handle max retries reached - escalate appropriately
      */
-    private handleMaxRetriesReached(keySignature: string, _context: TransactionContext): void {
+  private handleMaxRetriesReached(
+    keySignature: string,
+    _context: TransactionContext
+  ): void {
         logger.warn("Max transaction retries reached", {
             keySignature,
             context: _context.context,
             priority: _context.priority,
-            maxRetries: _context.maxRetries
+      maxRetries: _context.maxRetries,
         });
 
         // For high priority transactions, could trigger alerts or alternative handling
-        if (_context.priority === 'critical') {
+    if (_context.priority === "critical") {
             logger.warn("Critical transaction failed after max retries", {
                 keySignature,
-                context: _context.context
+        context: _context.context,
             });
         }
     }
@@ -513,7 +543,7 @@ class TransactionRecoveryManager {
         // Sort keys for consistent signature
         const sortedKeys = [...watchKeys].sort();
         // Simple hash of sorted keys
-        return sortedKeys.join('|').slice(0, 50); // Limit length
+    return sortedKeys.join("|").slice(0, 50); // Limit length
     }
 
     /**
@@ -532,17 +562,22 @@ class TransactionRecoveryManager {
                 state: this.circuitBreakerState,
                 failures: this.circuitBreakerFailures,
                 lastFailure: this.circuitBreakerLastFailure,
-                threshold: this.CIRCUIT_BREAKER_THRESHOLD
+        threshold: this.CIRCUIT_BREAKER_THRESHOLD,
             },
             adaptiveLearning: {
                 trackedKeys: this.successRates.size,
-                averageSuccessRate: Array.from(this.successRates.values()).reduce((a, b) => a + b, 0) / Math.max(1, this.successRates.size),
-                optimalDelaysConfigured: this.optimalDelays.size
+        averageSuccessRate:
+          Array.from(this.successRates.values()).reduce((a, b) => a + b, 0) /
+          Math.max(1, this.successRates.size),
+        optimalDelaysConfigured: this.optimalDelays.size,
             },
             conflictHistory: {
                 trackedSignatures: this.conflictHistory.size,
-                totalConflicts: Array.from(this.conflictHistory.values()).reduce((sum, stats) => sum + stats.totalConflicts, 0)
-            }
+        totalConflicts: Array.from(this.conflictHistory.values()).reduce(
+          (sum, stats) => sum + stats.totalConflicts,
+          0
+        ),
+      },
         };
     }
 }

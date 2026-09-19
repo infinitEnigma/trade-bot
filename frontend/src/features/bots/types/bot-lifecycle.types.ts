@@ -11,7 +11,8 @@
  * Actual lifecycle state as reported by the engine via backend.
  * UNKNOWN means the engine is unreachable / heartbeat lost.
  */
-export type BotActualState = "STOPPED" | "STARTING" | "RUNNING" | "STOPPING" | "ERROR" | "UNKNOWN";
+export type BotActualState =
+  "STOPPED" | "STARTING" | "RUNNING" | "STOPPING" | "ERROR" | "UNKNOWN";
 
 /**
  * Desired lifecycle state - what the backend/user wants.
@@ -32,7 +33,8 @@ export interface BotStateChangedEvent {
 /**
  * Connection status for WebSocket.
  */
-export type ConnectionStatus = "connected" | "connecting" | "disconnected" | "reconnecting" | "error";
+export type ConnectionStatus =
+  "connected" | "connecting" | "disconnected" | "reconnecting" | "error";
 
 /**
  * Bot lifecycle state for a single bot.
@@ -49,7 +51,14 @@ export interface BotLifecycleState {
 /**
  * Map actual_state to display information.
  */
-export const STATE_DISPLAY_INFO: Record<BotActualState, { label: string; color: string; icon: "stopped" | "loading" | "running" | "loading" | "error" | "unknown" }> = {
+export const STATE_DISPLAY_INFO: Record<
+  BotActualState,
+  {
+    label: string;
+    color: string;
+    icon: "stopped" | "loading" | "running" | "loading" | "error" | "unknown";
+  }
+> = {
     STOPPED: { label: "Stopped", color: "text-textMuted", icon: "stopped" },
     STARTING: { label: "Starting...", color: "text-warning", icon: "loading" },
     RUNNING: { label: "Running", color: "text-success", icon: "running" },

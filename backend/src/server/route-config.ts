@@ -53,12 +53,15 @@ export class RouteConfig {
         io: undefined,
     } as const;
 
-    private static routeLogger = new ContextAwareLogger('route-config');
+  private static routeLogger = new ContextAwareLogger("route-config");
 
     /**
      * Register all routes with the Express application
      */
-    static async register(app: Express, options: RouteConfigOptions = {}): Promise<void> {
+  static async register(
+    app: Express,
+    options: RouteConfigOptions = {}
+  ): Promise<void> {
         const config = { ...this.DEFAULT_OPTIONS, ...options };
 
         // Make io available to routes
@@ -66,11 +69,14 @@ export class RouteConfig {
             app.set("io", config.io);
         }
 
-        const operationTimer = this.routeLogger.startOperation('route-registration', {
+    const operationTimer = this.routeLogger.startOperation(
+      "route-registration",
+      {
             apiRoutesEnabled: config.enableApiRoutes,
             healthRoutesEnabled: config.enableHealthRoutes,
             socketIoAttached: !!config.io,
-        });
+      }
+    );
 
         try {
             if (config.enableApiRoutes) {
@@ -105,7 +111,9 @@ export class RouteConfig {
      * Register all API routes by functional domain
      */
     private static async registerApiRoutes(app: Express): Promise<void> {
-        const apiRoutesTimer = this.routeLogger.startOperation('api-routes-registration');
+    const apiRoutesTimer = this.routeLogger.startOperation(
+      "api-routes-registration"
+    );
 
         try {
             // 🔐 Authentication & Authorization
@@ -128,20 +136,26 @@ export class RouteConfig {
 
             apiRoutesTimer.success({
                 registeredRoutes: [
-                    'auth', 'user', 'market', 'strategies',
-                    'bot', 'wallet', 'balance', 'security'
-                ]
+          "auth",
+          "user",
+          "market",
+          "strategies",
+          "bot",
+          "wallet",
+          "balance",
+          "security",
+        ],
             });
 
             this.routeLogger.debug("API routes registered by domain", {
-                operation: 'api-routes-registration',
-                status: 'completed'
+        operation: "api-routes-registration",
+        status: "completed",
             });
         } catch (error) {
             apiRoutesTimer.failure(error as Error);
             this.routeLogger.error("Failed to register API routes", error as Error, {
-                operation: 'api-routes-registration',
-                status: 'failed'
+        operation: "api-routes-registration",
+        status: "failed",
             });
             throw error;
         }
@@ -151,21 +165,27 @@ export class RouteConfig {
      * Register authentication routes
      */
     private static async registerAuthRoutes(app: Express): Promise<void> {
-        const authTimer = this.routeLogger.startOperation('auth-routes-registration');
+    const authTimer = this.routeLogger.startOperation(
+      "auth-routes-registration"
+    );
         try {
             const { authRoutes } = await import("../interfaces/http/auth");
             app.use("/api/auth", authRoutes);
             authTimer.success();
             this.routeLogger.debug("Authentication routes registered", {
-                route: '/api/auth',
-                component: 'authentication'
+        route: "/api/auth",
+        component: "authentication",
             });
         } catch (error) {
             authTimer.failure(error as Error);
-            this.routeLogger.error("Failed to register authentication routes", error as Error, {
-                route: '/api/auth',
-                component: 'authentication'
-            });
+      this.routeLogger.error(
+        "Failed to register authentication routes",
+        error as Error,
+        {
+          route: "/api/auth",
+          component: "authentication",
+        }
+      );
             throw error;
         }
     }
@@ -174,21 +194,27 @@ export class RouteConfig {
      * Register user management routes
      */
     private static async registerUserRoutes(app: Express): Promise<void> {
-        const userTimer = this.routeLogger.startOperation('user-routes-registration');
+    const userTimer = this.routeLogger.startOperation(
+      "user-routes-registration"
+    );
         try {
             const { userRoutes } = await import("../interfaces/http/users");
             app.use("/api/user", userRoutes);
             userTimer.success();
             this.routeLogger.debug("User management routes registered", {
-                route: '/api/user',
-                component: 'user-management'
+        route: "/api/user",
+        component: "user-management",
             });
         } catch (error) {
             userTimer.failure(error as Error);
-            this.routeLogger.error("Failed to register user management routes", error as Error, {
-                route: '/api/user',
-                component: 'user-management'
-            });
+      this.routeLogger.error(
+        "Failed to register user management routes",
+        error as Error,
+        {
+          route: "/api/user",
+          component: "user-management",
+        }
+      );
             throw error;
         }
     }
@@ -197,22 +223,29 @@ export class RouteConfig {
      * Register market data and trading routes
      */
     private static async registerMarketRoutes(app: Express): Promise<void> {
-        const marketTimer = this.routeLogger.startOperation('market-routes-registration');
+    const marketTimer = this.routeLogger.startOperation(
+      "market-routes-registration"
+    );
         try {
-            const { marketRoutes, strategyRoutes } = await import("../interfaces/http/trading");
+      const { marketRoutes, strategyRoutes } =
+        await import("../interfaces/http/trading");
             app.use("/api/market", marketRoutes);
             app.use("/api/strategies", strategyRoutes);
             marketTimer.success();
             this.routeLogger.debug("Market and trading routes registered", {
-                routes: ['/api/market', '/api/strategies'],
-                component: 'market-trading'
+        routes: ["/api/market", "/api/strategies"],
+        component: "market-trading",
             });
         } catch (error) {
             marketTimer.failure(error as Error);
-            this.routeLogger.error("Failed to register market and trading routes", error as Error, {
-                routes: ['/api/market', '/api/strategies'],
-                component: 'market-trading'
-            });
+      this.routeLogger.error(
+        "Failed to register market and trading routes",
+        error as Error,
+        {
+          routes: ["/api/market", "/api/strategies"],
+          component: "market-trading",
+        }
+      );
             throw error;
         }
     }
@@ -221,21 +254,25 @@ export class RouteConfig {
      * Register bot management routes
      */
     private static async registerBotRoutes(app: Express): Promise<void> {
-        const botTimer = this.routeLogger.startOperation('bot-routes-registration');
+    const botTimer = this.routeLogger.startOperation("bot-routes-registration");
         try {
             const { botRoutes } = await import("../interfaces/http/bots");
             app.use("/api/bot", botRoutes);
             botTimer.success();
             this.routeLogger.debug("Bot management routes registered", {
-                route: '/api/bot',
-                component: 'bot-management'
+        route: "/api/bot",
+        component: "bot-management",
             });
         } catch (error) {
             botTimer.failure(error as Error);
-            this.routeLogger.error("Failed to register bot management routes", error as Error, {
-                route: '/api/bot',
-                component: 'bot-management'
-            });
+      this.routeLogger.error(
+        "Failed to register bot management routes",
+        error as Error,
+        {
+          route: "/api/bot",
+          component: "bot-management",
+        }
+      );
             throw error;
         }
     }
@@ -244,23 +281,30 @@ export class RouteConfig {
      * Register wallet and balance routes
      */
     private static async registerWalletRoutes(app: Express): Promise<void> {
-        const walletTimer = this.routeLogger.startOperation('wallet-routes-registration');
+    const walletTimer = this.routeLogger.startOperation(
+      "wallet-routes-registration"
+    );
         try {
             const { walletRoutes } = await import("../interfaces/http/wallet");
-            const { walletBalanceRoutes } = await import("../interfaces/http/wallet/balance");
+      const { walletBalanceRoutes } =
+        await import("../interfaces/http/wallet/balance");
             app.use("/api/wallet", walletRoutes);
             app.use("/api/balance", walletBalanceRoutes);
             walletTimer.success();
             this.routeLogger.debug("Wallet and balance routes registered", {
-                routes: ['/api/wallet', '/api/balance'],
-                component: 'wallet-balance'
+        routes: ["/api/wallet", "/api/balance"],
+        component: "wallet-balance",
             });
         } catch (error) {
             walletTimer.failure(error as Error);
-            this.routeLogger.error("Failed to register wallet and balance routes", error as Error, {
-                routes: ['/api/wallet', '/api/balance'],
-                component: 'wallet-balance'
-            });
+      this.routeLogger.error(
+        "Failed to register wallet and balance routes",
+        error as Error,
+        {
+          routes: ["/api/wallet", "/api/balance"],
+          component: "wallet-balance",
+        }
+      );
             throw error;
         }
     }
@@ -269,21 +313,28 @@ export class RouteConfig {
      * Register security and monitoring routes
      */
     private static async registerSecurityRoutes(app: Express): Promise<void> {
-        const securityTimer = this.routeLogger.startOperation('security-routes-registration');
+    const securityTimer = this.routeLogger.startOperation(
+      "security-routes-registration"
+    );
         try {
-            const { securityRoutes } = await import("../interfaces/http/system/security");
+      const { securityRoutes } =
+        await import("../interfaces/http/system/security");
             app.use("/api/security", securityRoutes);
             securityTimer.success();
             this.routeLogger.debug("Security routes registered", {
-                route: '/api/security',
-                component: 'security-monitoring'
+        route: "/api/security",
+        component: "security-monitoring",
             });
         } catch (error) {
             securityTimer.failure(error as Error);
-            this.routeLogger.error("Failed to register security routes", error as Error, {
-                route: '/api/security',
-                component: 'security-monitoring'
-            });
+      this.routeLogger.error(
+        "Failed to register security routes",
+        error as Error,
+        {
+          route: "/api/security",
+          component: "security-monitoring",
+        }
+      );
             throw error;
         }
     }
@@ -292,7 +343,9 @@ export class RouteConfig {
      * Register health check routes
      */
     private static async registerHealthRoutes(app: Express): Promise<void> {
-        const healthTimer = this.routeLogger.startOperation('health-routes-registration');
+    const healthTimer = this.routeLogger.startOperation(
+      "health-routes-registration"
+    );
         try {
             const { healthRoutes } = await import("../interfaces/http/system/health");
 
@@ -301,15 +354,19 @@ export class RouteConfig {
 
             healthTimer.success();
             this.routeLogger.debug("Health check routes registered", {
-                route: '/api',
-                component: 'health-check'
+        route: "/api",
+        component: "health-check",
             });
         } catch (error) {
             healthTimer.failure(error as Error);
-            this.routeLogger.error("Failed to register health check routes", error as Error, {
-                route: '/api',
-                component: 'health-check'
-            });
+      this.routeLogger.error(
+        "Failed to register health check routes",
+        error as Error,
+        {
+          route: "/api",
+          component: "health-check",
+        }
+      );
             throw error;
         }
     }
@@ -331,11 +388,14 @@ export class RouteConfig {
         if (stack) {
             for (const layer of stack) {
                 if (layer.route) {
-                    const methods = Object.keys(layer.route.methods).join(", ").toUpperCase();
+          const methods = Object.keys(layer.route.methods)
+            .join(", ")
+            .toUpperCase();
                     routes.push(`${methods} ${layer.route.path}`);
                 } else if (layer.name === "router" && layer.regexp) {
                     // Mounted router
-                    const mountPath = layer.regexp.toString()
+          const mountPath = layer.regexp
+            .toString()
                         .replace(/^\/\^/, "")
                         .replace(/\/\(\?:\(\[\^\/\]\+\)\)\?\)\?\$\/i/, "")
                         .replace(/\\/g, "");
@@ -350,7 +410,10 @@ export class RouteConfig {
     /**
      * Validate that all expected routes are registered
      */
-    static validateRouteRegistration(app: Express): { isValid: boolean; missingRoutes: string[] } {
+  static validateRouteRegistration(app: Express): {
+    isValid: boolean;
+    missingRoutes: string[];
+  } {
         const registeredRoutes = this.getRegisteredRoutes(app);
         const expectedRoutes = [
             "MOUNT /api/auth",
@@ -364,7 +427,8 @@ export class RouteConfig {
             "MOUNT /api", // Health routes
         ];
 
-        const missingRoutes = expectedRoutes.filter(expected =>
+    const missingRoutes = expectedRoutes.filter(
+      expected =>
             !registeredRoutes.some(registered => registered.includes(expected))
         );
 

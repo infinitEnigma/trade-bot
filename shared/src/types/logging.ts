@@ -27,26 +27,27 @@ import * as Errors from "../types/errors";
  * Error severity levels for logging and monitoring
  * Used for prioritization, alerting, and log filtering
  */
-export type LoggerErrorSeverity = 'critical' | 'high' | 'medium' | 'low' | 'debug';
+export type LoggerErrorSeverity =
+  "critical" | "high" | "medium" | "low" | "debug";
 
 /**
  * Comprehensive error classification system
  * Enables precise error categorization and handling
  */
 export type LoggerErrorType =
-    | 'validation'
-    | 'database'
-    | 'network'
-    | 'authentication'
-    | 'business'
-    | 'integration'
-    | 'timeout'
-    | 'permission'
-    | 'configuration'
-    | 'rate_limit'
-    | 'data_processing'
-    | 'external_service'
-    | 'unknown';
+  | "validation"
+  | "database"
+  | "network"
+  | "authentication"
+  | "business"
+  | "integration"
+  | "timeout"
+  | "permission"
+  | "configuration"
+  | "rate_limit"
+  | "data_processing"
+  | "external_service"
+  | "unknown";
 
 /**
  * Structured error information for consistent error logging
@@ -220,17 +221,20 @@ export interface LogContext {
  * Helper functions for creating type-safe metadata objects
  * These functions ensure consistent structure and optional fields
  */
-export function createErrorInfo(error: Error, options?: {
-    errorType?: ErrorInfo['errorType'];
+export function createErrorInfo(
+  error: Error,
+  options?: {
+    errorType?: ErrorInfo["errorType"];
     errorCode?: string;
     isOperational?: boolean;
-}): ErrorInfo {
+  }
+): ErrorInfo {
     return {
         error: error.message,
         errorMessage: error.message,
         errorName: error.name,
         errorStack: error.stack,
-        errorType: options?.errorType || 'unknown',
+    errorType: options?.errorType || "unknown",
         errorCode: options?.errorCode,
         isOperational: options?.isOperational,
     };
@@ -263,7 +267,7 @@ export function createDatabaseMetrics(options?: {
         table: options?.table,
         rowCount: options?.rowCount,
         queryDuration: options?.queryDuration,
-        databaseOperation: options?.query ? 'query' : undefined,
+    databaseOperation: options?.query ? "query" : undefined,
     };
 }
 
@@ -303,12 +307,12 @@ export function parseStackTrace(stack?: string): StackFrame[] {
     if (!stack) return [];
 
     const frames: StackFrame[] = [];
-    const stackLines = stack.split('\n');
+  const stackLines = stack.split("\n");
 
     // Skip the first line (error message)
     for (let i = 1; i < stackLines.length; i++) {
         const line = stackLines[i].trim();
-        if (!line || line.startsWith('    at ') || line.startsWith('at ')) {
+    if (!line || line.startsWith("    at ") || line.startsWith("at ")) {
             try {
                 const frame = parseStackLine(line);
                 if (frame) {
@@ -331,31 +335,33 @@ export function parseStackTrace(stack?: string): StackFrame[] {
 function parseStackLine(line: string): StackFrame | null {
     // Clean up the line
     let cleanLine = line.trim();
-    if (cleanLine.startsWith('at ')) {
+  if (cleanLine.startsWith("at ")) {
         cleanLine = cleanLine.substring(3);
-    } else if (cleanLine.startsWith('    at ')) {
+  } else if (cleanLine.startsWith("    at ")) {
         cleanLine = cleanLine.substring(6);
     }
 
     // Skip native code and internal Node.js frames
-    if (cleanLine.includes('(native)') ||
-        cleanLine.includes('(internal/') ||
-        cleanLine.includes('(node:') ||
-        cleanLine.includes('(module.js') ||
-        cleanLine.includes('(events.js') ||
-        cleanLine.includes('(timers.js')) {
+  if (
+    cleanLine.includes("(native)") ||
+    cleanLine.includes("(internal/") ||
+    cleanLine.includes("(node:") ||
+    cleanLine.includes("(module.js") ||
+    cleanLine.includes("(events.js") ||
+    cleanLine.includes("(timers.js")
+  ) {
         return null;
     }
 
     // Parse different stack trace formats
     const frame: StackFrame = {
-        isInternal: false
+    isInternal: false,
     };
 
     // Format: functionName (file:line:column)
     const parenMatch = cleanLine.match(/^(.+) \((.+):(\d+):(\d+)\)$/);
     if (parenMatch) {
-        frame.functionName = parenMatch[1] || 'anonymous';
+    frame.functionName = parenMatch[1] || "anonymous";
         frame.file = parenMatch[2];
         frame.line = parseInt(parenMatch[3]);
         frame.column = parseInt(parenMatch[4]);
@@ -374,7 +380,7 @@ function parseStackLine(line: string): StackFrame | null {
     // Format: functionName (file:line)
     const noColumnMatch = cleanLine.match(/^(.+) \((.+):(\d+)\)$/);
     if (noColumnMatch) {
-        frame.functionName = noColumnMatch[1] || 'anonymous';
+    frame.functionName = noColumnMatch[1] || "anonymous";
         frame.file = noColumnMatch[2];
         frame.line = parseInt(noColumnMatch[3]);
         return frame;
@@ -383,7 +389,7 @@ function parseStackLine(line: string): StackFrame | null {
     // Format: <anonymous> (file:line:column)
     const anonymousMatch = cleanLine.match(/^<anonymous> \((.+):(\d+):(\d+)\)$/);
     if (anonymousMatch) {
-        frame.functionName = 'anonymous';
+    frame.functionName = "anonymous";
         frame.file = anonymousMatch[1];
         frame.line = parseInt(anonymousMatch[2]);
         frame.column = parseInt(anonymousMatch[3]);
@@ -405,225 +411,253 @@ export function classifyError(error: Error): {
 } {
     const errorMessage = error.message.toLowerCase();
     const errorName = error.name.toLowerCase();
-    const stackTrace = error.stack || '';
+  const stackTrace = error.stack || "";
 
     // Database errors
-    if (errorName.includes('database') ||
-        errorName.includes('query') ||
-        errorMessage.includes('database') ||
-        errorMessage.includes('connection pool') ||
-        errorMessage.includes('query timeout') ||
-        errorMessage.includes('sql') ||
-        errorMessage.includes('postgres') ||
-        errorMessage.includes('pg::') ||
-        stackTrace.includes('database/') ||
-        stackTrace.includes('pool.ts')) {
-
-        if (errorMessage.includes('connection') && errorMessage.includes('failed')) {
+  if (
+    errorName.includes("database") ||
+    errorName.includes("query") ||
+    errorMessage.includes("database") ||
+    errorMessage.includes("connection pool") ||
+    errorMessage.includes("query timeout") ||
+    errorMessage.includes("sql") ||
+    errorMessage.includes("postgres") ||
+    errorMessage.includes("pg::") ||
+    stackTrace.includes("database/") ||
+    stackTrace.includes("pool.ts")
+  ) {
+    if (
+      errorMessage.includes("connection") &&
+      errorMessage.includes("failed")
+    ) {
             return {
-                errorType: 'database',
+        errorType: "database",
                 errorCode: Errors.ErrorCodes.CONNECTION_ERROR,
-                errorSeverity: 'high'
+        errorSeverity: "high",
             };
-        } else if (errorMessage.includes('timeout')) {
+    } else if (errorMessage.includes("timeout")) {
             return {
-                errorType: 'database',
+        errorType: "database",
                 errorCode: Errors.ErrorCodes.QUERY_ERROR,
-                errorSeverity: 'high'
+        errorSeverity: "high",
             };
-        } else if (errorMessage.includes('pool exhausted') || errorMessage.includes('too many clients')) {
+    } else if (
+      errorMessage.includes("pool exhausted") ||
+      errorMessage.includes("too many clients")
+    ) {
             return {
-                errorType: 'database',
+        errorType: "database",
                 errorCode: Errors.ErrorCodes.DATABASE_ERROR,
-                errorSeverity: 'critical'
+        errorSeverity: "critical",
             };
         } else {
             return {
-                errorType: 'database',
+        errorType: "database",
                 errorCode: Errors.ErrorCodes.QUERY_ERROR,
-                errorSeverity: 'high'
+        errorSeverity: "high",
             };
         }
     }
 
     // Network errors
-    if (errorName.includes('network') ||
-        errorName.includes('fetch') ||
-        errorName.includes('request') ||
-        errorMessage.includes('network') ||
-        errorMessage.includes('fetch') ||
-        errorMessage.includes('request failed') ||
-        errorMessage.includes('connection refused') ||
-        errorMessage.includes('etimedout') ||
-        errorMessage.includes('econnreset') ||
-        errorMessage.includes('econnrefused') ||
-        errorMessage.includes('timeout') ||
-        errorMessage.includes('socket hang up') ||
-        stackTrace.includes('axios') ||
-        stackTrace.includes('node-fetch') ||
-        stackTrace.includes('http') ||
-        stackTrace.includes('https')) {
-
-        if (errorMessage.includes('timeout')) {
+  if (
+    errorName.includes("network") ||
+    errorName.includes("fetch") ||
+    errorName.includes("request") ||
+    errorMessage.includes("network") ||
+    errorMessage.includes("fetch") ||
+    errorMessage.includes("request failed") ||
+    errorMessage.includes("connection refused") ||
+    errorMessage.includes("etimedout") ||
+    errorMessage.includes("econnreset") ||
+    errorMessage.includes("econnrefused") ||
+    errorMessage.includes("timeout") ||
+    errorMessage.includes("socket hang up") ||
+    stackTrace.includes("axios") ||
+    stackTrace.includes("node-fetch") ||
+    stackTrace.includes("http") ||
+    stackTrace.includes("https")
+  ) {
+    if (errorMessage.includes("timeout")) {
             return {
-                errorType: 'network',
+        errorType: "network",
                 errorCode: Errors.ErrorCodes.SERVICE_UNAVAILABLE,
-                errorSeverity: 'high'
+        errorSeverity: "high",
             };
-        } else if (errorMessage.includes('connection refused') || errorMessage.includes('econnrefused')) {
+    } else if (
+      errorMessage.includes("connection refused") ||
+      errorMessage.includes("econnrefused")
+    ) {
             return {
-                errorType: 'network',
+        errorType: "network",
                 errorCode: Errors.ErrorCodes.API_RATE_LIMITED,
-                errorSeverity: 'high'
+        errorSeverity: "high",
             };
         } else {
             return {
-                errorType: 'network',
+        errorType: "network",
                 errorCode: Errors.ErrorCodes.EXTERNAL_SERVICE_ERROR,
-                errorSeverity: 'high'
+        errorSeverity: "high",
             };
         }
     }
 
     // Authentication errors (check before validation since auth errors may contain "invalid")
-    if (errorName.includes('auth') ||
-        errorName.includes('token') ||
-        errorName.includes('jwt') ||
-        errorMessage.includes('authentication') ||
-        errorMessage.includes('authorization') ||
-        errorMessage.includes('token') ||
-        errorMessage.includes('jwt') ||
-        errorMessage.includes('invalid credentials') ||
-        errorMessage.includes('permission denied') ||
-        errorMessage.includes('unauthorized') ||
-        errorMessage.includes('forbidden') ||
-        (errorMessage.includes('invalid') && (errorMessage.includes('token') || errorMessage.includes('jwt') || errorMessage.includes('auth'))) ||
-        stackTrace.includes('auth') ||
-        stackTrace.includes('jwt')) {
-
-        if (errorMessage.includes('expired')) {
+  if (
+    errorName.includes("auth") ||
+    errorName.includes("token") ||
+    errorName.includes("jwt") ||
+    errorMessage.includes("authentication") ||
+    errorMessage.includes("authorization") ||
+    errorMessage.includes("token") ||
+    errorMessage.includes("jwt") ||
+    errorMessage.includes("invalid credentials") ||
+    errorMessage.includes("permission denied") ||
+    errorMessage.includes("unauthorized") ||
+    errorMessage.includes("forbidden") ||
+    (errorMessage.includes("invalid") &&
+      (errorMessage.includes("token") ||
+        errorMessage.includes("jwt") ||
+        errorMessage.includes("auth"))) ||
+    stackTrace.includes("auth") ||
+    stackTrace.includes("jwt")
+  ) {
+    if (errorMessage.includes("expired")) {
             return {
-                errorType: 'authentication',
+        errorType: "authentication",
                 errorCode: Errors.ErrorCodes.TOKEN_EXPIRED,
-                errorSeverity: 'medium'
+        errorSeverity: "medium",
             };
-        } else if (errorMessage.includes('permission denied') || errorMessage.includes('forbidden')) {
+    } else if (
+      errorMessage.includes("permission denied") ||
+      errorMessage.includes("forbidden")
+    ) {
             return {
-                errorType: 'authentication',
+        errorType: "authentication",
                 errorCode: Errors.ErrorCodes.INSUFFICIENT_PERMISSIONS,
-                errorSeverity: 'medium'
+        errorSeverity: "medium",
             };
-        } else if (errorMessage.includes('invalid') && (errorMessage.includes('token') || errorMessage.includes('jwt') || errorMessage.includes('auth'))) {
+    } else if (
+      errorMessage.includes("invalid") &&
+      (errorMessage.includes("token") ||
+        errorMessage.includes("jwt") ||
+        errorMessage.includes("auth"))
+    ) {
             return {
-                errorType: 'authentication',
+        errorType: "authentication",
                 errorCode: Errors.ErrorCodes.TOKEN_EXPIRED,
-                errorSeverity: 'medium'
+        errorSeverity: "medium",
             };
         } else {
             return {
-                errorType: 'authentication',
+        errorType: "authentication",
                 errorCode: Errors.ErrorCodes.INVALID_CREDENTIALS,
-                errorSeverity: 'medium'
+        errorSeverity: "medium",
             };
         }
     }
 
     // Validation errors
-    if (errorName.includes('validation') ||
-        errorName.includes('joi') ||
-        errorName.includes('zod') ||
-        errorMessage.includes('validation') ||
-        errorMessage.includes('invalid') ||
-        errorMessage.includes('schema') ||
-        errorMessage.includes('required') ||
-        errorMessage.includes('must be') ||
-        errorMessage.includes('should be') ||
-        stackTrace.includes('validation') ||
-        stackTrace.includes('schema')) {
-
+  if (
+    errorName.includes("validation") ||
+    errorName.includes("joi") ||
+    errorName.includes("zod") ||
+    errorMessage.includes("validation") ||
+    errorMessage.includes("invalid") ||
+    errorMessage.includes("schema") ||
+    errorMessage.includes("required") ||
+    errorMessage.includes("must be") ||
+    errorMessage.includes("should be") ||
+    stackTrace.includes("validation") ||
+    stackTrace.includes("schema")
+  ) {
         return {
-            errorType: 'validation',
+      errorType: "validation",
             errorCode: Errors.ErrorCodes.VALIDATION_ERROR,
-            errorSeverity: 'medium'
+      errorSeverity: "medium",
         };
     }
 
     // Rate limiting errors
-    if (errorMessage.includes('rate limit') ||
-        errorMessage.includes('too many requests') ||
-        errorMessage.includes('429') ||
-        stackTrace.includes('rate-limit')) {
-
+  if (
+    errorMessage.includes("rate limit") ||
+    errorMessage.includes("too many requests") ||
+    errorMessage.includes("429") ||
+    stackTrace.includes("rate-limit")
+  ) {
         return {
-            errorType: 'rate_limit',
+      errorType: "rate_limit",
             errorCode: Errors.ErrorCodes.API_RATE_LIMITED,
-            errorSeverity: 'medium'
+      errorSeverity: "medium",
         };
     }
 
     // Configuration errors
-    if (errorMessage.includes('configuration') ||
-        errorMessage.includes('env') ||
-        errorMessage.includes('environment') ||
-        errorMessage.includes('missing') ||
-        errorMessage.includes('not configured') ||
-        errorMessage.includes('undefined') ||
-        stackTrace.includes('config')) {
-
+  if (
+    errorMessage.includes("configuration") ||
+    errorMessage.includes("env") ||
+    errorMessage.includes("environment") ||
+    errorMessage.includes("missing") ||
+    errorMessage.includes("not configured") ||
+    errorMessage.includes("undefined") ||
+    stackTrace.includes("config")
+  ) {
         return {
-            errorType: 'configuration',
+      errorType: "configuration",
             errorCode: Errors.ErrorCodes.CONFIGURATION_ERROR,
-            errorSeverity: 'high'
+      errorSeverity: "high",
         };
     }
 
     // Business logic errors
-    if (errorMessage.includes('business') ||
-        errorMessage.includes('rule') ||
-        errorMessage.includes('limit exceeded') ||
-        errorMessage.includes('invalid state') ||
-        errorMessage.includes('cannot') ||
-        errorMessage.includes('not allowed') ||
-        stackTrace.includes('business') ||
-        stackTrace.includes('domain')) {
-
+  if (
+    errorMessage.includes("business") ||
+    errorMessage.includes("rule") ||
+    errorMessage.includes("limit exceeded") ||
+    errorMessage.includes("invalid state") ||
+    errorMessage.includes("cannot") ||
+    errorMessage.includes("not allowed") ||
+    stackTrace.includes("business") ||
+    stackTrace.includes("domain")
+  ) {
         return {
-            errorType: 'business',
+      errorType: "business",
             errorCode: Errors.ErrorCodes.INSUFFICIENT_BALANCE,
-            errorSeverity: 'medium'
+      errorSeverity: "medium",
         };
     }
 
     // Integration errors (external services)
-    if (errorMessage.includes('integration') ||
-        errorMessage.includes('api') ||
-        errorMessage.includes('service unavailable') ||
-        errorMessage.includes('503') ||
-        errorMessage.includes('external') ||
-        errorMessage.includes('third party') ||
-        stackTrace.includes('integration') ||
-        stackTrace.includes('external')) {
-
-        if (errorMessage.includes('unavailable') || errorMessage.includes('503')) {
+  if (
+    errorMessage.includes("integration") ||
+    errorMessage.includes("api") ||
+    errorMessage.includes("service unavailable") ||
+    errorMessage.includes("503") ||
+    errorMessage.includes("external") ||
+    errorMessage.includes("third party") ||
+    stackTrace.includes("integration") ||
+    stackTrace.includes("external")
+  ) {
+    if (errorMessage.includes("unavailable") || errorMessage.includes("503")) {
             return {
-                errorType: 'integration',
+        errorType: "integration",
                 errorCode: Errors.ErrorCodes.EXTERNAL_SERVICE_ERROR,
-                errorSeverity: 'high'
+        errorSeverity: "high",
             };
         } else {
             return {
-                errorType: 'integration',
+        errorType: "integration",
                 errorCode: Errors.ErrorCodes.SERVICE_UNAVAILABLE,
-                errorSeverity: 'high'
+        errorSeverity: "high",
             };
         }
     }
 
     // Default classification
     return {
-        errorType: 'unknown',
+    errorType: "unknown",
         errorCode: Errors.ErrorCodes.INTERNAL_ERROR,
-        errorSeverity: 'high'
+    errorSeverity: "high",
     };
 }
 
@@ -631,12 +665,15 @@ export function classifyError(error: Error): {
  * Enhanced error info creation with automatic classification and stack trace parsing
  * Provides comprehensive error context for debugging and monitoring
  */
-export function createEnhancedErrorInfo(error: Error, options?: {
-    errorType?: ErrorInfo['errorType'];
+export function createEnhancedErrorInfo(
+  error: Error,
+  options?: {
+    errorType?: ErrorInfo["errorType"];
     errorCode?: string;
     isOperational?: boolean;
     context?: Record<string, unknown>;
-}): ErrorInfo {
+  }
+): ErrorInfo {
     // Automatic classification
     const classification = classifyError(error);
 

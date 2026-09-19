@@ -274,33 +274,96 @@ export interface BotStatus {
 // ===========================================
 
 export function isEngineCommand(obj: any): obj is EngineCommand {
-    return obj && typeof obj === "object" && typeof obj.type === "string" && typeof obj.engineId === "string" && typeof obj.timestamp === "number";
+  return (
+    obj &&
+    typeof obj === "object" &&
+    typeof obj.type === "string" &&
+    typeof obj.engineId === "string" &&
+    typeof obj.timestamp === "number"
+  );
 }
 
 export function isEngineEvent(obj: any): obj is EngineEvent {
-    return obj && typeof obj === "object" && typeof obj.type === "string" && typeof obj.engineId === "string" && typeof obj.timestamp === "number";
+  return (
+    obj &&
+    typeof obj === "object" &&
+    typeof obj.type === "string" &&
+    typeof obj.engineId === "string" &&
+    typeof obj.timestamp === "number"
+  );
 }
 
 export function isStartEngineCommand(obj: any): obj is StartEngineCommand {
-    return obj && typeof obj === "object" && obj.type === "START_ENGINE" && typeof obj.engineId === "string" && typeof obj.timestamp === "number" && typeof obj.strategyId === "string" && obj.config && obj.credentials;
+  return (
+    obj &&
+    typeof obj === "object" &&
+    obj.type === "START_ENGINE" &&
+    typeof obj.engineId === "string" &&
+    typeof obj.timestamp === "number" &&
+    typeof obj.strategyId === "string" &&
+    obj.config &&
+    obj.credentials
+  );
 }
 
 export function isStopEngineCommand(obj: any): obj is StopEngineCommand {
-    return obj && typeof obj === "object" && obj.type === "STOP_ENGINE" && typeof obj.engineId === "string" && typeof obj.timestamp === "number";
+  return (
+    obj &&
+    typeof obj === "object" &&
+    obj.type === "STOP_ENGINE" &&
+    typeof obj.engineId === "string" &&
+    typeof obj.timestamp === "number"
+  );
 }
 
 export function isStartBotCommand(obj: any): obj is StartBotCommand {
-    return obj && typeof obj === "object" && obj.type === "START_BOT" && typeof obj.engineId === "string" && typeof obj.timestamp === "number" && typeof obj.botId === "string" && typeof obj.strategyId === "string" && obj.config && obj.credentials;
+  return (
+    obj &&
+    typeof obj === "object" &&
+    obj.type === "START_BOT" &&
+    typeof obj.engineId === "string" &&
+    typeof obj.timestamp === "number" &&
+    typeof obj.botId === "string" &&
+    typeof obj.strategyId === "string" &&
+    obj.config &&
+    obj.credentials
+  );
 }
 
 export function isStopBotCommand(obj: any): obj is StopBotCommand {
-    return obj && typeof obj === "object" && obj.type === "STOP_BOT" && typeof obj.engineId === "string" && typeof obj.timestamp === "number" && typeof obj.botId === "string";
+  return (
+    obj &&
+    typeof obj === "object" &&
+    obj.type === "STOP_BOT" &&
+    typeof obj.engineId === "string" &&
+    typeof obj.timestamp === "number" &&
+    typeof obj.botId === "string"
+  );
 }
 
 export function isEmergencyStopCommand(obj: any): obj is EmergencyStopCommand {
-    return obj && typeof obj === "object" && obj.type === "EMERGENCY_STOP" && typeof obj.engineId === "string" && typeof obj.timestamp === "number" && ["CANCEL_ALL_ORDERS", "CLOSE_POSITIONS", "FULL_SHUTDOWN"].includes(obj.action);
+  return (
+    obj &&
+    typeof obj === "object" &&
+    obj.type === "EMERGENCY_STOP" &&
+    typeof obj.engineId === "string" &&
+    typeof obj.timestamp === "number" &&
+    ["CANCEL_ALL_ORDERS", "CLOSE_POSITIONS", "FULL_SHUTDOWN"].includes(
+      obj.action
+    )
+  );
 }
 
-export function isUpdateStrategyConfigCommand(obj: any): obj is UpdateStrategyConfigCommand {
-    return obj && typeof obj === "object" && obj.type === "UPDATE_STRATEGY_CONFIG" && typeof obj.engineId === "string" && typeof obj.timestamp === "number" && typeof obj.botId === "string" && obj.config;
+export function isUpdateStrategyConfigCommand(
+  obj: any
+): obj is UpdateStrategyConfigCommand {
+  return (
+    obj &&
+    typeof obj === "object" &&
+    obj.type === "UPDATE_STRATEGY_CONFIG" &&
+    typeof obj.engineId === "string" &&
+    typeof obj.timestamp === "number" &&
+    typeof obj.botId === "string" &&
+    obj.config
+  );
 }

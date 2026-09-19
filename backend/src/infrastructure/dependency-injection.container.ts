@@ -8,50 +8,53 @@
  * @format
  */
 
-import { redisCacheAdapter } from './adapters/cache/redis-cache.adapter';
-import { loggerAdapter } from './adapters/logger/logger.adapter';
-import { jwtTokenAdapter } from './adapters/token/jwt-token.adapter';
-import { passwordAdapter } from './adapters/password/password.adapter';
-import { encryptionAdapter } from './adapters/encryption/encryption.adapter';
-import { externalApiAdapter } from './adapters/external/external-api.adapter';
-import { signatureVerificationServiceAdapter } from './adapters/security/signature-verification.adapter';
+import { redisCacheAdapter } from "./adapters/cache/redis-cache.adapter";
+import { loggerAdapter } from "./adapters/logger/logger.adapter";
+import { jwtTokenAdapter } from "./adapters/token/jwt-token.adapter";
+import { passwordAdapter } from "./adapters/password/password.adapter";
+import { encryptionAdapter } from "./adapters/encryption/encryption.adapter";
+import { externalApiAdapter } from "./adapters/external/external-api.adapter";
+import { signatureVerificationServiceAdapter } from "./adapters/security/signature-verification.adapter";
 
 // Redis Services
-import { redisService } from './cache/redis.service';
+import { redisService } from "./cache/redis.service";
 
 // Kodiak Connection Service
-import { kodiakConnectionService } from './external/kodiak-connection.service';
+import { kodiakConnectionService } from "./external/kodiak-connection.service";
 
 // Repository Adapters
-import { userRepositoryAdapter } from './adapters/repositories/user-repository.adapter';
-import { balanceRepositoryAdapter } from './adapters/repositories/balance-repository.adapter';
-import { positionRepositoryAdapter } from './adapters/repositories/position-repository.adapter';
-import { tradeRepositoryAdapter } from './adapters/repositories/trade-repository.adapter';
-import { strategyRepositoryAdapter } from './adapters/repositories/strategy-repository.adapter';
-import { kodiakCredentialsRepositoryAdapter } from './adapters/repositories/kodiak-credentials-repository.adapter';
-import { auditLogRepositoryAdapter } from './adapters/repositories/audit-log-repository.adapter';
-import { roleRepositoryAdapter } from './adapters/repositories/role-repository.adapter';
-import { botInstanceRepositoryAdapter } from './adapters/repositories/bot-instance-repository.adapter';
+import { userRepositoryAdapter } from "./adapters/repositories/user-repository.adapter";
+import { balanceRepositoryAdapter } from "./adapters/repositories/balance-repository.adapter";
+import { positionRepositoryAdapter } from "./adapters/repositories/position-repository.adapter";
+import { tradeRepositoryAdapter } from "./adapters/repositories/trade-repository.adapter";
+import { strategyRepositoryAdapter } from "./adapters/repositories/strategy-repository.adapter";
+import { kodiakCredentialsRepositoryAdapter } from "./adapters/repositories/kodiak-credentials-repository.adapter";
+import { auditLogRepositoryAdapter } from "./adapters/repositories/audit-log-repository.adapter";
+import { roleRepositoryAdapter } from "./adapters/repositories/role-repository.adapter";
+import { botInstanceRepositoryAdapter } from "./adapters/repositories/bot-instance-repository.adapter";
 
 // Pure Services
-import { BotManagementService } from '../core/bots/bot-management.service';
-import { WebSocketRateLimiter, webSocketRateLimiter } from '../infrastructure/security/rate-limiter/websocket-rate-limiter.adapter';
+import { BotManagementService } from "../core/bots/bot-management.service";
+import {
+  WebSocketRateLimiter,
+  webSocketRateLimiter,
+} from "../infrastructure/security/rate-limiter/websocket-rate-limiter.adapter";
 
 // Pure Services
-import { BalanceService } from '../core/wallet/balance.service.pure';
-import { AuthService } from '../core/auth/auth.service.pure';
-import { PositionService } from '../core/strategies/position.service.pure';
-import { RoleManagementService } from '../core/auth/role-management.service.pure';
-import { RoleQualificationService } from '../core/auth/role-qualification.service';
-import { WalletQualificationService } from '../core/wallet/wallet-qualification.service.pure';
-import { StrategyService } from '../core/strategies/strategy.service';
-import { MarketService } from '../core/market/market.service';
-import { HealthService } from '../core/system/health.service.pure';
-import { PositionValidatorService } from '../core/strategies/position-validator.service.pure';
-import { PositionSyncService } from '../core/strategies/position-sync.service.pure';
-import { EngineManager } from '../core/strategies/engine-manager.service.pure';
-import { UserProfileService } from '../core/user/user-profile.service';
-import { UserKodiakService } from '../core/user/user-kodiak.service';
+import { BalanceService } from "../core/wallet/balance.service.pure";
+import { AuthService } from "../core/auth/auth.service.pure";
+import { PositionService } from "../core/strategies/position.service.pure";
+import { RoleManagementService } from "../core/auth/role-management.service.pure";
+import { RoleQualificationService } from "../core/auth/role-qualification.service";
+import { WalletQualificationService } from "../core/wallet/wallet-qualification.service.pure";
+import { StrategyService } from "../core/strategies/strategy.service";
+import { MarketService } from "../core/market/market.service";
+import { HealthService } from "../core/system/health.service.pure";
+import { PositionValidatorService } from "../core/strategies/position-validator.service.pure";
+import { PositionSyncService } from "../core/strategies/position-sync.service.pure";
+import { EngineManager } from "../core/strategies/engine-manager.service.pure";
+import { UserProfileService } from "../core/user/user-profile.service";
+import { UserKodiakService } from "../core/user/user-kodiak.service";
 
 /**
  * Dependency Injection Container
@@ -60,7 +63,6 @@ import { UserKodiakService } from '../core/user/user-kodiak.service';
  * Ensures proper instantiation order and dependency resolution for clean architecture.
  */
 export class DependencyInjectionContainer {
-
     // ===========================================
     // INFRASTRUCTURE ADAPTERS (Singletons)
     // ===========================================
@@ -186,7 +188,7 @@ export class DependencyInjectionContainer {
             balanceRepository: this.balanceRepository,
             cache: this.cacheService,
             externalApi: this.externalApiService,
-            logger: this.loggerService
+      logger: this.loggerService,
         });
     }
 
@@ -208,7 +210,7 @@ export class DependencyInjectionContainer {
             passwordService: this.passwordService,
             logger: this.loggerService,
             auditLogger: this.auditLogRepository,
-            signatureVerificationService: this.signatureVerificationService
+      signatureVerificationService: this.signatureVerificationService,
         });
     }
 
@@ -220,7 +222,7 @@ export class DependencyInjectionContainer {
             positionRepository: this.positionRepository,
             cache: this.cacheService,
             externalApi: this.externalApiService,
-            logger: this.loggerService
+      logger: this.loggerService,
         });
     }
 
@@ -232,7 +234,7 @@ export class DependencyInjectionContainer {
             roleRepository: this.roleRepository,
             auditLogger: this.auditLogRepository,
             cache: this.cacheService,
-            logger: this.loggerService
+      logger: this.loggerService,
         });
     }
 
@@ -243,7 +245,7 @@ export class DependencyInjectionContainer {
         return new RoleQualificationService({
             userRepository: this.userRepository,
             cache: this.cacheService,
-            logger: this.loggerService
+      logger: this.loggerService,
         });
     }
 
@@ -254,7 +256,7 @@ export class DependencyInjectionContainer {
         return new WalletQualificationService({
             userRepository: this.userRepository,
             externalApi: this.externalApiService,
-            logger: this.loggerService
+      logger: this.loggerService,
         });
     }
 
@@ -265,7 +267,7 @@ export class DependencyInjectionContainer {
         return new StrategyService({
             strategyRepository: this.strategyRepository,
             botInstanceRepository: this.botInstanceRepository,
-            logger: this.loggerService
+      logger: this.loggerService,
         });
     }
 
@@ -277,7 +279,7 @@ export class DependencyInjectionContainer {
             botInstanceRepository: this.botInstanceRepository,
             strategyRepository: this.strategyRepository,
             auditLogRepository: this.auditLogRepository,
-            logger: this.loggerService
+      logger: this.loggerService,
         });
     }
 
@@ -287,7 +289,7 @@ export class DependencyInjectionContainer {
     get marketService(): MarketService {
         return new MarketService({
             kodiakCredentialsRepository: this.kodiakCredentialsRepository,
-            logger: this.loggerService
+      logger: this.loggerService,
         });
     }
 
@@ -300,7 +302,7 @@ export class DependencyInjectionContainer {
             positionRepository: this.positionRepository,
             cache: this.cacheService,
             externalApi: this.externalApiService,
-            logger: this.loggerService
+      logger: this.loggerService,
         });
     }
 
@@ -313,7 +315,7 @@ export class DependencyInjectionContainer {
             userRepository: this.userRepository,
             cache: this.cacheService,
             externalApi: this.externalApiService,
-            logger: this.loggerService
+      logger: this.loggerService,
         });
     }
 
@@ -323,7 +325,7 @@ export class DependencyInjectionContainer {
     get healthService(): HealthService {
         return new HealthService({
             logger: this.loggerService,
-            cacheService: this.cacheService
+      cacheService: this.cacheService,
         });
     }
 
@@ -335,7 +337,7 @@ export class DependencyInjectionContainer {
             userRepository: this.userRepository,
             cache: this.cacheService,
             passwordService: this.passwordService,
-            auditLogRepository: this.auditLogRepository
+      auditLogRepository: this.auditLogRepository,
         });
     }
 
@@ -358,11 +360,16 @@ export class DependencyInjectionContainer {
                     const result = await this.cacheService.get(cacheKey);
                     return result.success ? result.data : null;
                 },
-                setCachedResult: async (userId: string, accountId: string, success: boolean, error?: string) => {
+        setCachedResult: async (
+          userId: string,
+          accountId: string,
+          success: boolean,
+          error?: string
+        ) => {
                     const cacheKey = `kodiak:connection:${userId}:${accountId}`;
                     await this.cacheService.set(cacheKey, { success, error }, 300); // Cache for 5 minutes
-                }
-            }
+        },
+      },
         });
     }
 
@@ -373,7 +380,7 @@ export class DependencyInjectionContainer {
         return new EngineManager({
             botInstanceRepository: this.botInstanceRepository,
             logger: this.loggerService,
-            redisStreamOperations: this.redisStreamOperations
+      redisStreamOperations: this.redisStreamOperations,
         });
     }
 
@@ -402,27 +409,33 @@ export class DependencyInjectionContainer {
     async initialize(): Promise<void> {
         try {
             // Log successful container initialization
-            this.loggerService.info('Dependency Injection Container initialized successfully', {
+      this.loggerService.info(
+        "Dependency Injection Container initialized successfully",
+        {
                 adapters: {
-                    cache: 'RedisCacheAdapter',
-                    logger: 'LoggerAdapter',
-                    token: 'JwtTokenAdapter',
-                    password: 'PasswordAdapter',
-                    encryption: 'EncryptionAdapter',
-                    externalApi: 'ExternalApiAdapter',
-                    repositories: 7 // All repository adapters
+            cache: "RedisCacheAdapter",
+            logger: "LoggerAdapter",
+            token: "JwtTokenAdapter",
+            password: "PasswordAdapter",
+            encryption: "EncryptionAdapter",
+            externalApi: "ExternalApiAdapter",
+            repositories: 7, // All repository adapters
                 },
                 services: {
-                    balance: 'BalanceService',
-                    auth: 'AuthService',
-                    position: 'PositionService',
-                    botManagement: 'BotManagementService'
+            balance: "BalanceService",
+            auth: "AuthService",
+            position: "PositionService",
+            botManagement: "BotManagementService",
+          },
                 }
-            });
+      );
         } catch (error) {
-            this.loggerService.error('Failed to initialize Dependency Injection Container', {
-                error: error instanceof Error ? error.message : String(error)
-            });
+      this.loggerService.error(
+        "Failed to initialize Dependency Injection Container",
+        {
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
             throw error;
         }
     }
@@ -440,38 +453,37 @@ export class DependencyInjectionContainer {
 
         try {
             // Check cache service
-            const cacheHealth = await this.cacheService.get('health_check');
+      const cacheHealth = await this.cacheService.get("health_check");
             services.cache = cacheHealth.success;
-            details.cache = cacheHealth.success ? 'healthy' : 'unhealthy';
+      details.cache = cacheHealth.success ? "healthy" : "unhealthy";
 
             // Check external API connectivity (this would be a lightweight test)
             services.externalApi = true; // Assume healthy for now
-            details.externalApi = 'healthy';
+      details.externalApi = "healthy";
 
             // Check database connectivity via user repository
-            const _dbTest = await this.userRepository.findById('health-check-user');
+      const _dbTest = await this.userRepository.findById("health-check-user");
             services.database = true; // If no exception thrown
-            details.database = 'healthy';
+      details.database = "healthy";
 
             const healthy = Object.values(services).every(s => s);
 
             return {
                 healthy,
                 services,
-                details
+        details,
             };
-
         } catch (error) {
-            this.loggerService.error('Health check failed', {
-                error: error instanceof Error ? error.message : String(error)
+      this.loggerService.error("Health check failed", {
+        error: error instanceof Error ? error.message : String(error),
             });
 
             return {
                 healthy: false,
                 services: { cache: false, externalApi: false, database: false },
                 details: {
-                    error: error instanceof Error ? error.message : String(error)
-                }
+          error: error instanceof Error ? error.message : String(error),
+        },
             };
         }
     }
@@ -489,7 +501,7 @@ export class DependencyInjectionContainer {
             infrastructureAdapters: 6, // cache, logger, token, password, encryption, externalApi
             repositoryAdapters: 8, // user, balance, position, trade, strategy, kodiakCredentials, auditLog, botInstance
             businessServices: 4, // balance, auth, position, botManagement
-            totalServices: 18
+      totalServices: 18,
         };
     }
 }
@@ -522,7 +534,8 @@ export const getBalanceRepository = () => diContainer.balanceRepository;
 export const getPositionRepository = () => diContainer.positionRepository;
 export const getTradeRepository = () => diContainer.tradeRepository;
 export const getStrategyRepository = () => diContainer.strategyRepository;
-export const getKodiakCredentialsRepository = () => diContainer.kodiakCredentialsRepository;
+export const getKodiakCredentialsRepository = () =>
+  diContainer.kodiakCredentialsRepository;
 export const getAuditLogRepository = () => diContainer.auditLogRepository;
 export const getBotInstanceRepository = () => diContainer.botInstanceRepository;
 
@@ -534,7 +547,8 @@ export const getStrategyService = () => diContainer.strategyService;
 export const getBotManagementService = () => diContainer.botManagementService;
 export const getMarketService = () => diContainer.marketService;
 export const getHealthService = () => diContainer.healthService;
-export const getPositionValidatorService = () => diContainer.positionValidatorService;
+export const getPositionValidatorService = () =>
+  diContainer.positionValidatorService;
 export const getPositionSyncService = () => diContainer.positionSyncService;
 export const getEngineManager = () => diContainer.engineManager;
 export const getUserProfileService = () => diContainer.userProfileService;

@@ -10,7 +10,11 @@
 import { redisService } from "../../cache/redis.service";
 import { integrationLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import type { KodiakApiResponse } from "./types";
-import { createFetchOptions, getKodiakBaseUrl, getKodiakPublicHeaders } from "./fetch-options";
+import {
+  createFetchOptions,
+  getKodiakBaseUrl,
+  getKodiakPublicHeaders,
+} from "./fetch-options";
 
 export interface PublicKodiakFetchOptions<T> {
     /** Path beginning with /v1, appended to the configured base URL. */
@@ -33,7 +37,9 @@ export interface PublicKodiakFetchOptions<T> {
     logContext?: Record<string, unknown>;
 }
 
-export async function fetchPublicKodiak<T>(options: PublicKodiakFetchOptions<T>): Promise<KodiakApiResponse<T>> {
+export async function fetchPublicKodiak<T>(
+  options: PublicKodiakFetchOptions<T>
+): Promise<KodiakApiResponse<T>> {
     const { logContext = {} } = options;
     try {
         const cacheResult = await redisService.get(options.cacheKey);
@@ -43,13 +49,18 @@ export async function fetchPublicKodiak<T>(options: PublicKodiakFetchOptions<T>)
             return JSON.parse(cacheResult.data);
         }
 
-        const response = await fetch(`${getKodiakBaseUrl()}${options.path}`, createFetchOptions({
+    const response = await fetch(
+      `${getKodiakBaseUrl()}${options.path}`,
+      createFetchOptions({
             headers: getKodiakPublicHeaders(),
-        }));
+      })
+    );
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`);
+      throw new Error(
+        `Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`
+      );
         }
 
         const responseData = await response.json();
@@ -59,7 +70,11 @@ export async function fetchPublicKodiak<T>(options: PublicKodiakFetchOptions<T>)
             data: options.extract(responseData),
         };
 
-        await redisService.setex(options.cacheKey, options.ttlSeconds, JSON.stringify(result));
+    await redisService.setex(
+      options.cacheKey,
+      options.ttlSeconds,
+      JSON.stringify(result)
+    );
 
         logger.debug(options.successLog, logContext);
         return result;
@@ -80,5 +95,5 @@ export async function fetchPublicKodiak<T>(options: PublicKodiakFetchOptions<T>)
  * Default extractor used by most public endpoints: unwrap `.data` when present.
  */
 export function unwrapDataOrRaw<T>(responseData: unknown): T {
-    return (responseData as { data?: T }).data || responseData as T;
+  return (responseData as { data?: T }).data || (responseData as T);
 }

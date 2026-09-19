@@ -19,7 +19,7 @@ export type {
     AuthState,
     AuthActions,
     AuthContextType,
-    QualificationStatus
+  QualificationStatus,
 } from "./types";
 
 // Components (to be added)

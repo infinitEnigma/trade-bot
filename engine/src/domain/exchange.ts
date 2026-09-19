@@ -23,8 +23,8 @@ export interface ExchangeTicker {
  */
 export interface ExchangeOrderRequest {
     symbol: string;
-    side: 'BUY' | 'SELL';
-    orderType: 'LIMIT' | 'MARKET';
+  side: "BUY" | "SELL";
+  orderType: "LIMIT" | "MARKET";
     orderPrice?: number;
     orderQuantity: number;
     clientOrderId?: string;

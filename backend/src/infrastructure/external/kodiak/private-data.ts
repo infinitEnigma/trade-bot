@@ -31,7 +31,10 @@ export const privateDataMethods = {
     /**
      * Get Kodiak positions for a user
      */
-    async getPositions(this: KodiakIntegrationService, userId: string): Promise<KodiakApiResponse<KodiakPosition[]>> {
+  async getPositions(
+    this: KodiakIntegrationService,
+    userId: string
+  ): Promise<KodiakApiResponse<KodiakPosition[]>> {
         try {
             const cacheKey = `positions:${userId}`;
 
@@ -41,10 +44,13 @@ export const privateDataMethods = {
                 externalTrafficObserver.recordKodiakCacheHit("positions", userId);
                 logger.debug("Returning cached Kodiak positions", { userId });
                 // Ensure cached data matches KodiakApiResponse interface
-                if (cached && typeof cached === 'object' && 'success' in cached) {
+        if (cached && typeof cached === "object" && "success" in cached) {
                     return cached as KodiakApiResponse<KodiakPosition[]>;
                 } else {
-                    logger.warn("Cached Kodiak positions data has invalid structure, clearing cache", { userId });
+          logger.warn(
+            "Cached Kodiak positions data has invalid structure, clearing cache",
+            { userId }
+          );
                     kodiakCache.delete(cacheKey);
                 }
             } else {
@@ -98,7 +104,11 @@ export const privateDataMethods = {
     /**
      * Get Kodiak trade history for a user
      */
-    async getTrades(this: KodiakIntegrationService, userId: string, limit: number = 50): Promise<KodiakApiResponse<KodiakTrade[]>> {
+  async getTrades(
+    this: KodiakIntegrationService,
+    userId: string,
+    limit: number = 50
+  ): Promise<KodiakApiResponse<KodiakTrade[]>> {
         try {
             const cacheKey = `trades:${userId}:${limit}`;
 
@@ -108,10 +118,13 @@ export const privateDataMethods = {
                 externalTrafficObserver.recordKodiakCacheHit("trades", userId);
                 logger.debug("Returning cached Kodiak trades", { userId, limit });
                 // Ensure cached data matches KodiakApiResponse interface
-                if (cached && typeof cached === 'object' && 'success' in cached) {
+        if (cached && typeof cached === "object" && "success" in cached) {
                     return cached as KodiakApiResponse<KodiakTrade[]>;
                 } else {
-                    logger.warn("Cached Kodiak trades data has invalid structure, clearing cache", { userId, limit });
+          logger.warn(
+            "Cached Kodiak trades data has invalid structure, clearing cache",
+            { userId, limit }
+          );
                     kodiakCache.delete(cacheKey);
                 }
             } else {
@@ -166,7 +179,10 @@ export const privateDataMethods = {
     /**
      * Get Kodiak account balance for a user
      */
-    async getBalance(this: KodiakIntegrationService, userId: string): Promise<KodiakApiResponse<KodiakAccountInfo>> {
+  async getBalance(
+    this: KodiakIntegrationService,
+    userId: string
+  ): Promise<KodiakApiResponse<KodiakAccountInfo>> {
         try {
             const cacheKey = `kodiak:balance:${userId}`;
 
@@ -190,14 +206,13 @@ export const privateDataMethods = {
             }
 
             // Get account holdings
-            const holdingsData = await this.makeKodiakRequest<KodiakHoldingsResponse | KodiakHolding[]>(
-                "GET",
-                "/client/holding?all=true",
-                credentials
-            );
+      const holdingsData = await this.makeKodiakRequest<
+        KodiakHoldingsResponse | KodiakHolding[]
+      >("GET", "/client/holding?all=true", credentials);
 
             // Get account info
-            const accountInfoData = await this.makeKodiakRequest<KodiakApiAccountInfoResponse>(
+      const accountInfoData =
+        await this.makeKodiakRequest<KodiakApiAccountInfoResponse>(
                 "GET",
                 "/client/info",
                 credentials
@@ -209,25 +224,32 @@ export const privateDataMethods = {
                 : holdingsData?.holding || [];
 
             // Calculate total balance
-            const totalBalance = holdings.reduce((sum: number, holding: Record<string, unknown>) => {
-                const balanceStr = (holding as Record<string, unknown>).balance?.toString() || "0";
-                const priceStr = (holding as Record<string, unknown>).price?.toString() || "0";
+      const totalBalance = holdings.reduce(
+        (sum: number, holding: Record<string, unknown>) => {
+          const balanceStr =
+            (holding as Record<string, unknown>).balance?.toString() || "0";
+          const priceStr =
+            (holding as Record<string, unknown>).price?.toString() || "0";
 
                 const balance = parseFloat(balanceStr);
                 const price = parseFloat(priceStr);
 
                 return sum + balance * price;
-            }, 0);
+        },
+        0
+      );
 
-            const balances: KodiakBalance[] = holdings.map((holding: KodiakHolding) => ({
-                asset: holding.holding || holding.balance || 'UNKNOWN',
-                free: holding.balance || '0',
-                locked: '0',
-                freeze: '0',
-                withdrawing: '0',
-                ipoable: '0',
-                btcValuation: '0',
-            }));
+      const balances: KodiakBalance[] = holdings.map(
+        (holding: KodiakHolding) => ({
+          asset: holding.holding || holding.balance || "UNKNOWN",
+          free: holding.balance || "0",
+          locked: "0",
+          freeze: "0",
+          withdrawing: "0",
+          ipoable: "0",
+          btcValuation: "0",
+        })
+      );
 
             const accountInfo: KodiakAccountInfo = {
                 totalBalance: totalBalance.toString(),
@@ -245,7 +267,11 @@ export const privateDataMethods = {
             };
 
             // Cache the result
-            await redisService.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+      await redisService.setex(
+        cacheKey,
+        this.CACHE_TTL,
+        JSON.stringify(result)
+      );
 
             logger.debug("Kodiak balance retrieved and cached", {
                 userId,
@@ -270,7 +296,10 @@ export const privateDataMethods = {
     /**
      * Get Kodiak account information (authenticated)
      */
-    async getAccountInfo(this: KodiakIntegrationService, userId: string): Promise<KodiakApiResponse<KodiakAccountInfo>> {
+  async getAccountInfo(
+    this: KodiakIntegrationService,
+    userId: string
+  ): Promise<KodiakApiResponse<KodiakAccountInfo>> {
         try {
             const cacheKey = `kodiak:account:${userId}`;
 
@@ -307,7 +336,11 @@ export const privateDataMethods = {
             };
 
             // Cache the result
-            await redisService.setex(cacheKey, this.CACHE_TTL_MEDIUM, JSON.stringify(result));
+      await redisService.setex(
+        cacheKey,
+        this.CACHE_TTL_MEDIUM,
+        JSON.stringify(result)
+      );
 
             logger.debug("Kodiak account info retrieved and cached", {
                 userId,

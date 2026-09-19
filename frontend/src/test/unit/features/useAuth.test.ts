@@ -12,7 +12,7 @@ vi.mock("../../../features/auth/services/authService");
 // Mock checkAdminQualification to return not qualified by default
 (authService.checkAdminQualification as Mock).mockResolvedValue({
     success: true,
-    data: { isQualified: false }
+  data: { isQualified: false },
 });
 
 describe("useAuth hook", () => {
@@ -21,7 +21,7 @@ describe("useAuth hook", () => {
         // Reset the checkAdminQualification mock
         (authService.checkAdminQualification as Mock).mockResolvedValue({
             success: true,
-            data: { isQualified: false }
+      data: { isQualified: false },
         });
     });
 
@@ -80,9 +80,7 @@ describe("useAuth hook", () => {
 
         it("should handle login failure", async () => {
             const errorMessage = "Invalid credentials";
-            (authService.login as Mock).mockRejectedValue(
-                new Error(errorMessage)
-            );
+      (authService.login as Mock).mockRejectedValue(new Error(errorMessage));
 
             const { result } = renderHook(() => useAuth());
 
@@ -198,8 +196,8 @@ describe("useAuth hook", () => {
                 },
             });
 
-            Object.defineProperty(window, 'location', {
-                value: { pathname: '/dashboard' },
+      Object.defineProperty(window, "location", {
+        value: { pathname: "/dashboard" },
                 writable: true,
             });
 
@@ -275,9 +273,7 @@ describe("useAuth hook", () => {
     describe("register functionality", () => {
         it("should handle registration failure", async () => {
             const errorMessage = "Email already exists";
-            (authService.register as Mock).mockRejectedValue(
-                new Error(errorMessage)
-            );
+      (authService.register as Mock).mockRejectedValue(new Error(errorMessage));
 
             const { result } = renderHook(() => useAuth());
 
@@ -373,8 +369,8 @@ describe("useAuth hook", () => {
                 error: "Unauthorized",
             });
 
-            Object.defineProperty(window, 'location', {
-                value: { pathname: '/dashboard' },
+      Object.defineProperty(window, "location", {
+        value: { pathname: "/dashboard" },
                 writable: true,
             });
 
@@ -396,8 +392,8 @@ describe("useAuth hook", () => {
                 new Error(errorMessage)
             );
 
-            Object.defineProperty(window, 'location', {
-                value: { pathname: '/dashboard' },
+      Object.defineProperty(window, "location", {
+        value: { pathname: "/dashboard" },
                 writable: true,
             });
 
@@ -415,8 +411,8 @@ describe("useAuth hook", () => {
 
         it("should skip auth check on login page", async () => {
             // Mock window.location
-            Object.defineProperty(window, 'location', {
-                value: { pathname: '/login' },
+      Object.defineProperty(window, "location", {
+        value: { pathname: "/login" },
                 writable: true,
             });
 
@@ -432,8 +428,8 @@ describe("useAuth hook", () => {
 
         it("should skip auth check on register page", async () => {
             // Mock window.location
-            Object.defineProperty(window, 'location', {
-                value: { pathname: '/register' },
+      Object.defineProperty(window, "location", {
+        value: { pathname: "/register" },
                 writable: true,
             });
 
@@ -521,8 +517,8 @@ describe("useAuth hook", () => {
             };
 
             // Mock window.location to not be an auth page
-            Object.defineProperty(window, 'location', {
-                value: { pathname: '/dashboard' },
+      Object.defineProperty(window, "location", {
+        value: { pathname: "/dashboard" },
                 writable: true,
             });
 

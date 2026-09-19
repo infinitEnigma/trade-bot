@@ -77,12 +77,12 @@ class HttpClient {
         this.client.interceptors.response.use(
             response => {
                 // Ensure all responses follow ApiResponse format
-                if (response.data && typeof response.data === 'object') {
+        if (response.data && typeof response.data === "object") {
                     // If response doesn't have success field, wrap it in ApiResponse format
-                    if (!('success' in response.data)) {
+          if (!("success" in response.data)) {
                         response.data = {
                             success: true,
-                            data: response.data
+              data: response.data,
                         };
                     }
                 }

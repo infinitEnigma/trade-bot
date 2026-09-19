@@ -43,18 +43,23 @@ export class RedisCacheManager {
     ): Promise<CacheResult> {
         try {
             const serializedData = JSON.stringify(data);
-            const result = ttlSeconds ?
-                await this.connectionManager.getClient().setEx(key, ttlSeconds, serializedData) :
-                await this.connectionManager.getClient().set(key, serializedData);
+      const result = ttlSeconds
+        ? await this.connectionManager
+            .getClient()
+            .setEx(key, ttlSeconds, serializedData)
+        : await this.connectionManager.getClient().set(key, serializedData);
 
-            if (result === 'OK') {
+      if (result === "OK") {
                 return { success: true };
             } else {
-                return { success: false, error: 'Cache set failed' };
+        return { success: false, error: "Cache set failed" };
             }
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Cache set error", error as Error, { key, error: errorMessage });
+      logger.error("Cache set error", error as Error, {
+        key,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage };
         }
     }
@@ -74,12 +79,18 @@ export class RedisCacheManager {
                 const parsedData = JSON.parse(result);
                 return { success: true, data: parsedData, fromCache: true };
             } catch (parseError) {
-                logger.error("Cache parse error", parseError as Error, { key, error: (parseError as Error).message });
-                return { success: false, error: 'Failed to parse cached data' };
+        logger.error("Cache parse error", parseError as Error, {
+          key,
+          error: (parseError as Error).message,
+        });
+        return { success: false, error: "Failed to parse cached data" };
             }
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Cache get error", error as Error, { key, error: errorMessage });
+      logger.error("Cache get error", error as Error, {
+        key,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage };
         }
     }
@@ -102,22 +113,30 @@ export class RedisCacheManager {
                 // Get current version if versioning is enabled
                 let currentVersion = 0;
                 if (versionKey) {
-                    const versionResult = await this.connectionManager.getClient().get(versionKey);
+          const versionResult = await this.connectionManager
+            .getClient()
+            .get(versionKey);
                     currentVersion = versionResult ? parseInt(versionResult) : 0;
                 }
 
                 // Set the cache data
-                (multi as { set: (key: string, value: string) => void }).set(key, serializedData);
+        (multi as { set: (key: string, value: string) => void }).set(
+          key,
+          serializedData
+        );
 
                 // Update version if versioning is enabled
                 if (versionKey) {
-                    (multi as { set: (key: string, value: string) => void }).set(versionKey, (currentVersion + 1).toString());
+          (multi as { set: (key: string, value: string) => void }).set(
+            versionKey,
+            (currentVersion + 1).toString()
+          );
                 }
 
                 return currentVersion + 1;
             },
             maxRetries,
-            { context: 'cache_update' }
+      { context: "cache_update" }
         );
 
         if (result.success) {
@@ -138,7 +157,9 @@ export class RedisCacheManager {
             let version: number | undefined;
 
             if (versionKey) {
-                const versionResult = await this.connectionManager.getClient().get(versionKey);
+        const versionResult = await this.connectionManager
+          .getClient()
+          .get(versionKey);
                 if (versionResult) {
                     version = parseInt(versionResult);
                 }
@@ -156,14 +177,18 @@ export class RedisCacheManager {
                     success: true,
                     data: dataResult.data,
                     version,
-                    fromCache: dataResult.fromCache
+          fromCache: dataResult.fromCache,
                 };
             }
 
-            return { success: false, error: 'Cache miss or data not found', version };
+      return { success: false, error: "Cache miss or data not found", version };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Cache getWithVersion error", error as Error, { key, versionKey, error: errorMessage });
+      logger.error("Cache getWithVersion error", error as Error, {
+        key,
+        versionKey,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage };
         }
     }
@@ -173,7 +198,7 @@ export class RedisCacheManager {
      */
     async atomicInvalidate(
         keys: string[],
-        reason: string = 'manual_invalidation'
+    reason: string = "manual_invalidation"
     ): Promise<CacheResult<number>> {
         if (keys.length === 0) {
             return { success: true, data: 0 };
@@ -187,11 +212,15 @@ export class RedisCacheManager {
 
             // Add invalidation metadata (optional)
             const invalidationKey = `invalidation:${Date.now()}`;
-            multi.setEx(invalidationKey, 300, JSON.stringify({
+      multi.setEx(
+        invalidationKey,
+        300,
+        JSON.stringify({
                 keys,
                 reason,
-                timestamp: new Date().toISOString()
-            }));
+          timestamp: new Date().toISOString(),
+        })
+      );
 
             await multi.exec();
             const keysInvalidated = keys.length;
@@ -233,8 +262,11 @@ export class RedisCacheManager {
             return { success: true };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            const keys = Object.keys(keyValues).join(',');
-            logger.error("Cache mset error", error as Error, { keys, error: errorMessage });
+      const keys = Object.keys(keyValues).join(",");
+      logger.error("Cache mset error", error as Error, {
+        keys,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage };
         }
     }
@@ -242,7 +274,9 @@ export class RedisCacheManager {
     /**
      * Get multiple cache entries
      */
-    async mget<T = unknown>(keys: string[]): Promise<CacheResult<Record<string, T>>> {
+  async mget<T = unknown>(
+    keys: string[]
+  ): Promise<CacheResult<Record<string, T>>> {
         try {
             const client = this.connectionManager.getClient();
             const values = await client.mGet(keys);
@@ -256,7 +290,7 @@ export class RedisCacheManager {
                     } catch (parseError) {
                         logger.warn("Cache parse error for key", {
                             key,
-                            error: (parseError as Error).message
+              error: (parseError as Error).message,
                         });
                     }
                 }
@@ -265,7 +299,10 @@ export class RedisCacheManager {
             return { success: true, data: result, fromCache: true };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Cache mget error", error as Error, { keys: keys.join(','), error: errorMessage });
+      logger.error("Cache mget error", error as Error, {
+        keys: keys.join(","),
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage };
         }
     }
@@ -282,7 +319,10 @@ export class RedisCacheManager {
             return { success: true, data: exists };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Cache exists error", error as Error, { key, error: errorMessage });
+      logger.error("Cache exists error", error as Error, {
+        key,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage, data: false };
         }
     }
@@ -298,7 +338,10 @@ export class RedisCacheManager {
             return { success: true, data: ttl };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Cache TTL error", error as Error, { key, error: errorMessage });
+      logger.error("Cache TTL error", error as Error, {
+        key,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage, data: -1 };
         }
     }

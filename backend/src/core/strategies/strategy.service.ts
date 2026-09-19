@@ -15,7 +15,7 @@
 import {
     IStrategyRepository,
     IBotInstanceRepository,
-    ILogger
+  ILogger,
 } from "@trade-bot/shared";
 
 export interface StrategyServiceDependencies {
@@ -32,13 +32,17 @@ export class StrategyService {
      */
     async getStrategies(userId: string): Promise<any[]> {
         try {
-            const strategies = await this.deps.strategyRepository.getStrategies(userId);
-            this.deps.logger.debug("Strategies retrieved successfully", { userId, count: strategies.length });
+      const strategies =
+        await this.deps.strategyRepository.getStrategies(userId);
+      this.deps.logger.debug("Strategies retrieved successfully", {
+        userId,
+        count: strategies.length,
+      });
             return strategies;
         } catch (error) {
             this.deps.logger.error("Failed to get strategies", {
                 error: error instanceof Error ? error.message : String(error),
-                userId
+        userId,
             });
             throw new Error("Failed to get strategies");
         }
@@ -50,12 +54,14 @@ export class StrategyService {
     async getStrategy(id: string): Promise<any | null> {
         try {
             const strategy = await this.deps.strategyRepository.getStrategy(id);
-            this.deps.logger.debug("Strategy retrieved successfully", { strategyId: id });
+      this.deps.logger.debug("Strategy retrieved successfully", {
+        strategyId: id,
+      });
             return strategy;
         } catch (error) {
             this.deps.logger.error("Failed to get strategy", {
                 error: error instanceof Error ? error.message : String(error),
-                strategyId: id
+        strategyId: id,
             });
             throw new Error("Failed to get strategy");
         }
@@ -68,18 +74,18 @@ export class StrategyService {
         try {
             const strategy = await this.deps.strategyRepository.createStrategy({
                 userId,
-                ...strategyData
+        ...strategyData,
             });
             this.deps.logger.info("Strategy created successfully", {
                 strategyId: strategy.id,
-                userId
+        userId,
             });
             return strategy;
         } catch (error) {
             this.deps.logger.error("Failed to create strategy", {
                 error: error instanceof Error ? error.message : String(error),
                 userId,
-                strategyData
+        strategyData,
             });
             throw new Error("Failed to create strategy");
         }
@@ -91,14 +97,17 @@ export class StrategyService {
     async updateStrategy(id: string, updates: any): Promise<any> {
         try {
             await this.deps.strategyRepository.updateStrategy(id, updates);
-            const updatedStrategy = await this.deps.strategyRepository.getStrategy(id);
-            this.deps.logger.info("Strategy updated successfully", { strategyId: id });
+      const updatedStrategy =
+        await this.deps.strategyRepository.getStrategy(id);
+      this.deps.logger.info("Strategy updated successfully", {
+        strategyId: id,
+      });
             return updatedStrategy;
         } catch (error) {
             this.deps.logger.error("Failed to update strategy", {
                 error: error instanceof Error ? error.message : String(error),
                 strategyId: id,
-                updates
+        updates,
             });
             throw new Error("Failed to update strategy");
         }
@@ -110,19 +119,24 @@ export class StrategyService {
     async deleteStrategy(id: string): Promise<void> {
         try {
             // Delete associated bot instances first
-            const botInstances = await this.deps.botInstanceRepository.getActiveBotInstances();
-            const strategyBotInstances = botInstances.filter(bot => bot.strategy_id === id);
+      const botInstances =
+        await this.deps.botInstanceRepository.getActiveBotInstances();
+      const strategyBotInstances = botInstances.filter(
+        bot => bot.strategy_id === id
+      );
             for (const botInstance of strategyBotInstances) {
                 await this.deps.botInstanceRepository.deleteBotInstance(botInstance.id);
             }
 
             // Delete the strategy
             await this.deps.strategyRepository.deleteStrategy(id);
-            this.deps.logger.info("Strategy deleted successfully", { strategyId: id });
+      this.deps.logger.info("Strategy deleted successfully", {
+        strategyId: id,
+      });
         } catch (error) {
             this.deps.logger.error("Failed to delete strategy", {
                 error: error instanceof Error ? error.message : String(error),
-                strategyId: id
+        strategyId: id,
             });
             throw new Error("Failed to delete strategy");
         }
@@ -134,12 +148,15 @@ export class StrategyService {
     async toggleStrategy(id: string, active: boolean): Promise<void> {
         try {
             await this.deps.strategyRepository.toggleStrategy(id, active);
-            this.deps.logger.info("Strategy status toggled", { strategyId: id, active });
+      this.deps.logger.info("Strategy status toggled", {
+        strategyId: id,
+        active,
+      });
         } catch (error) {
             this.deps.logger.error("Failed to toggle strategy", {
                 error: error instanceof Error ? error.message : String(error),
                 strategyId: id,
-                active
+        active,
             });
             throw new Error("Failed to toggle strategy");
         }
@@ -158,12 +175,12 @@ export class StrategyService {
                 winRate: 0,
                 avgTrade: 0,
                 bestTrade: 0,
-                worstTrade: 0
+        worstTrade: 0,
             };
         } catch (error) {
             this.deps.logger.error("Failed to get strategy performance", {
                 error: error instanceof Error ? error.message : String(error),
-                strategyId: id
+        strategyId: id,
             });
             throw new Error("Failed to get strategy performance");
         }
@@ -171,6 +188,8 @@ export class StrategyService {
 }
 
 // Export factory function for creating service instances
-export function createStrategyService(deps: StrategyServiceDependencies): StrategyService {
+export function createStrategyService(
+  deps: StrategyServiceDependencies
+): StrategyService {
     return new StrategyService(deps);
 }

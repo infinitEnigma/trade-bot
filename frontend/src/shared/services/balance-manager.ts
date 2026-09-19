@@ -78,10 +78,10 @@ class GlobalBalanceManager {
     private startGlobalTimer(): void {
         if (this.refreshTimer) return;
 
-        console.log('💰 Global Balance: Starting global timer (5 minutes)');
+    console.log("💰 Global Balance: Starting global timer (5 minutes)");
 
         this.refreshTimer = setInterval(() => {
-            if (document.visibilityState === 'visible') {
+      if (document.visibilityState === "visible") {
                 this.refreshBalance();
             }
         }, 300000); // 5 minutes - ONE timer for entire app
@@ -92,7 +92,7 @@ class GlobalBalanceManager {
      */
     private stopGlobalTimer(): void {
         if (this.refreshTimer) {
-            console.log('💰 Global Balance: Stopping global timer');
+      console.log("💰 Global Balance: Stopping global timer");
             clearInterval(this.refreshTimer);
             this.refreshTimer = null;
         }
@@ -105,7 +105,9 @@ class GlobalBalanceManager {
         if (this.isRefreshing || this.subscribers.size === 0) return;
 
         this.isRefreshing = true;
-        console.log(`💰 Global Balance: Refreshing for ${this.subscribers.size} subscribers`);
+    console.log(
+      `💰 Global Balance: Refreshing for ${this.subscribers.size} subscribers`
+    );
 
         try {
             const response = await kodiakApi.getKodiakBalance();
@@ -114,30 +116,33 @@ class GlobalBalanceManager {
                 // Convert KodiakAccountInfo to legacy format
                 const kodiakBalance = response.data;
                 const legacyBalance = {
-                    walletBalance: parseFloat(kodiakBalance.totalBalance || '0'),
-                    accountBalance: parseFloat(kodiakBalance.totalBalance || '0'),
-                    availableBalance: parseFloat(kodiakBalance.totalBalance || '0'), // Assuming total balance is available for now
+          walletBalance: parseFloat(kodiakBalance.totalBalance || "0"),
+          accountBalance: parseFloat(kodiakBalance.totalBalance || "0"),
+          availableBalance: parseFloat(kodiakBalance.totalBalance || "0"), // Assuming total balance is available for now
                     reservedBalance: 0, // Not provided by Kodiak API
-                    totalAssets: parseFloat(kodiakBalance.totalBalance || '0'),
-                    timestamp: new Date().toISOString()
+          totalAssets: parseFloat(kodiakBalance.totalBalance || "0"),
+          timestamp: new Date().toISOString(),
                 };
 
                 this.lastBalanceData = legacyBalance;
-                console.log('💰 Global Balance: Updated, notifying subscribers');
+        console.log("💰 Global Balance: Updated, notifying subscribers");
 
                 // Notify all subscribers
                 this.subscribers.forEach(subscriber => {
                     try {
                         subscriber.callback(legacyBalance);
                     } catch (error) {
-                        console.error(`💰 Global Balance: Subscriber ${subscriber.id} callback failed:`, error);
+            console.error(
+              `💰 Global Balance: Subscriber ${subscriber.id} callback failed:`,
+              error
+            );
                     }
                 });
             } else {
-                console.warn('💰 Global Balance: Refresh failed:', response.error);
+        console.warn("💰 Global Balance: Refresh failed:", response.error);
             }
         } catch (error) {
-            console.error('💰 Global Balance: Refresh error:', error);
+      console.error("💰 Global Balance: Refresh error:", error);
         } finally {
             this.isRefreshing = false;
         }
@@ -154,7 +159,7 @@ class GlobalBalanceManager {
      * Force immediate refresh
      */
     async forceRefresh(): Promise<void> {
-        console.log('💰 Global Balance: Force refresh requested');
+    console.log("💰 Global Balance: Force refresh requested");
         await this.refreshBalance();
     }
 
@@ -169,7 +174,7 @@ class GlobalBalanceManager {
      * Cleanup all subscribers and timers
      */
     cleanup(): void {
-        console.log('💰 Global Balance: Cleaning up');
+    console.log("💰 Global Balance: Cleaning up");
         this.subscribers.clear();
         this.stopGlobalTimer();
         this.lastBalanceData = null;

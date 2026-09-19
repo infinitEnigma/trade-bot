@@ -34,17 +34,19 @@ export const useStrategies = () => {
 
     // Create strategy mutation
     const createMutation = useMutation({
-        mutationFn: (data: StrategyFormData) => strategyService.createStrategy(data),
-        onSuccess: (newStrategy) => {
+    mutationFn: (data: StrategyFormData) =>
+      strategyService.createStrategy(data),
+    onSuccess: newStrategy => {
             if (newStrategy) {
                 queryClient.invalidateQueries({ queryKey: ["strategies"] });
                 toast.success("Strategy created successfully!");
             }
         },
         onError: (error: unknown) => {
-            const errorMessage = error instanceof Error
+      const errorMessage =
+        error instanceof Error
                 ? error.message
-                : typeof error === 'object' && error !== null && 'message' in error
+          : typeof error === "object" && error !== null && "message" in error
                     ? (error as { message: string }).message
                     : "Failed to create strategy";
             toast.error(errorMessage);
@@ -53,16 +55,22 @@ export const useStrategies = () => {
 
     // Update strategy mutation
     const updateMutation = useMutation({
-        mutationFn: ({ id, data }: { id: string; data: Partial<StrategyFormData> }) =>
-            strategyService.updateStrategy(id, data),
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: Partial<StrategyFormData>;
+    }) => strategyService.updateStrategy(id, data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["strategies"] });
             toast.success("Strategy updated successfully!");
         },
         onError: (error: unknown) => {
-            const errorMessage = error instanceof Error
+      const errorMessage =
+        error instanceof Error
                 ? error.message
-                : typeof error === 'object' && error !== null && 'message' in error
+          : typeof error === "object" && error !== null && "message" in error
                     ? (error as { message: string }).message
                     : "Failed to update strategy";
             toast.error(errorMessage);
@@ -87,7 +95,7 @@ export const useStrategies = () => {
         if (!Array.isArray(bots)) {
             return undefined;
         }
-        return bots.find((bot) => bot.strategy_id === strategyId);
+    return bots.find(bot => bot.strategy_id === strategyId);
     };
 
     // Helper function to format currency

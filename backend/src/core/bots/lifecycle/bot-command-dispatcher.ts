@@ -7,7 +7,10 @@
  * @format
  */
 
-import { EngineProtocolService, SendCommandResult } from "../engine-protocol.service";
+import {
+  EngineProtocolService,
+  SendCommandResult,
+} from "../engine-protocol.service";
 import { contextLogger as logger } from "../../logging";
 import { BotLifecycleRepository } from "./bot-lifecycle.repository";
 
@@ -27,7 +30,11 @@ export class BotCommandDispatcher {
      * already-existing row, and the timeout sweeper can never later burn a
      * resolved bot to ERROR.
      */
-    async sendStartCommand(botId: string, userId: string, strategyId: string): Promise<SendCommandResult> {
+  async sendStartCommand(
+    botId: string,
+    userId: string,
+    strategyId: string
+  ): Promise<SendCommandResult> {
         const config = await this.repository.findStrategyConfig(strategyId);
         return this.publishTrackedCommand("BOT_START", {
             botId,
@@ -50,20 +57,36 @@ export class BotCommandDispatcher {
      * 3. XADD command
      * 4. if XADD fails → mark the pending command FAILED
      */
-    private async publishTrackedCommand(type: "BOT_START" | "BOT_STOP", payload: unknown): Promise<SendCommandResult> {
+  private async publishTrackedCommand(
+    type: "BOT_START" | "BOT_STOP",
+    payload: unknown
+  ): Promise<SendCommandResult> {
         const correlationId = crypto.randomUUID();
         const commandType = type;
 
         // Track BEFORE publishing so the engine's (possibly already-processed)
         // events resolve an existing row instead of racing an insert.
-        await this.repository.recordPendingCommand(botIdOf(payload), correlationId, commandType);
+    await this.repository.recordPendingCommand(
+      botIdOf(payload),
+      correlationId,
+      commandType
+    );
 
-        const result = await this.engineProtocol.sendCommand(type, payload as never, correlationId);
+    const result = await this.engineProtocol.sendCommand(
+      type,
+      payload as never,
+      correlationId
+    );
 
         if (!result.success) {
             // Redis rejected the command - mark the tracked row FAILED so it
             // is not left PENDING to be burned by the timeout sweeper later.
-            await this.repository.resolveCommand(correlationId, "FAILED", "DISPATCH_FAILED", result.error);
+      await this.repository.resolveCommand(
+        correlationId,
+        "FAILED",
+        "DISPATCH_FAILED",
+        result.error
+      );
         }
 
         return result;
@@ -76,11 +99,19 @@ export class BotCommandDispatcher {
      * internally (record-before-publish). Kept for callers that pre-build the
      * correlationId externally.
      */
-    async trackPending(botId: string, result: SendCommandResult, commandType: "BOT_START" | "BOT_STOP"): Promise<void> {
+  async trackPending(
+    botId: string,
+    result: SendCommandResult,
+    commandType: "BOT_START" | "BOT_STOP"
+  ): Promise<void> {
         if (!result.correlationId) {
             return;
         }
-        await this.repository.recordPendingCommand(botId, result.correlationId, commandType);
+    await this.repository.recordPendingCommand(
+      botId,
+      result.correlationId,
+      commandType
+    );
         logger.debug("Command tracked for timeout supervision", {
             botId,
             correlationId: result.correlationId,

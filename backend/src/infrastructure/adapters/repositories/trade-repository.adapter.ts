@@ -12,10 +12,10 @@ import {
     ITradeRepository,
     Trade,
     OrderStatus,
-    OrderSide
-} from '@trade-bot/shared';
-import { query } from '../../../database/pool';
-import { databaseLogger as logger } from '../../../core/logging/context-aware-logger.service';
+  OrderSide,
+} from "@trade-bot/shared";
+import { query } from "../../../database/pool";
+import { databaseLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 /**
  * Trade Repository Adapter
@@ -24,7 +24,6 @@ import { databaseLogger as logger } from '../../../core/logging/context-aware-lo
  * Provides trade data access with proper error handling and type safety.
  */
 export class TradeRepositoryAdapter implements ITradeRepository {
-
     /**
      * Get trades for a user
      */
@@ -50,10 +49,13 @@ export class TradeRepositoryAdapter implements ITradeRepository {
                 [userId, limit]
             );
 
-            return result.rows.map(row => this.mapRowToTrade(row)).filter(Boolean) as Trade[];
+      return result.rows
+        .map(row => this.mapRowToTrade(row))
+        .filter(Boolean) as Trade[];
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to get trades', error as Error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to get trades", error as Error);
             throw new Error(`Failed to get trades: ${errorMessage}`);
         }
     }
@@ -61,7 +63,11 @@ export class TradeRepositoryAdapter implements ITradeRepository {
     /**
      * Get trades for a specific strategy
      */
-    async getTradesByStrategy(userId: string, strategyId: string, limit: number = 50): Promise<Trade[]> {
+  async getTradesByStrategy(
+    userId: string,
+    strategyId: string,
+    limit: number = 50
+  ): Promise<Trade[]> {
         try {
             const result = await query<TradeRow>(
                 `SELECT
@@ -83,9 +89,12 @@ export class TradeRepositoryAdapter implements ITradeRepository {
                 [userId, strategyId, limit]
             );
 
-            return result.rows.map(row => this.mapRowToTrade(row)).filter(Boolean) as Trade[];
+      return result.rows
+        .map(row => this.mapRowToTrade(row))
+        .filter(Boolean) as Trade[];
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to get trades by strategy: ${errorMessage}`);
         }
     }
@@ -93,9 +102,10 @@ export class TradeRepositoryAdapter implements ITradeRepository {
     /**
      * Create a new trade record
      */
-    async createTrade(trade: Omit<Trade, 'id' | 'executedAt'>): Promise<Trade> {
+  async createTrade(trade: Omit<Trade, "id" | "executedAt">): Promise<Trade> {
         try {
-            const result = await query<{ id: string, executed_at: string }>(`
+      const result = await query<{ id: string; executed_at: string }>(
+        `
                 INSERT INTO trades (
                     user_id,
                     strategy_id,
@@ -118,12 +128,12 @@ export class TradeRepositoryAdapter implements ITradeRepository {
                     trade.quantity,
                     trade.price,
                     trade.fee,
-                    trade.pnl
+          trade.pnl,
                 ]
             );
 
             if (result.rows.length === 0) {
-                throw new Error('Trade creation failed - no rows returned');
+        throw new Error("Trade creation failed - no rows returned");
             }
 
             const row = result.rows[0];
@@ -140,10 +150,11 @@ export class TradeRepositoryAdapter implements ITradeRepository {
                 fee: trade.fee,
                 pnl: trade.pnl,
                 status: OrderStatus.FILLED,
-                executedAt: new Date(row.executed_at)
+        executedAt: new Date(row.executed_at),
             };
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to create trade: ${errorMessage}`);
         }
     }
@@ -156,7 +167,8 @@ export class TradeRepositoryAdapter implements ITradeRepository {
             // This would update trade status in the database
             logger.info(`Trade status update for trade ${tradeId}: ${status}`);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to update trade status: ${errorMessage}`);
         }
     }
@@ -167,8 +179,17 @@ export class TradeRepositoryAdapter implements ITradeRepository {
     private mapRowToTrade(row: TradeRow & { user_id?: string }): Trade | null {
         try {
             // Validate required fields
-            if (!row.id || !row.order_id || !row.symbol || !row.side || !row.quantity || !row.price || !row.fee || !row.executed_at) {
-                logger.warn('Invalid trade row - missing required fields');
+      if (
+        !row.id ||
+        !row.order_id ||
+        !row.symbol ||
+        !row.side ||
+        !row.quantity ||
+        !row.price ||
+        !row.fee ||
+        !row.executed_at
+      ) {
+        logger.warn("Invalid trade row - missing required fields");
                 return null;
             }
 
@@ -178,27 +199,34 @@ export class TradeRepositoryAdapter implements ITradeRepository {
             const fee = parseFloat(row.fee);
             const pnl = row.pnl ? parseFloat(row.pnl) : undefined;
 
-            if (isNaN(quantity) || isNaN(price) || isNaN(fee) || (row.pnl && isNaN(pnl!))) {
-                logger.warn('Invalid trade row - numeric fields contain non-numeric values');
+      if (
+        isNaN(quantity) ||
+        isNaN(price) ||
+        isNaN(fee) ||
+        (row.pnl && isNaN(pnl!))
+      ) {
+        logger.warn(
+          "Invalid trade row - numeric fields contain non-numeric values"
+        );
                 return null;
             }
 
             // Validate side is valid
-            if (!['BUY', 'SELL'].includes(row.side)) {
+      if (!["BUY", "SELL"].includes(row.side)) {
                 logger.warn(`Invalid trade side: ${row.side}`);
                 return null;
             }
 
             // Validate positive values
             if (quantity <= 0 || price <= 0 || fee < 0) {
-                logger.warn('Invalid trade row - negative or zero values');
+        logger.warn("Invalid trade row - negative or zero values");
                 return null;
             }
 
             // Return plain object matching Trade interface
             return {
                 id: row.id,
-                userId: row.user_id || 'unknown',
+        userId: row.user_id || "unknown",
                 strategyId: row.strategy_id,
                 orderId: row.order_id,
                 symbol: row.symbol,
@@ -208,10 +236,13 @@ export class TradeRepositoryAdapter implements ITradeRepository {
                 fee,
                 pnl,
                 status: OrderStatus.FILLED,
-                executedAt: new Date(row.executed_at)
+        executedAt: new Date(row.executed_at),
             };
         } catch (error) {
-            logger.error(`Failed to map trade row to domain object: ${error}`, error as Error);
+      logger.error(
+        `Failed to map trade row to domain object: ${error}`,
+        error as Error
+      );
             return null;
         }
     }

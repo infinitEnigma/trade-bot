@@ -8,7 +8,7 @@ import { validationLogger as logger } from "../../core/logging/context-aware-log
 
 export interface ValidationOptions {
     // Where to validate data from
-    source?: 'body' | 'query' | 'params';
+  source?: "body" | "query" | "params";
     // Whether to strip unknown fields
     stripUnknown?: boolean;
     // Custom error message prefix
@@ -21,11 +21,14 @@ export interface ValidationOptions {
  * @param options - Validation options
  * @returns Express middleware function
  */
-export function validateRequest(schema: Joi.ObjectSchema, options: ValidationOptions = {}) {
+export function validateRequest(
+  schema: Joi.ObjectSchema,
+  options: ValidationOptions = {}
+) {
     const {
-        source = 'body',
+    source = "body",
         stripUnknown = false,
-        errorPrefix = 'Validation failed'
+    errorPrefix = "Validation failed",
     } = options;
 
     return (req: Request, res: Response, next: NextFunction) => {
@@ -33,13 +36,13 @@ export function validateRequest(schema: Joi.ObjectSchema, options: ValidationOpt
             // Get data from specified source
             let dataToValidate: Record<string, unknown>;
             switch (source) {
-                case 'body':
+        case "body":
                     dataToValidate = req.body;
                     break;
-                case 'query':
+        case "query":
                     dataToValidate = req.query;
                     break;
-                case 'params':
+        case "params":
                     dataToValidate = req.params;
                     break;
                 default:
@@ -53,28 +56,36 @@ export function validateRequest(schema: Joi.ObjectSchema, options: ValidationOpt
                 allowUnknown: !stripUnknown, // Allow unknown fields if not stripping
             };
 
-            const { error, value } = schema.validate(dataToValidate, validationOptions);
+      const { error, value } = schema.validate(
+        dataToValidate,
+        validationOptions
+      );
 
             if (error) {
                 // Log validation error
                 logger.warn(`${errorPrefix}: ${error.details[0].message}`, {
                     source,
                     errors: error.details.map(detail => ({
-                        field: detail.path.join('.'),
+            field: detail.path.join("."),
                         message: detail.message,
                         value: detail.context?.value,
                     })),
                 });
 
                 // Create structured validation error
-                const validationError = new ValidationError(`${errorPrefix}: ${error.details[0].message}`);
+        const validationError = new ValidationError(
+          `${errorPrefix}: ${error.details[0].message}`
+        );
 
                 // Add detailed validation errors to response
-                const errorResponse = createErrorResponse(validationError, getCorrelationId());
+        const errorResponse = createErrorResponse(
+          validationError,
+          getCorrelationId()
+        );
                 (errorResponse as Record<string, unknown>).details = {
                     source,
                     errors: error.details.map(detail => ({
-                        field: detail.path.join('.'),
+            field: detail.path.join("."),
                         message: detail.message,
                         value: detail.context?.value,
                     })),
@@ -85,27 +96,27 @@ export function validateRequest(schema: Joi.ObjectSchema, options: ValidationOpt
 
             // Replace request data with validated/cleaned data
             switch (source) {
-                case 'body':
+        case "body":
                     req.body = value;
                     break;
-                case 'query':
+        case "query":
                     req.query = value;
                     break;
-                case 'params':
+        case "params":
                     req.params = value;
                     break;
             }
 
             next();
         } catch (err) {
-            logger.error('Validation middleware error', err as Error, {
+      logger.error("Validation middleware error", err as Error, {
                 source,
             });
 
-            const internalError = new ValidationError('Request validation failed');
-            res.status(internalError.statusCode).json(
-                createErrorResponse(internalError, getCorrelationId())
-            );
+      const internalError = new ValidationError("Request validation failed");
+      res
+        .status(internalError.statusCode)
+        .json(createErrorResponse(internalError, getCorrelationId()));
         }
     };
 }
@@ -121,8 +132,8 @@ export const commonSchemas = {
         .trim()
         .required()
         .messages({
-            'string.email': 'Please provide a valid email address',
-            'any.required': 'Email is required',
+      "string.email": "Please provide a valid email address",
+      "any.required": "Email is required",
         }),
 
     // Password validation
@@ -132,31 +143,25 @@ export const commonSchemas = {
         .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
         .required()
         .messages({
-            'string.min': 'Password must be at least 8 characters long',
-            'string.max': 'Password cannot exceed 128 characters',
-            'string.pattern.base': 'Password must contain at least one lowercase letter, one uppercase letter, and one number',
-            'any.required': 'Password is required',
+      "string.min": "Password must be at least 8 characters long",
+      "string.max": "Password cannot exceed 128 characters",
+      "string.pattern.base":
+        "Password must contain at least one lowercase letter, one uppercase letter, and one number",
+      "any.required": "Password is required",
         }),
 
     // UUID validation
-    uuid: Joi.string()
-        .uuid({ version: 'uuidv4' })
-        .required()
-        .messages({
-            'string.uuid': 'Invalid UUID format',
-            'any.required': 'UUID is required',
+  uuid: Joi.string().uuid({ version: "uuidv4" }).required().messages({
+    "string.uuid": "Invalid UUID format",
+    "any.required": "UUID is required",
         }),
 
     // Positive integer
-    positiveInteger: Joi.number()
-        .integer()
-        .positive()
-        .required()
-        .messages({
-            'number.base': 'Must be a number',
-            'number.integer': 'Must be an integer',
-            'number.positive': 'Must be a positive number',
-            'any.required': 'This field is required',
+  positiveInteger: Joi.number().integer().positive().required().messages({
+    "number.base": "Must be a number",
+    "number.integer": "Must be an integer",
+    "number.positive": "Must be a positive number",
+    "any.required": "This field is required",
         }),
 
     // Optional positive integer
@@ -165,41 +170,41 @@ export const commonSchemas = {
         .positive()
         .optional()
         .messages({
-            'number.base': 'Must be a number',
-            'number.integer': 'Must be an integer',
-            'number.positive': 'Must be a positive number',
+      "number.base": "Must be a number",
+      "number.integer": "Must be an integer",
+      "number.positive": "Must be a positive number",
         }),
 
     // String with length limits
-    string: (min = 1, max = 255) => Joi.string()
+  string: (min = 1, max = 255) =>
+    Joi.string()
         .min(min)
         .max(max)
         .trim()
         .messages({
-            'string.min': `Must be at least ${min} characters long`,
-            'string.max': `Cannot exceed ${max} characters`,
-            'string.base': 'Must be a string',
+        "string.min": `Must be at least ${min} characters long`,
+        "string.max": `Cannot exceed ${max} characters`,
+        "string.base": "Must be a string",
         }),
 
     // Boolean
-    boolean: Joi.boolean()
-        .messages({
-            'boolean.base': 'Must be a boolean value',
+  boolean: Joi.boolean().messages({
+    "boolean.base": "Must be a boolean value",
         }),
 
     // Date string
     dateString: Joi.string()
         .pattern(/^\d{4}-\d{2}-\d{2}$/)
         .messages({
-            'string.pattern.base': 'Date must be in YYYY-MM-DD format',
+      "string.pattern.base": "Date must be in YYYY-MM-DD format",
         }),
 
     // URL
     url: Joi.string()
-        .uri({ scheme: ['http', 'https'] })
+    .uri({ scheme: ["http", "https"] })
         .messages({
-            'string.uri': 'Must be a valid HTTP or HTTPS URL',
-            'string.uriCustomScheme': 'Must be a valid HTTP or HTTPS URL',
+      "string.uri": "Must be a valid HTTP or HTTPS URL",
+      "string.uriCustomScheme": "Must be a valid HTTP or HTTPS URL",
         }),
 };
 
@@ -213,50 +218,50 @@ export const validators = {
             email: commonSchemas.email,
             password: commonSchemas.password,
         }),
-        { errorPrefix: 'Registration validation failed' }
+    { errorPrefix: "Registration validation failed" }
     ),
 
     login: validateRequest(
         Joi.object({
             email: commonSchemas.email,
             password: Joi.string().required().messages({
-                'any.required': 'Password is required',
+        "any.required": "Password is required",
             }),
         }),
-        { errorPrefix: 'Login validation failed' }
+    { errorPrefix: "Login validation failed" }
     ),
 
     refreshToken: validateRequest(
         Joi.object({
             refreshToken: Joi.string().required().messages({
-                'any.required': 'Refresh token is required',
+        "any.required": "Refresh token is required",
             }),
         }),
-        { errorPrefix: 'Token refresh validation failed' }
+    { errorPrefix: "Token refresh validation failed" }
     ),
 
     // Bot validators
     startBot: validateRequest(
         Joi.object({
             strategyId: commonSchemas.uuid.messages({
-                'any.required': 'Strategy ID is required',
+        "any.required": "Strategy ID is required",
             }),
             notionalAmount: Joi.number().positive().precision(8).required().messages({
-                'number.base': 'Notional amount must be a number',
-                'number.positive': 'Notional amount must be positive',
-                'any.required': 'Notional amount is required',
+        "number.base": "Notional amount must be a number",
+        "number.positive": "Notional amount must be positive",
+        "any.required": "Notional amount is required",
             }),
         }),
-        { errorPrefix: 'Bot start validation failed' }
+    { errorPrefix: "Bot start validation failed" }
     ),
 
     stopBot: validateRequest(
         Joi.object({
             botId: commonSchemas.uuid.messages({
-                'any.required': 'Bot ID is required',
+        "any.required": "Bot ID is required",
             }),
         }),
-        { errorPrefix: 'Bot stop validation failed' }
+    { errorPrefix: "Bot stop validation failed" }
     ),
 
     // Generic ID parameter validator
@@ -264,24 +269,24 @@ export const validators = {
         Joi.object({
             id: commonSchemas.uuid,
         }),
-        { source: 'params', errorPrefix: 'ID parameter validation failed' }
+    { source: "params", errorPrefix: "ID parameter validation failed" }
     ),
 
     // Query parameter validators
     pagination: validateRequest(
         Joi.object({
             page: Joi.number().integer().min(1).default(1).messages({
-                'number.min': 'Page must be at least 1',
+        "number.min": "Page must be at least 1",
             }),
             limit: Joi.number().integer().min(1).max(100).default(20).messages({
-                'number.min': 'Limit must be at least 1',
-                'number.max': 'Limit cannot exceed 100',
+        "number.min": "Limit must be at least 1",
+        "number.max": "Limit cannot exceed 100",
             }),
             sortBy: Joi.string().optional(),
-            sortOrder: Joi.string().valid('asc', 'desc').default('desc').messages({
-                'any.only': 'Sort order must be "asc" or "desc"',
+      sortOrder: Joi.string().valid("asc", "desc").default("desc").messages({
+        "any.only": 'Sort order must be "asc" or "desc"',
             }),
         }),
-        { source: 'query', errorPrefix: 'Pagination validation failed' }
+    { source: "query", errorPrefix: "Pagination validation failed" }
     ),
 };

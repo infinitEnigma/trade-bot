@@ -1,7 +1,10 @@
 /** GET /api/market/positions + /balance — authenticated Kodiak user data. */
 import { Router, Response } from "express";
 import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
+import {
+  authMiddleware,
+  AuthenticatedRequest,
+} from "../../middleware/auth.middleware";
 import { errMessage, fail, ok } from "./market-helpers";
 
 export const portfolioRoutes = Router();
@@ -15,14 +18,15 @@ portfolioRoutes.get(
             if (!userId) {
                 return res.status(401).json({
                     success: false,
-                    error: "Authentication required"
+          error: "Authentication required",
                 });
             }
-            const positionsResponse = await kodiakIntegrationService.getPositions(userId);
+      const positionsResponse =
+        await kodiakIntegrationService.getPositions(userId);
             if (!positionsResponse.success) {
                 return res.status(400).json({
                     success: false,
-                    error: positionsResponse.error || "Failed to fetch positions"
+          error: positionsResponse.error || "Failed to fetch positions",
                 });
             }
             ok(res, positionsResponse.data);
@@ -44,14 +48,14 @@ portfolioRoutes.get(
             if (!userId) {
                 return res.status(401).json({
                     success: false,
-                    error: "Authentication required"
+          error: "Authentication required",
                 });
             }
             const balanceResponse = await kodiakIntegrationService.getBalance(userId);
             if (!balanceResponse.success) {
                 return res.status(400).json({
                     success: false,
-                    error: balanceResponse.error || "Failed to fetch balance"
+          error: balanceResponse.error || "Failed to fetch balance",
                 });
             }
             ok(res, balanceResponse.data);

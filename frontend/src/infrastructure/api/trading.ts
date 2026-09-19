@@ -12,7 +12,11 @@ export const tradingApi = {
     async getStrategies() {
         return globalRequestManager.deduplicateRequest(
             "strategies:list",
-            () => httpClient.getClient().get("/api/strategies").then(r => r.data),
+      () =>
+        httpClient
+          .getClient()
+          .get("/api/strategies")
+          .then(r => r.data),
             "tradingApi"
         );
     },
@@ -34,15 +38,16 @@ export const tradingApi = {
             config: Record<string, unknown>;
         }
     ) {
-        const response = await httpClient.getClient().put(
-            `/api/strategies/${strategyId}`,
-            data
-        );
+    const response = await httpClient
+      .getClient()
+      .put(`/api/strategies/${strategyId}`, data);
         return response.data;
     },
 
     async deleteStrategy(strategyId: string) {
-        const response = await httpClient.getClient().delete(`/api/strategies/${strategyId}`);
+    const response = await httpClient
+      .getClient()
+      .delete(`/api/strategies/${strategyId}`);
         return response.data;
     },
 
@@ -50,7 +55,11 @@ export const tradingApi = {
     async getBotInstances() {
         return globalRequestManager.deduplicateRequest(
             "bots:instances",
-            () => httpClient.getClient().get("/api/bot/instances").then(r => r.data),
+      () =>
+        httpClient
+          .getClient()
+          .get("/api/bot/instances")
+          .then(r => r.data),
             "tradingApi"
         );
     },
@@ -58,26 +67,35 @@ export const tradingApi = {
     async getEngineStatus() {
         return globalRequestManager.deduplicateRequest(
             "bots:engine-status",
-            () => httpClient.getClient().get("/api/bot/engine/status").then(r => r.data),
+      () =>
+        httpClient
+          .getClient()
+          .get("/api/bot/engine/status")
+          .then(r => r.data),
             "tradingApi"
         );
     },
 
     async startBot(strategyId: string) {
-        const response = await httpClient.getClient().post("/api/bot/start", { strategyId });
+    const response = await httpClient
+      .getClient()
+      .post("/api/bot/start", { strategyId });
         return response.data;
     },
 
     async stopBot(botId: string) {
-        const response = await httpClient.getClient().post("/api/bot/stop", { botId });
+    const response = await httpClient
+      .getClient()
+      .post("/api/bot/stop", { botId });
         return response.data;
     },
 
     async emergencyStop(botId: string) {
-        const response = await httpClient.getClient().post("/api/bot/emergency-stop", {
+    const response = await httpClient
+      .getClient()
+      .post("/api/bot/emergency-stop", {
             botId,
         });
         return response.data;
     },
-
 };

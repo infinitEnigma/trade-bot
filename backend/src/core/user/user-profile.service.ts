@@ -6,7 +6,12 @@
  */
 
 import { userLogger } from "../../core/logging";
-import { ICacheService, IPasswordService, IUserRepository, IAuditLogRepository } from "@trade-bot/shared";
+import {
+  ICacheService,
+  IPasswordService,
+  IUserRepository,
+  IAuditLogRepository,
+} from "@trade-bot/shared";
 
 export interface ProfileUpdateData {
     email?: string;
@@ -39,7 +44,7 @@ export interface UserProfile {
 }
 
 export interface UserSettings {
-    theme: 'light' | 'dark';
+  theme: "light" | "dark";
     language: string;
     timezone: string;
     notifications: boolean;
@@ -77,14 +82,16 @@ export class UserProfileService {
         } catch (cacheError) {
             userLogger.warn("Failed to read from cache, falling back to database", {
                 userId,
-                error: cacheError instanceof Error ? cacheError.message : String(cacheError),
+        error:
+          cacheError instanceof Error ? cacheError.message : String(cacheError),
             });
         }
 
         // Get authenticated user data using repository pattern
-        const userData = await this.deps.userRepository.getAuthenticatedUserData(userId);
+    const userData =
+      await this.deps.userRepository.getAuthenticatedUserData(userId);
         if (!userData) {
-            throw new Error('User not found');
+      throw new Error("User not found");
         }
 
         const profile: UserProfile = {
@@ -93,21 +100,23 @@ export class UserProfileService {
             userLevel: userData.user.userLevel,
             roles: userData.roles,
             hasKodiak: userData.hasCredentials,
-            kodiakStatus: userData.hasCredentials ? {
-                accountId: userData.kodiakAccountId || '',
-                verified: !!userData.kodiakVerified
-            } : null,
+      kodiakStatus: userData.hasCredentials
+        ? {
+            accountId: userData.kodiakAccountId || "",
+            verified: !!userData.kodiakVerified,
+          }
+        : null,
             createdAt: userData.user.createdAt,
             updatedAt: userData.user.updatedAt,
         };
 
         // Debug logging to check if kodiakStatus.accountId is being set correctly
-        userLogger.debug('🔍 UserProfile debug:', {
+    userLogger.debug("🔍 UserProfile debug:", {
             userId: userData.user.id,
             hasKodiak: userData.hasCredentials,
             kodiakAccountId: userData.kodiakAccountId,
             kodiakVerified: userData.kodiakVerified,
-            kodiakStatus: profile.kodiakStatus
+      kodiakStatus: profile.kodiakStatus,
         });
 
         // Cache the profile for future requests
@@ -117,7 +126,8 @@ export class UserProfileService {
         } catch (cacheError) {
             userLogger.warn("Failed to cache user profile", {
                 userId,
-                error: cacheError instanceof Error ? cacheError.message : String(cacheError),
+        error:
+          cacheError instanceof Error ? cacheError.message : String(cacheError),
             });
         }
 
@@ -143,12 +153,13 @@ export class UserProfileService {
             // Start operation timing
             const timer = userLogger.startOperation("verifyWalletOwnership", {
                 userId,
-                walletAddress
+        walletAddress,
             });
 
             // Lazy import (not top-level) to dodge the circular DI import,
             // resolved at call time so tests can re-mock the container.
-            const { diContainer } = await import('../../infrastructure/dependency-injection.container');
+      const { diContainer } =
+        await import("../../infrastructure/dependency-injection.container");
             const authService = diContainer.authService;
             const result = await authService.verifyWalletOwnership(
                 userId,
@@ -171,10 +182,14 @@ export class UserProfileService {
 
             return result;
         } catch (error) {
-            userLogger.error("Wallet verification error", error instanceof Error ? error : undefined, {
+      userLogger.error(
+        "Wallet verification error",
+        error instanceof Error ? error : undefined,
+        {
                 userId,
-                walletAddress
-            });
+          walletAddress,
+        }
+      );
 
             return {
                 success: false,
@@ -186,7 +201,10 @@ export class UserProfileService {
     /**
      * Update user profile with validation (simplified)
      */
-    async updateUserProfile(userId: string, updateData: ProfileUpdateData): Promise<ProfileUpdateResult> {
+  async updateUserProfile(
+    userId: string,
+    updateData: ProfileUpdateData
+  ): Promise<ProfileUpdateResult> {
         try {
             const { email } = updateData;
 
@@ -242,11 +260,14 @@ export class UserProfileService {
                     updatedAt: updateResult.updatedAt,
                 },
             };
-
         } catch (error) {
-            userLogger.error("Profile update error", error instanceof Error ? error : undefined, {
+      userLogger.error(
+        "Profile update error",
+        error instanceof Error ? error : undefined,
+        {
                 userId,
-            });
+        }
+      );
 
             return {
                 success: false,
@@ -256,26 +277,27 @@ export class UserProfileService {
         }
     }
 
-
-
     /**
      * Get current user email
      */
     private async getCurrentEmail(userId: string): Promise<string> {
         const user = await this.deps.userRepository.findById(userId);
         if (!user) {
-            throw new Error('User not found');
+      throw new Error("User not found");
         }
         return user.email;
     }
 
-
-
     /**
      * Check if email is available for use
      */
-    private async checkEmailAvailability(email: string, excludeUserId: string): Promise<boolean> {
-        const existingUser = await this.deps.userRepository.findByEmail(email.toLowerCase());
+  private async checkEmailAvailability(
+    email: string,
+    excludeUserId: string
+  ): Promise<boolean> {
+    const existingUser = await this.deps.userRepository.findByEmail(
+      email.toLowerCase()
+    );
         return !existingUser || existingUser.id === excludeUserId;
     }
 
@@ -286,10 +308,13 @@ export class UserProfileService {
         userId: string,
         changes: { email?: string }
     ): Promise<{ email: string; updatedAt: string }> {
-        const updateResult = await this.deps.userRepository.updateProfile(userId, changes);
+    const updateResult = await this.deps.userRepository.updateProfile(
+      userId,
+      changes
+    );
 
         if (!updateResult) {
-            throw new Error('User not found');
+      throw new Error("User not found");
         }
 
         return {
@@ -301,11 +326,14 @@ export class UserProfileService {
     /**
      * Log profile update for audit trail
      */
-    private async logProfileUpdate(userId: string, changes: string[]): Promise<void> {
+  private async logProfileUpdate(
+    userId: string,
+    changes: string[]
+  ): Promise<void> {
         await this.deps.auditLogRepository.logEvent({
             userId,
             action: "PROFILE_UPDATED",
-            details: { changes }
+      details: { changes },
         });
     }
 
@@ -329,7 +357,8 @@ export class UserProfileService {
 }
 
 // Export factory function for creating service instances
-export function createUserProfileService(deps: UserProfileServiceDependencies): UserProfileService {
+export function createUserProfileService(
+  deps: UserProfileServiceDependencies
+): UserProfileService {
     return new UserProfileService(deps);
 }
-

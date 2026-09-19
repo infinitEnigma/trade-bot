@@ -33,17 +33,17 @@ export class ExternalTrafficObserver {
     private privilegedConnections = 0;
     private readonly tagged = new Map<string, TaggedCounter>();
 
-    recordKodiakRequest(operation: string, userId = 'unknown'): void {
+  recordKodiakRequest(operation: string, userId = "unknown"): void {
         this.kodiakRequests += 1;
         this.bumpTag(`kodiak:${operation}:${userId}`);
     }
 
-    recordKodiakCacheHit(operation: string, userId = 'unknown'): void {
+  recordKodiakCacheHit(operation: string, userId = "unknown"): void {
         this.kodiakCacheHits += 1;
         this.bumpTag(`kodiak-cache-hit:${operation}:${userId}`);
     }
 
-    recordKodiakCacheMiss(operation: string, userId = 'unknown'): void {
+  recordKodiakCacheMiss(operation: string, userId = "unknown"): void {
         this.kodiakCacheMisses += 1;
         this.bumpTag(`kodiak-cache-miss:${operation}:${userId}`);
     }
@@ -51,10 +51,14 @@ export class ExternalTrafficObserver {
     recordKodiakError(operation: string, status?: number): void {
         this.kodiakErrors += 1;
         if (status === 429) this.kodiak429 += 1;
-        this.bumpTag(`kodiak-error:${operation}:${status ?? 'unknown'}`);
+    this.bumpTag(`kodiak-error:${operation}:${status ?? "unknown"}`);
     }
 
-    recordPrivilegedConnection(userId: string, userLevel: string, socketId: string): void {
+  recordPrivilegedConnection(
+    userId: string,
+    userLevel: string,
+    socketId: string
+  ): void {
         this.privilegedConnections += 1;
         this.bumpTag(`privileged-ws:${userLevel}:${userId}:${socketId}`);
     }
@@ -79,7 +83,9 @@ export class ExternalTrafficObserver {
             return;
         }
         if (this.tagged.size >= MAX_TAGGED_KEYS) {
-            const oldest = Array.from(this.tagged.entries()).sort((a, b) => a[1].lastSeenAt - b[1].lastSeenAt)[0];
+      const oldest = Array.from(this.tagged.entries()).sort(
+        (a, b) => a[1].lastSeenAt - b[1].lastSeenAt
+      )[0];
             if (oldest) this.tagged.delete(oldest[0]);
         }
         this.tagged.set(key, { count: 1, lastSeenAt: now });

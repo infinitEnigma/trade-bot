@@ -14,7 +14,7 @@ export class CommandError extends Error {
 
     constructor(retryable: boolean, message: string) {
         super(message);
-        this.name = 'CommandError';
+    this.name = "CommandError";
         this.retryable = retryable;
     }
 }

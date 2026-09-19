@@ -27,21 +27,33 @@
 
   /* Fine dots - subtle texture */
   .pattern-dots-fine {
-    background-image: radial-gradient(circle, rgba(255, 255, 255, var(--pattern-opacity)) 1px, transparent 1px);
+    background-image: radial-gradient(
+      circle,
+      rgba(255, 255, 255, var(--pattern-opacity)) 1px,
+      transparent 1px
+    );
     background-size: var(--pattern-size-small) var(--pattern-size-small);
     background-attachment: fixed;
   }
 
   /* Medium dots - balanced texture */
   .pattern-dots-medium {
-    background-image: radial-gradient(circle, rgba(255, 255, 255, calc(var(--pattern-opacity) * 1.5)) 1.5px, transparent 1.5px);
+    background-image: radial-gradient(
+      circle,
+      rgba(255, 255, 255, calc(var(--pattern-opacity) * 1.5)) 1.5px,
+      transparent 1.5px
+    );
     background-size: var(--pattern-size-medium) var(--pattern-size-medium);
     background-attachment: fixed;
   }
 
   /* Large dots - prominent texture */
   .pattern-dots-large {
-    background-image: radial-gradient(circle, rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.8)) 2px, transparent 2px);
+    background-image: radial-gradient(
+      circle,
+      rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.8)) 2px,
+      transparent 2px
+    );
     background-size: var(--pattern-size-large) var(--pattern-size-large);
     background-attachment: fixed;
   }
@@ -53,8 +65,15 @@
   /* Fine grid - subtle structure */
   .pattern-grid-fine {
     background-image:
-      linear-gradient(rgba(255, 255, 255, var(--pattern-opacity)) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, var(--pattern-opacity)) 1px, transparent 1px);
+      linear-gradient(
+        rgba(255, 255, 255, var(--pattern-opacity)) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        90deg,
+        rgba(255, 255, 255, var(--pattern-opacity)) 1px,
+        transparent 1px
+      );
     background-size: var(--pattern-size-small) var(--pattern-size-small);
     background-attachment: fixed;
   }
@@ -62,8 +81,15 @@
   /* Medium grid - balanced structure */
   .pattern-grid-medium {
     background-image:
-      linear-gradient(rgba(255, 255, 255, calc(var(--pattern-opacity) * 1.2)) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, calc(var(--pattern-opacity) * 1.2)) 1px, transparent 1px);
+      linear-gradient(
+        rgba(255, 255, 255, calc(var(--pattern-opacity) * 1.2)) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        90deg,
+        rgba(255, 255, 255, calc(var(--pattern-opacity) * 1.2)) 1px,
+        transparent 1px
+      );
     background-size: var(--pattern-size-medium) var(--pattern-size-medium);
     background-attachment: fixed;
   }
@@ -71,11 +97,27 @@
   /* Cross grid - enhanced structure */
   .pattern-grid-cross {
     background-image:
-      linear-gradient(rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.8)) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.8)) 1px, transparent 1px),
-      linear-gradient(rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.4)) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.4)) 1px, transparent 1px);
-    background-size: var(--pattern-size-medium) var(--pattern-size-medium), var(--pattern-size-small) var(--pattern-size-small);
+      linear-gradient(
+        rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.8)) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        90deg,
+        rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.8)) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.4)) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        90deg,
+        rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.4)) 1px,
+        transparent 1px
+      );
+    background-size:
+      var(--pattern-size-medium) var(--pattern-size-medium),
+      var(--pattern-size-small) var(--pattern-size-small);
     background-attachment: fixed;
   }
 
@@ -118,15 +160,26 @@
     background-image:
       url("data:image/svg+xml,%3Csvg width='120' height='30' viewBox='0 0 120 30' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 15 Q30 0 60 15 T120 15 V30 H0 Z' fill='%23ffffff' fill-opacity='0.01'/%3E%3C/svg%3E"),
       url("data:image/svg+xml,%3Csvg width='120' height='25' viewBox='0 0 120 25' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 12 Q30 25 60 12 T120 12 V25 H0 Z' fill='%23ffffff' fill-opacity='0.008'/%3E%3C/svg%3E");
-    background-size: 120px 30px, 120px 25px;
+    background-size:
+      120px 30px,
+      120px 25px;
     background-repeat: repeat-x;
     background-attachment: fixed;
     animation: wave-flow 20s ease-in-out infinite;
   }
 
   @keyframes wave-flow {
-    0%, 100% { background-position: 0 0, 0 0; }
-    50% { background-position: 30px 0, -30px 0; }
+    0%,
+    100% {
+      background-position:
+        0 0,
+        0 0;
+    }
+    50% {
+      background-position:
+        30px 0,
+        -30px 0;
+    }
   }
 
   /* ==========================================
@@ -146,10 +199,24 @@
   /* Tech grid + dots - complex but subtle */
   .pattern-tech-grid {
     background-image:
-      linear-gradient(rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.5)) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.5)) 1px, transparent 1px),
-      radial-gradient(circle, rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.3)) 1px, transparent 1px);
-    background-size: var(--pattern-size-medium) var(--pattern-size-medium), var(--pattern-size-medium) var(--pattern-size-medium), var(--pattern-size-small) var(--pattern-size-small);
+      linear-gradient(
+        rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.5)) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        90deg,
+        rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.5)) 1px,
+        transparent 1px
+      ),
+      radial-gradient(
+        circle,
+        rgba(255, 255, 255, calc(var(--pattern-opacity) * 0.3)) 1px,
+        transparent 1px
+      );
+    background-size:
+      var(--pattern-size-medium) var(--pattern-size-medium),
+      var(--pattern-size-medium) var(--pattern-size-medium),
+      var(--pattern-size-small) var(--pattern-size-small);
     background-attachment: fixed;
   }
 

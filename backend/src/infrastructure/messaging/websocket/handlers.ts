@@ -1,8 +1,17 @@
 /** @format */
 
 import { Socket } from "socket.io";
-import { WebSocketClient, IRateLimiter, ILogger } from "../../../interfaces/websocket";
-import { WebSocketError, WebSocketErrorCode, WEBSOCKET_CONSTANTS, WebSocketUtils } from "./types";
+import {
+  WebSocketClient,
+  IRateLimiter,
+  ILogger,
+} from "../../../interfaces/websocket";
+import {
+  WebSocketError,
+  WebSocketErrorCode,
+  WEBSOCKET_CONSTANTS,
+  WebSocketUtils,
+} from "./types";
 import { externalTrafficObserver } from "../../external/external-traffic-observer";
 
 /**
@@ -51,7 +60,10 @@ export class WebSocketEventHandlers {
             }
 
             // Check subscription limits
-            if (client.subscriptions.size >= WEBSOCKET_CONSTANTS.SUBSCRIPTIONS.MAX_PER_USER) {
+      if (
+        client.subscriptions.size >=
+        WEBSOCKET_CONSTANTS.SUBSCRIPTIONS.MAX_PER_USER
+      ) {
                 throw new WebSocketError(
                     "Subscription limit exceeded",
                     WebSocketErrorCode.SUBSCRIPTION_LIMIT_EXCEEDED,
@@ -76,7 +88,6 @@ export class WebSocketEventHandlers {
                 totalSubscriptions: client.subscriptions.size,
                 correlationId,
             });
-
         } catch (error) {
             if (error instanceof WebSocketError) {
                 this.logger.warn("Subscription failed", {
@@ -96,7 +107,8 @@ export class WebSocketEventHandlers {
                     correlationId,
                 });
             } else {
-                const errorObj = error instanceof Error ? error : new Error(String(error));
+        const errorObj =
+          error instanceof Error ? error : new Error(String(error));
                 this.logger.error("Unexpected subscription error", {
                     socketId: socket.id,
                     userId: client.userId,
@@ -162,7 +174,6 @@ export class WebSocketEventHandlers {
                 remainingSubscriptions: client.subscriptions.size,
                 correlationId,
             });
-
         } catch (error) {
             if (error instanceof WebSocketError) {
                 this.logger.warn("Unsubscribe failed", {
@@ -181,7 +192,8 @@ export class WebSocketEventHandlers {
                     correlationId,
                 });
             } else {
-                const errorObj = error instanceof Error ? error : new Error(String(error));
+        const errorObj =
+          error instanceof Error ? error : new Error(String(error));
                 this.logger.error("Unexpected unsubscribe error", {
                     socketId: socket.id,
                     userId: client.userId,
@@ -209,16 +221,20 @@ export class WebSocketEventHandlers {
         const client = (socket as unknown as { client?: WebSocketClient }).client;
         const correlationId = WebSocketUtils.generateCorrelationId();
 
-        this.logger.warn("Market data subscription requested but market streaming is not available", {
+    this.logger.warn(
+      "Market data subscription requested but market streaming is not available",
+      {
             socketId: socket.id,
             userId: client?.userId,
             symbol,
             correlationId,
-        });
+      }
+    );
 
         socket.emit("error", {
             event: "subscribe_market",
-            error: "Market data streaming is not available; market data is served over HTTP",
+      error:
+        "Market data streaming is not available; market data is served over HTTP",
             code: WebSocketErrorCode.MARKET_DATA_UNAVAILABLE,
             correlationId,
         });
@@ -231,12 +247,15 @@ export class WebSocketEventHandlers {
         const client = (socket as unknown as { client?: WebSocketClient }).client;
         const correlationId = WebSocketUtils.generateCorrelationId();
 
-        this.logger.debug("Market data unsubscribe requested (no-op, streaming not available)", {
+    this.logger.debug(
+      "Market data unsubscribe requested (no-op, streaming not available)",
+      {
             socketId: socket.id,
             userId: client?.userId,
             symbol,
             correlationId,
-        });
+      }
+    );
     }
 
     /**
@@ -253,15 +272,18 @@ export class WebSocketEventHandlers {
                 userId: client?.userId,
                 userLevel: client?.userLevel,
                 subscriptionsCount: client ? client.subscriptions.size : 0,
-                connectedDuration: client && client.connectedAt ? Date.now() - client.connectedAt.getTime() : 0,
+        connectedDuration:
+          client && client.connectedAt
+            ? Date.now() - client.connectedAt.getTime()
+            : 0,
                 correlationId,
             });
 
             // Client cleanup is handled by the connection manager
             // This is just for logging
-
         } catch (error) {
-            const errorObj = error instanceof Error ? error : new Error(String(error));
+      const errorObj =
+        error instanceof Error ? error : new Error(String(error));
             this.logger.error("Disconnect handling error", {
                 socketId: socket.id,
                 correlationId,
@@ -273,7 +295,10 @@ export class WebSocketEventHandlers {
     /**
      * Check rate limiting for user actions
      */
-    private async checkRateLimit(userId: string, action: string): Promise<boolean> {
+  private async checkRateLimit(
+    userId: string,
+    action: string
+  ): Promise<boolean> {
         try {
             const _cost = WebSocketUtils.calculateRateLimitCost(action);
             return await this.rateLimiter.canSubscribe(userId); // Simplified - in real implementation would track tokens

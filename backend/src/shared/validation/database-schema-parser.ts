@@ -64,7 +64,15 @@ export interface DatabaseSchema {
 }
 
 export class DatabaseSchemaParser {
-    private migrationDir = path.join(__dirname, "..", "..", "..", "..", "database", "migrations");
+  private migrationDir = path.join(
+    __dirname,
+    "..",
+    "..",
+    "..",
+    "..",
+    "database",
+    "migrations"
+  );
 
     /**
      * Parse all migration files to build complete database schema
@@ -102,9 +110,7 @@ export class DatabaseSchemaParser {
     private async getMigrationFiles(): Promise<string[]> {
         try {
             const files = await fs.readdir(this.migrationDir);
-            const sqlFiles = files
-                .filter(file => file.endsWith('.sql'))
-                .sort(); // Sort to ensure proper order
+      const sqlFiles = files.filter(file => file.endsWith(".sql")).sort(); // Sort to ensure proper order
 
             return sqlFiles.map(file => path.join(this.migrationDir, file));
         } catch (error) {
@@ -130,12 +136,12 @@ export class DatabaseSchemaParser {
         for (const statement of statements) {
             const trimmed = statement.trim();
 
-            if (trimmed.includes('CREATE TABLE')) {
+      if (trimmed.includes("CREATE TABLE")) {
                 const tableDef = this.parseCreateTableStatement(trimmed);
                 if (tableDef) {
                     schema.tables[tableDef.name] = tableDef;
                 }
-            } else if (trimmed.includes('ALTER TABLE')) {
+      } else if (trimmed.includes("ALTER TABLE")) {
                 this.parseAlterTableStatement(trimmed, schema);
             }
         }
@@ -149,12 +155,13 @@ export class DatabaseSchemaParser {
     private parseCreateTableStatement(statement: string): TableDefinition | null {
         try {
             // Match CREATE TABLE [IF NOT EXISTS] table_name (columns...)
-            const createTableRegex = /CREATE TABLE(?:\s+IF NOT EXISTS)?\s+["`]?(\w+)["`]?\s*\((.*)\);?/is;
+      const createTableRegex =
+        /CREATE TABLE(?:\s+IF NOT EXISTS)?\s+["`]?(\w+)["`]?\s*\((.*)\);?/is;
             const match = statement.match(createTableRegex);
 
             if (!match) {
                 logger.debug("CREATE TABLE regex did not match", {
-                    statement: statement.substring(0, 100)
+          statement: statement.substring(0, 100),
                 });
                 return null;
             }
@@ -165,7 +172,7 @@ export class DatabaseSchemaParser {
             logger.debug("Parsing CREATE TABLE", {
                 tableName,
                 columnsDefinitionLength: columnsDefinition.length,
-                columnsDefinitionPreview: columnsDefinition.substring(0, 200)
+        columnsDefinitionPreview: columnsDefinition.substring(0, 200),
             });
 
             const columns = this.parseColumnDefinitions(columnsDefinition);
@@ -174,7 +181,7 @@ export class DatabaseSchemaParser {
             logger.debug("CREATE TABLE parsed successfully", {
                 tableName,
                 columnCount: Object.keys(columns).length,
-                columns: Object.keys(columns)
+        columns: Object.keys(columns),
             });
 
             return {
@@ -195,24 +202,26 @@ export class DatabaseSchemaParser {
     /**
      * Parse column definitions from CREATE TABLE
      */
-    private parseColumnDefinitions(columnsDef: string): Record<string, ColumnDefinition> {
+  private parseColumnDefinitions(
+    columnsDef: string
+  ): Record<string, ColumnDefinition> {
         const columns: Record<string, ColumnDefinition> = {};
 
         // Fix: Handle column definitions with parentheses in type (like DECIMAL(10, 2))
         // We need to split by commas only when they're not inside parentheses
         const columnDefs = [];
         let openParens = 0;
-        let currentDef = '';
+    let currentDef = "";
 
         for (let i = 0; i < columnsDef.length; i++) {
             const char = columnsDef[i];
 
-            if (char === '(') openParens++;
-            if (char === ')') openParens--;
+      if (char === "(") openParens++;
+      if (char === ")") openParens--;
 
-            if (char === ',' && openParens === 0) {
+      if (char === "," && openParens === 0) {
                 columnDefs.push(currentDef.trim());
-                currentDef = '';
+        currentDef = "";
             } else {
                 currentDef += char;
             }
@@ -227,9 +236,14 @@ export class DatabaseSchemaParser {
             const columnDef = columnDefs[i];
 
             // Skip empty definitions and constraints
-            if (!columnDef || columnDef.startsWith('CONSTRAINT') ||
-                columnDef.startsWith('PRIMARY KEY') || columnDef.startsWith('UNIQUE') ||
-                columnDef.startsWith('CHECK') || columnDef.startsWith('FOREIGN KEY')) {
+      if (
+        !columnDef ||
+        columnDef.startsWith("CONSTRAINT") ||
+        columnDef.startsWith("PRIMARY KEY") ||
+        columnDef.startsWith("UNIQUE") ||
+        columnDef.startsWith("CHECK") ||
+        columnDef.startsWith("FOREIGN KEY")
+      ) {
                 continue;
             }
 
@@ -242,25 +256,28 @@ export class DatabaseSchemaParser {
                 logger.debug("Found column definition", {
                     columnName,
                     typeDef,
-                    index: i
+          index: i,
                 });
 
                 const columnDefObj = this.parseColumnType(columnName, typeDef);
 
                 // Fix: PRIMARY KEY implies NOT NULL
-                if (typeDef.includes('PRIMARY KEY')) {
+        if (typeDef.includes("PRIMARY KEY")) {
                     columnDefObj.notNull = true;
                 }
 
                 columns[columnName] = columnDefObj;
             } else {
-                logger.warn("Failed to parse column definition", { columnDef, index: i });
+        logger.warn("Failed to parse column definition", {
+          columnDef,
+          index: i,
+        });
             }
         }
 
         logger.debug("Total columns parsed", {
             totalColumns: Object.keys(columns).length,
-            columns: Object.keys(columns)
+      columns: Object.keys(columns),
         });
 
         return columns;
@@ -271,7 +288,7 @@ export class DatabaseSchemaParser {
      */
     private parseColumnType(name: string, typeDef: string): ColumnDefinition {
         // Trim and clean up the type definition
-        const cleanTypeDef = typeDef.trim().replace(/\s+/g, ' ');
+    const cleanTypeDef = typeDef.trim().replace(/\s+/g, " ");
 
         // Extract just the type part, ignoring constraints
         // Look for patterns like: TYPE, TYPE(size), TYPE(size,size)
@@ -280,7 +297,7 @@ export class DatabaseSchemaParser {
             logger.warn("Failed to parse column type", { name, typeDef });
             return {
                 name,
-                type: 'TEXT', // Default fallback
+        type: "TEXT", // Default fallback
                 notNull: false,
             };
         }
@@ -288,12 +305,25 @@ export class DatabaseSchemaParser {
         const typePart = typeMatch[1].toUpperCase();
 
         // Filter out invalid column types that are actually constraint keywords
-        const invalidTypes = ['NOT', 'NULL', 'UNIQUE', 'PRIMARY', 'KEY', 'CHECK', 'FOREIGN', 'REFERENCES', 'CONSTRAINT'];
+    const invalidTypes = [
+      "NOT",
+      "NULL",
+      "UNIQUE",
+      "PRIMARY",
+      "KEY",
+      "CHECK",
+      "FOREIGN",
+      "REFERENCES",
+      "CONSTRAINT",
+    ];
         if (invalidTypes.includes(typePart)) {
-            logger.warn("Skipping invalid column type that appears to be a constraint keyword", { name, typePart, typeDef });
+      logger.warn(
+        "Skipping invalid column type that appears to be a constraint keyword",
+        { name, typePart, typeDef }
+      );
             return {
                 name,
-                type: 'TEXT', // Default fallback
+        type: "TEXT", // Default fallback
                 notNull: false,
             };
         }
@@ -305,14 +335,14 @@ export class DatabaseSchemaParser {
         };
 
         // Parse type parameters (e.g., VARCHAR(255), DECIMAL(20, 8))
-        if (typePart.includes('(')) {
+    if (typePart.includes("(")) {
             const paramMatch = typePart.match(/^(\w+)\(([^)]+)\)$/);
             if (paramMatch) {
                 definition.type = paramMatch[1];
                 const params = paramMatch[2].trim();
 
-                if (definition.type === 'DECIMAL' || definition.type === 'NUMERIC') {
-                    const [precisionStr, scaleStr] = params.split(',').map(p => p.trim());
+        if (definition.type === "DECIMAL" || definition.type === "NUMERIC") {
+          const [precisionStr, scaleStr] = params.split(",").map(p => p.trim());
                     const precision = parseInt(precisionStr);
                     const scale = scaleStr ? parseInt(scaleStr) : 0;
                     if (!isNaN(precision)) {
@@ -360,8 +390,10 @@ export class DatabaseSchemaParser {
         const uniqueRegex = /UNIQUE\s*\(([^)]+)\)/gi;
         let uniqueMatch;
         while ((uniqueMatch = uniqueRegex.exec(columnsDef)) !== null) {
-            const columns = uniqueMatch[1].split(',').map(col => col.trim().replace(/["`]/g, ''));
-            const constraintName = `unique_${columns.join('_')}`;
+      const columns = uniqueMatch[1]
+        .split(",")
+        .map(col => col.trim().replace(/["`]/g, ""));
+      const constraintName = `unique_${columns.join("_")}`;
             constraints.unique[constraintName] = columns;
         }
 
@@ -372,25 +404,32 @@ export class DatabaseSchemaParser {
             let expression = checkMatch[1].trim();
 
             // Fix: Ensure we have matching parentheses for the check expression
-            if (expression && expression.split('(').length !== expression.split(')').length) {
+      if (
+        expression &&
+        expression.split("(").length !== expression.split(")").length
+      ) {
                 // Find the matching closing parenthesis
                 let openParens = 1;
                 let endPos = checkMatch.index + checkMatch[0].length;
                 while (endPos < columnsDef.length && openParens > 0) {
-                    if (columnsDef[endPos] === '(') openParens++;
-                    if (columnsDef[endPos] === ')') openParens--;
+          if (columnsDef[endPos] === "(") openParens++;
+          if (columnsDef[endPos] === ")") openParens--;
                     endPos++;
                 }
 
                 if (openParens === 0) {
-                    expression = columnsDef.substring(checkMatch.index + 7, endPos - 1).trim();
+          expression = columnsDef
+            .substring(checkMatch.index + 7, endPos - 1)
+            .trim();
                 }
             }
 
             const checkConstraint = this.parseCheckConstraint(expression);
             if (checkConstraint) {
                 // Try to associate with column if possible
-                const columnMatch = columnsDef.substring(0, checkMatch.index).match(/["`]?(\w+)["`]?\s+[^,]+$/);
+        const columnMatch = columnsDef
+          .substring(0, checkMatch.index)
+          .match(/["`]?(\w+)["`]?\s+[^,]+$/);
                 if (columnMatch) {
                     constraints.check[columnMatch[1]] = checkConstraint;
                 }
@@ -431,9 +470,9 @@ export class DatabaseSchemaParser {
         // Parse IN constraints (e.g., user_level IN ('BASIC', 'VERIFIED', 'PREMIUM', 'ADMIN'))
         const inMatch = expression.match(/(\w+)\s+IN\s*\(([^)]+)\)/i);
         if (inMatch) {
-            const values = inMatch[2].split(',').map(val =>
-                val.trim().replace(/['"]/g, '')
-            );
+      const values = inMatch[2]
+        .split(",")
+        .map(val => val.trim().replace(/['"]/g, ""));
             constraint.values = values;
         }
 
@@ -446,9 +485,9 @@ export class DatabaseSchemaParser {
                 const operator = rangeParts[1];
                 const value = parseInt(rangeParts[2]);
 
-                if (operator === '>=' || operator === '>') {
+        if (operator === ">=" || operator === ">") {
                     constraint.range.min = value;
-                } else if (operator === '<=' || operator === '<') {
+        } else if (operator === "<=" || operator === "<") {
                     constraint.range.max = value;
                 }
             }
@@ -457,7 +496,7 @@ export class DatabaseSchemaParser {
         // Parse pattern constraints (e.g., email LIKE '%@%.%')
         const likeMatch = expression.match(/(\w+)\s+LIKE\s+['"]([^'"]+)['"]/i);
         if (likeMatch) {
-            constraint.pattern = likeMatch[2].replace(/%/g, '.*');
+      constraint.pattern = likeMatch[2].replace(/%/g, ".*");
         }
 
         return constraint;
@@ -466,7 +505,10 @@ export class DatabaseSchemaParser {
     /**
      * Parse ALTER TABLE statements to update schema
      */
-    private parseAlterTableStatement(statement: string, schema: DatabaseSchema): void {
+  private parseAlterTableStatement(
+    statement: string,
+    schema: DatabaseSchema
+  ): void {
         try {
             // If there are multiple statements, split them first
             const statements = this.splitSqlStatements(statement);
@@ -486,20 +528,24 @@ export class DatabaseSchemaParser {
                 // Only log warning if table doesn't exist and it's not a migration that will create it later
                 if (!schema.tables[tableName]) {
                     // Check if this is a migration that creates the table later
-                    const createsTable = alterClause.includes('CREATE TABLE') ||
-                        alterClause.includes('IF NOT EXISTS');
+          const createsTable =
+            alterClause.includes("CREATE TABLE") ||
+            alterClause.includes("IF NOT EXISTS");
 
                     if (!createsTable) {
-                        logger.debug("ALTER TABLE references table not yet parsed (may be created in later migration)", {
+            logger.debug(
+              "ALTER TABLE references table not yet parsed (may be created in later migration)",
+              {
                             tableName,
-                            statement: `${singleStatement.substring(0, 100)}...`
-                        });
+                statement: `${singleStatement.substring(0, 100)}...`,
+              }
+            );
                     }
                     continue;
                 }
 
                 // Handle ADD COLUMN
-                if (alterClause.includes('ADD COLUMN')) {
+        if (alterClause.includes("ADD COLUMN")) {
                     this.handleAddColumnStatement(tableName, alterClause, schema);
                 }
             }
@@ -514,7 +560,11 @@ export class DatabaseSchemaParser {
     /**
      * Handle ADD COLUMN statements to update table schema
      */
-    private handleAddColumnStatement(tableName: string, alterClause: string, schema: DatabaseSchema): void {
+  private handleAddColumnStatement(
+    tableName: string,
+    alterClause: string,
+    schema: DatabaseSchema
+  ): void {
         try {
             // Extract column definition from ADD COLUMN statement
             const columnRegex = /ADD COLUMN\s+["`]?(\w+)["`]?\s+([^,;]+)/i;
@@ -530,7 +580,7 @@ export class DatabaseSchemaParser {
                 logger.debug("Added column to table schema", {
                     tableName,
                     columnName,
-                    columnType
+          columnType,
                 });
             }
         } catch (error) {
@@ -546,7 +596,7 @@ export class DatabaseSchemaParser {
      */
     private splitSqlStatements(content: string): string[] {
         // Simple approach: split by semicolons and filter
-        const rawStatements = content.split(';');
+    const rawStatements = content.split(";");
         const statements: string[] = [];
 
         for (const statement of rawStatements) {
@@ -555,10 +605,14 @@ export class DatabaseSchemaParser {
             if (trimmed.length === 0) continue;
 
             // Skip pure comment statements
-            const lines = trimmed.split('\n');
+      const lines = trimmed.split("\n");
             const nonCommentLines = lines.filter(line => {
                 const trimmedLine = line.trim();
-                return trimmedLine.length > 0 && !trimmedLine.startsWith('--') && !trimmedLine.startsWith('/*');
+        return (
+          trimmedLine.length > 0 &&
+          !trimmedLine.startsWith("--") &&
+          !trimmedLine.startsWith("/*")
+        );
             });
 
             if (nonCommentLines.length > 0) {
@@ -572,7 +626,10 @@ export class DatabaseSchemaParser {
     /**
      * Merge parsed schema from one migration into the main schema
      */
-    private mergeSchemas(mainSchema: DatabaseSchema, fileSchema: DatabaseSchema): void {
+  private mergeSchemas(
+    mainSchema: DatabaseSchema,
+    fileSchema: DatabaseSchema
+  ): void {
         // Merge tables
         for (const [tableName, tableDef] of Object.entries(fileSchema.tables)) {
             if (mainSchema.tables[tableName]) {
@@ -590,7 +647,10 @@ export class DatabaseSchemaParser {
     /**
      * Merge table definitions (for handling multiple migrations)
      */
-    private mergeTableDefinitions(existing: TableDefinition, newDef: TableDefinition): void {
+  private mergeTableDefinitions(
+    existing: TableDefinition,
+    newDef: TableDefinition
+  ): void {
         // Merge columns (new migrations might add columns)
         Object.assign(existing.columns, newDef.columns);
 

@@ -7,12 +7,18 @@
 
 import { Router, Request, Response } from "express";
 import Joi from "joi";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
+import {
+  authMiddleware,
+  AuthenticatedRequest,
+} from "../../middleware/auth.middleware";
 import { serviceProvider } from "../../../core/service-provider";
 import { kodiakIntegrationService } from "../../../infrastructure/external";
 import { createRateLimiter } from "../../../infrastructure/security/rate-limiter.service";
 //import { UserLevel } from "@trade-bot/shared";
-import { kodiakConnectionRateLimit, kodiakSyncedRateLimit } from "../../../infrastructure/security/rate-limiter/rate-limit.config";
+import {
+  kodiakConnectionRateLimit,
+  kodiakSyncedRateLimit,
+} from "../../../infrastructure/security/rate-limiter/rate-limit.config";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 const router = Router();
@@ -26,7 +32,11 @@ const kodiakConnectionSchema = Joi.object({
 });
 
 // POST /api/user/kodiak/connect
-router.post("/kodiak/connect", authMiddleware, createRateLimiter("kodiak-connection", kodiakConnectionRateLimit), async (req: AuthenticatedRequest, res: Response) => {
+router.post(
+  "/kodiak/connect",
+  authMiddleware,
+  createRateLimiter("kodiak-connection", kodiakConnectionRateLimit),
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Ensure user is authenticated (should always be true due to authMiddleware)
         if (!req.user) {
@@ -38,7 +48,7 @@ router.post("/kodiak/connect", authMiddleware, createRateLimiter("kodiak-connect
         if (error) {
             return res.status(400).json({
                 success: false,
-                error: error.details[0].message
+          error: error.details[0].message,
             });
         }
 
@@ -59,7 +69,6 @@ router.post("/kodiak/connect", authMiddleware, createRateLimiter("kodiak-connect
             message: result.message,
             data: result.data,
         });
-
     } catch (error) {
         logger.error("Kodiak connect error", error as Error, {
             userId: req.user?.userId,
@@ -67,13 +76,17 @@ router.post("/kodiak/connect", authMiddleware, createRateLimiter("kodiak-connect
 
         res.status(500).json({
             success: false,
-            error: "Failed to connect Kodiak credentials"
+        error: "Failed to connect Kodiak credentials",
         });
     }
-});
+  }
+);
 
 // DELETE /api/user/kodiak/disconnect
-router.delete("/kodiak/disconnect", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.delete(
+  "/kodiak/disconnect",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Ensure user is authenticated (should always be true due to authMiddleware)
         if (!req.user) {
@@ -96,7 +109,6 @@ router.delete("/kodiak/disconnect", authMiddleware, async (req: AuthenticatedReq
             success: true,
             message: result.message,
         });
-
     } catch (error) {
         logger.error("Kodiak disconnect error", error as Error, {
             userId: req.user?.userId,
@@ -107,10 +119,15 @@ router.delete("/kodiak/disconnect", authMiddleware, async (req: AuthenticatedReq
             error: "Failed to disconnect Kodiak credentials",
         });
     }
-});
+  }
+);
 
 // GET /api/user/kodiak/status
-router.get("/kodiak/status", authMiddleware, createRateLimiter("kodiak-status", kodiakSyncedRateLimit), async (req: AuthenticatedRequest, res: Response) => {
+router.get(
+  "/kodiak/status",
+  authMiddleware,
+  createRateLimiter("kodiak-status", kodiakSyncedRateLimit),
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Ensure user is authenticated (should always be true due to authMiddleware)
         if (!req.user) {
@@ -125,7 +142,7 @@ router.get("/kodiak/status", authMiddleware, createRateLimiter("kodiak-status", 
         logger.debug("Kodiak status response", {
             userId,
             status,
-            accountId: status?.accountId
+        accountId: status?.accountId,
         });
 
         // Prevent caching of user-specific data
@@ -137,7 +154,6 @@ router.get("/kodiak/status", authMiddleware, createRateLimiter("kodiak-status", 
             success: true,
             data: status,
         });
-
     } catch (error) {
         logger.error("Get Kodiak status error", error as Error, {
             userId: req.user?.userId,
@@ -145,13 +161,17 @@ router.get("/kodiak/status", authMiddleware, createRateLimiter("kodiak-status", 
 
         res.status(500).json({
             success: false,
-            error: "Failed to get Kodiak status"
+        error: "Failed to get Kodiak status",
         });
     }
-});
+  }
+);
 
 // GET /api/user/kodiak/positions
-router.get("/kodiak/positions", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get(
+  "/kodiak/positions",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Ensure user is authenticated (should always be true due to authMiddleware)
         if (!req.user) {
@@ -172,7 +192,6 @@ router.get("/kodiak/positions", authMiddleware, async (req: AuthenticatedRequest
             success: true,
             data: result.data,
         });
-
     } catch (error) {
         logger.error("Get Kodiak positions error", error as Error, {
             userId: req.user?.userId,
@@ -180,13 +199,17 @@ router.get("/kodiak/positions", authMiddleware, async (req: AuthenticatedRequest
 
         res.status(500).json({
             success: false,
-            error: "Failed to get Kodiak positions"
+        error: "Failed to get Kodiak positions",
         });
     }
-});
+  }
+);
 
 // GET /api/user/kodiak/trades
-router.get("/kodiak/trades", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get(
+  "/kodiak/trades",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Ensure user is authenticated (should always be true due to authMiddleware)
         if (!req.user) {
@@ -208,7 +231,6 @@ router.get("/kodiak/trades", authMiddleware, async (req: AuthenticatedRequest, r
             success: true,
             data: result.data,
         });
-
     } catch (error) {
         logger.error("Get Kodiak trades error", error as Error, {
             userId: req.user?.userId,
@@ -216,13 +238,17 @@ router.get("/kodiak/trades", authMiddleware, async (req: AuthenticatedRequest, r
 
         res.status(500).json({
             success: false,
-            error: "Failed to get Kodiak trades"
+        error: "Failed to get Kodiak trades",
         });
     }
-});
+  }
+);
 
 // GET /api/user/kodiak/balance
-router.get("/kodiak/balance", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get(
+  "/kodiak/balance",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Ensure user is authenticated (should always be true due to authMiddleware)
         if (!req.user) {
@@ -243,7 +269,6 @@ router.get("/kodiak/balance", authMiddleware, async (req: AuthenticatedRequest, 
             success: true,
             data: result.data,
         });
-
     } catch (error) {
         logger.error("Get Kodiak balance error", error as Error, {
             userId: req.user?.userId,
@@ -251,13 +276,17 @@ router.get("/kodiak/balance", authMiddleware, async (req: AuthenticatedRequest, 
 
         res.status(500).json({
             success: false,
-            error: "Failed to get Kodiak balance"
+        error: "Failed to get Kodiak balance",
         });
     }
-});
+  }
+);
 
 // GET /api/user/kodiak/account-info
-router.get("/kodiak/account-info", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get(
+  "/kodiak/account-info",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
         // Ensure user is authenticated (should always be true due to authMiddleware)
         if (!req.user) {
@@ -278,7 +307,6 @@ router.get("/kodiak/account-info", authMiddleware, async (req: AuthenticatedRequ
             success: true,
             data: result.data,
         });
-
     } catch (error) {
         logger.error("Get Kodiak account info error", error as Error, {
             userId: req.user?.userId,
@@ -286,20 +314,23 @@ router.get("/kodiak/account-info", authMiddleware, async (req: AuthenticatedRequ
 
         res.status(500).json({
             success: false,
-            error: "Failed to get Kodiak account info"
+        error: "Failed to get Kodiak account info",
         });
     }
-});
+  }
+);
 
 // GET /api/public/kodiak/availability
-router.get("/public/kodiak/availability", async (req: Request, res: Response) => {
+router.get(
+  "/public/kodiak/availability",
+  async (req: Request, res: Response) => {
     try {
         // Check if Kodiak API is generally available (no auth required)
         // This is a public endpoint that just indicates service status
         // For now, return a basic availability status
         const isAvailable = true; // Kodiak service is available
 
-        res.set('Cache-Control', 'public, max-age=300'); // Cache for 5 minutes
+      res.set("Cache-Control", "public, max-age=300"); // Cache for 5 minutes
 
         res.json({
             success: true,
@@ -319,6 +350,7 @@ router.get("/public/kodiak/availability", async (req: Request, res: Response) =>
             },
         });
     }
-});
+  }
+);
 
 export { router as userKodiakRoutes };

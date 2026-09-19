@@ -27,9 +27,9 @@
 import { contextLogger } from "../../logging";
 
 export enum CircuitState {
-    CLOSED = 'closed',     // Normal operation
-    OPEN = 'open',         // Failing, requests blocked
-    HALF_OPEN = 'half_open' // Testing recovery
+  CLOSED = "closed", // Normal operation
+  OPEN = "open", // Failing, requests blocked
+  HALF_OPEN = "half_open", // Testing recovery
 }
 
 export interface CircuitBreakerConfig {
@@ -85,7 +85,7 @@ export class CircuitBreaker {
             const waitTime = Math.max(0, this.nextAttemptTime - Date.now());
             return {
                 success: false,
-                error: `Circuit breaker ${this.state} - ${waitTime > 0 ? `retry in ${Math.round(waitTime / 1000)}s` : 'service unavailable'}`
+        error: `Circuit breaker ${this.state} - ${waitTime > 0 ? `retry in ${Math.round(waitTime / 1000)}s` : "service unavailable"}`,
             };
         }
 
@@ -102,12 +102,12 @@ export class CircuitBreaker {
             });
 
             return { success: true, result };
-
         } catch (error) {
             // Record failure
             this.onFailure();
 
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
 
             contextLogger.warn("Circuit breaker operation failed", {
                 state: this.state,
@@ -131,11 +131,11 @@ export class CircuitBreaker {
 
             // Execute the operation and handle the promise
             operation()
-                .then((result) => {
+        .then(result => {
                     clearTimeout(timeout);
                     resolve(result);
                 })
-                .catch((error) => {
+        .catch(error => {
                     clearTimeout(timeout);
                     reject(error);
                 });
@@ -204,7 +204,10 @@ export class CircuitBreaker {
         this.failureCount++;
 
         // Check if we should open the circuit
-        if (this.state === CircuitState.CLOSED && this.failureCount >= this.config.failureThreshold) {
+    if (
+      this.state === CircuitState.CLOSED &&
+      this.failureCount >= this.config.failureThreshold
+    ) {
             this.openCircuit();
         } else if (this.state === CircuitState.HALF_OPEN) {
             // Single failure in half-open reopens circuit
@@ -278,7 +281,9 @@ export class CircuitBreaker {
         if (this.state === CircuitState.OPEN) {
             healthy = false;
             issues.push("Circuit breaker is open - requests are failing fast");
-            recommendations.push("Check service health and consider manual reset if issue is resolved");
+      recommendations.push(
+        "Check service health and consider manual reset if issue is resolved"
+      );
         } else if (this.state === CircuitState.HALF_OPEN) {
             issues.push("Circuit breaker is testing recovery");
             recommendations.push("Monitor next few requests for successful recovery");
@@ -288,17 +293,23 @@ export class CircuitBreaker {
         if (this.failureCount > 0) {
             const timeSinceLastFailure = Date.now() - this.lastFailureTime;
             if (timeSinceLastFailure < this.config.monitoringPeriod) {
-                issues.push(`Recent failures detected (${this.failureCount} in last ${this.config.monitoringPeriod / 1000}s)`);
+        issues.push(
+          `Recent failures detected (${this.failureCount} in last ${this.config.monitoringPeriod / 1000}s)`
+        );
             }
         }
 
         // Check configuration
         if (this.config.failureThreshold < 1) {
-            recommendations.push("Consider increasing failure threshold for stability");
+      recommendations.push(
+        "Consider increasing failure threshold for stability"
+      );
         }
 
         if (this.config.recoveryTimeout < 10000) {
-            recommendations.push("Consider increasing recovery timeout to prevent premature retries");
+      recommendations.push(
+        "Consider increasing recovery timeout to prevent premature retries"
+      );
         }
 
         return {
@@ -336,7 +347,7 @@ export class CircuitBreaker {
      */
     getAnalysis(): {
         stats: CircuitBreakerStats;
-        health: ReturnType<CircuitBreaker['getHealthStatus']>;
+    health: ReturnType<CircuitBreaker["getHealthStatus"]>;
         config: CircuitBreakerConfig;
         metrics: {
             failureRate: number;
@@ -349,7 +360,9 @@ export class CircuitBreaker {
 
         // Calculate metrics
         const now = Date.now();
-        const totalTime = now - Math.min(stats.lastFailureTime || now, stats.lastSuccessTime || now);
+    const totalTime =
+      now -
+      Math.min(stats.lastFailureTime || now, stats.lastSuccessTime || now);
 
         let failureRate = 0;
         let averageTimeBetweenFailures = 0;
@@ -360,7 +373,8 @@ export class CircuitBreaker {
             averageTimeBetweenFailures = totalTime / stats.failures / 1000; // seconds
 
             if (stats.failures > 0 || stats.successes > 0) {
-                uptimePercentage = (stats.successes / (stats.failures + stats.successes)) * 100;
+        uptimePercentage =
+          (stats.successes / (stats.failures + stats.successes)) * 100;
             }
         }
 
@@ -370,7 +384,8 @@ export class CircuitBreaker {
             config: { ...this.config },
             metrics: {
                 failureRate: Math.round(failureRate * 100) / 100,
-                averageTimeBetweenFailures: Math.round(averageTimeBetweenFailures * 100) / 100,
+        averageTimeBetweenFailures:
+          Math.round(averageTimeBetweenFailures * 100) / 100,
                 uptimePercentage: Math.round(uptimePercentage * 100) / 100,
             },
         };

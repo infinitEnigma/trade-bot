@@ -16,10 +16,10 @@
  */
 
 // Export all HTTP route handlers from domain folders
-export { authRoutes } from '../auth';
-export { userRoutes, userProfileRoutes, userKodiakRoutes } from '../users';
-export { marketRoutes, strategyRoutes } from '../trading';
-export { botRoutes, botEngineRoutes, botManagementRoutes } from '../bots';
-export { walletRoutes, walletBalanceRoutes } from '../wallet';
-export { healthRoutes } from './health';
-export { securityRoutes } from './security';
+export { authRoutes } from "../auth";
+export { userRoutes, userProfileRoutes, userKodiakRoutes } from "../users";
+export { marketRoutes, strategyRoutes } from "../trading";
+export { botRoutes, botEngineRoutes, botManagementRoutes } from "../bots";
+export { walletRoutes, walletBalanceRoutes } from "../wallet";
+export { healthRoutes } from "./health";
+export { securityRoutes } from "./security";

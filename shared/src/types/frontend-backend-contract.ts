@@ -181,7 +181,7 @@ export interface GetBotInstancesResponse {
  */
 export interface CreateStrategyRequest {
     name: string;
-    type: 'GRID' | 'TREND_FOLLOWING' | 'ARBITRAGE';
+  type: "GRID" | "TREND_FOLLOWING" | "ARBITRAGE";
     symbol: string;
     config: FrontendStrategyConfig;
     isActive?: boolean;
@@ -194,7 +194,7 @@ export interface StrategyResponse {
     id: string;
     userId: string;
     name: string;
-    type: 'GRID' | 'TREND_FOLLOWING' | 'ARBITRAGE';
+  type: "GRID" | "TREND_FOLLOWING" | "ARBITRAGE";
     symbol: string;
     config: FrontendStrategyConfig;
     isActive: boolean;
@@ -225,7 +225,7 @@ export interface GetStrategiesResponse {
  */
 export interface GetMarketPriceRequest {
     symbol: string;
-    timeFrame?: '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
+  timeFrame?: "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
     limit?: number;
 }
 
@@ -269,12 +269,12 @@ export interface TradeResponse {
     userId: string;
     orderId: string;
     symbol: string;
-    side: 'BUY' | 'SELL';
+  side: "BUY" | "SELL";
     quantity: number;
     price: number;
     fee: number;
     pnl: number;
-    status: 'EXECUTED' | 'PENDING' | 'CANCELED';
+  status: "EXECUTED" | "PENDING" | "CANCELED";
     executedAt: Date;
 }
 
@@ -293,7 +293,7 @@ export interface GetPositionsResponse {
 export interface PositionResponse {
     id: string;
     symbol: string;
-    side: 'LONG' | 'SHORT';
+  side: "LONG" | "SHORT";
     quantity: number;
     entryPrice: number;
     markPrice: number;
@@ -363,14 +363,14 @@ export interface FrontendSectorPerformance {
  * System health response
  */
 export interface SystemHealthResponse {
-    status: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY';
+  status: "HEALTHY" | "DEGRADED" | "UNHEALTHY";
     timestamp: Date;
     uptime: number;
     services: {
-        api: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY';
-        database: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY';
-        engine: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY';
-        redis: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY';
+    api: "HEALTHY" | "DEGRADED" | "UNHEALTHY";
+    database: "HEALTHY" | "DEGRADED" | "UNHEALTHY";
+    engine: "HEALTHY" | "DEGRADED" | "UNHEALTHY";
+    redis: "HEALTHY" | "DEGRADED" | "UNHEALTHY";
     };
     metrics: {
         cpu: number;
@@ -443,7 +443,7 @@ export interface FrontendWebSocketEvent {
  * Trade executed event
  */
 export interface FrontendTradeExecutedEvent extends FrontendWebSocketEvent {
-    type: 'trade:executed';
+  type: "trade:executed";
     data: TradeResponse;
 }
 
@@ -451,7 +451,7 @@ export interface FrontendTradeExecutedEvent extends FrontendWebSocketEvent {
  * Position updated event
  */
 export interface FrontendPositionUpdatedEvent extends FrontendWebSocketEvent {
-    type: 'position:updated';
+  type: "position:updated";
     data: PositionResponse;
 }
 
@@ -459,7 +459,7 @@ export interface FrontendPositionUpdatedEvent extends FrontendWebSocketEvent {
  * Bot status changed event
  */
 export interface FrontendBotStatusEvent extends FrontendWebSocketEvent {
-    type: 'bot:status';
+  type: "bot:status";
     data: {
         botId: string;
         status: BotActualState;
@@ -472,7 +472,7 @@ export interface FrontendBotStatusEvent extends FrontendWebSocketEvent {
  * Engine status changed event
  */
 export interface FrontendEngineStatusEvent extends FrontendWebSocketEvent {
-    type: 'engine:status';
+  type: "engine:status";
     data: {
         running: boolean;
         bots: number;
@@ -486,7 +486,7 @@ export interface FrontendEngineStatusEvent extends FrontendWebSocketEvent {
  * Error event
  */
 export interface FrontendErrorEvent extends FrontendWebSocketEvent {
-    type: 'error';
+  type: "error";
     data: {
         message: string;
         code?: string;
@@ -529,7 +529,7 @@ export interface FrontendRiskLimits {
 export interface FrontendUser {
     id: string;
     email: string;
-    userLevel: 'BASIC' | 'REGISTERED' | 'VERIFIED';
+  userLevel: "BASIC" | "REGISTERED" | "VERIFIED";
     roles?: string[];
     createdAt: Date;
     updatedAt: Date;
@@ -554,25 +554,47 @@ export interface FrontendMarketDataPoint {
 // ===========================================
 
 export function isApiResponse(obj: any): obj is ApiResponse {
-    return obj && typeof obj === 'object' && typeof obj.success === 'boolean';
+  return obj && typeof obj === "object" && typeof obj.success === "boolean";
 }
 
 export function isApiError(obj: any): obj is ApiError {
-    return obj && typeof obj === 'object' && obj.success === false && typeof obj.error === 'string';
+  return (
+    obj &&
+    typeof obj === "object" &&
+    obj.success === false &&
+    typeof obj.error === "string"
+  );
 }
 
 export function isLoginRequest(obj: any): obj is LoginRequest {
-    return obj && typeof obj === 'object' && typeof obj.email === 'string' && typeof obj.password === 'string';
+  return (
+    obj &&
+    typeof obj === "object" &&
+    typeof obj.email === "string" &&
+    typeof obj.password === "string"
+  );
 }
 
 export function isRegisterRequest(obj: any): obj is RegisterRequest {
-    return obj && typeof obj === 'object' && typeof obj.email === 'string' && typeof obj.password === 'string';
+  return (
+    obj &&
+    typeof obj === "object" &&
+    typeof obj.email === "string" &&
+    typeof obj.password === "string"
+  );
 }
 
 export function isCreateBotRequest(obj: any): obj is CreateBotRequest {
-    return obj && typeof obj === 'object' && typeof obj.strategyId === 'string';
+  return obj && typeof obj === "object" && typeof obj.strategyId === "string";
 }
 
-export function isCreateStrategyRequest(obj: any): obj is CreateStrategyRequest {
-    return obj && typeof obj === 'object' && typeof obj.name === 'string' && ['GRID', 'TREND_FOLLOWING', 'ARBITRAGE'].includes(obj.type);
+export function isCreateStrategyRequest(
+  obj: any
+): obj is CreateStrategyRequest {
+  return (
+    obj &&
+    typeof obj === "object" &&
+    typeof obj.name === "string" &&
+    ["GRID", "TREND_FOLLOWING", "ARBITRAGE"].includes(obj.type)
+  );
 }

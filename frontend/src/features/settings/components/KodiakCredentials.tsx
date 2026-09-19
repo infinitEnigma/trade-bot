@@ -4,7 +4,10 @@ import React from "react";
 import { Key, AlertCircle, Eye, EyeOff, Loader2, XCircle } from "lucide-react";
 import { Card } from "../../../shared/components/ui";
 import { SectionHeader } from "../../../shared/components/ui";
-import { KodiakCredentials as CredentialsType, KodiakStatus } from "../types/settings.types";
+import {
+  KodiakCredentials as CredentialsType,
+  KodiakStatus,
+} from "../types/settings.types";
 
 interface KodiakCredentialsProps {
   kodiakStatus: KodiakStatus;
@@ -56,7 +59,8 @@ export const KodiakCredentials: React.FC<KodiakCredentialsProps> = ({
               </p>
               {kodiakStatus.connectedAt && (
                 <p className="text-sm text-textMuted">
-                  Connected: {new Date(kodiakStatus.connectedAt).toLocaleDateString()}
+                  Connected:{" "}
+                  {new Date(kodiakStatus.connectedAt).toLocaleDateString()}
                 </p>
               )}
             </div>
@@ -86,9 +90,7 @@ export const KodiakCredentials: React.FC<KodiakCredentialsProps> = ({
         <div className="space-y-4">
           <div className="flex items-center gap-3 p-4 rounded-lg bg-warning/10 border border-warning/20">
             <AlertCircle className="w-4 h-4 text-warning" />
-            <p className="text-warning font-medium">
-              No Credentials Provided
-            </p>
+            <p className="text-warning font-medium">No Credentials Provided</p>
           </div>
 
           <form onSubmit={onConnect} className="space-y-4">
@@ -100,7 +102,7 @@ export const KodiakCredentials: React.FC<KodiakCredentialsProps> = ({
                 <input
                   type="text"
                   value={formData.accountId}
-                  onChange={(e) => onUpdateField("accountId", e.target.value)}
+                  onChange={e => onUpdateField("accountId", e.target.value)}
                   className="input w-full"
                   placeholder="Your Kodiak Account ID"
                   required
@@ -115,7 +117,7 @@ export const KodiakCredentials: React.FC<KodiakCredentialsProps> = ({
                   <input
                     type={showSecrets ? "text" : "password"}
                     value={formData.apiKey}
-                    onChange={(e) => onUpdateField("apiKey", e.target.value)}
+                    onChange={e => onUpdateField("apiKey", e.target.value)}
                     className="input w-full pr-10"
                     placeholder="Your Kodiak API Key"
                     required
@@ -142,7 +144,7 @@ export const KodiakCredentials: React.FC<KodiakCredentialsProps> = ({
                   <input
                     type={showSecrets ? "text" : "password"}
                     value={formData.secretKey}
-                    onChange={(e) => onUpdateField("secretKey", e.target.value)}
+                    onChange={e => onUpdateField("secretKey", e.target.value)}
                     className="input w-full pr-10"
                     placeholder="Your Kodiak Secret Key"
                     required
@@ -167,8 +169,8 @@ export const KodiakCredentials: React.FC<KodiakCredentialsProps> = ({
               <div className="text-sm">
                 <p className="text-info font-medium">Security Notice</p>
                 <p className="text-textMuted mt-1">
-                  Your API credentials are encrypted and stored securely.
-                  We never display your secret key after connection.
+                  Your API credentials are encrypted and stored securely. We
+                  never display your secret key after connection.
                 </p>
               </div>
             </div>
@@ -177,7 +179,8 @@ export const KodiakCredentials: React.FC<KodiakCredentialsProps> = ({
               <div className="flex items-center gap-2 p-4 rounded-lg bg-danger/10 border border-danger/20">
                 <XCircle className="w-4 h-4 text-danger" />
                 <p className="text-danger text-sm">
-                  Failed to connect Kodiak credentials. Please check your credentials and try again.
+                  Failed to connect Kodiak credentials. Please check your
+                  credentials and try again.
                 </p>
               </div>
             )}
@@ -185,7 +188,12 @@ export const KodiakCredentials: React.FC<KodiakCredentialsProps> = ({
             <div className="flex justify-end">
               <button
                 type="submit"
-                disabled={isConnecting || !formData.accountId || !formData.apiKey || !formData.secretKey}
+                disabled={
+                  isConnecting ||
+                  !formData.accountId ||
+                  !formData.apiKey ||
+                  !formData.secretKey
+                }
                 className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isConnecting ? (

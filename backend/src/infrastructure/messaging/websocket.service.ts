@@ -11,7 +11,10 @@ import {
     ILogger,
     Server,
 } from "../../interfaces/websocket";
-import { WebSocketAuthMiddleware, isDefinitiveWsAuthCode } from "./websocket/auth";
+import {
+  WebSocketAuthMiddleware,
+  isDefinitiveWsAuthCode,
+} from "./websocket/auth";
 import { WebSocketEventHandlers } from "./websocket/handlers";
 import { WebSocketError, WEBSOCKET_CONSTANTS } from "./websocket/types";
 import { webSocketRateLimiter } from "../security/rate-limiter/websocket-rate-limiter.adapter";
@@ -80,10 +83,12 @@ export class WebSocketService implements IWebSocketService {
         const activeConnections = this.clients.size;
 
         // Calculate messages per second (rough estimate)
-        const messagesPerSecond = uptime > 0 ? (this.metrics.messagesProcessed / (uptime / 1000)) : 0;
+    const messagesPerSecond =
+      uptime > 0 ? this.metrics.messagesProcessed / (uptime / 1000) : 0;
 
         // Calculate error rate (errors per minute)
-        const errorRate = uptime > 0 ? (this.metrics.errorsCount / (uptime / 60000)) : 0;
+    const errorRate =
+      uptime > 0 ? this.metrics.errorsCount / (uptime / 60000) : 0;
 
         // Get top subscriptions
         const subscriptionCounts = new Map<string, number>();
@@ -102,12 +107,21 @@ export class WebSocketService implements IWebSocketService {
             .map(([topic, count]) => ({ topic, count }));
 
         // Calculate average response time
-        const averageResponseTime = this.metrics.responseTimes.length > 0
-            ? Math.round((this.metrics.responseTimes.reduce((sum, time) => sum + time, 0) / this.metrics.responseTimes.length) * 100) / 100
+    const averageResponseTime =
+      this.metrics.responseTimes.length > 0
+        ? Math.round(
+            (this.metrics.responseTimes.reduce((sum, time) => sum + time, 0) /
+              this.metrics.responseTimes.length) *
+              100
+          ) / 100
             : 0;
 
         // Calculate health score (0-100)
-        const healthScore = this.calculateHealthScore(activeConnections, messagesPerSecond, errorRate);
+    const healthScore = this.calculateHealthScore(
+      activeConnections,
+      messagesPerSecond,
+      errorRate
+    );
 
         return {
             activeConnections,
@@ -145,7 +159,9 @@ export class WebSocketService implements IWebSocketService {
             this.clients.delete(socketId);
             this.logger.info("Client forcefully disconnected", { socketId });
         } else {
-            this.logger.warn("Attempted to disconnect non-existent socket", { socketId });
+      this.logger.warn("Attempted to disconnect non-existent socket", {
+        socketId,
+      });
         }
     }
 
@@ -179,13 +195,16 @@ export class WebSocketService implements IWebSocketService {
             } catch (error) {
                 if (error instanceof WebSocketError) {
                     const definitive = isDefinitiveWsAuthCode(error.code);
-                    this.logger[definitive ? "warn" : "error"]("WebSocket authentication failed - service", {
+          this.logger[definitive ? "warn" : "error"](
+            "WebSocket authentication failed - service",
+            {
                         socketId: socket.id,
                         error: error.message,
                         code: error.code,
                         definitive,
                         ip: socket.handshake.address,
-                    });
+            }
+          );
 
                     this.metrics.errorsCount++;
                     // Surface the failure to the client with machine-readable data so it
@@ -199,7 +218,8 @@ export class WebSocketService implements IWebSocketService {
                     return;
                 }
 
-                const errorObj = error instanceof Error ? error : new Error(String(error));
+        const errorObj =
+          error instanceof Error ? error : new Error(String(error));
                 this.logger.error("Unexpected authentication error", {
                     socketId: socket.id,
                     ip: socket.handshake.address,
@@ -207,7 +227,11 @@ export class WebSocketService implements IWebSocketService {
                 });
 
                 this.metrics.errorsCount++;
-                next(new Error(error instanceof Error ? error.message : "Authentication failed"));
+        next(
+          new Error(
+            error instanceof Error ? error.message : "Authentication failed"
+          )
+        );
             }
         });
     }
@@ -218,7 +242,7 @@ export class WebSocketService implements IWebSocketService {
     private setupConnectionHandlers(): void {
         if (!this.io) return;
 
-        this.io.on("connection", async (socket) => {
+    this.io.on("connection", async socket => {
             const client = (socket as unknown as { client: WebSocketClient }).client;
 
             this.logger.info("WebSocket client connected", {
@@ -230,15 +254,23 @@ export class WebSocketService implements IWebSocketService {
             });
 
             // Privileged connection tracking (REGISTERED/VERIFIED users)
-            if (client.userLevel === "REGISTERED" || client.userLevel === "VERIFIED") {
-                externalTrafficObserver.recordPrivilegedConnection(client.userId, client.userLevel, socket.id);
+      if (
+        client.userLevel === "REGISTERED" ||
+        client.userLevel === "VERIFIED"
+      ) {
+        externalTrafficObserver.recordPrivilegedConnection(
+          client.userId,
+          client.userLevel,
+          socket.id
+        );
             }
 
             // Set up event handlers
             socket.on("subscribe", (room: string) => {
                 const startTime = Date.now();
                 this.metrics.messagesProcessed++;
-                this.eventHandlers.handleSubscribe(socket, room)
+        this.eventHandlers
+          .handleSubscribe(socket, room)
                     .then(() => {
                         this.metrics.responseTimes.push(Date.now() - startTime);
                         // Keep only last 1000 response times for memory efficiency
@@ -247,7 +279,8 @@ export class WebSocketService implements IWebSocketService {
                         }
                     })
                     .catch(error => {
-                        const errorObj = error instanceof Error ? error : new Error(String(error));
+            const errorObj =
+              error instanceof Error ? error : new Error(String(error));
                         this.logger.error("Subscribe handler error", {
                             socketId: socket.id,
                             error: errorObj,
@@ -263,7 +296,8 @@ export class WebSocketService implements IWebSocketService {
             socket.on("unsubscribe", (room: string) => {
                 const startTime = Date.now();
                 this.metrics.messagesProcessed++;
-                this.eventHandlers.handleUnsubscribe(socket, room)
+        this.eventHandlers
+          .handleUnsubscribe(socket, room)
                     .then(() => {
                         this.metrics.responseTimes.push(Date.now() - startTime);
                         if (this.metrics.responseTimes.length > 1000) {
@@ -271,7 +305,8 @@ export class WebSocketService implements IWebSocketService {
                         }
                     })
                     .catch(error => {
-                        const errorObj = error instanceof Error ? error : new Error(String(error));
+            const errorObj =
+              error instanceof Error ? error : new Error(String(error));
                         this.logger.error("Unsubscribe handler error", {
                             socketId: socket.id,
                             error: errorObj,
@@ -287,7 +322,8 @@ export class WebSocketService implements IWebSocketService {
             socket.on("subscribe_market", (symbol: string) => {
                 const startTime = Date.now();
                 this.metrics.messagesProcessed++;
-                this.eventHandlers.handleMarketSubscribe(socket, symbol)
+        this.eventHandlers
+          .handleMarketSubscribe(socket, symbol)
                     .then(() => {
                         this.metrics.responseTimes.push(Date.now() - startTime);
                         if (this.metrics.responseTimes.length > 1000) {
@@ -295,7 +331,8 @@ export class WebSocketService implements IWebSocketService {
                         }
                     })
                     .catch(error => {
-                        const errorObj = error instanceof Error ? error : new Error(String(error));
+            const errorObj =
+              error instanceof Error ? error : new Error(String(error));
                         this.logger.error("Market subscribe handler error", {
                             socketId: socket.id,
                             error: errorObj,
@@ -311,7 +348,8 @@ export class WebSocketService implements IWebSocketService {
             socket.on("unsubscribe_market", (symbol: string) => {
                 const startTime = Date.now();
                 this.metrics.messagesProcessed++;
-                this.eventHandlers.handleMarketUnsubscribe(socket, symbol)
+        this.eventHandlers
+          .handleMarketUnsubscribe(socket, symbol)
                     .then(() => {
                         this.metrics.responseTimes.push(Date.now() - startTime);
                         if (this.metrics.responseTimes.length > 1000) {
@@ -319,7 +357,8 @@ export class WebSocketService implements IWebSocketService {
                         }
                     })
                     .catch(error => {
-                        const errorObj = error instanceof Error ? error : new Error(String(error));
+            const errorObj =
+              error instanceof Error ? error : new Error(String(error));
                         this.logger.error("Market unsubscribe handler error", {
                             socketId: socket.id,
                             error: errorObj,
@@ -347,8 +386,9 @@ export class WebSocketService implements IWebSocketService {
     private setupErrorHandling(): void {
         if (!this.io) return;
 
-        this.io.on("connection_error", (error) => {
-            const errorObj = error instanceof Error ? error : new Error(String(error));
+    this.io.on("connection_error", error => {
+      const errorObj =
+        error instanceof Error ? error : new Error(String(error));
             this.logger.error("WebSocket connection error", {
                 message: error instanceof Error ? error.message : String(error),
                 context: (error as { context?: unknown })?.context,
@@ -400,13 +440,16 @@ export class WebSocketService implements IWebSocketService {
 
         // Penalize for no activity (unhealthy if no messages in 5 minutes)
         const timeSinceLastActivity = Date.now() - this.metrics.lastActivity;
-        if (timeSinceLastActivity > 300000) { // 5 minutes
+    if (timeSinceLastActivity > 300000) {
+      // 5 minutes
             score -= 30;
         }
 
         // Penalize for high error rate
-        if (errorRate > 10) score -= 20; // >10 errors per minute
-        else if (errorRate > 5) score -= 10; // >5 errors per minute
+    if (errorRate > 10)
+      score -= 20; // >10 errors per minute
+    else if (errorRate > 5)
+      score -= 10; // >5 errors per minute
         else if (errorRate > 1) score -= 5;  // >1 error per minute
 
         // Penalize for too many connections (potential resource exhaustion)
@@ -458,7 +501,8 @@ export class WebSocketService implements IWebSocketService {
                 });
             }
         } catch (error) {
-            const errorObj = error instanceof Error ? error : new Error(String(error));
+      const errorObj =
+        error instanceof Error ? error : new Error(String(error));
             this.logger.error("Error during WebSocket cleanup", {
                 message: error instanceof Error ? error.message : String(error),
                 context: (error as { context?: unknown })?.context,
@@ -474,7 +518,7 @@ export class WebSocketService implements IWebSocketService {
         metrics: WebSocketMetrics;
         connections: WebSocketConnection[];
         serviceHealth: {
-            status: 'healthy' | 'warning' | 'critical';
+      status: "healthy" | "warning" | "critical";
             uptime: number;
             memoryUsage: number;
         };
@@ -483,8 +527,12 @@ export class WebSocketService implements IWebSocketService {
             metrics: this.getMetrics(),
             connections: this.getConnections(),
             serviceHealth: {
-                status: this.getMetrics().healthScore >= 80 ? 'healthy' :
-                    this.getMetrics().healthScore >= 60 ? 'warning' : 'critical',
+        status:
+          this.getMetrics().healthScore >= 80
+            ? "healthy"
+            : this.getMetrics().healthScore >= 60
+              ? "warning"
+              : "critical",
                 uptime: Date.now() - this.startTime,
                 memoryUsage: this.getMemoryUsage(),
             },

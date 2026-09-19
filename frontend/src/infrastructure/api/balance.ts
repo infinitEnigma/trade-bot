@@ -14,7 +14,11 @@ export const balanceApi = {
     async getCurrentBalance() {
         return globalRequestManager.deduplicateRequest(
             "balance:current",
-            () => httpClient.getClient().get("/api/balance/current").then(r => r.data),
+      () =>
+        httpClient
+          .getClient()
+          .get("/api/balance/current")
+          .then(r => r.data),
             "balanceApi"
         );
     },
@@ -25,7 +29,11 @@ export const balanceApi = {
     async refreshBalance() {
         return globalRequestManager.deduplicateRequest(
             "balance:refresh",
-            () => httpClient.getClient().post("/api/balance/refresh").then(r => r.data),
+      () =>
+        httpClient
+          .getClient()
+          .post("/api/balance/refresh")
+          .then(r => r.data),
             "balanceApi"
         );
     },

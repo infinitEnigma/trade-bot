@@ -1,7 +1,7 @@
 /** @format */
 
-import { UserRole } from '../index';
-import { ICacheService, ILogger } from './infrastructure';
+import { UserRole } from "../index";
+import { ICacheService, ILogger } from "./infrastructure";
 
 // ===========================================
 // ROLE MANAGEMENT REPOSITORY INTERFACE
@@ -11,7 +11,12 @@ export interface IRoleRepository {
     /**
      * Assign a role to a user
      */
-    assignRole(userId: string, role: UserRole, grantedBy: string, criteria?: unknown): Promise<void>;
+  assignRole(
+    userId: string,
+    role: UserRole,
+    grantedBy: string,
+    criteria?: unknown
+  ): Promise<void>;
 
     /**
      * Remove a role from a user
@@ -94,7 +99,7 @@ export class UserRoleAssignment {
      * Check if assignment was granted by system
      */
     isSystemGranted(): boolean {
-        return this.grantedBy === 'system';
+    return this.grantedBy === "system";
     }
 }
 
@@ -127,7 +132,7 @@ export class RoleDetails {
 export class RoleHierarchy {
     private static readonly HIERARCHY = new Map<UserRole, number>([
         [UserRole.QUALIFIED_ALPHA, 100],
-        [UserRole.SYSTEM_ADMIN, 200]
+    [UserRole.SYSTEM_ADMIN, 200],
     ]);
 
     /**
@@ -171,7 +176,12 @@ export interface IRoleManagementService {
     /**
      * Assign a role to a user
      */
-    assignRole(userId: string, role: UserRole, grantedBy?: string, criteria?: unknown): Promise<void>;
+  assignRole(
+    userId: string,
+    role: UserRole,
+    grantedBy?: string,
+    criteria?: unknown
+  ): Promise<void>;
 
     /**
      * Remove a role from a user
@@ -229,7 +239,10 @@ export interface IRoleQualificationService {
     /**
      * Check if user qualifies for a role
      */
-    checkQualification(userId: string, role: UserRole): Promise<RoleQualificationResult>;
+  checkQualification(
+    userId: string,
+    role: UserRole
+  ): Promise<RoleQualificationResult>;
 
     /**
      * Get qualification criteria for a role

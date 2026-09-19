@@ -1,7 +1,11 @@
 /** @format */
 
 import { Socket } from "socket.io";
-import { WebSocketClient, IAuthService, ILogger } from "../../../interfaces/websocket";
+import {
+  WebSocketClient,
+  IAuthService,
+  ILogger,
+} from "../../../interfaces/websocket";
 import { WebSocketError, WebSocketErrorCode } from "./types";
 
 /**
@@ -18,7 +22,6 @@ export function isDefinitiveWsAuthCode(code: WebSocketErrorCode): boolean {
         code === WebSocketErrorCode.USER_NOT_FOUND
     );
 }
-
 
 /**
  * WebSocket Authentication Middleware
@@ -102,7 +105,6 @@ export class WebSocketAuthMiddleware {
             });
 
             return client;
-
         } catch (error) {
             // Re-throw WebSocketErrors as-is
             if (error instanceof WebSocketError) {
@@ -110,7 +112,8 @@ export class WebSocketAuthMiddleware {
             }
 
             // Wrap unexpected errors
-            const errorObj = error instanceof Error ? error : new Error(String(error));
+      const errorObj =
+        error instanceof Error ? error : new Error(String(error));
             this.logger.error("WebSocket authentication failed - auth", {
                 socketId: socket.id,
                 ipAddress,
@@ -122,7 +125,11 @@ export class WebSocketAuthMiddleware {
                 "Authentication failed",
                 WebSocketErrorCode.INTERNAL_ERROR,
                 500,
-                { socketId: socket.id, correlationId, originalError: error instanceof Error ? error.message : String(error) }
+        {
+          socketId: socket.id,
+          correlationId,
+          originalError: error instanceof Error ? error.message : String(error),
+        }
             );
         }
     }

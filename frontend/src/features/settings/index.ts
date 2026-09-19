@@ -21,7 +21,10 @@ export type {
 } from "./types/settings.types";
 
 // Components
-export { AccountOverview as AccountOverviewCard, KodiakCredentials as KodiakCredentialsCard } from "./components";
+export {
+  AccountOverview as AccountOverviewCard,
+  KodiakCredentials as KodiakCredentialsCard,
+} from "./components";
 
 // Hooks
 export { useSettings } from "./hooks";

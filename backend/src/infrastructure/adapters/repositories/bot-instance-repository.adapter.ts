@@ -8,9 +8,9 @@
  * @format
  */
 
-import { IBotInstanceRepository } from '@trade-bot/shared';
-import { query } from '../../../database/pool';
-import { tradingLogger as logger } from '../../../core/logging/context-aware-logger.service';
+import { IBotInstanceRepository } from "@trade-bot/shared";
+import { query } from "../../../database/pool";
+import { tradingLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 /**
  * Bot Instance Repository Adapter
@@ -19,24 +19,27 @@ import { tradingLogger as logger } from '../../../core/logging/context-aware-log
  * Provides bot instance data access with proper error handling and type safety.
  */
 export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
-
     /**
      * Get all bot instances for a user
      */
     async getBotInstances(userId: string): Promise<any[]> {
         try {
-            const result = await query(`
+      const result = await query(
+        `
                 SELECT bi.*, s.name as strategy_name, s.type as strategy_type, s.config as strategy_config
                 FROM bot_instances bi
                 JOIN strategies s ON bi.strategy_id = s.id
                 WHERE bi.user_id = $1
                 ORDER BY bi.created_at DESC
-            `, [userId]);
+            `,
+        [userId]
+      );
 
             return result.rows;
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to get bot instances', error as Error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to get bot instances", error as Error);
             throw new Error(`Failed to get bot instances: ${errorMessage}`);
         }
     }
@@ -46,12 +49,15 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
      */
     async getBotInstance(id: string): Promise<any | null> {
         try {
-            const result = await query(`
+      const result = await query(
+        `
                 SELECT bi.*, s.name as strategy_name, s.type as strategy_type, s.config as strategy_config
                 FROM bot_instances bi
                 JOIN strategies s ON bi.strategy_id = s.id
                 WHERE bi.id = $1
-            `, [id]);
+            `,
+        [id]
+      );
 
             if (result.rows.length === 0) {
                 return null;
@@ -59,8 +65,9 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
 
             return result.rows[0];
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to get bot instance', error as Error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to get bot instance", error as Error);
             throw new Error(`Failed to get bot instance: ${errorMessage}`);
         }
     }
@@ -68,30 +75,36 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
     /**
      * Create a new bot instance
      */
-    async createBotInstance(bot: Omit<any, 'id' | 'createdAt' | 'updatedAt'>): Promise<any> {
+  async createBotInstance(
+    bot: Omit<any, "id" | "createdAt" | "updatedAt">
+  ): Promise<any> {
         try {
-            const result = await query(`
+      const result = await query(
+        `
                 INSERT INTO bot_instances (id, strategy_id, user_id, status, running_time, total_trades, total_pnl)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING *
-            `, [
+            `,
+        [
                 bot.id,
                 bot.strategy_id,
                 bot.user_id,
-                bot.status || 'RUNNING',
+          bot.status || "RUNNING",
                 bot.running_time || 0,
                 bot.total_trades || 0,
-                bot.total_pnl || 0
-            ]);
+          bot.total_pnl || 0,
+        ]
+      );
 
             if (result.rows.length === 0) {
-                throw new Error('Bot instance creation failed - no rows returned');
+        throw new Error("Bot instance creation failed - no rows returned");
             }
 
             return result.rows[0];
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to create bot instance', error as Error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to create bot instance", error as Error);
             throw new Error(`Failed to create bot instance: ${errorMessage}`);
         }
     }
@@ -102,12 +115,13 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
     async updateBotStatus(id: string, status: string): Promise<void> {
         try {
             await query(
-                'UPDATE bot_instances SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        "UPDATE bot_instances SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
                 [status, id]
             );
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to update bot status', error as Error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to update bot status", error as Error);
             throw new Error(`Failed to update bot status: ${errorMessage}`);
         }
     }
@@ -115,7 +129,10 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
     /**
      * Update bot instance performance metrics
      */
-    async updateBotPerformance(id: string, metrics: { runningTime?: number; totalTrades?: number; totalPnL?: number }): Promise<void> {
+  async updateBotPerformance(
+    id: string,
+    metrics: { runningTime?: number; totalTrades?: number; totalPnL?: number }
+  ): Promise<void> {
         try {
             // Build update query dynamically based on provided fields
             const updateFields: string[] = [];
@@ -148,12 +165,13 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
             updateValues.push(id); // For the WHERE clause
 
             await query(
-                `UPDATE bot_instances SET ${updateFields.join(', ')} WHERE id = $${valueIndex}`,
+        `UPDATE bot_instances SET ${updateFields.join(", ")} WHERE id = $${valueIndex}`,
                 updateValues
             );
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to update bot performance', error as Error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to update bot performance", error as Error);
             throw new Error(`Failed to update bot performance: ${errorMessage}`);
         }
     }
@@ -163,10 +181,11 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
      */
     async deleteBotInstance(id: string): Promise<void> {
         try {
-            await query('DELETE FROM bot_instances WHERE id = $1', [id]);
+      await query("DELETE FROM bot_instances WHERE id = $1", [id]);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to delete bot instance', error as Error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to delete bot instance", error as Error);
             throw new Error(`Failed to delete bot instance: ${errorMessage}`);
         }
     }
@@ -183,8 +202,9 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
 
             return result.rows;
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to get active bot instances', error as Error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to get active bot instances", error as Error);
             throw new Error(`Failed to get active bot instances: ${errorMessage}`);
         }
     }

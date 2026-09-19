@@ -7,8 +7,8 @@
  * @format
  */
 
-import { ISignatureVerificationService } from '@trade-bot/shared';
-import { securityLogger as logger } from '../../../core/logging/context-aware-logger.service';
+import { ISignatureVerificationService } from "@trade-bot/shared";
+import { securityLogger as logger } from "../../../core/logging/context-aware-logger.service";
 /**
  * Signature Verification Service Adapter
  *
@@ -22,9 +22,13 @@ export class SignatureVerificationServiceAdapter implements ISignatureVerificati
      * @param message - The message that was signed
      * @returns Promise<boolean> - True if the signature is valid, false otherwise
      */
-    async verifySignature(walletAddress: string, signature: string, message: string): Promise<boolean> {
+  async verifySignature(
+    walletAddress: string,
+    signature: string,
+    message: string
+  ): Promise<boolean> {
         try {
-            const { ethers } = await import('ethers');
+      const { ethers } = await import("ethers");
 
             // Recover the address from the signature
             const recoveredAddress = ethers.verifyMessage(message, signature);
@@ -36,11 +40,12 @@ export class SignatureVerificationServiceAdapter implements ISignatureVerificati
             return normalizedRecovered === normalizedWalletAddress;
         } catch (error) {
             // If verification fails for any reason (invalid signature, malformed address, etc.), return false
-            logger.error('Signature verification failed:', error as Error);
+      logger.error("Signature verification failed:", error as Error);
             return false;
         }
     }
 }
 
 // Export singleton instance
-export const signatureVerificationServiceAdapter = new SignatureVerificationServiceAdapter();
+export const signatureVerificationServiceAdapter =
+  new SignatureVerificationServiceAdapter();

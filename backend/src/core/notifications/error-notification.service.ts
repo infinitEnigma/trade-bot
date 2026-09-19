@@ -7,7 +7,10 @@
 
 //import axios, { AxiosResponse } from "axios";
 import { ContextAwareLogger } from "../../core/logging";
-import { getCurrentContext, getContextForLogging } from "../../shared/utils/context";
+import {
+  getCurrentContext,
+  getContextForLogging,
+} from "../../shared/utils/context";
 
 export enum ErrorSeverity {
     LOW = "low",           // Minor issues, logged only
@@ -29,7 +32,8 @@ export enum ErrorCategory {
 }
 
 export type NotificationSeverity = ErrorSeverity;
-export type NotificationChannelType = 'email' | 'websocket' | 'database' | 'slack';
+export type NotificationChannelType =
+  "email" | "websocket" | "database" | "slack";
 
 export interface NotificationConfig {
     channels: NotificationChannel[];
@@ -245,7 +249,7 @@ class LogChannel implements NotificationChannel {
     enabled = true; // Always enabled
 
     // Context-aware logger for notification service
-    private notificationLogger = new ContextAwareLogger('error-notification');
+  private notificationLogger = new ContextAwareLogger("error-notification");
 
     async send(notification: ErrorNotification): Promise<boolean> {
         const logData = {
@@ -257,7 +261,9 @@ class LogChannel implements NotificationChannel {
             metadata: notification.context.metadata,
             ...(notification.stackTrace && { stackTrace: notification.stackTrace }),
             ...(notification.retryCount && { retryCount: notification.retryCount }),
-            ...(notification.recoveryAction && { recoveryAction: notification.recoveryAction }),
+      ...(notification.recoveryAction && {
+        recoveryAction: notification.recoveryAction,
+      }),
         };
 
         switch (notification.severity) {
@@ -290,7 +296,10 @@ class LogChannel implements NotificationChannel {
  */
 export class ErrorNotificationService {
     private channels: NotificationChannel[] = [];
-    private errorCounts = new Map<string, { count: number; lastNotification: number }>();
+  private errorCounts = new Map<
+    string,
+    { count: number; lastNotification: number }
+  >();
     private readonly NOTIFICATION_COOLDOWN = 5 * 60 * 1000; // 5 minutes between similar errors
 
     // Fire-and-forget queue system
@@ -299,7 +308,7 @@ export class ErrorNotificationService {
     private retryInterval: NodeJS.Timeout | null = null;
 
     // Context-aware logger for notification service
-    private notificationLogger = new ContextAwareLogger('error-notification');
+  private notificationLogger = new ContextAwareLogger("error-notification");
 
     constructor() {
         // Initialize notification channels
@@ -357,12 +366,17 @@ export class ErrorNotificationService {
                 try {
                     await this.sendToChannelsWithRetry(notification);
                 } catch (error) {
-                    this.notificationLogger.error("Failed to process notification from queue", undefined, {
-                        errorMessage: error instanceof Error ? error.message : String(error),
-                        errorName: error instanceof Error ? error.name : 'UnknownError',
+          this.notificationLogger.error(
+            "Failed to process notification from queue",
+            undefined,
+            {
+              errorMessage:
+                error instanceof Error ? error.message : String(error),
+              errorName: error instanceof Error ? error.name : "UnknownError",
                         severity: notification.severity,
                         category: notification.context.category,
-                    });
+            }
+          );
                 }
             }
         } finally {
@@ -373,11 +387,15 @@ export class ErrorNotificationService {
     /**
      * Send notification to all channels with retry logic
      */
-    private async sendToChannelsWithRetry(notification: ErrorNotification): Promise<boolean> {
+  private async sendToChannelsWithRetry(
+    notification: ErrorNotification
+  ): Promise<boolean> {
         const enabledChannels = this.channels.filter(c => c.enabled);
 
         if (enabledChannels.length === 0) {
-            this.notificationLogger.warn("No notification channels enabled", { severity: notification.severity });
+      this.notificationLogger.warn("No notification channels enabled", {
+        severity: notification.severity,
+      });
             return false;
         }
 
@@ -386,7 +404,9 @@ export class ErrorNotificationService {
             enabledChannels.map(channel => channel.send(notification))
         );
 
-        const successes = results.filter(r => r.status === 'fulfilled' && r.value).length;
+    const successes = results.filter(
+      r => r.status === "fulfilled" && r.value
+    ).length;
         const failures = results.length - successes;
 
         if (failures > 0) {
@@ -415,7 +435,7 @@ export class ErrorNotificationService {
      */
     async notifyError(
         error: Error,
-        context: Omit<ErrorContext, 'timestamp'>,
+    context: Omit<ErrorContext, "timestamp">,
         severity: ErrorSeverity = ErrorSeverity.MEDIUM,
         retryCount?: number,
         recoveryAction?: string
@@ -509,8 +529,10 @@ export class ErrorNotificationService {
      */
     private shouldThrottleNotification(notification: ErrorNotification): boolean {
         // Only throttle LOW and MEDIUM severity notifications
-        if (notification.severity === ErrorSeverity.HIGH ||
-            notification.severity === ErrorSeverity.CRITICAL) {
+    if (
+      notification.severity === ErrorSeverity.HIGH ||
+      notification.severity === ErrorSeverity.CRITICAL
+    ) {
             return false;
         }
 
@@ -554,16 +576,25 @@ export class ErrorNotificationService {
     getStats(): {
         channels: { name: string; enabled: boolean }[];
         throttledErrors: number;
-        recentErrors: Array<{ key: string; count: number; lastNotification: number }>;
+    recentErrors: Array<{
+      key: string;
+      count: number;
+      lastNotification: number;
+    }>;
     } {
         return {
             channels: this.channels.map(c => ({ name: c.name, enabled: c.enabled })),
-            throttledErrors: Array.from(this.errorCounts.values()).reduce((sum, item) => sum + item.count, 0),
-            recentErrors: Array.from(this.errorCounts.entries()).map(([key, data]) => ({
+      throttledErrors: Array.from(this.errorCounts.values()).reduce(
+        (sum, item) => sum + item.count,
+        0
+      ),
+      recentErrors: Array.from(this.errorCounts.entries()).map(
+        ([key, data]) => ({
                 key,
                 count: data.count,
                 lastNotification: data.lastNotification,
-            })),
+        })
+      ),
         };
     }
 
@@ -574,14 +605,17 @@ export class ErrorNotificationService {
         if (this.retryInterval) return;
 
         // Only start retry processor in production environment
-        if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
+    if (process.env.NODE_ENV === "test" || process.env.JEST_WORKER_ID) {
             return;
         }
 
         // Retry failed notifications every 5 minutes
-        this.retryInterval = setInterval(async () => {
+    this.retryInterval = setInterval(
+      async () => {
             await this.retryFailedNotifications();
-        }, 5 * 60 * 1000);
+      },
+      5 * 60 * 1000
+    );
 
         this.notificationLogger.debug("Started notification retry processor");
     }
@@ -597,50 +631,66 @@ export class ErrorNotificationService {
                 try {
                     const success = await this.sendToChannelsWithRetry(notification);
                     if (success) {
-                        await this.markNotificationDelivered(notification.id || 'unknown');
-                        this.notificationLogger.info("Successfully retried failed notification", {
-                            id: notification.id || 'unknown',
+            await this.markNotificationDelivered(notification.id || "unknown");
+            this.notificationLogger.info(
+              "Successfully retried failed notification",
+              {
+                id: notification.id || "unknown",
                             severity: notification.severity,
-                        });
+              }
+            );
                     }
                 } catch (error) {
                     this.notificationLogger.warn("Failed to retry notification", {
-                        id: notification.id || 'unknown',
-                        errorMessage: error instanceof Error ? error.message : String(error),
-                        errorName: error instanceof Error ? error.name : 'UnknownError',
+            id: notification.id || "unknown",
+            errorMessage:
+              error instanceof Error ? error.message : String(error),
+            errorName: error instanceof Error ? error.name : "UnknownError",
                     });
                 }
             }
         } catch (error) {
-            this.notificationLogger.error("Error in notification retry processor", undefined, {
+      this.notificationLogger.error(
+        "Error in notification retry processor",
+        undefined,
+        {
                 errorMessage: error instanceof Error ? error.message : String(error),
-                errorName: error instanceof Error ? error.name : 'UnknownError',
-            });
+          errorName: error instanceof Error ? error.name : "UnknownError",
+        }
+      );
         }
     }
 
     /**
      * Persist failed critical notification for retry
      */
-    private async persistFailedNotification(notification: ErrorNotification): Promise<void> {
+  private async persistFailedNotification(
+    notification: ErrorNotification
+  ): Promise<void> {
         try {
             // For now, just log - in production you'd persist to database
             // This ensures critical notifications aren't completely lost
-            this.notificationLogger.warn("Persisting failed critical notification for retry", {
+      this.notificationLogger.warn(
+        "Persisting failed critical notification for retry",
+        {
                 severity: notification.severity,
                 category: notification.context.category,
                 operation: notification.context.operation,
                 message: notification.message.substring(0, 200), // Truncate for logging
-            });
+        }
+      );
 
             // TODO: In production, persist to database table:
             // INSERT INTO failed_notifications (data, created_at) VALUES (...)
-
         } catch (error) {
-            this.notificationLogger.error("Failed to persist notification for retry", undefined, {
+      this.notificationLogger.error(
+        "Failed to persist notification for retry",
+        undefined,
+        {
                 errorMessage: error instanceof Error ? error.message : String(error),
-                errorName: error instanceof Error ? error.name : 'UnknownError',
-            });
+          errorName: error instanceof Error ? error.name : "UnknownError",
+        }
+      );
         }
     }
 
@@ -656,10 +706,14 @@ export class ErrorNotificationService {
     /**
      * Mark notification as delivered (stub for production)
      */
-    private async markNotificationDelivered(notificationId: string): Promise<void> {
+  private async markNotificationDelivered(
+    notificationId: string
+  ): Promise<void> {
         // TODO: In production, update database record
         // UPDATE failed_notifications SET processed = true WHERE id = ?
-        this.notificationLogger.debug("Marked notification as delivered", { notificationId });
+    this.notificationLogger.debug("Marked notification as delivered", {
+      notificationId,
+    });
     }
 
     /**
@@ -683,7 +737,9 @@ export class ErrorNotificationService {
         this.notificationQueue = [];
         this.processing = false;
 
-        this.notificationLogger.debug("Error notification service cleaned up for tests");
+    this.notificationLogger.debug(
+      "Error notification service cleaned up for tests"
+    );
     }
 }
 

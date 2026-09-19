@@ -17,7 +17,11 @@
 
 import { RedisConnectionManager } from "./connection-manager";
 import { redisLogger as logger } from "../../../core/logging/context-aware-logger.service";
-import type { EngineCommand, EngineEvent, ProtocolMessage } from "@trade-bot/shared";
+import type {
+  EngineCommand,
+  EngineEvent,
+  ProtocolMessage,
+} from "@trade-bot/shared";
 //import * as redis from "redis";
 //import { TypedString } from "ethers/lib.commonjs/abi/typed";
 
@@ -42,7 +46,8 @@ export const DEDUP_TTL_SECONDS = 24 * 60 * 60;
  * callers no longer need casts; the legacy `EngineCommand`/`EngineEvent`
  * interfaces remain supported for the legacy engine-manager path.
  */
-export type StreamPayload = ProtocolMessage<unknown> | EngineCommand | EngineEvent;
+export type StreamPayload =
+  ProtocolMessage<unknown> | EngineCommand | EngineEvent;
 
 export interface StreamMessage {
     id: string;
@@ -83,18 +88,29 @@ export class RedisStreamOperations {
     /**
      * Publish a message to a stream
      */
-    async publish(stream: string, message: StreamPayload): Promise<{ success: boolean; id?: string; error?: string }> {
+  async publish(
+    stream: string,
+    message: StreamPayload
+  ): Promise<{ success: boolean; id?: string; error?: string }> {
         try {
             const client = this.connectionManager.getClient();
             const id = await client.xAdd(stream, "*", {
                 data: JSON.stringify(message),
             });
 
-            logger.debug("Message published to stream", { stream, id, type: message.type });
+      logger.debug("Message published to stream", {
+        stream,
+        id,
+        type: message.type,
+      });
             return { success: true, id };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Stream publish error", error as Error, { stream, type: message.type, error: errorMessage });
+      logger.error("Stream publish error", error as Error, {
+        stream,
+        type: message.type,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage };
         }
     }
@@ -102,7 +118,10 @@ export class RedisStreamOperations {
     /**
      * Read messages from a stream
      */
-    async read(stream: string, options: StreamReadOptions = {}): Promise<{ success: boolean; messages?: StreamMessage[]; error?: string }> {
+  async read(
+    stream: string,
+    options: StreamReadOptions = {}
+  ): Promise<{ success: boolean; messages?: StreamMessage[]; error?: string }> {
         try {
             const client = this.connectionManager.getClient();
 
@@ -120,10 +139,13 @@ export class RedisStreamOperations {
 
                 if (!result) {
                     // Normal BLOCK timeout on an idle stream - not an error.
-                    logger.debug("Consumer group read returned no messages (idle timeout)", {
+          logger.debug(
+            "Consumer group read returned no messages (idle timeout)",
+            {
                         stream,
-                        consumerGroup: options.consumerGroup
-                    });
+              consumerGroup: options.consumerGroup,
+            }
+          );
                     return { success: true, messages: [] }; // Return success with empty messages instead of false
                 }
 
@@ -153,7 +175,9 @@ export class RedisStreamOperations {
 
                 if (!result) {
                     // Normal BLOCK timeout on an idle stream - not an error.
-                    logger.debug("Stream read returned no messages (idle timeout)", { stream });
+          logger.debug("Stream read returned no messages (idle timeout)", {
+            stream,
+          });
                     return { success: true, messages: [] }; // Return success with empty messages instead of false
                 }
 
@@ -173,7 +197,10 @@ export class RedisStreamOperations {
             }
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Stream read error", error as Error, { stream, error: errorMessage });
+      logger.error("Stream read error", error as Error, {
+        stream,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage };
         }
     }
@@ -181,7 +208,11 @@ export class RedisStreamOperations {
     /**
      * Acknowledge a message in a consumer group
      */
-    async ack(stream: string, consumerGroup: string, messageIds: string | string[]): Promise<{ success: boolean; count?: number; error?: string }> {
+  async ack(
+    stream: string,
+    consumerGroup: string,
+    messageIds: string | string[]
+  ): Promise<{ success: boolean; count?: number; error?: string }> {
         try {
             const client = this.connectionManager.getClient();
             const ids = Array.isArray(messageIds) ? messageIds : [messageIds];
@@ -191,7 +222,11 @@ export class RedisStreamOperations {
             return { success: true, count };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Stream acknowledge error", error as Error, { stream, consumerGroup, error: errorMessage });
+      logger.error("Stream acknowledge error", error as Error, {
+        stream,
+        consumerGroup,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage };
         }
     }
@@ -211,10 +246,21 @@ export class RedisStreamOperations {
     ): Promise<{ success: boolean; messages?: StreamMessage[]; error?: string }> {
         try {
             const client = this.connectionManager.getClient();
-            const reply = await client.xAutoClaim(stream, consumerGroup, consumerName, minIdleMs, "0-0", { COUNT: count });
+      const reply = await client.xAutoClaim(
+        stream,
+        consumerGroup,
+        consumerName,
+        minIdleMs,
+        "0-0",
+        { COUNT: count }
+      );
             const messages = this.normalizeClaimedMessages(reply?.messages ?? []);
             if (messages.length > 0) {
-                logger.info("Recovered pending stream messages via XAUTOCLAIM", { stream, consumerGroup, count: messages.length });
+        logger.info("Recovered pending stream messages via XAUTOCLAIM", {
+          stream,
+          consumerGroup,
+          count: messages.length,
+        });
             }
             return { success: true, messages };
         } catch (error) {
@@ -223,20 +269,40 @@ export class RedisStreamOperations {
             // it with "ERR unknown command". Fall back to XPENDING + XCLAIM
             // (available since Redis 5.0), which recovers the same stuck entries.
             if (/unknown command/i.test(errorMessage)) {
-                logger.debug("XAUTOCLAIM unavailable on this Redis version - using XPENDING/XCLAIM fallback", {
+        logger.debug(
+          "XAUTOCLAIM unavailable on this Redis version - using XPENDING/XCLAIM fallback",
+          {
                     stream,
                     consumerGroup,
-                });
-                return this.claimPendingLegacy(stream, consumerGroup, consumerName, minIdleMs, count);
             }
-            logger.error("Stream claim-pending error", error as Error, { stream, consumerGroup, error: errorMessage });
+        );
+        return this.claimPendingLegacy(
+          stream,
+          consumerGroup,
+          consumerName,
+          minIdleMs,
+          count
+        );
+      }
+      logger.error("Stream claim-pending error", error as Error, {
+        stream,
+        consumerGroup,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage };
         }
     }
 
     /** Map raw XAUTOCLAIM/XCLAIM message entries to StreamMessage[]. */
-    private normalizeClaimedMessages(entries: ({ id: string; message: Record<string, string> } | null)[]): StreamMessage[] {
-        return (entries.filter(m => m !== null) as { id: string; message: Record<string, string> }[]).map(msg => ({
+  private normalizeClaimedMessages(
+    entries: ({ id: string; message: Record<string, string> } | null)[]
+  ): StreamMessage[] {
+    return (
+      entries.filter(m => m !== null) as {
+        id: string;
+        message: Record<string, string>;
+      }[]
+    ).map(msg => ({
             id: msg.id,
             data: JSON.parse(msg.message.data),
         }));
@@ -262,7 +328,13 @@ export class RedisStreamOperations {
             const client = this.connectionManager.getClient();
             // Bounded page: healthy consumers ACK immediately, so the PEL
             // only accumulates entries after a crash.
-            const pending = await client.xPendingRange(stream, consumerGroup, "-", "+", Math.max(count, 100));
+      const pending = await client.xPendingRange(
+        stream,
+        consumerGroup,
+        "-",
+        "+",
+        Math.max(count, 100)
+      );
             const ids = (pending ?? [])
                 .filter(p => p.millisecondsSinceLastDelivery >= minIdleMs)
                 .slice(0, count)
@@ -270,15 +342,29 @@ export class RedisStreamOperations {
             if (ids.length === 0) {
                 return { success: true, messages: [] };
             }
-            const claimed = await client.xClaim(stream, consumerGroup, consumerName, minIdleMs, ids);
+      const claimed = await client.xClaim(
+        stream,
+        consumerGroup,
+        consumerName,
+        minIdleMs,
+        ids
+      );
             const messages = this.normalizeClaimedMessages(claimed ?? []);
             if (messages.length > 0) {
-                logger.info("Recovered pending stream messages via XPENDING/XCLAIM", { stream, consumerGroup, count: messages.length });
+        logger.info("Recovered pending stream messages via XPENDING/XCLAIM", {
+          stream,
+          consumerGroup,
+          count: messages.length,
+        });
             }
             return { success: true, messages };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Stream claim-pending fallback error", error as Error, { stream, consumerGroup, error: errorMessage });
+      logger.error("Stream claim-pending fallback error", error as Error, {
+        stream,
+        consumerGroup,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage };
         }
     }
@@ -294,10 +380,20 @@ export class RedisStreamOperations {
     async getPendingInsight(
         stream: string,
         consumerGroup: string,
-        options: { stuckThresholdMs: number; poisonThreshold: number; maxScan?: number }
+    options: {
+      stuckThresholdMs: number;
+      poisonThreshold: number;
+      maxScan?: number;
+    }
     ): Promise<PendingInsight> {
         const client = this.connectionManager.getClient();
-        const entries = await client.xPendingRange(stream, consumerGroup, "-", "+", options.maxScan ?? 500);
+    const entries = await client.xPendingRange(
+      stream,
+      consumerGroup,
+      "-",
+      "+",
+      options.maxScan ?? 500
+    );
         const rows = entries ?? [];
 
         let stuckCount = 0;
@@ -331,13 +427,25 @@ export class RedisStreamOperations {
      * this survives process restarts (stored in Redis with a TTL).
      * Returns true if this process is the first to mark the message.
      */
-    async markMessageProcessed(scope: string, messageId: string, ttlSeconds: number = DEDUP_TTL_SECONDS): Promise<boolean> {
+  async markMessageProcessed(
+    scope: string,
+    messageId: string,
+    ttlSeconds: number = DEDUP_TTL_SECONDS
+  ): Promise<boolean> {
         try {
             const client = this.connectionManager.getClient();
-            const result = await client.set(`tradebot:dedup:${scope}:${messageId}`, "1", { EX: ttlSeconds, NX: true });
+      const result = await client.set(
+        `tradebot:dedup:${scope}:${messageId}`,
+        "1",
+        { EX: ttlSeconds, NX: true }
+      );
             return result === "OK";
         } catch (error) {
-            logger.error("Dedup marker write failed - falling back to in-memory dedup", error as Error, { scope, messageId });
+      logger.error(
+        "Dedup marker write failed - falling back to in-memory dedup",
+        error as Error,
+        { scope, messageId }
+      );
             return true; // Fail open: better to double-process than to drop.
         }
     }
@@ -348,7 +456,10 @@ export class RedisStreamOperations {
             const client = this.connectionManager.getClient();
             return (await client.get(`tradebot:dedup:${scope}:${messageId}`)) === "1";
         } catch (error) {
-            logger.error("Dedup marker read failed", error as Error, { scope, messageId });
+      logger.error("Dedup marker read failed", error as Error, {
+        scope,
+        messageId,
+      });
             return false;
         }
     }
@@ -356,10 +467,16 @@ export class RedisStreamOperations {
     /**
      * Create a consumer group
      */
-    async createConsumerGroup(stream: string, consumerGroup: string, startId: string = "0"): Promise<{ success: boolean; error?: string }> {
+  async createConsumerGroup(
+    stream: string,
+    consumerGroup: string,
+    startId: string = "0"
+  ): Promise<{ success: boolean; error?: string }> {
         try {
             const client = this.connectionManager.getClient();
-            await client.xGroupCreate(stream, consumerGroup, startId, { MKSTREAM: true });
+      await client.xGroupCreate(stream, consumerGroup, startId, {
+        MKSTREAM: true,
+      });
             logger.info("Consumer group created", { stream, consumerGroup });
             return { success: true };
         } catch (error) {
@@ -367,10 +484,17 @@ export class RedisStreamOperations {
             if (errorMessage.includes("BUSYGROUP")) {
                 // Expected on every startup after the first: the group already
                 // exists, which is exactly the desired state.
-                logger.debug("Consumer group already exists", { stream, consumerGroup });
+        logger.debug("Consumer group already exists", {
+          stream,
+          consumerGroup,
+        });
                 return { success: true };
             }
-            logger.error("Consumer group creation error", error as Error, { stream, consumerGroup, error: errorMessage });
+      logger.error("Consumer group creation error", error as Error, {
+        stream,
+        consumerGroup,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage };
         }
     }
@@ -378,7 +502,11 @@ export class RedisStreamOperations {
     /**
      * Trim a stream to maintain size
      */
-    async trim(stream: string, maxLength: number, approximate: boolean = true): Promise<{ success: boolean; trimmedCount?: number; error?: string }> {
+  async trim(
+    stream: string,
+    maxLength: number,
+    approximate: boolean = true
+  ): Promise<{ success: boolean; trimmedCount?: number; error?: string }> {
         try {
             const client = this.connectionManager.getClient();
 
@@ -398,9 +526,20 @@ export class RedisStreamOperations {
             // Trim the stream
             try {
                 if (approximate) {
-                    await client.sendCommand(['XTRIM', stream, 'MAXLEN', maxLength.toString(), '~']);
+          await client.sendCommand([
+            "XTRIM",
+            stream,
+            "MAXLEN",
+            maxLength.toString(),
+            "~",
+          ]);
                 } else {
-                    await client.sendCommand(['XTRIM', stream, 'MAXLEN', maxLength.toString()]);
+          await client.sendCommand([
+            "XTRIM",
+            stream,
+            "MAXLEN",
+            maxLength.toString(),
+          ]);
                 }
             } catch (trimError) {
                 logger.error("XTRIM command failed", trimError as Error, {
@@ -408,7 +547,7 @@ export class RedisStreamOperations {
                     maxLength,
                     approximate,
                     error: (trimError as Error).message,
-                    stack: (trimError as Error).stack
+          stack: (trimError as Error).stack,
                 });
                 throw trimError;
             }
@@ -422,7 +561,11 @@ export class RedisStreamOperations {
             return { success: true, trimmedCount };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Stream trim error", error as Error, { stream, maxLength, error: errorMessage });
+      logger.error("Stream trim error", error as Error, {
+        stream,
+        maxLength,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage };
         }
     }
@@ -430,7 +573,15 @@ export class RedisStreamOperations {
     /**
      * Get stream information
      */
-    async info(stream: string): Promise<{ success: boolean; length?: number; firstId?: string; lastId?: string; error?: string }> {
+  async info(
+    stream: string
+  ): Promise<{
+    success: boolean;
+    length?: number;
+    firstId?: string;
+    lastId?: string;
+    error?: string;
+  }> {
         try {
             const client = this.connectionManager.getClient();
             const info = await client.xInfoStream(stream);
@@ -443,7 +594,10 @@ export class RedisStreamOperations {
             };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Stream info error", error as Error, { stream, error: errorMessage });
+      logger.error("Stream info error", error as Error, {
+        stream,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage };
         }
     }
@@ -451,7 +605,10 @@ export class RedisStreamOperations {
     /**
      * Delete a message from a stream
      */
-    async delete(stream: string, messageId: string): Promise<{ success: boolean; deletedCount?: number; error?: string }> {
+  async delete(
+    stream: string,
+    messageId: string
+  ): Promise<{ success: boolean; deletedCount?: number; error?: string }> {
         try {
             const client = this.connectionManager.getClient();
             const deletedCount = await client.xDel(stream, messageId);
@@ -460,7 +617,11 @@ export class RedisStreamOperations {
             return { success: true, deletedCount };
         } catch (error) {
             const errorMessage = (error as Error).message;
-            logger.error("Stream delete error", error as Error, { stream, messageId, error: errorMessage });
+      logger.error("Stream delete error", error as Error, {
+        stream,
+        messageId,
+        error: errorMessage,
+      });
             return { success: false, error: errorMessage };
         }
     }

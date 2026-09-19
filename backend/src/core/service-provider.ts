@@ -14,23 +14,23 @@
  * @format
  */
 
-import { IServiceFactory, getServiceFactory } from './service-factory';
-import { AuthService } from './auth/auth.service.pure';
-import { BalanceService } from './wallet/balance.service.pure';
-import { PositionService } from './strategies/position.service.pure';
-import { RoleManagementService } from './auth/role-management.service.pure';
-import { RoleQualificationService } from './auth/role-qualification.service';
-import { WalletQualificationService } from './wallet/wallet-qualification.service.pure';
-import { UserProfileService } from './user/user-profile.service';
-import { UserKodiakService } from './user/user-kodiak.service';
-import { BotManagementService } from './bots/bot-management.service';
-import { StrategyService } from './strategies/strategy.service';
-import { MarketService } from './market/market.service';
-import { HealthService } from './system/health.service.pure';
-import { PositionValidatorService } from './strategies/position-validator.service.pure';
-import { PositionSyncService } from './strategies/position-sync.service.pure';
-import { EngineManager } from './strategies/engine-manager.service.pure';
-import { contextLogger } from './logging';
+import { IServiceFactory, getServiceFactory } from "./service-factory";
+import { AuthService } from "./auth/auth.service.pure";
+import { BalanceService } from "./wallet/balance.service.pure";
+import { PositionService } from "./strategies/position.service.pure";
+import { RoleManagementService } from "./auth/role-management.service.pure";
+import { RoleQualificationService } from "./auth/role-qualification.service";
+import { WalletQualificationService } from "./wallet/wallet-qualification.service.pure";
+import { UserProfileService } from "./user/user-profile.service";
+import { UserKodiakService } from "./user/user-kodiak.service";
+import { BotManagementService } from "./bots/bot-management.service";
+import { StrategyService } from "./strategies/strategy.service";
+import { MarketService } from "./market/market.service";
+import { HealthService } from "./system/health.service.pure";
+import { PositionValidatorService } from "./strategies/position-validator.service.pure";
+import { PositionSyncService } from "./strategies/position-sync.service.pure";
+import { EngineManager } from "./strategies/engine-manager.service.pure";
+import { contextLogger } from "./logging";
 
 /**
  * Service Provider
@@ -49,9 +49,9 @@ export class ServiceProvider {
 
     private constructor() {
         this.factory = getServiceFactory();
-        contextLogger.info('Service Provider initialized', {
-            pattern: 'singleton',
-            factory: 'ServiceFactory'
+    contextLogger.info("Service Provider initialized", {
+      pattern: "singleton",
+      factory: "ServiceFactory",
         });
     }
 
@@ -71,7 +71,7 @@ export class ServiceProvider {
     getAuthService(): AuthService {
         const service = this.factory.getAuthService();
         if (!service) {
-            throw new Error('Auth Service is unavailable');
+      throw new Error("Auth Service is unavailable");
         }
         return service;
     }
@@ -89,7 +89,7 @@ export class ServiceProvider {
     getBalanceService(): BalanceService {
         const service = this.factory.getBalanceService();
         if (!service) {
-            throw new Error('Balance Service is unavailable');
+      throw new Error("Balance Service is unavailable");
         }
         return service;
     }
@@ -107,7 +107,7 @@ export class ServiceProvider {
     getPositionService(): PositionService {
         const service = this.factory.getPositionService();
         if (!service) {
-            throw new Error('Position Service is unavailable');
+      throw new Error("Position Service is unavailable");
         }
         return service;
     }
@@ -125,7 +125,7 @@ export class ServiceProvider {
     getRoleManagementService(): RoleManagementService {
         const service = this.factory.getRoleManagementService();
         if (!service) {
-            throw new Error('Role Management Service is unavailable');
+      throw new Error("Role Management Service is unavailable");
         }
         return service;
     }
@@ -143,7 +143,7 @@ export class ServiceProvider {
     getRoleQualificationService(): RoleQualificationService {
         const service = this.factory.getRoleQualificationService();
         if (!service) {
-            throw new Error('Role Qualification Service is unavailable');
+      throw new Error("Role Qualification Service is unavailable");
         }
         return service;
     }
@@ -161,7 +161,7 @@ export class ServiceProvider {
     getWalletQualificationService(): WalletQualificationService {
         const service = this.factory.getWalletQualificationService();
         if (!service) {
-            throw new Error('Wallet Qualification Service is unavailable');
+      throw new Error("Wallet Qualification Service is unavailable");
         }
         return service;
     }
@@ -179,7 +179,7 @@ export class ServiceProvider {
     getUserProfileService(): UserProfileService {
         const service = this.factory.getUserProfileService();
         if (!service) {
-            throw new Error('User Profile Service is unavailable');
+      throw new Error("User Profile Service is unavailable");
         }
         return service;
     }
@@ -197,7 +197,7 @@ export class ServiceProvider {
     getUserKodiakService(): UserKodiakService {
         const service = this.factory.getUserKodiakService();
         if (!service) {
-            throw new Error('User Kodiak Service is unavailable');
+      throw new Error("User Kodiak Service is unavailable");
         }
         return service;
     }
@@ -215,7 +215,7 @@ export class ServiceProvider {
     getBotManagementService(): BotManagementService {
         const service = this.factory.getBotManagementService();
         if (!service) {
-            throw new Error('Bot Management Service is unavailable');
+      throw new Error("Bot Management Service is unavailable");
         }
         return service;
     }
@@ -233,7 +233,7 @@ export class ServiceProvider {
     getStrategyService(): StrategyService {
         const service = this.factory.getStrategyService();
         if (!service) {
-            throw new Error('Strategy Service is unavailable');
+      throw new Error("Strategy Service is unavailable");
         }
         return service;
     }
@@ -251,7 +251,7 @@ export class ServiceProvider {
     getMarketService(): MarketService {
         const service = this.factory.getMarketService();
         if (!service) {
-            throw new Error('Market Service is unavailable');
+      throw new Error("Market Service is unavailable");
         }
         return service;
     }
@@ -269,7 +269,7 @@ export class ServiceProvider {
     getPositionValidatorService(): PositionValidatorService {
         const service = this.factory.getPositionValidatorService();
         if (!service) {
-            throw new Error('Position Validator Service is unavailable');
+      throw new Error("Position Validator Service is unavailable");
         }
         return service;
     }
@@ -287,7 +287,7 @@ export class ServiceProvider {
     getPositionSyncService(): PositionSyncService {
         const service = this.factory.getPositionSyncService();
         if (!service) {
-            throw new Error('Position Sync Service is unavailable');
+      throw new Error("Position Sync Service is unavailable");
         }
         return service;
     }
@@ -305,7 +305,7 @@ export class ServiceProvider {
     getHealthService(): HealthService {
         const service = this.factory.getHealthService();
         if (!service) {
-            throw new Error('Health Service is unavailable');
+      throw new Error("Health Service is unavailable");
         }
         return service;
     }
@@ -323,7 +323,7 @@ export class ServiceProvider {
     getEngineManager(): EngineManager {
         const service = this.factory.getEngineManager();
         if (!service) {
-            throw new Error('Engine Manager is unavailable');
+      throw new Error("Engine Manager is unavailable");
         }
         return service;
     }
@@ -418,50 +418,75 @@ export const getAuthService = () => serviceProvider.getAuthService();
 export const getAuthServiceSafe = () => serviceProvider.getAuthServiceSafe();
 
 export const getBalanceService = () => serviceProvider.getBalanceService();
-export const getBalanceServiceSafe = () => serviceProvider.getBalanceServiceSafe();
+export const getBalanceServiceSafe = () =>
+  serviceProvider.getBalanceServiceSafe();
 
 export const getPositionService = () => serviceProvider.getPositionService();
-export const getPositionServiceSafe = () => serviceProvider.getPositionServiceSafe();
+export const getPositionServiceSafe = () =>
+  serviceProvider.getPositionServiceSafe();
 
-export const getRoleManagementService = () => serviceProvider.getRoleManagementService();
-export const getRoleManagementServiceSafe = () => serviceProvider.getRoleManagementServiceSafe();
+export const getRoleManagementService = () =>
+  serviceProvider.getRoleManagementService();
+export const getRoleManagementServiceSafe = () =>
+  serviceProvider.getRoleManagementServiceSafe();
 
-export const getRoleQualificationService = () => serviceProvider.getRoleQualificationService();
-export const getRoleQualificationServiceSafe = () => serviceProvider.getRoleQualificationServiceSafe();
+export const getRoleQualificationService = () =>
+  serviceProvider.getRoleQualificationService();
+export const getRoleQualificationServiceSafe = () =>
+  serviceProvider.getRoleQualificationServiceSafe();
 
-export const getWalletQualificationService = () => serviceProvider.getWalletQualificationService();
-export const getWalletQualificationServiceSafe = () => serviceProvider.getWalletQualificationServiceSafe();
+export const getWalletQualificationService = () =>
+  serviceProvider.getWalletQualificationService();
+export const getWalletQualificationServiceSafe = () =>
+  serviceProvider.getWalletQualificationServiceSafe();
 
-export const getUserProfileService = () => serviceProvider.getUserProfileService();
-export const getUserProfileServiceSafe = () => serviceProvider.getUserProfileServiceSafe();
+export const getUserProfileService = () =>
+  serviceProvider.getUserProfileService();
+export const getUserProfileServiceSafe = () =>
+  serviceProvider.getUserProfileServiceSafe();
 
-export const getUserKodiakService = () => serviceProvider.getUserKodiakService();
-export const getUserKodiakServiceSafe = () => serviceProvider.getUserKodiakServiceSafe();
+export const getUserKodiakService = () =>
+  serviceProvider.getUserKodiakService();
+export const getUserKodiakServiceSafe = () =>
+  serviceProvider.getUserKodiakServiceSafe();
 
-export const getBotManagementService = () => serviceProvider.getBotManagementService();
-export const getBotManagementServiceSafe = () => serviceProvider.getBotManagementServiceSafe();
+export const getBotManagementService = () =>
+  serviceProvider.getBotManagementService();
+export const getBotManagementServiceSafe = () =>
+  serviceProvider.getBotManagementServiceSafe();
 
 export const getStrategyService = () => serviceProvider.getStrategyService();
-export const getStrategyServiceSafe = () => serviceProvider.getStrategyServiceSafe();
+export const getStrategyServiceSafe = () =>
+  serviceProvider.getStrategyServiceSafe();
 
 export const getMarketService = () => serviceProvider.getMarketService();
-export const getMarketServiceSafe = () => serviceProvider.getMarketServiceSafe();
+export const getMarketServiceSafe = () =>
+  serviceProvider.getMarketServiceSafe();
 
-export const getPositionValidatorService = () => serviceProvider.getPositionValidatorService();
-export const getPositionValidatorServiceSafe = () => serviceProvider.getPositionValidatorServiceSafe();
+export const getPositionValidatorService = () =>
+  serviceProvider.getPositionValidatorService();
+export const getPositionValidatorServiceSafe = () =>
+  serviceProvider.getPositionValidatorServiceSafe();
 
-export const getPositionSyncService = () => serviceProvider.getPositionSyncService();
-export const getPositionSyncServiceSafe = () => serviceProvider.getPositionSyncServiceSafe();
+export const getPositionSyncService = () =>
+  serviceProvider.getPositionSyncService();
+export const getPositionSyncServiceSafe = () =>
+  serviceProvider.getPositionSyncServiceSafe();
 
 export const getHealthService = () => serviceProvider.getHealthService();
-export const getHealthServiceSafe = () => serviceProvider.getHealthServiceSafe();
+export const getHealthServiceSafe = () =>
+  serviceProvider.getHealthServiceSafe();
 
 export const getEngineManager = () => serviceProvider.getEngineManager();
-export const getEngineManagerSafe = () => serviceProvider.getEngineManagerSafe();
+export const getEngineManagerSafe = () =>
+  serviceProvider.getEngineManagerSafe();
 
 /**
  * Service availability checking convenience functions
  */
-export const isServiceAvailable = (serviceName: string) => serviceProvider.isServiceAvailable(serviceName);
-export const getAvailableServices = () => serviceProvider.getAvailableServices();
-export const getUnavailableServices = () => serviceProvider.getUnavailableServices();
+export const isServiceAvailable = (serviceName: string) =>
+  serviceProvider.isServiceAvailable(serviceName);
+export const getAvailableServices = () =>
+  serviceProvider.getAvailableServices();
+export const getUnavailableServices = () =>
+  serviceProvider.getUnavailableServices();

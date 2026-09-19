@@ -6,9 +6,14 @@ import {
     RoleDetails,
     UserRoleAssignment,
     RoleHierarchy,
-    IRoleQualificationService
-} from '@trade-bot/shared';
-import { IRoleRepository, IAuditLogger, ICacheService, ILogger } from '@trade-bot/shared';
+  IRoleQualificationService,
+} from "@trade-bot/shared";
+import {
+  IRoleRepository,
+  IAuditLogger,
+  ICacheService,
+  ILogger,
+} from "@trade-bot/shared";
 
 /**
  * Pure Role Management Service - Clean Architecture Implementation
@@ -42,7 +47,7 @@ export interface RoleManagementServiceDependencies {
  */
 export class RoleManagementService implements IRoleManagementService {
     private readonly CACHE_TTL = 300; // 5 minutes for role data
-    private readonly CACHE_PREFIX = 'role';
+  private readonly CACHE_PREFIX = "role";
 
     constructor(private deps: RoleManagementServiceDependencies) { }
 
@@ -56,9 +61,18 @@ export class RoleManagementService implements IRoleManagementService {
      * 4. Log audit event
      * 5. Invalidate user cache
      */
-    async assignRole(userId: string, role: UserRole, grantedBy: string = 'system', criteria?: unknown): Promise<void> {
+  async assignRole(
+    userId: string,
+    role: UserRole,
+    grantedBy: string = "system",
+    criteria?: unknown
+  ): Promise<void> {
         try {
-            this.deps.logger.debug("Role assignment attempt", { userId, role, grantedBy });
+      this.deps.logger.debug("Role assignment attempt", {
+        userId,
+        role,
+        grantedBy,
+      });
 
             // Check if user already has the role
             const existingRole = await this.deps.roleRepository.hasRole(userId, role);
@@ -68,13 +82,18 @@ export class RoleManagementService implements IRoleManagementService {
             }
 
             // Assign the role through repository
-            await this.deps.roleRepository.assignRole(userId, role, grantedBy, criteria);
+      await this.deps.roleRepository.assignRole(
+        userId,
+        role,
+        grantedBy,
+        criteria
+      );
 
             // Log audit event
             await this.deps.auditLogger.logEvent({
                 userId,
-                action: 'ROLE_ASSIGNED',
-                details: { role, grantedBy, criteria }
+        action: "ROLE_ASSIGNED",
+        details: { role, grantedBy, criteria },
             });
 
             // Invalidate user cache to ensure fresh data on next request
@@ -84,15 +103,14 @@ export class RoleManagementService implements IRoleManagementService {
                 userId,
                 role,
                 grantedBy,
-                criteria
+        criteria,
             });
-
         } catch (error) {
             this.deps.logger.error("Role assignment failed", {
                 userId,
                 role,
                 grantedBy,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
@@ -117,8 +135,8 @@ export class RoleManagementService implements IRoleManagementService {
                 // Log audit event
                 await this.deps.auditLogger.logEvent({
                     userId,
-                    action: 'ROLE_REMOVED',
-                    details: { role }
+          action: "ROLE_REMOVED",
+          details: { role },
                 });
 
                 // Invalidate user cache
@@ -128,12 +146,11 @@ export class RoleManagementService implements IRoleManagementService {
             } else {
                 this.deps.logger.debug("Role not found for user", { userId, role });
             }
-
         } catch (error) {
             this.deps.logger.error("Role removal failed", {
                 userId,
                 role,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
@@ -153,7 +170,7 @@ export class RoleManagementService implements IRoleManagementService {
             this.deps.logger.error("Failed to check user role", {
                 userId,
                 role,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return false;
         }
@@ -172,7 +189,7 @@ export class RoleManagementService implements IRoleManagementService {
         } catch (error) {
             this.deps.logger.error("Failed to get user roles", {
                 userId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
@@ -185,14 +202,17 @@ export class RoleManagementService implements IRoleManagementService {
      * - Query repository for role details
      * - Return structured role information
      */
-    async getRoleDetails(userId: string, role: UserRole): Promise<RoleDetails | null> {
+  async getRoleDetails(
+    userId: string,
+    role: UserRole
+  ): Promise<RoleDetails | null> {
         try {
             return await this.deps.roleRepository.getRoleDetails(userId, role);
         } catch (error) {
             this.deps.logger.error("Failed to get role details", {
                 userId,
                 role,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return null;
         }
@@ -211,7 +231,7 @@ export class RoleManagementService implements IRoleManagementService {
         } catch (error) {
             this.deps.logger.error("Failed to get users with role", {
                 role,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return [];
         }
@@ -231,12 +251,18 @@ export class RoleManagementService implements IRoleManagementService {
 
             // Check if qualification service is available
             if (!this.deps.qualificationService) {
-                this.deps.logger.debug("No qualification service available, assuming role is valid", { userId, role });
+        this.deps.logger.debug(
+          "No qualification service available, assuming role is valid",
+          { userId, role }
+        );
                 return true;
             }
 
             // Check if user still qualifies for the role
-            const result = await this.deps.qualificationService.checkQualification(userId, role);
+      const result = await this.deps.qualificationService.checkQualification(
+        userId,
+        role
+      );
 
             if (!result.qualified) {
                 // User no longer qualifies - remove the role
@@ -245,14 +271,14 @@ export class RoleManagementService implements IRoleManagementService {
                 // Log the revalidation failure
                 await this.deps.auditLogger.logEvent({
                     userId,
-                    action: 'ROLE_REVALIDATION_FAILED',
-                    details: { role, reason: result.reason, criteria: result.criteria }
+          action: "ROLE_REVALIDATION_FAILED",
+          details: { role, reason: result.reason, criteria: result.criteria },
                 });
 
                 this.deps.logger.info("Role removed due to failed revalidation", {
                     userId,
                     role,
-                    reason: result.reason
+          reason: result.reason,
                 });
 
                 return false;
@@ -260,12 +286,11 @@ export class RoleManagementService implements IRoleManagementService {
 
             this.deps.logger.debug("Role revalidation successful", { userId, role });
             return true;
-
         } catch (error) {
             this.deps.logger.error("Role revalidation failed", {
                 userId,
                 role,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return false;
         }
@@ -278,7 +303,10 @@ export class RoleManagementService implements IRoleManagementService {
      * - Use role hierarchy to check permissions
      * - Query user's roles if needed
      */
-    async hasPermission(userId: string, requiredRole: UserRole): Promise<boolean> {
+  async hasPermission(
+    userId: string,
+    requiredRole: UserRole
+  ): Promise<boolean> {
         try {
             // Get user's current roles
             const userRoles = await this.getUserRoles(userId);
@@ -291,12 +319,11 @@ export class RoleManagementService implements IRoleManagementService {
             }
 
             return false;
-
         } catch (error) {
             this.deps.logger.error("Failed to check user permissions", {
                 userId,
                 requiredRole,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return false;
         }
@@ -318,11 +345,10 @@ export class RoleManagementService implements IRoleManagementService {
             }
 
             return highestLevel;
-
         } catch (error) {
             this.deps.logger.error("Failed to get user's highest role level", {
                 userId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return 0;
         }
@@ -342,11 +368,10 @@ export class RoleManagementService implements IRoleManagementService {
             }
 
             return false;
-
         } catch (error) {
             this.deps.logger.error("Failed to check if user is admin", {
                 userId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return false;
         }
@@ -359,7 +384,7 @@ export class RoleManagementService implements IRoleManagementService {
         const cacheKeys = [
             `${this.CACHE_PREFIX}:user:${userId}`,
             `${this.CACHE_PREFIX}:user:${userId}:roles`,
-            `${this.CACHE_PREFIX}:user:${userId}:details`
+      `${this.CACHE_PREFIX}:user:${userId}:details`,
         ];
 
         for (const cacheKey of cacheKeys) {
@@ -370,7 +395,7 @@ export class RoleManagementService implements IRoleManagementService {
                 this.deps.logger.warn("Failed to invalidate user cache", {
                     userId,
                     cacheKey,
-                    error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
                 });
             }
         }
@@ -378,6 +403,8 @@ export class RoleManagementService implements IRoleManagementService {
 }
 
 // Export factory function for creating service instances
-export function createRoleManagementService(deps: RoleManagementServiceDependencies): RoleManagementService {
+export function createRoleManagementService(
+  deps: RoleManagementServiceDependencies
+): RoleManagementService {
     return new RoleManagementService(deps);
 }

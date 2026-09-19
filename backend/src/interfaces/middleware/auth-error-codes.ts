@@ -27,7 +27,8 @@ export const AUTH_ERROR_CODES = {
     USER_NOT_FOUND: -1008,
 } as const;
 
-export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CODES];
+export type AuthErrorCode =
+  (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CODES];
 
 /**
  * Messages whose presence in an auth-service refresh failure means the token
@@ -45,12 +46,14 @@ const DEFINITIVE_REFRESH_FAILURE_PATTERNS = [
 ] as const;
 
 /** True when a refresh failure message describes a definitively-dead token. */
-export const isDefinitiveRefreshFailure = (message: string | undefined): boolean => {
+export const isDefinitiveRefreshFailure = (
+  message: string | undefined
+): boolean => {
     if (!message) {
         return false;
     }
     const lower = message.toLowerCase();
-    return DEFINITIVE_REFRESH_FAILURE_PATTERNS.some((pattern) =>
-        lower.includes(pattern),
+  return DEFINITIVE_REFRESH_FAILURE_PATTERNS.some(pattern =>
+    lower.includes(pattern)
     );
 };

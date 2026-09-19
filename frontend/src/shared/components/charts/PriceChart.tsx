@@ -10,7 +10,11 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { useChartHistorical, useCurrentPrice, useWebSocketPriceUpdates } from "../../hooks/useChartData";
+import {
+  useChartHistorical,
+  useCurrentPrice,
+  useWebSocketPriceUpdates,
+} from "../../hooks/useChartData";
 import { Card } from "../ui/Card";
 import { SectionHeader } from "../ui/SectionHeader";
 
@@ -94,7 +98,10 @@ const SYMBOLS = [
 
 /** Format a Unix-seconds timestamp into HH:MM for axis ticks */
 const fmtTime = (ts: number): string =>
-  new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  new Date(ts * 1000).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
 /** Format a price value to always show exactly 2 decimal places */
 const fmtPrice = (value: number | string): string =>
@@ -130,10 +137,8 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
     });
 
     // ── Current price (polled) ───────────────────────────────────────────────
-    const {
-      data: currentPriceData,
-      error: priceError,
-    } = useCurrentPrice(selectedSymbol);
+    const { data: currentPriceData, error: priceError } =
+      useCurrentPrice(selectedSymbol);
 
     // ── WebSocket real-time mark price ───────────────────────────────────────
     const { markPriceData } = useWebSocketPriceUpdates({
@@ -144,7 +149,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
     // Extract candle array from the response
     const historyData = useMemo(
       () => historyResult?.candles || [],
-      [historyResult],
+      [historyResult]
     );
 
     // Transform historical candles to ChartPoint format with MA(20)
@@ -186,7 +191,8 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
     useEffect(() => {
       if (chartData.length > 0) {
         setLiveChartData(chartData);
-        lastLiveTimestampRef.current = chartData[chartData.length - 1].timestamp;
+        lastLiveTimestampRef.current =
+          chartData[chartData.length - 1].timestamp;
         lastWsTimestampRef.current   = chartData[chartData.length - 1].timestamp;
       }
     }, [chartData]);
@@ -245,7 +251,8 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
     // visibly extends to the right every 5 s while tracking price in real time.
     const WS_BUCKET_SECONDS = 5;
     useEffect(() => {
-      if (!markPriceData?.price || markPriceData.symbol !== selectedSymbol) return;
+      if (!markPriceData?.price || markPriceData.symbol !== selectedSymbol)
+        return;
 
       const price  = markPriceData.price;
       const nowSec = Math.floor(Date.now() / 1000);
@@ -300,13 +307,16 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
     // Current price for the header display
     const currentPrice =
       currentPriceData?.price ??
-      (liveChartData.length > 0 ? liveChartData[liveChartData.length - 1].price : null);
+      (liveChartData.length > 0
+        ? liveChartData[liveChartData.length - 1].price
+        : null);
 
     const priceChange =
       currentPriceData?.change24h != null
         ? parseFloat(String(currentPriceData.change24h))
         : chartData.length > 1
-        ? chartData[chartData.length - 1].price - chartData[chartData.length - 2].price
+          ? chartData[chartData.length - 1].price -
+            chartData[chartData.length - 2].price
         : 0;
 
     const priceChangePercent =
@@ -320,7 +330,10 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
     const xTickFormatter = (ts: number): string => fmtTime(ts);
 
     // Reduce X-axis tick density based on how many points we have
-    const xTickCount = Math.min(8, Math.max(2, Math.floor(liveChartData.length / 10)));
+    const xTickCount = Math.min(
+      8,
+      Math.max(2, Math.floor(liveChartData.length / 10))
+    );
 
     return (
       <Card className="mb-8">
@@ -342,7 +355,8 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                       }`}
                     >
                       {priceChange >= 0 ? "+" : ""}
-                      {priceChange.toFixed(2)} ({priceChangePercent >= 0 ? "+" : ""}
+                      {priceChange.toFixed(2)} (
+                      {priceChangePercent >= 0 ? "+" : ""}
                       {priceChangePercent.toFixed(2)}%)
                     </span>
                   )}
@@ -359,7 +373,9 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                   )}
                 </div>
               ) : priceError ? (
-                <div className="text-sm text-danger">Price data unavailable</div>
+                <div className="text-sm text-danger">
+                  Price data unavailable
+                </div>
               ) : (
                 <div className="text-sm text-textMuted">Loading price…</div>
               )}
@@ -462,8 +478,10 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                     fontSize={12}
                     tick={{ fill: "var(--text-secondary)" }}
                     domain={[
-                      (dataMin: number) => Math.floor((dataMin - 10) * 100) / 100,
-                      (dataMax: number) => Math.ceil((dataMax + 10) * 100) / 100,
+                      (dataMin: number) =>
+                        Math.floor((dataMin - 10) * 100) / 100,
+                      (dataMax: number) =>
+                        Math.ceil((dataMax + 10) * 100) / 100,
                     ]}
                     tickFormatter={fmtPrice}
                     width={80}

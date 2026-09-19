@@ -44,7 +44,8 @@ router.get("/health/detailed", async (req: Request, res: Response) => {
       controlPlaneStatus = "not_ready";
     }
 
-    const statusCode = health.status === "healthy" && controlPlaneStatus === "ready" ? 200 : 503;
+    const statusCode =
+      health.status === "healthy" && controlPlaneStatus === "ready" ? 200 : 503;
 
     res.status(statusCode).json({
       status: controlPlaneStatus === "ready" ? health.status : "degraded",
@@ -55,7 +56,8 @@ router.get("/health/detailed", async (req: Request, res: Response) => {
       controlPlane: {
         status: controlPlaneStatus,
         redis: controlPlaneStatus === "ready",
-        description: controlPlaneStatus === "ready"
+        description:
+          controlPlaneStatus === "ready"
           ? "Trading control plane is operational"
           : "Trading control plane is NOT operational - bot commands will be rejected",
       },
@@ -69,7 +71,9 @@ router.get("/health/detailed", async (req: Request, res: Response) => {
       ip: req.ip,
     });
   } catch (error) {
-    contextLogger.error("Health check error", { error: (error as Error).message });
+    contextLogger.error("Health check error", {
+      error: (error as Error).message,
+    });
     res.status(503).json({
       status: "error",
       timestamp: new Date().toISOString(),
@@ -116,7 +120,10 @@ router.get("/health/database", async (req: Request, res: Response) => {
       },
     });
 
-    contextLogger.debug("Database health check passed", { responseTime, connections });
+    contextLogger.debug("Database health check passed", {
+      responseTime,
+      connections,
+    });
   } catch (error) {
     contextLogger.error("Database health check failed", {
       error: (error as Error).message,
@@ -145,7 +152,9 @@ router.get("/metrics/database", (req: Request, res: Response) => {
 
     contextLogger.debug("Database metrics endpoint accessed");
   } catch (error) {
-    contextLogger.error("Database metrics error", { error: (error as Error).message });
+    contextLogger.error("Database metrics error", {
+      error: (error as Error).message,
+    });
     res.status(500).json({
       success: false,
       error: "Failed to fetch database metrics",
@@ -249,7 +258,8 @@ router.get("/health/external", async (req: Request, res: Response) => {
     const data = await kodiakResponse.json();
 
     // Safely extract symbol from Kodiak API response
-    const symbol = (data as { data?: { symbol?: string } })?.data?.symbol || "unknown";
+    const symbol =
+      (data as { data?: { symbol?: string } })?.data?.symbol || "unknown";
 
     res.json({
       status: "healthy",
@@ -312,7 +322,9 @@ router.get("/metrics", async (req: Request, res: Response) => {
 
     contextLogger.debug("Metrics endpoint accessed");
   } catch (error) {
-    contextLogger.error("Metrics endpoint error", { error: (error as Error).message });
+    contextLogger.error("Metrics endpoint error", {
+      error: (error as Error).message,
+    });
     res.status(500).json({
       success: false,
       error: "Failed to fetch metrics",
@@ -338,7 +350,9 @@ router.get("/ready", async (req: Request, res: Response) => {
 
     contextLogger.debug("Readiness probe passed");
   } catch (error) {
-    contextLogger.error("Readiness probe failed", { error: (error as Error).message });
+    contextLogger.error("Readiness probe failed", {
+      error: (error as Error).message,
+    });
     res.status(503).json({
       status: "not ready",
       timestamp: new Date().toISOString(),
@@ -373,8 +387,8 @@ router.get("/health/services", (req: Request, res: Response) => {
     };
 
     // Determine overall service health
-    const allServicesHealthy = Object.values(serviceStatus).every(service =>
-      service.implementation !== 'legacy' || service.enabled
+    const allServicesHealthy = Object.values(serviceStatus).every(
+      service => service.implementation !== "legacy" || service.enabled
     );
 
     res.json({
@@ -382,20 +396,23 @@ router.get("/health/services", (req: Request, res: Response) => {
       timestamp: new Date().toISOString(),
       services: serviceStatus,
       summary: {
-        pureServicesEnabled: Object.values(serviceStatus).filter(s => s.enabled).length,
+        pureServicesEnabled: Object.values(serviceStatus).filter(s => s.enabled)
+          .length,
         totalServices: Object.keys(serviceStatus).length,
         migrationProgress: `${Object.values(serviceStatus).filter(s => s.enabled).length}/${Object.keys(serviceStatus).length} services migrated`,
       },
       environment: {
-        LEGACY_BALANCE_API: process.env.LEGACY_BALANCE_API === 'true',
-        LEGACY_AUTH_API: process.env.LEGACY_AUTH_API === 'true',
-        LEGACY_POSITION_API: process.env.LEGACY_POSITION_API === 'true',
-      }
+        LEGACY_BALANCE_API: process.env.LEGACY_BALANCE_API === "true",
+        LEGACY_AUTH_API: process.env.LEGACY_AUTH_API === "true",
+        LEGACY_POSITION_API: process.env.LEGACY_POSITION_API === "true",
+      },
     });
 
     contextLogger.debug("Service status endpoint accessed", { serviceStatus });
   } catch (error) {
-    contextLogger.error("Service status endpoint error", { error: (error as Error).message });
+    contextLogger.error("Service status endpoint error", {
+      error: (error as Error).message,
+    });
     res.status(500).json({
       status: "error",
       timestamp: new Date().toISOString(),
@@ -432,7 +449,9 @@ router.get("/ratelimit", async (req: Request, res: Response) => {
 
     contextLogger.debug("Rate limit stats endpoint accessed");
   } catch (error) {
-    contextLogger.error("Rate limit stats error", { error: (error as Error).message });
+    contextLogger.error("Rate limit stats error", {
+      error: (error as Error).message,
+    });
     res.status(500).json({
       success: false,
       error: "Failed to fetch rate limit stats",

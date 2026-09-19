@@ -14,8 +14,8 @@
 // ===========================================
 
 export const SECURITY = {
-    JWT_EXPIRY: '4h',
-    JWT_REFRESH_EXPIRY: '30d',
+  JWT_EXPIRY: "4h",
+  JWT_REFRESH_EXPIRY: "30d",
     BCRYPT_ROUNDS: 12,
     CSRF_TOKEN_LENGTH: 32,
 } as const;

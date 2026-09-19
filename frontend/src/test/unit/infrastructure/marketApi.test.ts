@@ -137,7 +137,13 @@ describe("marketApi", () => {
                         symbol: params.symbol,
                         interval: params.interval,
                         candles: [
-                            { time: Date.now() - 3600000, open: 49800, high: 50200, low: 49500, close: 50000 },
+              {
+                time: Date.now() - 3600000,
+                open: 49800,
+                high: 50200,
+                low: 49500,
+                close: 50000,
+              },
                         ],
                     },
                 };
@@ -172,7 +178,13 @@ describe("marketApi", () => {
                         symbol: params.symbol,
                         resolution: params.resolution,
                         candles: [
-                            { time: Date.now() - 86400000, open: 48000, high: 50000, low: 47500, close: 49000 },
+              {
+                time: Date.now() - 86400000,
+                open: 48000,
+                high: 50000,
+                low: 47500,
+                close: 49000,
+              },
                         ],
                     },
                 };
@@ -246,7 +258,11 @@ describe("marketApi", () => {
                     success: true,
                     data: [
                         { symbol, exchange: "BINANCE", description: "BTC/USDT" },
-                        { symbol: "ETH/USDT", exchange: "BINANCE", description: "ETH/USDT" },
+            {
+              symbol: "ETH/USDT",
+              exchange: "BINANCE",
+              description: "ETH/USDT",
+            },
                     ],
                 };
 
@@ -279,7 +295,13 @@ describe("marketApi", () => {
                         symbol: params.symbol,
                         resolution: params.resolution,
                         candles: [
-                            { time: Date.now() - 86400000, open: 48000, high: 50000, low: 47500, close: 49000 },
+              {
+                time: Date.now() - 86400000,
+                open: 48000,
+                high: 50000,
+                low: 47500,
+                close: 49000,
+              },
                         ],
                     },
                 };

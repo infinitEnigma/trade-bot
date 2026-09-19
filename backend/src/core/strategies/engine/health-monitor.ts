@@ -75,7 +75,11 @@ export class HealthMonitor {
     private lastHealthCheck: EngineHealth | null = null;
     private healthHistory: EngineHealth[] = [];
 
-    constructor(processSpawner: ProcessSpawner, port = 4000, config?: Partial<HealthCheckConfig>) {
+  constructor(
+    processSpawner: ProcessSpawner,
+    port = 4000,
+    config?: Partial<HealthCheckConfig>
+  ) {
         this.processSpawner = processSpawner;
         this.port = port;
 
@@ -164,7 +168,9 @@ export class HealthMonitor {
                 health.memoryUsage = resources.memoryUsage;
                 health.errorRate = resources.errorRate;
                 if (resources.memoryUsage > this.config.thresholds.maxMemoryUsage) {
-                    health.issues.push(`High memory usage: ${resources.memoryUsage} bytes`);
+          health.issues.push(
+            `High memory usage: ${resources.memoryUsage} bytes`
+          );
                 }
                 if (resources.errorRate > this.config.thresholds.maxErrorRate) {
                     health.issues.push(`High error rate: ${resources.errorRate}`);
@@ -178,7 +184,6 @@ export class HealthMonitor {
 
             // Store in history for trend analysis
             this.storeHealthCheck(health);
-
         } catch (error) {
             logger.error("Health check failed", error as Error, {
                 error: error instanceof Error ? error.message : String(error),
@@ -208,7 +213,7 @@ export class HealthMonitor {
                 `http://localhost:${this.port}/api/engine/health`,
                 { timeout: this.config.timeouts.httpTimeout }
             );
-            return response.data?.status === 'healthy';
+      return response.data?.status === "healthy";
         } catch (error) {
             logger.error("HTTP health check failed", error as Error, {
                 error: error instanceof Error ? error.message : String(error),
@@ -229,7 +234,10 @@ export class HealthMonitor {
     /**
      * Check bot operational health (placeholder)
      */
-    private async checkBotOperationalHealth(): Promise<{ healthy: boolean; lastTradeActivity: Date }> {
+  private async checkBotOperationalHealth(): Promise<{
+    healthy: boolean;
+    lastTradeActivity: Date;
+  }> {
         // TODO: Implement bot operational health checks
         // Check if bots are running, trading, and not erroring
         return {
@@ -241,7 +249,10 @@ export class HealthMonitor {
     /**
      * Check system resources (placeholder)
      */
-    private async checkSystemResources(): Promise<{ memoryUsage: number; errorRate: number }> {
+  private async checkSystemResources(): Promise<{
+    memoryUsage: number;
+    errorRate: number;
+  }> {
         // TODO: Implement system resource monitoring
         // Get actual process memory usage and error rates
         return {
@@ -260,7 +271,10 @@ export class HealthMonitor {
         }
 
         // Additional checks if enabled
-        if (this.config.enabledLayers.websocketHealth && !health.websocketConnected) {
+    if (
+      this.config.enabledLayers.websocketHealth &&
+      !health.websocketConnected
+    ) {
             return false;
         }
 
@@ -318,7 +332,12 @@ export class HealthMonitor {
 
         // System resources (minor - 5 points)
         if (this.config.enabledLayers.systemResources) {
-            const resourceScore = Math.max(0, 5 - (health.errorRate * 50) - (health.memoryUsage / this.config.thresholds.maxMemoryUsage));
+      const resourceScore = Math.max(
+        0,
+        5 -
+          health.errorRate * 50 -
+          health.memoryUsage / this.config.thresholds.maxMemoryUsage
+      );
             score += Math.max(0, resourceScore);
             totalWeight += 5;
         }
@@ -345,7 +364,7 @@ export class HealthMonitor {
     getHealthTrend(): {
         currentHealth: EngineHealth | null;
         averageHealthScore: number;
-        healthStability: 'stable' | 'degrading' | 'improving';
+    healthStability: "stable" | "degrading" | "improving";
         recentIssues: string[];
     } {
         const recentChecks = this.healthHistory.slice(-10); // Last 10 checks
@@ -354,22 +373,23 @@ export class HealthMonitor {
             return {
                 currentHealth: null,
                 averageHealthScore: 0,
-                healthStability: 'stable',
+        healthStability: "stable",
                 recentIssues: [],
             };
         }
 
         const averageHealthScore = Math.round(
-            recentChecks.reduce((sum, check) => sum + check.healthScore, 0) / recentChecks.length
+      recentChecks.reduce((sum, check) => sum + check.healthScore, 0) /
+        recentChecks.length
         );
 
         // Analyze trend
-        let stability: 'stable' | 'degrading' | 'improving' = 'stable';
+    let stability: "stable" | "degrading" | "improving" = "stable";
         if (recentChecks.length >= 3) {
             const recent = recentChecks.slice(-3);
             const trend = recent[2].healthScore - recent[0].healthScore;
-            if (trend < -10) stability = 'degrading';
-            else if (trend > 10) stability = 'improving';
+      if (trend < -10) stability = "degrading";
+      else if (trend > 10) stability = "improving";
         }
 
         // Collect recent issues
@@ -397,7 +417,7 @@ export class HealthMonitor {
 
         if (!current || !previous) return false;
 
-        return (previous.healthScore - current.healthScore) >= significantThreshold;
+    return previous.healthScore - current.healthScore >= significantThreshold;
     }
 
     /**
@@ -405,7 +425,7 @@ export class HealthMonitor {
      */
     getHealthReport(): {
         summary: EngineHealth | null;
-        trend: ReturnType<HealthMonitor['getHealthTrend']>;
+    trend: ReturnType<HealthMonitor["getHealthTrend"]>;
         recommendations: string[];
     } {
         const summary = this.lastHealthCheck;
@@ -414,10 +434,12 @@ export class HealthMonitor {
 
         if (summary) {
             if (!summary.overallHealthy) {
-                recommendations.push("Engine is not healthy - investigate issues immediately");
+        recommendations.push(
+          "Engine is not healthy - investigate issues immediately"
+        );
             }
 
-            if (trend.healthStability === 'degrading') {
+      if (trend.healthStability === "degrading") {
                 recommendations.push("Health is degrading - monitor closely");
             }
 
@@ -426,7 +448,9 @@ export class HealthMonitor {
             }
 
             if (summary.healthScore < 70) {
-                recommendations.push("Health score is low - consider restart or maintenance");
+        recommendations.push(
+          "Health score is low - consider restart or maintenance"
+        );
             }
         } else {
             recommendations.push("No health data available - run health check");

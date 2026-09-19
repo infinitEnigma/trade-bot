@@ -105,12 +105,12 @@ export interface KodiakMarketTicker {
     last_funding_rate?: number;
     next_funding_time?: number;
     open_interest?: string;
-    '24h_open'?: number;
-    '24h_close'?: number;
-    '24h_high'?: number;
-    '24h_low'?: number;
-    '24h_amount'?: number;
-    '24h_volume'?: number;
+  "24h_open"?: number;
+  "24h_close"?: number;
+  "24h_high"?: number;
+  "24h_low"?: number;
+  "24h_amount"?: number;
+  "24h_volume"?: number;
     [key: string]: unknown; // Allow for additional properties from API
 }
 
@@ -130,15 +130,21 @@ export interface KodiakOrderbook {
  */
 export interface KodiakTradingViewConfig {
     supported_resolutions: string[];
-    exchanges?: Record<string, {
+  exchanges?: Record<
+    string,
+    {
         value: string;
         name: string;
         desc: string;
-    }>;
-    symbols_types?: Record<string, {
+    }
+  >;
+  symbols_types?: Record<
+    string,
+    {
         value: string;
         name: string;
-    }>;
+    }
+  >;
     [key: string]: unknown; // Allow for additional properties from API
 }
 

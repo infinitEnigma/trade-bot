@@ -54,7 +54,9 @@ export interface LifecycleEventInput {
 }
 
 /** How long a PENDING command may wait for the engine before it times out. */
-export const BOT_COMMAND_TIMEOUT_MS = Number(process.env.BOT_COMMAND_TIMEOUT_MS ?? 30_000);
+export const BOT_COMMAND_TIMEOUT_MS = Number(
+  process.env.BOT_COMMAND_TIMEOUT_MS ?? 30_000
+);
 
 /** A tracked lifecycle command awaiting engine confirmation. */
 export interface TrackedCommandRow {
@@ -81,7 +83,10 @@ export enum TimeoutReason {
 /**
  * Determine the appropriate timeout reason based on command type and bot state.
  */
-export function getTimeoutReason(commandType: string, botState: BotActualState): TimeoutReason {
+export function getTimeoutReason(
+  commandType: string,
+  botState: BotActualState
+): TimeoutReason {
     if (commandType === "BOT_START" && botState === "RUNNING") {
         // Bot is already running - engine likely processed the start but events were lost
         return TimeoutReason.STATE_MISMATCH;
@@ -100,7 +105,10 @@ export function getTimeoutReason(commandType: string, botState: BotActualState):
 /**
  * Determine the target state for a timed-out command based on the timeout reason.
  */
-export function getTimeoutTargetState(reason: TimeoutReason, _commandType: string): BotActualState {
+export function getTimeoutTargetState(
+  reason: TimeoutReason,
+  _commandType: string
+): BotActualState {
     switch (reason) {
         case TimeoutReason.STATE_MISMATCH:
             // Bot is in an unexpected state - mark as UNKNOWN for reconciliation

@@ -88,7 +88,10 @@ export interface TradingState {
 
 export interface TradingActions {
     createStrategy: (data: StrategyFormData) => Promise<void>;
-    updateStrategy: (id: string, data: Partial<StrategyFormData>) => Promise<void>;
+  updateStrategy: (
+    id: string,
+    data: Partial<StrategyFormData>
+  ) => Promise<void>;
     deleteStrategy: (id: string) => Promise<void>;
     startBot: (strategyId: string) => Promise<void>;
     stopBot: (strategyId: string) => Promise<void>;
@@ -104,7 +107,7 @@ export function getStrategyConfig(strategy: Strategy): StrategyConfig | null {
     }
 
     // Handle legacy format where config might be a plain object
-    if (typeof strategy.config === 'object' && strategy.config !== null) {
+  if (typeof strategy.config === "object" && strategy.config !== null) {
         const config = strategy.config as unknown as Record<string, unknown>;
 
         switch (strategy.type) {
@@ -112,7 +115,7 @@ export function getStrategyConfig(strategy: Strategy): StrategyConfig | null {
                 return {
                     type: StrategyType.GRID,
                     config: {
-                        symbol: (config.symbol as string) || '',
+            symbol: (config.symbol as string) || "",
                         leverage: (config.leverage as number) || 1,
                         gridSize: (config.gridSize as number) || 10,
                         gridRange: (config.gridRange as number) || 5,
@@ -121,29 +124,29 @@ export function getStrategyConfig(strategy: Strategy): StrategyConfig | null {
                         entryThreshold: config.entryThreshold as number | undefined,
                         exitThreshold: config.exitThreshold as number | undefined,
                         stopLoss: config.stopLoss as number | undefined,
-                    }
+          },
                 };
             case StrategyType.TREND_FOLLOWING:
                 return {
                     type: StrategyType.TREND_FOLLOWING,
                     config: {
-                        symbol: (config.symbol as string) || '',
+            symbol: (config.symbol as string) || "",
                         leverage: (config.leverage as number) || 1,
                         entryThreshold: (config.entryThreshold as number) || 0,
                         exitThreshold: (config.exitThreshold as number) || 0,
                         takeProfit: config.takeProfit as number | undefined,
                         stopLoss: config.stopLoss as number | undefined,
-                    }
+          },
                 };
             case StrategyType.ARBITRAGE:
                 return {
                     type: StrategyType.ARBITRAGE,
                     config: {
-                        symbol: (config.symbol as string) || '',
+            symbol: (config.symbol as string) || "",
                         leverage: (config.leverage as number) || 1,
                         takeProfit: config.takeProfit as number | undefined,
                         stopLoss: config.stopLoss as number | undefined,
-                    }
+          },
                 };
             default:
                 return null;

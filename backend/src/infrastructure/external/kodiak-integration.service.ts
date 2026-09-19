@@ -24,7 +24,10 @@ import { kodiakCache } from "./kodiak-cache";
 import { externalTrafficObserver } from "./external-traffic-observer";
 import { integrationLogger as logger } from "../../core/logging/context-aware-logger.service";
 
-import { createAbortController, createFetchOptions } from "./kodiak/fetch-options";
+import {
+  createAbortController,
+  createFetchOptions,
+} from "./kodiak/fetch-options";
 import { getUserCredentials } from "./kodiak/credentials-provider";
 import { privateDataMethods } from "./kodiak/private-data";
 import { marketDataMethods } from "./kodiak/market-data";
@@ -57,27 +60,27 @@ export class KodiakIntegrationService {
     public readonly CACHE_TTL_MEDIUM = 600; // ⬆️ 10 minutes for semi-volatile data (was 30 seconds)
 
     // Module-level caching for crypto libraries to prevent memory leaks
-    private cryptoModule: typeof import('crypto') | null = null;
-    private bs58Module: typeof import('bs58') | null = null;
-    private ed25519Module: typeof import('@noble/ed25519') | null = null;
+  private cryptoModule: typeof import("crypto") | null = null;
+  private bs58Module: typeof import("bs58") | null = null;
+  private ed25519Module: typeof import("@noble/ed25519") | null = null;
 
     /**
      * Get crypto modules with caching to prevent memory leaks
      */
     private async getCryptoModules(): Promise<{
-        cryptoModule: typeof import('crypto');
-        bs58Module: typeof import('bs58');
-        ed25519Module: typeof import('@noble/ed25519');
+    cryptoModule: typeof import("crypto");
+    bs58Module: typeof import("bs58");
+    ed25519Module: typeof import("@noble/ed25519");
     }> {
         if (!this.cryptoModule) {
-            this.cryptoModule = await import('crypto');
-            this.bs58Module = await import('bs58');
-            this.ed25519Module = await import('@noble/ed25519');
+      this.cryptoModule = await import("crypto");
+      this.bs58Module = await import("bs58");
+      this.ed25519Module = await import("@noble/ed25519");
         }
         return {
             cryptoModule: this.cryptoModule!,
             bs58Module: this.bs58Module!,
-            ed25519Module: this.ed25519Module!
+      ed25519Module: this.ed25519Module!,
         };
     }
 
@@ -121,12 +124,18 @@ export class KodiakIntegrationService {
             const message = `${timestamp}${method.toUpperCase()}${signaturePath}${bodyStr}`;
 
             // Generate signature
-            const signature = await this.generateKodiakSignature(message, credentials.secretKey);
+      const signature = await this.generateKodiakSignature(
+        message,
+        credentials.secretKey
+      );
 
             const baseUrl = process.env.KODIAK_API_URL || "https://api.orderly.org";
 
             const headers: Record<string, string> = {
-                "Content-Type": method === "GET" ? "application/x-www-form-urlencoded" : "application/json",
+        "Content-Type":
+          method === "GET"
+            ? "application/x-www-form-urlencoded"
+            : "application/json",
                 "orderly-account-id": credentials.accountId,
                 "orderly-key": credentials.apiKey,
                 "orderly-signature": signature,
@@ -148,8 +157,14 @@ export class KodiakIntegrationService {
                 requestOptions.body = bodyStr;
             }
 
-            const response = await fetch(`${baseUrl}${signaturePath}`, requestOptions);
-            externalTrafficObserver.recordKodiakRequest(signaturePath, credentials.accountId);
+      const response = await fetch(
+        `${baseUrl}${signaturePath}`,
+        requestOptions
+      );
+      externalTrafficObserver.recordKodiakRequest(
+        signaturePath,
+        credentials.accountId
+      );
 
             logger.debug("Kodiak API response received", {
                 status: response.status,
@@ -158,13 +173,18 @@ export class KodiakIntegrationService {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                externalTrafficObserver.recordKodiakError(signaturePath, response.status);
+        externalTrafficObserver.recordKodiakError(
+          signaturePath,
+          response.status
+        );
                 logger.warn("Kodiak API error response", {
                     status: response.status,
                     statusText: response.statusText,
                     error: errorText,
                 });
-                throw new Error(`Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`);
+        throw new Error(
+          `Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`
+        );
             }
 
             const responseData = await response.json();
@@ -182,10 +202,14 @@ export class KodiakIntegrationService {
     /**
      * Generate Kodiak API signature using Ed25519
      */
-    private async generateKodiakSignature(message: string, secretKey: string): Promise<string> {
+  private async generateKodiakSignature(
+    message: string,
+    secretKey: string
+  ): Promise<string> {
         try {
             // Get cached crypto modules to prevent memory leaks
-            const { cryptoModule, bs58Module, ed25519Module } = await this.getCryptoModules();
+      const { cryptoModule, bs58Module, ed25519Module } =
+        await this.getCryptoModules();
 
             const sha512Hash = (message: Uint8Array) => {
                 const hash = cryptoModule.createHash("sha512");
@@ -198,12 +222,18 @@ export class KodiakIntegrationService {
                 hashes?: { sha512?: (message: Uint8Array) => Uint8Array };
                 etc?: { sha512Sync?: (message: Uint8Array) => Uint8Array };
                 utils?: { sha512Sync?: (message: Uint8Array) => Uint8Array };
-                sign?: (message: Uint8Array, privateKey: Uint8Array) => Uint8Array | Promise<Uint8Array>;
+        sign?: (
+          message: Uint8Array,
+          privateKey: Uint8Array
+        ) => Uint8Array | Promise<Uint8Array>;
             };
 
             if (ed25519Lib.hashes) {
                 ed25519Lib.hashes.sha512 = sha512Hash;
-            } else if (ed25519Lib.etc && typeof ed25519Lib.etc?.sha512Sync !== "undefined") {
+      } else if (
+        ed25519Lib.etc &&
+        typeof ed25519Lib.etc?.sha512Sync !== "undefined"
+      ) {
                 ed25519Lib.etc.sha512Sync = sha512Hash;
             } else if (ed25519Lib.utils) {
                 ed25519Lib.utils.sha512Sync = sha512Hash;
@@ -222,8 +252,12 @@ export class KodiakIntegrationService {
                 privateKey = bs58Module.default.decode(normalizedKey);
             }
             const messageBytes = new TextEncoder().encode(message);
-            const signature = await ed25519Lib.sign?.(messageBytes, privateKey) || Promise.resolve(new Uint8Array());
-            const signatureResult = await (signature instanceof Promise ? signature : Promise.resolve(signature));
+      const signature =
+        (await ed25519Lib.sign?.(messageBytes, privateKey)) ||
+        Promise.resolve(new Uint8Array());
+      const signatureResult = await (signature instanceof Promise
+        ? signature
+        : Promise.resolve(signature));
 
             return Buffer.from(signatureResult).toString("base64url");
         } catch (error) {
@@ -235,7 +269,9 @@ export class KodiakIntegrationService {
     /**
      * Test Kodiak API connectivity
      */
-    async testConnectivity(credentials: KodiakCredentials): Promise<{ success: boolean; error?: string }> {
+  async testConnectivity(
+    credentials: KodiakCredentials
+  ): Promise<{ success: boolean; error?: string }> {
         try {
             // If this call succeeds without throwing, credentials are valid
             await this.makeKodiakRequest("GET", "/client/info", credentials);
@@ -244,14 +280,13 @@ export class KodiakIntegrationService {
                 accountId: credentials.accountId,
             });
             return { success: true };
-
         } catch (error) {
             logger.error("Kodiak API connectivity test error", error as Error, {
                 accountId: credentials.accountId,
             });
             return {
                 success: false,
-                error: error instanceof Error ? error.message : "Connection failed"
+        error: error instanceof Error ? error.message : "Connection failed",
             };
         }
     }
@@ -280,8 +315,13 @@ export class KodiakIntegrationService {
 // gives the class its full public surface).
 type KodiakPrivateDataMethods = typeof privateDataMethods;
 type KodiakMarketDataMethods = typeof marketDataMethods;
-export interface KodiakIntegrationService extends KodiakPrivateDataMethods, KodiakMarketDataMethods {}
-Object.assign(KodiakIntegrationService.prototype, privateDataMethods, marketDataMethods);
+export interface KodiakIntegrationService
+  extends KodiakPrivateDataMethods, KodiakMarketDataMethods {}
+Object.assign(
+  KodiakIntegrationService.prototype,
+  privateDataMethods,
+  marketDataMethods
+);
 
 // Export singleton instance
 export const kodiakIntegrationService = new KodiakIntegrationService();

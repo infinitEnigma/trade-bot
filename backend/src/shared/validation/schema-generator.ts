@@ -42,7 +42,10 @@ export class SchemaGenerator {
     /**
      * Generate Joi validation schema for a specific table
      */
-    generateTableSchema(tableName: string, schema: DatabaseSchema): Joi.ObjectSchema | null {
+  generateTableSchema(
+    tableName: string,
+    schema: DatabaseSchema
+  ): Joi.ObjectSchema | null {
         const tableDef = schema.tables[tableName];
         if (!tableDef) {
             logger.warn("Table not found in schema", { tableName });
@@ -50,7 +53,9 @@ export class SchemaGenerator {
         }
 
         try {
-            const joiSchema = Joi.object(this.generateColumnSchemas(tableDef, schema));
+      const joiSchema = Joi.object(
+        this.generateColumnSchemas(tableDef, schema)
+      );
 
             // Strict mode: reject unknown fields to match database constraints
             return joiSchema.unknown(false);
@@ -80,7 +85,12 @@ export class SchemaGenerator {
                 columnDefCopy.checkConstraint = tableDef.checkConstraints[columnName];
             }
 
-            const joiSchema = this.generateColumnSchema(columnName, columnDefCopy, tableDef, fullSchema);
+      const joiSchema = this.generateColumnSchema(
+        columnName,
+        columnDefCopy,
+        tableDef,
+        fullSchema
+      );
             if (joiSchema) {
                 columnSchemas[columnName] = joiSchema;
             }
@@ -122,17 +132,17 @@ export class SchemaGenerator {
 
             // Add descriptive messages
             schema = schema.messages({
-                'any.required': `${columnName} is required`,
-                'string.pattern.base': `${columnName} has invalid format`,
-                'any.only': `${columnName} must be one of the allowed values`,
-                'number.base': `${columnName} must be a number`,
-                'number.integer': `${columnName} must be an integer`,
-                'number.positive': `${columnName} must be positive`,
-                'number.precision': `${columnName} exceeds allowed precision`,
-                'string.max': `${columnName} is too long`,
-                'string.uuid': `${columnName} must be a valid UUID`,
-                'boolean.base': `${columnName} must be a boolean`,
-                'date.base': `${columnName} must be a valid date`,
+        "any.required": `${columnName} is required`,
+        "string.pattern.base": `${columnName} has invalid format`,
+        "any.only": `${columnName} must be one of the allowed values`,
+        "number.base": `${columnName} must be a number`,
+        "number.integer": `${columnName} must be an integer`,
+        "number.positive": `${columnName} must be positive`,
+        "number.precision": `${columnName} exceeds allowed precision`,
+        "string.max": `${columnName} is too long`,
+        "string.uuid": `${columnName} must be a valid UUID`,
+        "boolean.base": `${columnName} must be a boolean`,
+        "date.base": `${columnName} must be a valid date`,
             });
 
             return schema;
@@ -151,12 +161,12 @@ export class SchemaGenerator {
         const { type, length, precision, scale } = columnDef;
 
         switch (type.toUpperCase()) {
-            case 'UUID':
-                return Joi.string().uuid({ version: 'uuidv4' });
+      case "UUID":
+        return Joi.string().uuid({ version: "uuidv4" });
 
-            case 'VARCHAR':
-            case 'CHAR':
-            case 'TEXT': {
+      case "VARCHAR":
+      case "CHAR":
+      case "TEXT": {
                 let stringSchema = Joi.string().trim();
                 if (length) {
                     stringSchema = stringSchema.max(length);
@@ -164,13 +174,13 @@ export class SchemaGenerator {
                 return stringSchema;
             }
 
-            case 'INTEGER':
-            case 'INT':
-            case 'BIGINT':
+      case "INTEGER":
+      case "INT":
+      case "BIGINT":
                 return Joi.number().integer();
 
-            case 'DECIMAL':
-            case 'NUMERIC': {
+      case "DECIMAL":
+      case "NUMERIC": {
                 const numberSchema = Joi.number();
                 if (precision !== undefined) {
                     if (scale !== undefined && scale > 0) {
@@ -182,12 +192,16 @@ export class SchemaGenerator {
                             .precision(precision)
                             .custom((value, helpers) => {
                                 const valueStr = value.toString();
-                                const decimalPart = valueStr.includes('.') ? valueStr.split('.')[1] : '';
+                const decimalPart = valueStr.includes(".")
+                  ? valueStr.split(".")[1]
+                  : "";
                                 if (decimalPart.length > scale) {
-                                    return helpers.error('number.precision', {
+                  return helpers.error("number.precision", {
                                         limit: scale,
                                         value,
-                                        label: helpers.state.path ? helpers.state.path.join('.') : 'value'
+                    label: helpers.state.path
+                      ? helpers.state.path.join(".")
+                      : "value",
                                     });
                                 }
                                 return value;
@@ -195,8 +209,10 @@ export class SchemaGenerator {
 
                         const decimalSchema = Joi.alternatives().try(
                             numberWithScaleSchema,
-                            Joi.string().pattern(decimalRegex).messages({
-                                'string.pattern.base': `Must have at most ${scale} decimal places`,
+              Joi.string()
+                .pattern(decimalRegex)
+                .messages({
+                  "string.pattern.base": `Must have at most ${scale} decimal places`,
                             })
                         );
                         return decimalSchema;
@@ -208,23 +224,25 @@ export class SchemaGenerator {
                 return numberSchema;
             }
 
-            case 'BOOLEAN':
+      case "BOOLEAN":
                 return Joi.boolean();
 
-            case 'TIMESTAMP':
-            case 'DATE':
-            case 'TIMESTAMP WITH TIME ZONE':
+      case "TIMESTAMP":
+      case "DATE":
+      case "TIMESTAMP WITH TIME ZONE":
                 return Joi.date();
 
-            case 'JSONB':
-            case 'JSON': {
+      case "JSONB":
+      case "JSON": {
                 const jsonSchema = Joi.object();
                 return jsonSchema;
             }
 
             default:
                 // Default to string for unknown types
-                logger.warn(`Unknown column type "${type}" (length: ${type.length}, upper: "${type.toUpperCase()}", trimmed: "${type.trim()}"), defaulting to string`);
+        logger.warn(
+          `Unknown column type "${type}" (length: ${type.length}, upper: "${type.toUpperCase()}", trimmed: "${type.trim()}"), defaulting to string`
+        );
                 return Joi.string();
         }
     }
@@ -232,7 +250,10 @@ export class SchemaGenerator {
     /**
      * Apply CHECK constraint to Joi schema
      */
-    private applyCheckConstraint(schema: Joi.Schema, constraint: CheckConstraint): Joi.Schema {
+  private applyCheckConstraint(
+    schema: Joi.Schema,
+    constraint: CheckConstraint
+  ): Joi.Schema {
         // Apply IN constraint (enum values)
         if (constraint.values && constraint.values.length > 0) {
             return schema.valid(...constraint.values);
@@ -243,11 +264,15 @@ export class SchemaGenerator {
             let rangedSchema = schema;
 
             if (constraint.range.min !== undefined) {
-                rangedSchema = (rangedSchema as Joi.NumberSchema).min(constraint.range.min);
+        rangedSchema = (rangedSchema as Joi.NumberSchema).min(
+          constraint.range.min
+        );
             }
 
             if (constraint.range.max !== undefined) {
-                rangedSchema = (rangedSchema as Joi.NumberSchema).max(constraint.range.max);
+        rangedSchema = (rangedSchema as Joi.NumberSchema).max(
+          constraint.range.max
+        );
             }
 
             return rangedSchema;
@@ -259,9 +284,13 @@ export class SchemaGenerator {
                 const regex = new RegExp(constraint.pattern);
                 return (schema as Joi.StringSchema).pattern(regex);
             } catch (error) {
-                logger.error("Invalid regex pattern in CHECK constraint", error as Error, {
+        logger.error(
+          "Invalid regex pattern in CHECK constraint",
+          error as Error,
+          {
                     pattern: constraint.pattern,
-                });
+          }
+        );
             }
         }
 
@@ -293,7 +322,7 @@ export class SchemaGenerator {
             // For now, we just validate the format/type is correct
             // Full FK validation would be done at the middleware level
             return value;
-        }, 'foreign key validation');
+    }, "foreign key validation");
     }
 
     /**
@@ -329,12 +358,18 @@ export class SchemaGenerator {
     /**
      * Validate data against generated schema
      */
-    validateData(tableName: string, data: unknown, schema: DatabaseSchema): ValidationResult {
+  validateData(
+    tableName: string,
+    data: unknown,
+    schema: DatabaseSchema
+  ): ValidationResult {
         const joiSchema = this.generateTableSchema(tableName, schema);
         if (!joiSchema) {
             return {
                 isValid: false,
-                errors: [{ field: 'schema', message: 'No validation schema found for table' }],
+        errors: [
+          { field: "schema", message: "No validation schema found for table" },
+        ],
             };
         }
 
@@ -347,7 +382,7 @@ export class SchemaGenerator {
             return {
                 isValid: false,
                 errors: error.details.map(detail => ({
-                    field: detail.path.join('.'),
+          field: detail.path.join("."),
                     message: detail.message,
                     value: detail.context?.value,
                 })),

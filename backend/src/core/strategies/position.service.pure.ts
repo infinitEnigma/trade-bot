@@ -20,7 +20,7 @@ import {
     ILogger,
     Position,
     Balance,
-} from '@trade-bot/shared';
+} from "@trade-bot/shared";
 
 export interface PositionServiceDependencies {
     positionRepository: IPositionRepository;
@@ -49,7 +49,7 @@ export interface RiskAssessment {
     totalExposure: number;
     maxRecommendedExposure: number;
     utilizationPercentage: number;
-    riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  riskLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
     recommendations: string[];
 }
 
@@ -61,7 +61,7 @@ export interface RiskAssessment {
  */
 export class PositionService {
     private readonly CACHE_TTL = 30; // 30 seconds for position data
-    private readonly CACHE_PREFIX = 'positions';
+  private readonly CACHE_PREFIX = "positions";
 
     constructor(private deps: PositionServiceDependencies) { }
 
@@ -75,37 +75,48 @@ export class PositionService {
      * 4. Return domain Position objects
      */
     async getUserPositions(userId: string): Promise<Position[]> {
-        this.deps.logger.debug('Getting user positions', { userId });
+    this.deps.logger.debug("Getting user positions", { userId });
 
         const cacheKey = this.buildCacheKey(userId);
 
         // 1. Try cache first
         const cachedResult = await this.deps.cache.get<Position[]>(cacheKey);
         if (cachedResult.success && cachedResult.data) {
-            this.deps.logger.debug('Position cache hit', { userId, count: cachedResult.data.length });
+      this.deps.logger.debug("Position cache hit", {
+        userId,
+        count: cachedResult.data.length,
+      });
             return cachedResult.data;
         }
 
         // 2. Cache miss - fetch from repository
-        this.deps.logger.debug('Position cache miss, querying repository', { userId });
+    this.deps.logger.debug("Position cache miss, querying repository", {
+      userId,
+    });
 
         const positions = await this.deps.positionRepository.getPositions(userId);
 
         // 3. Validate and convert to domain objects
-        const domainPositions = positions.map(pos => this.validateAndConvertPosition(pos)).filter(Boolean) as Position[];
+    const domainPositions = positions
+      .map(pos => this.validateAndConvertPosition(pos))
+      .filter(Boolean) as Position[];
 
         // 4. Cache the result
-        const cacheResult = await this.deps.cache.setex(cacheKey, this.CACHE_TTL, domainPositions);
+    const cacheResult = await this.deps.cache.setex(
+      cacheKey,
+      this.CACHE_TTL,
+      domainPositions
+    );
         if (!cacheResult.success) {
-            this.deps.logger.warn('Failed to cache positions', {
+      this.deps.logger.warn("Failed to cache positions", {
                 userId,
-                error: cacheResult.error
+        error: cacheResult.error,
             });
         }
 
-        this.deps.logger.info('Positions retrieved and cached', {
+    this.deps.logger.info("Positions retrieved and cached", {
             userId,
-            count: domainPositions.length
+      count: domainPositions.length,
         });
 
         return domainPositions;
@@ -120,19 +131,22 @@ export class PositionService {
      */
     async getPosition(userId: string, symbol: string): Promise<Position | null> {
         try {
-            const position = await this.deps.positionRepository.getPosition(userId, symbol);
+      const position = await this.deps.positionRepository.getPosition(
+        userId,
+        symbol
+      );
 
             if (!position) {
-                this.deps.logger.debug('Position not found', { userId, symbol });
+        this.deps.logger.debug("Position not found", { userId, symbol });
                 return null;
             }
 
             return this.validateAndConvertPosition(position);
         } catch (error) {
-            this.deps.logger.error('Failed to get position', {
+      this.deps.logger.error("Failed to get position", {
                 userId,
                 symbol,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return null;
         }
@@ -156,7 +170,7 @@ export class PositionService {
         maxExposurePercent: number = 0.8,
         maxSinglePositionPercent: number = 0.25
     ): Promise<PositionValidationResult> {
-        this.deps.logger.debug('Validating position size', {
+    this.deps.logger.debug("Validating position size", {
             userId,
             notionalAmount,
             symbol,
@@ -164,7 +178,7 @@ export class PositionService {
                 balance: accountLimits.balance,
                 maxLeverage: accountLimits.maxLeverage,
                 totalExposure: accountLimits.totalExposure,
-            }
+      },
         });
 
         // Check 1: Minimum position size
@@ -202,7 +216,8 @@ export class PositionService {
         }
 
         // Check 4: Account leverage limit
-        const maxAccountExposure = accountLimits.balance * accountLimits.maxLeverage;
+    const maxAccountExposure =
+      accountLimits.balance * accountLimits.maxLeverage;
         if (notionalAmount > maxAccountExposure) {
             return {
                 isValid: false,
@@ -236,11 +251,11 @@ export class PositionService {
             };
         }
 
-        this.deps.logger.debug('Position validation passed', {
+    this.deps.logger.debug("Position validation passed", {
             userId,
             notionalAmount,
             symbol,
-            maxAllowed: Math.min(maxSinglePosition, maxAccountExposure)
+      maxAllowed: Math.min(maxSinglePosition, maxAccountExposure),
         });
 
         return {
@@ -261,7 +276,10 @@ export class PositionService {
      * - Calculate total exposure and margin requirements
      * - Provide comprehensive account risk metrics
      */
-    async calculateAccountLimits(userId: string, balance: Balance): Promise<AccountLimits> {
+  async calculateAccountLimits(
+    userId: string,
+    balance: Balance
+  ): Promise<AccountLimits> {
         try {
             const positions = await this.getUserPositions(userId);
 
@@ -282,19 +300,18 @@ export class PositionService {
                 makerFeeRate: 0.001, // 0.1%
             };
 
-            this.deps.logger.debug('Account limits calculated', {
+      this.deps.logger.debug("Account limits calculated", {
                 userId,
                 positionsCount: positions.length,
                 totalExposure,
-                balance: balance.total
+        balance: balance.total,
             });
 
             return accountLimits;
-
         } catch (error) {
-            this.deps.logger.error('Failed to calculate account limits', {
+      this.deps.logger.error("Failed to calculate account limits", {
                 userId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
@@ -316,30 +333,33 @@ export class PositionService {
 
             const totalExposure = accountLimits.totalExposure;
             const maxRecommendedExposure = balance.total * 0.8; // 80% of balance
-            const utilizationPercentage = balance.total > 0 ? (totalExposure / balance.total) * 100 : 0;
+      const utilizationPercentage =
+        balance.total > 0 ? (totalExposure / balance.total) * 100 : 0;
 
             // Determine risk level
-            let riskLevel: RiskAssessment['riskLevel'];
+      let riskLevel: RiskAssessment["riskLevel"];
             const recommendations: string[] = [];
 
             if (utilizationPercentage >= 90) {
-                riskLevel = 'CRITICAL';
-                recommendations.push('Immediately reduce position sizes');
-                recommendations.push('Consider closing high-risk positions');
-                recommendations.push('Increase margin requirements');
+        riskLevel = "CRITICAL";
+        recommendations.push("Immediately reduce position sizes");
+        recommendations.push("Consider closing high-risk positions");
+        recommendations.push("Increase margin requirements");
             } else if (utilizationPercentage >= 70) {
-                riskLevel = 'HIGH';
-                recommendations.push('Monitor positions closely');
-                recommendations.push('Consider taking profits');
-                recommendations.push('Reduce leverage if possible');
+        riskLevel = "HIGH";
+        recommendations.push("Monitor positions closely");
+        recommendations.push("Consider taking profits");
+        recommendations.push("Reduce leverage if possible");
             } else if (utilizationPercentage >= 50) {
-                riskLevel = 'MEDIUM';
-                recommendations.push('Maintain current risk levels');
-                recommendations.push('Regular position monitoring');
+        riskLevel = "MEDIUM";
+        recommendations.push("Maintain current risk levels");
+        recommendations.push("Regular position monitoring");
             } else {
-                riskLevel = 'LOW';
-                recommendations.push('Risk levels are healthy');
-                recommendations.push('Consider increasing position sizes if appropriate');
+        riskLevel = "LOW";
+        recommendations.push("Risk levels are healthy");
+        recommendations.push(
+          "Consider increasing position sizes if appropriate"
+        );
             }
 
             // Check for concentrated positions
@@ -349,20 +369,26 @@ export class PositionService {
             });
 
             if (largePositions.length > 0) {
-                recommendations.push(`Reduce concentration in ${largePositions.map(p => p.symbol).join(', ')}`);
+        recommendations.push(
+          `Reduce concentration in ${largePositions.map(p => p.symbol).join(", ")}`
+        );
             }
 
             // Check for positions near liquidation
-            const nearLiquidationPositions = positions.filter(p => p.isNearLiquidation());
+      const nearLiquidationPositions = positions.filter(p =>
+        p.isNearLiquidation()
+      );
             if (nearLiquidationPositions.length > 0) {
-                recommendations.push(`${nearLiquidationPositions.length} positions near liquidation price`);
+        recommendations.push(
+          `${nearLiquidationPositions.length} positions near liquidation price`
+        );
             }
 
-            this.deps.logger.info('Risk assessment completed', {
+      this.deps.logger.info("Risk assessment completed", {
                 userId,
                 riskLevel,
                 utilizationPercentage: `${utilizationPercentage.toFixed(2)}%`,
-                recommendationsCount: recommendations.length
+        recommendationsCount: recommendations.length,
             });
 
             return {
@@ -370,13 +396,12 @@ export class PositionService {
                 maxRecommendedExposure,
                 utilizationPercentage,
                 riskLevel,
-                recommendations
+        recommendations,
             };
-
         } catch (error) {
-            this.deps.logger.error('Risk assessment failed', {
+      this.deps.logger.error("Risk assessment failed", {
                 userId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
@@ -390,9 +415,11 @@ export class PositionService {
      * - Ensure data consistency across systems
      * - Handle sync failures gracefully
      */
-    async syncPositions(userId: string): Promise<{ success: boolean; message: string }> {
+  async syncPositions(
+    userId: string
+  ): Promise<{ success: boolean; message: string }> {
         try {
-            this.deps.logger.info('Starting position synchronization', { userId });
+      this.deps.logger.info("Starting position synchronization", { userId });
 
             // This would orchestrate the sync process through injected dependencies
             // The actual sync logic would be handled by infrastructure adapters
@@ -400,22 +427,21 @@ export class PositionService {
             // Invalidate caches to ensure fresh data after sync
             await this.invalidatePositionCache(userId);
 
-            this.deps.logger.info('Position synchronization completed', { userId });
+      this.deps.logger.info("Position synchronization completed", { userId });
 
             return {
                 success: true,
-                message: 'Positions synchronized successfully'
+        message: "Positions synchronized successfully",
             };
-
         } catch (error) {
-            this.deps.logger.error('Position synchronization failed', {
+      this.deps.logger.error("Position synchronization failed", {
                 userId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
 
             return {
                 success: false,
-                message: `Synchronization failed: ${error instanceof Error ? error.message : String(error)}`
+        message: `Synchronization failed: ${error instanceof Error ? error.message : String(error)}`,
             };
         }
     }
@@ -433,11 +459,11 @@ export class PositionService {
         const result = await this.deps.cache.delete(cacheKey);
 
         if (result.success) {
-            this.deps.logger.debug('Position cache invalidated', { userId });
+      this.deps.logger.debug("Position cache invalidated", { userId });
         } else {
-            this.deps.logger.warn('Failed to invalidate position cache', {
+      this.deps.logger.warn("Failed to invalidate position cache", {
                 userId,
-                error: result.error
+        error: result.error,
             });
         }
     }
@@ -491,28 +517,28 @@ export class PositionService {
                 totalUnrealizedPnL,
                 profitablePositions,
                 losingPositions,
-                largestPosition
+        largestPosition,
             };
-
         } catch (error) {
-            this.deps.logger.error('Failed to calculate portfolio metrics', {
+      this.deps.logger.error("Failed to calculate portfolio metrics", {
                 userId,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
     }
 
-
     /**
      * Validate and convert position data to domain object
      */
-    private validateAndConvertPosition(positionData: PositionRepositoryData): Position | null {
+  private validateAndConvertPosition(
+    positionData: PositionRepositoryData
+  ): Position | null {
         try {
             // Convert repository data to domain Position object
             const position = new Position(
                 positionData.symbol,
-                positionData.side || 'LONG',
+        positionData.side || "LONG",
                 positionData.quantity || positionData.positionQty || 0,
                 positionData.entryPrice || positionData.averageOpenPrice || 0,
                 positionData.markPrice || 0,
@@ -523,9 +549,9 @@ export class PositionService {
 
             return position;
         } catch (error) {
-            this.deps.logger.warn('Invalid position data, skipping', {
+      this.deps.logger.warn("Invalid position data, skipping", {
                 symbol: positionData.symbol,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return null;
         }
@@ -540,7 +566,9 @@ export class PositionService {
 }
 
 // Export factory function for creating service instances
-export function createPositionService(deps: PositionServiceDependencies): PositionService {
+export function createPositionService(
+  deps: PositionServiceDependencies
+): PositionService {
     return new PositionService(deps);
 }
 
@@ -549,7 +577,7 @@ export function createPositionService(deps: PositionServiceDependencies): Positi
     */
 interface PositionRepositoryData {
     symbol: string;
-    side?: 'LONG' | 'SHORT';
+  side?: "LONG" | "SHORT";
     quantity?: number;
     positionQty?: number;
     entryPrice?: number;

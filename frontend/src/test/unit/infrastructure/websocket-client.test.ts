@@ -49,7 +49,10 @@ vi.mock("../../../infrastructure/config", () => ({
 }));
 
 import { io } from "socket.io-client";
-import { WebSocketClient, WebSocketStatus } from "../../../infrastructure/websocket/client";
+import {
+  WebSocketClient,
+  WebSocketStatus,
+} from "../../../infrastructure/websocket/client";
 
 function lastSocket(): any {
     return socketInstances[socketInstances.length - 1];

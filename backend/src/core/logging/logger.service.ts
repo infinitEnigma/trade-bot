@@ -73,7 +73,7 @@ if (process.env.NODE_ENV !== "production") {
 const logsDir = path.join(process.cwd(), "logs");
 
 // Filter to exclude HTTP logs from app.log
-const excludeHttpLogs = winston.format((info) => {
+const excludeHttpLogs = winston.format(info => {
   if (info.level === "http") {
     return false; // Skip HTTP logs for this transport
   }
@@ -97,7 +97,7 @@ logger.add(
 );
 
 // Filter to exclude HTTP logs from error.log
-const excludeHttpErrors = winston.format((info) => {
+const excludeHttpErrors = winston.format(info => {
   if (info.level === "http") {
     return false; // Skip HTTP logs for this transport
   }
@@ -121,7 +121,7 @@ logger.add(
 );
 
 // Filter to include only HTTP logs
-const includeOnlyHttpLogs = winston.format((info) => {
+const includeOnlyHttpLogs = winston.format(info => {
   if (info.level === "http") {
     return info; // Only include HTTP logs for this transport
   }

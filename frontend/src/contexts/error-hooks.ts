@@ -2,7 +2,10 @@
 
 import { useContext, useCallback } from "react";
 import { ErrorContext } from "./error-context";
-import type { ErrorType, ErrorAction } from "../shared/components/ui/error-types";
+import type {
+  ErrorType,
+  ErrorAction,
+} from "../shared/components/ui/error-types";
 
 /**
  * Hook to use error context
@@ -22,18 +25,20 @@ export const useErrorContext = (): {
         className?: string;
         size?: "sm" | "md" | "lg" | "xl";
         icon?: React.ReactNode;
-        status?: 'idle' | 'pending' | 'success' | 'failed';
+    status?: "idle" | "pending" | "success" | "failed";
         retryCount?: number;
         lastRetryAt?: Date;
         maxRetries?: number;
         retryCooldownMs?: number;
-        circuitBreakerState?: 'closed' | 'open' | 'half-open';
+    circuitBreakerState?: "closed" | "open" | "half-open";
         consecutiveFailures?: number;
         lastFailureAt?: Date;
         backoffMultiplier?: number;
         nextRetryAt?: Date;
     }[];
-    addError: (error: Omit<{
+  addError: (
+    error: Omit<
+      {
         id: string;
         timestamp: Date;
         type?: ErrorType;
@@ -46,20 +51,25 @@ export const useErrorContext = (): {
         className?: string;
         size?: "sm" | "md" | "lg" | "xl";
         icon?: React.ReactNode;
-        status?: 'idle' | 'pending' | 'success' | 'failed';
+        status?: "idle" | "pending" | "success" | "failed";
         retryCount?: number;
         lastRetryAt?: Date;
         maxRetries?: number;
         retryCooldownMs?: number;
-        circuitBreakerState?: 'closed' | 'open' | 'half-open';
+        circuitBreakerState?: "closed" | "open" | "half-open";
         consecutiveFailures?: number;
         lastFailureAt?: Date;
         backoffMultiplier?: number;
         nextRetryAt?: Date;
-    }, 'id' | 'timestamp'>) => string;
+      },
+      "id" | "timestamp"
+    >
+  ) => string;
     removeError: (id: string) => void;
     clearErrors: () => void;
-    updateError: (id: string, updates: Partial<{
+  updateError: (
+    id: string,
+    updates: Partial<{
         id: string;
         timestamp: Date;
         type?: ErrorType;
@@ -72,24 +82,25 @@ export const useErrorContext = (): {
         className?: string;
         size?: "sm" | "md" | "lg" | "xl";
         icon?: React.ReactNode;
-        status?: 'idle' | 'pending' | 'success' | 'failed';
+      status?: "idle" | "pending" | "success" | "failed";
         retryCount?: number;
         lastRetryAt?: Date;
         maxRetries?: number;
         retryCooldownMs?: number;
-        circuitBreakerState?: 'closed' | 'open' | 'half-open';
+      circuitBreakerState?: "closed" | "open" | "half-open";
         consecutiveFailures?: number;
         lastFailureAt?: Date;
         backoffMultiplier?: number;
         nextRetryAt?: Date;
-    }>) => void;
+    }>
+  ) => void;
     retryError: (id: string) => void;
     hasErrors: boolean;
     errorCount: number;
 } => {
     const context = useContext(ErrorContext);
     if (!context) {
-        throw new Error('useErrorContext must be used within an ErrorProvider');
+    throw new Error("useErrorContext must be used within an ErrorProvider");
     }
     return context;
 };
@@ -101,38 +112,59 @@ export const useErrorContext = (): {
 export const useErrorHandler = () => {
     const { addError, removeError } = useErrorContext();
 
-    const handleError = useCallback((
+  const handleError = useCallback(
+    (
         type: ErrorType,
         title?: string,
         message?: string,
         actions?: ErrorAction[]
     ) => {
         return addError({ type, title, message, actions });
-    }, [addError]);
+    },
+    [addError]
+  );
 
-    const handleNetworkError = useCallback((message?: string) => {
-        return handleError('network', undefined, message);
-    }, [handleError]);
+  const handleNetworkError = useCallback(
+    (message?: string) => {
+      return handleError("network", undefined, message);
+    },
+    [handleError]
+  );
 
-    const handleAuthError = useCallback((message?: string) => {
-        return handleError('auth', undefined, message);
-    }, [handleError]);
+  const handleAuthError = useCallback(
+    (message?: string) => {
+      return handleError("auth", undefined, message);
+    },
+    [handleError]
+  );
 
-    const handleValidationError = useCallback((message?: string) => {
-        return handleError('validation', undefined, message);
-    }, [handleError]);
+  const handleValidationError = useCallback(
+    (message?: string) => {
+      return handleError("validation", undefined, message);
+    },
+    [handleError]
+  );
 
-    const handleServerError = useCallback((message?: string) => {
-        return handleError('server', undefined, message);
-    }, [handleError]);
+  const handleServerError = useCallback(
+    (message?: string) => {
+      return handleError("server", undefined, message);
+    },
+    [handleError]
+  );
 
-    const handleTimeoutError = useCallback((message?: string) => {
-        return handleError('timeout', undefined, message);
-    }, [handleError]);
+  const handleTimeoutError = useCallback(
+    (message?: string) => {
+      return handleError("timeout", undefined, message);
+    },
+    [handleError]
+  );
 
-    const handlePermissionError = useCallback((message?: string) => {
-        return handleError('permission', undefined, message);
-    }, [handleError]);
+  const handlePermissionError = useCallback(
+    (message?: string) => {
+      return handleError("permission", undefined, message);
+    },
+    [handleError]
+  );
 
     return {
         handleError,

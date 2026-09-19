@@ -28,7 +28,9 @@ async function initializeSchemaValidation() {
 
     // Wait for schema to be loaded
     if (!schemaValidationMiddleware.isInitialized()) {
-      logger.info("Schema validation middleware not yet initialized, waiting...");
+      logger.info(
+        "Schema validation middleware not yet initialized, waiting..."
+      );
       // The middleware initializes itself asynchronously, so we just log the status
     }
 
@@ -39,9 +41,11 @@ async function initializeSchemaValidation() {
       totalTables: stats.totalTables,
       relationships: stats.relationships,
     });
-
   } catch (error) {
-    logger.error("Schema validation middleware initialization failed", error as Error);
+    logger.error(
+      "Schema validation middleware initialization failed",
+      error as Error
+    );
     throw error;
   } finally {
     await pool.end();

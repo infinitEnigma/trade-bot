@@ -25,8 +25,12 @@ import { redisLogger as logger } from "../../core/logging/context-aware-logger.s
 import { botLifecycleService } from "./bot-lifecycle.service";
 
 /** How long an engine may go without a heartbeat before it is OFFLINE. */
-export const ENGINE_HEARTBEAT_TIMEOUT_MS = Number(process.env.ENGINE_HEARTBEAT_TIMEOUT_MS ?? 30_000);
-const SWEEP_INTERVAL_MS = Number(process.env.ENGINE_SWEEP_INTERVAL_MS ?? 10_000);
+export const ENGINE_HEARTBEAT_TIMEOUT_MS = Number(
+  process.env.ENGINE_HEARTBEAT_TIMEOUT_MS ?? 30_000
+);
+const SWEEP_INTERVAL_MS = Number(
+  process.env.ENGINE_SWEEP_INTERVAL_MS ?? 10_000
+);
 
 interface EngineRow {
     engine_id: string;
@@ -136,7 +140,10 @@ export class EngineRegistryService {
             // The engine is healthy and tells us which bots it actually runs -
             // use that inventory to detect drift against persisted state.
             try {
-                await botLifecycleService.reconcileHeartbeatInventory(payload.engineId, payload.activeBotIds);
+        await botLifecycleService.reconcileHeartbeatInventory(
+          payload.engineId,
+          payload.activeBotIds
+        );
             } catch (error) {
                 logger.error("Heartbeat inventory reconciliation failed", undefined, {
                     engineId: payload.engineId,
@@ -160,14 +167,20 @@ export class EngineRegistryService {
      * DB errors THROW so the calling event handler propagates and the stream
      * message stays unacked for redelivery (transient failure ≠ authority).
      */
-    async isEngineAuthoritative(engineId: string, epoch?: number): Promise<boolean> {
+  async isEngineAuthoritative(
+    engineId: string,
+    epoch?: number
+  ): Promise<boolean> {
         const result = await query<EngineRow>(
             `SELECT engine_id, epoch, status, version, last_seen_at FROM engine_registry WHERE engine_id = $1`,
             [engineId]
         );
         const row = result.rows[0];
         if (!row) {
-            logger.warn("Engine authority check failed: unregistered engine", { engineId, epoch });
+      logger.warn("Engine authority check failed: unregistered engine", {
+        engineId,
+        epoch,
+      });
             return false;
         }
         // Exact authority: a runtime event must carry the epoch this engine is

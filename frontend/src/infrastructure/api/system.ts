@@ -11,7 +11,9 @@ export const systemApi = {
      * Get system health status
      */
     async getSystemHealth(): Promise<SystemHealthResponse> {
-        const response = await httpClient.getClient().get("/api/system/health/detailed");
+    const response = await httpClient
+      .getClient()
+      .get("/api/system/health/detailed");
         return response.data;
     },
 
@@ -27,7 +29,9 @@ export const systemApi = {
      * Get service status and migration progress
      */
     async getServiceStatus(): Promise<any> {
-        const response = await httpClient.getClient().get("/api/system/health/services");
+    const response = await httpClient
+      .getClient()
+      .get("/api/system/health/services");
         return response.data;
     },
 
@@ -35,7 +39,9 @@ export const systemApi = {
      * Get database metrics
      */
     async getDatabaseMetrics(): Promise<any> {
-        const response = await httpClient.getClient().get("/api/system/metrics/database");
+    const response = await httpClient
+      .getClient()
+      .get("/api/system/metrics/database");
         return response.data;
     },
 
@@ -51,7 +57,9 @@ export const systemApi = {
      * Get security and encryption status
      */
     async getSecurityStatus(): Promise<any> {
-        const response = await httpClient.getClient().get("/api/system/health/encryption");
+    const response = await httpClient
+      .getClient()
+      .get("/api/system/health/encryption");
         return response.data;
     },
 
@@ -59,7 +67,9 @@ export const systemApi = {
      * Get external API health status
      */
     async getExternalApiHealth(): Promise<any> {
-        const response = await httpClient.getClient().get("/api/system/health/external");
+    const response = await httpClient
+      .getClient()
+      .get("/api/system/health/external");
         return response.data;
-    }
+  },
 };

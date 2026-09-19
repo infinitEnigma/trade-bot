@@ -2,7 +2,12 @@
 
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { useAuth, useKodiakStatus, useConnectKodiak, useDisconnectKodiak } from "../../auth/hooks";
+import {
+  useAuth,
+  useKodiakStatus,
+  useConnectKodiak,
+  useDisconnectKodiak,
+} from "../../auth/hooks";
 import { kodiakApi } from "../../../infrastructure/api/kodiak";
 import {
   Key,
@@ -17,7 +22,11 @@ import {
 import { Card } from "../../../shared/components/ui";
 import { SectionHeader } from "../../../shared/components/ui";
 import { MetricIcon } from "../../../shared/components/ui";
-import { Container, ElectricalNetworkBackground, Grid } from "../../../shared/components/layout";
+import {
+  Container,
+  ElectricalNetworkBackground,
+  Grid,
+} from "../../../shared/components/layout";
 import { SmartToast } from "../../../shared/utils/toast";
 import { KodiakConnectResponse } from "../../../infrastructure/api/kodiak";
 
@@ -53,7 +62,8 @@ const Settings: React.FC = () => {
   const disconnectMutation = useDisconnectKodiak();
 
   // Follow existing pattern: only fetch for users who have Kodiak access
-  const hasKodiakAccess = user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
+  const hasKodiakAccess =
+    user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
 
   // For BASIC users, we know the status is disconnected without making API calls
   //const effectiveKodiakStatus = hasKodiakAccess ? kodiakStatus : { connected: false };
@@ -61,7 +71,8 @@ const Settings: React.FC = () => {
 
   // Connection status logic (following existing pattern)
   // For REGISTERED/VERIFIED users, assume Kodiak is connected even if API fails
-  const isConnected = hasKodiakAccess && (kodiakStatus?.data?.connected ?? true);
+  const isConnected =
+    hasKodiakAccess && (kodiakStatus?.data?.connected ?? true);
   const kodiakData = kodiakStatus?.data;
 
   // Real-time form validation
@@ -130,24 +141,34 @@ const Settings: React.FC = () => {
         dismissLoading();
         if (!response.success) {
           // Backend reported a handled failure via HTTP 200.
-          SmartToast.error(response.error || response.message || "Kodiak credential verification failed. Please check your credentials.");
+          SmartToast.error(
+            response.error ||
+              response.message ||
+              "Kodiak credential verification failed. Please check your credentials."
+          );
           return;
         }
         // Clear form on success
         setFormData({ accountId: "", apiKey: "", secretKey: "" });
-        SmartToast.success(response.message || "Kodiak account connected successfully! Your user level has been upgraded to VERIFIED.");
+        SmartToast.success(
+          response.message ||
+            "Kodiak account connected successfully! Your user level has been upgraded to VERIFIED."
+        );
 
         // Show additional info about verification
         if (response.data?.verified) {
           setTimeout(() => {
-            SmartToast.info("Your credentials have been verified and your user level upgraded.");
+            SmartToast.info(
+              "Your credentials have been verified and your user level upgraded."
+            );
           }, 2000);
         }
       },
       onError: (error: Error) => {
         dismissLoading();
         const axiosError = error as ApiError;
-        const errorMessage = axiosError?.response?.data?.error ||
+        const errorMessage =
+          axiosError?.response?.data?.error ||
                            axiosError?.response?.data?.message ||
                            "Failed to connect Kodiak credentials. Please check your credentials and try again.";
         SmartToast.error(errorMessage);
@@ -156,14 +177,21 @@ const Settings: React.FC = () => {
   };
 
   const handleDisconnect = () => {
-    if (confirm("Are you sure you want to disconnect your Kodiak credentials? This will downgrade your user level.")) {
+    if (
+      confirm(
+        "Are you sure you want to disconnect your Kodiak credentials? This will downgrade your user level."
+      )
+    ) {
       disconnectMutation.mutate(undefined, {
         onSuccess: () => {
           SmartToast.success("Kodiak account disconnected successfully.");
         },
         onError: (error: Error) => {
           const axiosError = error as ApiError;
-          SmartToast.error(axiosError?.response?.data?.error || "Failed to disconnect Kodiak account");
+          SmartToast.error(
+            axiosError?.response?.data?.error ||
+              "Failed to disconnect Kodiak account"
+          );
         },
       });
     }
@@ -172,11 +200,11 @@ const Settings: React.FC = () => {
   return (    
     <Container
         size={{
-          default: 'lg',
-          xl: 'xl',
-          '2xl': '2xl',
-          '3xl': '3xl',
-          '4xl': '4xl'
+        default: "lg",
+        xl: "xl",
+        "2xl": "2xl",
+        "3xl": "3xl",
+        "4xl": "4xl",
         }}
         className="py-2 space-y-4"
       >
@@ -206,7 +234,9 @@ const Settings: React.FC = () => {
             <div className="flex items-center gap-3 p-4 rounded-lg bg-surface border border-white/5">
               <div
                 className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                  hasKodiakAccess && isConnected ? "bg-success/10" : "bg-warning/10"
+                hasKodiakAccess && isConnected
+                  ? "bg-success/10"
+                  : "bg-warning/10"
                 }`}
               >
                 {effectiveStatusLoading ? (
@@ -253,7 +283,8 @@ const Settings: React.FC = () => {
                     </p>
                     {kodiakData?.connectedAt && (
                       <p className="text-sm text-textMuted">
-                        Connected: {new Date(kodiakData.connectedAt).toLocaleDateString()}
+                    Connected:{" "}
+                    {new Date(kodiakData.connectedAt).toLocaleDateString()}
                       </p>
                     )}
                     {kodiakData?.verified && (
@@ -262,7 +293,8 @@ const Settings: React.FC = () => {
                       </p>
                     )}
                     <p className="text-sm text-textMuted mt-1">
-                      Disconnecting Kodiak drops VERIFIED users back to REGISTERED (wallet link stays).
+                  Disconnecting Kodiak drops VERIFIED users back to REGISTERED
+                  (wallet link stays).
                     </p>
                   </div>
                   <button
@@ -292,10 +324,15 @@ const Settings: React.FC = () => {
                 <div className="flex items-center gap-3 p-4 rounded-lg bg-info/10 border border-info/20">
                   <AlertCircle className="w-4 h-4 text-info" />
                   <div className="text-sm">
-                    <p className="text-info font-medium">Connect your wallet first</p>
+                <p className="text-info font-medium">
+                  Connect your wallet first
+                </p>
                     <p className="text-textMuted mt-1">
                       Kodiak credentials unlock at REGISTERED level. Head to the{" "}
-                      <Link to="/dashboard" className="text-primary hover:underline">
+                  <Link
+                    to="/dashboard"
+                    className="text-primary hover:underline"
+                  >
                         Dashboard
                       </Link>{" "}
                       and connect + sign with your wallet to upgrade.
@@ -322,13 +359,17 @@ const Settings: React.FC = () => {
                       <input
                         type="text"
                         value={formData.accountId}
-                        onChange={e => handleInputChange("accountId", e.target.value)}
+                    onChange={e =>
+                      handleInputChange("accountId", e.target.value)
+                    }
                         className={`input w-full ${formErrors.accountId ? "border-danger" : ""}`}
                         placeholder="Your Kodiak Account ID"
                         required
                       />
                       {formErrors.accountId && (
-                        <p className="text-danger text-xs mt-1">{formErrors.accountId}</p>
+                    <p className="text-danger text-xs mt-1">
+                      {formErrors.accountId}
+                    </p>
                       )}
                     </div>
 
@@ -340,13 +381,17 @@ const Settings: React.FC = () => {
                         <input
                           type={showSecrets ? "text" : "password"}
                           value={formData.apiKey}
-                          onChange={e => handleInputChange("apiKey", e.target.value)}
+                      onChange={e =>
+                        handleInputChange("apiKey", e.target.value)
+                      }
                           className={`input w-full pr-10 ${formErrors.apiKey ? "border-danger" : ""}`}
                           placeholder="Your Kodiak API Key"
                           required
                         />
                         {formErrors.apiKey && (
-                          <p className="text-danger text-xs mt-1">{formErrors.apiKey}</p>
+                      <p className="text-danger text-xs mt-1">
+                        {formErrors.apiKey}
+                      </p>
                         )}
                         <button
                           type="button"
@@ -370,13 +415,17 @@ const Settings: React.FC = () => {
                         <input
                           type={showSecrets ? "text" : "password"}
                           value={formData.secretKey}
-                          onChange={e => handleInputChange("secretKey", e.target.value)}
+                      onChange={e =>
+                        handleInputChange("secretKey", e.target.value)
+                      }
                           className={`input w-full pr-10 ${formErrors.secretKey ? "border-danger" : ""}`}
                           placeholder="Your Kodiak Secret Key"
                           required
                         />
                         {formErrors.secretKey && (
-                          <p className="text-danger text-xs mt-1">{formErrors.secretKey}</p>
+                      <p className="text-danger text-xs mt-1">
+                        {formErrors.secretKey}
+                      </p>
                         )}
                         <button
                           type="button"
@@ -398,8 +447,9 @@ const Settings: React.FC = () => {
                     <div className="text-sm">
                       <p className="text-info font-medium">Security Notice</p>
                       <p className="text-textMuted mt-1">
-                        Your API credentials are encrypted using AES-256 encryption before storage.
-                        Credentials are only decrypted in memory when needed for API calls.
+                    Your API credentials are encrypted using AES-256 encryption
+                    before storage. Credentials are only decrypted in memory
+                    when needed for API calls.
                       </p>
                     </div>
                   </div>
@@ -408,7 +458,8 @@ const Settings: React.FC = () => {
                     <div className="flex items-center gap-2 p-4 rounded-lg bg-danger/10 border border-danger/20">
                       <XCircle className="w-4 h-4 text-danger" />
                       <p className="text-danger text-sm">
-                        Failed to connect Kodiak credentials. Please check your credentials and try again.
+                    Failed to connect Kodiak credentials. Please check your
+                    credentials and try again.
                       </p>
                     </div>
                   )}
@@ -445,16 +496,13 @@ const Settings: React.FC = () => {
             />
             <div className="space-y-3 text-sm text-textMuted">
               <p>
-                • Your Kodiak API credentials are encrypted using AES-256
-                encryption before storage
+            • Your Kodiak API credentials are encrypted using AES-256 encryption
+            before storage
               </p>
               <p>
-                • Credentials are only decrypted in memory when needed for API
-                calls
+            • Credentials are only decrypted in memory when needed for API calls
               </p>
-              <p>
-                • All credential operations are logged for security auditing
-              </p>
+          <p>• All credential operations are logged for security auditing</p>
               <p>• You can disconnect your credentials at any time</p>
             </div>
           </Card>

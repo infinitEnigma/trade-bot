@@ -24,11 +24,16 @@ export class PasswordServiceAdapter implements IPasswordService {
     /**
      * Hash a password using bcrypt
      */
-    async hash(password: string, rounds: number = this.DEFAULT_ROUNDS): Promise<string> {
+  async hash(
+    password: string,
+    rounds: number = this.DEFAULT_ROUNDS
+  ): Promise<string> {
         try {
             return await bcrypt.hash(password, rounds);
         } catch (error) {
-            throw new Error(`Failed to hash password: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to hash password: ${error instanceof Error ? error.message : String(error)}`
+      );
         }
     }
 
@@ -39,7 +44,9 @@ export class PasswordServiceAdapter implements IPasswordService {
         try {
             return await bcrypt.compare(password, hash);
         } catch (error) {
-            throw new Error(`Failed to verify password: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to verify password: ${error instanceof Error ? error.message : String(error)}`
+      );
         }
     }
 }

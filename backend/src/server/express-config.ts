@@ -56,19 +56,25 @@ export class ExpressConfig {
         trustProxy: true,
     };
 
-    private static expressLogger = new ContextAwareLogger('express-config');
+  private static expressLogger = new ContextAwareLogger("express-config");
 
     /**
      * Configure Express application with all middleware and settings
      */
-    static async configure(app: Express, options: ExpressConfigOptions = {}): Promise<void> {
+  static async configure(
+    app: Express,
+    options: ExpressConfigOptions = {}
+  ): Promise<void> {
         const config = { ...this.DEFAULT_OPTIONS, ...options };
 
-        const configTimer = this.expressLogger.startOperation('express-configuration', {
+    const configTimer = this.expressLogger.startOperation(
+      "express-configuration",
+      {
             corsEnabled: config.enableCors,
             securityEnabled: config.enableSecurity,
             trustProxy: config.trustProxy,
-        });
+      }
+    );
 
         try {
             this.configureTrustProxy(app, config);
@@ -85,11 +91,15 @@ export class ExpressConfig {
             });
         } catch (error) {
             configTimer.failure(error as Error);
-            this.expressLogger.error("Failed to configure Express application", error as Error, {
+      this.expressLogger.error(
+        "Failed to configure Express application",
+        error as Error,
+        {
                 corsEnabled: config.enableCors,
                 securityEnabled: config.enableSecurity,
                 trustProxy: config.trustProxy,
-            });
+        }
+      );
             throw error;
         }
     }
@@ -97,23 +107,34 @@ export class ExpressConfig {
     /**
      * Configure proxy trust settings
      */
-    private static configureTrustProxy(app: Express, config: ExpressConfigOptions): void {
+  private static configureTrustProxy(
+    app: Express,
+    config: ExpressConfigOptions
+  ): void {
         if (config.trustProxy) {
             // Trust proxy headers from nginx (required for rate limiting with X-Forwarded-For)
             app.set("trust proxy", 1);
-            this.expressLogger.debug("Proxy trust enabled for load balancer headers", {
-                component: 'proxy-configuration'
-            });
+      this.expressLogger.debug(
+        "Proxy trust enabled for load balancer headers",
+        {
+          component: "proxy-configuration",
+        }
+      );
         }
     }
 
     /**
      * Configure CORS settings
      */
-    private static configureCors(app: Express, config: ExpressConfigOptions): void {
+  private static configureCors(
+    app: Express,
+    config: ExpressConfigOptions
+  ): void {
         if (!config.enableCors) return;
 
-        const allowedOrigins = config.corsOptions?.allowedOrigins || [
+    const allowedOrigins =
+      config.corsOptions?.allowedOrigins ||
+      [
             process.env.FRONTEND_URL,
             process.env.CORS_ORIGIN,
             "http://localhost:3000",
@@ -155,7 +176,7 @@ export class ExpressConfig {
                     this.expressLogger.warn("CORS policy violation", {
                         origin,
                         allowedOrigins,
-                        component: 'cors-configuration'
+            component: "cors-configuration",
                     });
                     return callback(new Error("CORS policy violation"));
                 },
@@ -166,14 +187,17 @@ export class ExpressConfig {
         this.expressLogger.debug("CORS configured", {
             allowedOrigins: allowedOrigins.length,
             credentials: config.corsOptions?.credentials,
-            component: 'cors-configuration'
+      component: "cors-configuration",
         });
     }
 
     /**
      * Configure security middleware
      */
-    private static configureSecurity(app: Express, config: ExpressConfigOptions): void {
+  private static configureSecurity(
+    app: Express,
+    config: ExpressConfigOptions
+  ): void {
         if (!config.enableSecurity) return;
 
         // Apply security middleware
@@ -192,7 +216,7 @@ export class ExpressConfig {
         );
 
         this.expressLogger.debug("Security middleware (Helmet) configured", {
-            component: 'security-configuration'
+      component: "security-configuration",
         });
     }
 
@@ -210,7 +234,7 @@ export class ExpressConfig {
         // Rate limiting is handled per-endpoint with user-based limits
 
         this.expressLogger.debug("Request parsing middleware configured", {
-            component: 'parsing-configuration'
+      component: "parsing-configuration",
         });
     }
 
@@ -219,15 +243,17 @@ export class ExpressConfig {
      */
     private static async configureLogging(app: Express): Promise<void> {
         // Request context middleware (must be first)
-        const { contextMiddleware } = await import("../interfaces/middleware/context.middleware");
+    const { contextMiddleware } =
+      await import("../interfaces/middleware/context.middleware");
         app.use(contextMiddleware);
 
         // HTTP request logging middleware
-        const { httpLogger } = await import("../interfaces/middleware/logger.middleware");
+    const { httpLogger } =
+      await import("../interfaces/middleware/logger.middleware");
         app.use(httpLogger);
 
         this.expressLogger.debug("Logging and monitoring middleware configured", {
-            component: 'logging-configuration'
+      component: "logging-configuration",
         });
     }
 
@@ -239,10 +265,14 @@ export class ExpressConfig {
 
         // Configure the app asynchronously but return the app synchronously
         // This is a common pattern for Express apps - configure async but return sync
-        this.configure(app, options).catch((error) => {
-            this.expressLogger.error("Failed to configure Express application", error as Error, {
-                component: 'app-creation'
-            });
+    this.configure(app, options).catch(error => {
+      this.expressLogger.error(
+        "Failed to configure Express application",
+        error as Error,
+        {
+          component: "app-creation",
+        }
+      );
             throw error; // Re-throw to fail fast in development
         });
 

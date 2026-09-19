@@ -1,5 +1,5 @@
-import React from 'react';
-import { cn } from '../../utils';
+import React from "react";
+import { cn } from "../../utils";
 
 interface PageLayoutProps {
   children: React.ReactNode;
@@ -18,34 +18,22 @@ export const PageLayout: React.FC<PageLayoutProps> = ({
   className,
   header,
   footer,
-  minHeight = 'min-h-screen'
+  minHeight = "min-h-screen",
 }) => {
   return (
-    <div className={cn(
-      'bg-background',
-      minHeight,
-      className
-    )}>
-      {header && (
-        <header className="sticky top-0 z-50">
-          {header}
-        </header>
-      )}
+    <div className={cn("bg-background", minHeight, className)}>
+      {header && <header className="sticky top-0 z-50">{header}</header>}
 
-      <main className={cn(
+      <main
+        className={cn(
         "flex-1 min-h-0",
         header && "pt-20" // Add top padding when header is present to account for sticky header
-      )}>
-        <div className="w-full h-full">
-          {children}
-        </div>
+        )}
+      >
+        <div className="w-full h-full">{children}</div>
       </main>
 
-      {footer && (
-        <footer className="mt-auto">
-          {footer}
-        </footer>
-      )}
+      {footer && <footer className="mt-auto">{footer}</footer>}
     </div>
   );
 };

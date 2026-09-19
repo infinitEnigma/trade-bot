@@ -158,7 +158,9 @@ function startCleanupInterval(): void {
       let cleaned = 0;
 
       // Iterate through cache and remove expired entries
-      for (const [userId, cached] of (credentialCacheService as any).cache.entries()) {
+      for (const [userId, cached] of (
+        credentialCacheService as any
+      ).cache.entries()) {
         if (now - cached.cachedAt > cached.ttl) {
           (credentialCacheService as any).cache.delete(userId);
           cleaned++;
@@ -184,7 +186,7 @@ export const credentialCacheService = new CredentialCacheService();
 
 // Start cleanup interval by default (for production)
 // Only start in production environment, not in test environment
-if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
+if (process.env.NODE_ENV !== "test" && !process.env.JEST_WORKER_ID) {
   startCleanupInterval();
 }
 

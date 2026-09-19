@@ -45,13 +45,18 @@ export class WebSocketClient {
     /** Single-flight guard: at most one connection attempt in progress. */
     private connectPromise: Promise<Socket> | null = null;
     /** Deferred settle hooks for the in-flight connect() promise. */
-    private pendingConnect: { resolve: (socket: Socket) => void; reject: (err: Error) => void } | null = null;
+  private pendingConnect: {
+    resolve: (socket: Socket) => void;
+    reject: (err: Error) => void;
+  } | null = null;
     private connectionListeners: Array<(status: WebSocketStatus) => void> = [];
     private errorListeners: Array<(error: Error) => void> = [];
     private tickListeners: Array<(data: TickData) => void> = [];
     private klineListeners: Array<(data: KlineData) => void> = [];
     private markPriceListeners: Array<(data: MarkPriceData) => void> = [];
-    private botStateChangedListeners: Array<(data: BotStateChangedEventData) => void> = [];
+  private botStateChangedListeners: Array<
+    (data: BotStateChangedEventData) => void
+  > = [];
     private subscribedSymbols: Set<string> = new Set();
 
     private constructor() {
@@ -59,9 +64,15 @@ export class WebSocketClient {
         // visible again (single-flight connect() guards duplicate attempts).
         if (typeof window !== "undefined") {
             window.addEventListener("online", () => {
-                if (!this.socket?.connected && !this.reconnectTimer && !this.connectPromise) {
+        if (
+          !this.socket?.connected &&
+          !this.reconnectTimer &&
+          !this.connectPromise
+        ) {
                     console.log("📡 Network online - reconnecting");
-                    this.connect().catch(() => { /* handled by connection error listeners */ });
+          this.connect().catch(() => {
+            /* handled by connection error listeners */
+          });
                 }
             });
             document.addEventListener("visibilitychange", () => {
@@ -73,7 +84,9 @@ export class WebSocketClient {
                     this.status !== WebSocketStatus.DISCONNECTED
                 ) {
                     console.log("📡 Tab visible - reconnecting");
-                    this.connect().catch(() => { /* handled by connection error listeners */ });
+          this.connect().catch(() => {
+            /* handled by connection error listeners */
+          });
                 }
             });
         }
@@ -217,7 +230,10 @@ export class WebSocketClient {
                 console.log("📡 Connecting WebSocket before subscribing");
                 await this.connect();
             } catch (error) {
-                console.error("📡 Failed to connect WebSocket for subscription:", error);
+        console.error(
+          "📡 Failed to connect WebSocket for subscription:",
+          error
+        );
                 this.subscribedSymbols.add(symbol);
                 return;
             }
@@ -300,14 +316,18 @@ export class WebSocketClient {
      * Add bot state changed listener.
      * Called when the backend emits a `bot.stateChanged` event.
      */
-    public onBotStateChanged(listener: (data: BotStateChangedEventData) => void): void {
+  public onBotStateChanged(
+    listener: (data: BotStateChangedEventData) => void
+  ): void {
         this.botStateChangedListeners.push(listener);
     }
 
     /**
      * Remove bot state changed listener.
      */
-    public offBotStateChanged(listener: (data: BotStateChangedEventData) => void): void {
+  public offBotStateChanged(
+    listener: (data: BotStateChangedEventData) => void
+  ): void {
         const index = this.botStateChangedListeners.indexOf(listener);
         if (index !== -1) {
             this.botStateChangedListeners.splice(index, 1);
@@ -350,7 +370,7 @@ export class WebSocketClient {
             this.resubscribe();
         });
 
-        this.socket.on("disconnect", (reason) => {
+    this.socket.on("disconnect", reason => {
             console.log("📡 WebSocket disconnected", reason);
 
             if (this.status === WebSocketStatus.DISCONNECTED) {
@@ -367,20 +387,27 @@ export class WebSocketClient {
             }
         });
 
-        this.socket.on("connect_error", (error) => {
-            const wsError = error as Error & { data?: { code?: string; definitive?: boolean } };
+    this.socket.on("connect_error", error => {
+      const wsError = error as Error & {
+        data?: { code?: string; definitive?: boolean };
+      };
 
             // Definitive auth failure (dead/expired cookie, unknown user): retrying
             // the same handshake can never succeed. Stop the reconnect loop and ask
             // the app to re-authenticate (HTTP refresh or re-login) instead.
             if (wsError.data?.definitive) {
-                console.error("📡 WebSocket auth failure is definitive - stopping reconnection:", wsError.message);
+        console.error(
+          "📡 WebSocket auth failure is definitive - stopping reconnection:",
+          wsError.message
+        );
                 if (this.reconnectTimer) {
                     clearTimeout(this.reconnectTimer);
                     this.reconnectTimer = null;
                 }
                 this.status = WebSocketStatus.ERROR;
-                this.pendingConnect?.reject(error instanceof Error ? error : new Error(String(error)));
+        this.pendingConnect?.reject(
+          error instanceof Error ? error : new Error(String(error))
+        );
                 this.pendingConnect = null;
                 this.connectPromise = null;
                 this.notifyStatusChange();
@@ -398,7 +425,9 @@ export class WebSocketClient {
             this.status = WebSocketStatus.ERROR;
             // Settle the single-flight promise; a retry is scheduled by
             // attemptReconnection() below (exactly once for this failure).
-            this.pendingConnect?.reject(error instanceof Error ? error : new Error(String(error)));
+      this.pendingConnect?.reject(
+        error instanceof Error ? error : new Error(String(error))
+      );
             this.pendingConnect = null;
             this.connectPromise = null;
             this.notifyStatusChange();
@@ -527,9 +556,13 @@ export class WebSocketClient {
             : this.slowReconnectDelay;
 
         if (fast) {
-            console.log(`📡 Attempting reconnection #${this.reconnectAttempts} in ${Math.round(delay / 1000)}s`);
+      console.log(
+        `📡 Attempting reconnection #${this.reconnectAttempts} in ${Math.round(delay / 1000)}s`
+      );
         } else {
-            console.log(`📡 Reconnection attempts exhausted - retrying every ${Math.round(delay / 1000)}s`);
+      console.log(
+        `📡 Reconnection attempts exhausted - retrying every ${Math.round(delay / 1000)}s`
+      );
         }
 
         this.reconnectTimer = setTimeout(() => {

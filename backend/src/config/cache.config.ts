@@ -167,7 +167,7 @@ export interface FullCacheConfig extends CacheTTLConfig {
  * Get appropriate cache TTL configuration based on environment
  */
 export function getCacheConfig(): CacheTTLConfig {
-    const isProduction = process.env.NODE_ENV === 'production';
+  const isProduction = process.env.NODE_ENV === "production";
     return isProduction ? CACHE_TTL : CACHE_TTL_DEV;
 }
 
@@ -189,34 +189,39 @@ export function getTTLForKey(key: string): number {
     const config = getCacheConfig();
 
     // Session and auth
-    if (key.startsWith('user:') && key.includes('session')) return config.SESSION;
-    if (key.startsWith('jwt:blacklist:')) return config.JWT_BLACKLIST;
+  if (key.startsWith("user:") && key.includes("session")) return config.SESSION;
+  if (key.startsWith("jwt:blacklist:")) return config.JWT_BLACKLIST;
 
     // Market data
-    if (key.startsWith('tick:')) return config.MARKET_TICK;
-    if (key.startsWith('markprice:')) return config.MARKET_MARK_PRICE;
+  if (key.startsWith("tick:")) return config.MARKET_TICK;
+  if (key.startsWith("markprice:")) return config.MARKET_MARK_PRICE;
     // Match longer intervals first to avoid overlapping matches
-    if (key.startsWith('kline:') && key.includes('1h')) return config.MARKET_KLINES_LONG;
-    if (key.startsWith('kline:') && key.includes('30m')) return config.MARKET_KLINES_MEDIUM;
-    if (key.startsWith('kline:') && key.includes('15m')) return config.MARKET_KLINES_MEDIUM;
-    if (key.startsWith('kline:') && key.includes('5m')) return config.MARKET_KLINES_SHORT;
-    if (key.startsWith('kline:') && key.includes('1m')) return config.MARKET_KLINES_SHORT;
-    if (key.startsWith('futures:')) return config.MARKET_FUTURES;
-    if (key.startsWith('tv:config')) return config.MARKET_TRADINGVIEW_CONFIG;
+  if (key.startsWith("kline:") && key.includes("1h"))
+    return config.MARKET_KLINES_LONG;
+  if (key.startsWith("kline:") && key.includes("30m"))
+    return config.MARKET_KLINES_MEDIUM;
+  if (key.startsWith("kline:") && key.includes("15m"))
+    return config.MARKET_KLINES_MEDIUM;
+  if (key.startsWith("kline:") && key.includes("5m"))
+    return config.MARKET_KLINES_SHORT;
+  if (key.startsWith("kline:") && key.includes("1m"))
+    return config.MARKET_KLINES_SHORT;
+  if (key.startsWith("futures:")) return config.MARKET_FUTURES;
+  if (key.startsWith("tv:config")) return config.MARKET_TRADINGVIEW_CONFIG;
 
     // Rate limiting
-    if (key.startsWith('ratelimit:auth:')) return config.RATE_LIMIT_AUTH;
-    if (key.startsWith('ratelimit:market:')) return config.RATE_LIMIT_MARKET;
-    if (key.startsWith('ratelimit:trading:')) return config.RATE_LIMIT_TRADING;
-    if (key.startsWith('ratelimit:')) return config.RATE_LIMIT_GENERAL;
+  if (key.startsWith("ratelimit:auth:")) return config.RATE_LIMIT_AUTH;
+  if (key.startsWith("ratelimit:market:")) return config.RATE_LIMIT_MARKET;
+  if (key.startsWith("ratelimit:trading:")) return config.RATE_LIMIT_TRADING;
+  if (key.startsWith("ratelimit:")) return config.RATE_LIMIT_GENERAL;
 
     // Application data
-    if (key.startsWith('credential:')) return config.CREDENTIAL_CACHE;
-    if (key.startsWith('position:')) return config.POSITION_CACHE;
-    if (key.startsWith('balance:')) return config.BALANCE_CACHE;
+  if (key.startsWith("credential:")) return config.CREDENTIAL_CACHE;
+  if (key.startsWith("position:")) return config.POSITION_CACHE;
+  if (key.startsWith("balance:")) return config.BALANCE_CACHE;
 
     // Temporary data
-    if (key.startsWith('cache:')) return config.TEMP_DATA_DEFAULT;
+  if (key.startsWith("cache:")) return config.TEMP_DATA_DEFAULT;
 
     // Default fallback
     return config.TEMP_DATA_DEFAULT;
@@ -235,10 +240,11 @@ export const CACHE_KEYS = {
     markPrice: (symbol: string) => `markprice:${symbol}`,
     kline: (symbol: string, interval: string) => `kline:${symbol}:${interval}`,
     futures: (symbol: string) => `futures:${symbol}`,
-    tradingViewConfig: () => 'tv:config',
+  tradingViewConfig: () => "tv:config",
 
     // Rate limiting
-    rateLimit: (endpoint: string, identifier: string) => `ratelimit:${endpoint}:${identifier}`,
+  rateLimit: (endpoint: string, identifier: string) =>
+    `ratelimit:${endpoint}:${identifier}`,
 
     // Application data
     credential: (userId: string) => `credential:${userId}`,
@@ -253,9 +259,9 @@ export const CACHE_KEYS = {
  * Cache invalidation event types
  */
 export const CACHE_EVENTS = {
-    INVALIDATED: 'cache:invalidated',
-    REFRESHED: 'cache:refreshed',
-    CLEARED: 'cache:cleared',
+  INVALIDATED: "cache:invalidated",
+  REFRESHED: "cache:refreshed",
+  CLEARED: "cache:cleared",
 } as const;
 
 /**
@@ -290,4 +296,5 @@ export interface CacheClearEvent {
     userId?: string;
 }
 
-export type CacheEvent = CacheInvalidationEvent | CacheRefreshEvent | CacheClearEvent;
+export type CacheEvent =
+  CacheInvalidationEvent | CacheRefreshEvent | CacheClearEvent;

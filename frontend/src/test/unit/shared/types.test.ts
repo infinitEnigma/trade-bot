@@ -1,7 +1,14 @@
 /** @format */
 
 import { describe, it, expect } from "vitest";
-import { UserRole, UserLevel, Balance, StrategyType, Strategy, StrategyConfig } from "../../../shared/types";
+import {
+  UserRole,
+  UserLevel,
+  Balance,
+  StrategyType,
+  Strategy,
+  StrategyConfig,
+} from "../../../shared/types";
 
 describe("types.ts", () => {
     describe("Enums", () => {
@@ -89,12 +96,12 @@ describe("types.ts", () => {
 
         it("should throw error when locking more than available", () => {
             const balance = new Balance(100, 50, 50, "USD", new Date());
-            expect(() => balance.lock(51)).toThrow('Insufficient available balance');
+      expect(() => balance.lock(51)).toThrow("Insufficient available balance");
         });
 
         it("should throw error when unlocking more than locked", () => {
             const balance = new Balance(100, 50, 50, "USD", new Date());
-            expect(() => balance.unlock(51)).toThrow('Insufficient locked balance');
+      expect(() => balance.unlock(51)).toThrow("Insufficient locked balance");
         });
 
         it("should add and subtract amounts", () => {
@@ -111,7 +118,9 @@ describe("types.ts", () => {
 
         it("should throw error when subtracting more than available", () => {
             const balance = new Balance(100, 50, 50, "USD", new Date());
-            expect(() => balance.subtract(51)).toThrow('Insufficient available balance');
+      expect(() => balance.subtract(51)).toThrow(
+        "Insufficient available balance"
+      );
         });
 
         it("should check if can withdraw", () => {
@@ -130,11 +139,18 @@ describe("types.ts", () => {
             gridRange: 10,
             entryThreshold: 0.01,
             exitThreshold: 0.02,
-            stopLoss: 0.05
+      stopLoss: 0.05,
         };
 
         it("should create a Strategy instance", () => {
-            const strategy = new Strategy("1", "user1", "Test Strategy", StrategyType.GRID, "BTC/USD", baseConfig);
+      const strategy = new Strategy(
+        "1",
+        "user1",
+        "Test Strategy",
+        StrategyType.GRID,
+        "BTC/USD",
+        baseConfig
+      );
 
             expect(strategy.id).toBe("1");
             expect(strategy.userId).toBe("user1");
@@ -146,17 +162,52 @@ describe("types.ts", () => {
         });
 
         it("should check if strategy is valid", () => {
-            const validStrategy = new Strategy("1", "user1", "Test Strategy", StrategyType.GRID, "BTC/USD", baseConfig);
+      const validStrategy = new Strategy(
+        "1",
+        "user1",
+        "Test Strategy",
+        StrategyType.GRID,
+        "BTC/USD",
+        baseConfig
+      );
             expect(validStrategy.isValid()).toBe(true);
 
-            const invalidStrategy = new Strategy("", "user1", "Test Strategy", StrategyType.GRID, "BTC/USD", baseConfig);
+      const invalidStrategy = new Strategy(
+        "",
+        "user1",
+        "Test Strategy",
+        StrategyType.GRID,
+        "BTC/USD",
+        baseConfig
+      );
             expect(invalidStrategy.isValid()).toBe(false);
         });
 
         it("should determine risk level", () => {
-            const lowRisk = new Strategy("1", "user1", "Low Risk", StrategyType.GRID, "BTC/USD", { ...baseConfig, leverage: 2 });
-            const mediumRisk = new Strategy("1", "user1", "Medium Risk", StrategyType.GRID, "BTC/USD", { ...baseConfig, leverage: 4 });
-            const highRisk = new Strategy("1", "user1", "High Risk", StrategyType.GRID, "BTC/USD", { ...baseConfig, leverage: 6 });
+      const lowRisk = new Strategy(
+        "1",
+        "user1",
+        "Low Risk",
+        StrategyType.GRID,
+        "BTC/USD",
+        { ...baseConfig, leverage: 2 }
+      );
+      const mediumRisk = new Strategy(
+        "1",
+        "user1",
+        "Medium Risk",
+        StrategyType.GRID,
+        "BTC/USD",
+        { ...baseConfig, leverage: 4 }
+      );
+      const highRisk = new Strategy(
+        "1",
+        "user1",
+        "High Risk",
+        StrategyType.GRID,
+        "BTC/USD",
+        { ...baseConfig, leverage: 6 }
+      );
 
             expect(lowRisk.getRiskLevel()).toBe("LOW");
             expect(mediumRisk.getRiskLevel()).toBe("MEDIUM");
@@ -164,36 +215,91 @@ describe("types.ts", () => {
         });
 
         it("should check if strategy is tradable", () => {
-            const strategy = new Strategy("1", "user1", "Test Strategy", StrategyType.GRID, "BTC/USD", baseConfig);
+      const strategy = new Strategy(
+        "1",
+        "user1",
+        "Test Strategy",
+        StrategyType.GRID,
+        "BTC/USD",
+        baseConfig
+      );
 
             expect(strategy.isTradable(100)).toBe(true);
             expect(strategy.isTradable(0)).toBe(false);
         });
 
         it("should validate configuration based on strategy type", () => {
-            const gridStrategy = new Strategy("1", "user1", "Grid Strategy", StrategyType.GRID, "BTC/USD", baseConfig);
+      const gridStrategy = new Strategy(
+        "1",
+        "user1",
+        "Grid Strategy",
+        StrategyType.GRID,
+        "BTC/USD",
+        baseConfig
+      );
             expect(gridStrategy.isValid()).toBe(true);
 
-            const invalidGridStrategy = new Strategy("1", "user1", "Invalid Grid", StrategyType.GRID, "BTC/USD", { ...baseConfig, gridSize: undefined });
+      const invalidGridStrategy = new Strategy(
+        "1",
+        "user1",
+        "Invalid Grid",
+        StrategyType.GRID,
+        "BTC/USD",
+        { ...baseConfig, gridSize: undefined }
+      );
             expect(invalidGridStrategy.isValid()).toBe(false);
 
-            const trendStrategy = new Strategy("1", "user1", "Trend Strategy", StrategyType.TREND_FOLLOWING, "BTC/USD", baseConfig);
+      const trendStrategy = new Strategy(
+        "1",
+        "user1",
+        "Trend Strategy",
+        StrategyType.TREND_FOLLOWING,
+        "BTC/USD",
+        baseConfig
+      );
             expect(trendStrategy.isValid()).toBe(true);
 
-            const invalidTrendStrategy = new Strategy("1", "user1", "Invalid Trend", StrategyType.TREND_FOLLOWING, "BTC/USD", { ...baseConfig, entryThreshold: undefined });
+      const invalidTrendStrategy = new Strategy(
+        "1",
+        "user1",
+        "Invalid Trend",
+        StrategyType.TREND_FOLLOWING,
+        "BTC/USD",
+        { ...baseConfig, entryThreshold: undefined }
+      );
             expect(invalidTrendStrategy.isValid()).toBe(false);
 
-            const arbitrageStrategy = new Strategy("1", "user1", "Arbitrage Strategy", StrategyType.ARBITRAGE, "BTC/USD", {});
+      const arbitrageStrategy = new Strategy(
+        "1",
+        "user1",
+        "Arbitrage Strategy",
+        StrategyType.ARBITRAGE,
+        "BTC/USD",
+        {}
+      );
             expect(arbitrageStrategy.isValid()).toBe(true);
         });
 
         it("should invalidate strategy with invalid config values", () => {
-            const strategyWithInvalidLeverage = new Strategy("1", "user1", "Invalid Leverage", StrategyType.GRID, "BTC/USD", { ...baseConfig, leverage: 0 });
+      const strategyWithInvalidLeverage = new Strategy(
+        "1",
+        "user1",
+        "Invalid Leverage",
+        StrategyType.GRID,
+        "BTC/USD",
+        { ...baseConfig, leverage: 0 }
+      );
             expect(strategyWithInvalidLeverage.isValid()).toBe(false);
 
-            const strategyWithInvalidQuantity = new Strategy("1", "user1", "Invalid Quantity", StrategyType.GRID, "BTC/USD", { ...baseConfig, orderQuantity: 0 });
+      const strategyWithInvalidQuantity = new Strategy(
+        "1",
+        "user1",
+        "Invalid Quantity",
+        StrategyType.GRID,
+        "BTC/USD",
+        { ...baseConfig, orderQuantity: 0 }
+      );
             expect(strategyWithInvalidQuantity.isValid()).toBe(false);
         });
     });
-
 });

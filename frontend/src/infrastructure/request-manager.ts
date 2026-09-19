@@ -34,12 +34,15 @@ class GlobalRequestManager {
     async deduplicateRequest<T>(
         key: string,
         requestFn: () => Promise<T>,
-        clientId: string = 'unknown'
+    clientId: string = "unknown"
     ): Promise<T> {
-        const existing = this.pendingRequests.get(key) as PendingRequest<T> | undefined;
+    const existing = this.pendingRequests.get(key) as
+      PendingRequest<T> | undefined;
 
-        if (existing && (Date.now() - existing.timestamp) < this.requestTimeout) {
-            console.log(`🔄 Global deduplication: reusing request for ${key} from ${existing.clientId}`);
+    if (existing && Date.now() - existing.timestamp < this.requestTimeout) {
+      console.log(
+        `🔄 Global deduplication: reusing request for ${key} from ${existing.clientId}`
+      );
             return existing.promise;
         }
 
@@ -52,7 +55,7 @@ class GlobalRequestManager {
         this.pendingRequests.set(key, {
             promise,
             timestamp: Date.now(),
-            clientId
+      clientId,
         });
 
         return promise;
@@ -80,7 +83,7 @@ class GlobalRequestManager {
     getStats(): { pendingCount: number; keys: string[] } {
         return {
             pendingCount: this.pendingRequests.size,
-            keys: Array.from(this.pendingRequests.keys())
+      keys: Array.from(this.pendingRequests.keys()),
         };
     }
 

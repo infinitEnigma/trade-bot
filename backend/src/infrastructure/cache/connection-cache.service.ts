@@ -80,7 +80,10 @@ export class ConnectionCacheService {
     /**
      * Get cached connection result if available and not expired
      */
-    async getCachedResult(userId: string, accountId: string): Promise<ConnectionCacheEntry | null> {
+  async getCachedResult(
+    userId: string,
+    accountId: string
+  ): Promise<ConnectionCacheEntry | null> {
         const cacheKey = this.getCacheKey(userId, accountId);
 
         try {
@@ -137,7 +140,9 @@ export class ConnectionCacheService {
         customTtlSeconds?: number
     ): Promise<void> {
         const cacheKey = this.getCacheKey(userId, accountId);
-        const ttlSeconds = customTtlSeconds || (success ? this.config.successTtlSeconds : this.config.failureTtlSeconds);
+    const ttlSeconds =
+      customTtlSeconds ||
+      (success ? this.config.successTtlSeconds : this.config.failureTtlSeconds);
 
         try {
             // Check cache size limits per user
@@ -166,7 +171,6 @@ export class ConnectionCacheService {
                 ttlSeconds,
                 expiresAt: new Date(entry.timestamp + ttlSeconds * 1000).toISOString(),
             });
-
         } catch (error) {
             logger.error("Failed to set connection cache", error as Error, {
                 userId,
@@ -193,14 +197,21 @@ export class ConnectionCacheService {
             }
 
             if (cleared > 0) {
-                logger.info("User connection cache cleared", { userId, entriesCleared: cleared });
+        logger.info("User connection cache cleared", {
+          userId,
+          entriesCleared: cleared,
+        });
             }
 
             return cleared;
         } catch (error) {
-            logger.error("Failed to invalidate user connection cache", error as Error, {
+      logger.error(
+        "Failed to invalidate user connection cache",
+        error as Error,
+        {
                 userId,
-            });
+        }
+      );
             return 0;
         }
     }
@@ -220,7 +231,9 @@ export class ConnectionCacheService {
      * Note: This is a simplified implementation without Redis KEYS command
      * In production, you might want to maintain a separate index of user cache keys
      */
-    private async getUserCacheEntries(userId: string): Promise<ConnectionCacheEntry[]> {
+  private async getUserCacheEntries(
+    userId: string
+  ): Promise<ConnectionCacheEntry[]> {
         // For now, return empty array since we can't efficiently scan keys
         // In a production system, you would maintain a separate index
         return [];
@@ -237,7 +250,10 @@ export class ConnectionCacheService {
             // Sort by timestamp and remove oldest
             userEntries.sort((a, b) => a.timestamp - b.timestamp);
 
-            const toRemove = userEntries.slice(0, userEntries.length - this.config.maxEntriesPerUser + 1);
+      const toRemove = userEntries.slice(
+        0,
+        userEntries.length - this.config.maxEntriesPerUser + 1
+      );
 
             for (const entry of toRemove) {
                 const cacheKey = this.getCacheKey(entry.userId, entry.accountId);
@@ -250,9 +266,13 @@ export class ConnectionCacheService {
                 evictedCount: toRemove.length,
             });
         } catch (error) {
-            logger.error("Failed to evict oldest user cache entries", error as Error, {
+      logger.error(
+        "Failed to evict oldest user cache entries",
+        error as Error,
+        {
                 userId,
-            });
+        }
+      );
         }
     }
 

@@ -20,7 +20,10 @@ import { Request, Response, NextFunction } from "express";
 import Joi from "joi";
 import { createErrorResponse, ValidationError } from "@trade-bot/shared";
 import { getCorrelationId } from "../../shared/utils/context";
-import { DatabaseSchemaParser, DatabaseSchema } from "../../shared/validation/database-schema-parser";
+import {
+  DatabaseSchemaParser,
+  DatabaseSchema,
+} from "../../shared/validation/database-schema-parser";
 import { SchemaGenerator } from "../../shared/validation/schema-generator";
 import { validationLogger as logger } from "../../core/logging/context-aware-logger.service";
 
@@ -74,7 +77,7 @@ export interface SchemaValidationOptions {
     // Table to validate against
     table: string;
     // Where to validate data from
-    source?: 'body' | 'query' | 'params';
+  source?: "body" | "query" | "params";
     // Whether to strip unknown fields (default: false for strict validation)
     stripUnknown?: boolean;
     // Custom error message prefix
@@ -99,7 +102,10 @@ export class SchemaValidationMiddleware {
 
         // Initialize schema on construction
         this.initializeSchema().catch(error => {
-            logger.error("Failed to initialize schema validation middleware", error as Error);
+      logger.error(
+        "Failed to initialize schema validation middleware",
+        error as Error
+      );
         });
     }
 
@@ -124,7 +130,10 @@ export class SchemaValidationMiddleware {
                 totalTables: Object.keys(this.dbSchema.tables).length,
             });
         } catch (error) {
-            logger.error("Schema validation middleware initialization failed", error as Error);
+      logger.error(
+        "Schema validation middleware initialization failed",
+        error as Error
+      );
             throw error;
         }
     }
@@ -135,13 +144,17 @@ export class SchemaValidationMiddleware {
     validateTable(options: SchemaValidationOptions) {
         const {
             table,
-            source = 'body',
+      source = "body",
             stripUnknown = false, // Strict by default - reject unknown fields
             errorPrefix = `${table} validation failed`,
             validateForeignKeys = false,
         } = options;
 
-        return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    return async (
+      req: Request,
+      res: Response,
+      next: NextFunction
+    ): Promise<void> => {
             try {
                 // Wait for schema to be initialized if not ready
                 if (!this.dbSchema) {
@@ -158,13 +171,13 @@ export class SchemaValidationMiddleware {
                 // Get data from specified source
                 let dataToValidate: unknown;
                 switch (source) {
-                    case 'body':
+          case "body":
                         dataToValidate = req.body;
                         break;
-                    case 'query':
+          case "query":
                         dataToValidate = req.query;
                         break;
-                    case 'params':
+          case "params":
                         dataToValidate = req.params;
                         break;
                     default:
@@ -180,16 +193,19 @@ export class SchemaValidationMiddleware {
 
                 if (validationResult.error) {
                     // Log validation error with context
-                    logger.warn(`${errorPrefix}: ${validationResult.error.details[0].message}`, {
+          logger.warn(
+            `${errorPrefix}: ${validationResult.error.details[0].message}`,
+            {
                         table,
                         source,
                         errors: validationResult.error.details.map(detail => ({
-                            field: detail.path.join('.'),
+                field: detail.path.join("."),
                             message: detail.message,
                             value: detail.context?.value,
                         })),
                         correlationId: getCorrelationId(),
-                    });
+            }
+          );
 
                     // Create structured validation error
                     const validationError = new ValidationError(
@@ -197,16 +213,19 @@ export class SchemaValidationMiddleware {
                     );
 
                     // Add detailed validation errors
-                    const errorResponse = createErrorResponse(validationError, getCorrelationId()) as ValidationErrorResponse;
+          const errorResponse = createErrorResponse(
+            validationError,
+            getCorrelationId()
+          ) as ValidationErrorResponse;
                     errorResponse.details = {
                         table,
                         source,
-                        validationType: 'database_schema',
+            validationType: "database_schema",
                         errors: validationResult.error.details.map(detail => ({
-                            field: detail.path.join('.'),
+              field: detail.path.join("."),
                             message: detail.message,
                             value: detail.context?.value,
-                            constraint: this.getConstraintInfo(table, detail.path.join('.')),
+              constraint: this.getConstraintInfo(table, detail.path.join(".")),
                         })),
                     };
 
@@ -216,15 +235,23 @@ export class SchemaValidationMiddleware {
 
                 // Validate foreign keys if requested
                 if (validateForeignKeys && this.dbSchema) {
-                    const fkErrors = await this.validateForeignKeys(table, validationResult.value);
+          const fkErrors = await this.validateForeignKeys(
+            table,
+            validationResult.value
+          );
                     if (fkErrors.length > 0) {
-                        const fkError = new ValidationError('Foreign key validation failed');
+            const fkError = new ValidationError(
+              "Foreign key validation failed"
+            );
 
-                        const errorResponse = createErrorResponse(fkError, getCorrelationId()) as ValidationErrorResponse;
+            const errorResponse = createErrorResponse(
+              fkError,
+              getCorrelationId()
+            ) as ValidationErrorResponse;
                         errorResponse.details = {
                             table,
                             source,
-                            validationType: 'foreign_keys',
+              validationType: "foreign_keys",
                             errors: fkErrors,
                         };
 
@@ -235,29 +262,29 @@ export class SchemaValidationMiddleware {
 
                 // Replace request data with validated/cleaned data
                 switch (source) {
-                    case 'body':
+          case "body":
                         req.body = validationResult.value;
                         break;
-                    case 'query':
+          case "query":
                         req.query = validationResult.value;
                         break;
-                    case 'params':
+          case "params":
                         req.params = validationResult.value;
                         break;
                 }
 
                 next();
             } catch (error) {
-                logger.error('Schema validation middleware error', error as Error, {
+        logger.error("Schema validation middleware error", error as Error, {
                     table,
                     source,
                     correlationId: getCorrelationId(),
                 });
 
-                const internalError = new ValidationError('Schema validation failed');
-                res.status(internalError.statusCode).json(
-                    createErrorResponse(internalError, getCorrelationId())
-                );
+        const internalError = new ValidationError("Schema validation failed");
+        res
+          .status(internalError.statusCode)
+          .json(createErrorResponse(internalError, getCorrelationId()));
             }
         };
     }
@@ -265,7 +292,10 @@ export class SchemaValidationMiddleware {
     /**
      * Validate foreign key constraints
      */
-    private async validateForeignKeys(tableName: string, data: unknown): Promise<ForeignKeyError[]> {
+  private async validateForeignKeys(
+    tableName: string,
+    data: unknown
+  ): Promise<ForeignKeyError[]> {
         if (!this.dbSchema) {
             return [];
         }
@@ -319,11 +349,18 @@ export class SchemaValidationMiddleware {
     /**
      * Check if a foreign key reference exists in the database
      */
-    private async checkForeignKeyExists(table: string, column: string, value: unknown): Promise<boolean> {
+  private async checkForeignKeyExists(
+    table: string,
+    column: string,
+    value: unknown
+  ): Promise<boolean> {
         try {
             // Import database connection dynamically to avoid circular dependencies
             const { query } = await import("../../database/pool.js");
-            const result = await query(`SELECT 1 FROM ${table} WHERE ${column} = $1 LIMIT 1`, [value]);
+      const result = await query(
+        `SELECT 1 FROM ${table} WHERE ${column} = $1 LIMIT 1`,
+        [value]
+      );
             return result.rows.length > 0;
         } catch (error) {
             logger.error("Foreign key existence check failed", error as Error, {
@@ -338,7 +375,10 @@ export class SchemaValidationMiddleware {
     /**
      * Get constraint information for better error messages
      */
-    private getConstraintInfo(tableName: string, fieldName: string): ConstraintInfo | null {
+  private getConstraintInfo(
+    tableName: string,
+    fieldName: string
+  ): ConstraintInfo | null {
         if (!this.dbSchema) {
             return null;
         }
@@ -360,17 +400,17 @@ export class SchemaValidationMiddleware {
 
         if (columnDef.checkConstraint) {
             if (columnDef.checkConstraint.values) {
-                constraint.constraint = 'enum';
+        constraint.constraint = "enum";
                 constraint.allowedValues = columnDef.checkConstraint.values;
             } else if (columnDef.checkConstraint.range) {
-                constraint.constraint = 'range';
+        constraint.constraint = "range";
             } else if (columnDef.checkConstraint.pattern) {
-                constraint.constraint = 'pattern';
+        constraint.constraint = "pattern";
             }
         }
 
         if (tableDef.foreignKeys[fieldName]) {
-            constraint.constraint = 'foreign_key';
+      constraint.constraint = "foreign_key";
         }
 
         return constraint;
@@ -433,7 +473,10 @@ export function getSchemaValidationMiddleware(): SchemaValidationMiddleware {
  * Create validation middleware for a table
  * Convenience function for the most common use case
  */
-export function validateAgainstTable(tableName: string, options: Omit<SchemaValidationOptions, 'table'> = {}) {
+export function validateAgainstTable(
+  tableName: string,
+  options: Omit<SchemaValidationOptions, "table"> = {}
+) {
     const middleware = getSchemaValidationMiddleware();
     return middleware.validateTable({ table: tableName, ...options });
 }
@@ -444,37 +487,37 @@ export function validateAgainstTable(tableName: string, options: Omit<SchemaVali
  */
 export const databaseValidators = {
     // User validation - matches users table constraints
-    user: validateAgainstTable('users', {
-        errorPrefix: 'User validation failed'
+  user: validateAgainstTable("users", {
+    errorPrefix: "User validation failed",
     }),
 
     // Strategy validation - matches strategies table constraints
-    strategy: validateAgainstTable('strategies', {
-        errorPrefix: 'Strategy validation failed',
+  strategy: validateAgainstTable("strategies", {
+    errorPrefix: "Strategy validation failed",
         validateForeignKeys: true, // Validate user_id exists
     }),
 
     // Bot validation - matches bot_instances table constraints
-    bot: validateAgainstTable('bot_instances', {
-        errorPrefix: 'Bot validation failed',
+  bot: validateAgainstTable("bot_instances", {
+    errorPrefix: "Bot validation failed",
         validateForeignKeys: true, // Validate strategy_id and user_id exist
     }),
 
     // Trade validation - matches trades table constraints
-    trade: validateAgainstTable('trades', {
-        errorPrefix: 'Trade validation failed',
+  trade: validateAgainstTable("trades", {
+    errorPrefix: "Trade validation failed",
         validateForeignKeys: true, // Validate user_id, strategy_id, bot_id exist
     }),
 
     // Balance validation - matches kodiak_balances table constraints
-    balance: validateAgainstTable('kodiak_balances', {
-        errorPrefix: 'Balance validation failed',
+  balance: validateAgainstTable("kodiak_balances", {
+    errorPrefix: "Balance validation failed",
         validateForeignKeys: true, // Validate user_id exists
     }),
 
     // Position validation - matches kodiak_positions table constraints
-    position: validateAgainstTable('kodiak_positions', {
-        errorPrefix: 'Position validation failed',
+  position: validateAgainstTable("kodiak_positions", {
+    errorPrefix: "Position validation failed",
         validateForeignKeys: true, // Validate user_id exists
     }),
 };
@@ -485,14 +528,14 @@ export const databaseValidators = {
  */
 export const validators = {
     // Auth validators
-    register: validateAgainstTable('users', {
-        errorPrefix: 'Registration validation failed',
-        source: 'body',
+  register: validateAgainstTable("users", {
+    errorPrefix: "Registration validation failed",
+    source: "body",
     }),
 
-    login: validateAgainstTable('users', {
-        errorPrefix: 'Login validation failed',
-        source: 'body',
+  login: validateAgainstTable("users", {
+    errorPrefix: "Login validation failed",
+    source: "body",
         // Only validate email/password fields for login
         stripUnknown: true, // Allow extra fields for login
     }),
@@ -501,7 +544,7 @@ export const validators = {
         // Simple token validation (doesn't need database schema)
         const schema = Joi.object({
             refreshToken: Joi.string().required().messages({
-                'any.required': 'Refresh token is required',
+        "any.required": "Refresh token is required",
             }),
         });
 
@@ -511,11 +554,16 @@ export const validators = {
         });
 
         if (error) {
-            const validationError = new ValidationError('Token refresh validation failed');
-            const errorResponse = createErrorResponse(validationError, getCorrelationId()) as Record<string, unknown>;
+      const validationError = new ValidationError(
+        "Token refresh validation failed"
+      );
+      const errorResponse = createErrorResponse(
+        validationError,
+        getCorrelationId()
+      ) as Record<string, unknown>;
             errorResponse.details = {
                 errors: error.details.map(detail => ({
-                    field: detail.path.join('.'),
+          field: detail.path.join("."),
                     message: detail.message,
                 })),
             };
@@ -526,21 +574,21 @@ export const validators = {
         next();
     },
 
-    startBot: validateAgainstTable('bot_instances', {
-        errorPrefix: 'Bot start validation failed',
-        source: 'body',
+  startBot: validateAgainstTable("bot_instances", {
+    errorPrefix: "Bot start validation failed",
+    source: "body",
         validateForeignKeys: true,
     }),
 
-    stopBot: validateAgainstTable('bot_instances', {
-        errorPrefix: 'Bot stop validation failed',
-        source: 'params',
+  stopBot: validateAgainstTable("bot_instances", {
+    errorPrefix: "Bot stop validation failed",
+    source: "params",
         validateForeignKeys: false, // Params are typically validated separately
     }),
 
-    idParam: validateAgainstTable('generic_id', {
-        errorPrefix: 'ID parameter validation failed',
-        source: 'params',
+  idParam: validateAgainstTable("generic_id", {
+    errorPrefix: "ID parameter validation failed",
+    source: "params",
         stripUnknown: true,
     }),
 
@@ -548,15 +596,15 @@ export const validators = {
         // Simple pagination validation (doesn't need database schema)
         const schema = Joi.object({
             page: Joi.number().integer().min(1).default(1).messages({
-                'number.min': 'Page must be at least 1',
+        "number.min": "Page must be at least 1",
             }),
             limit: Joi.number().integer().min(1).max(100).default(20).messages({
-                'number.min': 'Limit must be at least 1',
-                'number.max': 'Limit cannot exceed 100',
+        "number.min": "Limit must be at least 1",
+        "number.max": "Limit cannot exceed 100",
             }),
             sortBy: Joi.string().optional(),
-            sortOrder: Joi.string().valid('asc', 'desc').default('desc').messages({
-                'any.only': 'Sort order must be "asc" or "desc"',
+      sortOrder: Joi.string().valid("asc", "desc").default("desc").messages({
+        "any.only": 'Sort order must be "asc" or "desc"',
             }),
         });
 
@@ -566,11 +614,16 @@ export const validators = {
         });
 
         if (error) {
-            const validationError = new ValidationError('Pagination validation failed');
-            const errorResponse = createErrorResponse(validationError, getCorrelationId()) as Record<string, unknown>;
+      const validationError = new ValidationError(
+        "Pagination validation failed"
+      );
+      const errorResponse = createErrorResponse(
+        validationError,
+        getCorrelationId()
+      ) as Record<string, unknown>;
             errorResponse.details = {
                 errors: error.details.map(detail => ({
-                    field: detail.path.join('.'),
+          field: detail.path.join("."),
                     message: detail.message,
                 })),
             };
@@ -583,4 +636,4 @@ export const validators = {
 };
 
 // Export legacy functions for backward compatibility
-export { validateRequest } from '../../interfaces/middleware/validation.middleware';
+export { validateRequest } from "../../interfaces/middleware/validation.middleware";

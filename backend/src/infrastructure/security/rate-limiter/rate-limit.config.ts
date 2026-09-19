@@ -113,8 +113,10 @@ const BASE_RATE_LIMITS = {
  * Get environment multiplier for rate limits
  */
 function getEnvironmentMultiplier(): number {
-    const env = process.env.NODE_ENV || 'development';
-    return ENVIRONMENT_MULTIPLIERS[env as keyof typeof ENVIRONMENT_MULTIPLIERS] || 1;
+  const env = process.env.NODE_ENV || "development";
+  return (
+    ENVIRONMENT_MULTIPLIERS[env as keyof typeof ENVIRONMENT_MULTIPLIERS] || 1
+  );
 }
 
 /**
@@ -126,8 +128,12 @@ function calculateUserLimits(baseMax: number): Record<UserLevel, number> {
 
     return {
         [UserLevel.BASIC]: adjustedBase,
-        [UserLevel.REGISTERED]: Math.round(adjustedBase * USER_TIER_RATIOS[UserLevel.REGISTERED]),
-        [UserLevel.VERIFIED]: Math.round(adjustedBase * USER_TIER_RATIOS[UserLevel.VERIFIED]),
+    [UserLevel.REGISTERED]: Math.round(
+      adjustedBase * USER_TIER_RATIOS[UserLevel.REGISTERED]
+    ),
+    [UserLevel.VERIFIED]: Math.round(
+      adjustedBase * USER_TIER_RATIOS[UserLevel.VERIFIED]
+    ),
     };
 }
 
@@ -135,7 +141,7 @@ function calculateUserLimits(baseMax: number): Record<UserLevel, number> {
  * Create a rate limit configuration with environment and user adjustments
  */
 function createRateLimitConfig(
-    baseConfig: typeof BASE_RATE_LIMITS[keyof typeof BASE_RATE_LIMITS],
+  baseConfig: (typeof BASE_RATE_LIMITS)[keyof typeof BASE_RATE_LIMITS],
     options: {
         enableUserBasedLimits?: boolean;
         failOpen?: boolean;
@@ -331,7 +337,8 @@ export const kodiakConnectionRateLimit: RateLimitConfig = {
     progressiveBaseDelay: 1000, // 1 second base delay (if enabled)
     skipSuccessfulRequests: false,
     skipFailedRequests: false,
-    message: "Too many Kodiak connection attempts. Please wait before trying again.",
+  message:
+    "Too many Kodiak connection attempts. Please wait before trying again.",
     failOpen: true, // ⬆️ Allow requests if rate limiting fails - prioritize UX
 };
 

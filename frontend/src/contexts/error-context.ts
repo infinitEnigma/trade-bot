@@ -1,7 +1,10 @@
 /** @format */
 
 import { createContext } from "react";
-import type { ErrorType, ErrorAction } from "../shared/components/ui/error-types";
+import type {
+  ErrorType,
+  ErrorAction,
+} from "../shared/components/ui/error-types";
 
 export interface ErrorState {
     id: string;
@@ -17,13 +20,13 @@ export interface ErrorState {
     size?: "sm" | "md" | "lg" | "xl";
     icon?: React.ReactNode;
     // Recovery UI state
-    status?: 'idle' | 'pending' | 'success' | 'failed';
+  status?: "idle" | "pending" | "success" | "failed";
     retryCount?: number;
     lastRetryAt?: Date;
     maxRetries?: number;
     retryCooldownMs?: number;
     // Advanced recovery features
-    circuitBreakerState?: 'closed' | 'open' | 'half-open';
+  circuitBreakerState?: "closed" | "open" | "half-open";
     consecutiveFailures?: number;
     lastFailureAt?: Date;
     backoffMultiplier?: number;
@@ -32,7 +35,7 @@ export interface ErrorState {
 
 interface ErrorContextValue {
     errors: ErrorState[];
-    addError: (error: Omit<ErrorState, 'id' | 'timestamp'>) => string;
+  addError: (error: Omit<ErrorState, "id" | "timestamp">) => string;
     removeError: (id: string) => void;
     clearErrors: () => void;
     updateError: (id: string, updates: Partial<ErrorState>) => void;
@@ -41,4 +44,6 @@ interface ErrorContextValue {
     errorCount: number;
 }
 
-export const ErrorContext = createContext<ErrorContextValue | undefined>(undefined);
+export const ErrorContext = createContext<ErrorContextValue | undefined>(
+  undefined
+);

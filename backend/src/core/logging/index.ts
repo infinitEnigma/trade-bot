@@ -17,7 +17,7 @@
  */
 
 // Export logging services
-export { default as logger } from '../logging/logger.service';
+export { default as logger } from "../logging/logger.service";
 export {
     ContextAwareLogger,
     contextLogger,
@@ -37,8 +37,8 @@ export {
     securityLogger,
     validationLogger,
     performanceLogger,
-    integrationLogger
-} from './context-aware-logger.service';
+  integrationLogger,
+} from "./context-aware-logger.service";
 
 // Re-export logging types for convenience
 export {
@@ -60,5 +60,5 @@ export {
     createUserContextInfo,
     parseStackTrace,
     classifyError,
-    createEnhancedErrorInfo
-} from './context-aware-logger.service';
+  createEnhancedErrorInfo,
+} from "./context-aware-logger.service";

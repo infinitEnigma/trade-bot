@@ -23,12 +23,23 @@
 
 import { assertTransition, BotEvent } from "@trade-bot/shared";
 import { contextLogger as logger } from "../logging";
-import { EngineProtocolService, engineProtocolService } from "./engine-protocol.service";
+import {
+  EngineProtocolService,
+  engineProtocolService,
+} from "./engine-protocol.service";
 import { BotCommandDispatcher } from "./lifecycle/bot-command-dispatcher";
 import { BotLifecycleNotifier } from "./lifecycle/bot-lifecycle-notifier";
-import { BotEventProcessor, EngineAuthorityChecker, EngineLifecycleEventHandler } from "./lifecycle/bot-event-processor";
+import {
+  BotEventProcessor,
+  EngineAuthorityChecker,
+  EngineLifecycleEventHandler,
+} from "./lifecycle/bot-event-processor";
 import { BotLifecycleRepository } from "./lifecycle/bot-lifecycle.repository";
-import { BotLifecycleResult, BotRow, BOT_COMMAND_TIMEOUT_MS } from "./lifecycle/types";
+import {
+  BotLifecycleResult,
+  BotRow,
+  BOT_COMMAND_TIMEOUT_MS,
+} from "./lifecycle/types";
 
 // Re-exported for existing consumers (timeout sweeper, tests).
 export { BOT_COMMAND_TIMEOUT_MS };
@@ -46,7 +57,9 @@ export class BotLifecycleService {
     }
 
     /** Register the Socket.IO server for frontend `bot.stateChanged` events. */
-    setSocketServer(io: Parameters<BotLifecycleNotifier["setSocketServer"]>[0]): void {
+  setSocketServer(
+    io: Parameters<BotLifecycleNotifier["setSocketServer"]>[0]
+  ): void {
         this.notifier.setSocketServer(io);
     }
 
@@ -78,8 +91,14 @@ export class BotLifecycleService {
         const bot = await this.getOwnedBot(botId, userId);
 
         // Idempotency: already starting or running with the same desired state.
-        if (bot.desired_state === "RUNNING" && (bot.actual_state === "STARTING" || bot.actual_state === "RUNNING")) {
-            logger.info("Start requested but bot already starting/running - no-op", { botId, actualState: bot.actual_state });
+    if (
+      bot.desired_state === "RUNNING" &&
+      (bot.actual_state === "STARTING" || bot.actual_state === "RUNNING")
+    ) {
+      logger.info("Start requested but bot already starting/running - no-op", {
+        botId,
+        actualState: bot.actual_state,
+      });
             return { botId, desiredState: "RUNNING", actualState: bot.actual_state };
         }
 
@@ -94,7 +113,9 @@ export class BotLifecycleService {
             bot.actual_state
         );
         if (!persisted) {
-            const error = new Error("Bot lifecycle state changed concurrently - retry");
+      const error = new Error(
+        "Bot lifecycle state changed concurrently - retry"
+      );
             (error as Error & { statusCode?: number }).statusCode = 409;
             throw error;
         }
@@ -107,10 +128,18 @@ export class BotLifecycleService {
             metadata: { userId },
         });
 
-        const sendResult = await this.dispatcher.sendStartCommand(bot.id, userId, bot.strategy_id);
+    const sendResult = await this.dispatcher.sendStartCommand(
+      bot.id,
+      userId,
+      bot.strategy_id
+    );
         if (!sendResult.success) {
             // Roll back to STOPPED so the bot is not stuck in STARTING with no command in flight.
-            await this.repository.persistTransition(botId, { desiredState: "STOPPED", actualState: "STOPPED" }, nextState);
+      await this.repository.persistTransition(
+        botId,
+        { desiredState: "STOPPED", actualState: "STOPPED" },
+        nextState
+      );
             await this.repository.recordLifecycleEvent(botId, {
                 eventType: "START_FAILED",
                 fromState: nextState,
@@ -135,7 +164,12 @@ export class BotLifecycleService {
             metadata: {},
         });
 
-        return { botId, desiredState: "RUNNING", actualState: nextState, correlationId: sendResult.correlationId };
+    return {
+      botId,
+      desiredState: "RUNNING",
+      actualState: nextState,
+      correlationId: sendResult.correlationId,
+    };
     }
 
     // ===========================================
@@ -146,9 +180,16 @@ export class BotLifecycleService {
      * Create a new bot instance for a strategy and start it.
      * The instance is created in actual STOPPED, then transitioned to STARTING.
      */
-    async createAndStart(userId: string, strategyId: string, notionalAmount: number): Promise<BotLifecycleResult> {
+  async createAndStart(
+    userId: string,
+    strategyId: string,
+    notionalAmount: number
+  ): Promise<BotLifecycleResult> {
         // Strategy must exist and belong to the user.
-        const strategyExists = await this.repository.strategyExistsForUser(strategyId, userId);
+    const strategyExists = await this.repository.strategyExistsForUser(
+      strategyId,
+      userId
+    );
         if (!strategyExists) {
             const error = new Error("Strategy not found");
             (error as Error & { statusCode?: number }).statusCode = 404;
@@ -156,7 +197,8 @@ export class BotLifecycleService {
         }
 
         // One active bot per strategy.
-        const activeBot = await this.repository.findActiveBotForStrategy(strategyId);
+    const activeBot =
+      await this.repository.findActiveBotForStrategy(strategyId);
         if (activeBot) {
             const error = new Error("Bot is already running for this strategy");
             (error as Error & { statusCode?: number }).statusCode = 409;
@@ -193,13 +235,20 @@ export class BotLifecycleService {
         const bot = await this.getOwnedBot(botId, userId);
 
         // Idempotency: already stopped or stopping with the same desired state.
-        if (bot.desired_state === "STOPPED" && (bot.actual_state === "STOPPED" || bot.actual_state === "STOPPING")) {
-            logger.info("Stop requested but bot already stopped/stopping - no-op", { botId, actualState: bot.actual_state });
+    if (
+      bot.desired_state === "STOPPED" &&
+      (bot.actual_state === "STOPPED" || bot.actual_state === "STOPPING")
+    ) {
+      logger.info("Stop requested but bot already stopped/stopping - no-op", {
+        botId,
+        actualState: bot.actual_state,
+      });
             return { botId, desiredState: "STOPPED", actualState: bot.actual_state };
         }
 
         // RUNNING goes through STOPPING; STARTING/ERROR go straight to STOPPED.
-        const targetState: "STOPPING" | "STOPPED" = bot.actual_state === "RUNNING" ? "STOPPING" : "STOPPED";
+    const targetState: "STOPPING" | "STOPPED" =
+      bot.actual_state === "RUNNING" ? "STOPPING" : "STOPPED";
         const nextState = assertTransition(bot.actual_state, targetState);
 
         const persisted = await this.repository.persistTransition(
@@ -212,7 +261,9 @@ export class BotLifecycleService {
             bot.actual_state
         );
         if (!persisted) {
-            const error = new Error("Bot lifecycle state changed concurrently - retry");
+      const error = new Error(
+        "Bot lifecycle state changed concurrently - retry"
+      );
             (error as Error & { statusCode?: number }).statusCode = 409;
             throw error;
         }
@@ -252,7 +303,12 @@ export class BotLifecycleService {
             metadata: {},
         });
 
-        return { botId, desiredState: "STOPPED", actualState: nextState, correlationId: sendResult.correlationId };
+    return {
+      botId,
+      desiredState: "STOPPED",
+      actualState: nextState,
+      correlationId: sendResult.correlationId,
+    };
     }
 
     // ===========================================
@@ -275,8 +331,14 @@ export class BotLifecycleService {
     }
 
     /** Reconcile a heartbeat's runtime inventory against backend state. */
-    reconcileHeartbeatInventory(engineId: string, activeBotIds: string[]): Promise<{ unlisted: number; drift: number }> {
-        return this.eventProcessor.reconcileHeartbeatInventory(engineId, activeBotIds);
+  reconcileHeartbeatInventory(
+    engineId: string,
+    activeBotIds: string[]
+  ): Promise<{ unlisted: number; drift: number }> {
+    return this.eventProcessor.reconcileHeartbeatInventory(
+      engineId,
+      activeBotIds
+    );
     }
 
     // ===========================================
@@ -291,7 +353,10 @@ export class BotLifecycleService {
      *
      * Returns the dispatch result so the reconciler can bound retry attempts.
      */
-    async reissueStopForReconciliation(botId: string, reason: string): Promise<BotLifecycleResult> {
+  async reissueStopForReconciliation(
+    botId: string,
+    reason: string
+  ): Promise<BotLifecycleResult> {
         const bot = await this.repository.findBot(botId);
         if (!bot) {
             const error = new Error("Bot not found");
@@ -300,15 +365,25 @@ export class BotLifecycleService {
         }
 
         if (bot.desired_state !== "STOPPED") {
-            throw new Error(`Refusing reconcile stop-reissue: desired_state is ${bot.desired_state}`);
+      throw new Error(
+        `Refusing reconcile stop-reissue: desired_state is ${bot.desired_state}`
+      );
         }
-        if (bot.actual_state === "STOPPED" || bot.actual_state === "ERROR" || bot.actual_state === "UNKNOWN") {
-            throw new Error(`Refusing reconcile stop-reissue: actual_state is ${bot.actual_state}`);
+    if (
+      bot.actual_state === "STOPPED" ||
+      bot.actual_state === "ERROR" ||
+      bot.actual_state === "UNKNOWN"
+    ) {
+      throw new Error(
+        `Refusing reconcile stop-reissue: actual_state is ${bot.actual_state}`
+      );
         }
 
         const sendResult = await this.dispatcher.sendStopCommand(botId);
         await this.repository.recordLifecycleEvent(botId, {
-            eventType: sendResult.success ? "RECONCILE_STOP_REISSUED" : "RECONCILE_STOP_REISSUE_FAILED",
+      eventType: sendResult.success
+        ? "RECONCILE_STOP_REISSUED"
+        : "RECONCILE_STOP_REISSUE_FAILED",
             fromState: bot.actual_state,
             toState: bot.actual_state,
             correlationId: sendResult.correlationId ?? null,
@@ -317,11 +392,19 @@ export class BotLifecycleService {
         });
 
         if (!sendResult.success) {
-            throw new Error(`Reconcile stop-reissue dispatch failed: ${sendResult.error ?? "unknown"}`);
+      throw new Error(
+        `Reconcile stop-reissue dispatch failed: ${sendResult.error ?? "unknown"}`
+      );
         }
 
         // Surface the reconciliation to the frontend without a fake transition.
-        this.notifier.emitStateChanged(botId, bot.user_id, bot.actual_state, bot.actual_state, sendResult.correlationId ?? "");
+    this.notifier.emitStateChanged(
+      botId,
+      bot.user_id,
+      bot.actual_state,
+      bot.actual_state,
+      sendResult.correlationId ?? ""
+    );
 
         return {
             botId,
@@ -337,7 +420,10 @@ export class BotLifecycleService {
      * compare-and-set transition. UNKNOWN tells the user/reconciliation that
      * the engine state is unverified, without fabricating a terminal state.
      */
-    async reconcileStuckTransitionToUnknown(botId: string, reason: string): Promise<boolean> {
+  async reconcileStuckTransitionToUnknown(
+    botId: string,
+    reason: string
+  ): Promise<boolean> {
         const bot = await this.repository.findBot(botId);
         if (!bot) {
             return false;
@@ -366,14 +452,23 @@ export class BotLifecycleService {
                 messageId: null,
                 metadata: { reason },
             });
-            this.notifier.emitStateChanged(botId, bot.user_id, bot.actual_state, "UNKNOWN", `reconcile-${reason}`);
+      this.notifier.emitStateChanged(
+        botId,
+        bot.user_id,
+        bot.actual_state,
+        "UNKNOWN",
+        `reconcile-${reason}`
+      );
         }
 
         return persisted;
     }
 
     /** Audit-only marker: desired RUNNING but engine state is unconfirmed. No auto-start is performed. */
-    async recordReconcileNeedsUserAction(botId: string, reason: string): Promise<void> {
+  async recordReconcileNeedsUserAction(
+    botId: string,
+    reason: string
+  ): Promise<void> {
         const bot = await this.repository.findBot(botId);
         if (!bot) {
             return;
@@ -408,4 +503,6 @@ export class BotLifecycleService {
 // ===========================================
 
 // Singleton instance
-export const botLifecycleService = new BotLifecycleService(engineProtocolService);
+export const botLifecycleService = new BotLifecycleService(
+  engineProtocolService
+);

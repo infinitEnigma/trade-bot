@@ -26,7 +26,7 @@ import { securityLogger as logger } from "../../../core/logging/context-aware-lo
  */
 class ProgressiveAuthLimiter {
     /** Redis key prefix for storing failure counters */
-    private readonly FAILURE_KEY_PREFIX = 'auth:failures:';
+  private readonly FAILURE_KEY_PREFIX = "auth:failures:";
 
     /** Maximum number of failures to track before capping delay */
     private readonly MAX_FAILURES = 5;
@@ -43,7 +43,9 @@ class ProgressiveAuthLimiter {
      * @param identifier - User identifier (username, email, or IP)
      * @returns Object containing delay in milliseconds and total failure count
      */
-    async recordFailure(identifier: string): Promise<{ delayMs: number; totalFailures: number }> {
+  async recordFailure(
+    identifier: string
+  ): Promise<{ delayMs: number; totalFailures: number }> {
         const key = `${this.FAILURE_KEY_PREFIX}${identifier}`;
 
         try {
@@ -56,7 +58,9 @@ class ProgressiveAuthLimiter {
             );
 
             if (!result.success) {
-                logger.warn("Failed to record auth failure, using fallback", { identifier });
+        logger.warn("Failed to record auth failure, using fallback", {
+          identifier,
+        });
                 return { delayMs: this.BASE_DELAY_MS, totalFailures: 1 };
             }
 
@@ -107,13 +111,17 @@ class ProgressiveAuthLimiter {
      * @param identifier - User identifier to check
      * @returns Object containing total failures and required delay
      */
-    async getFailureInfo(identifier: string): Promise<{ totalFailures: number; delayMs: number }> {
+  async getFailureInfo(
+    identifier: string
+  ): Promise<{ totalFailures: number; delayMs: number }> {
         const key = `${this.FAILURE_KEY_PREFIX}${identifier}`;
 
         try {
             const result = await redisService.get(key);
-            const totalFailures = result.success && result.data ? parseInt(result.data) : 0;
-            const delayMs = totalFailures > 0 ? this.calculateProgressiveDelay(totalFailures) : 0;
+      const totalFailures =
+        result.success && result.data ? parseInt(result.data) : 0;
+      const delayMs =
+        totalFailures > 0 ? this.calculateProgressiveDelay(totalFailures) : 0;
 
             return { totalFailures, delayMs };
         } catch (error) {
@@ -141,7 +149,10 @@ class ProgressiveAuthLimiter {
 
         // Exponential backoff: 1s, 2s, 4s, 8s, 16s, then cap at MAX_DELAY_MS
         const exponent = Math.min(failures - 1, 5); // Cap exponent to prevent overflow
-        const delayMs = Math.min(this.BASE_DELAY_MS * Math.pow(2, exponent), this.MAX_DELAY_MS);
+    const delayMs = Math.min(
+      this.BASE_DELAY_MS * Math.pow(2, exponent),
+      this.MAX_DELAY_MS
+    );
 
         // Add jitter (±10%) to prevent thundering herd
         const jitter = delayMs * 0.1 * (Math.random() * 2 - 1);

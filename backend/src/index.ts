@@ -60,7 +60,11 @@ import { engineProtocolService } from "./core/bots/engine-protocol.service";
 import { botLifecycleService } from "./core/bots/bot-lifecycle.service";
 import { commandTimeoutSweeper } from "./core/bots/command-timeout.sweeper";
 import { engineRegistryService } from "./core/bots/engine-registry.service";
-import { setRequestContext, generateCorrelationId, generateRequestId } from "./shared/utils/context";
+import {
+  setRequestContext,
+  generateCorrelationId,
+  generateRequestId,
+} from "./shared/utils/context";
 
 // Set default context for application initialization
 setRequestContext({
@@ -74,12 +78,18 @@ const START_TIME = Date.now();
 
 // Environment validation module
 export const REQUIRED_ENV_VARS = [
-    "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", // PostgreSQL
+  "DB_HOST",
+  "DB_PORT",
+  "DB_NAME",
+  "DB_USER",
+  "DB_PASSWORD", // PostgreSQL
     "REDIS_URL", // Redis cache
-    "JWT_SECRET", "JWT_REFRESH_SECRET", // Authentication
+  "JWT_SECRET",
+  "JWT_REFRESH_SECRET", // Authentication
     "ENCRYPTION_MASTER_KEY", // Data encryption
     "NODE_ENV", // Runtime environment
-    "KODIAK_API_URL", "KODIAK_WS_URL", // External APIs
+  "KODIAK_API_URL",
+  "KODIAK_WS_URL", // External APIs
     "FRONTEND_URL", // CORS configuration
 ];
 
@@ -135,8 +145,6 @@ import { ExpressConfig } from "./server/express-config";
 import { RouteConfig } from "./server/route-config";
 import { MiddlewareConfig } from "./server/middleware-config";
 
-
-
 // 🔄 Infrastructure Services
 import { redisService } from "./infrastructure";
 
@@ -166,21 +174,30 @@ try {
     initializePool();
     logger.info("✅ PostgreSQL connection pool initialized");
 } catch (error) {
-    logger.error("❌ Failed to initialize database pool", error instanceof Error ? error : new Error(String(error)));
+  logger.error(
+    "❌ Failed to initialize database pool",
+    error instanceof Error ? error : new Error(String(error))
+  );
     throw new Error("Database pool initialization failed");
 }
 
 // Connect to Redis on startup (now imported from infrastructure)
 redisService.connect().catch((error: unknown) => {
-    logger.error("❌ Failed to connect to Redis", error instanceof Error ? error : new Error(String(error)));
+  logger.error(
+    "❌ Failed to connect to Redis",
+    error instanceof Error ? error : new Error(String(error))
+  );
     // The application stays online without Redis. Endpoints that require the
     // trading control plane (bot start/stop) return 503 via redisService.isHealthy()
     // rather than silently dispatching a command that cannot reach the engine.
 });
 
 // Initialize dependency injection container
-diContainer.initialize().catch((error) => {
-    logger.error("❌ Failed to initialize dependency injection container", error instanceof Error ? error : new Error(String(error)));
+diContainer.initialize().catch(error => {
+  logger.error(
+    "❌ Failed to initialize dependency injection container",
+    error instanceof Error ? error : new Error(String(error))
+  );
     throw new Error("Dependency injection container initialization failed");
 });
 
@@ -276,25 +293,36 @@ const io = new Server(httpServer, {
 // polling sockets, causing "socket.client.writeToEngine is not a function").
 // Re-enable the adapter only if moving to a multi-server deployment that uses
 // the WebSocket transport.
-logger.info("Socket.IO running in single server mode (Redis Streams adapter disabled)");
+logger.info(
+  "Socket.IO running in single server mode (Redis Streams adapter disabled)"
+);
 
 // Add error handler to prevent server crash from Socket.IO protocol errors
-io.engine.on("connection_error", (err: Error & { context?: unknown; code?: string | number }) => {
+io.engine.on(
+  "connection_error",
+  (err: Error & { context?: unknown; code?: string | number }) => {
     logger.warn("Socket.IO connection error", {
         message: err.message,
         context: err.context,
         code: err.code,
     });
-});
+  }
+);
 
-io.engine.on("connection", (socket: { id: string; on: (event: string, callback: (err: Error) => void) => void }) => {
+io.engine.on(
+  "connection",
+  (socket: {
+    id: string;
+    on: (event: string, callback: (err: Error) => void) => void;
+  }) => {
     socket.on("error", (err: Error) => {
         logger.warn("Socket.IO engine socket error", {
             socketId: socket.id,
             error: err.message,
         });
     });
-});
+  }
+);
 
 // Add global error handler for Socket.IO server
 io.on("error", (error: Error) => {
@@ -338,7 +366,10 @@ let routeRegistrationPromise: Promise<void>;
         });
         routeRegistrationPromise = Promise.resolve();
     } catch (error) {
-        logger.error("Failed to register routes", error instanceof Error ? error : new Error(String(error)));
+    logger.error(
+      "Failed to register routes",
+      error instanceof Error ? error : new Error(String(error))
+    );
         process.exitCode = 1;
         routeRegistrationPromise = Promise.resolve(); // Don't reject to avoid unhandled rejection
     }
@@ -365,7 +396,6 @@ app.use(handleErrors);
 // 📡 Real-time Services
 import { WebSocketService } from "./infrastructure/messaging";
 
-
 //webSocketService.initialize(io);
 
 // ===========================================
@@ -382,7 +412,7 @@ const PORT = process.env.PORT || 3000;
  * @returns A promise that resolves when the server is ready
  */
 export const startServer = (): Promise<typeof httpServer> => {
-    return new Promise((resolve) => {
+  return new Promise(resolve => {
         httpServer.listen(PORT, () => {
             logger.info(`🚀 Server running on port ${PORT}`);
 
@@ -407,15 +437,22 @@ export const startServer = (): Promise<typeof httpServer> => {
             botLifecycleService.setSocketServer(io);
             // ENGINE_REGISTER / ENGINE_HEARTBEAT go to the engine registry
             // (liveness supervision + authoritative engine identity).
-            botLifecycleService.setEngineLifecycleHandler(event => engineRegistryService.handleEngineEvent(event));
+      botLifecycleService.setEngineLifecycleHandler(event =>
+        engineRegistryService.handleEngineEvent(event)
+      );
             // Fail-closed authority: runtime events must come from the
             // registered engine process with a current epoch.
-            botLifecycleService.setAuthorityChecker((engineId, epoch) => engineRegistryService.isEngineAuthoritative(engineId, epoch));
+      botLifecycleService.setAuthorityChecker((engineId, epoch) =>
+        engineRegistryService.isEngineAuthoritative(engineId, epoch)
+      );
             engineProtocolService
                 .start(event => botLifecycleService.handleEngineEvent(event))
                 .then(() => logger.info("🔌 Engine protocol listener started"))
                 .catch((error: unknown) => {
-                    logger.error("Failed to start engine protocol listener", error instanceof Error ? error : new Error(String(error)));
+          logger.error(
+            "Failed to start engine protocol listener",
+            error instanceof Error ? error : new Error(String(error))
+          );
                 });
 
             // ✅ START COMMAND TIMEOUT SWEEPER (lifecycle supervision)
@@ -439,10 +476,13 @@ export const startServer = (): Promise<typeof httpServer> => {
             // 🚫 TEMPORARILY DISABLED: Worker shutdown handlers
             // Dynamic import causing issues with ts-node-dev ES modules
             // Will re-enable once core functionality is stable
-            logger.info("Worker shutdown handlers temporarily disabled for stability", {
+      logger.info(
+        "Worker shutdown handlers temporarily disabled for stability",
+        {
                 reason: "Dynamic ES module import issues with ts-node-dev",
                 status: "Core functionality remains fully operational",
-            });
+        }
+      );
 
             resolve(httpServer);
         });
@@ -461,7 +501,7 @@ export const stopServer = (...args: any[]): Promise<void> => {
         try {
             // In test/mock environments, this check may fail, so we'll try to close directly
             // with error handling
-            httpServer.close((err) => {
+      httpServer.close(err => {
                 if (err) {
                     // If error is about server not running, just resolve
                     if (err.message && err.message.includes("Server is not running")) {
@@ -547,7 +587,10 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
             engineProtocolService.stop();
             logger.info("Engine protocol listener stopped");
         } catch (error) {
-            logger.error("Error stopping engine protocol listener", error instanceof Error ? error : new Error(String(error)));
+      logger.error(
+        "Error stopping engine protocol listener",
+        error instanceof Error ? error : new Error(String(error))
+      );
         }
 
         // Phase 2: Close external service connections
@@ -558,7 +601,10 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
             await redisService.disconnect();
             logger.info("Redis connection closed");
         } catch (error) {
-            logger.error("Error closing Redis connection", error instanceof Error ? error : new Error(String(error)));
+      logger.error(
+        "Error closing Redis connection",
+        error instanceof Error ? error : new Error(String(error))
+      );
         }
 
         // Phase 3: Close database connections
@@ -567,7 +613,10 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
             await closePool();
             logger.info("Database pool closed");
         } catch (error) {
-            logger.error("Error closing database pool", error instanceof Error ? error : new Error(String(error)));
+      logger.error(
+        "Error closing database pool",
+        error instanceof Error ? error : new Error(String(error))
+      );
         }
 
         // Phase 4: Final cleanup
@@ -588,9 +637,13 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
         }
     } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
-        logger.error("Critical error during graceful shutdown", err as unknown as Error, {
+    logger.error(
+      "Critical error during graceful shutdown",
+      err as unknown as Error,
+      {
             shutdownDuration: Date.now() - shutdownStart,
-        });
+      }
+    );
         shutdownCompleted = true;
         clearTimeout(shutdownTimeout);
 
@@ -608,10 +661,14 @@ process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 // Handle uncaught exceptions (development safety net)
-process.on("uncaughtException", (error) => {
+process.on("uncaughtException", error => {
     // Check if this is the Socket.IO protocol error
-    if (error instanceof TypeError &&
-        error.message.includes("Cannot read properties of undefined (reading 'protocol')")) {
+  if (
+    error instanceof TypeError &&
+    error.message.includes(
+      "Cannot read properties of undefined (reading 'protocol')"
+    )
+  ) {
         logger.warn("Socket.IO protocol error caught - ignoring to prevent crash", {
             error: error.message,
             stack: error.stack?.slice(0, 200), // Limit stack trace length
@@ -631,27 +688,38 @@ process.on("uncaughtException", (error) => {
     });
 });*/
 
-
-
 // Handle unhandled promise rejections
 process.on("unhandledRejection", (reason, _promise) => {
     // Ignore Socket.IO adapter errors that are non-fatal broadcast issues
-    if (reason instanceof TypeError &&
+  if (
+    reason instanceof TypeError &&
         (reason.message.includes("writeToEngine is not a function") ||
-            reason.message.includes("Cannot read properties of undefined (reading 'protocol')"))) {
-        logger.warn("Socket.IO adapter error suppressed (non-fatal broadcast issue)", {
+      reason.message.includes(
+        "Cannot read properties of undefined (reading 'protocol')"
+      ))
+  ) {
+    logger.warn(
+      "Socket.IO adapter error suppressed (non-fatal broadcast issue)",
+      {
             error: reason.message,
-        });
+      }
+    );
         return;
     }
-    logger.error("Unhandled promise rejection - initiating emergency shutdown", reason instanceof Error ? reason : new Error(String(reason)));
+  logger.error(
+    "Unhandled promise rejection - initiating emergency shutdown",
+    reason instanceof Error ? reason : new Error(String(reason))
+  );
     gracefulShutdown("unhandledRejection");
 });
 
 // Auto-start server only when directly run (not imported as module)
 if (require.main === module) {
     startServer().catch(error => {
-        logger.error("Failed to start server", error instanceof Error ? error : new Error(String(error)));
+    logger.error(
+      "Failed to start server",
+      error instanceof Error ? error : new Error(String(error))
+    );
         // Use process.exitCode instead of process.exit() for cleaner termination
         process.exitCode = 1;
     });

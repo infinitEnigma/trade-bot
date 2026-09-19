@@ -14,7 +14,7 @@ export function requireRole(role: UserRole) {
                 success,
                 error: `${role} role required for this action`,
                 requiredRole: role,
-                userRoles
+        userRoles,
             });
         }
         next();
@@ -31,9 +31,9 @@ export function requireAnyRole(...roles: UserRole[]) {
         if (!hasRequiredRole) {
             return res.status(403).json({
                 success,
-                error: `One of the following roles required: ${roles.join(', ')}`,
+        error: `One of the following roles required: ${roles.join(", ")}`,
                 requiredRoles: roles,
-                userRoles
+        userRoles,
             });
         }
         next();

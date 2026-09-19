@@ -83,7 +83,10 @@ export class BlockchainService {
     constructor(config: Partial<BlockchainServiceConfig> = {}) {
         // Set default configuration with fallback values
         this.config = {
-            etherscanApiKey: config.etherscanApiKey || process.env.ETHERSCAN_API_KEY || "your-etherscan-key",
+      etherscanApiKey:
+        config.etherscanApiKey ||
+        process.env.ETHERSCAN_API_KEY ||
+        "your-etherscan-key",
             chainId: config.chainId || 80094, // Default to specified chain (80094)
             chainName: config.chainName || "Ethereum Mainnet",
             nativeSymbol: config.nativeSymbol || "ETH",
@@ -93,7 +96,9 @@ export class BlockchainService {
         logger.info("Blockchain service initialized", {
             chainId: this.config.chainId,
             chainName: this.config.chainName,
-            apiKey: this.config.etherscanApiKey.includes("your-etherscan-key") ? "default" : "custom",
+      apiKey: this.config.etherscanApiKey.includes("your-etherscan-key")
+        ? "default"
+        : "custom",
         });
     }
 
@@ -135,13 +140,17 @@ export class BlockchainService {
 
             const response = await fetch(apiUrl);
             if (!response.ok) {
-                throw new Error(`Etherscan API request failed with status: ${response.status}`);
+        throw new Error(
+          `Etherscan API request failed with status: ${response.status}`
+        );
             }
 
-            const data = await response.json() as EtherscanBalanceResponse;
+      const data = (await response.json()) as EtherscanBalanceResponse;
 
             if (data.status !== "1" || !data.result) {
-                throw new Error(`Etherscan API error: ${data.message || "Unknown error"}`);
+        throw new Error(
+          `Etherscan API error: ${data.message || "Unknown error"}`
+        );
             }
 
             // Balance is returned in wei
@@ -159,7 +168,11 @@ export class BlockchainService {
             };
 
             // Cache the result
-            await redisService.setex(cacheKey, this.config.cacheTtl, JSON.stringify(result));
+      await redisService.setex(
+        cacheKey,
+        this.config.cacheTtl,
+        JSON.stringify(result)
+      );
 
             logger.debug("Blockchain balance fetched and cached", {
                 walletAddress,
@@ -173,14 +186,20 @@ export class BlockchainService {
                 walletAddress,
                 chainId: this.config.chainId,
             });
-            throw new Error(`Failed to get balance for ${walletAddress}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to get balance for ${walletAddress}: ${error instanceof Error ? error.message : String(error)}`
+      );
         }
     }
 
     /**
      * Get token balance for a wallet address
      */
-    async getTokenBalance(walletAddress: string, tokenAddress: string, decimals: number = 18): Promise<TokenBalance> {
+  async getTokenBalance(
+    walletAddress: string,
+    tokenAddress: string,
+    decimals: number = 18
+  ): Promise<TokenBalance> {
         try {
             // Validate addresses
             if (!this.isValidWalletAddress(walletAddress)) {
@@ -214,13 +233,18 @@ export class BlockchainService {
 
             const response = await fetch(apiUrl);
             if (!response.ok) {
-                throw new Error(`Etherscan API request failed with status: ${response.status}`);
+        throw new Error(
+          `Etherscan API request failed with status: ${response.status}`
+        );
             }
 
-            const data = await response.json() as EtherscanTokenTransactionsResponse;
+      const data =
+        (await response.json()) as EtherscanTokenTransactionsResponse;
 
             if (data.status !== "1" || !Array.isArray(data.result)) {
-                throw new Error(`Etherscan API error: ${data.message || "Unknown error"}`);
+        throw new Error(
+          `Etherscan API error: ${data.message || "Unknown error"}`
+        );
             }
 
             // Calculate token balance from transactions
@@ -266,7 +290,11 @@ export class BlockchainService {
             };
 
             // Cache the result
-            await redisService.setex(cacheKey, this.config.cacheTtl, JSON.stringify(result));
+      await redisService.setex(
+        cacheKey,
+        this.config.cacheTtl,
+        JSON.stringify(result)
+      );
 
             logger.debug("Token balance calculated and cached", {
                 walletAddress,
@@ -283,7 +311,9 @@ export class BlockchainService {
                 tokenAddress,
                 chainId: this.config.chainId,
             });
-            throw new Error(`Failed to get token balance for ${walletAddress}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to get token balance for ${walletAddress}: ${error instanceof Error ? error.message : String(error)}`
+      );
         }
     }
 
@@ -327,14 +357,19 @@ export class BlockchainService {
             logger.error("Failed to get user wallet address", error as Error, {
                 userId,
             });
-            throw new Error(`Failed to get wallet address for user ${userId}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to get wallet address for user ${userId}: ${error instanceof Error ? error.message : String(error)}`
+      );
         }
     }
 
     /**
      * Invalidate cached blockchain data for a user
      */
-    async invalidateUserCache(userId: string, walletAddress: string): Promise<void> {
+  async invalidateUserCache(
+    userId: string,
+    walletAddress: string
+  ): Promise<void> {
         try {
             const cacheKeys = [
                 `blockchain:balance:${this.config.chainId}:${walletAddress}`,
@@ -370,13 +405,17 @@ export class BlockchainService {
 
             const response = await fetch(apiUrl);
             if (!response.ok) {
-                throw new Error(`Etherscan API request failed with status: ${response.status}`);
+        throw new Error(
+          `Etherscan API request failed with status: ${response.status}`
+        );
             }
 
-            const data = await response.json() as EtherscanBalanceResponse;
+      const data = (await response.json()) as EtherscanBalanceResponse;
 
             if (data.status !== "1") {
-                throw new Error(`Etherscan API error: ${data.message || "Unknown error"}`);
+        throw new Error(
+          `Etherscan API error: ${data.message || "Unknown error"}`
+        );
             }
 
             logger.debug("Blockchain service health check successful", {
@@ -384,10 +423,15 @@ export class BlockchainService {
             });
             return { healthy: true };
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error("Blockchain service health check failed", new Error(errorMessage), {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(
+        "Blockchain service health check failed",
+        new Error(errorMessage),
+        {
                 chainId: this.config.chainId,
-            });
+        }
+      );
             return { healthy: false, error: errorMessage };
         }
     }
@@ -396,6 +440,8 @@ export class BlockchainService {
 // Export the class for on-demand instantiation
 // Note: Do NOT export a singleton instance to avoid unnecessary initialization
 // Export a factory function instead for on-demand creation
-export function createBlockchainService(config: Partial<BlockchainServiceConfig> = {}): BlockchainService {
+export function createBlockchainService(
+  config: Partial<BlockchainServiceConfig> = {}
+): BlockchainService {
     return new BlockchainService(config);
 }

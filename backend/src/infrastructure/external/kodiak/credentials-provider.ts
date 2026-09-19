@@ -14,7 +14,9 @@ import type { KodiakCredentials } from "./types";
 /**
  * Get decrypted Kodiak credentials for a user
  */
-export async function getUserCredentials(userId: string): Promise<KodiakCredentials | null> {
+export async function getUserCredentials(
+  userId: string
+): Promise<KodiakCredentials | null> {
     try {
         const result = await query<{
             account_id: string;
@@ -40,20 +42,35 @@ export async function getUserCredentials(userId: string): Promise<KodiakCredenti
             apiKey = encryptionService.decryptApiKey(row.api_key_encrypted);
             secretKey = encryptionService.decryptSecretKey(row.secret_key_encrypted);
         } catch (error) {
-            logger.error("Failed to decrypt Kodiak credentials with regular method, trying versioned", error as Error, {
+      logger.error(
+        "Failed to decrypt Kodiak credentials with regular method, trying versioned",
+        error as Error,
+        {
                 userId,
                 error: error instanceof Error ? error.message : String(error),
-            });
+        }
+      );
 
             // Try versioned decryption (for older data)
             try {
-                apiKey = await encryptionService.decryptWithVersion(row.api_key_encrypted);
-                secretKey = await encryptionService.decryptWithVersion(row.secret_key_encrypted);
+        apiKey = await encryptionService.decryptWithVersion(
+          row.api_key_encrypted
+        );
+        secretKey = await encryptionService.decryptWithVersion(
+          row.secret_key_encrypted
+        );
             } catch (versionError) {
-                logger.error("Failed to decrypt with versioned method, assuming plain text", versionError as Error, {
+        logger.error(
+          "Failed to decrypt with versioned method, assuming plain text",
+          versionError as Error,
+          {
                     userId,
-                    error: versionError instanceof Error ? versionError.message : String(versionError),
-                });
+            error:
+              versionError instanceof Error
+                ? versionError.message
+                : String(versionError),
+          }
+        );
 
                 // Assume plain text (for backward compatibility)
                 apiKey = row.api_key_encrypted;

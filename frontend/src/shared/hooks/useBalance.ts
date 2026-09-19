@@ -24,7 +24,7 @@ function convertDomainBalanceToLegacy(domainBalance: DomainBalance): Balance {
         availableBalance: domainBalance.available,
         reservedBalance: domainBalance.locked,
         totalAssets: domainBalance.total,
-        timestamp: domainBalance.lastUpdated.toISOString()
+    timestamp: domainBalance.lastUpdated.toISOString(),
     };
 }
 
@@ -63,7 +63,11 @@ export const useBalance = (autoRefresh: boolean = true) => {
                 if (lastData instanceof DomainBalance) {
                     // Convert domain balance to legacy format
                     balanceToSet = convertDomainBalanceToLegacy(lastData);
-                } else if (lastData && typeof lastData === 'object' && 'timestamp' in lastData) {
+        } else if (
+          lastData &&
+          typeof lastData === "object" &&
+          "timestamp" in lastData
+        ) {
                     // Already in legacy format
                     balanceToSet = lastData as unknown as Balance;
                 }
@@ -72,7 +76,6 @@ export const useBalance = (autoRefresh: boolean = true) => {
 
             // Then trigger refresh (will notify subscribers via subscription)
             await globalBalanceManager.forceRefresh();
-
         } catch (err) {
             setError((err as Error).message);
             console.error("Balance fetch error:", err);
@@ -107,7 +110,7 @@ export const useBalance = (autoRefresh: boolean = true) => {
         console.log(`💰 useBalance: Subscribing ${hookId} to global manager`);
 
         // Subscribe to global balance updates
-        const unsubscribe = globalBalanceManager.subscribe(hookId, (newBalance) => {
+    const unsubscribe = globalBalanceManager.subscribe(hookId, newBalance => {
             console.log(`💰 useBalance: Received update for ${hookId}`);
 
             // Handle both domain Balance class and legacy format
@@ -115,7 +118,11 @@ export const useBalance = (autoRefresh: boolean = true) => {
             if (newBalance instanceof DomainBalance) {
                 // Convert domain balance to legacy format
                 balanceToSet = convertDomainBalanceToLegacy(newBalance);
-            } else if (newBalance && typeof newBalance === 'object' && 'timestamp' in newBalance) {
+      } else if (
+        newBalance &&
+        typeof newBalance === "object" &&
+        "timestamp" in newBalance
+      ) {
                 // Already in legacy format
                 balanceToSet = newBalance as unknown as Balance;
             }

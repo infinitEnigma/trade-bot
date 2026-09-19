@@ -15,12 +15,12 @@
  */
 
 // Export domain-based route handlers
-export * from './auth';
-export * from './users';
-export * from './trading';
-export * from './bots';
-export * from './wallet';
-export * from './system';
+export * from "./auth";
+export * from "./users";
+export * from "./trading";
+export * from "./bots";
+export * from "./wallet";
+export * from "./system";
 
 // Export middleware (shared across domains)
-export * from '../middleware/index';
+export * from "../middleware/index";

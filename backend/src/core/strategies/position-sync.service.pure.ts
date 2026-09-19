@@ -20,8 +20,8 @@ import {
     ICacheService,
     IExternalApiService,
     ILogger,
-    Position
-} from '@trade-bot/shared';
+  Position,
+} from "@trade-bot/shared";
 
 export interface PositionSyncServiceDependencies {
     positionRepository: IPositionRepository;
@@ -95,25 +95,32 @@ export class PositionSyncService {
      * ❌ Before: API, Database, Bot State (3 sources)
      * ✅ After: Database (1 canonical source)
      */
-    async syncPositionsFromExternalAPI(userId: string): Promise<PositionSyncResult> {
+  async syncPositionsFromExternalAPI(
+    userId: string
+  ): Promise<PositionSyncResult> {
         const errors: string[] = [];
         let positionsSynced = 0;
         const syncTimestamp = new Date();
 
         try {
             // ✅ USE CENTRALIZED SERVICE - Get positions through single source of truth
-            const positionsResponse = await this.deps.externalApi.getPositions(userId);
+      const positionsResponse =
+        await this.deps.externalApi.getPositions(userId);
             if (!positionsResponse.success || !positionsResponse.data) {
                 return {
                     success: false,
                     positionsSynced: 0,
-                    errors: [positionsResponse.error || 'Failed to fetch positions from centralized service'],
+          errors: [
+            positionsResponse.error ||
+              "Failed to fetch positions from centralized service",
+          ],
                     syncTimestamp,
                 };
             }
 
             // Get account info through centralized service
-            const accountResponse = await this.deps.externalApi.getAccountInfo(userId);
+      const accountResponse =
+        await this.deps.externalApi.getAccountInfo(userId);
             if (accountResponse.success && accountResponse.data) {
                 await this.storeAccountInfoInDatabase(userId, accountResponse.data);
                 this.deps.logger.debug("Account info synced", { userId });
@@ -185,9 +192,18 @@ export class PositionSyncService {
     ): Promise<void> {
         const position = new Position(
             positionData.symbol,
-            'LONG', // Default side
-            parseFloat(String(positionData.positionQty || positionData.quantity || positionData.positionAmt || "0")),
-            parseFloat(String(positionData.averageOpenPrice || positionData.entryPrice || "0")),
+      "LONG", // Default side
+      parseFloat(
+        String(
+          positionData.positionQty ||
+            positionData.quantity ||
+            positionData.positionAmt ||
+            "0"
+        )
+      ),
+      parseFloat(
+        String(positionData.averageOpenPrice || positionData.entryPrice || "0")
+      ),
             parseFloat(String(positionData.markPrice || "0")),
             1, // Default leverage
             0.1, // Default margin ratio
@@ -195,7 +211,10 @@ export class PositionSyncService {
         );
 
         // Update or create position in database using repository
-        const existingPosition = await this.deps.positionRepository.getPosition(userId, position.symbol);
+    const existingPosition = await this.deps.positionRepository.getPosition(
+      userId,
+      position.symbol
+    );
         if (existingPosition) {
             await this.deps.positionRepository.updatePosition(userId, position);
         } else {
@@ -231,7 +250,10 @@ export class PositionSyncService {
 
             if (cacheResult.success && cacheResult.data) {
                 const cachedPositions = JSON.parse(cacheResult.data);
-                this.deps.logger.debug("Position cache hit", { userId, count: cachedPositions.length });
+        this.deps.logger.debug("Position cache hit", {
+          userId,
+          count: cachedPositions.length,
+        });
                 return cachedPositions;
             }
 
@@ -239,7 +261,11 @@ export class PositionSyncService {
             const positions = await this.deps.positionRepository.getPositions(userId);
 
             // Cache positions
-            await this.deps.cache.setex(cacheKey, this.POSITION_CACHE_TTL, JSON.stringify(positions));
+      await this.deps.cache.setex(
+        cacheKey,
+        this.POSITION_CACHE_TTL,
+        JSON.stringify(positions)
+      );
 
             this.deps.logger.debug("Positions fetched from database", {
                 userId,
@@ -248,7 +274,6 @@ export class PositionSyncService {
             });
 
             return positions;
-
         } catch (error) {
             this.deps.logger.error("Failed to get positions from database", {
                 userId,
@@ -269,7 +294,11 @@ export class PositionSyncService {
     /**
      * Sync positions for all users (batch operation)
      */
-    async syncAllUserPositions(): Promise<{ totalUsers: number; successfulSyncs: number; errors: string[] }> {
+  async syncAllUserPositions(): Promise<{
+    totalUsers: number;
+    successfulSyncs: number;
+    errors: string[];
+  }> {
         const errors: string[] = [];
         const successfulSyncs = 0;
 
@@ -278,7 +307,6 @@ export class PositionSyncService {
             // to get all users with verified credentials in the user repository
             this.deps.logger.info("Batch position sync not implemented yet", {});
             return { totalUsers: 0, successfulSyncs: 0, errors: [] };
-
         } catch (error) {
             const errorMsg = `Batch position sync failed: ${error}`;
             errors.push(errorMsg);
@@ -312,16 +340,21 @@ export class PositionSyncService {
 
             try {
                 // Use centralized service to get positions from API
-                const positionsResponse = await this.deps.externalApi.getPositions(userId);
+        const positionsResponse =
+          await this.deps.externalApi.getPositions(userId);
                 if (positionsResponse.success && positionsResponse.data) {
                     apiPositions = positionsResponse.data.length;
 
                     // Check for significant discrepancies
                     if (Math.abs(databasePositions - apiPositions) > 2) {
-                        issues.push(`Position count mismatch: DB=${databasePositions}, API=${apiPositions}`);
+            issues.push(
+              `Position count mismatch: DB=${databasePositions}, API=${apiPositions}`
+            );
                     }
                 } else {
-                    issues.push(`Failed to fetch positions from API: ${positionsResponse.error}`);
+          issues.push(
+            `Failed to fetch positions from API: ${positionsResponse.error}`
+          );
                 }
             } catch (apiError) {
                 issues.push(`API communication failed: ${(apiError as Error).message}`);
@@ -332,7 +365,9 @@ export class PositionSyncService {
             // check is skipped until the model gains one.
             const stalePositions: typeof dbPositions = [];
             if (stalePositions.length > 0) {
-                issues.push(`${stalePositions.length} positions are stale (>5 minutes old)`);
+        issues.push(
+          `${stalePositions.length} positions are stale (>5 minutes old)`
+        );
             }
 
             const isConsistent = issues.length === 0;
@@ -343,7 +378,6 @@ export class PositionSyncService {
                 databasePositions,
                 apiPositions,
             };
-
         } catch (error) {
             issues.push(`Consistency check failed: ${error}`);
             this.deps.logger.error("Position consistency check error", {
@@ -362,6 +396,8 @@ export class PositionSyncService {
 }
 
 // Export factory function for creating service instances
-export function createPositionSyncService(deps: PositionSyncServiceDependencies): PositionSyncService {
+export function createPositionSyncService(
+  deps: PositionSyncServiceDependencies
+): PositionSyncService {
     return new PositionSyncService(deps);
 }

@@ -12,17 +12,25 @@ import {
     BotEventType,
     BotActualState,
     createBotEvent,
-} from '@trade-bot/shared';
-import { RedisStreamOperations, ENGINE_EVENTS_STREAM } from '../infrastructure/redis/streams';
-import { logger } from '../utils/logger';
+} from "@trade-bot/shared";
+import {
+  RedisStreamOperations,
+  ENGINE_EVENTS_STREAM,
+} from "../infrastructure/redis/streams";
+import { logger } from "../utils/logger";
 
 /**
  * Publish any event to the engine events stream.
  */
-const EVENT_PUBLISH_MAX_RETRIES = Number(process.env.EVENT_PUBLISH_MAX_RETRIES || 3);
-const EVENT_PUBLISH_BASE_DELAY_MS = Number(process.env.EVENT_PUBLISH_BASE_DELAY_MS || 250);
+const EVENT_PUBLISH_MAX_RETRIES = Number(
+  process.env.EVENT_PUBLISH_MAX_RETRIES || 3
+);
+const EVENT_PUBLISH_BASE_DELAY_MS = Number(
+  process.env.EVENT_PUBLISH_BASE_DELAY_MS || 250
+);
 
-const delayMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const delayMs = (ms: number): Promise<void> =>
+  new Promise(resolve => setTimeout(resolve, ms));
 
 export interface PublishResult {
     success: boolean;
@@ -57,13 +65,13 @@ export async function publishEvent(
             payload: event.payload,
         });
         if (result.success) {
-            logger.debug('Engine event published', { type, correlationId });
+      logger.debug("Engine event published", { type, correlationId });
             return { success: true };
         }
         lastError = result.error;
         if (attempt < EVENT_PUBLISH_MAX_RETRIES - 1) {
             const backoffMs = Math.pow(2, attempt) * EVENT_PUBLISH_BASE_DELAY_MS;
-            logger.warn('Engine event publish failed, retrying', {
+      logger.warn("Engine event publish failed, retrying", {
                 type,
                 attempt: attempt + 1,
                 backoffMs,
@@ -72,7 +80,7 @@ export async function publishEvent(
         }
     }
 
-    logger.error('Failed to publish engine event after retries', {
+  logger.error("Failed to publish engine event after retries", {
         type,
         correlationId,
         error: lastError,
@@ -91,12 +99,17 @@ export async function publishAccepted(
     engineEpoch: number,
     correlationId: string
 ): Promise<PublishResult> {
-    return publishEvent(streamOps, 'COMMAND_ACCEPTED', {
+  return publishEvent(
+    streamOps,
+    "COMMAND_ACCEPTED",
+    {
         botId,
         commandType,
         engineId,
         engineEpoch,
-    }, correlationId);
+    },
+    correlationId
+  );
 }
 
 /**
@@ -112,14 +125,19 @@ export async function publishFailed(
     message: string,
     correlationId: string
 ): Promise<PublishResult> {
-    return publishEvent(streamOps, 'COMMAND_FAILED', {
+  return publishEvent(
+    streamOps,
+    "COMMAND_FAILED",
+    {
         botId,
         commandType,
         engineId,
         engineEpoch,
         errorCode,
         message,
-    }, correlationId);
+    },
+    correlationId
+  );
 }
 
 /**
@@ -133,10 +151,15 @@ export async function publishStateChanged(
     correlationId: string,
     reason?: string
 ): Promise<PublishResult> {
-    return publishEvent(streamOps, 'STATE_CHANGED', {
+  return publishEvent(
+    streamOps,
+    "STATE_CHANGED",
+    {
         botId,
         from,
         to,
-        reason: reason || '',
-    }, correlationId);
+      reason: reason || "",
+    },
+    correlationId
+  );
 }

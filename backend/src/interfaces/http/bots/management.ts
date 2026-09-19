@@ -67,18 +67,22 @@
  */
 
 import { Router, Response, NextFunction } from "express";
-import { v4 as uuidv4 } from "uuid";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
+import {
+  authMiddleware,
+  AuthenticatedRequest,
+} from "../../middleware/auth.middleware";
 import { query } from "../../../database/pool";
 import {
     ValidationError,
     NotFoundError,
     DatabaseError,
-    ConflictError,
     AuthenticationError,
     createErrorResponse,
 } from "@trade-bot/shared";
-import { getCorrelationId, getContextForLogging } from "../../../shared/utils/context";
+import {
+  getCorrelationId,
+  getContextForLogging,
+} from "../../../shared/utils/context";
 import { validators } from "../../middleware/validation.middleware";
 import { serviceProvider } from "../../../core/service-provider";
 import { botLifecycleService } from "../../../core/bots/bot-lifecycle.service";
@@ -187,9 +191,9 @@ router.get(
                 userId: "unauthenticated",
             });
             const authError = new AuthenticationError("User not authenticated");
-            return res.status(authError.statusCode).json(
-                createErrorResponse(authError, getCorrelationId())
-            );
+      return res
+        .status(authError.statusCode)
+        .json(createErrorResponse(authError, getCorrelationId()));
         }
 
         try {
@@ -206,9 +210,9 @@ router.get(
                 userId,
             });
             const dbError = new DatabaseError("Failed to get bot instances");
-            res.status(dbError.statusCode).json(
-                createErrorResponse(dbError, getCorrelationId())
-            );
+      res
+        .status(dbError.statusCode)
+        .json(createErrorResponse(dbError, getCorrelationId()));
         }
     }
 );
@@ -336,7 +340,8 @@ router.post(
         if (userLevel !== "VERIFIED") {
             return res.status(403).json({
                 success: false,
-                error: "Bot functions require VERIFIED user level. Please complete wallet verification."
+        error:
+          "Bot functions require VERIFIED user level. Please complete wallet verification.",
             });
         }
         next();
@@ -353,18 +358,26 @@ router.post(
             // Check if user has verified credentials first
             const hasCredentials = await hasUserKodiakCredentials(userId);
             if (!hasCredentials) {
-                const authError = new ValidationError("No verified Kodiak credentials found");
-                return res.status(authError.statusCode).json(createErrorResponse(authError, getCorrelationId()));
+        const authError = new ValidationError(
+          "No verified Kodiak credentials found"
+        );
+        return res
+          .status(authError.statusCode)
+          .json(createErrorResponse(authError, getCorrelationId()));
             }
 
             // Check control-plane health: Redis Streams must be available
             // to deliver lifecycle commands to the engine
             const controlPlaneHealthy = await redisService.isHealthy();
             if (!controlPlaneHealthy) {
-                logger.warn("Bot start rejected: control plane (Redis) not operational", { userId, strategyId });
+        logger.warn(
+          "Bot start rejected: control plane (Redis) not operational",
+          { userId, strategyId }
+        );
                 return res.status(503).json({
                     success: false,
-                    error: "Trading control plane is not operational. Please try again later.",
+          error:
+            "Trading control plane is not operational. Please try again later.",
                     retryAfter: 30,
                     timestamp: Date.now(),
                 });
@@ -376,7 +389,11 @@ router.post(
             // Redis Streams. The engine fetches credentials out-of-band
             // after COMMAND_ACCEPTED - no secrets ever travel through the
             // control protocol or Socket.IO.
-            const lifecycle = await botLifecycleService.createAndStart(userId, strategyId, parseFloat(notionalAmount));
+      const lifecycle = await botLifecycleService.createAndStart(
+        userId,
+        strategyId,
+        parseFloat(notionalAmount)
+      );
 
             // Log credential access for audit trail (engine will fetch
             // credentials through the authenticated engine endpoint).
@@ -413,8 +430,16 @@ router.post(
                 ...getContextForLogging(),
                 userId: req.user?.userId,
             });
-            const statusCode = (err as Error & { statusCode?: number }).statusCode ?? 500;
-            const message = statusCode === 404 ? "Strategy not found" : statusCode === 409 ? (err as Error).message : statusCode === 503 ? "Engine communication unavailable" : "Failed to start bot";
+      const statusCode =
+        (err as Error & { statusCode?: number }).statusCode ?? 500;
+      const message =
+        statusCode === 404
+          ? "Strategy not found"
+          : statusCode === 409
+            ? (err as Error).message
+            : statusCode === 503
+              ? "Engine communication unavailable"
+              : "Failed to start bot";
             res.status(statusCode).json({
                 success: false,
                 error: message,
@@ -434,7 +459,8 @@ router.post(
         if (userLevel !== "VERIFIED") {
             return res.status(403).json({
                 success: false,
-                error: "Bot functions require VERIFIED user level. Please complete wallet verification."
+        error:
+          "Bot functions require VERIFIED user level. Please complete wallet verification.",
             });
         }
         next();
@@ -449,10 +475,14 @@ router.post(
             // to deliver lifecycle commands to the engine
             const controlPlaneHealthy = await redisService.isHealthy();
             if (!controlPlaneHealthy) {
-                logger.warn("Bot stop rejected: control plane (Redis) not operational", { userId, botId });
+        logger.warn(
+          "Bot stop rejected: control plane (Redis) not operational",
+          { userId, botId }
+        );
                 return res.status(503).json({
                     success: false,
-                    error: "Trading control plane is not operational. Please try again later.",
+          error:
+            "Trading control plane is not operational. Please try again later.",
                     retryAfter: 30,
                     timestamp: Date.now(),
                 });
@@ -478,10 +508,16 @@ router.post(
             logger.error("Stop bot error", err as Error, {
                 userId: req.user?.userId,
             });
-            const statusCode = (err as Error & { statusCode?: number }).statusCode ?? 500;
+      const statusCode =
+        (err as Error & { statusCode?: number }).statusCode ?? 500;
             res.status(statusCode).json({
                 success: false,
-                error: statusCode === 404 ? "Bot not found" : statusCode === 503 ? "Engine communication unavailable" : "Failed to stop bot",
+        error:
+          statusCode === 404
+            ? "Bot not found"
+            : statusCode === 503
+              ? "Engine communication unavailable"
+              : "Failed to stop bot",
                 timestamp: Date.now(),
             });
         }
@@ -503,9 +539,9 @@ router.get(
 
             if (!botInstance || botInstance.userId !== userId) {
                 const notFoundError = new NotFoundError("Bot not found");
-                return res.status(notFoundError.statusCode).json(
-                    createErrorResponse(notFoundError, getCorrelationId())
-                );
+        return res
+          .status(notFoundError.statusCode)
+          .json(createErrorResponse(notFoundError, getCorrelationId()));
             }
 
             const statusInfo = {
@@ -518,9 +554,9 @@ router.get(
                     engineHealth: {
                         running: true,
                         lastHealthCheck: Date.now(),
-                        status: 'healthy'
-                    }
-                }
+            status: "healthy",
+          },
+        },
             };
 
             res.json({
@@ -534,9 +570,9 @@ router.get(
                 botId: req.params.botId,
             });
             const dbError = new DatabaseError("Failed to get bot status");
-            res.status(dbError.statusCode).json(
-                createErrorResponse(dbError, getCorrelationId())
-            );
+      res
+        .status(dbError.statusCode)
+        .json(createErrorResponse(dbError, getCorrelationId()));
         }
     }
 );
@@ -552,18 +588,21 @@ router.post(
 
             if (!botId) {
                 const validationError = new ValidationError("Bot ID required");
-                return res.status(validationError.statusCode).json(
-                    createErrorResponse(validationError, getCorrelationId())
-                );
+        return res
+          .status(validationError.statusCode)
+          .json(createErrorResponse(validationError, getCorrelationId()));
             }
 
             // Validate bot ownership (simplified)
-            const botResult = await query<{ id: string; status: string }>("SELECT id, status FROM bot_instances WHERE id = $1 AND user_id = $2", [botId, userId]);
+      const botResult = await query<{ id: string; status: string }>(
+        "SELECT id, status FROM bot_instances WHERE id = $1 AND user_id = $2",
+        [botId, userId]
+      );
             if (botResult.rows.length === 0) {
                 const notFoundError = new NotFoundError("Bot not found");
-                return res.status(notFoundError.statusCode).json(
-                    createErrorResponse(notFoundError, getCorrelationId())
-                );
+        return res
+          .status(notFoundError.statusCode)
+          .json(createErrorResponse(notFoundError, getCorrelationId()));
             }
 
             // Simplified status sync - just return current status
@@ -574,7 +613,11 @@ router.post(
                     status: botResult.rows[0].status,
                     reconciled: false,
                     reason: "sync_completed",
-                    engineHealth: { running: true, lastHealthCheck: Date.now(), status: 'healthy' },
+          engineHealth: {
+            running: true,
+            lastHealthCheck: Date.now(),
+            status: "healthy",
+          },
                 },
                 timestamp: Date.now(),
             });
@@ -584,9 +627,9 @@ router.post(
                 botId: req.body?.botId,
             });
             const dbError = new DatabaseError("Failed to sync bot status");
-            res.status(dbError.statusCode).json(
-                createErrorResponse(dbError, getCorrelationId())
-            );
+      res
+        .status(dbError.statusCode)
+        .json(createErrorResponse(dbError, getCorrelationId()));
         }
     }
 );
@@ -597,7 +640,7 @@ router.get(
     authMiddleware,
     async (req: AuthenticatedRequest, res: Response) => {
         try {
-            const userId = getUserId(req);
+      const _userId = getUserId(req);
             const botId = req.params.botId as string;
 
             // Get bot performance from service
@@ -615,9 +658,9 @@ router.get(
                 botId: req.params.botId,
             });
             const dbError = new DatabaseError("Failed to get bot performance");
-            res.status(dbError.statusCode).json(
-                createErrorResponse(dbError, getCorrelationId())
-            );
+      res
+        .status(dbError.statusCode)
+        .json(createErrorResponse(dbError, getCorrelationId()));
         }
     }
 );
@@ -641,9 +684,9 @@ router.get(
                 userId: req.user?.userId,
             });
             const dbError = new DatabaseError("Failed to get engine status");
-            res.status(dbError.statusCode).json(
-                createErrorResponse(dbError, getCorrelationId())
-            );
+      res
+        .status(dbError.statusCode)
+        .json(createErrorResponse(dbError, getCorrelationId()));
         }
     }
 );

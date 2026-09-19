@@ -56,7 +56,9 @@ describe("authApi", () => {
 
             mockPost.mockRejectedValue(new Error(errorMessage));
 
-            await expect(authApi.register(email, password)).rejects.toThrow(errorMessage);
+      await expect(authApi.register(email, password)).rejects.toThrow(
+        errorMessage
+      );
         });
     });
 

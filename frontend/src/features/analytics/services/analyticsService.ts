@@ -8,7 +8,7 @@ import {
     AnalyticsMetrics,
     SectorPerformance,
     PriceDataPoint,
-    AnalyticsData
+  AnalyticsData,
 } from "../types/analytics.types";
 
 interface TradingViewData {
@@ -41,11 +41,11 @@ export class AnalyticsService {
      */
     getTimeWindows(): AnalyticsTimeWindow[] {
         return [
-            { label: '7 Days', days: 7, value: '7d' },
-            { label: '30 Days', days: 30, value: '30d' },
-            { label: '90 Days', days: 90, value: '90d' },
-            { label: '6 Months', days: 180, value: '180d' },
-            { label: '1 Year', days: 365, value: '365d' },
+      { label: "7 Days", days: 7, value: "7d" },
+      { label: "30 Days", days: 30, value: "30d" },
+      { label: "90 Days", days: 90, value: "90d" },
+      { label: "6 Months", days: 180, value: "180d" },
+      { label: "1 Year", days: 365, value: "365d" },
         ];
     }
 
@@ -96,9 +96,13 @@ export class AnalyticsService {
 
                 const chunkDays = Math.min(historicalChunkSize, remainingDays - i);
                 const chunkStart = new Date();
-                chunkStart.setDate(chunkStart.getDate() - (remainingDays - i + recentDays));
+        chunkStart.setDate(
+          chunkStart.getDate() - (remainingDays - i + recentDays)
+        );
                 const chunkEnd = new Date();
-                chunkEnd.setDate(chunkEnd.getDate() - (remainingDays - i - chunkDays + recentDays));
+        chunkEnd.setDate(
+          chunkEnd.getDate() - (remainingDays - i - chunkDays + recentDays)
+        );
 
                 try {
                     const chunkData = await this.loadHistoricalChunk(
@@ -110,12 +114,11 @@ export class AnalyticsService {
 
                     // Update progress incrementally
                     const historicalProgress = (i + chunkDays) / remainingDays;
-                    onProgress?.(0.5 + (historicalProgress * 0.4)); // 50-90% for historical data
-
+          onProgress?.(0.5 + historicalProgress * 0.4); // 50-90% for historical data
                 } catch (error) {
                     if (!signal?.aborted) {
                         // Log error but continue with other chunks
-                        console.warn('Failed to load historical chunk:', error);
+            console.warn("Failed to load historical chunk:", error);
                     }
                 }
             }
@@ -133,7 +136,7 @@ export class AnalyticsService {
         startDate: Date,
         endDate: Date
     ): Promise<PriceDataPoint[]> {
-        const cacheKey = `analytics-${symbol}-${startDate.toISOString().split('T')[0]}-${endDate.toISOString().split('T')[0]}`;
+    const cacheKey = `analytics-${symbol}-${startDate.toISOString().split("T")[0]}-${endDate.toISOString().split("T")[0]}`;
 
         // Check cache first
         const cachedData = chartDataCache.get(cacheKey);
@@ -145,13 +148,13 @@ export class AnalyticsService {
         // Load from API
         const response = await marketApi.getTvHistory({
             symbol,
-            resolution: '1D', // Daily data for analytics
+      resolution: "1D", // Daily data for analytics
             from: Math.floor(startDate.getTime() / 1000),
             to: Math.floor(endDate.getTime() / 1000),
         });
 
         if (!response.success || !response.data) {
-            throw new Error('Failed to load historical data');
+      throw new Error("Failed to load historical data");
         }
 
         // Transform and cache the data
@@ -165,9 +168,16 @@ export class AnalyticsService {
      * Transform TradingView data to analytics format
      */
     private transformTradingViewData(tvData: TradingViewData): PriceDataPoint[] {
-        if (!tvData || typeof tvData !== 'object') return [];
+    if (!tvData || typeof tvData !== "object") return [];
 
-        const { t: timestamps, o: opens, h: highs, l: lows, c: closes, v: volumes } = tvData;
+    const {
+      t: timestamps,
+      o: opens,
+      h: highs,
+      l: lows,
+      c: closes,
+      v: volumes,
+    } = tvData;
 
         if (!timestamps || !Array.isArray(timestamps)) return [];
 
@@ -190,9 +200,9 @@ export class AnalyticsService {
                 totalReturn: 0,
                 winRate: 0,
                 totalTrades: 0,
-                avgTradeDuration: '0 hours',
-                bestDay: '0%',
-                worstDay: '0%',
+        avgTradeDuration: "0 hours",
+        bestDay: "0%",
+        worstDay: "0%",
                 sharpeRatio: 0,
                 maxDrawdown: 0,
                 volatility: 0,
@@ -205,7 +215,8 @@ export class AnalyticsService {
         // Calculate basic metrics
         const firstPrice = priceData[0]?.close || 0;
         const lastPrice = priceData[priceData.length - 1]?.close || 0;
-        const totalReturn = firstPrice > 0 ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
+    const totalReturn =
+      firstPrice > 0 ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
 
         // Calculate daily returns
         const dailyReturns = [];
@@ -218,8 +229,11 @@ export class AnalyticsService {
         }
 
         // Calculate volatility (standard deviation of returns)
-        const avgReturn = dailyReturns.reduce((sum, ret) => sum + ret, 0) / dailyReturns.length;
-        const variance = dailyReturns.reduce((sum, ret) => sum + Math.pow(ret - avgReturn, 2), 0) / dailyReturns.length;
+    const avgReturn =
+      dailyReturns.reduce((sum, ret) => sum + ret, 0) / dailyReturns.length;
+    const variance =
+      dailyReturns.reduce((sum, ret) => sum + Math.pow(ret - avgReturn, 2), 0) /
+      dailyReturns.length;
         const volatility = Math.sqrt(variance) * Math.sqrt(252) * 100; // Annualized volatility
 
         // Find best and worst days
@@ -232,7 +246,7 @@ export class AnalyticsService {
             totalReturn,
             winRate: 68.5, // Mock
             totalTrades: Math.floor(priceData.length * 0.1), // Mock
-            avgTradeDuration: '2.3 hours', // Mock
+      avgTradeDuration: "2.3 hours", // Mock
             bestDay: `+${bestDay.toFixed(1)}%`,
             worstDay: `${worstDay.toFixed(1)}%`,
             sharpeRatio: 1.8, // Mock
@@ -249,10 +263,10 @@ export class AnalyticsService {
      */
     calculateSectorPerformance(): SectorPerformance[] {
         return [
-            { sector: 'DeFi', performance: 15.2, contribution: 35 },
-            { sector: 'NFT', performance: -3.1, contribution: 15 },
-            { sector: 'Gaming', performance: 8.7, contribution: 25 },
-            { sector: 'Infrastructure', performance: 22.1, contribution: 25 },
+      { sector: "DeFi", performance: 15.2, contribution: 35 },
+      { sector: "NFT", performance: -3.1, contribution: 15 },
+      { sector: "Gaming", performance: 8.7, contribution: 25 },
+      { sector: "Infrastructure", performance: 22.1, contribution: 25 },
         ];
     }
 
@@ -266,7 +280,12 @@ export class AnalyticsService {
         signal?: AbortSignal
     ): Promise<AnalyticsData> {
         // Load data in chunks
-        const priceData = await this.loadDataInChunks(symbol, timeWindow.days, onProgress, signal);
+    const priceData = await this.loadDataInChunks(
+      symbol,
+      timeWindow.days,
+      onProgress,
+      signal
+    );
 
         // Calculate metrics
         const metrics = this.calculateAnalyticsMetrics(priceData);
@@ -276,7 +295,10 @@ export class AnalyticsService {
             metrics,
             sectorPerformance,
             priceData,
-            volumeData: priceData.map(d => ({ timestamp: d.timestamp, volume: d.volume })),
+      volumeData: priceData.map(d => ({
+        timestamp: d.timestamp,
+        volume: d.volume,
+      })),
         };
     }
 
@@ -309,7 +331,10 @@ export class AnalyticsService {
             metrics,
             sectorPerformance,
             priceData,
-            volumeData: priceData.map(d => ({ timestamp: d.timestamp, volume: d.volume })),
+      volumeData: priceData.map(d => ({
+        timestamp: d.timestamp,
+        volume: d.volume,
+      })),
         };
     }
 
@@ -362,9 +387,13 @@ export class AnalyticsService {
 
                 const chunkDays = Math.min(chunkSize, remainingDays - i);
                 const chunkStart = new Date();
-                chunkStart.setDate(chunkStart.getDate() - (remainingDays - i + recentDays));
+        chunkStart.setDate(
+          chunkStart.getDate() - (remainingDays - i + recentDays)
+        );
                 const chunkEnd = new Date();
-                chunkEnd.setDate(chunkEnd.getDate() - (remainingDays - i - chunkDays + recentDays));
+        chunkEnd.setDate(
+          chunkEnd.getDate() - (remainingDays - i - chunkDays + recentDays)
+        );
 
                 try {
                     const chunkData = await this.loadHistoricalChunk(
@@ -376,12 +405,11 @@ export class AnalyticsService {
 
                     // Update progress incrementally
                     const historicalProgress = (i + chunkDays) / remainingDays;
-                    onProgress?.(0.5 + (historicalProgress * 0.4)); // 50-90% for historical data
-
+          onProgress?.(0.5 + historicalProgress * 0.4); // 50-90% for historical data
                 } catch (error) {
                     if (!signal?.aborted) {
                         // Log error but continue with other chunks
-                        console.warn('Failed to load historical chunk:', error);
+            console.warn("Failed to load historical chunk:", error);
                     }
                 }
             }

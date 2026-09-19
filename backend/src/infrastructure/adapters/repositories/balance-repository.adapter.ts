@@ -8,13 +8,9 @@
  * @format
  */
 
-import {
-    IBalanceRepository,
-    Balance,
-    BalanceHistory
-} from '@trade-bot/shared';
-import { databaseLogger as logger } from '../../../core/logging/context-aware-logger.service';
-import { query } from '../../../database/pool';
+import { IBalanceRepository, Balance, BalanceHistory } from "@trade-bot/shared";
+import { databaseLogger as logger } from "../../../core/logging/context-aware-logger.service";
+import { query } from "../../../database/pool";
 
 /**
  * Balance Repository Adapter
@@ -23,7 +19,6 @@ import { query } from '../../../database/pool';
  * Provides balance data access with proper error handling and type safety.
  */
 export class BalanceRepositoryAdapter implements IBalanceRepository {
-
     // Allow injection of query function for testing
     constructor(private readonly queryFn = query) { }
 
@@ -32,7 +27,10 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
      */
     async getBalance(userId: string): Promise<Balance> {
         try {
-            const result = await this.queryFn('SELECT * FROM balances WHERE user_id = $1', [userId]);
+      const result = await this.queryFn(
+        "SELECT * FROM balances WHERE user_id = $1",
+        [userId]
+      );
             const typedResult = result as {
                 rows: Array<{
                     total: string;
@@ -40,11 +38,11 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
                     locked: string;
                     currency: string;
                     last_updated: string;
-                }>
+        }>;
             };
 
             if (typedResult.rows.length === 0) {
-                return Balance.zero('USD');
+        return Balance.zero("USD");
             }
 
             const row = typedResult.rows[0];
@@ -56,8 +54,9 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
                 new Date(row.last_updated)
             );
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to get balance', error as Error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to get balance", error as Error);
             throw new Error(`Failed to get balance: ${errorMessage}`);
         }
     }
@@ -68,13 +67,22 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
     async updateBalance(userId: string, balance: Balance): Promise<void> {
         try {
             await this.queryFn(
-                'UPDATE balances SET total = $1, available = $2, locked = $3, currency = $4, last_updated = NOW() WHERE user_id = $5',
-                [balance.total, balance.available, balance.locked, balance.currency, userId]
+        "UPDATE balances SET total = $1, available = $2, locked = $3, currency = $4, last_updated = NOW() WHERE user_id = $5",
+        [
+          balance.total,
+          balance.available,
+          balance.locked,
+          balance.currency,
+          userId,
+        ]
+      );
+      logger.info(
+        `Balance update for user ${userId}: ${balance.total} ${balance.currency}`
             );
-            logger.info(`Balance update for user ${userId}: ${balance.total} ${balance.currency}`);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to update balance', error as Error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to update balance", error as Error);
             throw new Error(`Failed to update balance: ${errorMessage}`);
         }
     }
@@ -82,10 +90,13 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
     /**
      * Get balance history for a user
      */
-    async getBalanceHistory(userId: string, limit: number = 50): Promise<BalanceHistory[]> {
+  async getBalanceHistory(
+    userId: string,
+    limit: number = 50
+  ): Promise<BalanceHistory[]> {
         try {
             const result = await this.queryFn(
-                'SELECT * FROM balance_history WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2',
+        "SELECT * FROM balance_history WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
                 [userId, limit]
             );
 
@@ -101,7 +112,7 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
                     change_reason: string;
                     change_amount: string;
                     created_at: string;
-                }>
+        }>;
             };
 
             return typedResult.rows.map(row => ({
@@ -116,11 +127,12 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
                 ),
                 changeReason: row.change_reason,
                 changeAmount: parseFloat(row.change_amount),
-                timestamp: new Date(row.created_at)
+        timestamp: new Date(row.created_at),
             }));
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to get balance history', error as Error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to get balance history", error as Error);
             throw new Error(`Failed to get balance history: ${errorMessage}`);
         }
     }

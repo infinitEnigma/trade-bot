@@ -10,8 +10,15 @@ import { timingSafeEqual } from "crypto";
 import { query } from "../../../database/pool";
 // Bot services have been removed - using direct database operations instead
 import { serviceProvider } from "../../../core/service-provider";
-import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../../../core/notifications/error-notification.service";
-import { withCredentials, SecureCredentials } from "../../../infrastructure/security/encryption.service";
+import {
+  errorNotificationService,
+  ErrorSeverity,
+  ErrorCategory,
+} from "../../../core/notifications/error-notification.service";
+import {
+  withCredentials,
+  SecureCredentials,
+} from "../../../infrastructure/security/encryption.service";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 /**
@@ -38,17 +45,17 @@ const router = Router();
  * Protects bot engine routes from unauthorized access
  */
 const botEngineAuth = (req: Request, res: Response, next: NextFunction) => {
-    const apiKey = req.headers['x-bot-engine-key'] as string;
+  const apiKey = req.headers["x-bot-engine-key"] as string;
 
     if (!apiKey) {
         logger.warn("Bot engine route accessed without API key", {
             path: req.path,
             ip: req.ip,
-            userAgent: req.headers['user-agent'],
+      userAgent: req.headers["user-agent"],
         });
         return res.status(401).json({
             success: false,
-            error: "API key required for bot engine access"
+      error: "API key required for bot engine access",
         });
     }
 
@@ -57,7 +64,7 @@ const botEngineAuth = (req: Request, res: Response, next: NextFunction) => {
         logger.error("BOT_ENGINE_API_KEY not configured");
         return res.status(500).json({
             success: false,
-            error: "Server configuration error"
+      error: "Server configuration error",
         });
     }
 
@@ -75,7 +82,7 @@ const botEngineAuth = (req: Request, res: Response, next: NextFunction) => {
         });
         return res.status(401).json({
             success: false,
-            error: "Invalid API key"
+      error: "Invalid API key",
         });
     }
 
@@ -88,16 +95,24 @@ const botEngineAuth = (req: Request, res: Response, next: NextFunction) => {
 };
 
 // POST /api/bot/heartbeat (called by bot engine)
-router.post("/heartbeat", botEngineAuth, async (req: Request, res: Response) => {
+router.post(
+  "/heartbeat",
+  botEngineAuth,
+  async (req: Request, res: Response) => {
     try {
         const { bot_id, status, position, exposure, timestamp } = req.body;
 
         if (!bot_id) {
-            return res.status(400).json({ success: false, error: "Bot ID required" });
+        return res
+          .status(400)
+          .json({ success: false, error: "Bot ID required" });
         }
 
         // Validate bot exists (simplified - no ownership validation for engine calls)
-        const botExists = await query("SELECT id FROM bot_instances WHERE id = $1", [bot_id]);
+      const botExists = await query(
+        "SELECT id FROM bot_instances WHERE id = $1",
+        [bot_id]
+      );
         if (botExists.rows.length === 0) {
             return res.status(404).json({ success: false, error: "Bot not found" });
         }
@@ -144,9 +159,12 @@ router.post("/heartbeat", botEngineAuth, async (req: Request, res: Response) => 
             ErrorSeverity.MEDIUM
         );
 
-        res.status(500).json({ success: false, error: "Failed to record heartbeat" });
+      res
+        .status(500)
+        .json({ success: false, error: "Failed to record heartbeat" });
     }
-});
+  }
+);
 
 // GET /api/bot/engine/credentials/:botId?correlationId=... (called by engine)
 //
@@ -159,16 +177,25 @@ router.post("/heartbeat", botEngineAuth, async (req: Request, res: Response) => 
 // - bot must exist with desired_state = RUNNING
 // - credentials are issued at most once per (botId, correlationId),
 //   enforced via a bot_lifecycle_events marker row.
-router.get("/credentials/:botId", botEngineAuth, async (req: Request, res: Response) => {
+router.get(
+  "/credentials/:botId",
+  botEngineAuth,
+  async (req: Request, res: Response) => {
     try {
         const { botId } = req.params;
         const correlationId = (req.query.correlationId as string) || "";
 
         if (!correlationId) {
-            return res.status(400).json({ success: false, error: "correlationId required" });
+        return res
+          .status(400)
+          .json({ success: false, error: "correlationId required" });
         }
 
-        const botResult = await query<{ user_id: string; desired_state: string; actual_state: string }>(
+      const botResult = await query<{
+        user_id: string;
+        desired_state: string;
+        actual_state: string;
+      }>(
             "SELECT user_id, desired_state, actual_state FROM bot_instances WHERE id = $1",
             [botId]
         );
@@ -177,8 +204,13 @@ router.get("/credentials/:botId", botEngineAuth, async (req: Request, res: Respo
         }
 
         const bot = botResult.rows[0];
-        if (bot.desired_state !== "RUNNING" || !["STARTING", "RUNNING"].includes(bot.actual_state)) {
-            return res.status(409).json({ success: false, error: "Bot is not in a startable state" });
+      if (
+        bot.desired_state !== "RUNNING" ||
+        !["STARTING", "RUNNING"].includes(bot.actual_state)
+      ) {
+        return res
+          .status(409)
+          .json({ success: false, error: "Bot is not in a startable state" });
         }
 
         // Issue at most once per (botId, correlationId).
@@ -187,15 +219,23 @@ router.get("/credentials/:botId", botEngineAuth, async (req: Request, res: Respo
             [botId, correlationId]
         );
         if (issuedMarker.rows.length > 0) {
-            return res.status(409).json({ success: false, error: "Credentials already issued for this correlation" });
+        return res
+          .status(409)
+          .json({
+            success: false,
+            error: "Credentials already issued for this correlation",
+          });
         }
 
         // Decrypt credentials in-memory; never persisted or logged.
-        const credentials = await withCredentials(bot.user_id, async (secure: SecureCredentials) => ({
+      const credentials = await withCredentials(
+        bot.user_id,
+        async (secure: SecureCredentials) => ({
             accountId: secure.get("accountId"),
             accessKey: secure.get("apiKey"),
             secretKey: secure.get("secretKey"),
-        }));
+        })
+      );
 
         await query(
             `INSERT INTO bot_lifecycle_events (bot_id, event_type, correlation_id, metadata)
@@ -211,12 +251,18 @@ router.get("/credentials/:botId", botEngineAuth, async (req: Request, res: Respo
         logger.error("Engine credential fetch error", err, {
             botId: req.params?.botId,
         });
-        res.status(500).json({ success: false, error: "Failed to issue credentials" });
+      res
+        .status(500)
+        .json({ success: false, error: "Failed to issue credentials" });
     }
-});
+  }
+);
 
 // POST /api/bot/report-trade (called by bot engine)
-router.post("/report-trade", botEngineAuth, async (req: Request, res: Response) => {
+router.post(
+  "/report-trade",
+  botEngineAuth,
+  async (req: Request, res: Response) => {
     try {
         const {
             userId,
@@ -330,17 +376,22 @@ router.post("/report-trade", botEngineAuth, async (req: Request, res: Response) 
 
         res.status(500).json({ success: false, error: "Failed to report trade" });
     }
-});
+  }
+);
 
 // POST /api/bot/engine-status (called by bot engine)
-router.post("/engine-status", botEngineAuth, async (req: Request, res: Response) => {
+router.post(
+  "/engine-status",
+  botEngineAuth,
+  async (req: Request, res: Response) => {
     try {
-        const { status, activeBots, totalBots, uptime, memoryUsage, cpuUsage } = req.body;
+      const { status, activeBots, totalBots, uptime, memoryUsage, cpuUsage } =
+        req.body;
 
         // Update engine status in memory
         // This could be extended to store in database if needed
         const engineStatus = {
-            running: status === 'running',
+        running: status === "running",
             status,
             activeBots: activeBots || 0,
             totalBots: totalBots || 0,
@@ -362,7 +413,7 @@ router.post("/engine-status", botEngineAuth, async (req: Request, res: Response)
         });
 
         // Check for engine health issues
-        if (status !== 'running') {
+      if (status !== "running") {
             await errorNotificationService.notifyError(
                 new Error(`Engine status: ${status}`),
                 {
@@ -373,17 +424,20 @@ router.post("/engine-status", botEngineAuth, async (req: Request, res: Response)
                         engineHealthIssue: true,
                     },
                 },
-                status === 'error' ? ErrorSeverity.CRITICAL : ErrorSeverity.HIGH
+          status === "error" ? ErrorSeverity.CRITICAL : ErrorSeverity.HIGH
             );
         }
 
         // Check if we should stop engine (no active bots)
-        if (activeBots === 0 && status === 'running') {
+      if (activeBots === 0 && status === "running") {
             setTimeout(async () => {
                 try {
                     await serviceProvider.getEngineManager().stopEngineIfNoActiveBots();
                 } catch (error) {
-                    logger.error("Failed to check engine stop condition", error as Error);
+            logger.error(
+              "Failed to check engine stop condition",
+              error as Error
+            );
                 }
             }, 5000); // 5 second delay to allow for race conditions
         }
@@ -401,21 +455,25 @@ router.post("/engine-status", botEngineAuth, async (req: Request, res: Response)
 
         res.status(500).json({
             success: false,
-            error: "Failed to process engine status update"
+        error: "Failed to process engine status update",
         });
     }
-});
+  }
+);
 
 // POST /api/bot/bot-error (called by bot engine when bot encounters error)
 // Simplified - bot services not implemented
-router.post("/bot-error", botEngineAuth, async (req: Request, res: Response) => {
+router.post(
+  "/bot-error",
+  botEngineAuth,
+  async (req: Request, res: Response) => {
     try {
         const { botId, error } = req.body;
 
         if (!botId || !error) {
             return res.status(400).json({
                 success: false,
-                error: "Bot ID and error message required"
+          error: "Bot ID and error message required",
             });
         }
 
@@ -442,21 +500,25 @@ router.post("/bot-error", botEngineAuth, async (req: Request, res: Response) => 
 
         res.status(500).json({
             success: false,
-            error: "Failed to process bot error report"
+        error: "Failed to process bot error report",
         });
     }
-});
+  }
+);
 
 // POST /api/bot/bot-recovery (called by bot engine when bot recovers)
 // Simplified - bot services not implemented
-router.post("/bot-recovery", botEngineAuth, async (req: Request, res: Response) => {
+router.post(
+  "/bot-recovery",
+  botEngineAuth,
+  async (req: Request, res: Response) => {
     try {
         const { botId } = req.body;
 
         if (!botId) {
             return res.status(400).json({
                 success: false,
-                error: "Bot ID required"
+          error: "Bot ID required",
             });
         }
 
@@ -483,10 +545,11 @@ router.post("/bot-recovery", botEngineAuth, async (req: Request, res: Response) 
 
         res.status(500).json({
             success: false,
-            error: "Failed to process bot recovery report"
+        error: "Failed to process bot recovery report",
         });
     }
-});
+  }
+);
 
 // GET /api/bot/engine/status (for frontend to check engine status)
 // Note: Since this router is mounted at /engine, the path is just /status
@@ -509,15 +572,15 @@ router.get("/status", async (req: Request, res: Response) => {
         };
 
         // Engine is considered running if there are any running bots
-        const running = parseInt(botStats.running_bots || '0') > 0;
+    const running = parseInt(botStats.running_bots || "0") > 0;
 
         const engineStatus = {
             running,
-            status: running ? 'running' : 'idle',
-            activeBots: parseInt(botStats.running_bots || '0'),
-            totalBots: parseInt(botStats.total_bots || '0'),
-            stoppedBots: parseInt(botStats.stopped_bots || '0'),
-            errorBots: parseInt(botStats.error_bots || '0'),
+      status: running ? "running" : "idle",
+      activeBots: parseInt(botStats.running_bots || "0"),
+      totalBots: parseInt(botStats.total_bots || "0"),
+      stoppedBots: parseInt(botStats.stopped_bots || "0"),
+      errorBots: parseInt(botStats.error_bots || "0"),
             lastUpdate: Date.now(),
         };
 
@@ -536,7 +599,7 @@ router.get("/status", async (req: Request, res: Response) => {
 
         res.status(500).json({
             success: false,
-            error: "Failed to get engine status"
+      error: "Failed to get engine status",
         });
     }
 });

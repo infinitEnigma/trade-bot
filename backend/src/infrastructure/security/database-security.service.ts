@@ -13,20 +13,20 @@ import { securityLogger as logger } from "../../core/logging/context-aware-logge
 export interface SecurityAssessment {
     databaseEncryption: {
         enabled: boolean;
-        type: 'transparent' | 'column-level' | 'application-level';
-        status: 'secure' | 'warning' | 'insecure';
+    type: "transparent" | "column-level" | "application-level";
+    status: "secure" | "warning" | "insecure";
         recommendations: string[];
     };
     sensitiveDataProtection: {
         encryptedFields: string[];
         unencryptedFields: string[];
-        riskLevel: 'low' | 'medium' | 'high';
+    riskLevel: "low" | "medium" | "high";
         recommendations: string[];
     };
     auditLogging: {
         enabled: boolean;
         retentionDays: number;
-        complianceLevel: 'basic' | 'enhanced' | 'full';
+    complianceLevel: "basic" | "enhanced" | "full";
         recommendations: string[];
     };
     accessControls: {
@@ -40,10 +40,10 @@ export interface SecurityAssessment {
 export interface EncryptionMigrationPlan {
     table: string;
     columns: string[];
-    migrationStrategy: 'online' | 'offline' | 'hybrid';
+  migrationStrategy: "online" | "offline" | "hybrid";
     estimatedDowntime: string;
     rollbackPlan: string;
-    riskAssessment: 'low' | 'medium' | 'high';
+  riskAssessment: "low" | "medium" | "high";
 }
 
 export interface DatabaseSecurityConfig {
@@ -67,10 +67,10 @@ export class DatabaseSecurityService {
             auditAllQueries: config.auditAllQueries ?? false,
             connectionEncryption: config.connectionEncryption ?? true,
             sensitiveTables: config.sensitiveTables ?? [
-                'kodiak_credentials',
-                'user_sessions',
-                'audit_logs',
-                'payment_data'
+        "kodiak_credentials",
+        "user_sessions",
+        "audit_logs",
+        "payment_data",
             ],
         };
     }
@@ -102,7 +102,7 @@ export class DatabaseSecurityService {
 
         // Cache assessment results for 1 hour
         await redisService.setex(
-            'db:security:assessment',
+      "db:security:assessment",
             3600,
             JSON.stringify(assessment)
         );
@@ -119,7 +119,9 @@ export class DatabaseSecurityService {
     /**
      * Assess database encryption status
      */
-    private async assessEncryptionStatus(): Promise<SecurityAssessment['databaseEncryption']> {
+  private async assessEncryptionStatus(): Promise<
+    SecurityAssessment["databaseEncryption"]
+  > {
         try {
             // Check if PostgreSQL TDE (Transparent Data Encryption) is enabled
             const tdeResult = await query(`
@@ -127,7 +129,9 @@ export class DatabaseSecurityService {
         WHERE name = 'data_directory_encrypted'
       `);
 
-            const hasTDE = tdeResult.rows.length > 0 && (tdeResult.rows[0] as { setting: string }).setting === 'on';
+      const hasTDE =
+        tdeResult.rows.length > 0 &&
+        (tdeResult.rows[0] as { setting: string }).setting === "on";
 
             // Check for application-level encryption usage
             const encryptedColumnsResult = await query(`
@@ -140,30 +144,39 @@ export class DatabaseSecurityService {
             const hasApplicationEncryption = encryptedColumnsResult.rows.length > 0;
 
             // Determine encryption type and status
-            let encryptionType: 'transparent' | 'column-level' | 'application-level' = 'application-level';
-            let status: 'secure' | 'warning' | 'insecure' = 'warning';
+      let encryptionType: "transparent" | "column-level" | "application-level" =
+        "application-level";
+      let status: "secure" | "warning" | "insecure" = "warning";
             const recommendations: string[] = [];
 
             if (hasTDE) {
-                encryptionType = 'transparent';
-                status = 'secure';
-                recommendations.push('✅ PostgreSQL TDE is properly configured');
+        encryptionType = "transparent";
+        status = "secure";
+        recommendations.push("✅ PostgreSQL TDE is properly configured");
             } else if (hasApplicationEncryption) {
-                encryptionType = 'application-level';
-                status = 'secure';
-                recommendations.push('✅ Application-level encryption is implemented');
-                recommendations.push('⚠️ Consider PostgreSQL TDE for additional security layer');
+        encryptionType = "application-level";
+        status = "secure";
+        recommendations.push("✅ Application-level encryption is implemented");
+        recommendations.push(
+          "⚠️ Consider PostgreSQL TDE for additional security layer"
+        );
             } else {
-                status = 'insecure';
-                recommendations.push('❌ No database encryption detected');
-                recommendations.push('🔴 CRITICAL: Implement encryption immediately');
-                recommendations.push('✅ Enable PostgreSQL TDE or implement application encryption');
+        status = "insecure";
+        recommendations.push("❌ No database encryption detected");
+        recommendations.push("🔴 CRITICAL: Implement encryption immediately");
+        recommendations.push(
+          "✅ Enable PostgreSQL TDE or implement application encryption"
+        );
             }
 
             // Additional recommendations
             if (!hasTDE) {
-                recommendations.push('📋 Consider: ALTER SYSTEM SET data_directory_encrypted = on;');
-                recommendations.push('📋 Consider: pg_tde extension for column-level encryption');
+        recommendations.push(
+          "📋 Consider: ALTER SYSTEM SET data_directory_encrypted = on;"
+        );
+        recommendations.push(
+          "📋 Consider: pg_tde extension for column-level encryption"
+        );
             }
 
             return {
@@ -177,12 +190,12 @@ export class DatabaseSecurityService {
 
             return {
                 enabled: false,
-                type: 'application-level',
-                status: 'warning',
+        type: "application-level",
+        status: "warning",
                 recommendations: [
-                    '❌ Unable to assess encryption status',
-                    '🔍 Manual review required',
-                    '✅ Verify PostgreSQL TDE configuration',
+          "❌ Unable to assess encryption status",
+          "🔍 Manual review required",
+          "✅ Verify PostgreSQL TDE configuration",
                 ],
             };
         }
@@ -191,7 +204,9 @@ export class DatabaseSecurityService {
     /**
      * Assess sensitive data protection
      */
-    private async assessSensitiveDataProtection(): Promise<SecurityAssessment['sensitiveDataProtection']> {
+  private async assessSensitiveDataProtection(): Promise<
+    SecurityAssessment["sensitiveDataProtection"]
+  > {
         try {
             const encryptedFields: string[] = [];
             const unencryptedFields: string[] = [];
@@ -205,55 +220,77 @@ export class DatabaseSecurityService {
       `);
 
             for (const field of kodiakFields.rows as Array<{ column_name: string }>) {
-                if (field.column_name.includes('encrypted')) {
+        if (field.column_name.includes("encrypted")) {
                     encryptedFields.push(`kodiak_credentials.${field.column_name}`);
-                } else if (['api_key', 'secret_key', 'wallet_address'].includes(field.column_name)) {
+        } else if (
+          ["api_key", "secret_key", "wallet_address"].includes(
+            field.column_name
+          )
+        ) {
                     unencryptedFields.push(`kodiak_credentials.${field.column_name}`);
                 }
             }
 
             // Check for other sensitive tables
-            const sensitiveTables = ['user_sessions', 'audit_logs'];
+      const sensitiveTables = ["user_sessions", "audit_logs"];
             for (const table of sensitiveTables) {
-                const tableExists = await query(`
+        const tableExists = await query(
+          `
           SELECT EXISTS (
             SELECT 1 FROM information_schema.tables
             WHERE table_name = $1
           )
-        `, [table]);
+        `,
+          [table]
+        );
 
                 if ((tableExists.rows[0] as { exists: boolean }).exists) {
-                    const sensitiveColumns = await query(`
+          const sensitiveColumns = await query(
+            `
             SELECT column_name FROM information_schema.columns
             WHERE table_name = $1
             AND column_name LIKE '%token%' OR column_name LIKE '%key%' OR column_name LIKE '%secret%'
-          `, [table]);
+          `,
+            [table]
+          );
 
-                    (sensitiveColumns.rows as Array<{ column_name: string }>).forEach((col) => {
+          (sensitiveColumns.rows as Array<{ column_name: string }>).forEach(
+            col => {
                         unencryptedFields.push(`${table}.${col.column_name}`);
-                    });
+            }
+          );
                 }
             }
 
             // Calculate risk level
-            let riskLevel: 'low' | 'medium' | 'high' = 'low';
+      let riskLevel: "low" | "medium" | "high" = "low";
             const recommendations: string[] = [];
 
             if (unencryptedFields.length > 0) {
-                if (unencryptedFields.some(field => field.includes('api_key') || field.includes('secret_key'))) {
-                    riskLevel = 'high';
-                    recommendations.push('🔴 CRITICAL: API keys and secrets found unencrypted');
-                    recommendations.push('✅ Implement immediate encryption for sensitive fields');
+        if (
+          unencryptedFields.some(
+            field => field.includes("api_key") || field.includes("secret_key")
+          )
+        ) {
+          riskLevel = "high";
+          recommendations.push(
+            "🔴 CRITICAL: API keys and secrets found unencrypted"
+          );
+          recommendations.push(
+            "✅ Implement immediate encryption for sensitive fields"
+          );
                 } else {
-                    riskLevel = 'medium';
-                    recommendations.push('⚠️ Some sensitive fields may not be encrypted');
+          riskLevel = "medium";
+          recommendations.push("⚠️ Some sensitive fields may not be encrypted");
                 }
             } else {
-                recommendations.push('✅ All identified sensitive fields are encrypted');
+        recommendations.push(
+          "✅ All identified sensitive fields are encrypted"
+        );
             }
 
-            recommendations.push('📋 Regular security audits recommended');
-            recommendations.push('🔄 Implement automated encryption validation');
+      recommendations.push("📋 Regular security audits recommended");
+      recommendations.push("🔄 Implement automated encryption validation");
 
             return {
                 encryptedFields,
@@ -262,16 +299,19 @@ export class DatabaseSecurityService {
                 recommendations,
             };
         } catch (error) {
-            logger.error("Failed to assess sensitive data protection", error as Error);
+      logger.error(
+        "Failed to assess sensitive data protection",
+        error as Error
+      );
 
             return {
                 encryptedFields: [],
-                unencryptedFields: ['unknown'],
-                riskLevel: 'high',
+        unencryptedFields: ["unknown"],
+        riskLevel: "high",
                 recommendations: [
-                    '❌ Unable to assess sensitive data protection',
-                    '🔍 Manual security review required',
-                    '✅ Implement encryption for all sensitive fields',
+          "❌ Unable to assess sensitive data protection",
+          "🔍 Manual security review required",
+          "✅ Implement encryption for all sensitive fields",
                 ],
             };
         }
@@ -280,7 +320,9 @@ export class DatabaseSecurityService {
     /**
      * Assess audit logging implementation
      */
-    private async assessAuditLogging(): Promise<SecurityAssessment['auditLogging']> {
+  private async assessAuditLogging(): Promise<
+    SecurityAssessment["auditLogging"]
+  > {
         try {
             // Check if audit_logs table exists and has data
             const auditTableExists = await query<{ exists: boolean }>(`
@@ -294,11 +336,11 @@ export class DatabaseSecurityService {
                 return {
                     enabled: false,
                     retentionDays: 0,
-                    complianceLevel: 'basic',
+          complianceLevel: "basic",
                     recommendations: [
-                        '❌ Audit logging table does not exist',
-                        '✅ Create audit_logs table for security compliance',
-                        '📋 Implement comprehensive audit trail',
+            "❌ Audit logging table does not exist",
+            "✅ Create audit_logs table for security compliance",
+            "📋 Implement comprehensive audit trail",
                     ],
                 };
             }
@@ -321,31 +363,36 @@ export class DatabaseSecurityService {
                 unique_users: number;
             };
             const retentionDays = stats.oldest_log
-                ? Math.floor((Date.now() - new Date(stats.oldest_log).getTime()) / (1000 * 60 * 60 * 24))
+        ? Math.floor(
+            (Date.now() - new Date(stats.oldest_log).getTime()) /
+              (1000 * 60 * 60 * 24)
+          )
                 : 0;
 
             // Determine compliance level
-            let complianceLevel: 'basic' | 'enhanced' | 'full' = 'basic';
+      let complianceLevel: "basic" | "enhanced" | "full" = "basic";
             const recommendations: string[] = [];
 
             if (stats.total_logs > 1000 && stats.unique_users > 10) {
-                complianceLevel = 'enhanced';
-                recommendations.push('✅ Good audit logging activity detected');
+        complianceLevel = "enhanced";
+        recommendations.push("✅ Good audit logging activity detected");
             } else if (stats.total_logs > 100) {
-                complianceLevel = 'basic';
-                recommendations.push('⚠️ Basic audit logging is working');
+        complianceLevel = "basic";
+        recommendations.push("⚠️ Basic audit logging is working");
             } else {
-                recommendations.push('❌ Insufficient audit logging activity');
+        recommendations.push("❌ Insufficient audit logging activity");
             }
 
             if (retentionDays < 90) {
-                recommendations.push('⚠️ Consider extending audit log retention to 90+ days');
+        recommendations.push(
+          "⚠️ Consider extending audit log retention to 90+ days"
+        );
             } else {
-                recommendations.push('✅ Adequate audit log retention period');
+        recommendations.push("✅ Adequate audit log retention period");
             }
 
-            recommendations.push('📋 Implement automated audit log analysis');
-            recommendations.push('🔄 Regular audit log backup and archiving');
+      recommendations.push("📋 Implement automated audit log analysis");
+      recommendations.push("🔄 Regular audit log backup and archiving");
 
             return {
                 enabled: true,
@@ -359,11 +406,11 @@ export class DatabaseSecurityService {
             return {
                 enabled: false,
                 retentionDays: 0,
-                complianceLevel: 'basic',
+        complianceLevel: "basic",
                 recommendations: [
-                    '❌ Unable to assess audit logging',
-                    '🔍 Manual audit log review required',
-                    '✅ Ensure comprehensive audit trail implementation',
+          "❌ Unable to assess audit logging",
+          "🔍 Manual audit log review required",
+          "✅ Ensure comprehensive audit trail implementation",
                 ],
             };
         }
@@ -372,7 +419,9 @@ export class DatabaseSecurityService {
     /**
      * Assess access controls
      */
-    private async assessAccessControls(): Promise<SecurityAssessment['accessControls']> {
+  private async assessAccessControls(): Promise<
+    SecurityAssessment["accessControls"]
+  > {
         try {
             const recommendations: string[] = [];
 
@@ -391,23 +440,26 @@ export class DatabaseSecurityService {
         WHERE name = 'ssl'
       `);
 
-            const hasSSL = sslEnabled.rows.length > 0 && sslEnabled.rows[0].setting === 'on';
+      const hasSSL =
+        sslEnabled.rows.length > 0 && sslEnabled.rows[0].setting === "on";
 
             // Basic assessment
             if (hasRLS) {
-                recommendations.push('✅ Row Level Security (RLS) is configured');
+        recommendations.push("✅ Row Level Security (RLS) is configured");
             } else {
-                recommendations.push('⚠️ Consider implementing Row Level Security');
+        recommendations.push("⚠️ Consider implementing Row Level Security");
             }
 
             if (hasSSL) {
-                recommendations.push('✅ SSL/TLS connection encryption is enabled');
+        recommendations.push("✅ SSL/TLS connection encryption is enabled");
             } else {
-                recommendations.push('⚠️ Consider enabling SSL/TLS for database connections');
+        recommendations.push(
+          "⚠️ Consider enabling SSL/TLS for database connections"
+        );
             }
 
-            recommendations.push('📋 Implement principle of least privilege');
-            recommendations.push('🔄 Regular access control audits');
+      recommendations.push("📋 Implement principle of least privilege");
+      recommendations.push("🔄 Regular access control audits");
 
             return {
                 rowLevelSecurity: hasRLS,
@@ -423,9 +475,9 @@ export class DatabaseSecurityService {
                 columnLevelSecurity: false,
                 connectionEncryption: false,
                 recommendations: [
-                    '❌ Unable to assess access controls',
-                    '🔍 Manual security review required',
-                    '✅ Implement proper access controls and encryption',
+          "❌ Unable to assess access controls",
+          "🔍 Manual security review required",
+          "✅ Implement proper access controls and encryption",
                 ],
             };
         }
@@ -441,12 +493,12 @@ export class DatabaseSecurityService {
 
         // Kodiak credentials migration
         migrationPlans.push({
-            table: 'kodiak_credentials',
-            columns: ['api_key', 'secret_key'],
-            migrationStrategy: 'online', // Can be done while system is running
-            estimatedDowntime: '0 minutes',
-            rollbackPlan: 'Restore from backup and re-encrypt with old method',
-            riskAssessment: 'low',
+      table: "kodiak_credentials",
+      columns: ["api_key", "secret_key"],
+      migrationStrategy: "online", // Can be done while system is running
+      estimatedDowntime: "0 minutes",
+      rollbackPlan: "Restore from backup and re-encrypt with old method",
+      riskAssessment: "low",
         });
 
         // User sessions migration (if exists)
@@ -459,12 +511,12 @@ export class DatabaseSecurityService {
 
         if ((userSessionsExists.rows[0] as { exists: boolean }).exists) {
             migrationPlans.push({
-                table: 'user_sessions',
-                columns: ['session_token', 'refresh_token'],
-                migrationStrategy: 'hybrid',
-                estimatedDowntime: '5 minutes',
-                rollbackPlan: 'Clear all sessions and force re-authentication',
-                riskAssessment: 'medium',
+        table: "user_sessions",
+        columns: ["session_token", "refresh_token"],
+        migrationStrategy: "hybrid",
+        estimatedDowntime: "5 minutes",
+        rollbackPlan: "Clear all sessions and force re-authentication",
+        riskAssessment: "medium",
             });
         }
 
@@ -478,7 +530,10 @@ export class DatabaseSecurityService {
     /**
      * Execute encryption migration for a table
      */
-    async migrateTableEncryption(tableName: string, columns: string[]): Promise<{
+  async migrateTableEncryption(
+    tableName: string,
+    columns: string[]
+  ): Promise<{
         success: boolean;
         migratedRows: number;
         errors: string[];
@@ -490,7 +545,9 @@ export class DatabaseSecurityService {
 
         try {
             // Get all rows that need migration
-            const rows = await query(`SELECT id, ${columns.join(', ')} FROM ${tableName}`);
+      const rows = await query(
+        `SELECT id, ${columns.join(", ")} FROM ${tableName}`
+      );
 
             for (const row of rows.rows as Array<Record<string, unknown>>) {
                 try {
@@ -500,7 +557,9 @@ export class DatabaseSecurityService {
                     for (const column of columns) {
                         if (row[column]) {
                             // Encrypt the value
-                            const encryptedValue = await encryptionService.encryptWithVersion(row[column] as string);
+              const encryptedValue = await encryptionService.encryptWithVersion(
+                row[column] as string
+              );
                             updates.push(`${column}_encrypted = $${updates.length + 1}`);
                             values.push(encryptedValue);
                         }
@@ -509,7 +568,7 @@ export class DatabaseSecurityService {
                     if (updates.length > 0) {
                         values.push(row.id as string | number);
                         await query(
-                            `UPDATE ${tableName} SET ${updates.join(', ')} WHERE id = $${values.length}`,
+              `UPDATE ${tableName} SET ${updates.join(", ")} WHERE id = $${values.length}`,
                             values
                         );
                         migratedRows++;
@@ -517,7 +576,11 @@ export class DatabaseSecurityService {
                 } catch (rowError) {
                     const error = `Failed to migrate row ${row.id as string | number}: ${rowError}`;
                     errors.push(error);
-                    logger.error("Row migration failed", rowError as Error, { tableName, rowId: row.id as string | number, error: rowError });
+          logger.error("Row migration failed", rowError as Error, {
+            tableName,
+            rowId: row.id as string | number,
+            error: rowError,
+          });
                 }
             }
 
@@ -533,7 +596,10 @@ export class DatabaseSecurityService {
                 errors,
             };
         } catch (error) {
-            logger.error("Encryption migration failed", error as Error, { tableName, error });
+      logger.error("Encryption migration failed", error as Error, {
+        tableName,
+        error,
+      });
 
             return {
                 success: false,
@@ -560,10 +626,13 @@ export class DatabaseSecurityService {
         WHERE name = 'data_directory_encrypted'
       `);
 
-            if (currentStatus.rows.length > 0 && (currentStatus.rows[0] as { setting: string }).setting === 'on') {
+      if (
+        currentStatus.rows.length > 0 &&
+        (currentStatus.rows[0] as { setting: string }).setting === "on"
+      ) {
                 return {
                     success: true,
-                    message: 'Database encryption is already enabled',
+          message: "Database encryption is already enabled",
                     requiresRestart: false,
                 };
             }
@@ -577,13 +646,13 @@ export class DatabaseSecurityService {
             await query(`ALTER SYSTEM SET data_directory_encrypted = on`);
 
             logger.warn("Database encryption setting updated - RESTART REQUIRED", {
-                action: 'ALTER SYSTEM SET data_directory_encrypted = on',
+        action: "ALTER SYSTEM SET data_directory_encrypted = on",
                 restartRequired: true,
             });
 
             return {
                 success: true,
-                message: 'Database encryption enabled - PostgreSQL restart required',
+        message: "Database encryption enabled - PostgreSQL restart required",
                 requiresRestart: true,
             };
         } catch (error) {
@@ -609,17 +678,20 @@ export class DatabaseSecurityService {
     }> {
         try {
             // Count encrypted vs total records in sensitive tables
-            const sensitiveTables = ['kodiak_credentials', 'user_sessions'];
+      const sensitiveTables = ["kodiak_credentials", "user_sessions"];
             let totalEncrypted = 0;
             let totalRecords = 0;
 
             for (const table of sensitiveTables) {
-                const tableExists = await query(`
+        const tableExists = await query(
+          `
           SELECT EXISTS (
             SELECT 1 FROM information_schema.tables
             WHERE table_name = $1
           )
-        `, [table]);
+        `,
+          [table]
+        );
 
                 if ((tableExists.rows[0] as { exists: boolean }).exists) {
                     const stats = await query<{
@@ -638,7 +710,8 @@ export class DatabaseSecurityService {
                 }
             }
 
-            const encryptionCoverage = totalRecords > 0 ? (totalEncrypted / totalRecords) * 100 : 0;
+      const encryptionCoverage =
+        totalRecords > 0 ? (totalEncrypted / totalRecords) * 100 : 0;
             const securityScore = Math.min(100, encryptionCoverage * 0.8 + 20); // Max 100, with base score
 
             return {
@@ -680,7 +753,7 @@ Generated: ${new Date().toISOString()}
 - Enabled: ${assessment.databaseEncryption.enabled}
 
 ### Recommendations:
-${assessment.databaseEncryption.recommendations.map(r => `- ${r}`).join('\n')}
+${assessment.databaseEncryption.recommendations.map(r => `- ${r}`).join("\n")}
 
 ## Sensitive Data Protection
 - Risk Level: ${assessment.sensitiveDataProtection.riskLevel.toUpperCase()}
@@ -688,7 +761,7 @@ ${assessment.databaseEncryption.recommendations.map(r => `- ${r}`).join('\n')}
 - Unencrypted Fields: ${assessment.sensitiveDataProtection.unencryptedFields.length}
 
 ### Recommendations:
-${assessment.sensitiveDataProtection.recommendations.map(r => `- ${r}`).join('\n')}
+${assessment.sensitiveDataProtection.recommendations.map(r => `- ${r}`).join("\n")}
 
 ## Audit Logging
 - Enabled: ${assessment.auditLogging.enabled}
@@ -696,14 +769,14 @@ ${assessment.sensitiveDataProtection.recommendations.map(r => `- ${r}`).join('\n
 - Compliance: ${assessment.auditLogging.complianceLevel}
 
 ### Recommendations:
-${assessment.auditLogging.recommendations.map(r => `- ${r}`).join('\n')}
+${assessment.auditLogging.recommendations.map(r => `- ${r}`).join("\n")}
 
 ## Access Controls
 - Row Level Security: ${assessment.accessControls.rowLevelSecurity}
 - Connection Encryption: ${assessment.accessControls.connectionEncryption}
 
 ### Recommendations:
-${assessment.accessControls.recommendations.map(r => `- ${r}`).join('\n')}
+${assessment.accessControls.recommendations.map(r => `- ${r}`).join("\n")}
 
 ## Metrics
 - Encrypted Records: ${metrics.encryptedRecords}/${metrics.totalRecords}

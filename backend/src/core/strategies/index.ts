@@ -17,11 +17,11 @@
  */
 
 // Export trading-related services
-export { EngineManager } from './engine-manager.service.pure';
-export { PositionSyncService } from './position-sync.service.pure';
-export { PositionValidatorService } from './position-validator.service.pure';
+export { EngineManager } from "./engine-manager.service.pure";
+export { PositionSyncService } from "./position-sync.service.pure";
+export { PositionValidatorService } from "./position-validator.service.pure";
 
 // Export engine sub-services
-export * from './engine/index';
+export * from "./engine/index";
 
 // Note: Type exports are not available yet - services need to be updated to export interfaces

@@ -20,8 +20,8 @@ import {
     ILogger,
     Balance,
     ApiResult,
-    BalanceHistory
-} from '@trade-bot/shared';
+  BalanceHistory,
+} from "@trade-bot/shared";
 
 export interface BalanceServiceDependencies {
     balanceRepository: IBalanceRepository;
@@ -53,7 +53,7 @@ export interface LegacyBalanceFormat {
  */
 export class BalanceService {
     private readonly CACHE_TTL = 300; // 5 minutes for balance data
-    private readonly CACHE_KEY_PREFIX = 'balance';
+  private readonly CACHE_KEY_PREFIX = "balance";
 
     constructor(private deps: BalanceServiceDependencies) { }
 
@@ -67,14 +67,14 @@ export class BalanceService {
      * 4. Return domain Balance object or legacy format based on feature flag
      */
     async getUserBalance(userId: string): Promise<Balance | LegacyBalanceFormat> {
-        this.deps.logger.debug('Getting user balance', { userId });
+    this.deps.logger.debug("Getting user balance", { userId });
 
         const cacheKey = this.buildCacheKey(userId);
 
         // 1. Try cache first
         const cachedResult = await this.deps.cache.get<Balance>(cacheKey);
         if (cachedResult.success && cachedResult.data) {
-            this.deps.logger.debug('Balance cache hit', { userId });
+      this.deps.logger.debug("Balance cache hit", { userId });
             const balance = cachedResult.data;
 
             // Return legacy format if feature flag is enabled
@@ -85,44 +85,52 @@ export class BalanceService {
         }
 
         // 2. Cache miss - fetch from external API
-        this.deps.logger.debug('Balance cache miss, fetching from API', { userId });
+    this.deps.logger.debug("Balance cache miss, fetching from API", { userId });
 
-        const apiResult: ApiResult<Balance> = await this.deps.externalApi.getBalance(userId);
+    const apiResult: ApiResult<Balance> =
+      await this.deps.externalApi.getBalance(userId);
 
         if (!apiResult.success) {
-            this.deps.logger.error('Failed to get balance from external API', {
+      this.deps.logger.error("Failed to get balance from external API", {
                 userId,
-                error: apiResult.error
+        error: apiResult.error,
             });
             throw new Error(`Balance fetch failed: ${apiResult.error}`);
         }
 
         if (!apiResult.data) {
-            this.deps.logger.error('Balance data is missing from successful API result', {
+      this.deps.logger.error(
+        "Balance data is missing from successful API result",
+        {
                 userId,
                 apiSuccess: apiResult.success,
-                apiError: apiResult.error
-            });
-            throw new Error('Balance data is missing from successful API result');
+          apiError: apiResult.error,
+        }
+      );
+      throw new Error("Balance data is missing from successful API result");
         }
 
         const balance = apiResult.data;
         this.validateBalance(balance);
 
         // 3. Cache the result
-        const cacheResult = await this.deps.cache.setex(cacheKey, this.CACHE_TTL, balance);
+    const cacheResult = await this.deps.cache.setex(
+      cacheKey,
+      this.CACHE_TTL,
+      balance
+    );
         if (!cacheResult.success) {
-            this.deps.logger.warn('Failed to cache balance', {
+      this.deps.logger.warn("Failed to cache balance", {
                 userId,
-                error: cacheResult.error
+        error: cacheResult.error,
             });
         }
 
-        this.deps.logger.info('Balance retrieved and cached', {
+    this.deps.logger.info("Balance retrieved and cached", {
             userId,
             total: balance.total,
             available: balance.available,
-            currency: balance.currency
+      currency: balance.currency,
         });
 
         // Return legacy format if feature flag is enabled
@@ -146,11 +154,11 @@ export class BalanceService {
         const result = await this.deps.cache.delete(cacheKey);
 
         if (result.success) {
-            this.deps.logger.info('Balance cache invalidated', { userId });
+      this.deps.logger.info("Balance cache invalidated", { userId });
         } else {
-            this.deps.logger.warn('Failed to invalidate balance cache', {
+      this.deps.logger.warn("Failed to invalidate balance cache", {
                 userId,
-                error: result.error
+        error: result.error,
             });
         }
 
@@ -165,10 +173,13 @@ export class BalanceService {
      * - Retrieve historical balance changes
      * - Useful for audit trails and analytics
      */
-    async getBalanceHistory(userId: string, limit: number = 50): Promise<BalanceHistory[]> {
+  async getBalanceHistory(
+    userId: string,
+    limit: number = 50
+  ): Promise<BalanceHistory[]> {
         // Note: This would use the repository interface when implemented
         // For now, this is a placeholder for future enhancement
-        this.deps.logger.debug('Getting balance history', { userId, limit });
+    this.deps.logger.debug("Getting balance history", { userId, limit });
 
         // This would be implemented when we add balance history to the repository
         // return await this.deps.balanceRepository.getBalanceHistory(userId, limit);
@@ -189,10 +200,10 @@ export class BalanceService {
             const balance = await this.getDomainBalance(userId);
             return balance.canWithdraw(amount);
         } catch (error) {
-            this.deps.logger.error('Error checking withdrawal capability', {
+      this.deps.logger.error("Error checking withdrawal capability", {
                 userId,
                 amount,
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             return false;
         }
@@ -227,19 +238,23 @@ export class BalanceService {
         }
 
         // Cache miss - fetch from external API
-        const apiResult: ApiResult<Balance> = await this.deps.externalApi.getBalance(userId);
+    const apiResult: ApiResult<Balance> =
+      await this.deps.externalApi.getBalance(userId);
 
         if (!apiResult.success) {
             throw new Error(`Balance fetch failed: ${apiResult.error}`);
         }
 
         if (!apiResult.data) {
-            this.deps.logger.error('Balance data is missing from successful API result', {
+      this.deps.logger.error(
+        "Balance data is missing from successful API result",
+        {
                 userId,
                 apiSuccess: apiResult.success,
-                apiError: apiResult.error
-            });
-            throw new Error('Balance data is missing from successful API result');
+          apiError: apiResult.error,
+        }
+      );
+      throw new Error("Balance data is missing from successful API result");
         }
 
         const balance = apiResult.data;
@@ -260,13 +275,13 @@ export class BalanceService {
      */
     private validateBalance(balance: Balance): void {
         if (!balance.isValid()) {
-            this.deps.logger.error('Invalid balance data received', {
+      this.deps.logger.error("Invalid balance data received", {
                 total: balance.total,
                 available: balance.available,
                 locked: balance.locked,
-                currency: balance.currency
+        currency: balance.currency,
             });
-            throw new Error('Invalid balance data from external source');
+      throw new Error("Invalid balance data from external source");
         }
     }
 
@@ -277,7 +292,7 @@ export class BalanceService {
      * during gradual migration to pure services.
      */
     private shouldReturnLegacyFormat(): boolean {
-        return process.env.LEGACY_BALANCE_API === 'true';
+    return process.env.LEGACY_BALANCE_API === "true";
     }
 
     /**
@@ -293,7 +308,7 @@ export class BalanceService {
             availableBalance: balance.available,
             reservedBalance: balance.locked,
             totalAssets: balance.total,
-            timestamp: balance.lastUpdated.toISOString()
+      timestamp: balance.lastUpdated.toISOString(),
         };
     }
 
@@ -306,6 +321,8 @@ export class BalanceService {
 }
 
 // Export factory function for creating service instances
-export function createBalanceService(deps: BalanceServiceDependencies): BalanceService {
+export function createBalanceService(
+  deps: BalanceServiceDependencies
+): BalanceService {
     return new BalanceService(deps);
 }

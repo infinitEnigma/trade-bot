@@ -16,7 +16,9 @@ export const walletApi = {
         signature: string;
         message: string;
     }) {
-        const response = await httpClient.getClient().post("/api/user/verify-wallet", data);
+    const response = await httpClient
+      .getClient()
+      .post("/api/user/verify-wallet", data);
         return response.data;
     },
 
@@ -27,7 +29,9 @@ export const walletApi = {
      * NOT call this endpoint.
      */
     async unlinkWallet() {
-        const response = await httpClient.getClient().post("/api/user/unlink-wallet");
+    const response = await httpClient
+      .getClient()
+      .post("/api/user/unlink-wallet");
         return response.data;
     },
 };

@@ -11,9 +11,7 @@
  * @format
  */
 
-import {
-    ILogger
-} from '@trade-bot/shared';
+import { ILogger } from "@trade-bot/shared";
 
 // Simplified process manager interface for trading engine
 export interface IProcessManager {
@@ -65,39 +63,38 @@ export class StrategiesEngineService {
      */
     async ensureEngineRunning(): Promise<void> {
         try {
-            this.deps.logger.debug('Ensuring trading engine is running');
+      this.deps.logger.debug("Ensuring trading engine is running");
 
             // Check if already running
             const status = await this.deps.processManager.getStatus();
             if (status.running) {
-                this.deps.logger.debug('Strategies engine already running', {
+        this.deps.logger.debug("Strategies engine already running", {
                     pid: status.pid,
-                    uptime: status.uptime
+          uptime: status.uptime,
                 });
                 return;
             }
 
             // Attempt to start the engine
-            this.deps.logger.info('Starting trading engine process');
+      this.deps.logger.info("Starting trading engine process");
             const started = await this.deps.processManager.spawn();
 
             if (!started) {
-                throw new Error('Failed to start trading engine process');
+        throw new Error("Failed to start trading engine process");
             }
 
             // Validate the process is running
             const newStatus = await this.deps.processManager.getStatus();
             if (!newStatus.running) {
-                throw new Error('Strategies engine process failed to start');
+        throw new Error("Strategies engine process failed to start");
             }
 
-            this.deps.logger.info('Strategies engine started successfully', {
-                pid: newStatus.pid
+      this.deps.logger.info("Strategies engine started successfully", {
+        pid: newStatus.pid,
             });
-
         } catch (error) {
-            this.deps.logger.error('Failed to ensure trading engine is running', {
-                error: error instanceof Error ? error.message : String(error)
+      this.deps.logger.error("Failed to ensure trading engine is running", {
+        error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
@@ -113,34 +110,35 @@ export class StrategiesEngineService {
      */
     async getEngineStatus(): Promise<LegacyEngineStatus> {
         try {
-            this.deps.logger.debug('Getting trading engine status');
+      this.deps.logger.debug("Getting trading engine status");
 
             const status = await this.deps.processManager.getStatus();
 
             const engineStatus: LegacyEngineStatus = {
                 running: status.running,
-                health: status.running ? {
-                    status: 'healthy',
+        health: status.running
+          ? {
+              status: "healthy",
                     bots: 0, // Would need bot count from separate service
-                    uptime: status.uptime || 0
-                } : undefined
+              uptime: status.uptime || 0,
+            }
+          : undefined,
             };
 
-            this.deps.logger.debug('Strategies engine status retrieved', {
+      this.deps.logger.debug("Strategies engine status retrieved", {
                 running: engineStatus.running,
-                uptime: engineStatus.health?.uptime
+        uptime: engineStatus.health?.uptime,
             });
 
             return engineStatus;
-
         } catch (error) {
-            this.deps.logger.error('Failed to get trading engine status', {
-                error: error instanceof Error ? error.message : String(error)
+      this.deps.logger.error("Failed to get trading engine status", {
+        error: error instanceof Error ? error.message : String(error),
             });
 
             // Return safe default status
             return {
-                running: false
+        running: false,
             };
         }
     }
@@ -155,12 +153,14 @@ export class StrategiesEngineService {
      */
     async stopEngineIfNoActiveBots(): Promise<void> {
         try {
-            this.deps.logger.debug('Checking if engine should be stopped due to no active bots');
+      this.deps.logger.debug(
+        "Checking if engine should be stopped due to no active bots"
+      );
 
             // Check if engine is running first
             const status = await this.deps.processManager.getStatus();
             if (!status.running) {
-                this.deps.logger.debug('Strategies engine already stopped');
+        this.deps.logger.debug("Strategies engine already stopped");
                 return;
             }
 
@@ -169,21 +169,22 @@ export class StrategiesEngineService {
             const activeBotCount = await this.getActiveBotCount();
 
             if (activeBotCount === 0) {
-                this.deps.logger.info('No active bots, stopping trading engine');
+        this.deps.logger.info("No active bots, stopping trading engine");
 
-                const stopped = await this.deps.processManager.kill('SIGTERM');
+        const stopped = await this.deps.processManager.kill("SIGTERM");
                 if (stopped) {
-                    this.deps.logger.info('Strategies engine stopped successfully');
+          this.deps.logger.info("Strategies engine stopped successfully");
                 } else {
-                    this.deps.logger.warn('Failed to stop trading engine gracefully');
+          this.deps.logger.warn("Failed to stop trading engine gracefully");
                 }
             } else {
-                this.deps.logger.debug(`Engine kept running for ${activeBotCount} active bots`);
+        this.deps.logger.debug(
+          `Engine kept running for ${activeBotCount} active bots`
+        );
             }
-
         } catch (error) {
-            this.deps.logger.error('Failed to check engine shutdown condition', {
-                error: error instanceof Error ? error.message : String(error)
+      this.deps.logger.error("Failed to check engine shutdown condition", {
+        error: error instanceof Error ? error.message : String(error),
             });
         }
     }
@@ -198,18 +199,17 @@ export class StrategiesEngineService {
      */
     async forceStopEngine(): Promise<void> {
         try {
-            this.deps.logger.warn('Force stopping trading engine');
+      this.deps.logger.warn("Force stopping trading engine");
 
-            const killed = await this.deps.processManager.kill('SIGKILL');
+      const killed = await this.deps.processManager.kill("SIGKILL");
             if (killed) {
-                this.deps.logger.info('Strategies engine force stopped successfully');
+        this.deps.logger.info("Strategies engine force stopped successfully");
             } else {
-                this.deps.logger.warn('Failed to force stop trading engine');
+        this.deps.logger.warn("Failed to force stop trading engine");
             }
-
         } catch (error) {
-            this.deps.logger.error('Failed to force stop trading engine', {
-                error: error instanceof Error ? error.message : String(error)
+      this.deps.logger.error("Failed to force stop trading engine", {
+        error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
@@ -226,8 +226,8 @@ export class StrategiesEngineService {
         try {
             return this.deps.processManager.isAlive();
         } catch (error) {
-            this.deps.logger.error('Failed to check engine process liveness', {
-                error: error instanceof Error ? error.message : String(error)
+      this.deps.logger.error("Failed to check engine process liveness", {
+        error: error instanceof Error ? error.message : String(error),
             });
             return false;
         }
@@ -247,6 +247,8 @@ export class StrategiesEngineService {
 }
 
 // Export factory function for creating service instances
-export function createStrategiesEngineService(deps: StrategiesEngineServiceDependencies): StrategiesEngineService {
+export function createStrategiesEngineService(
+  deps: StrategiesEngineServiceDependencies
+): StrategiesEngineService {
     return new StrategiesEngineService(deps);
 }

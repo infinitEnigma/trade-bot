@@ -1,7 +1,11 @@
 /** @format */
 
 import { kodiakApi } from "../../../infrastructure/api";
-import { Position, Trade, PortfolioPerformancePoint } from "../types/dashboard.types";
+import {
+  Position,
+  Trade,
+  PortfolioPerformancePoint,
+} from "../types/dashboard.types";
 
 /**
  * Dashboard Service
@@ -65,7 +69,9 @@ export class DashboardService {
         let currentBalance = initialBalance;
 
         sortedTrades.forEach(trade => {
-            const pnl = parseFloat(trade.avg_close_price || "0") - parseFloat(trade.avg_open_price || "0");
+      const pnl =
+        parseFloat(trade.avg_close_price || "0") -
+        parseFloat(trade.avg_open_price || "0");
             // For simplicity, assume each trade has 1 unit
             currentBalance += pnl;
 
@@ -90,7 +96,8 @@ export class DashboardService {
      * Get profitable positions count
      */
     getProfitablePositionsCount(positions: Position[]): number {
-        return positions.filter(p => parseFloat(p.unsettled_pnl || "0") >= 0).length;
+    return positions.filter(p => parseFloat(p.unsettled_pnl || "0") >= 0)
+      .length;
     }
 
     /**

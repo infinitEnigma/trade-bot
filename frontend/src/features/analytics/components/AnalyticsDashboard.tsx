@@ -13,7 +13,7 @@ import { AnalyticsData } from "../types/analytics.types";
  */
 const AnalyticsLoading: React.FC<{ progress: number; message: string }> = ({
   progress,
-  message
+  message,
 }) => (
   <div className="glass-card p-6 animate-pulse">
     <div className="w-32 h-5 bg-surface rounded mb-4"></div>
@@ -56,7 +56,9 @@ const ComingSoonFeatures: React.FC = () => (
         <div className="text-textMuted">Visual risk distribution analysis</div>
       </div>
       <div className="p-3 bg-surface rounded-lg">
-        <div className="font-medium text-text mb-1">Performance Forecasting</div>
+        <div className="font-medium text-text mb-1">
+          Performance Forecasting
+        </div>
         <div className="text-textMuted">AI-powered performance predictions</div>
       </div>
     </div>
@@ -86,7 +88,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
       <div className="space-y-8">
         <AnalyticsLoading
           progress={progress}
-          message={`Analyzing ${symbol.replace('PERP_', '').replace('_USDC', '')} data...`}
+          message={`Analyzing ${symbol.replace("PERP_", "").replace("_USDC", "")} data...`}
         />
       </div>
     );
@@ -99,7 +101,9 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
           <div className="w-12 h-12 mx-auto mb-4 bg-red-500/10 rounded-full flex items-center justify-center">
             <div className="w-6 h-6 bg-red-500 rounded"></div>
           </div>
-          <h3 className="text-lg font-semibold text-text mb-2">Failed to Load Analytics</h3>
+          <h3 className="text-lg font-semibold text-text mb-2">
+            Failed to Load Analytics
+          </h3>
           <p className="text-textMuted mb-4">{error}</p>
           <button
             onClick={() => window.location.reload()}
@@ -119,8 +123,12 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
           <div className="w-12 h-12 mx-auto mb-4 bg-yellow-500/10 rounded-full flex items-center justify-center">
             <div className="w-6 h-6 bg-yellow-400 rounded"></div>
           </div>
-          <h3 className="text-lg font-semibold text-text mb-2">No Analytics Data</h3>
-          <p className="text-textMuted mb-4">Unable to load analytics data at this time.</p>
+          <h3 className="text-lg font-semibold text-text mb-2">
+            No Analytics Data
+          </h3>
+          <p className="text-textMuted mb-4">
+            Unable to load analytics data at this time.
+          </p>
         </div>
       </div>
     );

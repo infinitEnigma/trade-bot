@@ -1,17 +1,17 @@
 /** @format */
 
-import { useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useEffect } from "react";
+import { useLocation } from "react-router-dom";
 
 // Page-specific background pattern mapping
 const pagePatterns = {
-    '/dashboard': 'pattern-grid-medium',
-    '/strategies': 'pattern-dots-medium',
-    '/analytics': 'pattern-waves-flow',
-    '/profile': 'pattern-hexagons',
-    '/settings': '', // No pattern for clean settings page
-    '/login': '', // No pattern for auth pages
-    '/register': '', // No pattern for auth pages
+  "/dashboard": "pattern-grid-medium",
+  "/strategies": "pattern-dots-medium",
+  "/analytics": "pattern-waves-flow",
+  "/profile": "pattern-hexagons",
+  "/settings": "", // No pattern for clean settings page
+  "/login": "", // No pattern for auth pages
+  "/register": "", // No pattern for auth pages
 } as const;
 
 export const usePageBackground = () => {
@@ -24,8 +24,9 @@ export const usePageBackground = () => {
 
         // Add the appropriate pattern class for the current page
         const currentPath = location.pathname;
-        const patternClass = pagePatterns[currentPath as keyof typeof pagePatterns] ||
-            pagePatterns['/dashboard']; // Default to dashboard pattern
+    const patternClass =
+      pagePatterns[currentPath as keyof typeof pagePatterns] ||
+      pagePatterns["/dashboard"]; // Default to dashboard pattern
 
         if (patternClass) {
             document.body.classList.add(patternClass);

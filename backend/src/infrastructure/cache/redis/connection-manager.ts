@@ -140,7 +140,9 @@ export class RedisConnectionManager {
 
         // All retries failed
         this.health.lastError = lastError?.message;
-        throw new Error(`Failed to connect to Redis after ${this.config.maxRetries} attempts: ${lastError?.message}`);
+    throw new Error(
+      `Failed to connect to Redis after ${this.config.maxRetries} attempts: ${lastError?.message}`
+    );
     }
 
     /**

@@ -34,7 +34,10 @@ export class KodiakClient {
 
     constructor(config: KodiakApiConfig = {}) {
         this.config = {
-            baseUrl: config.baseUrl || process.env.KODIAK_API_URL || "https://api.orderly.org",
+      baseUrl:
+        config.baseUrl ||
+        process.env.KODIAK_API_URL ||
+        "https://api.orderly.org",
             timeout: config.timeout || 30000, // 30 seconds
             retryAttempts: config.retryAttempts || 3,
         };
@@ -43,28 +46,42 @@ export class KodiakClient {
     /**
      * Make authenticated GET request to Kodiak API
      */
-    async get<T = unknown>(path: string, credentials: KodiakCredentials): Promise<KodiakApiResponse<T>> {
+  async get<T = unknown>(
+    path: string,
+    credentials: KodiakCredentials
+  ): Promise<KodiakApiResponse<T>> {
         return this.request<T>("GET", path, credentials);
     }
 
     /**
      * Make authenticated POST request to Kodiak API
      */
-    async post<T = unknown>(path: string, credentials: KodiakCredentials, body?: unknown): Promise<KodiakApiResponse<T>> {
+  async post<T = unknown>(
+    path: string,
+    credentials: KodiakCredentials,
+    body?: unknown
+  ): Promise<KodiakApiResponse<T>> {
         return this.request<T>("POST", path, credentials, body);
     }
 
     /**
      * Make authenticated PUT request to Kodiak API
      */
-    async put<T = unknown>(path: string, credentials: KodiakCredentials, body?: unknown): Promise<KodiakApiResponse<T>> {
+  async put<T = unknown>(
+    path: string,
+    credentials: KodiakCredentials,
+    body?: unknown
+  ): Promise<KodiakApiResponse<T>> {
         return this.request<T>("PUT", path, credentials, body);
     }
 
     /**
      * Make authenticated DELETE request to Kodiak API
      */
-    async delete<T = unknown>(path: string, credentials: KodiakCredentials): Promise<KodiakApiResponse<T>> {
+  async delete<T = unknown>(
+    path: string,
+    credentials: KodiakCredentials
+  ): Promise<KodiakApiResponse<T>> {
         return this.request<T>("DELETE", path, credentials);
     }
 
@@ -85,11 +102,17 @@ export class KodiakClient {
             const signaturePath = path.startsWith("/v1/") ? path : `/v1${path}`;
             const bodyStr = body ? JSON.stringify(body) : "";
             const message = `${timestamp}${method.toUpperCase()}${signaturePath}${bodyStr}`;
-            const signature = await this.generateSignature(message, credentials.secretKey);
+      const signature = await this.generateSignature(
+        message,
+        credentials.secretKey
+      );
 
             // Build headers
             const headers: Record<string, string> = {
-                "Content-Type": method === "GET" ? "application/x-www-form-urlencoded" : "application/json",
+        "Content-Type":
+          method === "GET"
+            ? "application/x-www-form-urlencoded"
+            : "application/json",
                 "orderly-account-id": credentials.accountId,
                 "orderly-key": credentials.apiKey,
                 "orderly-signature": signature,
@@ -133,7 +156,10 @@ export class KodiakClient {
 
                         // Don't retry on client errors (4xx)
                         if (response.status >= 400 && response.status < 500) {
-                            return this.handleApiError(response.status, errorText) as KodiakApiResponse<T>;
+              return this.handleApiError(
+                response.status,
+                errorText
+              ) as KodiakApiResponse<T>;
                         }
 
                         // Retry on server errors (5xx) or network issues
@@ -150,7 +176,6 @@ export class KodiakClient {
                     // Parse successful response
                     const responseData = await response.json();
                     return this.handleApiSuccess<T>(responseData);
-
                 } catch (error) {
                     lastError = error instanceof Error ? error : new Error(String(error));
 
@@ -164,17 +189,20 @@ export class KodiakClient {
             }
 
             // All retries failed
-            logger.error("Kodiak API request failed after retries", lastError as Error, {
+      logger.error(
+        "Kodiak API request failed after retries",
+        lastError as Error,
+        {
                 method,
                 url,
                 attempts: this.config.retryAttempts,
-            });
+        }
+      );
 
             return {
                 success: false,
                 error: `Request failed after ${this.config.retryAttempts} attempts: ${lastError?.message}`,
             };
-
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
 
@@ -193,7 +221,10 @@ export class KodiakClient {
     /**
      * Generate Ed25519 signature for Kodiak API authentication
      */
-    private async generateSignature(message: string, secretKey: string): Promise<string> {
+  private async generateSignature(
+    message: string,
+    secretKey: string
+  ): Promise<string> {
         try {
             // Configure @noble/ed25519 hash functions BEFORE any usage
             const { createHash } = await import("crypto");
@@ -215,7 +246,10 @@ export class KodiakClient {
 
             if (ed25519Module.hashes) {
                 ed25519Module.hashes.sha512 = sha512Hash;
-            } else if (ed25519Module.etc && typeof ed25519Module.etc.sha512Sync !== "undefined") {
+      } else if (
+        ed25519Module.etc &&
+        typeof ed25519Module.etc.sha512Sync !== "undefined"
+      ) {
                 ed25519Module.etc.sha512Sync = sha512Hash;
             } else if (ed25519Module.utils) {
                 ed25519Module.utils.sha512Sync = sha512Hash;
@@ -246,16 +280,24 @@ export class KodiakClient {
     private handleApiSuccess<T>(data: unknown): KodiakApiResponse<T> {
         // Kodiak API typically wraps successful responses
         if (data && typeof data === "object" && "success" in data) {
-            const responseData = data as { success: boolean; data?: T; message?: string; error?: string };
+      const responseData = data as {
+        success: boolean;
+        data?: T;
+        message?: string;
+        error?: string;
+      };
             if (responseData.success) {
                 return {
                     success: true,
-                    data: responseData.data || data as T,
+          data: responseData.data || (data as T),
                 };
             } else {
                 return {
                     success: false,
-                    error: responseData.message || responseData.error || "API returned success: false",
+          error:
+            responseData.message ||
+            responseData.error ||
+            "API returned success: false",
                 };
             }
         }
@@ -270,11 +312,17 @@ export class KodiakClient {
     /**
      * Handle API error responses
      */
-    private handleApiError(statusCode: number, errorText: string): KodiakApiResponse<unknown> {
+  private handleApiError(
+    statusCode: number,
+    errorText: string
+  ): KodiakApiResponse<unknown> {
         let errorMessage = `HTTP ${statusCode}`;
 
         try {
-            const errorData = JSON.parse(errorText) as { message?: string; error?: string };
+      const errorData = JSON.parse(errorText) as {
+        message?: string;
+        error?: string;
+      };
             if (errorData.message) {
                 errorMessage = errorData.message;
             } else if (errorData.error) {
@@ -304,7 +352,9 @@ export class KodiakClient {
     /**
      * Test API connectivity
      */
-    async testConnectivity(credentials: KodiakCredentials): Promise<{ success: boolean; error?: string }> {
+  async testConnectivity(
+    credentials: KodiakCredentials
+  ): Promise<{ success: boolean; error?: string }> {
         try {
             const response = await this.get("/client/info", credentials);
 

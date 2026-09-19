@@ -18,10 +18,10 @@ import {
     OrderStatus as TradeStatus,
     Strategy,
     StrategyConfig,
-    KodiakCredentials
-} from '../index';
+  KodiakCredentials,
+} from "../index";
 
-import { Balance } from './domain';
+import { Balance } from "./domain";
 
 // ===========================================
 // USER REPOSITORY
@@ -36,7 +36,9 @@ export interface IUserRepository {
     /**
      * Find user by email with password hash for authentication
      */
-    findByEmailWithPassword(email: string): Promise<(User & { passwordHash: string }) | null>;
+  findByEmailWithPassword(
+    email: string
+  ): Promise<(User & { passwordHash: string }) | null>;
 
     /**
      * Find user by ID
@@ -56,7 +58,10 @@ export interface IUserRepository {
     /**
      * Update user profile information
      */
-    updateProfile(id: string, updates: Partial<{ email: string; userLevel: UserLevel }>): Promise<User | null>;
+  updateProfile(
+    id: string,
+    updates: Partial<{ email: string; userLevel: UserLevel }>
+  ): Promise<User | null>;
 
     /**
      * Get authenticated user data with roles and credentials info
@@ -145,12 +150,16 @@ export interface ITradeRepository {
     /**
      * Get trades for a specific strategy
      */
-    getTradesByStrategy(userId: string, strategyId: string, limit?: number): Promise<Trade[]>;
+  getTradesByStrategy(
+    userId: string,
+    strategyId: string,
+    limit?: number
+  ): Promise<Trade[]>;
 
     /**
      * Create a new trade record
      */
-    createTrade(trade: Omit<Trade, 'id' | 'executedAt'>): Promise<Trade>;
+  createTrade(trade: Omit<Trade, "id" | "executedAt">): Promise<Trade>;
 
     /**
      * Update trade status
@@ -176,7 +185,9 @@ export interface IStrategyRepository {
     /**
      * Create a new strategy
      */
-    createStrategy(strategy: Omit<Strategy, 'id' | 'createdAt' | 'updatedAt'>): Promise<Strategy>;
+  createStrategy(
+    strategy: Omit<Strategy, "id" | "createdAt" | "updatedAt">
+  ): Promise<Strategy>;
 
     /**
      * Update strategy configuration
@@ -207,7 +218,9 @@ export interface IKodiakCredentialsRepository {
     /**
      * Save Kodiak credentials for a user
      */
-    saveCredentials(credentials: Omit<KodiakCredentials, 'id' | 'createdAt' | 'updatedAt'>): Promise<KodiakCredentials>;
+  saveCredentials(
+    credentials: Omit<KodiakCredentials, "id" | "createdAt" | "updatedAt">
+  ): Promise<KodiakCredentials>;
 
     /**
      * Update credentials verification status
@@ -243,7 +256,9 @@ export interface IBotInstanceRepository {
     /**
      * Create a new bot instance
      */
-    createBotInstance(bot: Omit<any, 'id' | 'createdAt' | 'updatedAt'>): Promise<any>;
+  createBotInstance(
+    bot: Omit<any, "id" | "createdAt" | "updatedAt">
+  ): Promise<any>;
 
     /**
      * Update bot instance status
@@ -253,7 +268,10 @@ export interface IBotInstanceRepository {
     /**
      * Update bot instance performance metrics
      */
-    updateBotPerformance(id: string, metrics: { runningTime?: number; totalTrades?: number; totalPnL?: number }): Promise<void>;
+  updateBotPerformance(
+    id: string,
+    metrics: { runningTime?: number; totalTrades?: number; totalPnL?: number }
+  ): Promise<void>;
 
     /**
      * Delete bot instance
@@ -274,7 +292,7 @@ export interface IAuditLogRepository {
     /**
      * Log an audit event
      */
-    logEvent(event: Omit<AuditLogEntry, 'id' | 'timestamp'>): Promise<void>;
+  logEvent(event: Omit<AuditLogEntry, "id" | "timestamp">): Promise<void>;
 
     /**
      * Get audit logs for a user

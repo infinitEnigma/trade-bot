@@ -26,32 +26,41 @@ export class HealthService {
             api: this.checkApiStatus(),
             database: this.checkDatabaseStatus(),
             redis: this.checkRedisStatus(),
-            tradingEngine: this.checkTradingEngineStatus()
+      tradingEngine: this.checkTradingEngineStatus(),
         };
 
         const results = await Promise.allSettled(Object.values(healthChecks));
         const keys = Object.keys(healthChecks);
 
         const healthStatus = keys.reduce((acc: any, key: string, index: number) => {
-            acc[key] = results[index].status === 'fulfilled'
-                ? { status: 'healthy', details: results[index].value }
-                : { status: 'unhealthy', error: results[index].reason instanceof Error ? results[index].reason.message : String(results[index].reason) };
+      acc[key] =
+        results[index].status === "fulfilled"
+          ? { status: "healthy", details: results[index].value }
+          : {
+              status: "unhealthy",
+              error:
+                results[index].reason instanceof Error
+                  ? results[index].reason.message
+                  : String(results[index].reason),
+            };
             return acc;
         }, {});
 
-        const overallStatus = Object.values(healthStatus).every((check: any) => check.status === 'healthy')
-            ? 'healthy'
-            : 'unhealthy';
+    const overallStatus = Object.values(healthStatus).every(
+      (check: any) => check.status === "healthy"
+    )
+      ? "healthy"
+      : "unhealthy";
 
         this.deps.logger.debug("System health check completed", {
             status: overallStatus,
-            checks: Object.keys(healthStatus)
+      checks: Object.keys(healthStatus),
         });
 
         return {
             status: overallStatus,
             timestamp: new Date(),
-            checks: healthStatus
+      checks: healthStatus,
         };
     }
 
@@ -72,7 +81,7 @@ export class HealthService {
             return "Database connection successful";
         } catch (error) {
             this.deps.logger.error("Database health check failed", {
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
@@ -83,14 +92,14 @@ export class HealthService {
      */
     private async checkRedisStatus(): Promise<string> {
         try {
-            const response = await this.deps.cacheService.get('health_check');
+      const response = await this.deps.cacheService.get("health_check");
             if (response.success) {
                 return "Redis connection successful";
             }
             throw new Error("Redis health check failed");
         } catch (error) {
             this.deps.logger.error("Redis health check failed", {
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             throw error;
         }
@@ -110,20 +119,20 @@ export class HealthService {
     async getSystemInfo(): Promise<any> {
         try {
             const info = {
-                version: process.env.npm_package_version || 'unknown',
+        version: process.env.npm_package_version || "unknown",
                 nodeVersion: process.version,
                 platform: process.platform,
                 architecture: process.arch,
                 uptime: process.uptime(),
                 memoryUsage: process.memoryUsage(),
-                environment: process.env.NODE_ENV || 'development'
+        environment: process.env.NODE_ENV || "development",
             };
 
             this.deps.logger.debug("System information retrieved successfully");
             return info;
         } catch (error) {
             this.deps.logger.error("Failed to get system information", {
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             throw new Error("Failed to get system information");
         }
@@ -137,14 +146,14 @@ export class HealthService {
             const metrics = {
                 cpu: this.getCpuUsage(),
                 memory: process.memoryUsage(),
-                eventLoop: this.getEventLoopDelay()
+        eventLoop: this.getEventLoopDelay(),
             };
 
             this.deps.logger.debug("Performance metrics retrieved successfully");
             return metrics;
         } catch (error) {
             this.deps.logger.error("Failed to get performance metrics", {
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             throw new Error("Failed to get performance metrics");
         }
@@ -168,6 +177,8 @@ export class HealthService {
 }
 
 // Export factory function for creating service instances
-export function createHealthService(deps: HealthServiceDependencies): HealthService {
+export function createHealthService(
+  deps: HealthServiceDependencies
+): HealthService {
     return new HealthService(deps);
 }

@@ -7,7 +7,11 @@
 
 import { securityLogger as logger } from "../core/logging/context-aware-logger.service";
 import { getContextForLogging } from "../shared/utils/context";
-import { errorNotificationService, ErrorSeverity, ErrorCategory } from "../core/notifications/error-notification.service";
+import {
+  errorNotificationService,
+  ErrorSeverity,
+  ErrorCategory,
+} from "../core/notifications/error-notification.service";
 
 export interface RetryConfig {
     maxAttempts: number;
@@ -69,7 +73,10 @@ export class RetryService {
 
                 if (!isRetryable || attempt === finalConfig.maxAttempts) {
                     // Not retryable or max attempts reached
-                    logger.error(`${operationName} failed after ${attempt} attempts`, error as Error, {
+          logger.error(
+            `${operationName} failed after ${attempt} attempts`,
+            error as Error,
+            {
                         ...getContextForLogging(),
                         operation: operationName,
                         attempts: attempt,
@@ -77,7 +84,8 @@ export class RetryService {
                         duration: Date.now() - startTime,
                         error: lastError.message,
                         isRetryable,
-                    });
+            }
+          );
 
                     // Notify about persistent failures
                     if (attempt > 1) {
@@ -92,7 +100,9 @@ export class RetryService {
                                     duration: Date.now() - startTime,
                                 },
                             },
-                            attempt >= finalConfig.maxAttempts ? ErrorSeverity.HIGH : ErrorSeverity.MEDIUM,
+              attempt >= finalConfig.maxAttempts
+                ? ErrorSeverity.HIGH
+                : ErrorSeverity.MEDIUM,
                             attempt,
                             `Failed after ${attempt} attempts`
                         );
@@ -110,13 +120,16 @@ export class RetryService {
                 // Calculate delay for next attempt
                 const delay = this.calculateDelay(attempt, finalConfig);
 
-                logger.warn(`${operationName} attempt ${attempt} failed, retrying in ${delay}ms`, {
+        logger.warn(
+          `${operationName} attempt ${attempt} failed, retrying in ${delay}ms`,
+          {
                     ...getContextForLogging(),
                     operation: operationName,
                     attempt,
                     delay,
                     error: lastError.message,
-                });
+          }
+        );
 
                 totalDelay += delay;
                 await this.delay(delay);
@@ -151,7 +164,8 @@ export class RetryService {
      * Calculate delay for retry attempt using exponential backoff
      */
     private calculateDelay(attempt: number, config: RetryConfig): number {
-        const exponentialDelay = config.baseDelay * Math.pow(config.backoffFactor, attempt - 1);
+    const exponentialDelay =
+      config.baseDelay * Math.pow(config.backoffFactor, attempt - 1);
         const delayWithCap = Math.min(exponentialDelay, config.maxDelay);
 
         if (config.jitter) {
@@ -172,29 +186,37 @@ export class RetryService {
         const name = error.name.toLowerCase();
 
         // Network-related errors
-        if (message.includes('timeout') ||
-            message.includes('econnrefused') ||
-            message.includes('enotfound') ||
-            message.includes('econnreset') ||
-            message.includes('network') ||
-            name.includes('timeout')) {
+    if (
+      message.includes("timeout") ||
+      message.includes("econnrefused") ||
+      message.includes("enotfound") ||
+      message.includes("econnreset") ||
+      message.includes("network") ||
+      name.includes("timeout")
+    ) {
             return true;
         }
 
         // HTTP 5xx errors
-        if (message.includes('status code 5')) {
+    if (message.includes("status code 5")) {
             return true;
         }
 
         // Database connection errors
-        if (message.includes('connection') &&
-            (message.includes('lost') || message.includes('failed') || message.includes('timeout'))) {
+    if (
+      message.includes("connection") &&
+      (message.includes("lost") ||
+        message.includes("failed") ||
+        message.includes("timeout"))
+    ) {
             return true;
         }
 
         // WebSocket connection errors
-        if (message.includes('websocket') &&
-            (message.includes('closed') || message.includes('failed'))) {
+    if (
+      message.includes("websocket") &&
+      (message.includes("closed") || message.includes("failed"))
+    ) {
             return true;
         }
 
@@ -221,14 +243,23 @@ export async function withRetry<T>(
     operationName: string,
     config?: Partial<RetryConfig>
 ): Promise<T> {
-    const result = await retryService.executeWithRetry(operation, operationName, config);
+  const result = await retryService.executeWithRetry(
+    operation,
+    operationName,
+    config
+  );
 
     if (!result.success) {
-        throw result.error || new Error(`${operationName} failed after ${result.attempts} attempts`);
+    throw (
+      result.error ||
+      new Error(`${operationName} failed after ${result.attempts} attempts`)
+    );
     }
 
     if (result.result === undefined) {
-        throw new Error(`${operationName} completed successfully but returned no result`);
+    throw new Error(
+      `${operationName} completed successfully but returned no result`
+    );
     }
 
     return result.result;
@@ -282,42 +313,52 @@ export const RETRY_CONDITIONS = {
     // Retry on network errors
     NETWORK_ERRORS: (error: Error): boolean => {
         const message = error.message.toLowerCase();
-        return message.includes('timeout') ||
-            message.includes('econnrefused') ||
-            message.includes('enotfound') ||
-            message.includes('network');
+    return (
+      message.includes("timeout") ||
+      message.includes("econnrefused") ||
+      message.includes("enotfound") ||
+      message.includes("network")
+    );
     },
 
     // Retry on HTTP errors (5xx, some 4xx)
     HTTP_ERRORS: (error: Error): boolean => {
         const message = error.message.toLowerCase();
-        return message.includes('status code 5') ||
-            message.includes('502') ||
-            message.includes('503') ||
-            message.includes('504');
+    return (
+      message.includes("status code 5") ||
+      message.includes("502") ||
+      message.includes("503") ||
+      message.includes("504")
+    );
     },
 
     // Retry on database connection errors
     DATABASE_CONNECTION: (error: Error): boolean => {
         const message = error.message.toLowerCase();
-        return message.includes('connection') &&
-            (message.includes('lost') ||
-                message.includes('failed') ||
-                message.includes('timeout'));
+    return (
+      message.includes("connection") &&
+      (message.includes("lost") ||
+        message.includes("failed") ||
+        message.includes("timeout"))
+    );
     },
 
     // Retry on WebSocket errors
     WEBSOCKET_ERRORS: (error: Error): boolean => {
         const message = error.message.toLowerCase();
-        return message.includes('websocket') &&
-            (message.includes('closed') ||
-                message.includes('failed') ||
-                message.includes('reconnect'));
+    return (
+      message.includes("websocket") &&
+      (message.includes("closed") ||
+        message.includes("failed") ||
+        message.includes("reconnect"))
+    );
     },
 
     // Combined network and HTTP errors
     NETWORK_AND_HTTP: (error: Error): boolean => {
-        return RETRY_CONDITIONS.NETWORK_ERRORS(error) ||
-            RETRY_CONDITIONS.HTTP_ERRORS(error);
+    return (
+      RETRY_CONDITIONS.NETWORK_ERRORS(error) ||
+      RETRY_CONDITIONS.HTTP_ERRORS(error)
+    );
     },
 };

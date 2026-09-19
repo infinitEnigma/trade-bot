@@ -5,12 +5,12 @@
  * event loop blocking during computationally expensive bcrypt operations.
  */
 
-import { Worker } from 'worker_threads';
-import { EventEmitter } from 'events';
-import * as os from 'os';
-import { securityLogger as logger } from '../core/logging/context-aware-logger.service';
+import { Worker } from "worker_threads";
+import { EventEmitter } from "events";
+import * as os from "os";
+import { securityLogger as logger } from "../core/logging/context-aware-logger.service";
 //import * as bcrypt from 'bcryptjs';
-import * as path from 'path';
+import * as path from "path";
 
 /**
  * Worker message interface
@@ -41,7 +41,7 @@ interface CompareTaskData {
  */
 interface HashTask {
     id: string;
-    action: 'hash';
+  action: "hash";
     data: HashTaskData;
     resolve: (result: string) => void;
     reject: (error: Error) => void;
@@ -53,7 +53,7 @@ interface HashTask {
 
 interface CompareTask {
     id: string;
-    action: 'compare';
+  action: "compare";
     data: CompareTaskData;
     resolve: (result: boolean) => void;
     reject: (error: Error) => void;
@@ -78,11 +78,13 @@ class PasswordWorkerPool extends EventEmitter {
     private workerHealthCheckInterval: NodeJS.Timeout | null = null;
     private lastHealthCheck = Date.now();
 
-    constructor(private poolSize: number = Math.max(2, Math.floor(os.cpus().length / 2))) {
+  constructor(
+    private poolSize: number = Math.max(2, Math.floor(os.cpus().length / 2))
+  ) {
         super();
         this.initializePool();
         this.startHealthCheck();
-        logger.info('Password worker pool initialized', {
+    logger.info("Password worker pool initialized", {
             poolSize,
             availableCpus: os.cpus().length,
         });
@@ -94,12 +96,14 @@ class PasswordWorkerPool extends EventEmitter {
     private initializePool(): void {
         // Enhanced test environment detection for worker pool
         const isTestEnvironment = this.isTestEnvironment();
-        const poolSize = isTestEnvironment ? Math.max(1, Math.floor(this.poolSize / 2)) : this.poolSize;
+    const poolSize = isTestEnvironment
+      ? Math.max(1, Math.floor(this.poolSize / 2))
+      : this.poolSize;
 
-        logger.info('Initializing worker pool', {
+    logger.info("Initializing worker pool", {
             originalPoolSize: this.poolSize,
             actualPoolSize: poolSize,
-            isTestEnvironment
+      isTestEnvironment,
         });
 
         for (let i = 0; i < poolSize; i++) {
@@ -125,22 +129,23 @@ class PasswordWorkerPool extends EventEmitter {
 
         // Log health status if there are issues
         if (stats.availableWorkers === 0 && stats.totalWorkers > 0) {
-            logger.warn('All workers busy', { stats });
+      logger.warn("All workers busy", { stats });
         }
 
         if (stats.queuedTasks > 5) {
-            logger.warn('High task queue', { queuedTasks: stats.queuedTasks });
+      logger.warn("High task queue", { queuedTasks: stats.queuedTasks });
         }
 
         // Check for stuck tasks (tasks running longer than expected)
         const now = Date.now();
         for (const [taskId, task] of this.activeTasks) {
             const duration = now - task.startTime;
-            if (duration > 45000) { // Tasks running longer than 45 seconds
-                logger.warn('Task potentially stuck', {
+      if (duration > 45000) {
+        // Tasks running longer than 45 seconds
+        logger.warn("Task potentially stuck", {
                     taskId,
                     duration,
-                    action: task.action
+          action: task.action,
                 });
             }
         }
@@ -150,7 +155,7 @@ class PasswordWorkerPool extends EventEmitter {
      * Create a new worker thread
      */
     private createWorker(): void {
-        const workerScriptPath = path.join(__dirname, 'password-worker-thread.js');
+    const workerScriptPath = path.join(__dirname, "password-worker-thread.js");
         const worker = new Worker(workerScriptPath, {
             workerData: {},
             resourceLimits: {
@@ -159,38 +164,45 @@ class PasswordWorkerPool extends EventEmitter {
             },
         });
 
-        worker.on('message', (message) => {
+    worker.on("message", message => {
             this.handleWorkerMessage(worker, message);
         });
 
-        worker.on('error', (error) => {
-            logger.warn('Password worker error', {
+    worker.on("error", error => {
+      logger.warn("Password worker error", {
                 error: (error as Error).message,
-                stack: (error as Error).stack
+        stack: (error as Error).stack,
             });
             this.handleWorkerError(worker, error as Error);
         });
 
-        worker.on('exit', (code) => {
-            logger.warn('Password worker exited', { code });
+    worker.on("exit", code => {
+      logger.warn("Password worker exited", { code });
             this.handleWorkerExit(worker, code);
         });
 
         // Handle worker thread uncaught exceptions
-        worker.on('message', (message) => {
-            if (message && typeof message === 'object' && message.type === 'uncaughtException') {
-                this.handleWorkerUncaughtException(worker, new Error(message.error || 'Unknown error'));
+    worker.on("message", message => {
+      if (
+        message &&
+        typeof message === "object" &&
+        message.type === "uncaughtException"
+      ) {
+        this.handleWorkerUncaughtException(
+          worker,
+          new Error(message.error || "Unknown error")
+        );
             }
         });
 
-        worker.on('online', () => {
-            logger.debug('Password worker online', { workerId: worker.threadId });
+    worker.on("online", () => {
+      logger.debug("Password worker online", { workerId: worker.threadId });
         });
 
-        worker.on('messageerror', (error) => {
-            logger.error('Password worker message error', error as Error, {
+    worker.on("messageerror", error => {
+      logger.error("Password worker message error", error as Error, {
                 error: error.message,
-                stack: error.stack
+        stack: error.stack,
             });
         });
 
@@ -208,7 +220,7 @@ class PasswordWorkerPool extends EventEmitter {
         if (!task) {
             // NEW: Check if we're shutting down before logging unknown task
             if (!this.isShuttingDown) {
-                logger.warn('Received message for unknown task', { id });
+        logger.warn("Received message for unknown task", { id });
             }
 
             return;
@@ -225,13 +237,13 @@ class PasswordWorkerPool extends EventEmitter {
 
         // Complete the task
         if (success) {
-            if (task.action === 'hash') {
+      if (task.action === "hash") {
                 (task as HashTask).resolve(result as string);
             } else {
                 (task as CompareTask).resolve(result as boolean);
             }
         } else {
-            const err = new Error(error || 'Worker task failed');
+      const err = new Error(error || "Worker task failed");
             task.reject(err);
         }
 
@@ -243,7 +255,7 @@ class PasswordWorkerPool extends EventEmitter {
      * Handle worker thread errors
      */
     private handleWorkerError(worker: Worker, error: Error): void {
-        logger.error('Password worker thread error', error as Error, {
+    logger.error("Password worker thread error", error as Error, {
             error: error.message,
             stack: error.stack,
         });
@@ -258,7 +270,7 @@ class PasswordWorkerPool extends EventEmitter {
         for (const [taskId, task] of this.activeTasks) {
             // Simple heuristic: assume tasks on errored workers failed
             // In production, you'd want more sophisticated task tracking
-            task.reject(new Error('Worker thread error'));
+      task.reject(new Error("Worker thread error"));
             this.activeTasks.delete(taskId);
         }
 
@@ -272,7 +284,7 @@ class PasswordWorkerPool extends EventEmitter {
      * Handle worker thread uncaught exceptions
      */
     private handleWorkerUncaughtException(worker: Worker, error: Error): void {
-        logger.warn('Password worker uncaught exception', {
+    logger.warn("Password worker uncaught exception", {
             error: error.message,
             stack: error.stack,
         });
@@ -281,9 +293,16 @@ class PasswordWorkerPool extends EventEmitter {
         try {
             worker.terminate();
         } catch (terminateError) {
-            logger.error('Failed to terminate worker after uncaught exception', terminateError as Error, {
-                error: terminateError instanceof Error ? terminateError.message : String(terminateError),
-            });
+      logger.error(
+        "Failed to terminate worker after uncaught exception",
+        terminateError as Error,
+        {
+          error:
+            terminateError instanceof Error
+              ? terminateError.message
+              : String(terminateError),
+        }
+      );
         }
 
         // Remove from pools
@@ -307,7 +326,7 @@ class PasswordWorkerPool extends EventEmitter {
      * Handle worker thread exit
      */
     private handleWorkerExit(worker: Worker, code: number): void {
-        logger.info('Password worker thread exited', { code });
+    logger.info("Password worker thread exited", { code });
 
         // Remove from pools
         const workerIndex = this.workers.indexOf(worker);
@@ -330,11 +349,11 @@ class PasswordWorkerPool extends EventEmitter {
      * Replace a failed worker
      */
     private replaceWorker(oldWorker: Worker): void {
-        logger.info('Replacing failed password worker');
+    logger.info("Replacing failed password worker");
         try {
             oldWorker.terminate();
         } catch (error) {
-            logger.error('Error terminating failed worker', error as Error, {
+      logger.error("Error terminating failed worker", error as Error, {
                 error: error instanceof Error ? error.message : String(error),
             });
         }
@@ -371,13 +390,13 @@ class PasswordWorkerPool extends EventEmitter {
 
         // Send task to worker with enhanced error handling and debug logging
         try {
-            logger.debug('Sending task to worker', {
+      logger.debug("Sending task to worker", {
                 taskId: task.id,
                 action: task.action,
                 workerId: worker.threadId,
                 queueLength: this.taskQueue.length,
                 availableWorkers: this.availableWorkers.length,
-                isTestEnvironment
+        isTestEnvironment,
             });
 
             worker.postMessage({
@@ -391,11 +410,11 @@ class PasswordWorkerPool extends EventEmitter {
                 this.handleTaskTimeout(task, worker);
             }, timeoutDuration);
         } catch (error) {
-            logger.error('Failed to send task to worker', error as Error, {
+      logger.error("Failed to send task to worker", error as Error, {
                 taskId: task.id,
                 workerId: worker.threadId,
                 error: error instanceof Error ? error.message : String(error),
-                isTestEnvironment
+        isTestEnvironment,
             });
 
             // Make worker available again
@@ -404,7 +423,7 @@ class PasswordWorkerPool extends EventEmitter {
             }
 
             // Reject task and process next
-            task.reject(new Error('Failed to send task to worker'));
+      task.reject(new Error("Failed to send task to worker"));
             this.processQueue();
         }
     }
@@ -412,15 +431,18 @@ class PasswordWorkerPool extends EventEmitter {
     /**
      * Handle task timeout with retry logic
      */
-    private async handleTaskTimeout(task: PasswordTask, worker: Worker): Promise<void> {
+  private async handleTaskTimeout(
+    task: PasswordTask,
+    worker: Worker
+  ): Promise<void> {
         const isTestEnvironment = this.isTestEnvironment();
         const duration = Date.now() - task.startTime;
 
-        logger.warn('Password task timeout - attempting recovery', {
+    logger.warn("Password task timeout - attempting recovery", {
             taskId: task.id,
             action: task.action,
             duration,
-            isTestEnvironment
+      isTestEnvironment,
         });
 
         // Remove from active tasks
@@ -439,19 +461,22 @@ class PasswordWorkerPool extends EventEmitter {
             if (!task.retryCount && !isTestEnvironment) {
                 task.retryCount = 1;
                 this.taskQueue.unshift(task); // Put task back at front of queue
-                logger.info('Retrying timed-out task', { taskId: task.id, isTestEnvironment });
+        logger.info("Retrying timed-out task", {
+          taskId: task.id,
+          isTestEnvironment,
+        });
             } else {
                 // Max retries reached or in test environment, reject task
                 const errorMessage = isTestEnvironment
-                    ? 'Password operation timeout in test environment (no retries)'
-                    : 'Password operation timeout after retries';
+          ? "Password operation timeout in test environment (no retries)"
+          : "Password operation timeout after retries";
                 task.reject(new Error(errorMessage));
             }
         } else {
             // Worker is not responsive, replace it immediately
-            logger.warn('Worker unresponsive, replacing immediately', {
+      logger.warn("Worker unresponsive, replacing immediately", {
                 workerId: worker.threadId,
-                isTestEnvironment
+        isTestEnvironment,
             });
             this.replaceWorker(worker);
 
@@ -459,12 +484,15 @@ class PasswordWorkerPool extends EventEmitter {
             if (!task.retryCount && !isTestEnvironment) {
                 task.retryCount = 1;
                 this.taskQueue.unshift(task); // Put task back at front of queue
-                logger.info('Retrying task with new worker', { taskId: task.id, isTestEnvironment });
+        logger.info("Retrying task with new worker", {
+          taskId: task.id,
+          isTestEnvironment,
+        });
             } else {
                 // Max retries reached or in test environment, reject task
                 const errorMessage = isTestEnvironment
-                    ? 'Password operation timeout - worker unresponsive in test environment'
-                    : 'Password operation timeout - worker unresponsive';
+          ? "Password operation timeout - worker unresponsive in test environment"
+          : "Password operation timeout - worker unresponsive";
                 task.reject(new Error(errorMessage));
             }
         }
@@ -480,27 +508,27 @@ class PasswordWorkerPool extends EventEmitter {
         const isTestEnvironment = this.isTestEnvironment();
         const responsivenessTimeout = isTestEnvironment ? 500 : 1000; // 500ms for tests, 1s for production
 
-        return new Promise((resolve) => {
+    return new Promise(resolve => {
             const timeout = setTimeout(() => {
                 resolve(false);
             }, responsivenessTimeout);
 
             const handleMessage = (message: any) => {
-                if (message && message.type === 'healthCheckResponse') {
+        if (message && message.type === "healthCheckResponse") {
                     clearTimeout(timeout);
-                    worker.off('message', handleMessage);
+          worker.off("message", handleMessage);
                     resolve(true);
                 }
             };
 
-            worker.on('message', handleMessage);
+      worker.on("message", handleMessage);
 
             // Send health check
             try {
                 worker.postMessage({
                     id: `health_${Date.now()}`,
-                    action: 'healthCheck',
-                    data: {}
+          action: "healthCheck",
+          data: {},
                 });
             } catch (error) {
                 clearTimeout(timeout);
@@ -516,7 +544,7 @@ class PasswordWorkerPool extends EventEmitter {
         return new Promise((resolve, reject) => {
             const task: HashTask = {
                 id: `hash_${this.nextTaskId++}_${Date.now()}`,
-                action: 'hash',
+        action: "hash",
                 data: { password, rounds },
                 resolve,
                 reject,
@@ -536,7 +564,7 @@ class PasswordWorkerPool extends EventEmitter {
         return new Promise((resolve, reject) => {
             const task: CompareTask = {
                 id: `compare_${this.nextTaskId++}_${Date.now()}`,
-                action: 'compare',
+        action: "compare",
                 data: { password, hash },
                 resolve,
                 reject,
@@ -587,12 +615,14 @@ class PasswordWorkerPool extends EventEmitter {
 
         // Check if we have minimum viable workers
         if (stats.availableWorkers === 0 && stats.totalWorkers === 0) {
-            errors.push('No workers available');
+      errors.push("No workers available");
         }
 
         // Check if pool is severely degraded
         if (stats.totalWorkers < Math.floor(this.poolSize / 2)) {
-            errors.push(`Worker pool degraded: ${stats.totalWorkers}/${this.poolSize} workers`);
+      errors.push(
+        `Worker pool degraded: ${stats.totalWorkers}/${this.poolSize} workers`
+      );
         }
 
         // Check for excessive queue
@@ -611,7 +641,7 @@ class PasswordWorkerPool extends EventEmitter {
      * Shutdown the worker pool gracefully
      */
     async shutdown(): Promise<void> {
-        logger.info('Shutting down password worker pool');
+    logger.info("Shutting down password worker pool");
         this.isShuttingDown = true;
 
         // Clear health check interval
@@ -622,33 +652,33 @@ class PasswordWorkerPool extends EventEmitter {
 
         // Reject all pending tasks
         for (const task of this.taskQueue) {
-            task.reject(new Error('Worker pool shutting down'));
+      task.reject(new Error("Worker pool shutting down"));
         }
         this.taskQueue.length = 0;
 
         // Clear active tasks
         for (const [taskId, task] of this.activeTasks) {
-            task.reject(new Error('Worker pool shutting down'));
+      task.reject(new Error("Worker pool shutting down"));
         }
         this.activeTasks.clear();
 
         // Terminate all workers
         const terminationPromises = this.workers.map(worker => {
-            return new Promise<void>((resolve) => {
-                worker.once('exit', () => resolve());
+      return new Promise<void>(resolve => {
+        worker.once("exit", () => resolve());
                 worker.terminate();
             });
         });
 
         await Promise.all(terminationPromises);
-        logger.info('Password worker pool shutdown complete');
+    logger.info("Password worker pool shutdown complete");
     }
 
     /**
      * Check if we're running in a test environment
      */
     private isTestEnvironment(): boolean {
-        return process.env.NODE_ENV === 'test' || !!process.env.JEST_WORKER_ID;
+    return process.env.NODE_ENV === "test" || !!process.env.JEST_WORKER_ID;
     }
 
     /**
@@ -669,9 +699,14 @@ class PasswordWorkerPool extends EventEmitter {
             // Reject all pending tasks
             for (const task of this.taskQueue) {
                 try {
-                    task.reject(new Error('Worker pool shutting down during test cleanup'));
+          task.reject(
+            new Error("Worker pool shutting down during test cleanup")
+          );
                 } catch (error) {
-                    logger.error('Warning: Failed to reject task during cleanup:', error as Error);
+          logger.error(
+            "Warning: Failed to reject task during cleanup:",
+            error as Error
+          );
                 }
             }
             this.taskQueue.length = 0;
@@ -679,10 +714,15 @@ class PasswordWorkerPool extends EventEmitter {
             // Clear active tasks
             for (const [taskId, task] of this.activeTasks) {
                 try {
-                    task.reject(new Error('Worker pool shutting down during test cleanup'));
+          task.reject(
+            new Error("Worker pool shutting down during test cleanup")
+          );
                     clearTimeout(task.timeout);
                 } catch (error) {
-                    logger.error('Warning: Failed to clear active task during cleanup:', error as Error);
+          logger.error(
+            "Warning: Failed to clear active task during cleanup:",
+            error as Error
+          );
                 }
             }
             this.activeTasks.clear();
@@ -690,7 +730,7 @@ class PasswordWorkerPool extends EventEmitter {
             // Terminate all workers with simple, reliable logic
             console.info(`🔧 Terminating ${this.workers.length} workers...`);
             const terminationPromises = this.workers.map(worker => {
-                return new Promise<void>((resolve) => {
+        return new Promise<void>(resolve => {
                     // Set a hard timeout to ensure we don't get stuck
                     const timeout = setTimeout(() => {
                         worker.removeAllListeners();
@@ -698,17 +738,20 @@ class PasswordWorkerPool extends EventEmitter {
                     }, 1000); // 1 second timeout
 
                     // Listen for worker exit
-                    worker.once('exit', () => {
+          worker.once("exit", () => {
                         clearTimeout(timeout);
                         resolve();
                     });
 
                     // Try to terminate the worker
                     try {
-                        worker.terminate().then(() => {
+            worker
+              .terminate()
+              .then(() => {
                             clearTimeout(timeout);
                             resolve();
-                        }).catch(() => {
+              })
+              .catch(() => {
                             clearTimeout(timeout);
                             resolve();
                         });
@@ -727,18 +770,23 @@ class PasswordWorkerPool extends EventEmitter {
 
             // Remove process handlers to prevent interference with other tests
             try {
-                process.removeListener('SIGTERM', async () => {
+        process.removeListener("SIGTERM", async () => {
                     await this.shutdown();
                 });
-                process.removeListener('SIGINT', async () => {
+        process.removeListener("SIGINT", async () => {
                     await this.shutdown();
                 });
             } catch (error) {
-                logger.error('Warning: Failed to remove process handlers:', error as Error);
+        logger.error(
+          "Warning: Failed to remove process handlers:",
+          error as Error
+        );
             }
-
         } catch (error) {
-            logger.error('Warning: Password worker pool cleanup failed:', error as Error);
+      logger.error(
+        "Warning: Password worker pool cleanup failed:",
+        error as Error
+      );
         }
     }
 }
@@ -749,7 +797,7 @@ let _testWorkerPool: PasswordWorkerPool | null = null;
 
 function getPasswordWorkerPool(): PasswordWorkerPool {
     // In test environment, use test-specific pool to avoid state leakage
-    if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
+  if (process.env.NODE_ENV === "test" || process.env.JEST_WORKER_ID) {
         if (!_testWorkerPool) {
             _testWorkerPool = new PasswordWorkerPool();
         }
@@ -763,14 +811,14 @@ function getPasswordWorkerPool(): PasswordWorkerPool {
 }
 
 // Graceful shutdown handling - only register if not in test environment
-if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
-    process.on('SIGTERM', async () => {
+if (process.env.NODE_ENV !== "test" && !process.env.JEST_WORKER_ID) {
+  process.on("SIGTERM", async () => {
         if (_passwordWorkerPool) {
             await _passwordWorkerPool.shutdown();
         }
     });
 
-    process.on('SIGINT', async () => {
+  process.on("SIGINT", async () => {
         if (_passwordWorkerPool) {
             await _passwordWorkerPool.shutdown();
         }
@@ -783,28 +831,38 @@ export const passwordWorkerPool = {
         return getPasswordWorkerPool().hashPassword.bind(getPasswordWorkerPool());
     },
     get comparePassword() {
-        return getPasswordWorkerPool().comparePassword.bind(getPasswordWorkerPool());
+    return getPasswordWorkerPool().comparePassword.bind(
+      getPasswordWorkerPool()
+    );
     },
     get shutdown() {
         return getPasswordWorkerPool().shutdown.bind(getPasswordWorkerPool());
     },
     get cleanupForTests() {
-        return getPasswordWorkerPool().cleanupForTests.bind(getPasswordWorkerPool());
+    return getPasswordWorkerPool().cleanupForTests.bind(
+      getPasswordWorkerPool()
+    );
     },
     get getStats() {
         return getPasswordWorkerPool().getStats.bind(getPasswordWorkerPool());
     },
     get healthCheck() {
         return getPasswordWorkerPool().healthCheck.bind(getPasswordWorkerPool());
-    }
+  },
 } as PasswordWorkerPool;
 
 // Export convenience functions with lazy initialization
-export const hashPassword = (password: string, rounds: number = 12): Promise<string> => {
+export const hashPassword = (
+  password: string,
+  rounds: number = 12
+): Promise<string> => {
     return getPasswordWorkerPool().hashPassword(password, rounds);
 };
 
-export const comparePassword = (password: string, hash: string): Promise<boolean> => {
+export const comparePassword = (
+  password: string,
+  hash: string
+): Promise<boolean> => {
     return getPasswordWorkerPool().comparePassword(password, hash);
 };
 

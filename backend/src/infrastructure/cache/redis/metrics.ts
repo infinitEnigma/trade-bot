@@ -63,7 +63,11 @@ export class RedisMetrics {
     /**
      * Record transaction attempt
      */
-    recordTransactionAttempt(success: boolean, attempts: number, _totalDelay: number): void {
+  recordTransactionAttempt(
+    success: boolean,
+    attempts: number,
+    _totalDelay: number
+  ): void {
         this.transactionStats.transactionsAttempted++;
         this.transactionStats.lastTransactionTime = Date.now();
 
@@ -86,7 +90,10 @@ export class RedisMetrics {
 
         // Check if recent (last 5 minutes)
         const now = Date.now();
-        if (this.conflictStats.lastConflictTime === 0 || now - this.conflictStats.lastConflictTime < 5 * 60 * 1000) {
+    if (
+      this.conflictStats.lastConflictTime === 0 ||
+      now - this.conflictStats.lastConflictTime < 5 * 60 * 1000
+    ) {
             this.conflictStats.recentConflicts++;
         }
 
@@ -105,8 +112,8 @@ export class RedisMetrics {
                 // Legacy fallback: verify via a direct ping — cached health
                 // flags may be stale (facade contract relies on ping()).
                 const pong = await client.ping();
-                if (pong !== 'PONG') {
-                    throw new Error('Redis ping failed');
+        if (pong !== "PONG") {
+          throw new Error("Redis ping failed");
                 }
             }
 
@@ -114,12 +121,14 @@ export class RedisMetrics {
             const dbSize = await client.dbSize();
 
             // Get memory information
-            const memoryInfo = await client.info('memory');
-            const uptimeInfo = await client.info('server');
+      const memoryInfo = await client.info("memory");
+      const uptimeInfo = await client.info("server");
 
             // Parse memory usage
             const usedMemoryMatch = memoryInfo?.match(/used_memory:(\d+)/);
-            const usedMemory = usedMemoryMatch ? parseInt(usedMemoryMatch[1]) : undefined;
+      const usedMemory = usedMemoryMatch
+        ? parseInt(usedMemoryMatch[1])
+        : undefined;
 
             // Parse uptime
             const uptimeMatch = uptimeInfo?.match(/uptime_in_seconds:(\d+)/);
@@ -210,7 +219,10 @@ export class RedisMetrics {
     private calculateOverallHealth(components: {
         connection: { connected: boolean; ready: boolean };
         cache: { connected: boolean; error?: string };
-        transactions: { transactionsAttempted: number; transactionsSuccessful: number };
+    transactions: {
+      transactionsAttempted: number;
+      transactionsSuccessful: number;
+    };
         conflicts: { totalConflicts: number };
     }): number {
         let score = 0;
@@ -229,15 +241,21 @@ export class RedisMetrics {
         totalWeight += 30;
 
         // Transaction success rate (20% weight)
-        const successRate = components.transactions.transactionsAttempted > 0 ?
-            components.transactions.transactionsSuccessful / components.transactions.transactionsAttempted : 1;
-        score += (successRate * 20);
+    const successRate =
+      components.transactions.transactionsAttempted > 0
+        ? components.transactions.transactionsSuccessful /
+          components.transactions.transactionsAttempted
+        : 1;
+    score += successRate * 20;
         totalWeight += 20;
 
         // Conflict rate (10% weight) - lower conflicts = higher score
-        const conflictRate = components.transactions.transactionsAttempted > 0 ?
-            components.conflicts.totalConflicts / components.transactions.transactionsAttempted : 0;
-        score += ((1 - Math.min(conflictRate, 1)) * 10);
+    const conflictRate =
+      components.transactions.transactionsAttempted > 0
+        ? components.conflicts.totalConflicts /
+          components.transactions.transactionsAttempted
+        : 0;
+    score += (1 - Math.min(conflictRate, 1)) * 10;
         totalWeight += 10;
 
         return Math.round((score / totalWeight) * 100);

@@ -34,7 +34,7 @@ export const tvHistoryCacheKey = (
     symbol: string,
     resolution: string,
     from: number,
-    to: number,
+  to: number
 ): string =>
     `tv:history:${symbol}:${resolution}:${roundTo5Minutes(from)}:${roundTo5Minutes(to)}`;
 
@@ -65,7 +65,11 @@ export const INTERVAL_SECONDS: Record<string, number> = {
 };
 
 /** Success envelope shared by all market handlers. */
-export const ok = (res: Response, data: unknown, extra: Record<string, unknown> = {}): void => {
+export const ok = (
+  res: Response,
+  data: unknown,
+  extra: Record<string, unknown> = {}
+): void => {
     res.json({ success: true, data, timestamp: Date.now(), ...extra });
 };
 
@@ -75,7 +79,7 @@ export const fail = (
     operation: string,
     message: string,
     context: Record<string, unknown> = {},
-    status = 500,
+  status = 500
 ): void => {
     marketLogger.error(`${operation} error`, undefined, {
         ...context,

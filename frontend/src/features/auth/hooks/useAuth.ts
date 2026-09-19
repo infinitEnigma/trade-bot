@@ -16,7 +16,13 @@ const useAuthStore = create<AuthStore>()(
             isAuthenticated: false,
             isLoading: false, // Start as false to prevent automatic auth checks
 
-            login: async ({ email, password }: { email: string; password: string }) => {
+      login: async ({
+        email,
+        password,
+      }: {
+        email: string;
+        password: string;
+      }) => {
                 try {
                     set({ isLoading: true });
                     const response = await authService.login(email, password);
@@ -27,15 +33,25 @@ const useAuthStore = create<AuthStore>()(
 
                         if (profileResponse.success && profileResponse.data) {
                             // Check if user is verified and needs admin qualification check
-                            if (profileResponse.data.user.userLevel === 'VERIFIED') {
+              if (profileResponse.data.user.userLevel === "VERIFIED") {
                                 try {
-                                    const adminQualificationResponse = await authService.checkAdminQualification();
-                                    if (adminQualificationResponse.success && adminQualificationResponse.data?.isQualified) {
+                  const adminQualificationResponse =
+                    await authService.checkAdminQualification();
+                  if (
+                    adminQualificationResponse.success &&
+                    adminQualificationResponse.data?.isQualified
+                  ) {
                                         // Add SYSTEM_ADMIN role to user if qualified
-                                        profileResponse.data.user.roles = [...(profileResponse.data.user.roles || []), 'SYSTEM_ADMIN'];
+                    profileResponse.data.user.roles = [
+                      ...(profileResponse.data.user.roles || []),
+                      "SYSTEM_ADMIN",
+                    ];
                                     }
                                 } catch (adminError) {
-                                    console.error("Admin qualification check failed:", adminError);
+                  console.error(
+                    "Admin qualification check failed:",
+                    adminError
+                  );
                                     // Continue login even if admin check fails
                                 }
                             }
@@ -71,7 +87,13 @@ const useAuthStore = create<AuthStore>()(
                 }
             },
 
-            register: async ({ email, password }: { email: string; password: string }) => {
+      register: async ({
+        email,
+        password,
+      }: {
+        email: string;
+        password: string;
+      }) => {
                 try {
                     set({ isLoading: true });
                     const response = await authService.register(email, password);
@@ -91,7 +113,9 @@ const useAuthStore = create<AuthStore>()(
                     }
                 } catch (error) {
                     console.error("Registration error:", error);
-                    toast.error(error instanceof Error ? error.message : "Registration failed");
+          toast.error(
+            error instanceof Error ? error.message : "Registration failed"
+          );
                     set({
                         user: null,
                         isAuthenticated: false,
@@ -133,7 +157,8 @@ const useAuthStore = create<AuthStore>()(
 
                     // Skip check on auth pages and landing page to avoid rate limiting
                     const currentPath = window.location.pathname;
-                    const isAuthPage = currentPath === "/login" || currentPath === "/register";
+          const isAuthPage =
+            currentPath === "/login" || currentPath === "/register";
                     const isLandingPage = currentPath === "/";
 
                     if (isAuthPage || isLandingPage) {
@@ -146,15 +171,25 @@ const useAuthStore = create<AuthStore>()(
                     const response = await authService.getProfile();
 
                     if (response.success && response.data) {
-                        console.log("🔄 AUTH: Auth check successful, user:", response.data.user.userLevel);
+            console.log(
+              "🔄 AUTH: Auth check successful, user:",
+              response.data.user.userLevel
+            );
 
                         // Check if user is verified and needs admin qualification check
-                        if (response.data.user.userLevel === 'VERIFIED') {
+            if (response.data.user.userLevel === "VERIFIED") {
                             try {
-                                const adminQualificationResponse = await authService.checkAdminQualification();
-                                if (adminQualificationResponse.success && adminQualificationResponse.data?.isQualified) {
+                const adminQualificationResponse =
+                  await authService.checkAdminQualification();
+                if (
+                  adminQualificationResponse.success &&
+                  adminQualificationResponse.data?.isQualified
+                ) {
                                     // Add SYSTEM_ADMIN role to user if qualified
-                                    response.data.user.roles = [...(response.data.user.roles || []), 'SYSTEM_ADMIN'];
+                  response.data.user.roles = [
+                    ...(response.data.user.roles || []),
+                    "SYSTEM_ADMIN",
+                  ];
                                 }
                             } catch (adminError) {
                                 console.error("Admin qualification check failed:", adminError);
@@ -187,12 +222,12 @@ const useAuthStore = create<AuthStore>()(
         }),
         {
             name: "auth-storage",
-            partialize: (state) => ({
+      partialize: state => ({
                 user: state.user,
                 isAuthenticated: state.isAuthenticated,
             }),
             // Prevent automatic auth checks during rehydration
-            onRehydrateStorage: () => (state) => {
+      onRehydrateStorage: () => state => {
                 if (state) {
                     // Ensure loading state is false after rehydration
                     state.isLoading = false;
@@ -237,7 +272,7 @@ if (typeof window !== "undefined") {
  * Used by mutations that change user state without making API calls
  */
 export const updateAuthUser = (userData: Partial<AuthUser>) => {
-    useAuthStore.setState((state) => {
+  useAuthStore.setState(state => {
         if (!state.user) return state; // No user to update
 
         const updatedUser = { ...state.user, ...userData };

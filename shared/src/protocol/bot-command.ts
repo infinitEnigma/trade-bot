@@ -63,7 +63,8 @@ export interface StatusRequestCommandPayload {
     botId: string;
 }
 
-export type BotCommandPayload = StartBotCommandPayload | StopBotCommandPayload | StatusRequestCommandPayload;
+export type BotCommandPayload =
+  StartBotCommandPayload | StopBotCommandPayload | StatusRequestCommandPayload;
 
 export type BotCommand = ProtocolMessage<BotCommandPayload>;
 
@@ -81,7 +82,11 @@ export function generateMessageId(): string {
 /**
  * Build a protocol command envelope.
  */
-export function createBotCommand<P extends BotCommandPayload>(type: BotCommandType, payload: P, correlationId?: string): ProtocolMessage<P> {
+export function createBotCommand<P extends BotCommandPayload>(
+  type: BotCommandType,
+  payload: P,
+  correlationId?: string
+): ProtocolMessage<P> {
     return {
         version: PROTOCOL_VERSION,
         messageId: generateMessageId(),
@@ -96,7 +101,9 @@ export function createBotCommand<P extends BotCommandPayload>(type: BotCommandTy
 // TYPE GUARDS
 // ===========================================
 
-export function isProtocolMessage(obj: unknown): obj is ProtocolMessage<unknown> {
+export function isProtocolMessage(
+  obj: unknown
+): obj is ProtocolMessage<unknown> {
     return (
         typeof obj === "object" &&
         obj !== null &&
@@ -110,19 +117,42 @@ export function isProtocolMessage(obj: unknown): obj is ProtocolMessage<unknown>
 }
 
 export function isBotCommand(obj: unknown): obj is BotCommand {
-    return isProtocolMessage(obj) && (["BOT_START", "BOT_STOP", "BOT_STATUS_REQUEST"] as string[]).includes(obj.type);
+  return (
+    isProtocolMessage(obj) &&
+    (["BOT_START", "BOT_STOP", "BOT_STATUS_REQUEST"] as string[]).includes(
+      obj.type
+    )
+  );
 }
 
-export function isBotStartCommand(obj: unknown): obj is ProtocolMessage<StartBotCommandPayload> {
-    return isProtocolMessage(obj) && obj.type === "BOT_START" && typeof (obj.payload as StartBotCommandPayload)?.botId === "string";
+export function isBotStartCommand(
+  obj: unknown
+): obj is ProtocolMessage<StartBotCommandPayload> {
+  return (
+    isProtocolMessage(obj) &&
+    obj.type === "BOT_START" &&
+    typeof (obj.payload as StartBotCommandPayload)?.botId === "string"
+  );
 }
 
-export function isBotStopCommand(obj: unknown): obj is ProtocolMessage<StopBotCommandPayload> {
-    return isProtocolMessage(obj) && obj.type === "BOT_STOP" && typeof (obj.payload as StopBotCommandPayload)?.botId === "string";
+export function isBotStopCommand(
+  obj: unknown
+): obj is ProtocolMessage<StopBotCommandPayload> {
+  return (
+    isProtocolMessage(obj) &&
+    obj.type === "BOT_STOP" &&
+    typeof (obj.payload as StopBotCommandPayload)?.botId === "string"
+  );
 }
 
-export function isStatusRequestCommand(obj: unknown): obj is ProtocolMessage<StatusRequestCommandPayload> {
-    return isProtocolMessage(obj) && obj.type === "BOT_STATUS_REQUEST" && typeof (obj.payload as StatusRequestCommandPayload)?.botId === "string";
+export function isStatusRequestCommand(
+  obj: unknown
+): obj is ProtocolMessage<StatusRequestCommandPayload> {
+  return (
+    isProtocolMessage(obj) &&
+    obj.type === "BOT_STATUS_REQUEST" &&
+    typeof (obj.payload as StatusRequestCommandPayload)?.botId === "string"
+  );
 }
 
 // ===========================================

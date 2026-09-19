@@ -30,7 +30,9 @@ describe("HttpClient", () => {
 
             // Get the request interceptor function
             const requestInterceptors = (client.interceptors.request as any).handlers;
-            const requestInterceptor = requestInterceptors.find((interceptor: any) => interceptor.fulfilled)?.fulfilled;
+      const requestInterceptor = requestInterceptors.find(
+        (interceptor: any) => interceptor.fulfilled
+      )?.fulfilled;
 
             expect(requestInterceptor).toBeDefined();
 
@@ -42,7 +44,7 @@ describe("HttpClient", () => {
                 params: {},
                 baseURL: "http://localhost",
                 timeout: 0,
-                withCredentials: true
+        withCredentials: true,
             };
 
             const result = requestInterceptor!(mockConfig);
@@ -55,7 +57,9 @@ describe("HttpClient", () => {
 
             // Get the request interceptor error handler
             const requestInterceptors = (client.interceptors.request as any).handlers;
-            const errorInterceptor = requestInterceptors.find((interceptor: any) => interceptor.rejected)?.rejected;
+      const errorInterceptor = requestInterceptors.find(
+        (interceptor: any) => interceptor.rejected
+      )?.rejected;
 
             expect(errorInterceptor).toBeDefined();
 
@@ -80,13 +84,16 @@ describe("HttpClient", () => {
                     params: {},
                     baseURL: "http://localhost",
                     timeout: 0,
-                    withCredentials: true
+          withCredentials: true,
                 };
 
                 // Get the interceptor functions from axios
                 // Axios interceptors are stored in interceptor.fulfilled and interceptor.rejected arrays
-                const responseInterceptors = (client.interceptors.response as any).handlers;
-                const successInterceptor = responseInterceptors.find((interceptor: any) => interceptor.fulfilled)?.fulfilled;
+        const responseInterceptors = (client.interceptors.response as any)
+          .handlers;
+        const successInterceptor = responseInterceptors.find(
+          (interceptor: any) => interceptor.fulfilled
+        )?.fulfilled;
 
                 expect(successInterceptor).toBeDefined();
 
@@ -95,12 +102,12 @@ describe("HttpClient", () => {
                     status: 200,
                     statusText: "OK",
                     headers: {},
-                    config: mockRequest
+          config: mockRequest,
                 });
 
                 expect(result.data).toEqual({
                     success: true,
-                    data: mockData
+          data: mockData,
                 });
             });
 
@@ -109,7 +116,7 @@ describe("HttpClient", () => {
 
                 const mockResponse = {
                     success: true,
-                    data: { id: 1, name: "Test Data" }
+          data: { id: 1, name: "Test Data" },
                 };
 
                 const mockRequest = {
@@ -120,18 +127,21 @@ describe("HttpClient", () => {
                     params: {},
                     baseURL: "http://localhost",
                     timeout: 0,
-                    withCredentials: true
+          withCredentials: true,
                 };
 
-                const responseInterceptors = (client.interceptors.response as any).handlers;
-                const successInterceptor = responseInterceptors.find((interceptor: any) => interceptor.fulfilled)?.fulfilled;
+        const responseInterceptors = (client.interceptors.response as any)
+          .handlers;
+        const successInterceptor = responseInterceptors.find(
+          (interceptor: any) => interceptor.fulfilled
+        )?.fulfilled;
 
                 const result = await successInterceptor!({
                     data: mockResponse,
                     status: 200,
                     statusText: "OK",
                     headers: {},
-                    config: mockRequest
+          config: mockRequest,
                 });
 
                 expect(result.data).toEqual(mockResponse);
@@ -159,17 +169,26 @@ describe("HttpClient", () => {
                         headers: {
                             "ratelimit-limit": "100",
                             "ratelimit-remaining": "0",
-                            "ratelimit-reset": Date.now() + 60000
-                        }
+              "ratelimit-reset": Date.now() + 60000,
+            },
                     },
-                    config: { url: "/api/test" }
+          config: { url: "/api/test" },
                 };
 
-                const responseInterceptors = (client.interceptors.response as any).handlers;
-                const errorInterceptor = responseInterceptors.find((interceptor: any) => interceptor.rejected)?.rejected;
+        const responseInterceptors = (client.interceptors.response as any)
+          .handlers;
+        const errorInterceptor = responseInterceptors.find(
+          (interceptor: any) => interceptor.rejected
+        )?.rejected;
 
-                await expect(errorInterceptor!(mockError)).rejects.toHaveProperty("retryAfter", 60);
-                await expect(errorInterceptor!(mockError)).rejects.toHaveProperty("message", expect.stringContaining("Rate limited"));
+        await expect(errorInterceptor!(mockError)).rejects.toHaveProperty(
+          "retryAfter",
+          60
+        );
+        await expect(errorInterceptor!(mockError)).rejects.toHaveProperty(
+          "message",
+          expect.stringContaining("Rate limited")
+        );
             });
 
             it("should handle network errors (ERR_NETWORK)", async () => {
@@ -177,11 +196,14 @@ describe("HttpClient", () => {
 
                 const mockError = {
                     response: undefined,
-                    code: "ERR_NETWORK"
+          code: "ERR_NETWORK",
                 };
 
-                const responseInterceptors = (client.interceptors.response as any).handlers;
-                const errorInterceptor = responseInterceptors.find((interceptor: any) => interceptor.rejected)?.rejected;
+        const responseInterceptors = (client.interceptors.response as any)
+          .handlers;
+        const errorInterceptor = responseInterceptors.find(
+          (interceptor: any) => interceptor.rejected
+        )?.rejected;
 
                 await expect(errorInterceptor!(mockError)).rejects.toEqual(mockError);
                 expect(window.dispatchEvent).toHaveBeenCalled();
@@ -193,14 +215,19 @@ describe("HttpClient", () => {
 
                 const mockError = {
                     response: { status: 401 },
-                    config: { url: "/api/auth/login", _retry: false }
+          config: { url: "/api/auth/login", _retry: false },
                 };
 
-                const responseInterceptors = (client.interceptors.response as any).handlers;
-                const errorInterceptor = responseInterceptors.find((interceptor: any) => interceptor.rejected)?.rejected;
+        const responseInterceptors = (client.interceptors.response as any)
+          .handlers;
+        const errorInterceptor = responseInterceptors.find(
+          (interceptor: any) => interceptor.rejected
+        )?.rejected;
 
                 await expect(errorInterceptor!(mockError)).rejects.toEqual(mockError);
-                expect(window.dispatchEvent).toHaveBeenCalledWith(expect.any(CustomEvent));
+        expect(window.dispatchEvent).toHaveBeenCalledWith(
+          expect.any(CustomEvent)
+        );
                 expect(window.location.href).toEqual("/login");
             });
 
@@ -209,11 +236,14 @@ describe("HttpClient", () => {
 
                 const mockError = {
                     response: { status: 401 },
-                    config: { url: "/api/user/profile", _retry: false }
+          config: { url: "/api/user/profile", _retry: false },
                 };
 
-                const responseInterceptors = (client.interceptors.response as any).handlers;
-                const errorInterceptor = responseInterceptors.find((interceptor: any) => interceptor.rejected)?.rejected;
+        const responseInterceptors = (client.interceptors.response as any)
+          .handlers;
+        const errorInterceptor = responseInterceptors.find(
+          (interceptor: any) => interceptor.rejected
+        )?.rejected;
 
                 await expect(errorInterceptor!(mockError)).rejects.toEqual(mockError);
                 expect(window.dispatchEvent).toHaveBeenCalled();
@@ -226,27 +256,30 @@ describe("HttpClient", () => {
                 // Save original href
                 const originalHref = window.location.href;
                 // Mock href to be something else initially
-                Object.defineProperty(window.location, 'href', {
+        Object.defineProperty(window.location, "href", {
                     writable: true,
-                    value: 'http://localhost/dashboard'
+          value: "http://localhost/dashboard",
                 });
 
                 const mockError = {
                     response: { status: 401 },
-                    config: { url: "/api/market/data", _retry: false }
+          config: { url: "/api/market/data", _retry: false },
                 };
 
-                const responseInterceptors = (client.interceptors.response as any).handlers;
-                const errorInterceptor = responseInterceptors.find((interceptor: any) => interceptor.rejected)?.rejected;
+        const responseInterceptors = (client.interceptors.response as any)
+          .handlers;
+        const errorInterceptor = responseInterceptors.find(
+          (interceptor: any) => interceptor.rejected
+        )?.rejected;
 
                 await expect(errorInterceptor!(mockError)).rejects.toEqual(mockError);
                 expect(window.dispatchEvent).not.toHaveBeenCalled();
                 expect(window.location.href).not.toEqual("/login");
 
                 // Restore original href
-                Object.defineProperty(window.location, 'href', {
+        Object.defineProperty(window.location, "href", {
                     writable: true,
-                    value: originalHref
+          value: originalHref,
                 });
             });
 
@@ -255,11 +288,14 @@ describe("HttpClient", () => {
 
                 const mockError = {
                     response: { status: 403 },
-                    config: { url: "/api/restricted" }
+          config: { url: "/api/restricted" },
                 };
 
-                const responseInterceptors = (client.interceptors.response as any).handlers;
-                const errorInterceptor = responseInterceptors.find((interceptor: any) => interceptor.rejected)?.rejected;
+        const responseInterceptors = (client.interceptors.response as any)
+          .handlers;
+        const errorInterceptor = responseInterceptors.find(
+          (interceptor: any) => interceptor.rejected
+        )?.rejected;
 
                 await expect(errorInterceptor!(mockError)).rejects.toEqual(mockError);
             });
@@ -269,11 +305,14 @@ describe("HttpClient", () => {
 
                 const mockError = {
                     response: { status: 500 },
-                    config: { url: "/api/auth/login" }
+          config: { url: "/api/auth/login" },
                 };
 
-                const responseInterceptors = (client.interceptors.response as any).handlers;
-                const errorInterceptor = responseInterceptors.find((interceptor: any) => interceptor.rejected)?.rejected;
+        const responseInterceptors = (client.interceptors.response as any)
+          .handlers;
+        const errorInterceptor = responseInterceptors.find(
+          (interceptor: any) => interceptor.rejected
+        )?.rejected;
 
                 await expect(errorInterceptor!(mockError)).rejects.toEqual(mockError);
                 expect(window.dispatchEvent).toHaveBeenCalled();

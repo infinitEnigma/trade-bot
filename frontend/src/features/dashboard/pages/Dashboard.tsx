@@ -32,14 +32,19 @@ import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
 import { UserProgressCard } from "../../../shared/components/user/UserProgressCard";
 import { LoadingSpinner } from "../../../shared/components/ui";
 import { useBalance } from "../../../shared/hooks";
-import { Container, ElectricalNetworkBackground, Grid, Section } from "../../../shared/components/layout";
+import {
+  Container,
+  ElectricalNetworkBackground,
+  Grid,
+  Section,
+} from "../../../shared/components/layout";
 
 // Type definitions for Dashboard components
 interface StatsCardProps {
   title: string;
   value: number;
   icon: React.ComponentType<{ className?: string }>;
-  format?: 'currency' | 'number';
+  format?: "currency" | "number";
 }
 
 interface PortfolioChartProps {
@@ -74,7 +79,9 @@ interface PerformanceData {
 }
 
 // Lazy load heavy components
-const PriceChart = React.lazy(() => import("../../../shared/components/charts/PriceChart"));
+const PriceChart = React.lazy(
+  () => import("../../../shared/components/charts/PriceChart")
+);
 const WalletConnectDialog = React.lazy(() =>
   import("../../../shared/components/WalletConnectDialog").then(module => ({
     default: module.WalletConnectDialog,
@@ -89,7 +96,7 @@ const StatsCard = ({ title, value, icon: Icon, format }: StatsCardProps) => (
       </div>
     </div>
     <h3 className="text-lg font-bold text-text mb-1">
-      {format === 'currency' ? `$${value.toLocaleString()}` : value}
+      {format === "currency" ? `$${value.toLocaleString()}` : value}
     </h3>
     <p className="text-xs text-textMuted">{title}</p>
   </div>
@@ -172,7 +179,11 @@ const Dashboard: React.FC = () => {
     },
   });
 
-  const { data: tradesData, isLoading: tradesLoading, error: tradesError } = useQuery({
+  const {
+    data: tradesData,
+    isLoading: tradesLoading,
+    error: tradesError,
+  } = useQuery({
     queryKey: ["kodiak-trades", user?.id],
     queryFn: () => kodiakApi.getKodiakTrades(),
     enabled: hasKodiakAccess && !!user?.id,
@@ -203,10 +214,12 @@ const Dashboard: React.FC = () => {
 
   // For VERIFIED users, always show portfolio (even with zero balances)
   // For REGISTERED users, show if balance data exists
-  const shouldShowPortfolio = user?.userLevel === "VERIFIED" ||
+  const shouldShowPortfolio =
+    user?.userLevel === "VERIFIED" ||
     (user?.userLevel === "REGISTERED" && realBalance);
 
-  const portfolio = shouldShowPortfolio ? {
+  const portfolio = shouldShowPortfolio
+    ? {
     totalBalance: realBalance?.accountBalance || 0,
     pnl,
     pnlPercent,
@@ -214,22 +227,27 @@ const Dashboard: React.FC = () => {
     totalTrades: tradesData?.success
       ? tradesData.data?.rows?.length || 0
       : 0,
-  } : null;
+      }
+    : null;
 
   // Calculate real portfolio performance chart data
   const portfolioData =
     tradesData?.success && tradesData.data?.rows
-      ? calculatePortfolioPerformance(tradesData.data.rows, totalBalance, currentTime)
+      ? calculatePortfolioPerformance(
+          tradesData.data.rows,
+          totalBalance,
+          currentTime
+        )
       : [{ time: "No data", value: totalBalance || 10000 }];
 
   return (
     <Container
         size={{
-          default: 'lg',  // Mobile: constrained
-          xl: 'xl',       // Large desktop: reasonable width
-          '2xl': '2xl',   // Ultra-wide: wider
-          '3xl': '3xl',   // 1080p: even wider
-          '4xl': '4xl'    // 1440p: maximum readable
+        default: "lg", // Mobile: constrained
+        xl: "xl", // Large desktop: reasonable width
+        "2xl": "2xl", // Ultra-wide: wider
+        "3xl": "3xl", // 1080p: even wider
+        "4xl": "4xl", // 1440p: maximum readable
         }}
         className="py-2 space-y-4"
       >
@@ -281,7 +299,7 @@ const Dashboard: React.FC = () => {
             />
 
             <Grid cols={{ default: 1, md: 2, lg: 4 }} gap={6}>
-              {[0, 1, 2, 3].map((index) => (
+              {[0, 1, 2, 3].map(index => (
                 <motion.div
                   key={index}
                   initial={{ opacity: 0, y: 20 }}
@@ -289,11 +307,17 @@ const Dashboard: React.FC = () => {
                   transition={{
                     duration: 0.4,
                     delay: index * 0.1,
-                    ease: "easeOut"
+                    ease: "easeOut",
                   }}
                   className="gpu-accelerated will-change-transform"
                 >
-                  <Suspense fallback={<div className="glass-card p-6 flex items-center justify-center"><LoadingSpinner /></div>}>
+                  <Suspense
+                    fallback={
+                      <div className="glass-card p-6 flex items-center justify-center">
+                        <LoadingSpinner />
+                      </div>
+                    }
+                  >
                     {index === 0 && (
                       <StatsCard
                         title="Wallet Balance"
@@ -497,7 +521,8 @@ const Dashboard: React.FC = () => {
                             No Open Positions
                           </h3>
                           <p className="text-textMuted text-center mb-4">
-                            Start trading by creating a new strategy or opening a position manually.
+                            Start trading by creating a new strategy or opening
+                            a position manually.
                           </p>
                         </div>
                         <div className="space-y-3">

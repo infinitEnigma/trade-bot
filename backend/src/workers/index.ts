@@ -16,4 +16,4 @@
  */
 
 // Export worker modules
-export { hashPassword, comparePassword } from './password-worker';
+export { hashPassword, comparePassword } from "./password-worker";

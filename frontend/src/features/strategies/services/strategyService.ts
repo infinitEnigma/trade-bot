@@ -57,7 +57,10 @@ export class StrategyService {
     /**
      * Update an existing strategy
      */
-    async updateStrategy(id: string, data: Partial<StrategyFormData>): Promise<Strategy | null> {
+  async updateStrategy(
+    id: string,
+    data: Partial<StrategyFormData>
+  ): Promise<Strategy | null> {
         try {
             const updateData: {
                 name: string;
@@ -67,7 +70,16 @@ export class StrategyService {
             } = {
                 name: data.name || "",
                 type: data.type || StrategyType.GRID,
-                config: data.config || { type: StrategyType.GRID, config: { symbol: '', leverage: 1, gridSize: 10, gridRange: 5, orderQuantity: 1 } }
+        config: data.config || {
+          type: StrategyType.GRID,
+          config: {
+            symbol: "",
+            leverage: 1,
+            gridSize: 10,
+            gridRange: 5,
+            orderQuantity: 1,
+          },
+        },
             };
 
             if (data.active !== undefined) updateData.active = data.active;
@@ -104,7 +116,9 @@ export class StrategyService {
         try {
             const response = await tradingApi.getBotInstances();
             if (response.success && response.data) {
-                const bot = response.data.find((bot: { strategy_id: string }) => bot.strategy_id === strategyId);
+        const bot = response.data.find(
+          (bot: { strategy_id: string }) => bot.strategy_id === strategyId
+        );
                 if (bot) {
                     return {
                         id: bot.id,
@@ -113,7 +127,16 @@ export class StrategyService {
                         total_trades: bot.total_trades,
                         total_pnl: bot.total_pnl,
                         last_updated: bot.last_updated,
-                        config: bot.config || { type: StrategyType.GRID, config: { symbol: '', leverage: 1, gridSize: 10, gridRange: 5, orderQuantity: 1 } }
+            config: bot.config || {
+              type: StrategyType.GRID,
+              config: {
+                symbol: "",
+                leverage: 1,
+                gridSize: 10,
+                gridRange: 5,
+                orderQuantity: 1,
+              },
+            },
                     };
                 }
             }
@@ -131,15 +154,34 @@ export class StrategyService {
         try {
             const response = await tradingApi.getBotInstances();
             if (response.success && response.data) {
-                return response.data.map((bot: { strategy_id: string; status: string; total_trades: number; total_pnl: number; last_updated: string; config?: unknown }) => ({
+        return response.data.map(
+          (bot: {
+            strategy_id: string;
+            status: string;
+            total_trades: number;
+            total_pnl: number;
+            last_updated: string;
+            config?: unknown;
+          }) => ({
                     id: bot.strategy_id,
                     strategy_id: bot.strategy_id,
-                    status: bot.status as "RUNNING" | "STOPPED" | "ERROR" | "STARTING" | "STOPPING",
+            status: bot.status as
+              "RUNNING" | "STOPPED" | "ERROR" | "STARTING" | "STOPPING",
                     total_trades: bot.total_trades,
                     total_pnl: bot.total_pnl,
                     last_updated: bot.last_updated,
-                    config: bot.config || { type: StrategyType.GRID, config: { symbol: '', leverage: 1, gridSize: 10, gridRange: 5, orderQuantity: 1 } }
-                }));
+            config: bot.config || {
+              type: StrategyType.GRID,
+              config: {
+                symbol: "",
+                leverage: 1,
+                gridSize: 10,
+                gridRange: 5,
+                orderQuantity: 1,
+              },
+            },
+          })
+        );
             }
             return [];
         } catch (error) {
@@ -151,7 +193,10 @@ export class StrategyService {
     /**
      * Validate strategy configuration
      */
-    validateStrategyConfig(type: StrategyType, config: Record<string, unknown>): {
+  validateStrategyConfig(
+    type: StrategyType,
+    config: Record<string, unknown>
+  ): {
         isValid: boolean;
         errors: string[];
     } {
@@ -159,16 +204,26 @@ export class StrategyService {
 
         switch (type) {
             case StrategyType.GRID:
-                if (!config.symbol || typeof config.symbol !== 'string') {
+        if (!config.symbol || typeof config.symbol !== "string") {
                     errors.push("Symbol is required");
                 }
-                if (!config.gridSize || (typeof config.gridSize === 'number' && config.gridSize < 2)) {
+        if (
+          !config.gridSize ||
+          (typeof config.gridSize === "number" && config.gridSize < 2)
+        ) {
                     errors.push("Grid size must be at least 2");
                 }
-                if (!config.gridRange || (typeof config.gridRange === 'number' && config.gridRange <= 0)) {
+        if (
+          !config.gridRange ||
+          (typeof config.gridRange === "number" && config.gridRange <= 0)
+        ) {
                     errors.push("Grid range must be positive");
                 }
-                if (!config.orderQuantity || (typeof config.orderQuantity === 'number' && config.orderQuantity <= 0)) {
+        if (
+          !config.orderQuantity ||
+          (typeof config.orderQuantity === "number" &&
+            config.orderQuantity <= 0)
+        ) {
                     errors.push("Order quantity must be positive");
                 }
                 break;

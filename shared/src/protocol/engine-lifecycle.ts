@@ -44,7 +44,8 @@ export interface EngineHeartbeatEventPayload {
     version: string;
 }
 
-export type EngineLifecycleEventPayload = EngineRegisterEventPayload | EngineHeartbeatEventPayload;
+export type EngineLifecycleEventPayload =
+  EngineRegisterEventPayload | EngineHeartbeatEventPayload;
 
 export type EngineLifecycleEvent = ProtocolMessage<EngineLifecycleEventPayload>;
 
@@ -52,7 +53,9 @@ export type EngineLifecycleEvent = ProtocolMessage<EngineLifecycleEventPayload>;
 // TYPE GUARDS
 // ===========================================
 
-export function isEngineRegisterEvent(obj: unknown): obj is ProtocolMessage<EngineRegisterEventPayload> {
+export function isEngineRegisterEvent(
+  obj: unknown
+): obj is ProtocolMessage<EngineRegisterEventPayload> {
     const payload = (obj as { payload?: EngineRegisterEventPayload })?.payload;
     return (
         typeof obj === "object" &&
@@ -64,7 +67,9 @@ export function isEngineRegisterEvent(obj: unknown): obj is ProtocolMessage<Engi
     );
 }
 
-export function isEngineHeartbeatEvent(obj: unknown): obj is ProtocolMessage<EngineHeartbeatEventPayload> {
+export function isEngineHeartbeatEvent(
+  obj: unknown
+): obj is ProtocolMessage<EngineHeartbeatEventPayload> {
     const payload = (obj as { payload?: EngineHeartbeatEventPayload })?.payload;
     return (
         typeof obj === "object" &&

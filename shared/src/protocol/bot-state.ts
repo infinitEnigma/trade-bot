@@ -19,16 +19,27 @@
  * Actual lifecycle state as reported by the engine.
  * UNKNOWN means the engine is unreachable / heartbeat lost (reserved for a later milestone).
  */
-export type BotActualState = "STOPPED" | "STARTING" | "RUNNING" | "STOPPING" | "ERROR" | "UNKNOWN";
+export type BotActualState =
+  "STOPPED" | "STARTING" | "RUNNING" | "STOPPING" | "ERROR" | "UNKNOWN";
 
 /**
  * Desired lifecycle state - what the backend/user wants.
  */
 export type BotDesiredState = "RUNNING" | "STOPPED";
 
-export const BOT_ACTUAL_STATES: readonly BotActualState[] = ["STOPPED", "STARTING", "RUNNING", "STOPPING", "ERROR", "UNKNOWN"];
+export const BOT_ACTUAL_STATES: readonly BotActualState[] = [
+  "STOPPED",
+  "STARTING",
+  "RUNNING",
+  "STOPPING",
+  "ERROR",
+  "UNKNOWN",
+];
 
-export const BOT_DESIRED_STATES: readonly BotDesiredState[] = ["RUNNING", "STOPPED"];
+export const BOT_DESIRED_STATES: readonly BotDesiredState[] = [
+  "RUNNING",
+  "STOPPED",
+];
 
 // ===========================================
 // VALID TRANSITIONS
@@ -45,7 +56,10 @@ export const BOT_DESIRED_STATES: readonly BotDesiredState[] = ["RUNNING", "STOPP
  *   UNKNOWN  ──reconnect──▶ RUNNING | STOPPED | ERROR
  *   ERROR    ──retry──▶ STARTING | STOPPED
  */
-export const VALID_TRANSITIONS: Record<BotActualState, readonly BotActualState[]> = {
+export const VALID_TRANSITIONS: Record<
+  BotActualState,
+  readonly BotActualState[]
+> = {
     STOPPED: ["STARTING"],
     STARTING: ["RUNNING", "STOPPED", "ERROR"],
     RUNNING: ["STOPPING", "ERROR", "UNKNOWN"],
@@ -60,7 +74,7 @@ export const VALID_TRANSITIONS: Record<BotActualState, readonly BotActualState[]
 export class InvalidStateTransitionError extends Error {
     constructor(
         public readonly from: BotActualState,
-        public readonly to: BotActualState,
+    public readonly to: BotActualState
     ) {
         super(`Invalid bot state transition: ${from} -> ${to}`);
         this.name = "InvalidStateTransitionError";
@@ -70,7 +84,10 @@ export class InvalidStateTransitionError extends Error {
 /**
  * Check whether a transition between actual states is legal.
  */
-export function canTransition(from: BotActualState, to: BotActualState): boolean {
+export function canTransition(
+  from: BotActualState,
+  to: BotActualState
+): boolean {
     if (from === to) {
         // Self-transitions are treated as no-ops, not errors.
         return true;
@@ -83,7 +100,10 @@ export function canTransition(from: BotActualState, to: BotActualState): boolean
  * Throws InvalidStateTransitionError for illegal transitions.
  * Returns the target state on success (allows `actual = assertTransition(actual, next)`).
  */
-export function assertTransition(from: BotActualState, to: BotActualState): BotActualState {
+export function assertTransition(
+  from: BotActualState,
+  to: BotActualState
+): BotActualState {
     if (!canTransition(from, to)) {
         throw new InvalidStateTransitionError(from, to);
     }
@@ -94,12 +114,18 @@ export function assertTransition(from: BotActualState, to: BotActualState): BotA
  * Type guard for BotActualState.
  */
 export function isBotActualState(value: unknown): value is BotActualState {
-    return typeof value === "string" && (BOT_ACTUAL_STATES as readonly string[]).includes(value);
+  return (
+    typeof value === "string" &&
+    (BOT_ACTUAL_STATES as readonly string[]).includes(value)
+  );
 }
 
 /**
  * Type guard for BotDesiredState.
  */
 export function isBotDesiredState(value: unknown): value is BotDesiredState {
-    return typeof value === "string" && (BOT_DESIRED_STATES as readonly string[]).includes(value);
+  return (
+    typeof value === "string" &&
+    (BOT_DESIRED_STATES as readonly string[]).includes(value)
+  );
 }

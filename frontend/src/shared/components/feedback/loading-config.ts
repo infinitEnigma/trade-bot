@@ -4,12 +4,20 @@
 export const LoadingStates = {
     creatingStrategy: {
         message: "Creating your trading strategy...",
-        steps: ["Validating parameters", "Connecting to exchange", "Deploying strategy"],
+    steps: [
+      "Validating parameters",
+      "Connecting to exchange",
+      "Deploying strategy",
+    ],
     },
 
     startingBot: {
         message: "Starting trading bot...",
-        steps: ["Initializing engine", "Connecting to exchange", "Starting automated trading"],
+    steps: [
+      "Initializing engine",
+      "Connecting to exchange",
+      "Starting automated trading",
+    ],
     },
 
     stoppingBot: {
@@ -19,7 +27,11 @@ export const LoadingStates = {
 
     checkingQualification: {
         message: "Verifying wallet qualification...",
-        steps: ["Connecting to wallet", "Checking NFT ownership", "Validating token balance"],
+    steps: [
+      "Connecting to wallet",
+      "Checking NFT ownership",
+      "Validating token balance",
+    ],
     },
 
     loadingPortfolio: {

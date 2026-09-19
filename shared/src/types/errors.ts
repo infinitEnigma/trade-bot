@@ -407,7 +407,7 @@ export interface DataFreshnessMetadata {
     stalenessThreshold: number;
 
     /** Data source type for frontend optimization */
-    dataSource: 'websocket' | 'api' | 'cache' | 'static';
+  dataSource: "websocket" | "api" | "cache" | "static";
 
     /** Cache TTL remaining in seconds (if applicable) */
     cacheTTLRemaining?: number;
@@ -447,14 +447,17 @@ export const DataFreshnessUtils = {
             nextExpectedUpdate: actualLastUpdated + 5000,
             isStale: now - actualLastUpdated > 30000, // 30 seconds
             stalenessThreshold: 30000,
-            dataSource: 'websocket',
+      dataSource: "websocket",
         };
     },
 
     /**
      * Create freshness metadata for API-based data
      */
-    createApiMetadata(updateFrequency: number, lastUpdated?: number): DataFreshnessMetadata {
+  createApiMetadata(
+    updateFrequency: number,
+    lastUpdated?: number
+  ): DataFreshnessMetadata {
         const now = Date.now();
         const actualLastUpdated = lastUpdated || now;
 
@@ -465,14 +468,17 @@ export const DataFreshnessUtils = {
             nextExpectedUpdate: actualLastUpdated + updateFrequency,
             isStale: now - actualLastUpdated > updateFrequency * 3,
             stalenessThreshold: updateFrequency * 3,
-            dataSource: 'api',
+      dataSource: "api",
         };
     },
 
     /**
      * Create freshness metadata for cached data
      */
-    createCacheMetadata(cacheTTL: number, lastUpdated?: number): DataFreshnessMetadata {
+  createCacheMetadata(
+    cacheTTL: number,
+    lastUpdated?: number
+  ): DataFreshnessMetadata {
         const now = Date.now();
         const actualLastUpdated = lastUpdated || now;
 
@@ -480,11 +486,14 @@ export const DataFreshnessUtils = {
             lastUpdated: actualLastUpdated,
             updateFrequency: cacheTTL * 1000, // Convert to milliseconds
             recommendedPollInterval: Math.max(cacheTTL * 1000, 30000),
-            nextExpectedUpdate: actualLastUpdated + (cacheTTL * 1000),
+      nextExpectedUpdate: actualLastUpdated + cacheTTL * 1000,
             isStale: now - actualLastUpdated > cacheTTL * 1000,
             stalenessThreshold: cacheTTL * 1000,
-            dataSource: 'cache',
-            cacheTTLRemaining: Math.max(0, cacheTTL - Math.floor((now - actualLastUpdated) / 1000)),
+      dataSource: "cache",
+      cacheTTLRemaining: Math.max(
+        0,
+        cacheTTL - Math.floor((now - actualLastUpdated) / 1000)
+      ),
         };
     },
 
@@ -502,7 +511,7 @@ export const DataFreshnessUtils = {
             nextExpectedUpdate: actualLastUpdated + 1800000,
             isStale: now - actualLastUpdated > 3600000, // 1 hour
             stalenessThreshold: 3600000,
-            dataSource: 'static',
+      dataSource: "static",
         };
     },
 };

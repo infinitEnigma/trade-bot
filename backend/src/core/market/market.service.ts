@@ -22,12 +22,13 @@ export class MarketService {
      */
     async hasUserKodiakCredentials(userId: string): Promise<boolean> {
         try {
-            const credentials = await this.deps.kodiakCredentialsRepository.getCredentials(userId);
+      const credentials =
+        await this.deps.kodiakCredentialsRepository.getCredentials(userId);
             return !!credentials && credentials.verified;
         } catch (error) {
             this.deps.logger.error("Failed to check user Kodiak credentials", {
                 error: error instanceof Error ? error.message : String(error),
-                userId
+        userId,
             });
             return false;
         }
@@ -40,27 +41,28 @@ export class MarketService {
         try {
             // For now, return mock price data
             const mockPrices = [
-                { symbol: 'BTC/USDT', price: 50000, change24h: 2.5 },
-                { symbol: 'ETH/USDT', price: 3000, change24h: -1.2 },
-                { symbol: 'SOL/USDT', price: 100, change24h: 5.8 },
-                { symbol: 'ADA/USDT', price: 0.5, change24h: -0.8 }
+        { symbol: "BTC/USDT", price: 50000, change24h: 2.5 },
+        { symbol: "ETH/USDT", price: 3000, change24h: -1.2 },
+        { symbol: "SOL/USDT", price: 100, change24h: 5.8 },
+        { symbol: "ADA/USDT", price: 0.5, change24h: -0.8 },
             ];
 
             // Filter by symbols if provided
-            const filteredPrices = symbols.length > 0
+      const filteredPrices =
+        symbols.length > 0
                 ? mockPrices.filter(p => symbols.includes(p.symbol))
                 : mockPrices;
 
             this.deps.logger.debug("Market prices retrieved successfully", {
                 count: filteredPrices.length,
-                symbols
+        symbols,
             });
 
             return filteredPrices;
         } catch (error) {
             this.deps.logger.error("Failed to get market prices", {
                 error: error instanceof Error ? error.message : String(error),
-                symbols
+        symbols,
             });
             throw new Error("Failed to get market prices");
         }
@@ -73,21 +75,21 @@ export class MarketService {
         try {
             // For now, return mock trading pairs
             const tradingPairs = [
-                { symbol: 'BTC/USDT', base: 'BTC', quote: 'USDT', status: 'ACTIVE' },
-                { symbol: 'ETH/USDT', base: 'ETH', quote: 'USDT', status: 'ACTIVE' },
-                { symbol: 'SOL/USDT', base: 'SOL', quote: 'USDT', status: 'ACTIVE' },
-                { symbol: 'ADA/USDT', base: 'ADA', quote: 'USDT', status: 'ACTIVE' },
-                { symbol: 'DOT/USDT', base: 'DOT', quote: 'USDT', status: 'ACTIVE' }
+        { symbol: "BTC/USDT", base: "BTC", quote: "USDT", status: "ACTIVE" },
+        { symbol: "ETH/USDT", base: "ETH", quote: "USDT", status: "ACTIVE" },
+        { symbol: "SOL/USDT", base: "SOL", quote: "USDT", status: "ACTIVE" },
+        { symbol: "ADA/USDT", base: "ADA", quote: "USDT", status: "ACTIVE" },
+        { symbol: "DOT/USDT", base: "DOT", quote: "USDT", status: "ACTIVE" },
             ];
 
             this.deps.logger.debug("Trading pairs retrieved successfully", {
-                count: tradingPairs.length
+        count: tradingPairs.length,
             });
 
             return tradingPairs;
         } catch (error) {
             this.deps.logger.error("Failed to get trading pairs", {
-                error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
             });
             throw new Error("Failed to get trading pairs");
         }
@@ -101,37 +103,37 @@ export class MarketService {
             // For now, return mock market depth data
             const bids = [];
             const asks = [];
-            const basePrice = symbol === 'BTC/USDT' ? 50000 : 3000;
+      const basePrice = symbol === "BTC/USDT" ? 50000 : 3000;
 
             for (let i = 1; i <= limit; i++) {
                 bids.push({
-                    price: basePrice - (i * 0.1),
-                    quantity: Math.random() * 10
+          price: basePrice - i * 0.1,
+          quantity: Math.random() * 10,
                 });
 
                 asks.push({
-                    price: basePrice + (i * 0.1),
-                    quantity: Math.random() * 10
+          price: basePrice + i * 0.1,
+          quantity: Math.random() * 10,
                 });
             }
 
             const marketDepth = {
                 symbol,
                 bids: bids.sort((a, b) => b.price - a.price),
-                asks: asks.sort((a, b) => a.price - b.price)
+        asks: asks.sort((a, b) => a.price - b.price),
             };
 
             this.deps.logger.debug("Market depth retrieved successfully", {
                 symbol,
                 bidCount: marketDepth.bids.length,
-                askCount: marketDepth.asks.length
+        askCount: marketDepth.asks.length,
             });
 
             return marketDepth;
         } catch (error) {
             this.deps.logger.error("Failed to get market depth", {
                 error: error instanceof Error ? error.message : String(error),
-                symbol
+        symbol,
             });
             throw new Error("Failed to get market depth");
         }
@@ -139,8 +141,8 @@ export class MarketService {
 }
 
 // Export factory function for creating service instances
-export function createMarketService(deps: MarketServiceDependencies): MarketService {
+export function createMarketService(
+  deps: MarketServiceDependencies
+): MarketService {
     return new MarketService(deps);
 }
-
-

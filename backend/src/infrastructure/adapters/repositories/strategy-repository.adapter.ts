@@ -12,10 +12,10 @@ import {
     IStrategyRepository,
     Strategy,
     StrategyConfig,
-    StrategyType
-} from '@trade-bot/shared';
-import { query } from '../../../database/pool';
-import { databaseLogger as logger } from '../../../core/logging/context-aware-logger.service';
+  StrategyType,
+} from "@trade-bot/shared";
+import { query } from "../../../database/pool";
+import { databaseLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 /**
  * Strategy Repository Adapter
@@ -24,20 +24,22 @@ import { databaseLogger as logger } from '../../../core/logging/context-aware-lo
  * Provides strategy data access with proper error handling and type safety.
  */
 export class StrategyRepositoryAdapter implements IStrategyRepository {
-
     /**
      * Get all strategies for a user
      */
     async getStrategies(userId: string): Promise<Strategy[]> {
         try {
             const result = await query<StrategyRow>(
-                'SELECT id, user_id, name, type, config, active, created_at, updated_at FROM strategies WHERE user_id = $1 ORDER BY created_at DESC',
+        "SELECT id, user_id, name, type, config, active, created_at, updated_at FROM strategies WHERE user_id = $1 ORDER BY created_at DESC",
                 [userId]
             );
 
-            return result.rows.map(row => this.mapRowToStrategy(row)).filter(Boolean) as Strategy[];
+      return result.rows
+        .map(row => this.mapRowToStrategy(row))
+        .filter(Boolean) as Strategy[];
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to get strategies: ${errorMessage}`);
         }
     }
@@ -48,7 +50,7 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
     async getStrategy(id: string): Promise<Strategy | null> {
         try {
             const result = await query<StrategyRow>(
-                'SELECT id, user_id, name, type, config, active, created_at, updated_at FROM strategies WHERE id = $1',
+        "SELECT id, user_id, name, type, config, active, created_at, updated_at FROM strategies WHERE id = $1",
                 [id]
             );
 
@@ -58,7 +60,8 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
 
             return this.mapRowToStrategy(result.rows[0]);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to get strategy: ${errorMessage}`);
         }
     }
@@ -66,15 +69,27 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
     /**
      * Create a new strategy
      */
-    async createStrategy(strategy: Omit<Strategy, 'id' | 'createdAt' | 'updatedAt'>): Promise<Strategy> {
+  async createStrategy(
+    strategy: Omit<Strategy, "id" | "createdAt" | "updatedAt">
+  ): Promise<Strategy> {
         try {
-            const result = await query<{ id: string, created_at: string, updated_at: string }>(
-                'INSERT INTO strategies (user_id, name, type, config, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING id, created_at, updated_at',
-                [strategy.userId, strategy.name, strategy.type, JSON.stringify(strategy.config), strategy.active]
+      const result = await query<{
+        id: string;
+        created_at: string;
+        updated_at: string;
+      }>(
+        "INSERT INTO strategies (user_id, name, type, config, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING id, created_at, updated_at",
+        [
+          strategy.userId,
+          strategy.name,
+          strategy.type,
+          JSON.stringify(strategy.config),
+          strategy.active,
+        ]
             );
 
             if (result.rows.length === 0) {
-                throw new Error('Strategy creation failed - no rows returned');
+        throw new Error("Strategy creation failed - no rows returned");
             }
 
             const row = result.rows[0];
@@ -86,10 +101,11 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
                 config: strategy.config,
                 active: strategy.active,
                 created_at: row.created_at,
-                updated_at: row.updated_at
+        updated_at: row.updated_at,
             }) as Strategy;
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to create strategy: ${errorMessage}`);
         }
     }
@@ -97,12 +113,16 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
     /**
      * Update strategy configuration
      */
-    async updateStrategy(id: string, _updates: Partial<StrategyConfig>): Promise<void> {
+  async updateStrategy(
+    id: string,
+    _updates: Partial<StrategyConfig>
+  ): Promise<void> {
         try {
             // This would update strategy configuration in the database
             logger.info(`Strategy config update for strategy ${id}`);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to update strategy: ${errorMessage}`);
         }
     }
@@ -112,12 +132,13 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
      */
     async deleteStrategy(id: string): Promise<void> {
         try {
-            const result = await query('DELETE FROM strategies WHERE id = $1', [id]);
+      const result = await query("DELETE FROM strategies WHERE id = $1", [id]);
             if (result.rowCount === 0) {
-                throw new Error('Strategy not found');
+        throw new Error("Strategy not found");
             }
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to delete strategy: ${errorMessage}`);
         }
     }
@@ -128,15 +149,16 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
     async toggleStrategy(id: string, active: boolean): Promise<void> {
         try {
             const result = await query(
-                'UPDATE strategies SET active = $1, updated_at = NOW() WHERE id = $2',
+        "UPDATE strategies SET active = $1, updated_at = NOW() WHERE id = $2",
                 [active, id]
             );
 
             if (result.rowCount === 0) {
-                throw new Error('Strategy not found');
+        throw new Error("Strategy not found");
             }
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to toggle strategy: ${errorMessage}`);
         }
     }
@@ -152,13 +174,17 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
                 userId: row.user_id,
                 name: row.name,
                 type: row.type,
-                config: typeof row.config === 'string' ? JSON.parse(row.config) : row.config,
+        config:
+          typeof row.config === "string" ? JSON.parse(row.config) : row.config,
                 active: row.active,
                 createdAt: new Date(row.created_at),
-                updatedAt: new Date(row.updated_at)
+        updatedAt: new Date(row.updated_at),
             };
         } catch (error) {
-            logger.error(`Failed to map strategy row to domain object: ${error}`, error as Error);
+      logger.error(
+        `Failed to map strategy row to domain object: ${error}`,
+        error as Error
+      );
             return null;
         }
     }

@@ -28,8 +28,13 @@ export interface RefreshMutex {
 }
 
 /** Acquire `mutex:refresh:<userId>` (fail-open: proceeds unlocked on error). */
-export const acquireRefreshMutex = async (userId: string | undefined): Promise<RefreshMutex & { token: string }> => {
-    const mutex = { key: userId ? `mutex:refresh:${userId}` : null, acquired: false };
+export const acquireRefreshMutex = async (
+  userId: string | undefined
+): Promise<RefreshMutex & { token: string }> => {
+  const mutex = {
+    key: userId ? `mutex:refresh:${userId}` : null,
+    acquired: false,
+  };
     // Random owner token so only this request can release its own lock
     const token = randomBytes(16).toString("hex");
     if (mutex.key) {
@@ -48,7 +53,8 @@ export const acquireRefreshMutex = async (userId: string | undefined): Promise<R
             }
         } catch (lockError) {
             authLogger.warn("Failed to acquire token refresh mutex", {
-                error: lockError instanceof Error ? lockError.message : String(lockError),
+        error:
+          lockError instanceof Error ? lockError.message : String(lockError),
                 userId,
                 mutexKey: mutex.key,
             });
@@ -61,7 +67,7 @@ export const acquireRefreshMutex = async (userId: string | undefined): Promise<R
 /** Release a previously acquired mutex (owner-token compare-and-delete). */
 export const releaseRefreshMutex = async (
     mutex: RefreshMutex & { token: string },
-    userId: string | undefined,
+  userId: string | undefined
 ): Promise<void> => {
     if (!mutex.acquired || !mutex.key) {
         return;
@@ -78,7 +84,10 @@ export const releaseRefreshMutex = async (
         });
     } catch (unlockError) {
         authLogger.warn("Failed to release token refresh mutex", {
-            error: unlockError instanceof Error ? unlockError.message : String(unlockError),
+      error:
+        unlockError instanceof Error
+          ? unlockError.message
+          : String(unlockError),
             userId,
             mutexKey: mutex.key,
         });
