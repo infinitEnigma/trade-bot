@@ -27,36 +27,36 @@ router.get(
   adminMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-        // Defensive check - user should be set by authMiddleware
-        if (!req.user) {
-            logger.warn("Security assessment requested without authenticated user");
-            return res.status(401).json({
-                success: false,
-                error: "Unauthorized - user not authenticated",
-            });
-        }
-
-        logger.info("Security assessment requested", {
-            userId: req.user.userId,
-            userLevel: req.user.userLevel,
+      // Defensive check - user should be set by authMiddleware
+      if (!req.user) {
+        logger.warn("Security assessment requested without authenticated user");
+        return res.status(401).json({
+          success: false,
+          error: "Unauthorized - user not authenticated",
         });
+      }
 
-        const assessment = await databaseSecurityService.assessDatabaseSecurity();
+      logger.info("Security assessment requested", {
+        userId: req.user.userId,
+        userLevel: req.user.userLevel,
+      });
 
-        res.json({
-            success: true,
-            data: assessment,
-            generatedAt: new Date().toISOString(),
-        });
+      const assessment = await databaseSecurityService.assessDatabaseSecurity();
+
+      res.json({
+        success: true,
+        data: assessment,
+        generatedAt: new Date().toISOString(),
+      });
     } catch (error) {
-        logger.error("Security assessment failed", error as Error, {
-            userId: req.user?.userId,
-        });
+      logger.error("Security assessment failed", error as Error, {
+        userId: req.user?.userId,
+      });
 
-        res.status(500).json({
-            success: false,
-            error: "Failed to generate security assessment",
-        });
+      res.status(500).json({
+        success: false,
+        error: "Failed to generate security assessment",
+      });
     }
   }
 );
@@ -70,30 +70,30 @@ router.get(
   adminMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-        // Defensive check - user should be set by authMiddleware
-        if (!req.user) {
-            logger.warn("Security metrics requested without authenticated user");
-            return res.status(401).json({
-                success: false,
-                error: "Unauthorized - user not authenticated",
-            });
-        }
-
-        const metrics = await databaseSecurityService.getSecurityMetrics();
-
-        res.json({
-            success: true,
-            data: metrics,
+      // Defensive check - user should be set by authMiddleware
+      if (!req.user) {
+        logger.warn("Security metrics requested without authenticated user");
+        return res.status(401).json({
+          success: false,
+          error: "Unauthorized - user not authenticated",
         });
+      }
+
+      const metrics = await databaseSecurityService.getSecurityMetrics();
+
+      res.json({
+        success: true,
+        data: metrics,
+      });
     } catch (error) {
-        logger.error("Security metrics retrieval failed", error as Error, {
-            userId: req.user?.userId,
-        });
+      logger.error("Security metrics retrieval failed", error as Error, {
+        userId: req.user?.userId,
+      });
 
-        res.status(500).json({
-            success: false,
-            error: "Failed to retrieve security metrics",
-        });
+      res.status(500).json({
+        success: false,
+        error: "Failed to retrieve security metrics",
+      });
     }
   }
 );
@@ -107,42 +107,42 @@ router.get(
   adminMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-        // Defensive check - user should be set by authMiddleware
-        if (!req.user) {
+      // Defensive check - user should be set by authMiddleware
+      if (!req.user) {
         logger.warn(
           "Security audit report requested without authenticated user"
         );
-            return res.status(401).json({
-                success: false,
-                error: "Unauthorized - user not authenticated",
-            });
-        }
-
-        logger.info("Security audit report requested", {
-            userId: req.user.userId,
-            userLevel: req.user.userLevel,
+        return res.status(401).json({
+          success: false,
+          error: "Unauthorized - user not authenticated",
         });
+      }
+
+      logger.info("Security audit report requested", {
+        userId: req.user.userId,
+        userLevel: req.user.userLevel,
+      });
 
       const report =
         await databaseSecurityService.generateSecurityAuditReport();
 
-        // Set headers for file download
+      // Set headers for file download
       res.setHeader("Content-Type", "text/plain");
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="security-audit-${new Date().toISOString().split("T")[0]}.txt"`
       );
 
-        res.send(report);
+      res.send(report);
     } catch (error) {
-        logger.error("Security audit report generation failed", error as Error, {
-            userId: req.user?.userId,
-        });
+      logger.error("Security audit report generation failed", error as Error, {
+        userId: req.user?.userId,
+      });
 
-        res.status(500).json({
-            success: false,
-            error: "Failed to generate security audit report",
-        });
+      res.status(500).json({
+        success: false,
+        error: "Failed to generate security audit report",
+      });
     }
   }
 );
@@ -156,32 +156,32 @@ router.get(
   adminMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-        // Defensive check - user should be set by authMiddleware
-        if (!req.user) {
-            logger.warn("Migration plan requested without authenticated user");
-            return res.status(401).json({
-                success: false,
-                error: "Unauthorized - user not authenticated",
-            });
-        }
+      // Defensive check - user should be set by authMiddleware
+      if (!req.user) {
+        logger.warn("Migration plan requested without authenticated user");
+        return res.status(401).json({
+          success: false,
+          error: "Unauthorized - user not authenticated",
+        });
+      }
 
       const migrationPlan =
         await databaseSecurityService.generateEncryptionMigrationPlan();
 
-        res.json({
-            success: true,
-            data: migrationPlan,
-            totalTables: migrationPlan.length,
-        });
+      res.json({
+        success: true,
+        data: migrationPlan,
+        totalTables: migrationPlan.length,
+      });
     } catch (error) {
-        logger.error("Migration plan generation failed", error as Error, {
-            userId: req.user?.userId,
-        });
+      logger.error("Migration plan generation failed", error as Error, {
+        userId: req.user?.userId,
+      });
 
-        res.status(500).json({
-            success: false,
-            error: "Failed to generate migration plan",
-        });
+      res.status(500).json({
+        success: false,
+        error: "Failed to generate migration plan",
+      });
     }
   }
 );
@@ -195,60 +195,60 @@ router.post(
   adminMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-        // Defensive check - user should be set by authMiddleware
-        if (!req.user) {
+      // Defensive check - user should be set by authMiddleware
+      if (!req.user) {
         logger.warn(
           "Table encryption migration requested without authenticated user"
         );
-            return res.status(401).json({
-                success: false,
-                error: "Unauthorized - user not authenticated",
-            });
-        }
-
-        const { tableName, columns } = req.body;
-
-        if (!tableName || !Array.isArray(columns) || columns.length === 0) {
-            return res.status(400).json({
-                success: false,
-                error: "tableName (string) and columns (array) are required",
-            });
-        }
-
-        logger.info("Table encryption migration requested", {
-            userId: req.user.userId,
-            tableName,
-            columns,
+        return res.status(401).json({
+          success: false,
+          error: "Unauthorized - user not authenticated",
         });
+      }
+
+      const { tableName, columns } = req.body;
+
+      if (!tableName || !Array.isArray(columns) || columns.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: "tableName (string) and columns (array) are required",
+        });
+      }
+
+      logger.info("Table encryption migration requested", {
+        userId: req.user.userId,
+        tableName,
+        columns,
+      });
 
       const result = await databaseSecurityService.migrateTableEncryption(
         tableName,
         columns
       );
 
-        if (!result.success) {
-            return res.status(400).json({
-                success: false,
-                error: "Migration completed with errors",
-                data: result,
-            });
-        }
-
-        res.json({
-            success: true,
-            message: `Successfully migrated ${result.migratedRows} records`,
-            data: result,
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          error: "Migration completed with errors",
+          data: result,
         });
+      }
+
+      res.json({
+        success: true,
+        message: `Successfully migrated ${result.migratedRows} records`,
+        data: result,
+      });
     } catch (error) {
-        logger.error("Table encryption migration failed", error as Error, {
-            userId: req.user?.userId,
-            tableName: req.body.tableName,
-        });
+      logger.error("Table encryption migration failed", error as Error, {
+        userId: req.user?.userId,
+        tableName: req.body.tableName,
+      });
 
-        res.status(500).json({
-            success: false,
-            error: "Failed to migrate table encryption",
-        });
+      res.status(500).json({
+        success: false,
+        error: "Failed to migrate table encryption",
+      });
     }
   }
 );
@@ -262,45 +262,45 @@ router.post(
   adminMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-        // Defensive check - user should be set by authMiddleware
-        if (!req.user) {
+      // Defensive check - user should be set by authMiddleware
+      if (!req.user) {
         logger.warn(
           "Database encryption enable requested without authenticated user"
         );
-            return res.status(401).json({
-                success: false,
-                error: "Unauthorized - user not authenticated",
-            });
-        }
-
-        logger.warn("Database encryption enable requested", {
-            userId: req.user.userId,
-            userLevel: req.user.userLevel,
+        return res.status(401).json({
+          success: false,
+          error: "Unauthorized - user not authenticated",
         });
+      }
 
-        const result = await databaseSecurityService.enableDatabaseEncryption();
+      logger.warn("Database encryption enable requested", {
+        userId: req.user.userId,
+        userLevel: req.user.userLevel,
+      });
 
-        if (!result.success) {
-            return res.status(400).json({
-                success: false,
-                error: result.message,
-            });
-        }
+      const result = await databaseSecurityService.enableDatabaseEncryption();
 
-        res.json({
-            success: true,
-            message: result.message,
-            requiresRestart: result.requiresRestart,
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          error: result.message,
         });
+      }
+
+      res.json({
+        success: true,
+        message: result.message,
+        requiresRestart: result.requiresRestart,
+      });
     } catch (error) {
-        logger.error("Database encryption enable failed", error as Error, {
-            userId: req.user?.userId,
-        });
+      logger.error("Database encryption enable failed", error as Error, {
+        userId: req.user?.userId,
+      });
 
-        res.status(500).json({
-            success: false,
-            error: "Failed to enable database encryption",
-        });
+      res.status(500).json({
+        success: false,
+        error: "Failed to enable database encryption",
+      });
     }
   }
 );
@@ -314,50 +314,50 @@ router.post(
   adminMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-        // Defensive check - user should be set by authMiddleware
-        if (!req.user) {
+      // Defensive check - user should be set by authMiddleware
+      if (!req.user) {
         logger.warn(
           "Encryption key rotation requested without authenticated user"
         );
-            return res.status(401).json({
-                success: false,
-                error: "Unauthorized - user not authenticated",
-            });
-        }
-
-        logger.warn("Encryption key rotation requested", {
-            userId: req.user.userId,
-            userLevel: req.user.userLevel,
+        return res.status(401).json({
+          success: false,
+          error: "Unauthorized - user not authenticated",
         });
+      }
 
-        const { encryptionService } = await import("../../../infrastructure");
+      logger.warn("Encryption key rotation requested", {
+        userId: req.user.userId,
+        userLevel: req.user.userLevel,
+      });
 
-        const needsRotation = await encryptionService.isKeyRotationNeeded();
+      const { encryptionService } = await import("../../../infrastructure");
 
-        if (!needsRotation) {
-            return res.json({
-                success: true,
-                message: "Key rotation not needed at this time",
-                rotated: false,
-            });
-        }
+      const needsRotation = await encryptionService.isKeyRotationNeeded();
 
-        await encryptionService.rotateEncryptionKeys();
-
-        res.json({
-            success: true,
-            message: "Encryption keys rotated successfully",
-            rotated: true,
+      if (!needsRotation) {
+        return res.json({
+          success: true,
+          message: "Key rotation not needed at this time",
+          rotated: false,
         });
+      }
+
+      await encryptionService.rotateEncryptionKeys();
+
+      res.json({
+        success: true,
+        message: "Encryption keys rotated successfully",
+        rotated: true,
+      });
     } catch (error) {
-        logger.error("Encryption key rotation failed", error as Error, {
-            userId: req.user?.userId,
-        });
+      logger.error("Encryption key rotation failed", error as Error, {
+        userId: req.user?.userId,
+      });
 
-        res.status(500).json({
-            success: false,
-            error: "Failed to rotate encryption keys",
-        });
+      res.status(500).json({
+        success: false,
+        error: "Failed to rotate encryption keys",
+      });
     }
   }
 );

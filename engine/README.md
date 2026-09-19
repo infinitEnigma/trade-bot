@@ -79,8 +79,8 @@ Backend                          Engine
 
 ```typescript
 interface EngineIdentity {
-    engineId: string;  // Persistent across restarts
-    epoch: number;     // Incremented on every start
+  engineId: string; // Persistent across restarts
+  epoch: number; // Incremented on every start
 }
 ```
 
@@ -101,6 +101,7 @@ This requires `BOT_ENGINE_API_KEY` for authentication.
 ## Quick Start
 
 ### Prerequisites
+
 - Node.js ≥ 25.0.9
 - Backend API running
 - PostgreSQL database
@@ -153,16 +154,18 @@ npm run build && npm start
 Creates automated buy/sell grids around a central price level.
 
 **Configuration**:
+
 ```typescript
 interface GridStrategyConfig {
-    symbol: string;           // Trading pair (e.g., "ETH_PERP")
-    gridSize: number;         // Number of grid levels
-    gridRangePercent: number; // Price range percentage
-    orderQuantity: number;    // Quantity per order
+  symbol: string; // Trading pair (e.g., "ETH_PERP")
+  gridSize: number; // Number of grid levels
+  gridRangePercent: number; // Price range percentage
+  orderQuantity: number; // Quantity per order
 }
 ```
 
 **How it works**:
+
 1. Calculates grid levels around current price
 2. Places buy orders at levels below current price
 3. When buy order fills, places sell order at level above
@@ -173,24 +176,29 @@ interface GridStrategyConfig {
 ## Protocol Reliability
 
 ### At-Least-Once Delivery
+
 - Messages are not deleted after being read
 - ACK only after handler completes successfully
 - Failed handler → message left unacked for redelivery
 
 ### Pending Message Recovery
+
 - `XAUTOCLAIM` recovers messages from crashed consumers
 - Minimum idle time before reclaim: `PENDING_RECOVERY_MIN_IDLE_MS` (default 60s)
 
 ### Deduplication
+
 - Processed message IDs stored durably in Redis (24h TTL)
 - In-memory cache for fast lookup
 - Prevents re-execution after restarts
 
 ### Poison Message Detection
+
 - Tracks redelivery count per pending message
 - Logs warning when threshold exceeded (`PENDING_POISON_MAX_DELIVERIES`, default 10)
 
 ### Heartbeat
+
 - Engine publishes `ENGINE_HEARTBEAT` every `ENGINE_HEARTBEAT_INTERVAL_MS` (default 10s)
 - Backend marks engine `OFFLINE` after `ENGINE_HEARTBEAT_TIMEOUT_MS` (default 30s)
 - Heartbeat includes `activeBotIds` for reconciliation
@@ -199,17 +207,17 @@ interface GridStrategyConfig {
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `BACKEND_URL` | `http://localhost:3000` | Backend base URL |
-| `BOT_ENGINE_API_KEY` | (required) | Backend engine API key |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL |
-| `ENGINE_ID` | auto-generated | Persistent engine identifier |
-| `ENGINE_STATE_FILE` | `./.engine-state.json` | Engine identity persistence |
-| `ENGINE_HEARTBEAT_INTERVAL_MS` | `10000` | Heartbeat interval (ms) |
-| `PENDING_RECOVERY_MIN_IDLE_MS` | `60000` | Min idle before XAUTOCLAIM (ms) |
-| `PENDING_STUCK_ALERT_THRESHOLD_MS` | `30000` | Stuck pending alert threshold (ms) |
-| `PENDING_POISON_MAX_DELIVERIES` | `10` | Poison message threshold |
+| Variable                           | Default                  | Description                        |
+| ---------------------------------- | ------------------------ | ---------------------------------- |
+| `BACKEND_URL`                      | `http://localhost:3000`  | Backend base URL                   |
+| `BOT_ENGINE_API_KEY`               | (required)               | Backend engine API key             |
+| `REDIS_URL`                        | `redis://localhost:6379` | Redis connection URL               |
+| `ENGINE_ID`                        | auto-generated           | Persistent engine identifier       |
+| `ENGINE_STATE_FILE`                | `./.engine-state.json`   | Engine identity persistence        |
+| `ENGINE_HEARTBEAT_INTERVAL_MS`     | `10000`                  | Heartbeat interval (ms)            |
+| `PENDING_RECOVERY_MIN_IDLE_MS`     | `60000`                  | Min idle before XAUTOCLAIM (ms)    |
+| `PENDING_STUCK_ALERT_THRESHOLD_MS` | `30000`                  | Stuck pending alert threshold (ms) |
+| `PENDING_POISON_MAX_DELIVERIES`    | `10`                     | Poison message threshold           |
 
 ---
 
@@ -217,16 +225,17 @@ interface GridStrategyConfig {
 
 ### ✅ Recently Completed
 
-| Improvement | Description |
-|-------------|-------------|
-| Modularization | Engine decomposed into `application/`, `protocol/`, `domain/`, `exchanges/` layers |
-| Exchange-Agnostic | Core engine decoupled from specific exchanges via `ExchangeClient` interface |
-| Overlapping Ticks | Sequential tick loop with single-flight guard |
-| Order Idempotency | Deterministic `clientOrderId` for exchange duplicate detection |
+| Improvement       | Description                                                                        |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| Modularization    | Engine decomposed into `application/`, `protocol/`, `domain/`, `exchanges/` layers |
+| Exchange-Agnostic | Core engine decoupled from specific exchanges via `ExchangeClient` interface       |
+| Overlapping Ticks | Sequential tick loop with single-flight guard                                      |
+| Order Idempotency | Deterministic `clientOrderId` for exchange duplicate detection                     |
 
 ### Exchange Extensibility
 
 To add a new exchange:
+
 1. Create `src/exchanges/{exchange}/client.ts`
 2. Implement the `ExchangeClient` interface from `src/domain/exchange.ts`
 3. The engine core automatically works with the new exchange

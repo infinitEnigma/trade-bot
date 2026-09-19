@@ -2,7 +2,7 @@
 
 import React, { Suspense } from "react";
 import { Strategy, StrategyType } from "../../../shared/types";
-import { Zap, Edit, Trash2} from "lucide-react";
+import { Zap, Edit, Trash2 } from "lucide-react";
 import { Card } from "../../../shared/components/ui";
 import { BotControls } from "../bots/components/BotControls";
 import { getStrategyConfig, BotInstance } from "../types/strategies.types";

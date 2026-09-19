@@ -51,8 +51,8 @@ const NavItem: React.FC<NavItemProps> = ({
         flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 hover-lift
         ${
           current
-          ? "bg-primary/20 text-primary border border-primary/30"
-          : "text-text-secondary hover:text-text-primary hover:bg-white/5"
+            ? "bg-primary/20 text-primary border border-primary/30"
+            : "text-text-secondary hover:text-text-primary hover:bg-white/5"
         }
       `}
     >

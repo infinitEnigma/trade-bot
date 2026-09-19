@@ -24,15 +24,15 @@ export const PROTOCOL_VERSION = 1 as const;
  * Common envelope for every protocol message (commands and events).
  */
 export interface ProtocolMessage<T> {
-    version: typeof PROTOCOL_VERSION;
-    /** Unique id of this message - used by consumers to deduplicate. */
-    messageId: string;
-    /** Groups a command with its acknowledgements and resulting state events. */
-    correlationId: string;
-    /** ISO-8601 timestamp of when the message was created. */
-    timestamp: string;
-    type: string;
-    payload: T;
+  version: typeof PROTOCOL_VERSION;
+  /** Unique id of this message - used by consumers to deduplicate. */
+  messageId: string;
+  /** Groups a command with its acknowledgements and resulting state events. */
+  correlationId: string;
+  /** ISO-8601 timestamp of when the message was created. */
+  timestamp: string;
+  type: string;
+  payload: T;
 }
 
 // ===========================================
@@ -46,21 +46,21 @@ export type BotCommandType = "BOT_START" | "BOT_STOP" | "BOT_STATUS_REQUEST";
  * The engine fetches credentials out-of-band after COMMAND_ACCEPTED.
  */
 export interface StartBotCommandPayload {
-    botId: string;
-    userId: string;
-    strategyId: string;
-    /** Version of the strategy config, for cache invalidation / audit. */
-    configVersion: number;
-    /** Non-secret strategy configuration (symbol, grid params, ...). */
-    config: Record<string, unknown>;
+  botId: string;
+  userId: string;
+  strategyId: string;
+  /** Version of the strategy config, for cache invalidation / audit. */
+  configVersion: number;
+  /** Non-secret strategy configuration (symbol, grid params, ...). */
+  config: Record<string, unknown>;
 }
 
 export interface StopBotCommandPayload {
-    botId: string;
+  botId: string;
 }
 
 export interface StatusRequestCommandPayload {
-    botId: string;
+  botId: string;
 }
 
 export type BotCommandPayload =
@@ -76,7 +76,7 @@ export type BotCommand = ProtocolMessage<BotCommandPayload>;
  * Generate a unique message id (UUID v4 via Web Crypto, available in Node >= 19).
  */
 export function generateMessageId(): string {
-    return globalThis.crypto.randomUUID();
+  return globalThis.crypto.randomUUID();
 }
 
 /**
@@ -87,14 +87,14 @@ export function createBotCommand<P extends BotCommandPayload>(
   payload: P,
   correlationId?: string
 ): ProtocolMessage<P> {
-    return {
-        version: PROTOCOL_VERSION,
-        messageId: generateMessageId(),
-        correlationId: correlationId ?? generateMessageId(),
-        timestamp: new Date().toISOString(),
-        type,
-        payload,
-    };
+  return {
+    version: PROTOCOL_VERSION,
+    messageId: generateMessageId(),
+    correlationId: correlationId ?? generateMessageId(),
+    timestamp: new Date().toISOString(),
+    type,
+    payload,
+  };
 }
 
 // ===========================================
@@ -104,16 +104,16 @@ export function createBotCommand<P extends BotCommandPayload>(
 export function isProtocolMessage(
   obj: unknown
 ): obj is ProtocolMessage<unknown> {
-    return (
-        typeof obj === "object" &&
-        obj !== null &&
-        (obj as ProtocolMessage<unknown>).version === PROTOCOL_VERSION &&
-        typeof (obj as ProtocolMessage<unknown>).messageId === "string" &&
-        typeof (obj as ProtocolMessage<unknown>).correlationId === "string" &&
-        typeof (obj as ProtocolMessage<unknown>).timestamp === "string" &&
-        typeof (obj as ProtocolMessage<unknown>).type === "string" &&
-        "payload" in obj
-    );
+  return (
+    typeof obj === "object" &&
+    obj !== null &&
+    (obj as ProtocolMessage<unknown>).version === PROTOCOL_VERSION &&
+    typeof (obj as ProtocolMessage<unknown>).messageId === "string" &&
+    typeof (obj as ProtocolMessage<unknown>).correlationId === "string" &&
+    typeof (obj as ProtocolMessage<unknown>).timestamp === "string" &&
+    typeof (obj as ProtocolMessage<unknown>).type === "string" &&
+    "payload" in obj
+  );
 }
 
 export function isBotCommand(obj: unknown): obj is BotCommand {
@@ -163,9 +163,9 @@ export function isStatusRequestCommand(
  * Snapshot of a bot's lifecycle state as seen by the engine.
  */
 export interface BotStateSnapshot {
-    botId: string;
-    engineId: string;
-    actualState: BotActualState;
-    desiredState?: BotDesiredState;
-    lastCycleAt?: string;
+  botId: string;
+  engineId: string;
+  actualState: BotActualState;
+  desiredState?: BotDesiredState;
+  lastCycleAt?: string;
 }

@@ -17,58 +17,58 @@ import {
 } from "./fetch-options";
 
 export interface PublicKodiakFetchOptions<T> {
-    /** Path beginning with /v1, appended to the configured base URL. */
-    path: string;
-    /** Redis cache key. */
-    cacheKey: string;
-    /** Redis TTL in seconds. */
-    ttlSeconds: number;
-    /** Extract the payload from the raw JSON response (`data || raw` unless overridden). */
-    extract: (responseData: unknown) => T;
-    /** Debug log message emitted on cache hit. */
-    cacheHitLog: string;
-    /** Debug log message emitted after a successful fetch + cache write. */
-    successLog: string;
-    /** Error log message emitted when the fetch fails. */
-    errorLog: string;
-    /** `error` field of the failure response returned to callers. */
-    errorMessage: string;
-    /** Structured context for debug/error logs (symbol, resolution, ...). */
-    logContext?: Record<string, unknown>;
+  /** Path beginning with /v1, appended to the configured base URL. */
+  path: string;
+  /** Redis cache key. */
+  cacheKey: string;
+  /** Redis TTL in seconds. */
+  ttlSeconds: number;
+  /** Extract the payload from the raw JSON response (`data || raw` unless overridden). */
+  extract: (responseData: unknown) => T;
+  /** Debug log message emitted on cache hit. */
+  cacheHitLog: string;
+  /** Debug log message emitted after a successful fetch + cache write. */
+  successLog: string;
+  /** Error log message emitted when the fetch fails. */
+  errorLog: string;
+  /** `error` field of the failure response returned to callers. */
+  errorMessage: string;
+  /** Structured context for debug/error logs (symbol, resolution, ...). */
+  logContext?: Record<string, unknown>;
 }
 
 export async function fetchPublicKodiak<T>(
   options: PublicKodiakFetchOptions<T>
 ): Promise<KodiakApiResponse<T>> {
-    const { logContext = {} } = options;
-    try {
-        const cacheResult = await redisService.get(options.cacheKey);
+  const { logContext = {} } = options;
+  try {
+    const cacheResult = await redisService.get(options.cacheKey);
 
-        if (cacheResult.success && cacheResult.data) {
-            logger.debug(options.cacheHitLog, logContext);
-            return JSON.parse(cacheResult.data);
-        }
+    if (cacheResult.success && cacheResult.data) {
+      logger.debug(options.cacheHitLog, logContext);
+      return JSON.parse(cacheResult.data);
+    }
 
     const response = await fetch(
       `${getKodiakBaseUrl()}${options.path}`,
       createFetchOptions({
-            headers: getKodiakPublicHeaders(),
+        headers: getKodiakPublicHeaders(),
       })
     );
 
-        if (!response.ok) {
-            const errorText = await response.text();
+    if (!response.ok) {
+      const errorText = await response.text();
       throw new Error(
         `Kodiak API error: ${response.status} ${response.statusText} - ${errorText}`
       );
-        }
+    }
 
-        const responseData = await response.json();
+    const responseData = await response.json();
 
-        const result: KodiakApiResponse<T> = {
-            success: true,
-            data: options.extract(responseData),
-        };
+    const result: KodiakApiResponse<T> = {
+      success: true,
+      data: options.extract(responseData),
+    };
 
     await redisService.setex(
       options.cacheKey,
@@ -76,19 +76,19 @@ export async function fetchPublicKodiak<T>(
       JSON.stringify(result)
     );
 
-        logger.debug(options.successLog, logContext);
-        return result;
-    } catch (error) {
-        logger.error(options.errorLog, error as Error, {
-            ...logContext,
-            error: error instanceof Error ? error.message : String(error),
-        });
+    logger.debug(options.successLog, logContext);
+    return result;
+  } catch (error) {
+    logger.error(options.errorLog, error as Error, {
+      ...logContext,
+      error: error instanceof Error ? error.message : String(error),
+    });
 
-        return {
-            success: false,
-            error: options.errorMessage,
-        };
-    }
+    return {
+      success: false,
+      error: options.errorMessage,
+    };
+  }
 }
 
 /**

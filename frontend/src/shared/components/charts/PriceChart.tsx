@@ -27,8 +27,8 @@ interface PriceChartProps {
  * Chart point data structure for Recharts
  */
 interface ChartPoint {
-  time: string;       // HH:MM label for tooltip / display
-  timestamp: number;  // Unix seconds — used as the X-axis dataKey so the line moves smoothly
+  time: string; // HH:MM label for tooltip / display
+  timestamp: number; // Unix seconds — used as the X-axis dataKey so the line moves smoothly
   open: number;
   high: number;
   low: number;
@@ -79,12 +79,12 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
 // value = the resolution string passed to the API (TradingView format)
 // ------------------------------------------------------------------
 const TIMEFRAMES = [
-  { label: "1m",  value: "1"   },
-  { label: "5m",  value: "5"   },
-  { label: "15m", value: "15"  },
-  { label: "1H",  value: "60"  },
-  { label: "4H",  value: "240" },
-  { label: "1D",  value: "D"   },
+  { label: "1m", value: "1" },
+  { label: "5m", value: "5" },
+  { label: "15m", value: "15" },
+  { label: "1H", value: "60" },
+  { label: "4H", value: "240" },
+  { label: "1D", value: "D" },
 ] as const;
 
 // Supported symbols
@@ -161,12 +161,12 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         const price = candle.close;
         prices.push(price);
         return {
-          time:      fmtTime(candle.time),
+          time: fmtTime(candle.time),
           timestamp: candle.time,
-          open:   candle.open,
-          high:   candle.high,
-          low:    candle.low,
-          close:  candle.close,
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close,
           volume: candle.volume || 0,
           price,
         };
@@ -185,7 +185,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
     // ── Live chart data: seeded from history, then extended by price ticks ───
     const [liveChartData, setLiveChartData] = useState<ChartPoint[]>([]);
     const lastLiveTimestampRef = useRef<number>(0);
-    const lastWsTimestampRef   = useRef<number>(0);
+    const lastWsTimestampRef = useRef<number>(0);
 
     // Re-seed whenever symbol / resolution / historical data changes
     useEffect(() => {
@@ -193,7 +193,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         setLiveChartData(chartData);
         lastLiveTimestampRef.current =
           chartData[chartData.length - 1].timestamp;
-        lastWsTimestampRef.current   = chartData[chartData.length - 1].timestamp;
+        lastWsTimestampRef.current = chartData[chartData.length - 1].timestamp;
       }
     }, [chartData]);
 
@@ -201,8 +201,8 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
     useEffect(() => {
       if (!currentPriceData?.price) return;
 
-      const nowSec   = Math.floor(Date.now() / 1000);
-      const price    = currentPriceData.price;
+      const nowSec = Math.floor(Date.now() / 1000);
+      const price = currentPriceData.price;
       const timeLabel = fmtTime(nowSec);
 
       setLiveChartData(prev => {
@@ -216,8 +216,8 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
             ...prev.slice(0, -1),
             {
               ...last,
-              high:  Math.max(last.high, price),
-              low:   Math.min(last.low,  price),
+              high: Math.max(last.high, price),
+              low: Math.min(last.low, price),
               close: price,
               price,
             },
@@ -232,12 +232,12 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         window.push(price);
 
         const newPoint: ChartPoint = {
-          time:      timeLabel,
+          time: timeLabel,
           timestamp: nowSec,
-          open:   price,
-          high:   price,
-          low:    price,
-          close:  price,
+          open: price,
+          high: price,
+          low: price,
+          close: price,
           volume: 0,
           price,
           ma20: window.reduce((a, b) => a + b, 0) / window.length,
@@ -254,14 +254,14 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
       if (!markPriceData?.price || markPriceData.symbol !== selectedSymbol)
         return;
 
-      const price  = markPriceData.price;
+      const price = markPriceData.price;
       const nowSec = Math.floor(Date.now() / 1000);
 
       setLiveChartData(prev => {
         if (prev.length === 0) return prev;
 
-        const last              = prev[prev.length - 1];
-        const secondsSinceLast  = nowSec - lastWsTimestampRef.current;
+        const last = prev[prev.length - 1];
+        const secondsSinceLast = nowSec - lastWsTimestampRef.current;
 
         if (secondsSinceLast < WS_BUCKET_SECONDS) {
           // Within bucket: update last point in-place — line moves on Y axis
@@ -269,8 +269,8 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
             ...prev.slice(0, -1),
             {
               ...last,
-              high:  Math.max(last.high, price),
-              low:   Math.min(last.low,  price),
+              high: Math.max(last.high, price),
+              low: Math.min(last.low, price),
               close: price,
               price,
               // Keep the same timestamp so the X position is stable within bucket
@@ -280,7 +280,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         }
 
         // New 5-second bucket: append a point so the line extends on X axis
-        lastWsTimestampRef.current  = nowSec;
+        lastWsTimestampRef.current = nowSec;
         lastLiveTimestampRef.current = nowSec;
 
         const priceWindow = prev.slice(-19).map(p => p.price);
@@ -289,12 +289,12 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         return [
           ...prev,
           {
-            time:      fmtTime(nowSec),
+            time: fmtTime(nowSec),
             timestamp: nowSec,
-            open:   last.close || price,
-            high:   price,
-            low:    price,
-            close:  price,
+            open: last.close || price,
+            high: price,
+            low: price,
+            close: price,
             volume: 0,
             price,
             ma20: priceWindow.reduce((a, b) => a + b, 0) / priceWindow.length,
@@ -317,14 +317,14 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
         : chartData.length > 1
           ? chartData[chartData.length - 1].price -
             chartData[chartData.length - 2].price
-        : 0;
+          : 0;
 
     const priceChangePercent =
       currentPriceData?.change24h != null && currentPrice !== null
         ? (priceChange / (currentPrice - priceChange)) * 100
         : chartData.length > 1 && currentPrice !== null
-        ? (priceChange / chartData[chartData.length - 2].price) * 100
-        : 0;
+          ? (priceChange / chartData[chartData.length - 2].price) * 100
+          : 0;
 
     // ── X-axis tick formatter: show HH:MM from raw timestamp ────────────────
     const xTickFormatter = (ts: number): string => fmtTime(ts);
@@ -365,10 +365,10 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                       {currentPriceData.source === "public"
                         ? "Public"
                         : currentPriceData.source === "authenticated"
-                        ? "Live"
-                        : currentPriceData.source === "public_fallback"
-                        ? "Fallback"
-                        : "Cached"}
+                          ? "Live"
+                          : currentPriceData.source === "public_fallback"
+                            ? "Fallback"
+                            : "Cached"}
                     </span>
                   )}
                 </div>
@@ -392,7 +392,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                   // Reset live data so the seeding effect fires cleanly
                   setLiveChartData([]);
                   lastLiveTimestampRef.current = 0;
-                  lastWsTimestampRef.current   = 0;
+                  lastWsTimestampRef.current = 0;
                 }}
                 className="px-3 py-1 text-sm bg-surface border border-white/10 rounded-lg"
               >
@@ -412,7 +412,7 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                       setSelectedResolution(tf.value);
                       setLiveChartData([]);
                       lastLiveTimestampRef.current = 0;
-                      lastWsTimestampRef.current   = 0;
+                      lastWsTimestampRef.current = 0;
                     }}
                     className={`px-2 py-1 text-xs rounded ${
                       selectedResolution === tf.value

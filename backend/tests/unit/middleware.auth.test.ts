@@ -9,7 +9,7 @@ const mockAuthService = {
 };
 
 // Mock the auth service instance
-jest.mock('../../src/core/auth/auth.service.pure', () => ({
+jest.mock("../../src/core/auth/auth.service.pure", () => ({
   AuthService: jest.fn().mockImplementation(() => ({
     validateToken: jest.fn(),
     getUserById: jest.fn(),
@@ -19,21 +19,24 @@ jest.mock('../../src/core/auth/auth.service.pure', () => ({
 }));
 
 // Mock the DI container so the middleware resolves the mock auth service
-jest.mock('../../src/infrastructure/dependency-injection.container', () => ({
+jest.mock("../../src/infrastructure/dependency-injection.container", () => ({
   diContainer: {
     authService: mockAuthService,
   },
 }));
 
-import { authMiddleware, AuthenticatedRequest } from '../../src/interfaces/middleware';
-import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import {
+  authMiddleware,
+  AuthenticatedRequest,
+} from "../../src/interfaces/middleware";
+import { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
 
 // Mock Redis service
-jest.mock('../../src/infrastructure/cache/redis.service', () => ({
+jest.mock("../../src/infrastructure/cache/redis.service", () => ({
   redisService: {
     getClient: jest.fn(() => ({
-      set: jest.fn().mockResolvedValue('OK'),
+      set: jest.fn().mockResolvedValue("OK"),
       del: jest.fn().mockResolvedValue(1),
       setNX: jest.fn().mockResolvedValue(true), // For mutex operations
     })),
@@ -44,19 +47,19 @@ jest.mock('../../src/infrastructure/cache/redis.service', () => ({
 }));
 
 // Mock progressive auth limiter
-jest.mock('../../src/infrastructure/security/rate-limiter.service', () => ({
+jest.mock("../../src/infrastructure/security/rate-limiter.service", () => ({
   progressiveAuthLimiter: {
     recordSuccess: jest.fn(),
   },
 }));
 
 // Mock context utilities
-jest.mock('../../src/shared/utils/context', () => ({
+jest.mock("../../src/shared/utils/context", () => ({
   setUserContext: jest.fn(),
 }));
 
 // Mock @noble/ed25519 module to avoid Jest parse errors
-jest.mock('@noble/ed25519', () => ({
+jest.mock("@noble/ed25519", () => ({
   sign: jest.fn(),
   verify: jest.fn(),
   getPublicKey: jest.fn(),
@@ -72,17 +75,18 @@ jest.mock('@noble/ed25519', () => ({
   verifyAsync: jest.fn(),
 }));
 
-import { redisService } from '../../src/infrastructure/cache/redis.service';
+import { redisService } from "../../src/infrastructure/cache/redis.service";
 
-describe('Auth Middleware', () => {
+describe("Auth Middleware", () => {
   let req: Partial<AuthenticatedRequest>;
   let res: Partial<Response>;
   let next: NextFunction;
 
   beforeAll(() => {
     // Set JWT secret for tests
-    process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing-purposes-only';
-    process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-key-for-testing-purposes-only';
+    process.env.JWT_SECRET = "test-jwt-secret-key-for-testing-purposes-only";
+    process.env.JWT_REFRESH_SECRET =
+      "test-jwt-refresh-secret-key-for-testing-purposes-only";
   });
 
   beforeEach(() => {
@@ -99,123 +103,140 @@ describe('Auth Middleware', () => {
     jest.clearAllMocks();
   });
 
-  it('should reject requests without token', () => {
+  it("should reject requests without token", () => {
     authMiddleware(req as Request, res as Response, next);
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({
       success: false,
       code: -1001,
-      message: 'Unauthorized - no token provided'
+      message: "Unauthorized - no token provided",
     });
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should reject requests with empty token', () => {
-    (req as any).cookies.accessToken = '';
+  it("should reject requests with empty token", () => {
+    (req as any).cookies.accessToken = "";
     authMiddleware(req as Request, res as Response, next);
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({
       success: false,
       code: -1001,
-      message: 'Unauthorized - no token provided'
+      message: "Unauthorized - no token provided",
     });
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should accept valid token in cookie', async () => {
-    const testUser = { userId: 'test-user-id', email: 'test@example.com' };
-    const token = jwt.sign(testUser, process.env.JWT_SECRET || 'test-secret');
+  it("should accept valid token in cookie", async () => {
+    const testUser = { userId: "test-user-id", email: "test@example.com" };
+    const token = jwt.sign(testUser, process.env.JWT_SECRET || "test-secret");
 
     (req as any).cookies.accessToken = token;
-    (req as any).path = '/api/user/profile'; // Use a non-lightweight endpoint
+    (req as any).path = "/api/user/profile"; // Use a non-lightweight endpoint
 
     // Mock successful token validation
     (mockAuthService.validateToken as jest.Mock).mockResolvedValue(testUser);
     (mockAuthService.getAuthenticatedUserData as jest.Mock).mockResolvedValue({
       user: {
-        id: 'test-user-id',
-        email: 'test@example.com',
-        userLevel: 'REGISTERED',
+        id: "test-user-id",
+        email: "test@example.com",
+        userLevel: "REGISTERED",
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       },
       roles: [],
-      hasCredentials: false
+      hasCredentials: false,
     });
 
     await authMiddleware(req as Request, res as Response, next);
 
     expect(mockAuthService.validateToken).toHaveBeenCalledWith(token);
-    expect(mockAuthService.getAuthenticatedUserData).toHaveBeenCalledWith('test-user-id');
+    expect(mockAuthService.getAuthenticatedUserData).toHaveBeenCalledWith(
+      "test-user-id"
+    );
     expect(next).toHaveBeenCalled();
-    expect((req as AuthenticatedRequest).user).toEqual({ ...testUser, userLevel: 'REGISTERED', roles: [] });
+    expect((req as AuthenticatedRequest).user).toEqual({
+      ...testUser,
+      userLevel: "REGISTERED",
+      roles: [],
+    });
   });
 
-  it('should accept valid token in Authorization header', async () => {
-    const testUser = { userId: 'test-user-id', email: 'test@example.com' };
-    const token = jwt.sign(testUser, process.env.JWT_SECRET || 'test-secret');
+  it("should accept valid token in Authorization header", async () => {
+    const testUser = { userId: "test-user-id", email: "test@example.com" };
+    const token = jwt.sign(testUser, process.env.JWT_SECRET || "test-secret");
 
     req.headers = { authorization: `Bearer ${token}` };
     (req as any).cookies = {}; // No cookie
-    (req as any).path = '/api/user/profile'; // Use a non-lightweight endpoint
+    (req as any).path = "/api/user/profile"; // Use a non-lightweight endpoint
 
     // Mock successful token validation
     (mockAuthService.validateToken as jest.Mock).mockResolvedValue(testUser);
     (mockAuthService.getAuthenticatedUserData as jest.Mock).mockResolvedValue({
       user: {
-        id: 'test-user-id',
-        email: 'test@example.com',
-        userLevel: 'REGISTERED',
+        id: "test-user-id",
+        email: "test@example.com",
+        userLevel: "REGISTERED",
         roles: [],
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       },
       roles: [],
-      hasCredentials: false
+      hasCredentials: false,
     });
 
     await authMiddleware(req as Request, res as Response, next);
 
     expect(mockAuthService.validateToken).toHaveBeenCalledWith(token);
     expect(next).toHaveBeenCalled();
-    expect((req as AuthenticatedRequest).user).toEqual({ ...testUser, userLevel: 'REGISTERED', roles: [] });
+    expect((req as AuthenticatedRequest).user).toEqual({
+      ...testUser,
+      userLevel: "REGISTERED",
+      roles: [],
+    });
   });
 
-  it('should prioritize Authorization header over cookie', async () => {
-    const headerUser = { userId: 'header-user', email: 'header@example.com' };
-    const headerToken = jwt.sign(headerUser, process.env.JWT_SECRET || 'test-secret');
+  it("should prioritize Authorization header over cookie", async () => {
+    const headerUser = { userId: "header-user", email: "header@example.com" };
+    const headerToken = jwt.sign(
+      headerUser,
+      process.env.JWT_SECRET || "test-secret"
+    );
 
-    (req as any).cookies.accessToken = 'some-cookie-token';
+    (req as any).cookies.accessToken = "some-cookie-token";
     req.headers = { authorization: `Bearer ${headerToken}` };
-    (req as any).path = '/api/user/profile'; // Use a non-lightweight endpoint
+    (req as any).path = "/api/user/profile"; // Use a non-lightweight endpoint
 
     // Mock successful token validation for header token
     (mockAuthService.validateToken as jest.Mock).mockResolvedValue(headerUser);
     (mockAuthService.getAuthenticatedUserData as jest.Mock).mockResolvedValue({
       user: {
-        id: 'header-user',
-        email: 'header@example.com',
-        userLevel: 'REGISTERED',
+        id: "header-user",
+        email: "header@example.com",
+        userLevel: "REGISTERED",
         roles: [],
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       },
       roles: [],
-      hasCredentials: false
+      hasCredentials: false,
     });
 
     await authMiddleware(req as Request, res as Response, next);
 
     expect(mockAuthService.validateToken).toHaveBeenCalledWith(headerToken);
     expect(next).toHaveBeenCalled();
-    expect((req as AuthenticatedRequest).user).toEqual({ ...headerUser, userLevel: 'REGISTERED', roles: [] }); // Header should win
+    expect((req as AuthenticatedRequest).user).toEqual({
+      ...headerUser,
+      userLevel: "REGISTERED",
+      roles: [],
+    }); // Header should win
   });
 
-  it('should reject expired token', async () => {
+  it("should reject expired token", async () => {
     const expiredToken = jwt.sign(
-      { userId: 'test-user', email: 'test@example.com' },
-      process.env.JWT_SECRET || 'test-secret',
-      { expiresIn: '-1h' } // Already expired
+      { userId: "test-user", email: "test@example.com" },
+      process.env.JWT_SECRET || "test-secret",
+      { expiresIn: "-1h" } // Already expired
     );
 
     (req as any).cookies.accessToken = expiredToken;
@@ -230,33 +251,33 @@ describe('Auth Middleware', () => {
     expect(res.json).toHaveBeenCalledWith({
       success: false,
       code: -1002,
-      message: 'Unauthorized - invalid token'
+      message: "Unauthorized - invalid token",
     });
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should reject invalid token', async () => {
-    (req as any).cookies.accessToken = 'invalid-token';
+  it("should reject invalid token", async () => {
+    (req as any).cookies.accessToken = "invalid-token";
 
     // Mock failed token validation
     (mockAuthService.validateToken as jest.Mock).mockResolvedValue(null);
 
     await authMiddleware(req as Request, res as Response, next);
 
-    expect(mockAuthService.validateToken).toHaveBeenCalledWith('invalid-token');
+    expect(mockAuthService.validateToken).toHaveBeenCalledWith("invalid-token");
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({
       success: false,
       code: -1002,
-      message: 'Unauthorized - invalid token'
+      message: "Unauthorized - invalid token",
     });
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should reject token with wrong secret', async () => {
+  it("should reject token with wrong secret", async () => {
     const token = jwt.sign(
-      { userId: 'test-user', email: 'test@example.com' },
-      'wrong-secret'
+      { userId: "test-user", email: "test@example.com" },
+      "wrong-secret"
     );
 
     (req as any).cookies.accessToken = token;
@@ -271,121 +292,132 @@ describe('Auth Middleware', () => {
     expect(res.json).toHaveBeenCalledWith({
       success: false,
       code: -1002,
-      message: 'Unauthorized - invalid token'
+      message: "Unauthorized - invalid token",
     });
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should handle auth service errors gracefully', async () => {
-    (req as any).cookies.accessToken = 'some-token';
+  it("should handle auth service errors gracefully", async () => {
+    (req as any).cookies.accessToken = "some-token";
 
     // Mock authService to throw an error
-    (mockAuthService.validateToken as jest.Mock).mockRejectedValue(new Error('Database error'));
+    (mockAuthService.validateToken as jest.Mock).mockRejectedValue(
+      new Error("Database error")
+    );
 
     await authMiddleware(req as Request, res as Response, next);
 
-    expect(mockAuthService.validateToken).toHaveBeenCalledWith('some-token');
+    expect(mockAuthService.validateToken).toHaveBeenCalledWith("some-token");
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({
       success: false,
       code: -1000,
-      message: 'Authentication error'
+      message: "Authentication error",
     });
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should set user object with correct properties', async () => {
+  it("should set user object with correct properties", async () => {
     const testUser = {
-      userId: 'user-123',
-      email: 'user@example.com',
-      userLevel: 'REGISTERED'
+      userId: "user-123",
+      email: "user@example.com",
+      userLevel: "REGISTERED",
     };
-    const token = jwt.sign(testUser, process.env.JWT_SECRET || 'test-secret');
+    const token = jwt.sign(testUser, process.env.JWT_SECRET || "test-secret");
 
     (req as any).cookies.accessToken = token;
-    (req as any).path = '/api/user/profile'; // Use a non-lightweight endpoint
+    (req as any).path = "/api/user/profile"; // Use a non-lightweight endpoint
 
     // Mock successful token validation
     (mockAuthService.validateToken as jest.Mock).mockResolvedValue(testUser);
     (mockAuthService.getAuthenticatedUserData as jest.Mock).mockResolvedValue({
       user: {
-        id: 'user-123',
-        email: 'user@example.com',
-        userLevel: 'REGISTERED',
+        id: "user-123",
+        email: "user@example.com",
+        userLevel: "REGISTERED",
         roles: [],
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       },
       roles: [],
-      hasCredentials: false
+      hasCredentials: false,
     });
 
     await authMiddleware(req as Request, res as Response, next);
 
     expect(mockAuthService.validateToken).toHaveBeenCalledWith(token);
     expect(next).toHaveBeenCalled();
-    expect((req as AuthenticatedRequest).user).toEqual({ ...testUser, userLevel: 'REGISTERED', roles: [] });
-    expect((req as AuthenticatedRequest).user!.userId).toBe('user-123');
-    expect((req as AuthenticatedRequest).user!.email).toBe('user@example.com');
-    expect((req as AuthenticatedRequest).user!.userLevel).toBe('REGISTERED');
+    expect((req as AuthenticatedRequest).user).toEqual({
+      ...testUser,
+      userLevel: "REGISTERED",
+      roles: [],
+    });
+    expect((req as AuthenticatedRequest).user!.userId).toBe("user-123");
+    expect((req as AuthenticatedRequest).user!.email).toBe("user@example.com");
+    expect((req as AuthenticatedRequest).user!.userLevel).toBe("REGISTERED");
   });
 
-  it('should handle token refresh retry logic', async () => {
+  it("should handle token refresh retry logic", async () => {
     const testUser = {
-      userId: 'user-123',
-      email: 'user@example.com',
-      userLevel: 'BASIC'
+      userId: "user-123",
+      email: "user@example.com",
+      userLevel: "BASIC",
     };
-    const token = jwt.sign(testUser, process.env.JWT_SECRET || 'test-secret', { expiresIn: '-1h' });
+    const token = jwt.sign(testUser, process.env.JWT_SECRET || "test-secret", {
+      expiresIn: "-1h",
+    });
 
     (req as any).cookies.accessToken = token;
-    (req as any).cookies.refreshToken = 'valid-refresh-token';
-    (req as any).path = '/api/user/profile'; // Use a non-lightweight endpoint
+    (req as any).cookies.refreshToken = "valid-refresh-token";
+    (req as any).path = "/api/user/profile"; // Use a non-lightweight endpoint
     // Mock token validation to throw TokenExpiredError (triggers refresh)
     (mockAuthService.validateToken as jest.Mock)
-      .mockRejectedValueOnce(new jwt.TokenExpiredError('Token expired', new Date()))
-      .mockResolvedValueOnce({ // After refresh, validation succeeds
-        userId: 'test-user',
-        email: 'test@example.com',
-        userLevel: 'BASIC'
+      .mockRejectedValueOnce(
+        new jwt.TokenExpiredError("Token expired", new Date())
+      )
+      .mockResolvedValueOnce({
+        // After refresh, validation succeeds
+        userId: "test-user",
+        email: "test@example.com",
+        userLevel: "BASIC",
       });
 
     // Mock successful refresh on first attempt
     (mockAuthService.refreshToken as jest.Mock).mockResolvedValue({
       success: true,
       tokens: {
-        accessToken: 'new-access-token',
-        refreshToken: 'new-refresh-token',
+        accessToken: "new-access-token",
+        refreshToken: "new-refresh-token",
         expiresIn: 14400,
       },
-      user: { id: 'test-user', email: 'test@example.com', userLevel: 'BASIC' },
+      user: { id: "test-user", email: "test@example.com", userLevel: "BASIC" },
     });
 
     // Mock getUserById for the refreshed token validation
     (mockAuthService.getUserById as jest.Mock).mockResolvedValue({
-      id: 'test-user',
-      email: 'test@example.com',
-      userLevel: 'BASIC'
+      id: "test-user",
+      email: "test@example.com",
+      userLevel: "BASIC",
     });
 
     // Mock user data loading for refreshed token - this is called after refresh
     (mockAuthService.getAuthenticatedUserData as jest.Mock).mockResolvedValue({
       user: {
-        id: 'test-user',
-        email: 'test@example.com',
-        userLevel: 'BASIC',
+        id: "test-user",
+        email: "test@example.com",
+        userLevel: "BASIC",
         roles: [],
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       },
       roles: [],
-      hasCredentials: false
+      hasCredentials: false,
     });
 
     // Mock Redis client for mutex - simulate successful mutex acquisition
     const mockRedisClient = {
-      set: jest.fn().mockResolvedValue('OK'),
-      setNX: jest.fn().mockResolvedValue('OK'), // Mutex acquired successfully
+      set: jest.fn().mockResolvedValue("OK"),
+      setNX: jest.fn().mockResolvedValue("OK"), // Mutex acquired successfully
       del: jest.fn().mockResolvedValue(1),
     };
     (redisService.getClient as jest.Mock).mockReturnValue(mockRedisClient);
@@ -393,61 +425,69 @@ describe('Auth Middleware', () => {
 
     await authMiddleware(req as Request, res as Response, next);
 
-    expect(mockAuthService.refreshToken).toHaveBeenCalledWith('valid-refresh-token');
+    expect(mockAuthService.refreshToken).toHaveBeenCalledWith(
+      "valid-refresh-token"
+    );
     expect(mockAuthService.refreshToken).toHaveBeenCalledTimes(1); // Should only be called once on success
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should handle token refresh failure after retries', async () => {
+  it("should handle token refresh failure after retries", async () => {
     const expiredToken = jwt.sign(
-      { userId: 'test-user', email: 'test@example.com' },
-      process.env.JWT_SECRET || 'test-secret',
-      { expiresIn: '-1h' }
+      { userId: "test-user", email: "test@example.com" },
+      process.env.JWT_SECRET || "test-secret",
+      { expiresIn: "-1h" }
     );
 
     (req as any).cookies.accessToken = expiredToken;
-    (req as any).cookies.refreshToken = 'invalid-refresh-token';
+    (req as any).cookies.refreshToken = "invalid-refresh-token";
 
     // Mock token validation to throw TokenExpiredError (triggers refresh)
-    (mockAuthService.validateToken as jest.Mock).mockRejectedValue(new jwt.TokenExpiredError('Token expired', new Date()));
+    (mockAuthService.validateToken as jest.Mock).mockRejectedValue(
+      new jwt.TokenExpiredError("Token expired", new Date())
+    );
 
     // Mock refresh to always fail
     (mockAuthService.refreshToken as jest.Mock).mockResolvedValue({
       success: false,
-      message: 'Invalid refresh token',
+      message: "Invalid refresh token",
     });
 
     // Mock Redis client for mutex
     const mockRedisClient = {
-      set: jest.fn().mockResolvedValue('OK'),
+      set: jest.fn().mockResolvedValue("OK"),
     };
     (redisService.getClient as jest.Mock).mockReturnValue(mockRedisClient);
     (redisService.del as jest.Mock).mockResolvedValue({ success: true });
 
     await authMiddleware(req as Request, res as Response, next);
     //expect(next).toHaveBeenCalled();
-    expect(mockAuthService.refreshToken).not.toHaveBeenCalledWith('valid-refresh-token');
+    expect(mockAuthService.refreshToken).not.toHaveBeenCalledWith(
+      "valid-refresh-token"
+    );
     expect(res.status).not.toHaveBeenCalledWith(401);
     expect(res.json).not.toHaveBeenCalledWith({
       success: false,
       code: -1004,
-      message: 'Unauthorized - token refresh failed after multiple attempts',
+      message: "Unauthorized - token refresh failed after multiple attempts",
     });
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should handle simultaneous refresh mutex', async () => {
+  it("should handle simultaneous refresh mutex", async () => {
     const expiredToken = jwt.sign(
-      { userId: 'test-user', email: 'test@example.com' },
-      process.env.JWT_SECRET || 'test-secret',
-      { expiresIn: '-1h' }
+      { userId: "test-user", email: "test@example.com" },
+      process.env.JWT_SECRET || "test-secret",
+      { expiresIn: "-1h" }
     );
 
     (req as any).cookies.accessToken = expiredToken;
-    (req as any).cookies.refreshToken = 'refresh-token';
+    (req as any).cookies.refreshToken = "refresh-token";
 
     // Mock token validation to throw TokenExpiredError (triggers refresh)
-    (mockAuthService.validateToken as jest.Mock).mockRejectedValue(new jwt.TokenExpiredError('Token expired', new Date()));
+    (mockAuthService.validateToken as jest.Mock).mockRejectedValue(
+      new jwt.TokenExpiredError("Token expired", new Date())
+    );
 
     // Mock Redis client to simulate mutex already held
     const mockRedisClient = {
@@ -463,18 +503,18 @@ describe('Auth Middleware', () => {
     expect(res.json).toHaveBeenCalledWith({
       success: false,
       code: -1002,
-      message: 'Session expired - please log in again',
+      message: "Session expired - please log in again",
     });
     expect(res.clearCookie).toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should respond -1002 and clear session cookies on definitive refresh failure', async () => {
-    (req as any).cookies.refreshToken = 'refresh-token';
+  it("should respond -1002 and clear session cookies on definitive refresh failure", async () => {
+    (req as any).cookies.refreshToken = "refresh-token";
 
     (mockAuthService.refreshToken as jest.Mock).mockResolvedValue({
       success: false,
-      message: 'Token refresh failed - invalid token',
+      message: "Token refresh failed - invalid token",
     });
 
     await authMiddleware(req as Request, res as Response, next);
@@ -483,20 +523,28 @@ describe('Auth Middleware', () => {
     expect(res.json).toHaveBeenCalledWith({
       success: false,
       code: -1002,
-      message: 'Session expired - please log in again',
+      message: "Session expired - please log in again",
     });
-    for (const cookieName of ['accessToken', 'refreshToken', 'csrfSecret', 'csrfToken']) {
-      expect(res.clearCookie).toHaveBeenCalledWith(cookieName, expect.anything());
+    for (const cookieName of [
+      "accessToken",
+      "refreshToken",
+      "csrfSecret",
+      "csrfToken",
+    ]) {
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        cookieName,
+        expect.anything()
+      );
     }
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should respond -1004 without clearing cookies on transient refresh failure', async () => {
-    (req as any).cookies.refreshToken = 'refresh-token';
+  it("should respond -1004 without clearing cookies on transient refresh failure", async () => {
+    (req as any).cookies.refreshToken = "refresh-token";
 
     (mockAuthService.refreshToken as jest.Mock).mockResolvedValue({
       success: false,
-      message: 'Redis temporarily unavailable',
+      message: "Redis temporarily unavailable",
     });
 
     await authMiddleware(req as Request, res as Response, next);
@@ -505,7 +553,7 @@ describe('Auth Middleware', () => {
     expect(res.json).toHaveBeenCalledWith({
       success: false,
       code: -1004,
-      message: 'Unauthorized - token refresh failed after multiple attempts',
+      message: "Unauthorized - token refresh failed after multiple attempts",
     });
     expect(res.clearCookie).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();

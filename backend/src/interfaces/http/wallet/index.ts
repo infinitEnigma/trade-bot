@@ -19,34 +19,34 @@ router.get(
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const userId = req.user?.userId;
-        if (!userId) {
-            return res.status(401).json({
-                success: false,
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
           error: "Unauthorized - user not authenticated",
-            });
-        }
+        });
+      }
 
       const walletQualificationService =
         serviceProvider.getWalletQualificationService();
       const result =
         await walletQualificationService.checkAlphaQualification(userId);
 
-        res.json({
-            success: true,
-            qualified: result.qualified,
-            reasons: result.reasons,
+      res.json({
+        success: true,
+        qualified: result.qualified,
+        reasons: result.reasons,
         data: result,
-        });
+      });
     } catch (error) {
-        logger.error("Wallet qualification check error", error as Error, {
-            userId: req.user?.userId,
-        });
+      logger.error("Wallet qualification check error", error as Error, {
+        userId: req.user?.userId,
+      });
 
-        res.status(500).json({
-            success: false,
+      res.status(500).json({
+        success: false,
         error: "Failed to check wallet qualification",
-        });
+      });
     }
   }
 );

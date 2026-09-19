@@ -1,6 +1,6 @@
 /**
  * Password Worker Thread Script
- * 
+ *
  * This file is used by the password worker pool to handle
  * password hashing and comparison operations in worker threads.
  */
@@ -16,10 +16,10 @@ let isShuttingDown = false;
 // Health check mechanism with improved timeout handling
 const healthCheckInterval = setInterval(() => {
   if (isShuttingDown) return;
-  
+
   const now = Date.now();
   const idleTime = now - lastActivity;
-  
+
   if (idleTime > 60000) {
     // No activity for 1 minute
     console.warn("Worker: No activity for 60 seconds, sending heartbeat");
@@ -33,7 +33,7 @@ const healthCheckInterval = setInterval(() => {
       console.error("Worker: Failed to send heartbeat", error);
     }
   }
-  
+
   // Force garbage collection if available to prevent memory leaks
   if (idleTime > 120000 && global.gc) {
     // 2 minutes
@@ -58,7 +58,7 @@ parentPort.on("message", async message => {
     switch (action) {
       case "hash": {
         const { password, rounds } = data;
-        
+
         // Validate input with enhanced validation
         if (
           !password ||
@@ -83,15 +83,15 @@ parentPort.on("message", async message => {
         });
 
         const hash = await Promise.race([hashPromise, timeoutPromise]);
-        
+
         // Validate result
         if (!hash || typeof hash !== "string" || hash.length < 50) {
           throw new Error("Invalid hash result from bcrypt");
         }
-        
-        parentPort.postMessage({ 
-          id, 
-          success: true, 
+
+        parentPort.postMessage({
+          id,
+          success: true,
           result: hash,
           timestamp: Date.now(),
           duration: Date.now() - lastActivity,
@@ -101,7 +101,7 @@ parentPort.on("message", async message => {
 
       case "compare": {
         const { password: comparePassword, hash } = data;
-        
+
         // Validate input with enhanced validation
         if (
           !comparePassword ||
@@ -126,15 +126,15 @@ parentPort.on("message", async message => {
         });
 
         const isValid = await Promise.race([comparePromise, timeoutPromise]);
-        
+
         // Validate result
         if (typeof isValid !== "boolean") {
           throw new Error("Invalid comparison result from bcrypt");
         }
-        
-        parentPort.postMessage({ 
-          id, 
-          success: true, 
+
+        parentPort.postMessage({
+          id,
+          success: true,
           result: isValid,
           timestamp: Date.now(),
           duration: Date.now() - lastActivity,
@@ -174,57 +174,63 @@ parentPort.on("message", async message => {
         parentPort.postMessage({
           id,
           success: false,
-          error: `Unknown action: ${  action}`,
-          timestamp: Date.now()
+          error: `Unknown action: ${action}`,
+          timestamp: Date.now(),
         });
     }
   } catch (error) {
-    console.error('Worker error:', error);
+    console.error("Worker error:", error);
     parentPort.postMessage({
       id,
       success: false,
-      error: error.message || 'Unknown error',
+      error: error.message || "Unknown error",
       stack: error.stack,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 });
 
 // Handle uncaught errors to prevent worker crashes
-process.on('uncaughtException', (error) => {
-  console.error('Worker uncaught exception:', error);
+process.on("uncaughtException", error => {
+  console.error("Worker uncaught exception:", error);
   isHealthy = false;
-  
+
   try {
     parentPort.postMessage({
-      type: 'uncaughtException',
+      type: "uncaughtException",
       error: error.message,
       stack: error.stack,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   } catch (postError) {
-    console.error('Worker: Failed to post uncaught exception message:', postError);
+    console.error(
+      "Worker: Failed to post uncaught exception message:",
+      postError
+    );
   }
-  
+
   // Don't exit the worker immediately, let main thread handle replacement
   // This allows for better error recovery
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Worker unhandled promise rejection:', reason);
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Worker unhandled promise rejection:", reason);
   isHealthy = false;
-  
+
   try {
     parentPort.postMessage({
-      type: 'unhandledRejection',
+      type: "unhandledRejection",
       error: reason instanceof Error ? reason.message : String(reason),
       stack: reason instanceof Error ? reason.stack : undefined,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   } catch (postError) {
-    console.error('Worker: Failed to post unhandled rejection message:', postError);
+    console.error(
+      "Worker: Failed to post unhandled rejection message:",
+      postError
+    );
   }
-  
+
   // Don't exit the worker immediately, let main thread handle replacement
   // This allows for better error recovery
 });

@@ -41,62 +41,62 @@ const MAX_STOP_REISSUES_PER_HOUR = Number(
 );
 
 export interface ReconcileRunResult {
-    stopReissued: number;
-    markedUnknown: number;
-    needsUserAction: number;
-    failures: number;
+  stopReissued: number;
+  markedUnknown: number;
+  needsUserAction: number;
+  failures: number;
 }
 
 export class LifecycleReconciliationService {
-    private repository = new BotLifecycleRepository();
-    private intervalId: NodeJS.Timeout | null = null;
-    private running = false;
-    private lastRunResult: ReconcileRunResult | null = null;
+  private repository = new BotLifecycleRepository();
+  private intervalId: NodeJS.Timeout | null = null;
+  private running = false;
+  private lastRunResult: ReconcileRunResult | null = null;
 
-    start(): void {
-        if (this.intervalId) {
-            return;
-        }
-        // Jitter to avoid aligning with other periodic jobs.
+  start(): void {
+    if (this.intervalId) {
+      return;
+    }
+    // Jitter to avoid aligning with other periodic jobs.
     const jitter = Math.floor(
       Math.random() * Math.min(RECONCILE_INTERVAL_MS / 4, 10_000)
     );
-        this.intervalId = setInterval(() => {
-            void this.runOnce().catch((error: unknown) => {
-                logger.error("Lifecycle reconciliation sweep failed", undefined, {
-                    error: error instanceof Error ? error.message : String(error),
-                });
-            });
-        }, RECONCILE_INTERVAL_MS + jitter);
-        // Do not keep the process alive just for the reconciler.
-        this.intervalId.unref();
-        logger.info("Lifecycle reconciliation service started", {
-            intervalMs: RECONCILE_INTERVAL_MS,
-            stuckGraceMs: STUCK_GRACE_MS,
-            maxStopReissuesPerHour: MAX_STOP_REISSUES_PER_HOUR,
+    this.intervalId = setInterval(() => {
+      void this.runOnce().catch((error: unknown) => {
+        logger.error("Lifecycle reconciliation sweep failed", undefined, {
+          error: error instanceof Error ? error.message : String(error),
         });
-    }
+      });
+    }, RECONCILE_INTERVAL_MS + jitter);
+    // Do not keep the process alive just for the reconciler.
+    this.intervalId.unref();
+    logger.info("Lifecycle reconciliation service started", {
+      intervalMs: RECONCILE_INTERVAL_MS,
+      stuckGraceMs: STUCK_GRACE_MS,
+      maxStopReissuesPerHour: MAX_STOP_REISSUES_PER_HOUR,
+    });
+  }
 
-    stop(): void {
-        if (this.intervalId) {
-            clearInterval(this.intervalId);
-            this.intervalId = null;
-            logger.info("Lifecycle reconciliation service stopped");
-        }
+  stop(): void {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+      logger.info("Lifecycle reconciliation service stopped");
     }
+  }
 
-    getStatus(): { running: boolean; lastRunResult: ReconcileRunResult | null } {
+  getStatus(): { running: boolean; lastRunResult: ReconcileRunResult | null } {
     return {
       running: this.intervalId !== null,
       lastRunResult: this.lastRunResult,
     };
-    }
+  }
 
-    /**
-     * One reconciliation pass. Safe to call manually (tests, admin endpoint).
-     */
-    async runOnce(): Promise<ReconcileRunResult> {
-        if (this.running) {
+  /**
+   * One reconciliation pass. Safe to call manually (tests, admin endpoint).
+   */
+  async runOnce(): Promise<ReconcileRunResult> {
+    if (this.running) {
       return (
         this.lastRunResult ?? {
           stopReissued: 0,
@@ -105,8 +105,8 @@ export class LifecycleReconciliationService {
           failures: 0,
         }
       );
-        }
-        this.running = true;
+    }
+    this.running = true;
     const result: ReconcileRunResult = {
       stopReissued: 0,
       markedUnknown: 0,
@@ -114,102 +114,102 @@ export class LifecycleReconciliationService {
       failures: 0,
     };
 
+    try {
+      // 1. desired=STOPPED but engine still active -> bounded stop reissue.
+      const drift = await this.repository.findDesiredStoppedButActiveBots();
+      for (const bot of drift) {
         try {
-            // 1. desired=STOPPED but engine still active -> bounded stop reissue.
-            const drift = await this.repository.findDesiredStoppedButActiveBots();
-            for (const bot of drift) {
-                try {
           const reissues = await this.repository.countRecentStopReissues(
             bot.id
           );
-                    if (reissues >= MAX_STOP_REISSUES_PER_HOUR) {
-                        logger.warn("Reconcile stop-reissue budget exhausted, deferring", {
-                            botId: bot.id,
-                            actualState: bot.actual_state,
-                            reissuesLastHour: reissues,
-                        });
-                        continue;
-                    }
+          if (reissues >= MAX_STOP_REISSUES_PER_HOUR) {
+            logger.warn("Reconcile stop-reissue budget exhausted, deferring", {
+              botId: bot.id,
+              actualState: bot.actual_state,
+              reissuesLastHour: reissues,
+            });
+            continue;
+          }
           await botLifecycleService.reissueStopForReconciliation(
             bot.id,
             "desired-stopped-drift"
           );
-                    result.stopReissued++;
-                    logger.warn("Reconciled stop drift: re-issued BOT_STOP", {
-                        botId: bot.id,
-                        actualState: bot.actual_state,
-                        engineId: bot.engine_id,
-                    });
-                } catch (error) {
-                    result.failures++;
-                    logger.error("Reconcile stop-reissue failed", undefined, {
-                        botId: bot.id,
-                        error: error instanceof Error ? error.message : String(error),
-                    });
-                }
-            }
+          result.stopReissued++;
+          logger.warn("Reconciled stop drift: re-issued BOT_STOP", {
+            botId: bot.id,
+            actualState: bot.actual_state,
+            engineId: bot.engine_id,
+          });
+        } catch (error) {
+          result.failures++;
+          logger.error("Reconcile stop-reissue failed", undefined, {
+            botId: bot.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
 
-            // 2. Transitional states stuck beyond grace with no PENDING command -> UNKNOWN.
-            const graceSeconds = Math.round(STUCK_GRACE_MS / 1000);
+      // 2. Transitional states stuck beyond grace with no PENDING command -> UNKNOWN.
+      const graceSeconds = Math.round(STUCK_GRACE_MS / 1000);
       const stuck =
         await this.repository.findStuckTransitionalBots(graceSeconds);
-            for (const bot of stuck) {
-                try {
+      for (const bot of stuck) {
+        try {
           const persisted =
             await botLifecycleService.reconcileStuckTransitionToUnknown(
               bot.id,
               "stuck-beyond-grace"
             );
-                    if (persisted) {
-                        result.markedUnknown++;
+          if (persisted) {
+            result.markedUnknown++;
             logger.error(
               "Reconciled stuck transitional bot to UNKNOWN",
               undefined,
               {
-                            botId: bot.id,
-                            fromState: bot.actual_state,
+                botId: bot.id,
+                fromState: bot.actual_state,
               }
             );
-                    }
-                } catch (error) {
-                    result.failures++;
-                    logger.error("Reconcile stuck-transition failed", undefined, {
-                        botId: bot.id,
-                        error: error instanceof Error ? error.message : String(error),
-                    });
-                }
-            }
+          }
+        } catch (error) {
+          result.failures++;
+          logger.error("Reconcile stuck-transition failed", undefined, {
+            botId: bot.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
 
-            // 3. desired=RUNNING but unconfirmed -> audit-only (no auto-start).
+      // 3. desired=RUNNING but unconfirmed -> audit-only (no auto-start).
       const unconfirmed =
         await this.repository.findDesiredRunningUnconfirmedBots();
-            for (const bot of unconfirmed) {
-                try {
+      for (const bot of unconfirmed) {
+        try {
           await botLifecycleService.recordReconcileNeedsUserAction(
             bot.id,
             "desired-running-unconfirmed"
           );
-                    result.needsUserAction++;
+          result.needsUserAction++;
           logger.warn(
             "Reconciled desired-RUNNING bot with unconfirmed engine state (user action required)",
             {
-                        botId: bot.id,
-                        actualState: bot.actual_state,
+              botId: bot.id,
+              actualState: bot.actual_state,
             }
           );
-                } catch (error) {
-                    result.failures++;
-                    logger.error("Reconcile needs-user-action marker failed", undefined, {
-                        botId: bot.id,
-                        error: error instanceof Error ? error.message : String(error),
-                    });
-                }
-            }
-        } finally {
-            this.running = false;
+        } catch (error) {
+          result.failures++;
+          logger.error("Reconcile needs-user-action marker failed", undefined, {
+            botId: bot.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
+      }
+    } finally {
+      this.running = false;
+    }
 
-        this.lastRunResult = result;
+    this.lastRunResult = result;
     if (
       result.stopReissued +
         result.markedUnknown +
@@ -217,10 +217,10 @@ export class LifecycleReconciliationService {
         result.failures >
       0
     ) {
-            logger.info("Lifecycle reconciliation sweep completed", { ...result });
-        }
-        return result;
+      logger.info("Lifecycle reconciliation sweep completed", { ...result });
     }
+    return result;
+  }
 }
 
 // Singleton instance. Started explicitly by the main server lifecycle only.

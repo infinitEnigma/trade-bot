@@ -54,18 +54,18 @@ export type LoggerErrorType =
  * Contains all relevant details for debugging and monitoring
  */
 export interface ErrorInfo {
-    error?: string;
-    errorMessage?: string;
-    errorName?: string;
-    errorCode?: string;
-    errorStack?: string;
-    originalError?: string;
-    isOperational?: boolean;
-    errorType?: LoggerErrorType;
-    errorSeverity?: LoggerErrorSeverity;
-    timestamp?: number;
-    context?: Record<string, unknown>;
-    stackFrames?: StackFrame[];
+  error?: string;
+  errorMessage?: string;
+  errorName?: string;
+  errorCode?: string;
+  errorStack?: string;
+  originalError?: string;
+  isOperational?: boolean;
+  errorType?: LoggerErrorType;
+  errorSeverity?: LoggerErrorSeverity;
+  timestamp?: number;
+  context?: Record<string, unknown>;
+  stackFrames?: StackFrame[];
 }
 
 /**
@@ -73,12 +73,12 @@ export interface ErrorInfo {
  * Used for detailed error analysis and debugging
  */
 export interface StackFrame {
-    file?: string;
-    line?: number;
-    column?: number;
-    functionName?: string;
-    isInternal?: boolean;
-    sourceCode?: string;
+  file?: string;
+  line?: number;
+  column?: number;
+  functionName?: string;
+  isInternal?: boolean;
+  sourceCode?: string;
 }
 
 /**
@@ -86,14 +86,14 @@ export interface StackFrame {
  * Enables performance tracking and optimization
  */
 export interface PerformanceMetrics {
-    duration?: number;
-    durationMs?: number;
-    startTime?: number;
-    endTime?: number;
-    operation?: string;
-    operationType?: string;
-    success?: boolean;
-    performance?: boolean;
+  duration?: number;
+  durationMs?: number;
+  startTime?: number;
+  endTime?: number;
+  operation?: string;
+  operationType?: string;
+  success?: boolean;
+  performance?: boolean;
 }
 
 /**
@@ -101,12 +101,12 @@ export interface PerformanceMetrics {
  * Provides insights into database performance and usage
  */
 export interface DatabaseMetrics {
-    query?: string;
-    table?: string;
-    rowCount?: number;
-    affectedRows?: number;
-    queryDuration?: number;
-    databaseOperation?: string;
+  query?: string;
+  table?: string;
+  rowCount?: number;
+  affectedRows?: number;
+  queryDuration?: number;
+  databaseOperation?: string;
 }
 
 /**
@@ -114,12 +114,12 @@ export interface DatabaseMetrics {
  * Captures request details for monitoring and debugging
  */
 export interface HttpRequestInfo {
-    method?: string;
-    path?: string;
-    statusCode?: number;
-    requestId?: string;
-    userAgent?: string;
-    ipAddress?: string;
+  method?: string;
+  path?: string;
+  statusCode?: number;
+  requestId?: string;
+  userAgent?: string;
+  ipAddress?: string;
 }
 
 /**
@@ -127,11 +127,11 @@ export interface HttpRequestInfo {
  * Associates logs with user sessions and operations
  */
 export interface UserContextInfo {
-    userId?: string;
-    userLevel?: string;
-    userEmail?: string;
-    userRole?: string;
-    sessionId?: string;
+  userId?: string;
+  userLevel?: string;
+  userEmail?: string;
+  userRole?: string;
+  sessionId?: string;
 }
 
 /**
@@ -139,23 +139,23 @@ export interface UserContextInfo {
  * Maintains backward compatibility while providing structured logging
  */
 export interface LogContext {
-    correlationId?: string;
-    userId?: string;
-    userLevel?: string;
-    requestId?: string;
-    operationDuration?: number;
-    component?: string;
-    operation?: string;
+  correlationId?: string;
+  userId?: string;
+  userLevel?: string;
+  requestId?: string;
+  operationDuration?: number;
+  component?: string;
+  operation?: string;
 
-    // Type-safe metadata extensions
-    errorInfo?: ErrorInfo;
-    performanceMetrics?: PerformanceMetrics;
-    databaseMetrics?: DatabaseMetrics;
-    httpRequest?: HttpRequestInfo;
-    userContext?: UserContextInfo;
+  // Type-safe metadata extensions
+  errorInfo?: ErrorInfo;
+  performanceMetrics?: PerformanceMetrics;
+  databaseMetrics?: DatabaseMetrics;
+  httpRequest?: HttpRequestInfo;
+  userContext?: UserContextInfo;
 
-    // Maintain backward compatibility with dynamic properties
-    [key: string]: unknown;
+  // Maintain backward compatibility with dynamic properties
+  [key: string]: unknown;
 }
 
 /**
@@ -229,74 +229,74 @@ export function createErrorInfo(
     isOperational?: boolean;
   }
 ): ErrorInfo {
-    return {
-        error: error.message,
-        errorMessage: error.message,
-        errorName: error.name,
-        errorStack: error.stack,
+  return {
+    error: error.message,
+    errorMessage: error.message,
+    errorName: error.name,
+    errorStack: error.stack,
     errorType: options?.errorType || "unknown",
-        errorCode: options?.errorCode,
-        isOperational: options?.isOperational,
-    };
+    errorCode: options?.errorCode,
+    isOperational: options?.isOperational,
+  };
 }
 
 export function createPerformanceMetrics(options?: {
-    duration?: number;
-    operation?: string;
-    operationType?: string;
-    success?: boolean;
+  duration?: number;
+  operation?: string;
+  operationType?: string;
+  success?: boolean;
 }): PerformanceMetrics {
-    return {
-        duration: options?.duration,
-        durationMs: options?.duration,
-        operation: options?.operation,
-        operationType: options?.operationType,
-        success: options?.success,
-        performance: true,
-    };
+  return {
+    duration: options?.duration,
+    durationMs: options?.duration,
+    operation: options?.operation,
+    operationType: options?.operationType,
+    success: options?.success,
+    performance: true,
+  };
 }
 
 export function createDatabaseMetrics(options?: {
-    query?: string;
-    table?: string;
-    rowCount?: number;
-    queryDuration?: number;
+  query?: string;
+  table?: string;
+  rowCount?: number;
+  queryDuration?: number;
 }): DatabaseMetrics {
-    return {
-        query: options?.query,
-        table: options?.table,
-        rowCount: options?.rowCount,
-        queryDuration: options?.queryDuration,
+  return {
+    query: options?.query,
+    table: options?.table,
+    rowCount: options?.rowCount,
+    queryDuration: options?.queryDuration,
     databaseOperation: options?.query ? "query" : undefined,
-    };
+  };
 }
 
 export function createHttpRequestInfo(options?: {
-    method?: string;
-    path?: string;
-    statusCode?: number;
-    requestId?: string;
+  method?: string;
+  path?: string;
+  statusCode?: number;
+  requestId?: string;
 }): HttpRequestInfo {
-    return {
-        method: options?.method,
-        path: options?.path,
-        statusCode: options?.statusCode,
-        requestId: options?.requestId,
-    };
+  return {
+    method: options?.method,
+    path: options?.path,
+    statusCode: options?.statusCode,
+    requestId: options?.requestId,
+  };
 }
 
 export function createUserContextInfo(options?: {
-    userId?: string;
-    userLevel?: string;
-    userEmail?: string;
-    userRole?: string;
+  userId?: string;
+  userLevel?: string;
+  userEmail?: string;
+  userRole?: string;
 }): UserContextInfo {
-    return {
-        userId: options?.userId,
-        userLevel: options?.userLevel,
-        userEmail: options?.userEmail,
-        userRole: options?.userRole,
-    };
+  return {
+    userId: options?.userId,
+    userLevel: options?.userLevel,
+    userEmail: options?.userEmail,
+    userRole: options?.userRole,
+  };
 }
 
 /**
@@ -304,28 +304,28 @@ export function createUserContextInfo(options?: {
  * Enables detailed error analysis and debugging
  */
 export function parseStackTrace(stack?: string): StackFrame[] {
-    if (!stack) return [];
+  if (!stack) return [];
 
-    const frames: StackFrame[] = [];
+  const frames: StackFrame[] = [];
   const stackLines = stack.split("\n");
 
-    // Skip the first line (error message)
-    for (let i = 1; i < stackLines.length; i++) {
-        const line = stackLines[i].trim();
+  // Skip the first line (error message)
+  for (let i = 1; i < stackLines.length; i++) {
+    const line = stackLines[i].trim();
     if (!line || line.startsWith("    at ") || line.startsWith("at ")) {
-            try {
-                const frame = parseStackLine(line);
-                if (frame) {
-                    frames.push(frame);
-                }
-            } catch (_error) {
-                // Skip malformed stack lines
-                continue;
-            }
+      try {
+        const frame = parseStackLine(line);
+        if (frame) {
+          frames.push(frame);
         }
+      } catch (_error) {
+        // Skip malformed stack lines
+        continue;
+      }
     }
+  }
 
-    return frames;
+  return frames;
 }
 
 /**
@@ -333,15 +333,15 @@ export function parseStackTrace(stack?: string): StackFrame[] {
  * Handles various stack trace formats from different environments
  */
 function parseStackLine(line: string): StackFrame | null {
-    // Clean up the line
-    let cleanLine = line.trim();
+  // Clean up the line
+  let cleanLine = line.trim();
   if (cleanLine.startsWith("at ")) {
-        cleanLine = cleanLine.substring(3);
+    cleanLine = cleanLine.substring(3);
   } else if (cleanLine.startsWith("    at ")) {
-        cleanLine = cleanLine.substring(6);
-    }
+    cleanLine = cleanLine.substring(6);
+  }
 
-    // Skip native code and internal Node.js frames
+  // Skip native code and internal Node.js frames
   if (
     cleanLine.includes("(native)") ||
     cleanLine.includes("(internal/") ||
@@ -350,54 +350,54 @@ function parseStackLine(line: string): StackFrame | null {
     cleanLine.includes("(events.js") ||
     cleanLine.includes("(timers.js")
   ) {
-        return null;
-    }
-
-    // Parse different stack trace formats
-    const frame: StackFrame = {
-    isInternal: false,
-    };
-
-    // Format: functionName (file:line:column)
-    const parenMatch = cleanLine.match(/^(.+) \((.+):(\d+):(\d+)\)$/);
-    if (parenMatch) {
-    frame.functionName = parenMatch[1] || "anonymous";
-        frame.file = parenMatch[2];
-        frame.line = parseInt(parenMatch[3]);
-        frame.column = parseInt(parenMatch[4]);
-        return frame;
-    }
-
-    // Format: at file:line:column
-    const simpleMatch = cleanLine.match(/^(.+):(\d+):(\d+)$/);
-    if (simpleMatch) {
-        frame.file = simpleMatch[1];
-        frame.line = parseInt(simpleMatch[2]);
-        frame.column = parseInt(simpleMatch[3]);
-        return frame;
-    }
-
-    // Format: functionName (file:line)
-    const noColumnMatch = cleanLine.match(/^(.+) \((.+):(\d+)\)$/);
-    if (noColumnMatch) {
-    frame.functionName = noColumnMatch[1] || "anonymous";
-        frame.file = noColumnMatch[2];
-        frame.line = parseInt(noColumnMatch[3]);
-        return frame;
-    }
-
-    // Format: <anonymous> (file:line:column)
-    const anonymousMatch = cleanLine.match(/^<anonymous> \((.+):(\d+):(\d+)\)$/);
-    if (anonymousMatch) {
-    frame.functionName = "anonymous";
-        frame.file = anonymousMatch[1];
-        frame.line = parseInt(anonymousMatch[2]);
-        frame.column = parseInt(anonymousMatch[3]);
-        return frame;
-    }
-
-    // If we can't parse it, return null
     return null;
+  }
+
+  // Parse different stack trace formats
+  const frame: StackFrame = {
+    isInternal: false,
+  };
+
+  // Format: functionName (file:line:column)
+  const parenMatch = cleanLine.match(/^(.+) \((.+):(\d+):(\d+)\)$/);
+  if (parenMatch) {
+    frame.functionName = parenMatch[1] || "anonymous";
+    frame.file = parenMatch[2];
+    frame.line = parseInt(parenMatch[3]);
+    frame.column = parseInt(parenMatch[4]);
+    return frame;
+  }
+
+  // Format: at file:line:column
+  const simpleMatch = cleanLine.match(/^(.+):(\d+):(\d+)$/);
+  if (simpleMatch) {
+    frame.file = simpleMatch[1];
+    frame.line = parseInt(simpleMatch[2]);
+    frame.column = parseInt(simpleMatch[3]);
+    return frame;
+  }
+
+  // Format: functionName (file:line)
+  const noColumnMatch = cleanLine.match(/^(.+) \((.+):(\d+)\)$/);
+  if (noColumnMatch) {
+    frame.functionName = noColumnMatch[1] || "anonymous";
+    frame.file = noColumnMatch[2];
+    frame.line = parseInt(noColumnMatch[3]);
+    return frame;
+  }
+
+  // Format: <anonymous> (file:line:column)
+  const anonymousMatch = cleanLine.match(/^<anonymous> \((.+):(\d+):(\d+)\)$/);
+  if (anonymousMatch) {
+    frame.functionName = "anonymous";
+    frame.file = anonymousMatch[1];
+    frame.line = parseInt(anonymousMatch[2]);
+    frame.column = parseInt(anonymousMatch[3]);
+    return frame;
+  }
+
+  // If we can't parse it, return null
+  return null;
 }
 
 /**
@@ -405,15 +405,15 @@ function parseStackLine(line: string): StackFrame | null {
  * Enables automatic error categorization and handling
  */
 export function classifyError(error: Error): {
-    errorType: LoggerErrorType;
-    errorCode: Errors.ErrorCodes;
-    errorSeverity: LoggerErrorSeverity;
+  errorType: LoggerErrorType;
+  errorCode: Errors.ErrorCodes;
+  errorSeverity: LoggerErrorSeverity;
 } {
-    const errorMessage = error.message.toLowerCase();
-    const errorName = error.name.toLowerCase();
+  const errorMessage = error.message.toLowerCase();
+  const errorName = error.name.toLowerCase();
   const stackTrace = error.stack || "";
 
-    // Database errors
+  // Database errors
   if (
     errorName.includes("database") ||
     errorName.includes("query") ||
@@ -430,36 +430,36 @@ export function classifyError(error: Error): {
       errorMessage.includes("connection") &&
       errorMessage.includes("failed")
     ) {
-            return {
+      return {
         errorType: "database",
-                errorCode: Errors.ErrorCodes.CONNECTION_ERROR,
+        errorCode: Errors.ErrorCodes.CONNECTION_ERROR,
         errorSeverity: "high",
-            };
+      };
     } else if (errorMessage.includes("timeout")) {
-            return {
+      return {
         errorType: "database",
-                errorCode: Errors.ErrorCodes.QUERY_ERROR,
+        errorCode: Errors.ErrorCodes.QUERY_ERROR,
         errorSeverity: "high",
-            };
+      };
     } else if (
       errorMessage.includes("pool exhausted") ||
       errorMessage.includes("too many clients")
     ) {
-            return {
+      return {
         errorType: "database",
-                errorCode: Errors.ErrorCodes.DATABASE_ERROR,
+        errorCode: Errors.ErrorCodes.DATABASE_ERROR,
         errorSeverity: "critical",
-            };
-        } else {
-            return {
+      };
+    } else {
+      return {
         errorType: "database",
-                errorCode: Errors.ErrorCodes.QUERY_ERROR,
+        errorCode: Errors.ErrorCodes.QUERY_ERROR,
         errorSeverity: "high",
-            };
-        }
+      };
     }
+  }
 
-    // Network errors
+  // Network errors
   if (
     errorName.includes("network") ||
     errorName.includes("fetch") ||
@@ -479,30 +479,30 @@ export function classifyError(error: Error): {
     stackTrace.includes("https")
   ) {
     if (errorMessage.includes("timeout")) {
-            return {
+      return {
         errorType: "network",
-                errorCode: Errors.ErrorCodes.SERVICE_UNAVAILABLE,
+        errorCode: Errors.ErrorCodes.SERVICE_UNAVAILABLE,
         errorSeverity: "high",
-            };
+      };
     } else if (
       errorMessage.includes("connection refused") ||
       errorMessage.includes("econnrefused")
     ) {
-            return {
+      return {
         errorType: "network",
-                errorCode: Errors.ErrorCodes.API_RATE_LIMITED,
+        errorCode: Errors.ErrorCodes.API_RATE_LIMITED,
         errorSeverity: "high",
-            };
-        } else {
-            return {
+      };
+    } else {
+      return {
         errorType: "network",
-                errorCode: Errors.ErrorCodes.EXTERNAL_SERVICE_ERROR,
+        errorCode: Errors.ErrorCodes.EXTERNAL_SERVICE_ERROR,
         errorSeverity: "high",
-            };
-        }
+      };
     }
+  }
 
-    // Authentication errors (check before validation since auth errors may contain "invalid")
+  // Authentication errors (check before validation since auth errors may contain "invalid")
   if (
     errorName.includes("auth") ||
     errorName.includes("token") ||
@@ -523,41 +523,41 @@ export function classifyError(error: Error): {
     stackTrace.includes("jwt")
   ) {
     if (errorMessage.includes("expired")) {
-            return {
+      return {
         errorType: "authentication",
-                errorCode: Errors.ErrorCodes.TOKEN_EXPIRED,
+        errorCode: Errors.ErrorCodes.TOKEN_EXPIRED,
         errorSeverity: "medium",
-            };
+      };
     } else if (
       errorMessage.includes("permission denied") ||
       errorMessage.includes("forbidden")
     ) {
-            return {
+      return {
         errorType: "authentication",
-                errorCode: Errors.ErrorCodes.INSUFFICIENT_PERMISSIONS,
+        errorCode: Errors.ErrorCodes.INSUFFICIENT_PERMISSIONS,
         errorSeverity: "medium",
-            };
+      };
     } else if (
       errorMessage.includes("invalid") &&
       (errorMessage.includes("token") ||
         errorMessage.includes("jwt") ||
         errorMessage.includes("auth"))
     ) {
-            return {
+      return {
         errorType: "authentication",
-                errorCode: Errors.ErrorCodes.TOKEN_EXPIRED,
+        errorCode: Errors.ErrorCodes.TOKEN_EXPIRED,
         errorSeverity: "medium",
-            };
-        } else {
-            return {
+      };
+    } else {
+      return {
         errorType: "authentication",
-                errorCode: Errors.ErrorCodes.INVALID_CREDENTIALS,
+        errorCode: Errors.ErrorCodes.INVALID_CREDENTIALS,
         errorSeverity: "medium",
-            };
-        }
+      };
     }
+  }
 
-    // Validation errors
+  // Validation errors
   if (
     errorName.includes("validation") ||
     errorName.includes("joi") ||
@@ -571,28 +571,28 @@ export function classifyError(error: Error): {
     stackTrace.includes("validation") ||
     stackTrace.includes("schema")
   ) {
-        return {
+    return {
       errorType: "validation",
-            errorCode: Errors.ErrorCodes.VALIDATION_ERROR,
+      errorCode: Errors.ErrorCodes.VALIDATION_ERROR,
       errorSeverity: "medium",
-        };
-    }
+    };
+  }
 
-    // Rate limiting errors
+  // Rate limiting errors
   if (
     errorMessage.includes("rate limit") ||
     errorMessage.includes("too many requests") ||
     errorMessage.includes("429") ||
     stackTrace.includes("rate-limit")
   ) {
-        return {
+    return {
       errorType: "rate_limit",
-            errorCode: Errors.ErrorCodes.API_RATE_LIMITED,
+      errorCode: Errors.ErrorCodes.API_RATE_LIMITED,
       errorSeverity: "medium",
-        };
-    }
+    };
+  }
 
-    // Configuration errors
+  // Configuration errors
   if (
     errorMessage.includes("configuration") ||
     errorMessage.includes("env") ||
@@ -602,14 +602,14 @@ export function classifyError(error: Error): {
     errorMessage.includes("undefined") ||
     stackTrace.includes("config")
   ) {
-        return {
+    return {
       errorType: "configuration",
-            errorCode: Errors.ErrorCodes.CONFIGURATION_ERROR,
+      errorCode: Errors.ErrorCodes.CONFIGURATION_ERROR,
       errorSeverity: "high",
-        };
-    }
+    };
+  }
 
-    // Business logic errors
+  // Business logic errors
   if (
     errorMessage.includes("business") ||
     errorMessage.includes("rule") ||
@@ -620,14 +620,14 @@ export function classifyError(error: Error): {
     stackTrace.includes("business") ||
     stackTrace.includes("domain")
   ) {
-        return {
+    return {
       errorType: "business",
-            errorCode: Errors.ErrorCodes.INSUFFICIENT_BALANCE,
+      errorCode: Errors.ErrorCodes.INSUFFICIENT_BALANCE,
       errorSeverity: "medium",
-        };
-    }
+    };
+  }
 
-    // Integration errors (external services)
+  // Integration errors (external services)
   if (
     errorMessage.includes("integration") ||
     errorMessage.includes("api") ||
@@ -639,26 +639,26 @@ export function classifyError(error: Error): {
     stackTrace.includes("external")
   ) {
     if (errorMessage.includes("unavailable") || errorMessage.includes("503")) {
-            return {
+      return {
         errorType: "integration",
-                errorCode: Errors.ErrorCodes.EXTERNAL_SERVICE_ERROR,
+        errorCode: Errors.ErrorCodes.EXTERNAL_SERVICE_ERROR,
         errorSeverity: "high",
-            };
-        } else {
-            return {
+      };
+    } else {
+      return {
         errorType: "integration",
-                errorCode: Errors.ErrorCodes.SERVICE_UNAVAILABLE,
+        errorCode: Errors.ErrorCodes.SERVICE_UNAVAILABLE,
         errorSeverity: "high",
-            };
-        }
+      };
     }
+  }
 
-    // Default classification
-    return {
+  // Default classification
+  return {
     errorType: "unknown",
-        errorCode: Errors.ErrorCodes.INTERNAL_ERROR,
+    errorCode: Errors.ErrorCodes.INTERNAL_ERROR,
     errorSeverity: "high",
-    };
+  };
 }
 
 /**
@@ -674,23 +674,23 @@ export function createEnhancedErrorInfo(
     context?: Record<string, unknown>;
   }
 ): ErrorInfo {
-    // Automatic classification
-    const classification = classifyError(error);
+  // Automatic classification
+  const classification = classifyError(error);
 
-    // Parse stack trace
-    const stackFrames = parseStackTrace(error.stack);
+  // Parse stack trace
+  const stackFrames = parseStackTrace(error.stack);
 
-    return {
-        error: error.message,
-        errorMessage: error.message,
-        errorName: error.name,
-        errorStack: error.stack,
-        errorType: options?.errorType || classification.errorType,
-        errorCode: options?.errorCode || classification.errorCode,
-        errorSeverity: classification.errorSeverity,
-        isOperational: options?.isOperational,
-        timestamp: Date.now(),
-        context: options?.context,
-        stackFrames,
-    };
+  return {
+    error: error.message,
+    errorMessage: error.message,
+    errorName: error.name,
+    errorStack: error.stack,
+    errorType: options?.errorType || classification.errorType,
+    errorCode: options?.errorCode || classification.errorCode,
+    errorSeverity: classification.errorSeverity,
+    isOperational: options?.isOperational,
+    timestamp: Date.now(),
+    context: options?.context,
+    stackFrames,
+  };
 }

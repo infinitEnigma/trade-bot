@@ -15,35 +15,35 @@ import { securityLogger as logger } from "../../../core/logging/context-aware-lo
  * Uses ethers.js to verify Ethereum wallet signatures.
  */
 export class SignatureVerificationServiceAdapter implements ISignatureVerificationService {
-    /**
-     * Verify that a signature is valid for the given wallet address and message
-     * @param walletAddress - The wallet address that should have signed the message
-     * @param signature - The signature to verify
-     * @param message - The message that was signed
-     * @returns Promise<boolean> - True if the signature is valid, false otherwise
-     */
+  /**
+   * Verify that a signature is valid for the given wallet address and message
+   * @param walletAddress - The wallet address that should have signed the message
+   * @param signature - The signature to verify
+   * @param message - The message that was signed
+   * @returns Promise<boolean> - True if the signature is valid, false otherwise
+   */
   async verifySignature(
     walletAddress: string,
     signature: string,
     message: string
   ): Promise<boolean> {
-        try {
+    try {
       const { ethers } = await import("ethers");
 
-            // Recover the address from the signature
-            const recoveredAddress = ethers.verifyMessage(message, signature);
+      // Recover the address from the signature
+      const recoveredAddress = ethers.verifyMessage(message, signature);
 
-            // Normalize addresses for comparison (remove checksum, lowercase)
-            const normalizedRecovered = recoveredAddress.toLowerCase().trim();
-            const normalizedWalletAddress = walletAddress.toLowerCase().trim();
+      // Normalize addresses for comparison (remove checksum, lowercase)
+      const normalizedRecovered = recoveredAddress.toLowerCase().trim();
+      const normalizedWalletAddress = walletAddress.toLowerCase().trim();
 
-            return normalizedRecovered === normalizedWalletAddress;
-        } catch (error) {
-            // If verification fails for any reason (invalid signature, malformed address, etc.), return false
+      return normalizedRecovered === normalizedWalletAddress;
+    } catch (error) {
+      // If verification fails for any reason (invalid signature, malformed address, etc.), return false
       logger.error("Signature verification failed:", error as Error);
-            return false;
-        }
+      return false;
     }
+  }
 }
 
 // Export singleton instance

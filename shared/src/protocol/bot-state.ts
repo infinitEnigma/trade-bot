@@ -60,25 +60,25 @@ export const VALID_TRANSITIONS: Record<
   BotActualState,
   readonly BotActualState[]
 > = {
-    STOPPED: ["STARTING"],
-    STARTING: ["RUNNING", "STOPPED", "ERROR"],
-    RUNNING: ["STOPPING", "ERROR", "UNKNOWN"],
-    STOPPING: ["STOPPED", "ERROR"],
-    UNKNOWN: ["RUNNING", "STOPPED", "ERROR"],
-    ERROR: ["STARTING", "STOPPED"],
+  STOPPED: ["STARTING"],
+  STARTING: ["RUNNING", "STOPPED", "ERROR"],
+  RUNNING: ["STOPPING", "ERROR", "UNKNOWN"],
+  STOPPING: ["STOPPED", "ERROR"],
+  UNKNOWN: ["RUNNING", "STOPPED", "ERROR"],
+  ERROR: ["STARTING", "STOPPED"],
 };
 
 /**
  * Error thrown when an illegal state transition is attempted.
  */
 export class InvalidStateTransitionError extends Error {
-    constructor(
-        public readonly from: BotActualState,
+  constructor(
+    public readonly from: BotActualState,
     public readonly to: BotActualState
-    ) {
-        super(`Invalid bot state transition: ${from} -> ${to}`);
-        this.name = "InvalidStateTransitionError";
-    }
+  ) {
+    super(`Invalid bot state transition: ${from} -> ${to}`);
+    this.name = "InvalidStateTransitionError";
+  }
 }
 
 /**
@@ -88,11 +88,11 @@ export function canTransition(
   from: BotActualState,
   to: BotActualState
 ): boolean {
-    if (from === to) {
-        // Self-transitions are treated as no-ops, not errors.
-        return true;
-    }
-    return VALID_TRANSITIONS[from].includes(to);
+  if (from === to) {
+    // Self-transitions are treated as no-ops, not errors.
+    return true;
+  }
+  return VALID_TRANSITIONS[from].includes(to);
 }
 
 /**
@@ -104,10 +104,10 @@ export function assertTransition(
   from: BotActualState,
   to: BotActualState
 ): BotActualState {
-    if (!canTransition(from, to)) {
-        throw new InvalidStateTransitionError(from, to);
-    }
-    return to;
+  if (!canTransition(from, to)) {
+    throw new InvalidStateTransitionError(from, to);
+  }
+  return to;
 }
 
 /**

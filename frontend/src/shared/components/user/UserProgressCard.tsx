@@ -133,7 +133,7 @@ const ProgressStepItem: React.FC<{
         ${
           step.completed
             ? "bg-green-500 border-green-500 text-white"
-          : step.current
+            : step.current
               ? "bg-primary border-primary text-white animate-pulse"
               : "bg-surface border-textMuted text-textMuted"
         }
@@ -166,7 +166,7 @@ const ProgressStepItem: React.FC<{
           ${
             step.completed
               ? "text-green-400"
-            : step.current
+              : step.current
                 ? "text-primary"
                 : "text-textMuted"
           }

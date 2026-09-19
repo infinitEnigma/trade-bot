@@ -9,9 +9,9 @@
  */
 
 import {
-    BotEventType,
-    BotActualState,
-    createBotEvent,
+  BotEventType,
+  BotActualState,
+  createBotEvent,
 } from "@trade-bot/shared";
 import {
   RedisStreamOperations,
@@ -33,8 +33,8 @@ const delayMs = (ms: number): Promise<void> =>
   new Promise(resolve => setTimeout(resolve, ms));
 
 export interface PublishResult {
-    success: boolean;
-    error?: string;
+  success: boolean;
+  error?: string;
 }
 
 /**
@@ -47,66 +47,66 @@ export interface PublishResult {
  * instead of letting the event disappear.
  */
 export async function publishEvent(
-    streamOps: RedisStreamOperations,
-    type: BotEventType,
-    payload: Record<string, unknown>,
-    correlationId: string
+  streamOps: RedisStreamOperations,
+  type: BotEventType,
+  payload: Record<string, unknown>,
+  correlationId: string
 ): Promise<PublishResult> {
-    const event = createBotEvent(type, payload as any, correlationId);
+  const event = createBotEvent(type, payload as any, correlationId);
 
-    let lastError: string | undefined;
-    for (let attempt = 0; attempt < EVENT_PUBLISH_MAX_RETRIES; attempt++) {
-        const result = await streamOps.publish(ENGINE_EVENTS_STREAM, {
-            version: event.version,
-            messageId: event.messageId,
-            correlationId: event.correlationId,
-            timestamp: event.timestamp,
-            type: event.type,
-            payload: event.payload,
-        });
-        if (result.success) {
+  let lastError: string | undefined;
+  for (let attempt = 0; attempt < EVENT_PUBLISH_MAX_RETRIES; attempt++) {
+    const result = await streamOps.publish(ENGINE_EVENTS_STREAM, {
+      version: event.version,
+      messageId: event.messageId,
+      correlationId: event.correlationId,
+      timestamp: event.timestamp,
+      type: event.type,
+      payload: event.payload,
+    });
+    if (result.success) {
       logger.debug("Engine event published", { type, correlationId });
-            return { success: true };
-        }
-        lastError = result.error;
-        if (attempt < EVENT_PUBLISH_MAX_RETRIES - 1) {
-            const backoffMs = Math.pow(2, attempt) * EVENT_PUBLISH_BASE_DELAY_MS;
-      logger.warn("Engine event publish failed, retrying", {
-                type,
-                attempt: attempt + 1,
-                backoffMs,
-            });
-            await delayMs(backoffMs);
-        }
+      return { success: true };
     }
+    lastError = result.error;
+    if (attempt < EVENT_PUBLISH_MAX_RETRIES - 1) {
+      const backoffMs = Math.pow(2, attempt) * EVENT_PUBLISH_BASE_DELAY_MS;
+      logger.warn("Engine event publish failed, retrying", {
+        type,
+        attempt: attempt + 1,
+        backoffMs,
+      });
+      await delayMs(backoffMs);
+    }
+  }
 
   logger.error("Failed to publish engine event after retries", {
-        type,
-        correlationId,
-        error: lastError,
-    });
-    return { success: false, error: lastError };
+    type,
+    correlationId,
+    error: lastError,
+  });
+  return { success: false, error: lastError };
 }
 
 /**
  * Publish COMMAND_ACCEPTED event.
  */
 export async function publishAccepted(
-    streamOps: RedisStreamOperations,
-    botId: string,
-    commandType: string,
-    engineId: string,
-    engineEpoch: number,
-    correlationId: string
+  streamOps: RedisStreamOperations,
+  botId: string,
+  commandType: string,
+  engineId: string,
+  engineEpoch: number,
+  correlationId: string
 ): Promise<PublishResult> {
   return publishEvent(
     streamOps,
     "COMMAND_ACCEPTED",
     {
-        botId,
-        commandType,
-        engineId,
-        engineEpoch,
+      botId,
+      commandType,
+      engineId,
+      engineEpoch,
     },
     correlationId
   );
@@ -116,25 +116,25 @@ export async function publishAccepted(
  * Publish COMMAND_FAILED event.
  */
 export async function publishFailed(
-    streamOps: RedisStreamOperations,
-    botId: string,
-    commandType: string,
-    engineId: string,
-    engineEpoch: number,
-    errorCode: string,
-    message: string,
-    correlationId: string
+  streamOps: RedisStreamOperations,
+  botId: string,
+  commandType: string,
+  engineId: string,
+  engineEpoch: number,
+  errorCode: string,
+  message: string,
+  correlationId: string
 ): Promise<PublishResult> {
   return publishEvent(
     streamOps,
     "COMMAND_FAILED",
     {
-        botId,
-        commandType,
-        engineId,
-        engineEpoch,
-        errorCode,
-        message,
+      botId,
+      commandType,
+      engineId,
+      engineEpoch,
+      errorCode,
+      message,
     },
     correlationId
   );
@@ -144,20 +144,20 @@ export async function publishFailed(
  * Publish STATE_CHANGED event.
  */
 export async function publishStateChanged(
-    streamOps: RedisStreamOperations,
-    botId: string,
-    from: BotActualState,
-    to: BotActualState,
-    correlationId: string,
-    reason?: string
+  streamOps: RedisStreamOperations,
+  botId: string,
+  from: BotActualState,
+  to: BotActualState,
+  correlationId: string,
+  reason?: string
 ): Promise<PublishResult> {
   return publishEvent(
     streamOps,
     "STATE_CHANGED",
     {
-        botId,
-        from,
-        to,
+      botId,
+      from,
+      to,
       reason: reason || "",
     },
     correlationId

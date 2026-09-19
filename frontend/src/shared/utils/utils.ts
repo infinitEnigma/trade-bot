@@ -11,10 +11,10 @@ export function cn(...inputs: ClassValue[]) {
   // Dedupe classes before merging
   const dedupedInputs = new Set(
     inputs.flatMap(input => {
-    if (typeof input === "string") {
-      return input.split(" ").filter(Boolean);
-    }
-    return [];
+      if (typeof input === "string") {
+        return input.split(" ").filter(Boolean);
+      }
+      return [];
     })
   );
 

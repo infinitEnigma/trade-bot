@@ -23,9 +23,9 @@ export const BalanceCards: React.FC<BalanceCardsProps> = ({
   loading,
 }) => {
   const { user } = useAuth();
-  
+
   if (!user && !UserLevel.VERIFIED) return null;
-  
+
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

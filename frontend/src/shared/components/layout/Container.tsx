@@ -22,7 +22,7 @@ interface ContainerProps {
         "2xl"?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "4xl" | "full";
         "3xl"?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "4xl" | "full";
         "4xl"?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "4xl" | "full";
-  };
+      };
   padding?: "none" | "sm" | "md" | "lg";
   centerContent?: boolean;
 }
@@ -77,9 +77,9 @@ export const Container: React.FC<ContainerProps> = ({
     <div
       className={cn(
         "mx-auto w-full",
-      sizeClass,
-      paddingClasses[padding],
-      className
+        sizeClass,
+        paddingClasses[padding],
+        className
       )}
     >
       {children}

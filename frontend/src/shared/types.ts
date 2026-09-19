@@ -2,166 +2,166 @@
 
 // UserRole enum for frontend use
 export enum UserRole {
-    QUALIFIED_ALPHA = "QUALIFIED_ALPHA",
-    SYSTEM_ADMIN = "SYSTEM_ADMIN",
+  QUALIFIED_ALPHA = "QUALIFIED_ALPHA",
+  SYSTEM_ADMIN = "SYSTEM_ADMIN",
 }
 
 // UserLevel enum for frontend use
 export enum UserLevel {
-    BASIC = "BASIC",
-    REGISTERED = "REGISTERED",
-    VERIFIED = "VERIFIED",
+  BASIC = "BASIC",
+  REGISTERED = "REGISTERED",
+  VERIFIED = "VERIFIED",
 }
 
 // User interface for frontend use
 export interface User {
-    id: string;
-    email: string;
-    userLevel: UserLevel;
-    roles?: UserRole[];
-    createdAt: Date;
-    updatedAt: Date;
+  id: string;
+  email: string;
+  userLevel: UserLevel;
+  roles?: UserRole[];
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // Balance class for frontend use
 export class Balance {
-    constructor(
-        public total: number,
-        public available: number,
-        public locked: number,
-        public currency: string,
-        public lastUpdated: Date
-    ) { }
+  constructor(
+    public total: number,
+    public available: number,
+    public locked: number,
+    public currency: string,
+    public lastUpdated: Date
+  ) {}
 
   static zero(currency: string = "USD"): Balance {
-        return new Balance(0, 0, 0, currency, new Date());
-    }
+    return new Balance(0, 0, 0, currency, new Date());
+  }
 
   static fromTotal(total: number, currency: string = "USD"): Balance {
-        return new Balance(total, total, 0, currency, new Date());
-    }
+    return new Balance(total, total, 0, currency, new Date());
+  }
 
-    canWithdraw(amount: number): boolean {
-        return this.available >= amount && amount > 0;
-    }
+  canWithdraw(amount: number): boolean {
+    return this.available >= amount && amount > 0;
+  }
 
-    isValid(): boolean {
-        return (
-            this.total >= 0 &&
-            this.available >= 0 &&
-            this.locked >= 0 &&
-            this.total >= this.available + this.locked &&
-            this.currency.length > 0
-        );
-    }
+  isValid(): boolean {
+    return (
+      this.total >= 0 &&
+      this.available >= 0 &&
+      this.locked >= 0 &&
+      this.total >= this.available + this.locked &&
+      this.currency.length > 0
+    );
+  }
 
-    getUtilizationPercentage(): number {
-        return this.total > 0 ? (this.locked / this.total) * 100 : 0;
-    }
+  getUtilizationPercentage(): number {
+    return this.total > 0 ? (this.locked / this.total) * 100 : 0;
+  }
 
-    lock(amount: number): Balance {
-        if (!this.canWithdraw(amount)) {
+  lock(amount: number): Balance {
+    if (!this.canWithdraw(amount)) {
       throw new Error("Insufficient available balance");
-        }
-
-        return new Balance(
-            this.total,
-            this.available - amount,
-            this.locked + amount,
-            this.currency,
-            new Date()
-        );
     }
 
-    unlock(amount: number): Balance {
-        if (this.locked < amount) {
+    return new Balance(
+      this.total,
+      this.available - amount,
+      this.locked + amount,
+      this.currency,
+      new Date()
+    );
+  }
+
+  unlock(amount: number): Balance {
+    if (this.locked < amount) {
       throw new Error("Insufficient locked balance");
-        }
-
-        return new Balance(
-            this.total,
-            this.available + amount,
-            this.locked - amount,
-            this.currency,
-            new Date()
-        );
     }
 
-    add(amount: number): Balance {
-        return new Balance(
-            this.total + amount,
-            this.available + amount,
-            this.locked,
-            this.currency,
-            new Date()
-        );
-    }
+    return new Balance(
+      this.total,
+      this.available + amount,
+      this.locked - amount,
+      this.currency,
+      new Date()
+    );
+  }
 
-    subtract(amount: number): Balance {
-        if (this.available < amount) {
+  add(amount: number): Balance {
+    return new Balance(
+      this.total + amount,
+      this.available + amount,
+      this.locked,
+      this.currency,
+      new Date()
+    );
+  }
+
+  subtract(amount: number): Balance {
+    if (this.available < amount) {
       throw new Error("Insufficient available balance");
-        }
-
-        return new Balance(
-            this.total - amount,
-            this.available - amount,
-            this.locked,
-            this.currency,
-            new Date()
-        );
     }
 
-    isZero(): boolean {
-        return this.total === 0;
-    }
+    return new Balance(
+      this.total - amount,
+      this.available - amount,
+      this.locked,
+      this.currency,
+      new Date()
+    );
+  }
 
-    isPositive(): boolean {
-        return this.total > 0;
-    }
+  isZero(): boolean {
+    return this.total === 0;
+  }
+
+  isPositive(): boolean {
+    return this.total > 0;
+  }
 }
 
 // StrategyType enum for frontend use
 export enum StrategyType {
-    GRID = "GRID",
-    TREND_FOLLOWING = "TREND_FOLLOWING",
+  GRID = "GRID",
+  TREND_FOLLOWING = "TREND_FOLLOWING",
   ARBITRAGE = "ARBITRAGE",
 }
 
 // Strategy class for frontend use
 export class Strategy {
-    constructor(
-        public id: string,
-        public userId: string,
-        public name: string,
-        public type: StrategyType,
-        public symbol: string,
-        public config: StrategyConfig,
-        public active: boolean = false
-    ) { }
+  constructor(
+    public id: string,
+    public userId: string,
+    public name: string,
+    public type: StrategyType,
+    public symbol: string,
+    public config: StrategyConfig,
+    public active: boolean = false
+  ) {}
 
-    isTradable(currentPrice: number): boolean {
-        return currentPrice > 0;
-    }
+  isTradable(currentPrice: number): boolean {
+    return currentPrice > 0;
+  }
 
   getRiskLevel(): "LOW" | "MEDIUM" | "HIGH" {
-        const leverage = this.config.leverage || 1;
+    const leverage = this.config.leverage || 1;
     if (leverage <= 2) return "LOW";
     if (leverage <= 5) return "MEDIUM";
     return "HIGH";
-    }
+  }
 
-    isValid(): boolean {
-        return (
-            this.id.length > 0 &&
-            this.userId.length > 0 &&
-            this.name.length > 0 &&
-            this.symbol.length > 0 &&
-            this.isValidConfig()
-        );
-    }
+  isValid(): boolean {
+    return (
+      this.id.length > 0 &&
+      this.userId.length > 0 &&
+      this.name.length > 0 &&
+      this.symbol.length > 0 &&
+      this.isValidConfig()
+    );
+  }
 
-    private isValidConfig(): boolean {
-        const config = this.config;
+  private isValidConfig(): boolean {
+    const config = this.config;
 
     if (
       config.leverage !== undefined &&
@@ -174,39 +174,39 @@ export class Strategy {
     )
       return false;
 
-        switch (this.type) {
-            case StrategyType.GRID:
+    switch (this.type) {
+      case StrategyType.GRID:
         return !!(
           config.gridSize &&
           config.gridRange &&
           config.gridSize > 0 &&
           config.gridRange > 0
         );
-            case StrategyType.TREND_FOLLOWING:
+      case StrategyType.TREND_FOLLOWING:
         return !!(
           config.entryThreshold &&
           config.exitThreshold &&
           Math.abs(config.entryThreshold) > 0 &&
           Math.abs(config.exitThreshold) > 0
         );
-            case StrategyType.ARBITRAGE:
-                return true;
-            default:
-                return false;
-        }
+      case StrategyType.ARBITRAGE:
+        return true;
+      default:
+        return false;
     }
+  }
 }
 
 // StrategyConfig interface for frontend use
 export interface StrategyConfig {
-    leverage?: number;
-    gridSize?: number;
-    gridRange?: number;
-    orderQuantity?: number;
-    takeProfit?: number;
-    entryThreshold?: number;
-    exitThreshold?: number;
-    stopLoss?: number;
+  leverage?: number;
+  gridSize?: number;
+  gridRange?: number;
+  orderQuantity?: number;
+  takeProfit?: number;
+  entryThreshold?: number;
+  exitThreshold?: number;
+  stopLoss?: number;
 }
 
 // Re-export from monorepo shared package for consistency

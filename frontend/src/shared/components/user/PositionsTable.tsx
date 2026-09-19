@@ -31,8 +31,8 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
   isLoading,
 }) => {
   const { user } = useAuth();
-    
-    if (!user && !UserLevel.VERIFIED) return null;
+
+  if (!user && !UserLevel.VERIFIED) return null;
   return (
     <Card>
       <SectionHeader

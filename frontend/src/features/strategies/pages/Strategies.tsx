@@ -94,9 +94,9 @@ const Strategies: React.FC = React.memo(() => {
   const { data: engineStatus } = useQuery({
     queryKey: ["engine-status"],
     queryFn: () => tradingApi.getEngineStatus(),
-    staleTime: 120000,        // ⬆️ Increased to 2 minutes (from 30s)
-    gcTime: 300000,           // ⬆️ Increased to 5 minutes (from 1min)
-    refetchInterval: 300000,   // 🔄 Poll every 5 minutes (not continuously)
+    staleTime: 120000, // ⬆️ Increased to 2 minutes (from 30s)
+    gcTime: 300000, // ⬆️ Increased to 5 minutes (from 1min)
+    refetchInterval: 300000, // 🔄 Poll every 5 minutes (not continuously)
     refetchOnWindowFocus: false, // 🚫 Don't refetch on focus
     refetchIntervalInBackground: false, // 🚫 Don't poll in background
     enabled: user?.userLevel === "VERIFIED", // Only for verified users
@@ -161,9 +161,9 @@ const Strategies: React.FC = React.memo(() => {
       <PageLayout className="flex items-center justify-center">
         <Container size="sm" className="text-center">
           <div className="glass-card p-8">
-        <div className="w-12 h-12 mx-auto mb-6 bg-red-500/10 rounded-full flex items-center justify-center">
-          <AlertTriangle className="w-6 h-6 text-red-500" />
-        </div>
+            <div className="w-12 h-12 mx-auto mb-6 bg-red-500/10 rounded-full flex items-center justify-center">
+              <AlertTriangle className="w-6 h-6 text-red-500" />
+            </div>
             <h1 className="text-2xl font-bold text-text mb-4">
               Trading Features Unavailable
             </h1>
@@ -245,8 +245,8 @@ const Strategies: React.FC = React.memo(() => {
           <Suspense
             fallback={
               <div className="glass-card p-6 animate-pulse">
-            <div className="w-32 h-5 bg-surface rounded mb-4"></div>
-            <div className="bg-surface rounded-lg h-110"></div>
+                <div className="w-32 h-5 bg-surface rounded mb-4"></div>
+                <div className="bg-surface rounded-lg h-110"></div>
               </div>
             }
           >
@@ -581,17 +581,17 @@ const Strategies: React.FC = React.memo(() => {
           <Suspense
             fallback={
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="glass-card p-8 animate-pulse">
-              <div className="w-64 h-8 bg-surface rounded mb-4"></div>
-              <div className="space-y-3">
-                <div className="w-full h-10 bg-surface rounded"></div>
-                <div className="w-full h-10 bg-surface rounded"></div>
-                <div className="flex gap-3">
-                  <div className="w-20 h-10 bg-surface rounded"></div>
-                  <div className="w-24 h-10 bg-surface rounded"></div>
+                <div className="glass-card p-8 animate-pulse">
+                  <div className="w-64 h-8 bg-surface rounded mb-4"></div>
+                  <div className="space-y-3">
+                    <div className="w-full h-10 bg-surface rounded"></div>
+                    <div className="w-full h-10 bg-surface rounded"></div>
+                    <div className="flex gap-3">
+                      <div className="w-20 h-10 bg-surface rounded"></div>
+                      <div className="w-24 h-10 bg-surface rounded"></div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
               </div>
             }
           >
@@ -610,17 +610,17 @@ const Strategies: React.FC = React.memo(() => {
           <Suspense
             fallback={
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="glass-card p-8 animate-pulse">
-              <div className="w-64 h-8 bg-surface rounded mb-4"></div>
-              <div className="space-y-3">
-                <div className="w-full h-10 bg-surface rounded"></div>
-                <div className="w-full h-10 bg-surface rounded"></div>
-                <div className="flex gap-3">
-                  <div className="w-20 h-10 bg-surface rounded"></div>
-                  <div className="w-24 h-10 bg-surface rounded"></div>
+                <div className="glass-card p-8 animate-pulse">
+                  <div className="w-64 h-8 bg-surface rounded mb-4"></div>
+                  <div className="space-y-3">
+                    <div className="w-full h-10 bg-surface rounded"></div>
+                    <div className="w-full h-10 bg-surface rounded"></div>
+                    <div className="flex gap-3">
+                      <div className="w-20 h-10 bg-surface rounded"></div>
+                      <div className="w-24 h-10 bg-surface rounded"></div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
               </div>
             }
           >

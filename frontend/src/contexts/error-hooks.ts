@@ -12,30 +12,30 @@ import type {
  * Must be used within an ErrorProvider
  */
 export const useErrorContext = (): {
-    errors: {
-        id: string;
-        timestamp: Date;
-        type?: ErrorType;
-        title?: string;
-        message?: string;
-        description?: string;
-        actions?: ErrorAction[];
-        showReport?: boolean;
-        showHome?: boolean;
-        className?: string;
-        size?: "sm" | "md" | "lg" | "xl";
-        icon?: React.ReactNode;
+  errors: {
+    id: string;
+    timestamp: Date;
+    type?: ErrorType;
+    title?: string;
+    message?: string;
+    description?: string;
+    actions?: ErrorAction[];
+    showReport?: boolean;
+    showHome?: boolean;
+    className?: string;
+    size?: "sm" | "md" | "lg" | "xl";
+    icon?: React.ReactNode;
     status?: "idle" | "pending" | "success" | "failed";
-        retryCount?: number;
-        lastRetryAt?: Date;
-        maxRetries?: number;
-        retryCooldownMs?: number;
+    retryCount?: number;
+    lastRetryAt?: Date;
+    maxRetries?: number;
+    retryCooldownMs?: number;
     circuitBreakerState?: "closed" | "open" | "half-open";
-        consecutiveFailures?: number;
-        lastFailureAt?: Date;
-        backoffMultiplier?: number;
-        nextRetryAt?: Date;
-    }[];
+    consecutiveFailures?: number;
+    lastFailureAt?: Date;
+    backoffMultiplier?: number;
+    nextRetryAt?: Date;
+  }[];
   addError: (
     error: Omit<
       {
@@ -65,44 +65,44 @@ export const useErrorContext = (): {
       "id" | "timestamp"
     >
   ) => string;
-    removeError: (id: string) => void;
-    clearErrors: () => void;
+  removeError: (id: string) => void;
+  clearErrors: () => void;
   updateError: (
     id: string,
     updates: Partial<{
-        id: string;
-        timestamp: Date;
-        type?: ErrorType;
-        title?: string;
-        message?: string;
-        description?: string;
-        actions?: ErrorAction[];
-        showReport?: boolean;
-        showHome?: boolean;
-        className?: string;
-        size?: "sm" | "md" | "lg" | "xl";
-        icon?: React.ReactNode;
+      id: string;
+      timestamp: Date;
+      type?: ErrorType;
+      title?: string;
+      message?: string;
+      description?: string;
+      actions?: ErrorAction[];
+      showReport?: boolean;
+      showHome?: boolean;
+      className?: string;
+      size?: "sm" | "md" | "lg" | "xl";
+      icon?: React.ReactNode;
       status?: "idle" | "pending" | "success" | "failed";
-        retryCount?: number;
-        lastRetryAt?: Date;
-        maxRetries?: number;
-        retryCooldownMs?: number;
+      retryCount?: number;
+      lastRetryAt?: Date;
+      maxRetries?: number;
+      retryCooldownMs?: number;
       circuitBreakerState?: "closed" | "open" | "half-open";
-        consecutiveFailures?: number;
-        lastFailureAt?: Date;
-        backoffMultiplier?: number;
-        nextRetryAt?: Date;
+      consecutiveFailures?: number;
+      lastFailureAt?: Date;
+      backoffMultiplier?: number;
+      nextRetryAt?: Date;
     }>
   ) => void;
-    retryError: (id: string) => void;
-    hasErrors: boolean;
-    errorCount: number;
+  retryError: (id: string) => void;
+  hasErrors: boolean;
+  errorCount: number;
 } => {
-    const context = useContext(ErrorContext);
-    if (!context) {
+  const context = useContext(ErrorContext);
+  if (!context) {
     throw new Error("useErrorContext must be used within an ErrorProvider");
-    }
-    return context;
+  }
+  return context;
 };
 
 /**
@@ -110,16 +110,16 @@ export const useErrorContext = (): {
  * Provides convenient methods for common error types
  */
 export const useErrorHandler = () => {
-    const { addError, removeError } = useErrorContext();
+  const { addError, removeError } = useErrorContext();
 
   const handleError = useCallback(
     (
-        type: ErrorType,
-        title?: string,
-        message?: string,
-        actions?: ErrorAction[]
+      type: ErrorType,
+      title?: string,
+      message?: string,
+      actions?: ErrorAction[]
     ) => {
-        return addError({ type, title, message, actions });
+      return addError({ type, title, message, actions });
     },
     [addError]
   );
@@ -166,14 +166,14 @@ export const useErrorHandler = () => {
     [handleError]
   );
 
-    return {
-        handleError,
-        handleNetworkError,
-        handleAuthError,
-        handleValidationError,
-        handleServerError,
-        handleTimeoutError,
-        handlePermissionError,
-        removeError,
-    };
+  return {
+    handleError,
+    handleNetworkError,
+    handleAuthError,
+    handleValidationError,
+    handleServerError,
+    handleTimeoutError,
+    handlePermissionError,
+    removeError,
+  };
 };

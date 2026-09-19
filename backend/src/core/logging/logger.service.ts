@@ -33,8 +33,8 @@ const customFormat = winston.format.combine(
     const contextStr =
       Object.keys(context).length > 0
         ? ` [${Object.entries(context)
-          .map(([k, v]) => `${k}=${v}`)
-          .join(" ")}]`
+            .map(([k, v]) => `${k}=${v}`)
+            .join(" ")}]`
         : "";
 
     return `${info.timestamp} ${info.level}: ${info.message}${contextStr}`;

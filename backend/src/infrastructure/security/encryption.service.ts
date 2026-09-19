@@ -582,8 +582,8 @@ export class EncryptionService {
             "Failed to re-encrypt credential during rotation",
             error as Error,
             {
-            credentialId: cred.id,
-            error: (error as Error).message,
+              credentialId: cred.id,
+              error: (error as Error).message,
             }
           );
         }

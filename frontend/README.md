@@ -30,11 +30,11 @@ The frontend is a modern React 19 single-page application (SPA) built with Vite,
 
 The UI adapts to the authenticated user's access level, which is enforced server-side:
 
-| Level | How it is reached | What the UI exposes |
-|-------|-------------------|---------------------|
-| **BASIC** | Email + password sign-up / sign-in | Public market data, charts, dashboard pages. The Dashboard wallet widget is shown to every level so BASIC users can start the upgrade. |
-| **REGISTERED** | Connect a wallet in the Dashboard widget and sign the welcome message | Kodiak credential form in Settings becomes active |
-| **VERIFIED** | Provide exchange (Kodiak) API credentials in Settings; the backend verifies them | Trading strategies, bot configuration, private/exchange-specific data |
+| Level          | How it is reached                                                                | What the UI exposes                                                                                                                    |
+| -------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **BASIC**      | Email + password sign-up / sign-in                                               | Public market data, charts, dashboard pages. The Dashboard wallet widget is shown to every level so BASIC users can start the upgrade. |
+| **REGISTERED** | Connect a wallet in the Dashboard widget and sign the welcome message            | Kodiak credential form in Settings becomes active                                                                                      |
+| **VERIFIED**   | Provide exchange (Kodiak) API credentials in Settings; the backend verifies them | Trading strategies, bot configuration, private/exchange-specific data                                                                  |
 
 ```
 BASIC ─connect wallet + sign message──▶ REGISTERED ──verify exchange keys in Settings──▶ VERIFIED
@@ -95,6 +95,7 @@ Market data is **not** streamed over the WebSocket. Prices, TradingView history,
 ## Quick Start
 
 ### Prerequisites
+
 - Node.js ≥ 25.0.9
 - Backend API running (see [Backend Docs](../backend/README.md))
 
@@ -159,28 +160,33 @@ npm run format:check
 ## Technology Stack
 
 ### Core Framework
+
 - **React 19.2** - Latest React with concurrent features
 - **TypeScript 5** - Full type safety and modern JavaScript features
 - **Vite 7** - Fast build tool with HMR and optimized production builds
 
 ### UI & Styling
+
 - **Tailwind CSS 4** - Utility-first CSS framework
 - **Radix UI** - Accessible, unstyled UI components
 - **Lucide React** - Beautiful icon library
 - **Framer Motion** - Smooth animations and transitions
 
 ### Data & State Management
+
 - **Zustand** - Lightweight, scalable state management
 - **TanStack Query** - Powerful data fetching and caching
 - **Axios** - HTTP client with interceptors
 - **Socket.IO Client** - Real-time WebSocket communication
 
 ### Wallet / Web3
+
 - **wagmi 3** - React hooks for Ethereum wallet connection, signing, and account state
 - **viem** - Low-level Ethereum client used by wagmi
 - **WalletConnectDialog** - Connects an injected browser wallet and signs the welcome message to upgrade the account from `BASIC` to `REGISTERED`; also exposes audited wallet unlinking
 
 ### Charts & Visualization
+
 - **Lightweight Charts** - High-performance financial charts
 - **Recharts** - React charting library for additional visualizations
 

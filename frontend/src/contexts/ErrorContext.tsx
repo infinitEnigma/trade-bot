@@ -25,20 +25,20 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
   // Add new error
   const addError = useCallback(
     (errorData: Omit<ErrorState, "id" | "timestamp">): string => {
-    const id = generateId();
-    const newError: ErrorState = {
-      ...errorData,
-      id,
-      timestamp: new Date(),
-    };
+      const id = generateId();
+      const newError: ErrorState = {
+        ...errorData,
+        id,
+        timestamp: new Date(),
+      };
 
-    setErrors(prev => {
-      const updated = [newError, ...prev];
-      // Keep only the most recent maxErrors
-      return updated.slice(0, maxErrors);
-    });
+      setErrors(prev => {
+        const updated = [newError, ...prev];
+        // Keep only the most recent maxErrors
+        return updated.slice(0, maxErrors);
+      });
 
-    return id;
+      return id;
     },
     [generateId, maxErrors]
   );
@@ -66,9 +66,9 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
   // Calculate exponential backoff delay
   const calculateBackoffDelay = useCallback(
     (retryCount: number, baseDelay: number = 1000): number => {
-    const multiplier = Math.pow(2, retryCount); // Exponential backoff
-    const jitter = Math.random() * 0.1 * baseDelay; // Add 10% jitter
-    return Math.min(baseDelay * multiplier + jitter, 30000); // Cap at 30 seconds
+      const multiplier = Math.pow(2, retryCount); // Exponential backoff
+      const jitter = Math.random() * 0.1 * baseDelay; // Add 10% jitter
+      return Math.min(baseDelay * multiplier + jitter, 30000); // Cap at 30 seconds
     },
     []
   );
@@ -76,20 +76,20 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
   // Check circuit breaker state
   const getCircuitBreakerState = useCallback(
     (error: ErrorState): "closed" | "open" | "half-open" => {
-    const now = Date.now();
-    const consecutiveFailures = error.consecutiveFailures || 0;
-    const lastFailure = error.lastFailureAt?.getTime() || 0;
+      const now = Date.now();
+      const consecutiveFailures = error.consecutiveFailures || 0;
+      const lastFailure = error.lastFailureAt?.getTime() || 0;
 
-    // Circuit breaker thresholds
-    const failureThreshold = 5; // Open after 5 consecutive failures
-    const recoveryTimeout = 60000; // Try half-open after 60 seconds
+      // Circuit breaker thresholds
+      const failureThreshold = 5; // Open after 5 consecutive failures
+      const recoveryTimeout = 60000; // Try half-open after 60 seconds
 
-    if (consecutiveFailures >= failureThreshold) {
-      if (now - lastFailure > recoveryTimeout) {
+      if (consecutiveFailures >= failureThreshold) {
+        if (now - lastFailure > recoveryTimeout) {
           return "half-open"; // Time to try again
-      }
+        }
         return "open"; // Still in failure state
-    }
+      }
 
       return "closed"; // Normal operation
     },
@@ -99,111 +99,111 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
   // Retry error with advanced patterns (calls retry function if available)
   const retryError = useCallback(
     async (id: string) => {
-    const error = errors.find(e => e.id === id);
-    if (!error?.actions) return;
+      const error = errors.find(e => e.id === id);
+      if (!error?.actions) return;
 
-    const now = Date.now();
-    const currentRetries = error.retryCount || 0;
-    const maxRetries = error.maxRetries || 3;
-    const consecutiveFailures = error.consecutiveFailures || 0;
+      const now = Date.now();
+      const currentRetries = error.retryCount || 0;
+      const maxRetries = error.maxRetries || 3;
+      const consecutiveFailures = error.consecutiveFailures || 0;
 
-    // Check circuit breaker state
-    const circuitState = getCircuitBreakerState(error);
+      // Check circuit breaker state
+      const circuitState = getCircuitBreakerState(error);
       if (circuitState === "open") {
-      console.warn(`Circuit breaker open for error ${id}, skipping retry`);
-      updateError(id, {
-        message: `${error.message} Circuit breaker open`,
+        console.warn(`Circuit breaker open for error ${id}, skipping retry`);
+        updateError(id, {
+          message: `${error.message} Circuit breaker open`,
           circuitBreakerState: "open",
-      });
-      return;
-    }
+        });
+        return;
+      }
 
-    // Check if we're within retry limits
+      // Check if we're within retry limits
       if (currentRetries >= maxRetries && circuitState !== "half-open") {
-      console.warn(`Max retries exceeded for error ${id}`);
-      updateError(id, {
+        console.warn(`Max retries exceeded for error ${id}`);
+        updateError(id, {
           status: "failed",
-        message: `${error.message}  Max retries: ${maxRetries}`,
+          message: `${error.message}  Max retries: ${maxRetries}`,
           circuitBreakerState: "open",
-      });
-      return;
-    }
+        });
+        return;
+      }
 
-    // Check next retry timing
-    const nextRetryAt = error.nextRetryAt?.getTime() || 0;
-    if (now < nextRetryAt) {
-      const remainingMs = nextRetryAt - now;
+      // Check next retry timing
+      const nextRetryAt = error.nextRetryAt?.getTime() || 0;
+      if (now < nextRetryAt) {
+        const remainingMs = nextRetryAt - now;
         console.warn(
           `Next retry not ready for error ${id}, ${remainingMs}ms remaining`
         );
-      return;
-    }
+        return;
+      }
 
       const retryAction = error.actions.find(
         action =>
           action.label.toLowerCase().includes("try again") ||
           action.label.toLowerCase().includes("retry")
-    );
+      );
 
-    if (retryAction) {
-      try {
-        // Calculate backoff delay for next retry
-        const backoffMultiplier = error.backoffMultiplier || 1;
-        const baseDelay = error.retryCooldownMs || 1000;
+      if (retryAction) {
+        try {
+          // Calculate backoff delay for next retry
+          const backoffMultiplier = error.backoffMultiplier || 1;
+          const baseDelay = error.retryCooldownMs || 1000;
           const backoffDelay = calculateBackoffDelay(
             currentRetries,
             baseDelay * backoffMultiplier
           );
 
-        // Update error status to pending with circuit breaker state
-        updateError(id, {
+          // Update error status to pending with circuit breaker state
+          updateError(id, {
             status: "pending",
-          retryCount: currentRetries + 1,
-          lastRetryAt: new Date(),
-          nextRetryAt: new Date(now + backoffDelay),
-          message: `${error.message} Retrying...`,
+            retryCount: currentRetries + 1,
+            lastRetryAt: new Date(),
+            nextRetryAt: new Date(now + backoffDelay),
+            message: `${error.message} Retrying...`,
             circuitBreakerState:
               circuitState === "half-open" ? "half-open" : "closed",
             backoffMultiplier,
-        });
+          });
 
-        // Execute retry action
-        await retryAction.onClick();
+          // Execute retry action
+          await retryAction.onClick();
 
-        // On success, reset circuit breaker and update status
-        updateError(id, {
+          // On success, reset circuit breaker and update status
+          updateError(id, {
             status: "success",
-          consecutiveFailures: 0,
+            consecutiveFailures: 0,
             circuitBreakerState: "closed",
             message: error.message?.replace(" (Retrying...)", " (Success!)"),
             nextRetryAt: undefined, // Clear next retry time
-        });
+          });
 
-        // Auto-remove successful retries after 2 seconds
-        setTimeout(() => {
-          removeError(id);
-        }, 2000);
-      } catch {
-        // On failure, update circuit breaker state
-        const newConsecutiveFailures = consecutiveFailures + 1;
-        const newCircuitState = getCircuitBreakerState({
-          ...error,
-          consecutiveFailures: newConsecutiveFailures,
+          // Auto-remove successful retries after 2 seconds
+          setTimeout(() => {
+            removeError(id);
+          }, 2000);
+        } catch {
+          // On failure, update circuit breaker state
+          const newConsecutiveFailures = consecutiveFailures + 1;
+          const newCircuitState = getCircuitBreakerState({
+            ...error,
+            consecutiveFailures: newConsecutiveFailures,
             lastFailureAt: new Date(),
-        });
+          });
 
-        updateError(id, {
+          updateError(id, {
             status: "failed",
-          consecutiveFailures: newConsecutiveFailures,
-          lastFailureAt: new Date(),
-          circuitBreakerState: newCircuitState,
+            consecutiveFailures: newConsecutiveFailures,
+            lastFailureAt: new Date(),
+            circuitBreakerState: newCircuitState,
             message: error.message?.replace(
               " (Retrying...)",
               ` (Retry failed - ${newConsecutiveFailures} failures)`
             ),
-        });
+          });
+        }
       }
-    }
     },
     [
       errors,
@@ -222,7 +222,7 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
       const now = Date.now();
       setErrors(prev =>
         prev.filter(error => {
-        const errorTime = error.timestamp.getTime();
+          const errorTime = error.timestamp.getTime();
           return now - errorTime < autoDismissTimeout;
         })
       );
@@ -302,9 +302,9 @@ export const ErrorNotifications: React.FC<ErrorNotificationsProps> = ({
                   </div>
                 ) : (
                   error.icon || (
-                  <div className="w-5 h-5 bg-red-500/20 rounded-full flex items-center justify-center">
-                    <span className="text-red-400 text-xs">!</span>
-                  </div>
+                    <div className="w-5 h-5 bg-red-500/20 rounded-full flex items-center justify-center">
+                      <span className="text-red-400 text-xs">!</span>
+                    </div>
                   )
                 )}
               </div>

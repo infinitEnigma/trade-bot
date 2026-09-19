@@ -247,11 +247,11 @@ export const useChartHistorical = ({
 
       const response: FreshnessAwareResponse<TradingViewData> =
         await marketApi.getTvHistory({
-        symbol,
-        resolution: getResolution(interval),
-        from: fromTimestamp,
-        to: toTimestamp,
-      });
+          symbol,
+          resolution: getResolution(interval),
+          from: fromTimestamp,
+          to: toTimestamp,
+        });
 
       // Extract freshness metadata from response
       if (response.freshness) {
@@ -583,8 +583,8 @@ export const useChartData = ({ symbol, interval }: UseChartDataOptions) => {
       // but historical candles use seconds — divide by 1000 to align them.
       const startTimeSec =
         klineData.startTime > 1e12
-        ? Math.floor(klineData.startTime / 1000)
-        : klineData.startTime;
+          ? Math.floor(klineData.startTime / 1000)
+          : klineData.startTime;
 
       const candle: CandleData = {
         time: startTimeSec,

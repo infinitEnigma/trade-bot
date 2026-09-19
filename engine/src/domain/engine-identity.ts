@@ -23,12 +23,12 @@ const ENGINE_STATE_FILE =
  * The epoch increments on every start.
  */
 export function loadOrCreateEngineIdentity(): EngineIdentity {
-    let state: { engineId?: string; epoch?: number } = {};
-    try {
+  let state: { engineId?: string; epoch?: number } = {};
+  try {
     state = JSON.parse(fs.readFileSync(ENGINE_STATE_FILE, "utf-8"));
-    } catch {
-        // First run or unreadable state file - create fresh identity
-    }
+  } catch {
+    // First run or unreadable state file - create fresh identity
+  }
 
   const engineId =
     process.env.ENGINE_ID ||
@@ -36,26 +36,26 @@ export function loadOrCreateEngineIdentity(): EngineIdentity {
     `kodiak-engine-${crypto.randomUUID().substring(0, 8)}`;
   const epoch = (state.engineId === engineId ? (state.epoch ?? 0) : 0) + 1;
 
-    try {
+  try {
     fs.writeFileSync(
       ENGINE_STATE_FILE,
       JSON.stringify({ engineId, epoch }, null, 2)
     );
-    } catch (error) {
-        const message = `Could not persist engine identity to ${ENGINE_STATE_FILE}: ${error instanceof Error ? error.message : String(error)}`;
+  } catch (error) {
+    const message = `Could not persist engine identity to ${ENGINE_STATE_FILE}: ${error instanceof Error ? error.message : String(error)}`;
     if (process.env.NODE_ENV === "production") {
       throw new Error(
         `FATAL: ${message} - engine identity must be persistable in production`
       );
-        }
+    }
     logger.error(
       "Engine identity could not be persisted - epoch will reset on restart",
       {
-            file: ENGINE_STATE_FILE,
-            error: message,
+        file: ENGINE_STATE_FILE,
+        error: message,
       }
     );
-    }
+  }
 
-    return { engineId, epoch };
+  return { engineId, epoch };
 }

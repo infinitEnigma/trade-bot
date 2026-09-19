@@ -40,11 +40,11 @@ const getRequiredEnv = (key: string): string => {
 
 // PostgreSQL statement timeout configuration
 export enum QueryTimeout {
-  FAST = 5000,        // 5 seconds - simple queries, auth, cache operations
-  MEDIUM = 15000,     // 15 seconds - complex joins, aggregations
-  SLOW = 30000,       // 30 seconds - default for most operations
-  COMPLEX = 60000,    // 60 seconds - heavy analytics, reports
-  REPORT = 300000,    // 5 minutes - long-running reports, data exports
+  FAST = 5000, // 5 seconds - simple queries, auth, cache operations
+  MEDIUM = 15000, // 15 seconds - complex joins, aggregations
+  SLOW = 30000, // 30 seconds - default for most operations
+  COMPLEX = 60000, // 60 seconds - heavy analytics, reports
+  REPORT = 300000, // 5 minutes - long-running reports, data exports
 }
 
 export interface QueryTimeoutConfig {
@@ -58,12 +58,12 @@ export interface QueryTimeoutConfig {
 
 // Default timeout configuration
 const DEFAULT_TIMEOUT_CONFIG: QueryTimeoutConfig = {
-  default: QueryTimeout.SLOW,    // 30 seconds
-  fast: QueryTimeout.FAST,       // 5 seconds
-  medium: QueryTimeout.MEDIUM,   // 15 seconds
-  slow: QueryTimeout.SLOW,       // 30 seconds
+  default: QueryTimeout.SLOW, // 30 seconds
+  fast: QueryTimeout.FAST, // 5 seconds
+  medium: QueryTimeout.MEDIUM, // 15 seconds
+  slow: QueryTimeout.SLOW, // 30 seconds
   complex: QueryTimeout.COMPLEX, // 60 seconds
-  report: QueryTimeout.REPORT,   // 5 minutes
+  report: QueryTimeout.REPORT, // 5 minutes
 };
 
 // Current timeout configuration (can be made configurable)
@@ -393,9 +393,9 @@ export function getPoolMetrics(): {
   const averageWaitTime =
     poolMetrics.connectionWaitTimes.length > 0
       ? Math.round(
-        poolMetrics.connectionWaitTimes.reduce((a, b) => a + b, 0) /
-        poolMetrics.connectionWaitTimes.length
-      )
+          poolMetrics.connectionWaitTimes.reduce((a, b) => a + b, 0) /
+            poolMetrics.connectionWaitTimes.length
+        )
       : 0;
 
   const maxWaitTime =
@@ -547,8 +547,8 @@ export async function getClientWithTimeout(
       "Failed to set client timeout, using pool default",
       error as Error,
       {
-      timeoutMs,
-      error: (error as Error).message,
+        timeoutMs,
+        error: (error as Error).message,
       }
     );
   }

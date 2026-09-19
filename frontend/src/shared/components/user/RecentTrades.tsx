@@ -20,8 +20,8 @@ export const RecentTrades: React.FC<RecentTradesProps> = ({
   isLoading,
 }) => {
   const { user } = useAuth();
-      
-      if (!user && !UserLevel.VERIFIED) return null;
+
+  if (!user && !UserLevel.VERIFIED) return null;
   const [currentTime] = useState(() => Date.now());
   return (
     <Card>

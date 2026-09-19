@@ -1,1185 +1,1506 @@
 /** @format */
 
-import { AuthService, createAuthService, AuthServiceDependencies } from '../../src/core/auth/auth.service.pure';
-import { UserLevel } from '@trade-bot/shared';
+import {
+  AuthService,
+  createAuthService,
+  AuthServiceDependencies,
+} from "../../src/core/auth/auth.service.pure";
+import { UserLevel } from "@trade-bot/shared";
 
-describe('AuthService', () => {
-    // Create mock dependencies for the AuthService
-    const createMockDependencies = (): AuthServiceDependencies => {
-        return {
-            userRepository: {
-                findByEmail: jest.fn(),
-                findByEmailWithPassword: jest.fn(),
-                create: jest.fn(),
-                findById: jest.fn(),
-                getAuthenticatedUserData: jest.fn(),
-                updateUserLevel: jest.fn(),
-                updateProfile: jest.fn(),
-                getWalletAddress: jest.fn(),
-                setWalletAddress: jest.fn(),
-                clearWalletAddress: jest.fn(),
-            },
-            cache: {
-                get: jest.fn(),
-                setex: jest.fn(),
-                delete: jest.fn(),
-                set: jest.fn(),
-                exists: jest.fn(),
-                mget: jest.fn(),
-                mset: jest.fn(),
-                atomicConditionalUpdate: jest.fn(),
-            },
-            tokenService: {
-                verifyToken: jest.fn(),
-                verifyTokenWithDatabaseValidation: jest.fn(),
-                generateAccessToken: jest.fn(),
-                generateRefreshToken: jest.fn(),
-                hashTokenForStorage: jest.fn(),
-            },
-            passwordService: {
-                hash: jest.fn(),
-                verify: jest.fn(),
-            },
-            logger: {
-                debug: jest.fn(),
-                info: jest.fn(),
-                warn: jest.fn(),
-                error: jest.fn(),
-                child: jest.fn(),
-            },
-            auditLogger: {
-                logEvent: jest.fn(),
-                getUserLogs: jest.fn(),
-            },
-            signatureVerificationService: {
-                verifySignature: jest.fn(),
-            },
-        };
+describe("AuthService", () => {
+  // Create mock dependencies for the AuthService
+  const createMockDependencies = (): AuthServiceDependencies => {
+    return {
+      userRepository: {
+        findByEmail: jest.fn(),
+        findByEmailWithPassword: jest.fn(),
+        create: jest.fn(),
+        findById: jest.fn(),
+        getAuthenticatedUserData: jest.fn(),
+        updateUserLevel: jest.fn(),
+        updateProfile: jest.fn(),
+        getWalletAddress: jest.fn(),
+        setWalletAddress: jest.fn(),
+        clearWalletAddress: jest.fn(),
+      },
+      cache: {
+        get: jest.fn(),
+        setex: jest.fn(),
+        delete: jest.fn(),
+        set: jest.fn(),
+        exists: jest.fn(),
+        mget: jest.fn(),
+        mset: jest.fn(),
+        atomicConditionalUpdate: jest.fn(),
+      },
+      tokenService: {
+        verifyToken: jest.fn(),
+        verifyTokenWithDatabaseValidation: jest.fn(),
+        generateAccessToken: jest.fn(),
+        generateRefreshToken: jest.fn(),
+        hashTokenForStorage: jest.fn(),
+      },
+      passwordService: {
+        hash: jest.fn(),
+        verify: jest.fn(),
+      },
+      logger: {
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        child: jest.fn(),
+      },
+      auditLogger: {
+        logEvent: jest.fn(),
+        getUserLogs: jest.fn(),
+      },
+      signatureVerificationService: {
+        verifySignature: jest.fn(),
+      },
+    };
+  };
+
+  describe("Constructor", () => {
+    it("should create an instance of AuthService", () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+      expect(authService).toBeInstanceOf(AuthService);
+    });
+
+    it("should create an instance using the factory function", () => {
+      const deps = createMockDependencies();
+      const authService = createAuthService(deps);
+      expect(authService).toBeInstanceOf(AuthService);
+    });
+  });
+
+  describe("User Registration", () => {
+    it("should successfully register a new user", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testEmail = "test@example.com";
+      const testPassword = "Password123!";
+      const testUserId = "user-123";
+      const testUserLevel = UserLevel.BASIC;
+      const testPasswordHash = "hashed-password";
+      const testAccessToken = "access-token";
+      const testRefreshToken = "refresh-token";
+
+      // Mock dependencies
+      (deps.userRepository.findByEmail as jest.Mock).mockResolvedValue(null);
+      (deps.passwordService.hash as jest.Mock).mockResolvedValue(
+        testPasswordHash
+      );
+      (deps.userRepository.create as jest.Mock).mockResolvedValue({
+        id: testUserId,
+        email: testEmail,
+        userLevel: testUserLevel,
+      });
+      (deps.tokenService.generateAccessToken as jest.Mock).mockReturnValue(
+        testAccessToken
+      );
+      (deps.tokenService.generateRefreshToken as jest.Mock).mockReturnValue(
+        testRefreshToken
+      );
+
+      const result = await authService.register(testEmail, testPassword);
+
+      expect(result.success).toBe(true);
+      expect(result.user?.id).toEqual(testUserId);
+      expect(result.user?.email).toEqual(testEmail);
+      expect(result.user?.userLevel).toEqual(testUserLevel);
+      expect(result.tokens?.accessToken).toEqual(testAccessToken);
+      expect(result.tokens?.refreshToken).toEqual(testRefreshToken);
+
+      expect(deps.userRepository.findByEmail).toHaveBeenCalledWith(testEmail);
+      expect(deps.passwordService.hash).toHaveBeenCalledWith(testPassword);
+      expect(deps.userRepository.create).toHaveBeenCalled();
+      expect(deps.tokenService.generateAccessToken).toHaveBeenCalled();
+      expect(deps.tokenService.generateRefreshToken).toHaveBeenCalled();
+      expect(deps.logger.info).toHaveBeenCalled();
+      expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "USER_REGISTERED" })
+      );
+    });
+
+    it("should fail to register when email already exists", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testEmail = "test@example.com";
+      const testPassword = "Password123!";
+
+      (deps.userRepository.findByEmail as jest.Mock).mockResolvedValue({
+        id: "existing-user",
+        email: testEmail,
+      });
+
+      const result = await authService.register(testEmail, testPassword);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual("Email already registered");
+      expect(deps.logger.warn).toHaveBeenCalled();
+      expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "USER_REGISTRATION_FAILED" })
+      );
+    });
+
+    it("should handle registration errors", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testEmail = "test@example.com";
+      const testPassword = "Password123!";
+
+      (deps.userRepository.findByEmail as jest.Mock).mockRejectedValue(
+        new Error("Database error")
+      );
+
+      const result = await authService.register(testEmail, testPassword);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual("Registration failed");
+      expect(deps.logger.error).toHaveBeenCalled();
+    });
+  });
+
+  describe("User Login", () => {
+    it("should successfully login a user with valid credentials", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testEmail = "test@example.com";
+      const testPassword = "Password123!";
+      const testUserId = "user-123";
+      const testUserLevel = UserLevel.VERIFIED;
+      const testPasswordHash = "hashed-password";
+      const testAccessToken = "access-token";
+      const testRefreshToken = "refresh-token";
+
+      (
+        deps.userRepository.findByEmailWithPassword as jest.Mock
+      ).mockResolvedValue({
+        id: testUserId,
+        email: testEmail,
+        userLevel: testUserLevel,
+        passwordHash: testPasswordHash,
+      });
+      (deps.passwordService.verify as jest.Mock).mockResolvedValue(true);
+      (deps.tokenService.generateAccessToken as jest.Mock).mockReturnValue(
+        testAccessToken
+      );
+      (deps.tokenService.generateRefreshToken as jest.Mock).mockReturnValue(
+        testRefreshToken
+      );
+
+      const result = await authService.login({
+        email: testEmail,
+        password: testPassword,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.user?.id).toEqual(testUserId);
+      expect(result.tokens?.accessToken).toEqual(testAccessToken);
+
+      expect(deps.userRepository.findByEmailWithPassword).toHaveBeenCalledWith(
+        testEmail
+      );
+      expect(deps.passwordService.verify).toHaveBeenCalledWith(
+        testPassword,
+        testPasswordHash
+      );
+      expect(deps.tokenService.generateAccessToken).toHaveBeenCalled();
+      expect(deps.tokenService.generateRefreshToken).toHaveBeenCalled();
+      expect(deps.logger.info).toHaveBeenCalled();
+      expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "USER_LOGIN" })
+      );
+    });
+
+    it("should fail login when user not found", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testEmail = "nonexistent@example.com";
+      const testPassword = "Password123!";
+
+      (
+        deps.userRepository.findByEmailWithPassword as jest.Mock
+      ).mockResolvedValue(null);
+
+      const result = await authService.login({
+        email: testEmail,
+        password: testPassword,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual("Invalid credentials");
+      expect(deps.logger.warn).toHaveBeenCalled();
+      expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "USER_LOGIN_FAILED",
+          details: expect.objectContaining({ reason: "user_not_found" }),
+        })
+      );
+    });
+
+    it("should fail login when password is invalid", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testEmail = "test@example.com";
+      const testPassword = "WrongPassword123!";
+      const testUserId = "user-123";
+      const testPasswordHash = "hashed-password";
+
+      (
+        deps.userRepository.findByEmailWithPassword as jest.Mock
+      ).mockResolvedValue({
+        id: testUserId,
+        email: testEmail,
+        userLevel: UserLevel.BASIC,
+        passwordHash: testPasswordHash,
+      });
+      (deps.passwordService.verify as jest.Mock).mockResolvedValue(false);
+
+      const result = await authService.login({
+        email: testEmail,
+        password: testPassword,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual("Invalid credentials");
+      expect(deps.logger.warn).toHaveBeenCalled();
+      expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "USER_LOGIN_FAILED",
+          details: expect.objectContaining({ reason: "invalid_password" }),
+        })
+      );
+    });
+
+    it("should handle login errors", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testEmail = "test@example.com";
+      const testPassword = "Password123!";
+
+      (
+        deps.userRepository.findByEmailWithPassword as jest.Mock
+      ).mockRejectedValue(new Error("Database error"));
+
+      const result = await authService.login({
+        email: testEmail,
+        password: testPassword,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual("Login failed");
+      expect(deps.logger.error).toHaveBeenCalled();
+    });
+  });
+
+  describe("Token Refresh", () => {
+    it("should successfully refresh tokens with valid refresh token", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testEmail = "test@example.com";
+      const testUserLevel = UserLevel.VERIFIED;
+      const testRefreshToken = "valid-refresh-token";
+      const testAccessToken = "new-access-token";
+      const testNewRefreshToken = "new-refresh-token";
+
+      (deps.tokenService.verifyToken as jest.Mock).mockReturnValue({
+        userId: testUserId,
+      });
+      (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+        id: testUserId,
+        email: testEmail,
+        userLevel: testUserLevel,
+      });
+      (deps.tokenService.generateAccessToken as jest.Mock).mockReturnValue(
+        testAccessToken
+      );
+      (deps.tokenService.generateRefreshToken as jest.Mock).mockReturnValue(
+        testNewRefreshToken
+      );
+
+      const result = await authService.refreshToken(testRefreshToken);
+
+      expect(result.success).toBe(true);
+      expect(result.user?.id).toEqual(testUserId);
+      expect(result.tokens?.accessToken).toEqual(testAccessToken);
+      expect(result.tokens?.refreshToken).toEqual(testNewRefreshToken);
+
+      expect(deps.tokenService.verifyToken).toHaveBeenCalledWith(
+        testRefreshToken,
+        "refresh"
+      );
+      expect(deps.userRepository.findById).toHaveBeenCalledWith(testUserId);
+      expect(deps.tokenService.generateAccessToken).toHaveBeenCalled();
+      expect(deps.tokenService.generateRefreshToken).toHaveBeenCalled();
+      expect(deps.logger.info).toHaveBeenCalled();
+    });
+
+    it("should fail to refresh token with invalid token", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      (deps.tokenService.verifyToken as jest.Mock).mockReturnValue(null);
+
+      const result = await authService.refreshToken("invalid-refresh-token");
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual("Invalid refresh token");
+      expect(deps.logger.warn).toHaveBeenCalled();
+    });
+
+    it("should fail to refresh token when user not found", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "nonexistent-user";
+      (deps.tokenService.verifyToken as jest.Mock).mockReturnValue({
+        userId: testUserId,
+      });
+      (deps.userRepository.findById as jest.Mock).mockResolvedValue(null);
+
+      const result = await authService.refreshToken("valid-refresh-token");
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual("User not found");
+      expect(deps.logger.warn).toHaveBeenCalled();
+    });
+
+    it("should handle token refresh errors", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      (deps.tokenService.verifyToken as jest.Mock).mockImplementation(() => {
+        throw new Error("Token verification failed");
+      });
+
+      const result = await authService.refreshToken("valid-refresh-token");
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual("Invalid refresh token");
+      expect(deps.logger.error).toHaveBeenCalled();
+    });
+
+    it("should verify refresh tokens with the refresh token type", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      (deps.tokenService.verifyToken as jest.Mock).mockReturnValue(null);
+
+      await authService.refreshToken("some-refresh-token");
+
+      // The refresh path must only accept refresh tokens - never access tokens
+      expect(deps.tokenService.verifyToken).toHaveBeenCalledWith(
+        "some-refresh-token",
+        "refresh"
+      );
+    });
+
+    it("should fail to refresh a blacklisted refresh token", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      (deps.tokenService.hashTokenForStorage as jest.Mock).mockReturnValue(
+        "blacklisted-hash"
+      );
+      (deps.cache.get as jest.Mock).mockResolvedValue({
+        success: true,
+        data: "1",
+      });
+
+      const result = await authService.refreshToken(
+        "blacklisted-refresh-token"
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual("Invalid refresh token");
+      // Blacklisted tokens must be rejected before any verification work
+      expect(deps.tokenService.verifyToken).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Logout", () => {
+    it("should blacklist refresh and access tokens on logout", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const exp = Math.floor(Date.now() / 1000) + 3600;
+      (deps.tokenService.verifyToken as jest.Mock).mockImplementation(
+        (_token, expectedType) =>
+          expectedType === "refresh"
+            ? { userId: "user-123", type: "refresh", exp }
+            : { userId: "user-123", type: "access", exp }
+      );
+      (deps.tokenService.hashTokenForStorage as jest.Mock).mockReturnValue(
+        "tokenhash"
+      );
+      (deps.cache.setex as jest.Mock).mockResolvedValue({ success: true });
+
+      const result = await authService.logout("refresh-token", "access-token");
+
+      expect(result.success).toBe(true);
+      expect(result.tokensBlacklisted).toEqual(2);
+      expect(deps.cache.setex).toHaveBeenCalledTimes(2);
+      expect(deps.cache.setex).toHaveBeenCalledWith(
+        "jwt:blacklist:tokenhash",
+        expect.any(Number),
+        "1"
+      );
+      expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "USER_LOGGED_OUT" })
+      );
+    });
+
+    it("should skip blacklisting invalid tokens", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      (deps.tokenService.verifyToken as jest.Mock).mockReturnValue(null);
+
+      const result = await authService.logout("invalid-refresh-token");
+
+      expect(result.success).toBe(true);
+      expect(result.tokensBlacklisted).toEqual(0);
+      expect(deps.cache.setex).not.toHaveBeenCalled();
+    });
+
+    it("should reject a blacklisted access token during validation", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      (deps.tokenService.hashTokenForStorage as jest.Mock).mockReturnValue(
+        "tokenhash"
+      );
+      (deps.cache.get as jest.Mock).mockResolvedValue({
+        success: true,
+        data: "1",
+      });
+
+      const result = await authService.validateToken(
+        "blacklisted-access-token"
+      );
+
+      expect(result).toBeNull();
+      expect(
+        deps.tokenService.verifyTokenWithDatabaseValidation
+      ).not.toHaveBeenCalled();
+    });
+
+    it("should accept a non-blacklisted access token during validation", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      (deps.tokenService.hashTokenForStorage as jest.Mock).mockReturnValue(
+        "tokenhash"
+      );
+      (deps.cache.get as jest.Mock).mockResolvedValue({
+        success: true,
+        data: null,
+      });
+      (
+        deps.tokenService.verifyTokenWithDatabaseValidation as jest.Mock
+      ).mockResolvedValue({
+        userId: "user-123",
+        email: "test@example.com",
+        userLevel: UserLevel.VERIFIED,
+      });
+
+      const result = await authService.validateToken("valid-access-token");
+
+      expect(result).not.toBeNull();
+      expect(
+        deps.tokenService.verifyTokenWithDatabaseValidation
+      ).toHaveBeenCalled();
+    });
+  });
+
+  describe("Token Validation", () => {
+    it("should validate valid token successfully", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testEmail = "test@example.com";
+      const testUserLevel = UserLevel.VERIFIED;
+      const testToken = "valid-access-token";
+
+      (
+        deps.tokenService.verifyTokenWithDatabaseValidation as jest.Mock
+      ).mockResolvedValue({
+        userId: testUserId,
+        email: testEmail,
+        userLevel: testUserLevel,
+      });
+
+      const result = await authService.validateToken(testToken);
+
+      expect(result).not.toBeNull();
+      expect(result?.userId).toEqual(testUserId);
+      expect(
+        deps.tokenService.verifyTokenWithDatabaseValidation
+      ).toHaveBeenCalledWith(testToken, authService);
+    });
+
+    it("should return null for invalid token", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      (
+        deps.tokenService.verifyTokenWithDatabaseValidation as jest.Mock
+      ).mockResolvedValue(null);
+
+      const result = await authService.validateToken("invalid-token");
+
+      expect(result).toBeNull();
+      expect(deps.logger.debug).toHaveBeenCalled();
+    });
+
+    it("should handle token validation errors", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      (
+        deps.tokenService.verifyTokenWithDatabaseValidation as jest.Mock
+      ).mockRejectedValue(new Error("Validation error"));
+
+      const result = await authService.validateToken("valid-token");
+
+      expect(result).toBeNull();
+      expect(deps.logger.debug).toHaveBeenCalled();
+    });
+  });
+
+  describe("User Data Management", () => {
+    it("should get authenticated user data with cache hit", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testUserData = {
+        user: {
+          id: testUserId,
+          email: "test@example.com",
+          userLevel: UserLevel.VERIFIED,
+        },
+        roles: ["USER"],
+        hasCredentials: true,
+      };
+
+      (deps.cache.get as jest.Mock).mockResolvedValue({
+        success: true,
+        data: testUserData,
+      });
+
+      const result = await authService.getAuthenticatedUserData(testUserId);
+
+      expect(result).toEqual(testUserData);
+      expect(deps.cache.get).toHaveBeenCalled();
+      expect(
+        deps.userRepository.getAuthenticatedUserData
+      ).not.toHaveBeenCalled();
+      expect(deps.logger.debug).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ userId: testUserId })
+      );
+    });
+
+    it("should get authenticated user data with cache miss", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testUserData = {
+        user: {
+          id: testUserId,
+          email: "test@example.com",
+          userLevel: UserLevel.VERIFIED,
+        },
+        roles: ["USER"],
+        hasCredentials: true,
+      };
+
+      (deps.cache.get as jest.Mock).mockResolvedValue({
+        success: false,
+        data: null,
+      });
+      (
+        deps.userRepository.getAuthenticatedUserData as jest.Mock
+      ).mockResolvedValue(testUserData);
+      (deps.cache.setex as jest.Mock).mockResolvedValue({ success: true });
+
+      const result = await authService.getAuthenticatedUserData(testUserId);
+
+      expect(result).toEqual(testUserData);
+      expect(deps.cache.get).toHaveBeenCalled();
+      expect(deps.userRepository.getAuthenticatedUserData).toHaveBeenCalledWith(
+        testUserId
+      );
+      expect(deps.cache.setex).toHaveBeenCalled();
+      expect(deps.logger.debug).toHaveBeenCalledWith(
+        "Auth user data cache miss, querying repository",
+        expect.any(Object)
+      );
+    });
+
+    it("should handle cache set failure when storing authenticated user data", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testUserData = {
+        user: {
+          id: testUserId,
+          email: "test@example.com",
+          userLevel: UserLevel.VERIFIED,
+        },
+        roles: ["USER"],
+        hasCredentials: true,
+      };
+
+      (deps.cache.get as jest.Mock).mockResolvedValue({
+        success: false,
+        data: null,
+      });
+      (
+        deps.userRepository.getAuthenticatedUserData as jest.Mock
+      ).mockResolvedValue(testUserData);
+      (deps.cache.setex as jest.Mock).mockResolvedValue({
+        success: false,
+        error: "Cache storage failed",
+      });
+
+      const result = await authService.getAuthenticatedUserData(testUserId);
+
+      expect(result).toEqual(testUserData);
+      expect(deps.cache.get).toHaveBeenCalled();
+      expect(deps.userRepository.getAuthenticatedUserData).toHaveBeenCalledWith(
+        testUserId
+      );
+      expect(deps.cache.setex).toHaveBeenCalled();
+      expect(deps.logger.warn).toHaveBeenCalled();
+    });
+
+    it("should return null when user data not found", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "nonexistent-user";
+
+      (deps.cache.get as jest.Mock).mockResolvedValue({
+        success: false,
+        data: null,
+      });
+      (
+        deps.userRepository.getAuthenticatedUserData as jest.Mock
+      ).mockResolvedValue(null);
+
+      const result = await authService.getAuthenticatedUserData(testUserId);
+
+      expect(result).toBeNull();
+    });
+
+    it("should handle getting user data errors", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+
+      (deps.cache.get as jest.Mock).mockRejectedValue(new Error("Cache error"));
+
+      const result = await authService.getAuthenticatedUserData(testUserId);
+
+      expect(result).toBeNull();
+      expect(deps.logger.error).toHaveBeenCalled();
+    });
+
+    it("should invalidate user data cache", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
+
+      await authService.invalidateUserDataCache(testUserId);
+
+      expect(deps.cache.delete).toHaveBeenCalled();
+      expect(deps.logger.debug).toHaveBeenCalled();
+    });
+
+    it("should handle cache invalidation errors", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      (deps.cache.delete as jest.Mock).mockResolvedValue({
+        success: false,
+        error: "Cache error",
+      });
+
+      await authService.invalidateUserDataCache(testUserId);
+
+      expect(deps.cache.delete).toHaveBeenCalled();
+      expect(deps.logger.warn).toHaveBeenCalled();
+    });
+  });
+
+  describe("User Level Management", () => {
+    it("should update user level successfully", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testNewLevel = UserLevel.VERIFIED;
+
+      (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(
+        true
+      );
+      (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
+
+      const result = await authService.updateUserLevel(
+        testUserId,
+        testNewLevel
+      );
+
+      expect(result).toBe(true);
+      expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(
+        testUserId,
+        testNewLevel
+      );
+      expect(deps.cache.delete).toHaveBeenCalled();
+      expect(deps.logger.info).toHaveBeenCalled();
+      expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "USER_LEVEL_UPDATED",
+          details: expect.objectContaining({ newLevel: testNewLevel }),
+        })
+      );
+    });
+
+    it("should return false when user level update fails", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testNewLevel = UserLevel.VERIFIED;
+
+      (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(
+        false
+      );
+
+      const result = await authService.updateUserLevel(
+        testUserId,
+        testNewLevel
+      );
+
+      expect(result).toBe(false);
+    });
+
+    it("should handle user level update errors", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testNewLevel = UserLevel.VERIFIED;
+
+      (deps.userRepository.updateUserLevel as jest.Mock).mockRejectedValue(
+        new Error("Database error")
+      );
+
+      const result = await authService.updateUserLevel(
+        testUserId,
+        testNewLevel
+      );
+
+      expect(result).toBe(false);
+      expect(deps.logger.error).toHaveBeenCalled();
+    });
+  });
+
+  describe("User Lookup", () => {
+    it("should get user by ID successfully", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testUser = {
+        id: testUserId,
+        email: "test@example.com",
+        userLevel: UserLevel.BASIC,
+      };
+
+      (deps.userRepository.findById as jest.Mock).mockResolvedValue(testUser);
+
+      const result = await authService.getUserById(testUserId);
+
+      expect(result).toEqual(testUser);
+      expect(deps.userRepository.findById).toHaveBeenCalledWith(testUserId);
+    });
+
+    it("should handle user lookup errors", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+
+      (deps.userRepository.findById as jest.Mock).mockRejectedValue(
+        new Error("Database error")
+      );
+
+      const result = await authService.getUserById(testUserId);
+
+      expect(result).toBeNull();
+      expect(deps.logger.error).toHaveBeenCalled();
+    });
+  });
+
+  describe("Password Management", () => {
+    it("should verify valid password", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testPassword = "Password123!";
+      const testPasswordHash = "hashed-password";
+
+      (deps.passwordService.verify as jest.Mock).mockResolvedValue(true);
+
+      const result = await authService.verifyPassword(
+        testPasswordHash,
+        testPassword
+      );
+
+      expect(result).toBe(true);
+      expect(deps.passwordService.verify).toHaveBeenCalledWith(
+        testPassword,
+        testPasswordHash
+      );
+    });
+
+    it("should fail password verification for invalid password", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testPassword = "WrongPassword123!";
+      const testPasswordHash = "hashed-password";
+
+      (deps.passwordService.verify as jest.Mock).mockResolvedValue(false);
+
+      const result = await authService.verifyPassword(
+        testPasswordHash,
+        testPassword
+      );
+
+      expect(result).toBe(false);
+    });
+
+    it("should handle password verification errors", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testPassword = "Password123!";
+      const testPasswordHash = "hashed-password";
+
+      (deps.passwordService.verify as jest.Mock).mockRejectedValue(
+        new Error("Verification error")
+      );
+
+      const result = await authService.verifyPassword(
+        testPasswordHash,
+        testPassword
+      );
+
+      expect(result).toBe(false);
+      expect(deps.logger.error).toHaveBeenCalled();
+    });
+
+    it("should hash password successfully", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testPassword = "Password123!";
+      const testHash = "hashed-password";
+
+      (deps.passwordService.hash as jest.Mock).mockResolvedValue(testHash);
+
+      const result = await authService.hashPassword(testPassword);
+
+      expect(result).toEqual(testHash);
+      expect(deps.passwordService.hash).toHaveBeenCalledWith(testPassword);
+    });
+
+    it("should throw error when password hashing fails", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testPassword = "Password123!";
+
+      (deps.passwordService.hash as jest.Mock).mockRejectedValue(
+        new Error("Hashing error")
+      );
+
+      await expect(authService.hashPassword(testPassword)).rejects.toThrow();
+      expect(deps.logger.error).toHaveBeenCalled();
+    });
+  });
+
+  describe("Token Invalidation", () => {
+    it("should invalidate user tokens successfully", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+
+      (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
+
+      const result = await authService.invalidateUserTokens(testUserId);
+
+      expect(result.success).toBe(true);
+      expect(result.tokensBlacklisted).toEqual(0);
+      expect(deps.cache.delete).toHaveBeenCalled();
+      expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "USER_TOKENS_INVALIDATED" })
+      );
+    });
+
+    it("should handle token invalidation errors", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+
+      (deps.cache.delete as jest.Mock).mockRejectedValue(
+        new Error("Cache error")
+      );
+
+      const result = await authService.invalidateUserTokens(testUserId);
+
+      expect(result.success).toBe(false);
+      expect(result.errors).toEqual(
+        expect.arrayContaining([expect.any(String)])
+      );
+      expect(deps.logger.error).toHaveBeenCalled();
+    });
+  });
+
+  describe("Wallet Verification (BASIC -> REGISTERED)", () => {
+    it("should verify wallet ownership and upgrade BASIC user to REGISTERED", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testWalletAddress = "0x742d35Cc6634C0532925a3b88650D7A3e5554A0";
+      const testSignature = "0x1234..."; // This is just a placeholder
+      const testMessage =
+        "Please sign this message to verify your wallet ownership";
+
+      // Mock signature verification
+      (
+        deps.signatureVerificationService.verifySignature as jest.Mock
+      ).mockResolvedValue(true);
+
+      // No wallet linked yet
+      (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(
+        null
+      );
+
+      // Mock current user as BASIC
+      (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+        id: testUserId,
+        email: "test@example.com",
+        userLevel: UserLevel.BASIC,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Mock wallet persistence + level update
+      (deps.userRepository.setWalletAddress as jest.Mock).mockResolvedValue(
+        true
+      );
+      (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(
+        true
+      );
+      (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
+
+      const result = await authService.verifyWalletOwnership(
+        testUserId,
+        testWalletAddress,
+        testSignature,
+        testMessage
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.message).toEqual(
+        "Wallet ownership verified. Your account has been upgraded to REGISTERED level."
+      );
+      expect(deps.logger.info).toHaveBeenCalled();
+      expect(deps.userRepository.getWalletAddress).toHaveBeenCalledWith(
+        testUserId
+      );
+      expect(deps.userRepository.setWalletAddress).toHaveBeenCalledWith(
+        testUserId,
+        testWalletAddress.toLowerCase()
+      );
+      expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(
+        testUserId,
+        UserLevel.REGISTERED
+      );
+    });
+
+    it("should re-verify wallet for already REGISTERED user without level change", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testWalletAddress = "0x742d35Cc6634C0532925a3b88650D7A3e5554A0";
+      const testSignature = "0x1234...";
+      const testMessage =
+        "Please sign this message to verify your wallet ownership";
+
+      (
+        deps.signatureVerificationService.verifySignature as jest.Mock
+      ).mockResolvedValue(true);
+      (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(
+        testWalletAddress
+      );
+      (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+        id: testUserId,
+        email: "test@example.com",
+        userLevel: UserLevel.REGISTERED,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const result = await authService.verifyWalletOwnership(
+        testUserId,
+        testWalletAddress,
+        testSignature,
+        testMessage
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.message).toEqual("Wallet ownership verified.");
+      expect(deps.userRepository.updateUserLevel).not.toHaveBeenCalled();
+    });
+
+    it("should fail verification when signature does not match wallet address", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testWalletAddress = "0x742d35Cc6634C0532925a3b88650D7A3e5554A0";
+      const testSignature = "0x1234...";
+      const testMessage =
+        "Please sign this message to verify your wallet ownership";
+
+      // Mock signature verification failing
+      (
+        deps.signatureVerificationService.verifySignature as jest.Mock
+      ).mockResolvedValue(false);
+
+      // Mock getting the stored wallet address
+      (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(
+        testWalletAddress
+      );
+
+      const result = await authService.verifyWalletOwnership(
+        testUserId,
+        testWalletAddress,
+        testSignature,
+        testMessage
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual(
+        "Signature does not match the provided wallet address"
+      );
+      expect(deps.logger.warn).toHaveBeenCalled();
+    });
+
+    it("should fail verification when wallet persistence fails", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testWalletAddress = "0x742d35Cc6634C0532925a3b88650D7A3e5554A0";
+      const testSignature = "0x1234...";
+      const testMessage =
+        "Please sign this message to verify your wallet ownership";
+
+      // Mock signature verification
+      (
+        deps.signatureVerificationService.verifySignature as jest.Mock
+      ).mockResolvedValue(true);
+
+      // No wallet linked yet, persistence fails
+      (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(
+        null
+      );
+      (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+        id: testUserId,
+        email: "test@example.com",
+        userLevel: UserLevel.BASIC,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      (deps.userRepository.setWalletAddress as jest.Mock).mockResolvedValue(
+        false
+      );
+
+      const result = await authService.verifyWalletOwnership(
+        testUserId,
+        testWalletAddress,
+        testSignature,
+        testMessage
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual(
+        "Wallet signature valid but failed to link wallet to account"
+      );
+      expect(deps.logger.error).toHaveBeenCalled();
+    });
+
+    it("should fail verification when wallet address does not match linked wallet", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testWalletAddress = "0x742d35Cc6634C0532925a3b88650D7A3e5554A0";
+      const testSignature = "0x1234...";
+      const testMessage =
+        "Please sign this message to verify your wallet ownership";
+
+      // Mock signature verification
+      (
+        deps.signatureVerificationService.verifySignature as jest.Mock
+      ).mockResolvedValue(true);
+
+      // Mock getting the stored wallet address - return different address
+      (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(
+        "0x9876..."
+      );
+
+      const result = await authService.verifyWalletOwnership(
+        testUserId,
+        testWalletAddress,
+        testSignature,
+        testMessage
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual(
+        "Wallet address does not match the wallet linked to your account"
+      );
+      expect(deps.logger.warn).toHaveBeenCalled();
+    });
+
+    it("should fail verification when user level update fails", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testWalletAddress = "0x742d35Cc6634C0532925a3b88650D7A3e5554A0";
+      const testSignature = "0x1234...";
+      const testMessage =
+        "Please sign this message to verify your wallet ownership";
+
+      // Mock signature verification
+      (
+        deps.signatureVerificationService.verifySignature as jest.Mock
+      ).mockResolvedValue(true);
+
+      // No wallet linked yet; level update fails
+      (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(
+        null
+      );
+      (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+        id: testUserId,
+        email: "test@example.com",
+        userLevel: UserLevel.BASIC,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      (deps.userRepository.setWalletAddress as jest.Mock).mockResolvedValue(
+        true
+      );
+
+      // Mock user level update failing
+      (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(
+        false
+      );
+      (deps.cache.delete as jest.Mock).mockResolvedValue({ success: false });
+
+      const result = await authService.verifyWalletOwnership(
+        testUserId,
+        testWalletAddress,
+        testSignature,
+        testMessage
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual(
+        "Wallet verification succeeded but failed to update user level"
+      );
+      expect(deps.logger.error).toHaveBeenCalled();
+    });
+
+    it("should handle wallet verification errors", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      const testUserId = "user-123";
+      const testWalletAddress = "0x1234...";
+      const testSignature = "signature";
+      const testMessage = "message";
+
+      // Mock signature verification throwing an error
+      (
+        deps.signatureVerificationService.verifySignature as jest.Mock
+      ).mockImplementation(() => {
+        throw new Error("Signature verification failed");
+      });
+
+      const result = await authService.verifyWalletOwnership(
+        testUserId,
+        testWalletAddress,
+        testSignature,
+        testMessage
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual("Failed to verify wallet ownership");
+      expect(deps.logger.error).toHaveBeenCalled();
+    });
+  });
+
+  describe("Wallet Unlink (downgrade)", () => {
+    const testUserId = "user-123";
+    const baseUser = {
+      id: testUserId,
+      email: "test@example.com",
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
 
-    describe('Constructor', () => {
-        it('should create an instance of AuthService', () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-            expect(authService).toBeInstanceOf(AuthService);
-        });
+    it("should unlink wallet and downgrade REGISTERED user to BASIC", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
 
-        it('should create an instance using the factory function', () => {
-            const deps = createMockDependencies();
-            const authService = createAuthService(deps);
-            expect(authService).toBeInstanceOf(AuthService);
-        });
+      (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+        ...baseUser,
+        userLevel: UserLevel.REGISTERED,
+      });
+      (deps.userRepository.clearWalletAddress as jest.Mock).mockResolvedValue(
+        true
+      );
+      (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(
+        true
+      );
+      (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
+
+      const result = await authService.unlinkWallet(testUserId);
+
+      expect(result.success).toBe(true);
+      expect(deps.userRepository.clearWalletAddress).toHaveBeenCalledWith(
+        testUserId
+      );
+      expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(
+        testUserId,
+        UserLevel.BASIC
+      );
     });
 
-    describe('User Registration', () => {
-        it('should successfully register a new user', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
+    it("should downgrade VERIFIED user without Kodiak to BASIC", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
 
-            const testEmail = 'test@example.com';
-            const testPassword = 'Password123!';
-            const testUserId = 'user-123';
-            const testUserLevel = UserLevel.BASIC;
-            const testPasswordHash = 'hashed-password';
-            const testAccessToken = 'access-token';
-            const testRefreshToken = 'refresh-token';
+      (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+        ...baseUser,
+        userLevel: UserLevel.VERIFIED,
+      });
+      (deps.userRepository.clearWalletAddress as jest.Mock).mockResolvedValue(
+        true
+      );
+      (
+        deps.userRepository.getAuthenticatedUserData as jest.Mock
+      ).mockResolvedValue({
+        user: { ...baseUser, userLevel: UserLevel.VERIFIED },
+        roles: [],
+        hasCredentials: false,
+      });
+      (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(
+        true
+      );
+      (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
 
-            // Mock dependencies
-            (deps.userRepository.findByEmail as jest.Mock).mockResolvedValue(null);
-            (deps.passwordService.hash as jest.Mock).mockResolvedValue(testPasswordHash);
-            (deps.userRepository.create as jest.Mock).mockResolvedValue({
-                id: testUserId,
-                email: testEmail,
-                userLevel: testUserLevel,
-            });
-            (deps.tokenService.generateAccessToken as jest.Mock).mockReturnValue(testAccessToken);
-            (deps.tokenService.generateRefreshToken as jest.Mock).mockReturnValue(testRefreshToken);
+      const result = await authService.unlinkWallet(testUserId);
 
-            const result = await authService.register(testEmail, testPassword);
-
-            expect(result.success).toBe(true);
-            expect(result.user?.id).toEqual(testUserId);
-            expect(result.user?.email).toEqual(testEmail);
-            expect(result.user?.userLevel).toEqual(testUserLevel);
-            expect(result.tokens?.accessToken).toEqual(testAccessToken);
-            expect(result.tokens?.refreshToken).toEqual(testRefreshToken);
-
-            expect(deps.userRepository.findByEmail).toHaveBeenCalledWith(testEmail);
-            expect(deps.passwordService.hash).toHaveBeenCalledWith(testPassword);
-            expect(deps.userRepository.create).toHaveBeenCalled();
-            expect(deps.tokenService.generateAccessToken).toHaveBeenCalled();
-            expect(deps.tokenService.generateRefreshToken).toHaveBeenCalled();
-            expect(deps.logger.info).toHaveBeenCalled();
-            expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
-                expect.objectContaining({ action: 'USER_REGISTERED' })
-            );
-        });
-
-        it('should fail to register when email already exists', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testEmail = 'test@example.com';
-            const testPassword = 'Password123!';
-
-            (deps.userRepository.findByEmail as jest.Mock).mockResolvedValue({
-                id: 'existing-user',
-                email: testEmail,
-            });
-
-            const result = await authService.register(testEmail, testPassword);
-
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('Email already registered');
-            expect(deps.logger.warn).toHaveBeenCalled();
-            expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
-                expect.objectContaining({ action: 'USER_REGISTRATION_FAILED' })
-            );
-        });
-
-        it('should handle registration errors', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testEmail = 'test@example.com';
-            const testPassword = 'Password123!';
-
-            (deps.userRepository.findByEmail as jest.Mock).mockRejectedValue(new Error('Database error'));
-
-            const result = await authService.register(testEmail, testPassword);
-
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('Registration failed');
-            expect(deps.logger.error).toHaveBeenCalled();
-        });
+      expect(result.success).toBe(true);
+      expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(
+        testUserId,
+        UserLevel.BASIC
+      );
     });
 
-    describe('User Login', () => {
-        it('should successfully login a user with valid credentials', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
+    it("should downgrade VERIFIED user with Kodiak to REGISTERED", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
 
-            const testEmail = 'test@example.com';
-            const testPassword = 'Password123!';
-            const testUserId = 'user-123';
-            const testUserLevel = UserLevel.VERIFIED;
-            const testPasswordHash = 'hashed-password';
-            const testAccessToken = 'access-token';
-            const testRefreshToken = 'refresh-token';
+      (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+        ...baseUser,
+        userLevel: UserLevel.VERIFIED,
+      });
+      (deps.userRepository.clearWalletAddress as jest.Mock).mockResolvedValue(
+        true
+      );
+      (
+        deps.userRepository.getAuthenticatedUserData as jest.Mock
+      ).mockResolvedValue({
+        user: { ...baseUser, userLevel: UserLevel.VERIFIED },
+        roles: [],
+        hasCredentials: true,
+      });
+      (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(
+        true
+      );
+      (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
 
-            (deps.userRepository.findByEmailWithPassword as jest.Mock).mockResolvedValue({
-                id: testUserId,
-                email: testEmail,
-                userLevel: testUserLevel,
-                passwordHash: testPasswordHash,
-            });
-            (deps.passwordService.verify as jest.Mock).mockResolvedValue(true);
-            (deps.tokenService.generateAccessToken as jest.Mock).mockReturnValue(testAccessToken);
-            (deps.tokenService.generateRefreshToken as jest.Mock).mockReturnValue(testRefreshToken);
+      const result = await authService.unlinkWallet(testUserId);
 
-            const result = await authService.login({ email: testEmail, password: testPassword });
-
-            expect(result.success).toBe(true);
-            expect(result.user?.id).toEqual(testUserId);
-            expect(result.tokens?.accessToken).toEqual(testAccessToken);
-
-            expect(deps.userRepository.findByEmailWithPassword).toHaveBeenCalledWith(testEmail);
-            expect(deps.passwordService.verify).toHaveBeenCalledWith(testPassword, testPasswordHash);
-            expect(deps.tokenService.generateAccessToken).toHaveBeenCalled();
-            expect(deps.tokenService.generateRefreshToken).toHaveBeenCalled();
-            expect(deps.logger.info).toHaveBeenCalled();
-            expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
-                expect.objectContaining({ action: 'USER_LOGIN' })
-            );
-        });
-
-        it('should fail login when user not found', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testEmail = 'nonexistent@example.com';
-            const testPassword = 'Password123!';
-
-            (deps.userRepository.findByEmailWithPassword as jest.Mock).mockResolvedValue(null);
-
-            const result = await authService.login({ email: testEmail, password: testPassword });
-
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('Invalid credentials');
-            expect(deps.logger.warn).toHaveBeenCalled();
-            expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    action: 'USER_LOGIN_FAILED',
-                    details: expect.objectContaining({ reason: 'user_not_found' })
-                })
-            );
-        });
-
-        it('should fail login when password is invalid', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testEmail = 'test@example.com';
-            const testPassword = 'WrongPassword123!';
-            const testUserId = 'user-123';
-            const testPasswordHash = 'hashed-password';
-
-            (deps.userRepository.findByEmailWithPassword as jest.Mock).mockResolvedValue({
-                id: testUserId,
-                email: testEmail,
-                userLevel: UserLevel.BASIC,
-                passwordHash: testPasswordHash,
-            });
-            (deps.passwordService.verify as jest.Mock).mockResolvedValue(false);
-
-            const result = await authService.login({ email: testEmail, password: testPassword });
-
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('Invalid credentials');
-            expect(deps.logger.warn).toHaveBeenCalled();
-            expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    action: 'USER_LOGIN_FAILED',
-                    details: expect.objectContaining({ reason: 'invalid_password' })
-                })
-            );
-        });
-
-        it('should handle login errors', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testEmail = 'test@example.com';
-            const testPassword = 'Password123!';
-
-            (deps.userRepository.findByEmailWithPassword as jest.Mock).mockRejectedValue(new Error('Database error'));
-
-            const result = await authService.login({ email: testEmail, password: testPassword });
-
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('Login failed');
-            expect(deps.logger.error).toHaveBeenCalled();
-        });
+      expect(result.success).toBe(true);
+      expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(
+        testUserId,
+        UserLevel.REGISTERED
+      );
     });
 
-    describe('Token Refresh', () => {
-        it('should successfully refresh tokens with valid refresh token', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
+    it("should fail when no linked wallet exists", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
 
-            const testUserId = 'user-123';
-            const testEmail = 'test@example.com';
-            const testUserLevel = UserLevel.VERIFIED;
-            const testRefreshToken = 'valid-refresh-token';
-            const testAccessToken = 'new-access-token';
-            const testNewRefreshToken = 'new-refresh-token';
+      (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+        ...baseUser,
+        userLevel: UserLevel.REGISTERED,
+      });
+      (deps.userRepository.clearWalletAddress as jest.Mock).mockResolvedValue(
+        false
+      );
 
-            (deps.tokenService.verifyToken as jest.Mock).mockReturnValue({ userId: testUserId });
-            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
-                id: testUserId,
-                email: testEmail,
-                userLevel: testUserLevel,
-            });
-            (deps.tokenService.generateAccessToken as jest.Mock).mockReturnValue(testAccessToken);
-            (deps.tokenService.generateRefreshToken as jest.Mock).mockReturnValue(testNewRefreshToken);
+      const result = await authService.unlinkWallet(testUserId);
 
-            const result = await authService.refreshToken(testRefreshToken);
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual("No linked wallet found");
+      expect(deps.userRepository.updateUserLevel).not.toHaveBeenCalled();
+    });
+  });
 
-            expect(result.success).toBe(true);
-            expect(result.user?.id).toEqual(testUserId);
-            expect(result.tokens?.accessToken).toEqual(testAccessToken);
-            expect(result.tokens?.refreshToken).toEqual(testNewRefreshToken);
+  describe("Legacy API Support", () => {
+    it("should detect legacy format requirement", () => {
+      // This tests the private method by accessing through prototype
+      const originalEnv = process.env.LEGACY_AUTH_API;
 
-            expect(deps.tokenService.verifyToken).toHaveBeenCalledWith(testRefreshToken, 'refresh');
-            expect(deps.userRepository.findById).toHaveBeenCalledWith(testUserId);
-            expect(deps.tokenService.generateAccessToken).toHaveBeenCalled();
-            expect(deps.tokenService.generateRefreshToken).toHaveBeenCalled();
-            expect(deps.logger.info).toHaveBeenCalled();
-        });
+      process.env.LEGACY_AUTH_API = "true";
 
-        it('should fail to refresh token with invalid token', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
+      // We need to use any type to access private properties/methods for testing
+      const getShouldReturnLegacyFormat = (service: any) =>
+        service.shouldReturnLegacyFormat();
 
-            (deps.tokenService.verifyToken as jest.Mock).mockReturnValue(null);
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
 
-            const result = await authService.refreshToken('invalid-refresh-token');
+      const result = getShouldReturnLegacyFormat(authService);
 
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('Invalid refresh token');
-            expect(deps.logger.warn).toHaveBeenCalled();
-        });
+      expect(result).toBe(true);
 
-        it('should fail to refresh token when user not found', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'nonexistent-user';
-            (deps.tokenService.verifyToken as jest.Mock).mockReturnValue({ userId: testUserId });
-            (deps.userRepository.findById as jest.Mock).mockResolvedValue(null);
-
-            const result = await authService.refreshToken('valid-refresh-token');
-
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('User not found');
-            expect(deps.logger.warn).toHaveBeenCalled();
-        });
-
-        it('should handle token refresh errors', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            (deps.tokenService.verifyToken as jest.Mock).mockImplementation(() => {
-                throw new Error('Token verification failed');
-            });
-
-            const result = await authService.refreshToken('valid-refresh-token');
-
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('Invalid refresh token');
-            expect(deps.logger.error).toHaveBeenCalled();
-        });
-
-        it('should verify refresh tokens with the refresh token type', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            (deps.tokenService.verifyToken as jest.Mock).mockReturnValue(null);
-
-            await authService.refreshToken('some-refresh-token');
-
-            // The refresh path must only accept refresh tokens - never access tokens
-            expect(deps.tokenService.verifyToken).toHaveBeenCalledWith('some-refresh-token', 'refresh');
-        });
-
-        it('should fail to refresh a blacklisted refresh token', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            (deps.tokenService.hashTokenForStorage as jest.Mock).mockReturnValue('blacklisted-hash');
-            (deps.cache.get as jest.Mock).mockResolvedValue({ success: true, data: '1' });
-
-            const result = await authService.refreshToken('blacklisted-refresh-token');
-
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('Invalid refresh token');
-            // Blacklisted tokens must be rejected before any verification work
-            expect(deps.tokenService.verifyToken).not.toHaveBeenCalled();
-        });
+      process.env.LEGACY_AUTH_API = originalEnv;
     });
 
-    describe('Logout', () => {
-        it('should blacklist refresh and access tokens on logout', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
+    it("should convert to legacy format", () => {
+      const originalEnv = process.env.LEGACY_AUTH_API;
+      process.env.LEGACY_AUTH_API = "true";
 
-            const exp = Math.floor(Date.now() / 1000) + 3600;
-            (deps.tokenService.verifyToken as jest.Mock).mockImplementation((_token, expectedType) =>
-                expectedType === 'refresh'
-                    ? { userId: 'user-123', type: 'refresh', exp }
-                    : { userId: 'user-123', type: 'access', exp }
-            );
-            (deps.tokenService.hashTokenForStorage as jest.Mock).mockReturnValue('tokenhash');
-            (deps.cache.setex as jest.Mock).mockResolvedValue({ success: true });
+      // We need to use any type to access private properties/methods for testing
+      const convertToLegacyFormat = (service: any, result: any) =>
+        service.convertToLegacyFormat(result);
 
-            const result = await authService.logout('refresh-token', 'access-token');
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
 
-            expect(result.success).toBe(true);
-            expect(result.tokensBlacklisted).toEqual(2);
-            expect(deps.cache.setex).toHaveBeenCalledTimes(2);
-            expect(deps.cache.setex).toHaveBeenCalledWith('jwt:blacklist:tokenhash', expect.any(Number), '1');
-            expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
-                expect.objectContaining({ action: 'USER_LOGGED_OUT' })
-            );
-        });
+      const testResult = {
+        success: true,
+        message: "Success",
+        user: {
+          id: "user-123",
+          email: "test@example.com",
+          userLevel: UserLevel.BASIC,
+        },
+        tokens: {
+          accessToken: "access-token",
+          refreshToken: "refresh-token",
+          expiresIn: 14400,
+        },
+      };
 
-        it('should skip blacklisting invalid tokens', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
+      const legacyResult = convertToLegacyFormat(authService, testResult);
 
-            (deps.tokenService.verifyToken as jest.Mock).mockReturnValue(null);
+      expect(legacyResult.success).toEqual(testResult.success);
+      expect(legacyResult.message).toEqual(testResult.message);
+      expect(legacyResult.user).toEqual(testResult.user);
+      expect(legacyResult.tokens).toEqual(testResult.tokens);
 
-            const result = await authService.logout('invalid-refresh-token');
-
-            expect(result.success).toBe(true);
-            expect(result.tokensBlacklisted).toEqual(0);
-            expect(deps.cache.setex).not.toHaveBeenCalled();
-        });
-
-        it('should reject a blacklisted access token during validation', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            (deps.tokenService.hashTokenForStorage as jest.Mock).mockReturnValue('tokenhash');
-            (deps.cache.get as jest.Mock).mockResolvedValue({ success: true, data: '1' });
-
-            const result = await authService.validateToken('blacklisted-access-token');
-
-            expect(result).toBeNull();
-            expect(deps.tokenService.verifyTokenWithDatabaseValidation).not.toHaveBeenCalled();
-        });
-
-        it('should accept a non-blacklisted access token during validation', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            (deps.tokenService.hashTokenForStorage as jest.Mock).mockReturnValue('tokenhash');
-            (deps.cache.get as jest.Mock).mockResolvedValue({ success: true, data: null });
-            (deps.tokenService.verifyTokenWithDatabaseValidation as jest.Mock).mockResolvedValue({
-                userId: 'user-123',
-                email: 'test@example.com',
-                userLevel: UserLevel.VERIFIED,
-            });
-
-            const result = await authService.validateToken('valid-access-token');
-
-            expect(result).not.toBeNull();
-            expect(deps.tokenService.verifyTokenWithDatabaseValidation).toHaveBeenCalled();
-        });
+      process.env.LEGACY_AUTH_API = originalEnv;
     });
+  });
 
-    describe('Token Validation', () => {
-        it('should validate valid token successfully', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
+  describe("Audit Logging", () => {
+    it("should handle audit log event failure", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
 
-            const testUserId = 'user-123';
-            const testEmail = 'test@example.com';
-            const testUserLevel = UserLevel.VERIFIED;
-            const testToken = 'valid-access-token';
+      const testEmail = "test@example.com";
+      const testPassword = "Password123!";
+      const testUserId = "user-123";
+      const testUserLevel = UserLevel.BASIC;
+      const testPasswordHash = "hashed-password";
+      const testAccessToken = "access-token";
+      const testRefreshToken = "refresh-token";
 
-            (deps.tokenService.verifyTokenWithDatabaseValidation as jest.Mock).mockResolvedValue({
-                userId: testUserId,
-                email: testEmail,
-                userLevel: testUserLevel,
-            });
+      (deps.userRepository.findByEmail as jest.Mock).mockResolvedValue(null);
+      (deps.passwordService.hash as jest.Mock).mockResolvedValue(
+        testPasswordHash
+      );
+      (deps.userRepository.create as jest.Mock).mockResolvedValue({
+        id: testUserId,
+        email: testEmail,
+        userLevel: testUserLevel,
+      });
+      (deps.tokenService.generateAccessToken as jest.Mock).mockReturnValue(
+        testAccessToken
+      );
+      (deps.tokenService.generateRefreshToken as jest.Mock).mockReturnValue(
+        testRefreshToken
+      );
+      (deps.auditLogger?.logEvent as jest.Mock).mockRejectedValue(
+        new Error("Audit log failed")
+      );
 
-            const result = await authService.validateToken(testToken);
+      const result = await authService.register(testEmail, testPassword);
 
-            expect(result).not.toBeNull();
-            expect(result?.userId).toEqual(testUserId);
-            expect(deps.tokenService.verifyTokenWithDatabaseValidation).toHaveBeenCalledWith(testToken, authService);
-        });
-
-        it('should return null for invalid token', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            (deps.tokenService.verifyTokenWithDatabaseValidation as jest.Mock).mockResolvedValue(null);
-
-            const result = await authService.validateToken('invalid-token');
-
-            expect(result).toBeNull();
-            expect(deps.logger.debug).toHaveBeenCalled();
-        });
-
-        it('should handle token validation errors', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            (deps.tokenService.verifyTokenWithDatabaseValidation as jest.Mock).mockRejectedValue(new Error('Validation error'));
-
-            const result = await authService.validateToken('valid-token');
-
-            expect(result).toBeNull();
-            expect(deps.logger.debug).toHaveBeenCalled();
-        });
+      expect(result.success).toBe(true);
+      expect(deps.logger.warn).toHaveBeenCalledWith(
+        "Failed to log audit event",
+        expect.any(Object)
+      );
     });
-
-    describe('User Data Management', () => {
-        it('should get authenticated user data with cache hit', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            const testUserData = {
-                user: { id: testUserId, email: 'test@example.com', userLevel: UserLevel.VERIFIED },
-                roles: ['USER'],
-                hasCredentials: true,
-            };
-
-            (deps.cache.get as jest.Mock).mockResolvedValue({ success: true, data: testUserData });
-
-            const result = await authService.getAuthenticatedUserData(testUserId);
-
-            expect(result).toEqual(testUserData);
-            expect(deps.cache.get).toHaveBeenCalled();
-            expect(deps.userRepository.getAuthenticatedUserData).not.toHaveBeenCalled();
-            expect(deps.logger.debug).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ userId: testUserId }));
-        });
-
-        it('should get authenticated user data with cache miss', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            const testUserData = {
-                user: { id: testUserId, email: 'test@example.com', userLevel: UserLevel.VERIFIED },
-                roles: ['USER'],
-                hasCredentials: true,
-            };
-
-            (deps.cache.get as jest.Mock).mockResolvedValue({ success: false, data: null });
-            (deps.userRepository.getAuthenticatedUserData as jest.Mock).mockResolvedValue(testUserData);
-            (deps.cache.setex as jest.Mock).mockResolvedValue({ success: true });
-
-            const result = await authService.getAuthenticatedUserData(testUserId);
-
-            expect(result).toEqual(testUserData);
-            expect(deps.cache.get).toHaveBeenCalled();
-            expect(deps.userRepository.getAuthenticatedUserData).toHaveBeenCalledWith(testUserId);
-            expect(deps.cache.setex).toHaveBeenCalled();
-            expect(deps.logger.debug).toHaveBeenCalledWith('Auth user data cache miss, querying repository', expect.any(Object));
-        });
-
-        it('should handle cache set failure when storing authenticated user data', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            const testUserData = {
-                user: { id: testUserId, email: 'test@example.com', userLevel: UserLevel.VERIFIED },
-                roles: ['USER'],
-                hasCredentials: true,
-            };
-
-            (deps.cache.get as jest.Mock).mockResolvedValue({ success: false, data: null });
-            (deps.userRepository.getAuthenticatedUserData as jest.Mock).mockResolvedValue(testUserData);
-            (deps.cache.setex as jest.Mock).mockResolvedValue({ success: false, error: 'Cache storage failed' });
-
-            const result = await authService.getAuthenticatedUserData(testUserId);
-
-            expect(result).toEqual(testUserData);
-            expect(deps.cache.get).toHaveBeenCalled();
-            expect(deps.userRepository.getAuthenticatedUserData).toHaveBeenCalledWith(testUserId);
-            expect(deps.cache.setex).toHaveBeenCalled();
-            expect(deps.logger.warn).toHaveBeenCalled();
-        });
-
-        it('should return null when user data not found', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'nonexistent-user';
-
-            (deps.cache.get as jest.Mock).mockResolvedValue({ success: false, data: null });
-            (deps.userRepository.getAuthenticatedUserData as jest.Mock).mockResolvedValue(null);
-
-            const result = await authService.getAuthenticatedUserData(testUserId);
-
-            expect(result).toBeNull();
-        });
-
-        it('should handle getting user data errors', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-
-            (deps.cache.get as jest.Mock).mockRejectedValue(new Error('Cache error'));
-
-            const result = await authService.getAuthenticatedUserData(testUserId);
-
-            expect(result).toBeNull();
-            expect(deps.logger.error).toHaveBeenCalled();
-        });
-
-        it('should invalidate user data cache', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
-
-            await authService.invalidateUserDataCache(testUserId);
-
-            expect(deps.cache.delete).toHaveBeenCalled();
-            expect(deps.logger.debug).toHaveBeenCalled();
-        });
-
-        it('should handle cache invalidation errors', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            (deps.cache.delete as jest.Mock).mockResolvedValue({ success: false, error: 'Cache error' });
-
-            await authService.invalidateUserDataCache(testUserId);
-
-            expect(deps.cache.delete).toHaveBeenCalled();
-            expect(deps.logger.warn).toHaveBeenCalled();
-        });
-    });
-
-    describe('User Level Management', () => {
-        it('should update user level successfully', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            const testNewLevel = UserLevel.VERIFIED;
-
-            (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(true);
-            (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
-
-            const result = await authService.updateUserLevel(testUserId, testNewLevel);
-
-            expect(result).toBe(true);
-            expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(testUserId, testNewLevel);
-            expect(deps.cache.delete).toHaveBeenCalled();
-            expect(deps.logger.info).toHaveBeenCalled();
-            expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    action: 'USER_LEVEL_UPDATED',
-                    details: expect.objectContaining({ newLevel: testNewLevel })
-                })
-            );
-        });
-
-        it('should return false when user level update fails', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            const testNewLevel = UserLevel.VERIFIED;
-
-            (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(false);
-
-            const result = await authService.updateUserLevel(testUserId, testNewLevel);
-
-            expect(result).toBe(false);
-        });
-
-        it('should handle user level update errors', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            const testNewLevel = UserLevel.VERIFIED;
-
-            (deps.userRepository.updateUserLevel as jest.Mock).mockRejectedValue(new Error('Database error'));
-
-            const result = await authService.updateUserLevel(testUserId, testNewLevel);
-
-            expect(result).toBe(false);
-            expect(deps.logger.error).toHaveBeenCalled();
-        });
-    });
-
-    describe('User Lookup', () => {
-        it('should get user by ID successfully', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            const testUser = {
-                id: testUserId,
-                email: 'test@example.com',
-                userLevel: UserLevel.BASIC,
-            };
-
-            (deps.userRepository.findById as jest.Mock).mockResolvedValue(testUser);
-
-            const result = await authService.getUserById(testUserId);
-
-            expect(result).toEqual(testUser);
-            expect(deps.userRepository.findById).toHaveBeenCalledWith(testUserId);
-        });
-
-        it('should handle user lookup errors', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-
-            (deps.userRepository.findById as jest.Mock).mockRejectedValue(new Error('Database error'));
-
-            const result = await authService.getUserById(testUserId);
-
-            expect(result).toBeNull();
-            expect(deps.logger.error).toHaveBeenCalled();
-        });
-    });
-
-    describe('Password Management', () => {
-        it('should verify valid password', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testPassword = 'Password123!';
-            const testPasswordHash = 'hashed-password';
-
-            (deps.passwordService.verify as jest.Mock).mockResolvedValue(true);
-
-            const result = await authService.verifyPassword(testPasswordHash, testPassword);
-
-            expect(result).toBe(true);
-            expect(deps.passwordService.verify).toHaveBeenCalledWith(testPassword, testPasswordHash);
-        });
-
-        it('should fail password verification for invalid password', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testPassword = 'WrongPassword123!';
-            const testPasswordHash = 'hashed-password';
-
-            (deps.passwordService.verify as jest.Mock).mockResolvedValue(false);
-
-            const result = await authService.verifyPassword(testPasswordHash, testPassword);
-
-            expect(result).toBe(false);
-        });
-
-        it('should handle password verification errors', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testPassword = 'Password123!';
-            const testPasswordHash = 'hashed-password';
-
-            (deps.passwordService.verify as jest.Mock).mockRejectedValue(new Error('Verification error'));
-
-            const result = await authService.verifyPassword(testPasswordHash, testPassword);
-
-            expect(result).toBe(false);
-            expect(deps.logger.error).toHaveBeenCalled();
-        });
-
-        it('should hash password successfully', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testPassword = 'Password123!';
-            const testHash = 'hashed-password';
-
-            (deps.passwordService.hash as jest.Mock).mockResolvedValue(testHash);
-
-            const result = await authService.hashPassword(testPassword);
-
-            expect(result).toEqual(testHash);
-            expect(deps.passwordService.hash).toHaveBeenCalledWith(testPassword);
-        });
-
-        it('should throw error when password hashing fails', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testPassword = 'Password123!';
-
-            (deps.passwordService.hash as jest.Mock).mockRejectedValue(new Error('Hashing error'));
-
-            await expect(authService.hashPassword(testPassword)).rejects.toThrow();
-            expect(deps.logger.error).toHaveBeenCalled();
-        });
-    });
-
-    describe('Token Invalidation', () => {
-        it('should invalidate user tokens successfully', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-
-            (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
-
-            const result = await authService.invalidateUserTokens(testUserId);
-
-            expect(result.success).toBe(true);
-            expect(result.tokensBlacklisted).toEqual(0);
-            expect(deps.cache.delete).toHaveBeenCalled();
-            expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
-                expect.objectContaining({ action: 'USER_TOKENS_INVALIDATED' })
-            );
-        });
-
-        it('should handle token invalidation errors', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-
-            (deps.cache.delete as jest.Mock).mockRejectedValue(new Error('Cache error'));
-
-            const result = await authService.invalidateUserTokens(testUserId);
-
-            expect(result.success).toBe(false);
-            expect(result.errors).toEqual(expect.arrayContaining([expect.any(String)]));
-            expect(deps.logger.error).toHaveBeenCalled();
-        });
-    });
-
-    describe('Wallet Verification (BASIC -> REGISTERED)', () => {
-        it('should verify wallet ownership and upgrade BASIC user to REGISTERED', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            const testWalletAddress = '0x742d35Cc6634C0532925a3b88650D7A3e5554A0';
-            const testSignature = '0x1234...'; // This is just a placeholder
-            const testMessage = 'Please sign this message to verify your wallet ownership';
-
-            // Mock signature verification
-            (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(true);
-
-            // No wallet linked yet
-            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(null);
-
-            // Mock current user as BASIC
-            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
-                id: testUserId,
-                email: 'test@example.com',
-                userLevel: UserLevel.BASIC,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            });
-
-            // Mock wallet persistence + level update
-            (deps.userRepository.setWalletAddress as jest.Mock).mockResolvedValue(true);
-            (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(true);
-            (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
-
-            const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
-
-            expect(result.success).toBe(true);
-            expect(result.message).toEqual('Wallet ownership verified. Your account has been upgraded to REGISTERED level.');
-            expect(deps.logger.info).toHaveBeenCalled();
-            expect(deps.userRepository.getWalletAddress).toHaveBeenCalledWith(testUserId);
-            expect(deps.userRepository.setWalletAddress).toHaveBeenCalledWith(testUserId, testWalletAddress.toLowerCase());
-            expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(testUserId, UserLevel.REGISTERED);
-        });
-
-        it('should re-verify wallet for already REGISTERED user without level change', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            const testWalletAddress = '0x742d35Cc6634C0532925a3b88650D7A3e5554A0';
-            const testSignature = '0x1234...';
-            const testMessage = 'Please sign this message to verify your wallet ownership';
-
-            (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(true);
-            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(testWalletAddress);
-            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
-                id: testUserId,
-                email: 'test@example.com',
-                userLevel: UserLevel.REGISTERED,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            });
-
-            const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
-
-            expect(result.success).toBe(true);
-            expect(result.message).toEqual('Wallet ownership verified.');
-            expect(deps.userRepository.updateUserLevel).not.toHaveBeenCalled();
-        });
-
-        it('should fail verification when signature does not match wallet address', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            const testWalletAddress = '0x742d35Cc6634C0532925a3b88650D7A3e5554A0';
-            const testSignature = '0x1234...';
-            const testMessage = 'Please sign this message to verify your wallet ownership';
-
-            // Mock signature verification failing
-            (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(false);
-
-            // Mock getting the stored wallet address
-            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(testWalletAddress);
-
-            const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
-
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('Signature does not match the provided wallet address');
-            expect(deps.logger.warn).toHaveBeenCalled();
-        });
-
-        it('should fail verification when wallet persistence fails', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            const testWalletAddress = '0x742d35Cc6634C0532925a3b88650D7A3e5554A0';
-            const testSignature = '0x1234...';
-            const testMessage = 'Please sign this message to verify your wallet ownership';
-
-            // Mock signature verification
-            (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(true);
-
-            // No wallet linked yet, persistence fails
-            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(null);
-            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
-                id: testUserId,
-                email: 'test@example.com',
-                userLevel: UserLevel.BASIC,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            });
-            (deps.userRepository.setWalletAddress as jest.Mock).mockResolvedValue(false);
-
-            const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
-
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('Wallet signature valid but failed to link wallet to account');
-            expect(deps.logger.error).toHaveBeenCalled();
-        });
-
-        it('should fail verification when wallet address does not match linked wallet', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            const testWalletAddress = '0x742d35Cc6634C0532925a3b88650D7A3e5554A0';
-            const testSignature = '0x1234...';
-            const testMessage = 'Please sign this message to verify your wallet ownership';
-
-            // Mock signature verification
-            (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(true);
-
-            // Mock getting the stored wallet address - return different address
-            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue('0x9876...');
-
-            const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
-
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('Wallet address does not match the wallet linked to your account');
-            expect(deps.logger.warn).toHaveBeenCalled();
-        });
-
-        it('should fail verification when user level update fails', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            const testWalletAddress = '0x742d35Cc6634C0532925a3b88650D7A3e5554A0';
-            const testSignature = '0x1234...';
-            const testMessage = 'Please sign this message to verify your wallet ownership';
-
-            // Mock signature verification
-            (deps.signatureVerificationService.verifySignature as jest.Mock).mockResolvedValue(true);
-
-            // No wallet linked yet; level update fails
-            (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(null);
-            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
-                id: testUserId,
-                email: 'test@example.com',
-                userLevel: UserLevel.BASIC,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            });
-            (deps.userRepository.setWalletAddress as jest.Mock).mockResolvedValue(true);
-
-            // Mock user level update failing
-            (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(false);
-            (deps.cache.delete as jest.Mock).mockResolvedValue({ success: false });
-
-            const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
-
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('Wallet verification succeeded but failed to update user level');
-            expect(deps.logger.error).toHaveBeenCalled();
-        });
-
-        it('should handle wallet verification errors', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testUserId = 'user-123';
-            const testWalletAddress = '0x1234...';
-            const testSignature = 'signature';
-            const testMessage = 'message';
-
-            // Mock signature verification throwing an error
-            (deps.signatureVerificationService.verifySignature as jest.Mock).mockImplementation(() => {
-                throw new Error('Signature verification failed');
-            });
-
-            const result = await authService.verifyWalletOwnership(testUserId, testWalletAddress, testSignature, testMessage);
-
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('Failed to verify wallet ownership');
-            expect(deps.logger.error).toHaveBeenCalled();
-        });
-    });
-
-    describe('Wallet Unlink (downgrade)', () => {
-        const testUserId = 'user-123';
-        const baseUser = {
-            id: testUserId,
-            email: 'test@example.com',
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        };
-
-        it('should unlink wallet and downgrade REGISTERED user to BASIC', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
-                ...baseUser,
-                userLevel: UserLevel.REGISTERED,
-            });
-            (deps.userRepository.clearWalletAddress as jest.Mock).mockResolvedValue(true);
-            (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(true);
-            (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
-
-            const result = await authService.unlinkWallet(testUserId);
-
-            expect(result.success).toBe(true);
-            expect(deps.userRepository.clearWalletAddress).toHaveBeenCalledWith(testUserId);
-            expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(testUserId, UserLevel.BASIC);
-        });
-
-        it('should downgrade VERIFIED user without Kodiak to BASIC', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
-                ...baseUser,
-                userLevel: UserLevel.VERIFIED,
-            });
-            (deps.userRepository.clearWalletAddress as jest.Mock).mockResolvedValue(true);
-            (deps.userRepository.getAuthenticatedUserData as jest.Mock).mockResolvedValue({
-                user: { ...baseUser, userLevel: UserLevel.VERIFIED },
-                roles: [],
-                hasCredentials: false,
-            });
-            (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(true);
-            (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
-
-            const result = await authService.unlinkWallet(testUserId);
-
-            expect(result.success).toBe(true);
-            expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(testUserId, UserLevel.BASIC);
-        });
-
-        it('should downgrade VERIFIED user with Kodiak to REGISTERED', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
-                ...baseUser,
-                userLevel: UserLevel.VERIFIED,
-            });
-            (deps.userRepository.clearWalletAddress as jest.Mock).mockResolvedValue(true);
-            (deps.userRepository.getAuthenticatedUserData as jest.Mock).mockResolvedValue({
-                user: { ...baseUser, userLevel: UserLevel.VERIFIED },
-                roles: [],
-                hasCredentials: true,
-            });
-            (deps.userRepository.updateUserLevel as jest.Mock).mockResolvedValue(true);
-            (deps.cache.delete as jest.Mock).mockResolvedValue({ success: true });
-
-            const result = await authService.unlinkWallet(testUserId);
-
-            expect(result.success).toBe(true);
-            expect(deps.userRepository.updateUserLevel).toHaveBeenCalledWith(testUserId, UserLevel.REGISTERED);
-        });
-
-        it('should fail when no linked wallet exists', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            (deps.userRepository.findById as jest.Mock).mockResolvedValue({
-                ...baseUser,
-                userLevel: UserLevel.REGISTERED,
-            });
-            (deps.userRepository.clearWalletAddress as jest.Mock).mockResolvedValue(false);
-
-            const result = await authService.unlinkWallet(testUserId);
-
-            expect(result.success).toBe(false);
-            expect(result.message).toEqual('No linked wallet found');
-            expect(deps.userRepository.updateUserLevel).not.toHaveBeenCalled();
-        });
-    });
-
-    describe('Legacy API Support', () => {
-        it('should detect legacy format requirement', () => {
-            // This tests the private method by accessing through prototype
-            const originalEnv = process.env.LEGACY_AUTH_API;
-
-            process.env.LEGACY_AUTH_API = 'true';
-
-            // We need to use any type to access private properties/methods for testing
-            const getShouldReturnLegacyFormat = (service: any) => service.shouldReturnLegacyFormat();
-
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const result = getShouldReturnLegacyFormat(authService);
-
-            expect(result).toBe(true);
-
-            process.env.LEGACY_AUTH_API = originalEnv;
-        });
-
-        it('should convert to legacy format', () => {
-            const originalEnv = process.env.LEGACY_AUTH_API;
-            process.env.LEGACY_AUTH_API = 'true';
-
-            // We need to use any type to access private properties/methods for testing
-            const convertToLegacyFormat = (service: any, result: any) => service.convertToLegacyFormat(result);
-
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testResult = {
-                success: true,
-                message: 'Success',
-                user: { id: 'user-123', email: 'test@example.com', userLevel: UserLevel.BASIC },
-                tokens: {
-                    accessToken: 'access-token',
-                    refreshToken: 'refresh-token',
-                    expiresIn: 14400,
-                },
-            };
-
-            const legacyResult = convertToLegacyFormat(authService, testResult);
-
-            expect(legacyResult.success).toEqual(testResult.success);
-            expect(legacyResult.message).toEqual(testResult.message);
-            expect(legacyResult.user).toEqual(testResult.user);
-            expect(legacyResult.tokens).toEqual(testResult.tokens);
-
-            process.env.LEGACY_AUTH_API = originalEnv;
-        });
-    });
-
-    describe('Audit Logging', () => {
-        it('should handle audit log event failure', async () => {
-            const deps = createMockDependencies();
-            const authService = new AuthService(deps);
-
-            const testEmail = 'test@example.com';
-            const testPassword = 'Password123!';
-            const testUserId = 'user-123';
-            const testUserLevel = UserLevel.BASIC;
-            const testPasswordHash = 'hashed-password';
-            const testAccessToken = 'access-token';
-            const testRefreshToken = 'refresh-token';
-
-            (deps.userRepository.findByEmail as jest.Mock).mockResolvedValue(null);
-            (deps.passwordService.hash as jest.Mock).mockResolvedValue(testPasswordHash);
-            (deps.userRepository.create as jest.Mock).mockResolvedValue({
-                id: testUserId,
-                email: testEmail,
-                userLevel: testUserLevel,
-            });
-            (deps.tokenService.generateAccessToken as jest.Mock).mockReturnValue(testAccessToken);
-            (deps.tokenService.generateRefreshToken as jest.Mock).mockReturnValue(testRefreshToken);
-            (deps.auditLogger?.logEvent as jest.Mock).mockRejectedValue(new Error('Audit log failed'));
-
-            const result = await authService.register(testEmail, testPassword);
-
-            expect(result.success).toBe(true);
-            expect(deps.logger.warn).toHaveBeenCalledWith(
-                'Failed to log audit event',
-                expect.any(Object)
-            );
-        });
-    });
+  });
 });

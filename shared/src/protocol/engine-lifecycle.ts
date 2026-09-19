@@ -27,21 +27,21 @@ import { ProtocolMessage } from "./bot-command";
 export type EngineLifecycleEventType = "ENGINE_REGISTER" | "ENGINE_HEARTBEAT";
 
 export interface EngineRegisterEventPayload {
-    engineId: string;
-    /** Monotonically increasing on every engine restart. */
-    epoch: number;
-    /** Engine build/version string, e.g. "kodiak@1.2.0". */
-    version: string;
-    /** ISO-8601 timestamp of the engine process start. */
-    startedAt: string;
+  engineId: string;
+  /** Monotonically increasing on every engine restart. */
+  epoch: number;
+  /** Engine build/version string, e.g. "kodiak@1.2.0". */
+  version: string;
+  /** ISO-8601 timestamp of the engine process start. */
+  startedAt: string;
 }
 
 export interface EngineHeartbeatEventPayload {
-    engineId: string;
-    epoch: number;
-    /** Bot ids the engine currently considers active (STARTING/RUNNING/STOPPING). */
-    activeBotIds: string[];
-    version: string;
+  engineId: string;
+  epoch: number;
+  /** Bot ids the engine currently considers active (STARTING/RUNNING/STOPPING). */
+  activeBotIds: string[];
+  version: string;
 }
 
 export type EngineLifecycleEventPayload =
@@ -56,27 +56,27 @@ export type EngineLifecycleEvent = ProtocolMessage<EngineLifecycleEventPayload>;
 export function isEngineRegisterEvent(
   obj: unknown
 ): obj is ProtocolMessage<EngineRegisterEventPayload> {
-    const payload = (obj as { payload?: EngineRegisterEventPayload })?.payload;
-    return (
-        typeof obj === "object" &&
-        obj !== null &&
-        (obj as { type?: string }).type === "ENGINE_REGISTER" &&
-        typeof payload?.engineId === "string" &&
-        typeof payload.epoch === "number" &&
-        typeof payload.version === "string"
-    );
+  const payload = (obj as { payload?: EngineRegisterEventPayload })?.payload;
+  return (
+    typeof obj === "object" &&
+    obj !== null &&
+    (obj as { type?: string }).type === "ENGINE_REGISTER" &&
+    typeof payload?.engineId === "string" &&
+    typeof payload.epoch === "number" &&
+    typeof payload.version === "string"
+  );
 }
 
 export function isEngineHeartbeatEvent(
   obj: unknown
 ): obj is ProtocolMessage<EngineHeartbeatEventPayload> {
-    const payload = (obj as { payload?: EngineHeartbeatEventPayload })?.payload;
-    return (
-        typeof obj === "object" &&
-        obj !== null &&
-        (obj as { type?: string }).type === "ENGINE_HEARTBEAT" &&
-        typeof payload?.engineId === "string" &&
-        typeof payload.epoch === "number" &&
-        Array.isArray(payload.activeBotIds)
-    );
+  const payload = (obj as { payload?: EngineHeartbeatEventPayload })?.payload;
+  return (
+    typeof obj === "object" &&
+    obj !== null &&
+    (obj as { type?: string }).type === "ENGINE_HEARTBEAT" &&
+    typeof payload?.engineId === "string" &&
+    typeof payload.epoch === "number" &&
+    Array.isArray(payload.activeBotIds)
+  );
 }

@@ -9,15 +9,15 @@
 
 // Types
 export type {
-    KodiakCredentials,
-    KodiakStatus,
-    AccountOverview,
-    ProfileFormData,
-    ProfileUpdatePayload,
-    SettingsState,
-    ProfileState,
-    SettingsActions,
-    ProfileActions,
+  KodiakCredentials,
+  KodiakStatus,
+  AccountOverview,
+  ProfileFormData,
+  ProfileUpdatePayload,
+  SettingsState,
+  ProfileState,
+  SettingsActions,
+  ProfileActions,
 } from "./types/settings.types";
 
 // Components

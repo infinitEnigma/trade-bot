@@ -19,22 +19,22 @@ import { authLogger } from "../../core/logging";
 import { progressiveAuthLimiter } from "../../infrastructure/security/rate-limiter.service";
 import { acquireRefreshMutex, releaseRefreshMutex } from "./auth-refresh-mutex";
 import {
-    clearSessionCookies,
-    setRefreshedSessionCookies,
+  clearSessionCookies,
+  setRefreshedSessionCookies,
 } from "./auth-session-cookies";
 import {
-    hydrateSessionUser,
-    isLightweightEndpoint,
+  hydrateSessionUser,
+  isLightweightEndpoint,
 } from "./auth-session-hydrator";
 import {
-    AUTH_ERROR_CODES,
-    isDefinitiveRefreshFailure,
+  AUTH_ERROR_CODES,
+  isDefinitiveRefreshFailure,
 } from "./auth-error-codes";
 
 // Re-export the extracted helpers so existing deep imports keep working.
 export {
-    isLightweightEndpoint,
-    LIGHTWEIGHT_ENDPOINT_PREFIXES,
+  isLightweightEndpoint,
+  LIGHTWEIGHT_ENDPOINT_PREFIXES,
 } from "./auth-session-hydrator";
 export { RELEASE_LOCK_SCRIPT } from "./auth-refresh-mutex";
 export { AUTH_ERROR_CODES } from "./auth-error-codes";
@@ -144,9 +144,9 @@ async function retryTokenRefresh(
       "All token refresh attempts failed",
       lastError instanceof Error ? lastError : undefined,
       {
-      attempts: maxRetries,
-      userId,
-      lockAcquired,
+        attempts: maxRetries,
+        userId,
+        lockAcquired,
       }
     );
 
@@ -247,8 +247,8 @@ async function finalizeRefreshedSession(
       "Refreshed user not found for hydrator endpoint",
       undefined,
       {
-      userId: newPayload.userId,
-      endpoint: req.path,
+        userId: newPayload.userId,
+        endpoint: req.path,
       }
     );
     res.status(401).json({
@@ -256,8 +256,8 @@ async function finalizeRefreshedSession(
       code: AUTH_ERROR_CODES.USER_NOT_FOUND,
       message:
         hydration.failure === "USER_NOT_FOUND"
-        ? "Unauthorized - refreshed user not found"
-        : "Unauthorized - refreshed user data not found",
+          ? "Unauthorized - refreshed user not found"
+          : "Unauthorized - refreshed user data not found",
     });
     return;
   }
@@ -316,8 +316,8 @@ export async function authMiddleware(
         authLogger.debug(
           "Access token missing, attempting refresh with refresh token",
           {
-          path: req.path,
-          method: req.method,
+            path: req.path,
+            method: req.method,
           }
         );
 
@@ -339,10 +339,10 @@ export async function authMiddleware(
             "Token refresh process failed",
             refreshError instanceof Error ? refreshError : undefined,
             {
-            error:
-              refreshError instanceof Error
-                ? refreshError.message
-                : String(refreshError),
+              error:
+                refreshError instanceof Error
+                  ? refreshError.message
+                  : String(refreshError),
             }
           );
           res.status(401).json({
@@ -395,8 +395,8 @@ export async function authMiddleware(
         code: AUTH_ERROR_CODES.USER_NOT_FOUND,
         message:
           freshHydration.failure === "USER_NOT_FOUND"
-          ? "Unauthorized - user not found"
-          : "Unauthorized - refreshed user data not found",
+            ? "Unauthorized - user not found"
+            : "Unauthorized - refreshed user data not found",
       });
       return;
     }
@@ -420,7 +420,7 @@ export async function authMiddleware(
       "Auth middleware error",
       error instanceof Error ? error : undefined,
       {
-      error: error instanceof Error ? error.message : String(error),
+        error: error instanceof Error ? error.message : String(error),
       }
     );
 
@@ -463,10 +463,10 @@ export async function authMiddleware(
           "Token refresh process failed",
           refreshError instanceof Error ? refreshError : undefined,
           {
-          error:
-            refreshError instanceof Error
-              ? refreshError.message
-              : String(refreshError),
+            error:
+              refreshError instanceof Error
+                ? refreshError.message
+                : String(refreshError),
           }
         );
         res.status(401).json({

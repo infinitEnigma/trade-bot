@@ -18,11 +18,11 @@ export { dashboardService } from "./services";
 
 // Types
 export type {
-    BalanceData,
-    Position,
-    Trade,
-    PortfolioData,
-    PortfolioPerformancePoint,
-    DashboardState,
-    DashboardActions,
+  BalanceData,
+  Position,
+  Trade,
+  PortfolioData,
+  PortfolioPerformancePoint,
+  DashboardState,
+  DashboardActions,
 } from "./types";

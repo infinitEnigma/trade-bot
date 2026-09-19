@@ -15,28 +15,28 @@ const pagePatterns = {
 } as const;
 
 export const usePageBackground = () => {
-    const location = useLocation();
+  const location = useLocation();
 
-    useEffect(() => {
-        // Remove all existing pattern classes
-        const patternClasses = Object.values(pagePatterns).filter(Boolean);
-        document.body.classList.remove(...patternClasses);
+  useEffect(() => {
+    // Remove all existing pattern classes
+    const patternClasses = Object.values(pagePatterns).filter(Boolean);
+    document.body.classList.remove(...patternClasses);
 
-        // Add the appropriate pattern class for the current page
-        const currentPath = location.pathname;
+    // Add the appropriate pattern class for the current page
+    const currentPath = location.pathname;
     const patternClass =
       pagePatterns[currentPath as keyof typeof pagePatterns] ||
       pagePatterns["/dashboard"]; // Default to dashboard pattern
 
-        if (patternClass) {
-            document.body.classList.add(patternClass);
-        }
+    if (patternClass) {
+      document.body.classList.add(patternClass);
+    }
 
-        // Cleanup function to remove pattern on unmount
-        return () => {
-            if (patternClass) {
-                document.body.classList.remove(patternClass);
-            }
-        };
-    }, [location.pathname]);
+    // Cleanup function to remove pattern on unmount
+    return () => {
+      if (patternClass) {
+        document.body.classList.remove(patternClass);
+      }
+    };
+  }, [location.pathname]);
 };

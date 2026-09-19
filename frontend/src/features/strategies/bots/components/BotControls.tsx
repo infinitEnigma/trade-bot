@@ -131,11 +131,11 @@ const QualificationCheckButton: React.FC = () => {
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error
-        ? error.message
+          ? error.message
           : typeof error === "object" && error !== null && "response" in error
             ? (error as { response: { data: { error: string } } }).response.data
                 .error
-          : "Failed to check qualification";
+            : "Failed to check qualification";
       OperationToasts.qualificationFailed(errorMessage);
     } finally {
       setIsChecking(false);
@@ -190,11 +190,11 @@ export const BotControls: React.FC<BotControlsProps> = ({
     onError: (error: unknown) => {
       const errorMessage =
         error instanceof Error
-        ? error.message
+          ? error.message
           : typeof error === "object" && error !== null && "response" in error
             ? (error as { response: { data: { error: string } } }).response.data
                 .error
-          : "Unknown error";
+            : "Unknown error";
       OperationToasts.botError("start", errorMessage);
     },
   });
@@ -209,11 +209,11 @@ export const BotControls: React.FC<BotControlsProps> = ({
     onError: (error: unknown) => {
       const errorMessage =
         error instanceof Error
-        ? error.message
+          ? error.message
           : typeof error === "object" && error !== null && "response" in error
             ? (error as { response: { data: { error: string } } }).response.data
                 .error
-          : "Unknown error";
+            : "Unknown error";
       OperationToasts.botError("stop", errorMessage);
     },
   });
@@ -228,11 +228,11 @@ export const BotControls: React.FC<BotControlsProps> = ({
     onError: (error: unknown) => {
       const errorMessage =
         error instanceof Error
-        ? error.message
+          ? error.message
           : typeof error === "object" && error !== null && "response" in error
             ? (error as { response: { data: { error: string } } }).response.data
                 .error
-          : "Unknown error";
+            : "Unknown error";
       OperationToasts.botError("emergency stop", errorMessage);
     },
   });
@@ -323,7 +323,7 @@ export const BotControls: React.FC<BotControlsProps> = ({
             onClick={() => {
               if (
                 window.confirm(
-                "🚨 EMERGENCY STOP\n\nThis will immediately cancel ALL open orders and stop trading.\n\nAre you sure?"
+                  "🚨 EMERGENCY STOP\n\nThis will immediately cancel ALL open orders and stop trading.\n\nAre you sure?"
                 )
               ) {
                 emergencyStopMutation.mutate();

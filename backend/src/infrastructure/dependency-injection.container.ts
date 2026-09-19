@@ -63,356 +63,356 @@ import { UserKodiakService } from "../core/user/user-kodiak.service";
  * Ensures proper instantiation order and dependency resolution for clean architecture.
  */
 export class DependencyInjectionContainer {
-    // ===========================================
-    // INFRASTRUCTURE ADAPTERS (Singletons)
-    // ===========================================
+  // ===========================================
+  // INFRASTRUCTURE ADAPTERS (Singletons)
+  // ===========================================
 
-    /**
-     * Cache Service - Redis-based caching with TTL support
-     */
-    get cacheService() {
-        return redisCacheAdapter;
-    }
+  /**
+   * Cache Service - Redis-based caching with TTL support
+   */
+  get cacheService() {
+    return redisCacheAdapter;
+  }
 
-    /**
-     * Logger Service - Winston-based logging with context support
-     */
-    get loggerService() {
-        return loggerAdapter;
-    }
+  /**
+   * Logger Service - Winston-based logging with context support
+   */
+  get loggerService() {
+    return loggerAdapter;
+  }
 
-    /**
-     * Token Service - JWT token generation and verification
-     */
-    get tokenService() {
-        return jwtTokenAdapter;
-    }
+  /**
+   * Token Service - JWT token generation and verification
+   */
+  get tokenService() {
+    return jwtTokenAdapter;
+  }
 
-    /**
-     * Password Service - bcrypt hashing with worker threads
-     */
-    get passwordService() {
-        return passwordAdapter;
-    }
+  /**
+   * Password Service - bcrypt hashing with worker threads
+   */
+  get passwordService() {
+    return passwordAdapter;
+  }
 
-    /**
-     * Encryption Service - AES-256-GCM with key rotation
-     */
-    get encryptionService() {
-        return encryptionAdapter;
-    }
+  /**
+   * Encryption Service - AES-256-GCM with key rotation
+   */
+  get encryptionService() {
+    return encryptionAdapter;
+  }
 
-    /**
-     * External API Service - Kodiak exchange integration
-     */
-    get externalApiService() {
-        return externalApiAdapter;
-    }
+  /**
+   * External API Service - Kodiak exchange integration
+   */
+  get externalApiService() {
+    return externalApiAdapter;
+  }
 
-    // ===========================================
-    // REPOSITORY ADAPTERS (Data Access)
-    // ===========================================
+  // ===========================================
+  // REPOSITORY ADAPTERS (Data Access)
+  // ===========================================
 
-    /**
-     * User Repository - PostgreSQL user data access
-     */
-    get userRepository() {
-        return userRepositoryAdapter;
-    }
+  /**
+   * User Repository - PostgreSQL user data access
+   */
+  get userRepository() {
+    return userRepositoryAdapter;
+  }
 
-    /**
-     * Balance Repository - Balance data persistence
-     */
-    get balanceRepository() {
-        return balanceRepositoryAdapter;
-    }
+  /**
+   * Balance Repository - Balance data persistence
+   */
+  get balanceRepository() {
+    return balanceRepositoryAdapter;
+  }
 
-    /**
-     * Position Repository - Position data management
-     */
-    get positionRepository() {
-        return positionRepositoryAdapter;
-    }
+  /**
+   * Position Repository - Position data management
+   */
+  get positionRepository() {
+    return positionRepositoryAdapter;
+  }
 
-    /**
-     * Trade Repository - Trade history storage
-     */
-    get tradeRepository() {
-        return tradeRepositoryAdapter;
-    }
+  /**
+   * Trade Repository - Trade history storage
+   */
+  get tradeRepository() {
+    return tradeRepositoryAdapter;
+  }
 
-    /**
-     * Strategy Repository - Trading strategy configuration
-     */
-    get strategyRepository() {
-        return strategyRepositoryAdapter;
-    }
+  /**
+   * Strategy Repository - Trading strategy configuration
+   */
+  get strategyRepository() {
+    return strategyRepositoryAdapter;
+  }
 
-    /**
-     * Kodiak Credentials Repository - Exchange credential management
-     */
-    get kodiakCredentialsRepository() {
-        return kodiakCredentialsRepositoryAdapter;
-    }
+  /**
+   * Kodiak Credentials Repository - Exchange credential management
+   */
+  get kodiakCredentialsRepository() {
+    return kodiakCredentialsRepositoryAdapter;
+  }
 
-    /**
-     * Audit Log Repository - Security audit logging
-     */
-    get auditLogRepository() {
-        return auditLogRepositoryAdapter;
-    }
+  /**
+   * Audit Log Repository - Security audit logging
+   */
+  get auditLogRepository() {
+    return auditLogRepositoryAdapter;
+  }
 
-    /**
-     * Role Repository - Role management data access
-     */
-    get roleRepository() {
-        return roleRepositoryAdapter;
-    }
+  /**
+   * Role Repository - Role management data access
+   */
+  get roleRepository() {
+    return roleRepositoryAdapter;
+  }
 
-    /**
-     * Bot Instance Repository - Bot instance data management
-     */
-    get botInstanceRepository() {
-        return botInstanceRepositoryAdapter;
-    }
+  /**
+   * Bot Instance Repository - Bot instance data management
+   */
+  get botInstanceRepository() {
+    return botInstanceRepositoryAdapter;
+  }
 
-    // ===========================================
-    // PURE BUSINESS SERVICES (Dependency Injection)
-    // ===========================================
+  // ===========================================
+  // PURE BUSINESS SERVICES (Dependency Injection)
+  // ===========================================
 
-    /**
-     * Balance Service - Pure business logic for balance management
-     */
-    get balanceService(): BalanceService {
-        return new BalanceService({
-            balanceRepository: this.balanceRepository,
-            cache: this.cacheService,
-            externalApi: this.externalApiService,
+  /**
+   * Balance Service - Pure business logic for balance management
+   */
+  get balanceService(): BalanceService {
+    return new BalanceService({
+      balanceRepository: this.balanceRepository,
+      cache: this.cacheService,
+      externalApi: this.externalApiService,
       logger: this.loggerService,
-        });
-    }
+    });
+  }
 
-    /**
-     * Signature Verification Service - Ethereum wallet signature verification
-     */
-    get signatureVerificationService() {
-        return signatureVerificationServiceAdapter;
-    }
+  /**
+   * Signature Verification Service - Ethereum wallet signature verification
+   */
+  get signatureVerificationService() {
+    return signatureVerificationServiceAdapter;
+  }
 
-    /**
-     * Auth Service - Pure business logic for authentication
-     */
-    get authService(): AuthService {
-        return new AuthService({
-            userRepository: this.userRepository,
-            cache: this.cacheService,
-            tokenService: this.tokenService,
-            passwordService: this.passwordService,
-            logger: this.loggerService,
-            auditLogger: this.auditLogRepository,
+  /**
+   * Auth Service - Pure business logic for authentication
+   */
+  get authService(): AuthService {
+    return new AuthService({
+      userRepository: this.userRepository,
+      cache: this.cacheService,
+      tokenService: this.tokenService,
+      passwordService: this.passwordService,
+      logger: this.loggerService,
+      auditLogger: this.auditLogRepository,
       signatureVerificationService: this.signatureVerificationService,
-        });
-    }
+    });
+  }
 
-    /**
-     * Position Service - Pure business logic for position management
-     */
-    get positionService(): PositionService {
-        return new PositionService({
-            positionRepository: this.positionRepository,
-            cache: this.cacheService,
-            externalApi: this.externalApiService,
+  /**
+   * Position Service - Pure business logic for position management
+   */
+  get positionService(): PositionService {
+    return new PositionService({
+      positionRepository: this.positionRepository,
+      cache: this.cacheService,
+      externalApi: this.externalApiService,
       logger: this.loggerService,
-        });
-    }
+    });
+  }
 
-    /**
-     * Role Management Service - Pure business logic for role management
-     */
-    get roleManagementService(): RoleManagementService {
-        return new RoleManagementService({
-            roleRepository: this.roleRepository,
-            auditLogger: this.auditLogRepository,
-            cache: this.cacheService,
+  /**
+   * Role Management Service - Pure business logic for role management
+   */
+  get roleManagementService(): RoleManagementService {
+    return new RoleManagementService({
+      roleRepository: this.roleRepository,
+      auditLogger: this.auditLogRepository,
+      cache: this.cacheService,
       logger: this.loggerService,
-        });
-    }
+    });
+  }
 
-    /**
-     * Role Qualification Service - Pure business logic for role qualification
-     */
-    get roleQualificationService(): RoleQualificationService {
-        return new RoleQualificationService({
-            userRepository: this.userRepository,
-            cache: this.cacheService,
+  /**
+   * Role Qualification Service - Pure business logic for role qualification
+   */
+  get roleQualificationService(): RoleQualificationService {
+    return new RoleQualificationService({
+      userRepository: this.userRepository,
+      cache: this.cacheService,
       logger: this.loggerService,
-        });
-    }
+    });
+  }
 
-    /**
-     * Wallet Qualification Service - Pure business logic for wallet qualification
-     */
-    get walletQualificationService(): WalletQualificationService {
-        return new WalletQualificationService({
-            userRepository: this.userRepository,
-            externalApi: this.externalApiService,
+  /**
+   * Wallet Qualification Service - Pure business logic for wallet qualification
+   */
+  get walletQualificationService(): WalletQualificationService {
+    return new WalletQualificationService({
+      userRepository: this.userRepository,
+      externalApi: this.externalApiService,
       logger: this.loggerService,
-        });
-    }
+    });
+  }
 
-    /**
-     * Strategy Service - Business logic for strategy management operations
-     */
-    get strategyService(): StrategyService {
-        return new StrategyService({
-            strategyRepository: this.strategyRepository,
-            botInstanceRepository: this.botInstanceRepository,
+  /**
+   * Strategy Service - Business logic for strategy management operations
+   */
+  get strategyService(): StrategyService {
+    return new StrategyService({
+      strategyRepository: this.strategyRepository,
+      botInstanceRepository: this.botInstanceRepository,
       logger: this.loggerService,
-        });
-    }
+    });
+  }
 
-    /**
-     * Bot Management Service - Business logic for bot management operations
-     */
-    get botManagementService(): BotManagementService {
-        return new BotManagementService({
-            botInstanceRepository: this.botInstanceRepository,
-            strategyRepository: this.strategyRepository,
-            auditLogRepository: this.auditLogRepository,
-      logger: this.loggerService,
-        });
-    }
-
-    /**
-     * Market Service - Business logic for market operations
-     */
-    get marketService(): MarketService {
-        return new MarketService({
-            kodiakCredentialsRepository: this.kodiakCredentialsRepository,
-      logger: this.loggerService,
-        });
-    }
-
-    /**
-     * Position Validator Service - Pure business logic for position validation
-     */
-    get positionValidatorService(): PositionValidatorService {
-        return new PositionValidatorService({
-            userRepository: this.userRepository,
-            positionRepository: this.positionRepository,
-            cache: this.cacheService,
-            externalApi: this.externalApiService,
-      logger: this.loggerService,
-        });
-    }
-
-    /**
-     * Position Sync Service - Pure business logic for position synchronization
-     */
-    get positionSyncService(): PositionSyncService {
-        return new PositionSyncService({
-            positionRepository: this.positionRepository,
-            userRepository: this.userRepository,
-            cache: this.cacheService,
-            externalApi: this.externalApiService,
-      logger: this.loggerService,
-        });
-    }
-
-    /**
-     * Health Service - Business logic for system health monitoring
-     */
-    get healthService(): HealthService {
-        return new HealthService({
-            logger: this.loggerService,
-      cacheService: this.cacheService,
-        });
-    }
-
-    /**
-     * User Profile Service - Pure business logic for user profile management
-     */
-    get userProfileService(): UserProfileService {
-        return new UserProfileService({
-            userRepository: this.userRepository,
-            cache: this.cacheService,
-            passwordService: this.passwordService,
+  /**
+   * Bot Management Service - Business logic for bot management operations
+   */
+  get botManagementService(): BotManagementService {
+    return new BotManagementService({
+      botInstanceRepository: this.botInstanceRepository,
+      strategyRepository: this.strategyRepository,
       auditLogRepository: this.auditLogRepository,
-        });
-    }
+      logger: this.loggerService,
+    });
+  }
 
-    /**
-     * Kodiak Connection Service - Infrastructure service for Kodiak exchange connections
-     */
-    get kodiakConnectionService() {
-        return kodiakConnectionService;
-    }
+  /**
+   * Market Service - Business logic for market operations
+   */
+  get marketService(): MarketService {
+    return new MarketService({
+      kodiakCredentialsRepository: this.kodiakCredentialsRepository,
+      logger: this.loggerService,
+    });
+  }
 
-    /**
-     * User Kodiak Service - Pure business logic for user Kodiak integration
-     */
-    get userKodiakService(): UserKodiakService {
-        return new UserKodiakService({
-            kodiakConnectionService: this.kodiakConnectionService,
-            cache: {
-                getCachedResult: async (userId: string, accountId: string) => {
-                    const cacheKey = `kodiak:connection:${userId}:${accountId}`;
-                    const result = await this.cacheService.get(cacheKey);
-                    return result.success ? result.data : null;
-                },
+  /**
+   * Position Validator Service - Pure business logic for position validation
+   */
+  get positionValidatorService(): PositionValidatorService {
+    return new PositionValidatorService({
+      userRepository: this.userRepository,
+      positionRepository: this.positionRepository,
+      cache: this.cacheService,
+      externalApi: this.externalApiService,
+      logger: this.loggerService,
+    });
+  }
+
+  /**
+   * Position Sync Service - Pure business logic for position synchronization
+   */
+  get positionSyncService(): PositionSyncService {
+    return new PositionSyncService({
+      positionRepository: this.positionRepository,
+      userRepository: this.userRepository,
+      cache: this.cacheService,
+      externalApi: this.externalApiService,
+      logger: this.loggerService,
+    });
+  }
+
+  /**
+   * Health Service - Business logic for system health monitoring
+   */
+  get healthService(): HealthService {
+    return new HealthService({
+      logger: this.loggerService,
+      cacheService: this.cacheService,
+    });
+  }
+
+  /**
+   * User Profile Service - Pure business logic for user profile management
+   */
+  get userProfileService(): UserProfileService {
+    return new UserProfileService({
+      userRepository: this.userRepository,
+      cache: this.cacheService,
+      passwordService: this.passwordService,
+      auditLogRepository: this.auditLogRepository,
+    });
+  }
+
+  /**
+   * Kodiak Connection Service - Infrastructure service for Kodiak exchange connections
+   */
+  get kodiakConnectionService() {
+    return kodiakConnectionService;
+  }
+
+  /**
+   * User Kodiak Service - Pure business logic for user Kodiak integration
+   */
+  get userKodiakService(): UserKodiakService {
+    return new UserKodiakService({
+      kodiakConnectionService: this.kodiakConnectionService,
+      cache: {
+        getCachedResult: async (userId: string, accountId: string) => {
+          const cacheKey = `kodiak:connection:${userId}:${accountId}`;
+          const result = await this.cacheService.get(cacheKey);
+          return result.success ? result.data : null;
+        },
         setCachedResult: async (
           userId: string,
           accountId: string,
           success: boolean,
           error?: string
         ) => {
-                    const cacheKey = `kodiak:connection:${userId}:${accountId}`;
-                    await this.cacheService.set(cacheKey, { success, error }, 300); // Cache for 5 minutes
+          const cacheKey = `kodiak:connection:${userId}:${accountId}`;
+          await this.cacheService.set(cacheKey, { success, error }, 300); // Cache for 5 minutes
         },
       },
-        });
-    }
+    });
+  }
 
-    /**
-     * Engine Manager - Pure business logic for engine management
-     */
-    get engineManager(): EngineManager {
-        return new EngineManager({
-            botInstanceRepository: this.botInstanceRepository,
-            logger: this.loggerService,
+  /**
+   * Engine Manager - Pure business logic for engine management
+   */
+  get engineManager(): EngineManager {
+    return new EngineManager({
+      botInstanceRepository: this.botInstanceRepository,
+      logger: this.loggerService,
       redisStreamOperations: this.redisStreamOperations,
-        });
-    }
+    });
+  }
 
-    /**
-     * WebSocket Rate Limiter - Rate limiting for WebSocket operations
-     */
-    get webSocketRateLimiter(): WebSocketRateLimiter {
-        return webSocketRateLimiter;
-    }
+  /**
+   * WebSocket Rate Limiter - Rate limiting for WebSocket operations
+   */
+  get webSocketRateLimiter(): WebSocketRateLimiter {
+    return webSocketRateLimiter;
+  }
 
-    /**
-     * Redis Stream Operations - For engine-backend communication
-     */
-    get redisStreamOperations() {
-        return redisService.streamOps;
-    }
+  /**
+   * Redis Stream Operations - For engine-backend communication
+   */
+  get redisStreamOperations() {
+    return redisService.streamOps;
+  }
 
-    // ===========================================
-    // CONTAINER MANAGEMENT
-    // ===========================================
+  // ===========================================
+  // CONTAINER MANAGEMENT
+  // ===========================================
 
-    /**
-     * Initialize all infrastructure services
-     * Call this at application startup
-     */
-    async initialize(): Promise<void> {
-        try {
-            // Log successful container initialization
+  /**
+   * Initialize all infrastructure services
+   * Call this at application startup
+   */
+  async initialize(): Promise<void> {
+    try {
+      // Log successful container initialization
       this.loggerService.info(
         "Dependency Injection Container initialized successfully",
         {
-                adapters: {
+          adapters: {
             cache: "RedisCacheAdapter",
             logger: "LoggerAdapter",
             token: "JwtTokenAdapter",
@@ -420,90 +420,90 @@ export class DependencyInjectionContainer {
             encryption: "EncryptionAdapter",
             externalApi: "ExternalApiAdapter",
             repositories: 7, // All repository adapters
-                },
-                services: {
+          },
+          services: {
             balance: "BalanceService",
             auth: "AuthService",
             position: "PositionService",
             botManagement: "BotManagementService",
           },
-                }
+        }
       );
-        } catch (error) {
+    } catch (error) {
       this.loggerService.error(
         "Failed to initialize Dependency Injection Container",
         {
           error: error instanceof Error ? error.message : String(error),
         }
       );
-            throw error;
-        }
+      throw error;
     }
+  }
 
-    /**
-     * Health check for all infrastructure services
-     */
-    async healthCheck(): Promise<{
-        healthy: boolean;
-        services: Record<string, boolean>;
-        details: Record<string, unknown>;
-    }> {
-        const services: Record<string, boolean> = {};
-        const details: Record<string, unknown> = {};
+  /**
+   * Health check for all infrastructure services
+   */
+  async healthCheck(): Promise<{
+    healthy: boolean;
+    services: Record<string, boolean>;
+    details: Record<string, unknown>;
+  }> {
+    const services: Record<string, boolean> = {};
+    const details: Record<string, unknown> = {};
 
-        try {
-            // Check cache service
+    try {
+      // Check cache service
       const cacheHealth = await this.cacheService.get("health_check");
-            services.cache = cacheHealth.success;
+      services.cache = cacheHealth.success;
       details.cache = cacheHealth.success ? "healthy" : "unhealthy";
 
-            // Check external API connectivity (this would be a lightweight test)
-            services.externalApi = true; // Assume healthy for now
+      // Check external API connectivity (this would be a lightweight test)
+      services.externalApi = true; // Assume healthy for now
       details.externalApi = "healthy";
 
-            // Check database connectivity via user repository
+      // Check database connectivity via user repository
       const _dbTest = await this.userRepository.findById("health-check-user");
-            services.database = true; // If no exception thrown
+      services.database = true; // If no exception thrown
       details.database = "healthy";
 
-            const healthy = Object.values(services).every(s => s);
+      const healthy = Object.values(services).every(s => s);
 
-            return {
-                healthy,
-                services,
+      return {
+        healthy,
+        services,
         details,
-            };
-        } catch (error) {
+      };
+    } catch (error) {
       this.loggerService.error("Health check failed", {
         error: error instanceof Error ? error.message : String(error),
-            });
+      });
 
-            return {
-                healthy: false,
-                services: { cache: false, externalApi: false, database: false },
-                details: {
+      return {
+        healthy: false,
+        services: { cache: false, externalApi: false, database: false },
+        details: {
           error: error instanceof Error ? error.message : String(error),
         },
-            };
-        }
+      };
     }
+  }
 
-    /**
-     * Get service instantiation statistics
-     */
-    getServiceStats(): {
-        infrastructureAdapters: number;
-        repositoryAdapters: number;
-        businessServices: number;
-        totalServices: number;
-    } {
-        return {
-            infrastructureAdapters: 6, // cache, logger, token, password, encryption, externalApi
-            repositoryAdapters: 8, // user, balance, position, trade, strategy, kodiakCredentials, auditLog, botInstance
-            businessServices: 4, // balance, auth, position, botManagement
+  /**
+   * Get service instantiation statistics
+   */
+  getServiceStats(): {
+    infrastructureAdapters: number;
+    repositoryAdapters: number;
+    businessServices: number;
+    totalServices: number;
+  } {
+    return {
+      infrastructureAdapters: 6, // cache, logger, token, password, encryption, externalApi
+      repositoryAdapters: 8, // user, balance, position, trade, strategy, kodiakCredentials, auditLog, botInstance
+      businessServices: 4, // balance, auth, position, botManagement
       totalServices: 18,
-        };
-    }
+    };
+  }
 }
 
 // ===========================================

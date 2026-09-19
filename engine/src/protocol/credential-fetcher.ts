@@ -20,23 +20,23 @@ const BOT_ENGINE_API_KEY = process.env.BOT_ENGINE_API_KEY || "";
  * Uses the correlationId for request tracing.
  */
 export async function fetchCredentials(
-    botId: string,
-    correlationId: string
+  botId: string,
+  correlationId: string
 ): Promise<FetchCredentialsResult> {
-    const response = await axios.get(
-        `${BACKEND_URL}/api/bot/engine/credentials/${botId}`,
-        {
-            headers: {
+  const response = await axios.get(
+    `${BACKEND_URL}/api/bot/engine/credentials/${botId}`,
+    {
+      headers: {
         "x-correlation-id": correlationId,
         "x-bot-engine-key": BOT_ENGINE_API_KEY,
-            },
-            timeout: 10000,
-        }
-    );
+      },
+      timeout: 10000,
+    }
+  );
 
-    const { accountId, accessKey, secretKey } = response.data.data;
+  const { accountId, accessKey, secretKey } = response.data.data;
 
   logger.info("Credentials fetched for bot", { botId, accountId });
 
-    return { accountId, accessKey, secretKey };
+  return { accountId, accessKey, secretKey };
 }

@@ -7,9 +7,9 @@ import { useAuth, updateAuthUser } from "./useAuth";
 import { UserLevel } from "../../../shared/types";
 
 interface ApiError extends Error {
-    response?: {
-        status?: number;
-    };
+  response?: {
+    status?: number;
+  };
 }
 
 /**
@@ -17,29 +17,29 @@ interface ApiError extends Error {
  * This replaces direct API calls in components
  */
 export const useUser = () => {
-    const { user: authUser } = useAuth();
+  const { user: authUser } = useAuth();
 
-    return useQuery({
-        queryKey: ["user", authUser?.id],
-        queryFn: () => authApi.getProfile(),
-        enabled: !!authUser?.id, // Only fetch if we have a user ID
-        staleTime: 5 * 60 * 1000, // 5 minutes - data stays fresh
-        gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache
-        refetchOnWindowFocus: false, // Don't refetch on window focus
-        refetchOnReconnect: false, // Don't refetch on reconnect
-        retry: (failureCount, error: Error) => {
-            // Don't retry on 401/403 (auth errors)
-            const apiError = error as ApiError;
+  return useQuery({
+    queryKey: ["user", authUser?.id],
+    queryFn: () => authApi.getProfile(),
+    enabled: !!authUser?.id, // Only fetch if we have a user ID
+    staleTime: 5 * 60 * 1000, // 5 minutes - data stays fresh
+    gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnReconnect: false, // Don't refetch on reconnect
+    retry: (failureCount, error: Error) => {
+      // Don't retry on 401/403 (auth errors)
+      const apiError = error as ApiError;
       if (
         apiError?.response?.status === 401 ||
         apiError?.response?.status === 403
       ) {
-                return false;
-            }
-            // Retry up to 2 times for other errors
-            return failureCount < 2;
-        },
-    });
+        return false;
+      }
+      // Retry up to 2 times for other errors
+      return failureCount < 2;
+    },
+  });
 };
 
 /**
@@ -48,99 +48,99 @@ export const useUser = () => {
  * For REGISTERED/VERIFIED users, assume connected if API fails
  */
 export const useKodiakStatus = () => {
-    const { user } = useAuth();
-    const { data: userData } = useUser();
+  const { user } = useAuth();
+  const { data: userData } = useUser();
 
-    // Follow existing pattern: only fetch for users who have Kodiak access
+  // Follow existing pattern: only fetch for users who have Kodiak access
   const hasKodiakAccess =
     user?.userLevel === UserLevel.REGISTERED ||
     user?.userLevel === UserLevel.VERIFIED;
-    const queryResult = useQuery({
-        queryKey: ["kodiak-status", user?.id],
-        queryFn: () => kodiakApi.getKodiakStatus(),
-        enabled: !!user?.id && hasKodiakAccess, // Skip for BASIC users
-        staleTime: 2 * 60 * 1000, // 2 minutes - Kodiak status changes less frequently
-        gcTime: 5 * 60 * 1000, // 5 minutes cache
-        refetchInterval: 60 * 1000, // refetch every 60 seconds
-        refetchIntervalInBackground: false, // Don't refetch when tab is not active
-        refetchOnWindowFocus: false,
-        retry: (failureCount, error: Error) => {
-            // Don't retry auth errors
-            const apiError = error as ApiError;
+  const queryResult = useQuery({
+    queryKey: ["kodiak-status", user?.id],
+    queryFn: () => kodiakApi.getKodiakStatus(),
+    enabled: !!user?.id && hasKodiakAccess, // Skip for BASIC users
+    staleTime: 2 * 60 * 1000, // 2 minutes - Kodiak status changes less frequently
+    gcTime: 5 * 60 * 1000, // 5 minutes cache
+    refetchInterval: 60 * 1000, // refetch every 60 seconds
+    refetchIntervalInBackground: false, // Don't refetch when tab is not active
+    refetchOnWindowFocus: false,
+    retry: (failureCount, error: Error) => {
+      // Don't retry auth errors
+      const apiError = error as ApiError;
       if (
         apiError?.response?.status === 401 ||
         apiError?.response?.status === 403 ||
         apiError?.response?.status === 429
       ) {
-                return false;
-            }
-            return failureCount < 1; // Only retry once for Kodiak status
-        },
-    });
+        return false;
+      }
+      return failureCount < 1; // Only retry once for Kodiak status
+    },
+  });
 
-    // For REGISTERED/VERIFIED users, assume Kodiak is connected if API fails
-    // This ensures consistency between user level and Kodiak status display
+  // For REGISTERED/VERIFIED users, assume Kodiak is connected if API fails
+  // This ensures consistency between user level and Kodiak status display
   const modifiedData = queryResult.data
     ? queryResult.data
     : hasKodiakAccess
       ? {
-            data: {
-                connected: true,
-                verified: user?.userLevel === UserLevel.VERIFIED,
-                accountId: userData?.data?.kodiakStatus?.accountId, // Get accountId from user profile
+          data: {
+            connected: true,
+            verified: user?.userLevel === UserLevel.VERIFIED,
+            accountId: userData?.data?.kodiakStatus?.accountId, // Get accountId from user profile
             connectedAt: undefined,
           },
-            }
+        }
       : null;
 
-    return {
-        ...queryResult,
-        data: modifiedData,
-    };
+  return {
+    ...queryResult,
+    data: modifiedData,
+  };
 };
 
 /**
  * Mutation hook for Kodiak connection
  */
 export const useConnectKodiak = () => {
-    const queryClient = useQueryClient();
-    const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
 
-    return useMutation({
+  return useMutation({
     mutationFn: (credentials: {
       accountId: string;
       apiKey: string;
       secretKey: string;
     }) => kodiakApi.connectKodiak(credentials),
     onSuccess: response => {
-            // Invalidate React Query caches with correct query keys (including user ID)
-            queryClient.invalidateQueries({ queryKey: ["user", user?.id] });
-            queryClient.invalidateQueries({ queryKey: ["kodiak-status", user?.id] });
+      // Invalidate React Query caches with correct query keys (including user ID)
+      queryClient.invalidateQueries({ queryKey: ["user", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["kodiak-status", user?.id] });
 
-            // Directly update the Zustand store with new user level (immediate UI update)
-            if (response.data?.userLevel) {
-                updateAuthUser({ userLevel: response.data.userLevel as UserLevel });
-            }
-        },
-    });
+      // Directly update the Zustand store with new user level (immediate UI update)
+      if (response.data?.userLevel) {
+        updateAuthUser({ userLevel: response.data.userLevel as UserLevel });
+      }
+    },
+  });
 };
 
 /**
  * Mutation hook for Kodiak disconnection
  */
 export const useDisconnectKodiak = () => {
-    const queryClient = useQueryClient();
-    const { user, refreshUser } = useAuth();
+  const queryClient = useQueryClient();
+  const { user, refreshUser } = useAuth();
 
-    return useMutation({
-        mutationFn: () => kodiakApi.disconnectKodiak(),
-        onSuccess: () => {
-            // Invalidate React Query caches with correct query keys (including user ID)
-            queryClient.invalidateQueries({ queryKey: ["user", user?.id] });
-            queryClient.invalidateQueries({ queryKey: ["kodiak-status", user?.id] });
+  return useMutation({
+    mutationFn: () => kodiakApi.disconnectKodiak(),
+    onSuccess: () => {
+      // Invalidate React Query caches with correct query keys (including user ID)
+      queryClient.invalidateQueries({ queryKey: ["user", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["kodiak-status", user?.id] });
 
-            // Also refresh the Zustand auth store to update user level
-            refreshUser();
-        },
-    });
+      // Also refresh the Zustand auth store to update user level
+      refreshUser();
+    },
+  });
 };

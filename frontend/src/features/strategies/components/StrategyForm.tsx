@@ -169,11 +169,11 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
     onError: (error: unknown) => {
       const errorMessage =
         error instanceof Error
-        ? error.message
+          ? error.message
           : typeof error === "object" && error !== null && "response" in error
             ? (error as { response: { data: { error: string } } }).response.data
                 .error
-          : "Failed to create strategy";
+            : "Failed to create strategy";
       toast.error(errorMessage);
     },
   });
@@ -212,11 +212,11 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
     onError: (error: unknown) => {
       const errorMessage =
         error instanceof Error
-        ? error.message
+          ? error.message
           : typeof error === "object" && error !== null && "response" in error
             ? (error as { response: { data: { error: string } } }).response.data
                 .error
-          : "Failed to update strategy";
+            : "Failed to update strategy";
       toast.error(errorMessage);
     },
   });

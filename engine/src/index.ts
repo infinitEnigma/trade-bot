@@ -18,44 +18,44 @@ import { loadOrCreateEngineIdentity } from "./domain/engine-identity";
 let activeBotManager: BotManager | null = null;
 
 async function main(): Promise<void> {
-    const streamOps = getRedisStreamOperations();
+  const streamOps = getRedisStreamOperations();
 
-    try {
+  try {
     logger.info("Starting Trading Engine");
 
-        // Connect to Redis
-        await streamOps.connect();
+    // Connect to Redis
+    await streamOps.connect();
     await streamOps.createConsumerGroup(
       "tradebot:engine:commands",
       "engine-workers"
     );
 
-        // Initialize engine identity
-        const identity = loadOrCreateEngineIdentity();
+    // Initialize engine identity
+    const identity = loadOrCreateEngineIdentity();
     logger.info("Engine identity loaded", {
       engineId: identity.engineId,
       epoch: identity.epoch,
     });
 
-        // Create bot manager
-        activeBotManager = new BotManager(identity);
+    // Create bot manager
+    activeBotManager = new BotManager(identity);
 
-        // Start heartbeat (stop function reserved for shutdown wiring)
-        startHeartbeat(
-            streamOps,
-            identity.engineId,
-            identity.epoch,
-            () => activeBotManager?.activeBotIds ?? []
-        );
+    // Start heartbeat (stop function reserved for shutdown wiring)
+    startHeartbeat(
+      streamOps,
+      identity.engineId,
+      identity.epoch,
+      () => activeBotManager?.activeBotIds ?? []
+    );
 
-        // Start listening for commands
-        await listenForCommands(activeBotManager, streamOps);
-    } catch (error) {
+    // Start listening for commands
+    await listenForCommands(activeBotManager, streamOps);
+  } catch (error) {
     logger.error("Failed to start Trading Engine", {
-            error: error instanceof Error ? error.message : String(error),
-        });
-        process.exit(1);
-    }
+      error: error instanceof Error ? error.message : String(error),
+    });
+    process.exit(1);
+  }
 }
 
 // Graceful shutdown
@@ -63,18 +63,18 @@ const shutdown = async (signal: string): Promise<void> => {
   logger.info(`${signal} received, shutting down engine`, {
     engineId: activeBotManager?.activeBotIds,
   });
-    if (activeBotManager) {
-        const streamOps = getRedisStreamOperations();
-        const identity = loadOrCreateEngineIdentity();
-        await stopAll(
-            activeBotManager.getBotRuntimes(),
-            streamOps,
-            identity.engineId,
-            identity.epoch,
+  if (activeBotManager) {
+    const streamOps = getRedisStreamOperations();
+    const identity = loadOrCreateEngineIdentity();
+    await stopAll(
+      activeBotManager.getBotRuntimes(),
+      streamOps,
+      identity.engineId,
+      identity.epoch,
       "graceful_shutdown"
-        );
-    }
-    process.exit(0);
+    );
+  }
+  process.exit(0);
 };
 
 process.on("SIGTERM", () => void shutdown("SIGTERM"));

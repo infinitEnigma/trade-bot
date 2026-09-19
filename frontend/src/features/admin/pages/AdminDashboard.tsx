@@ -122,8 +122,8 @@ const AdminDashboard: React.FC = () => {
                   flex items-center gap-2 px-4 py-2 rounded-md transition-all
                   ${
                     activeTab === tab.id
-                    ? "bg-primary/20 text-primary border border-primary/30"
-                    : "text-text-secondary hover:text-text-primary hover:bg-white/5"
+                      ? "bg-primary/20 text-primary border border-primary/30"
+                      : "text-text-secondary hover:text-text-primary hover:bg-white/5"
                   }
                 `}
               >
@@ -147,7 +147,7 @@ const AdminDashboard: React.FC = () => {
                 title="System Health"
                 subtitle="Real-time system status"
               />
-              
+
               {healthLoading ? (
                 <Grid cols={{ default: 1, md: 2, lg: 4 }} gap={6}>
                   {[1, 2, 3, 4].map(i => (
@@ -236,7 +236,7 @@ const AdminDashboard: React.FC = () => {
                 title="Performance Metrics"
                 subtitle="System resource utilization"
               />
-              
+
               {metricsLoading ? (
                 <Grid cols={{ default: 1, md: 2, lg: 3 }} gap={6}>
                   {[1, 2, 3].map(i => (
@@ -309,7 +309,7 @@ const AdminDashboard: React.FC = () => {
                 title="System Information"
                 subtitle="Current system details"
               />
-              
+
               {servicesLoading ? (
                 <Card className="p-6">
                   <div className="flex items-center justify-center">
@@ -329,8 +329,8 @@ const AdminDashboard: React.FC = () => {
                             key={name}
                             className="flex items-center justify-between"
                           >
-                          <span className="text-sm text-text">{name}</span>
-                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-text">{name}</span>
+                            <div className="flex items-center gap-2">
                               {renderStatusIndicator(
                                 service.implementation === "legacy"
                                   ? "INACTIVE"
@@ -339,8 +339,8 @@ const AdminDashboard: React.FC = () => {
                               <span className="text-xs text-textMuted">
                                 {service.implementation}
                               </span>
+                            </div>
                           </div>
-                        </div>
                         )
                       )}
                     </div>

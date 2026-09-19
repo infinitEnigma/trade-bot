@@ -93,16 +93,16 @@ const Analytics: React.FC = () => {
   const [selectedTimeWindow, setSelectedTimeWindow] =
     useState<AnalyticsTimeWindow>({
       label: "30 Days",
-    days: 30,
+      days: 30,
       value: "30d",
-  });
+    });
 
   // Load analytics data - moved before conditional to comply with Rules of Hooks
   const { data, loading, error, progress, timeWindows, refetch } = useAnalytics(
     {
-    symbol: selectedSymbol,
-    timeWindow: selectedTimeWindow,
-    user, // Pass user data for stable subscription ID
+      symbol: selectedSymbol,
+      timeWindow: selectedTimeWindow,
+      user, // Pass user data for stable subscription ID
     }
   );
 
@@ -168,234 +168,234 @@ const Analytics: React.FC = () => {
       {data && !loading && !error && (
         <div className="container mx-auto px-4 py-8">
           {/* Performance Overview */}
-        <div className="mb-8">
-          <SectionHeader
-            title="Performance Overview"
-            subtitle="Comprehensive analysis of your trading performance"
-          />
+          <div className="mb-8">
+            <SectionHeader
+              title="Performance Overview"
+              subtitle="Comprehensive analysis of your trading performance"
+            />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <Card className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
-                  <TrendingUp className="w-5 h-5 text-green-400" />
-                </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
+                    <TrendingUp className="w-5 h-5 text-green-400" />
+                  </div>
                   <span className="text-xs text-green-400 font-medium">
                     +{mockAnalytics.performance.totalReturn}%
                   </span>
-              </div>
-              <h3 className="text-lg font-bold text-text mb-1">
-                ${mockAnalytics.performance.totalReturn.toLocaleString()}
-              </h3>
-              <p className="text-xs text-textMuted">Total Return</p>
-            </Card>
-
-            <Card className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
-                  <Activity className="w-5 h-5 text-blue-400" />
                 </div>
+                <h3 className="text-lg font-bold text-text mb-1">
+                  ${mockAnalytics.performance.totalReturn.toLocaleString()}
+                </h3>
+                <p className="text-xs text-textMuted">Total Return</p>
+              </Card>
+
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
+                    <Activity className="w-5 h-5 text-blue-400" />
+                  </div>
                   <span className="text-xs text-blue-400 font-medium">
                     {mockAnalytics.performance.winRate}%
                   </span>
-              </div>
-              <h3 className="text-lg font-bold text-text mb-1">
-                {mockAnalytics.performance.winRate}%
-              </h3>
-              <p className="text-xs text-textMuted">Win Rate</p>
-            </Card>
-
-            <Card className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
-                  <BarChart3 className="w-5 h-5 text-purple-400" />
                 </div>
+                <h3 className="text-lg font-bold text-text mb-1">
+                  {mockAnalytics.performance.winRate}%
+                </h3>
+                <p className="text-xs text-textMuted">Win Rate</p>
+              </Card>
+
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
+                    <BarChart3 className="w-5 h-5 text-purple-400" />
+                  </div>
                   <span className="text-xs text-purple-400 font-medium">
                     {mockAnalytics.performance.totalTrades}
                   </span>
-              </div>
-              <h3 className="text-lg font-bold text-text mb-1">
-                {mockAnalytics.performance.totalTrades.toLocaleString()}
-              </h3>
-              <p className="text-xs text-textMuted">Total Trades</p>
-            </Card>
-
-            <Card className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-10 h-10 bg-orange-500/10 rounded-lg flex items-center justify-center">
-                  <Users className="w-5 h-5 text-orange-400" />
                 </div>
+                <h3 className="text-lg font-bold text-text mb-1">
+                  {mockAnalytics.performance.totalTrades.toLocaleString()}
+                </h3>
+                <p className="text-xs text-textMuted">Total Trades</p>
+              </Card>
+
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-10 h-10 bg-orange-500/10 rounded-lg flex items-center justify-center">
+                    <Users className="w-5 h-5 text-orange-400" />
+                  </div>
                   <span className="text-xs text-orange-400 font-medium">
                     {mockAnalytics.performance.avgTradeDuration}
                   </span>
-              </div>
-              <h3 className="text-lg font-bold text-text mb-1">
-                {mockAnalytics.performance.avgTradeDuration}
-              </h3>
-              <p className="text-xs text-textMuted">Avg Trade Duration</p>
-            </Card>
+                </div>
+                <h3 className="text-lg font-bold text-text mb-1">
+                  {mockAnalytics.performance.avgTradeDuration}
+                </h3>
+                <p className="text-xs text-textMuted">Avg Trade Duration</p>
+              </Card>
+            </div>
           </div>
-        </div>
 
-        {/* Risk Analytics */}
-        <div className="mb-8">
-          <SectionHeader
-            title="Risk Analytics"
-            subtitle="Risk-adjusted performance and volatility analysis"
-          />
+          {/* Risk Analytics */}
+          <div className="mb-8">
+            <SectionHeader
+              title="Risk Analytics"
+              subtitle="Risk-adjusted performance and volatility analysis"
+            />
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="p-6">
                 <h3 className="text-lg font-semibold text-text mb-4">
                   Risk Metrics
                 </h3>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-sm text-textMuted">Sharpe Ratio</span>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-textMuted">Sharpe Ratio</span>
                     <span className="text-sm font-medium text-text">
                       {mockAnalytics.risk.sharpeRatio}
                     </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-textMuted">Max Drawdown</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-textMuted">Max Drawdown</span>
                     <span className="text-sm font-medium text-red-400">
                       -{mockAnalytics.risk.maxDrawdown}%
                     </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-textMuted">Volatility</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-textMuted">Volatility</span>
                     <span className="text-sm font-medium text-text">
                       {mockAnalytics.risk.volatility}%
                     </span>
+                  </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
 
-            <Card className="p-6">
+              <Card className="p-6">
                 <h3 className="text-lg font-semibold text-text mb-4">
                   Market Correlation
                 </h3>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-sm text-textMuted">Beta</span>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-textMuted">Beta</span>
                     <span className="text-sm font-medium text-text">
                       {mockAnalytics.risk.beta}
                     </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-textMuted">Alpha</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-textMuted">Alpha</span>
                     <span className="text-sm font-medium text-green-400">
                       +{mockAnalytics.risk.alpha}
                     </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-textMuted">Correlation</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-textMuted">Correlation</span>
                     <span className="text-sm font-medium text-text">
                       {mockAnalytics.market.marketCorrelation}
                     </span>
+                  </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
 
-            <Card className="p-6">
+              <Card className="p-6">
                 <h3 className="text-lg font-semibold text-text mb-4">
                   Best/Worst Days
                 </h3>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-sm text-textMuted">Best Day</span>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-textMuted">Best Day</span>
                     <span className="text-sm font-medium text-green-400">
                       {mockAnalytics.performance.bestDay}
                     </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-textMuted">Worst Day</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-textMuted">Worst Day</span>
                     <span className="text-sm font-medium text-red-400">
                       {mockAnalytics.performance.worstDay}
                     </span>
+                  </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
+            </div>
           </div>
-        </div>
 
-        {/* Sector Performance */}
-        <div className="mb-8">
-          <SectionHeader
-            title="Sector Performance"
-            subtitle="Performance breakdown by market sector"
-          />
+          {/* Sector Performance */}
+          <div className="mb-8">
+            <SectionHeader
+              title="Sector Performance"
+              subtitle="Performance breakdown by market sector"
+            />
 
-          <Card className="p-6">
-            <div className="space-y-4">
+            <Card className="p-6">
+              <div className="space-y-4">
                 {mockAnalytics.market.sectorPerformance.map(sector => (
                   <div
                     key={sector.sector}
                     className="flex items-center justify-between"
                   >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <DollarSign className="w-4 h-4 text-primary" />
-                    </div>
-                    <div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                        <DollarSign className="w-4 h-4 text-primary" />
+                      </div>
+                      <div>
                         <h4 className="font-medium text-text">
                           {sector.sector}
                         </h4>
                         <p className="text-xs text-textMuted">
                           {sector.contribution}% of portfolio
                         </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right">
+                    <div className="text-right">
                       <span
                         className={`font-medium ${sector.performance >= 0 ? "text-green-400" : "text-red-400"}`}
                       >
                         {sector.performance >= 0 ? "+" : ""}
                         {sector.performance}%
-                    </span>
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-
-        {/* Coming Soon Features */}
-        <Card className="p-8 text-center border-dashed border-2 border-primary/20 bg-primary/5">
-          <div className="w-16 h-16 mx-auto mb-4 bg-primary/10 rounded-full flex items-center justify-center">
-            <BarChart3 className="w-8 h-8 text-primary" />
+                ))}
+              </div>
+            </Card>
           </div>
-          <h3 className="text-xl font-semibold text-text mb-2">
-            Advanced Analytics Coming Soon
-          </h3>
-          <p className="text-textMuted mb-4">
-            We're working on even more detailed analytics including:
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-            <div className="p-3 bg-surface rounded-lg">
+
+          {/* Coming Soon Features */}
+          <Card className="p-8 text-center border-dashed border-2 border-primary/20 bg-primary/5">
+            <div className="w-16 h-16 mx-auto mb-4 bg-primary/10 rounded-full flex items-center justify-center">
+              <BarChart3 className="w-8 h-8 text-primary" />
+            </div>
+            <h3 className="text-xl font-semibold text-text mb-2">
+              Advanced Analytics Coming Soon
+            </h3>
+            <p className="text-textMuted mb-4">
+              We're working on even more detailed analytics including:
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div className="p-3 bg-surface rounded-lg">
                 <div className="font-medium text-text mb-1">
                   Trade Timing Analysis
                 </div>
                 <div className="text-textMuted">
                   Optimal entry/exit timing patterns
                 </div>
-            </div>
-            <div className="p-3 bg-surface rounded-lg">
-              <div className="font-medium text-text mb-1">Risk Heatmaps</div>
+              </div>
+              <div className="p-3 bg-surface rounded-lg">
+                <div className="font-medium text-text mb-1">Risk Heatmaps</div>
                 <div className="text-textMuted">
                   Visual risk distribution analysis
                 </div>
-            </div>
-            <div className="p-3 bg-surface rounded-lg">
+              </div>
+              <div className="p-3 bg-surface rounded-lg">
                 <div className="font-medium text-text mb-1">
                   Performance Forecasting
                 </div>
                 <div className="text-textMuted">
                   AI-powered performance predictions
                 </div>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
         </div>
       )}
     </div>

@@ -1,9 +1,9 @@
 /** @format */
 
 export {
-    validateEmail,
-    validatePasswordStrength,
-    validatePasswordRequirements,
-    validatePasswordConfirmation,
+  validateEmail,
+  validatePasswordStrength,
+  validatePasswordRequirements,
+  validatePasswordConfirmation,
   type FieldValidation,
 } from "./validation";

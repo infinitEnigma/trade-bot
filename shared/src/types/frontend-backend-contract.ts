@@ -26,29 +26,29 @@ export const FRONTEND_BACKEND_CONTRACT_VERSION = "1.0.0";
  * Base response interface for all API responses
  */
 export interface ApiResponse<T = any> {
-    success: boolean;
-    data: T;
-    message?: string;
+  success: boolean;
+  data: T;
+  message?: string;
 }
 
 /**
  * Base error response interface
  */
 export interface ApiError {
-    success: false;
-    error: string;
-    code?: string;
-    details?: any;
+  success: false;
+  error: string;
+  code?: string;
+  details?: any;
 }
 
 /**
  * Pagination information
  */
 export interface Pagination {
-    page: number;
-    limit: number;
-    total: number;
-    pages: number;
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
 }
 
 // ===========================================
@@ -59,58 +59,58 @@ export interface Pagination {
  * Login request
  */
 export interface LoginRequest {
-    email: string;
-    password: string;
+  email: string;
+  password: string;
 }
 
 /**
  * Login response
  */
 export interface LoginResponse {
-    user: FrontendUser;
-    token?: string; // For future token-based auth
+  user: FrontendUser;
+  token?: string; // For future token-based auth
 }
 
 /**
  * Registration request
  */
 export interface RegisterRequest {
-    email: string;
-    password: string;
+  email: string;
+  password: string;
 }
 
 /**
  * Registration response
  */
 export interface RegisterResponse {
-    user: FrontendUser;
+  user: FrontendUser;
 }
 
 /**
  * User profile response
  */
 export interface UserProfileResponse {
-    user: FrontendUser;
-    kodiakStatus?: {
-        accountId: string;
-        verified: boolean;
-    };
+  user: FrontendUser;
+  kodiakStatus?: {
+    accountId: string;
+    verified: boolean;
+  };
 }
 
 /**
  * Kodiak credentials request
  */
 export interface KodiakCredentialsRequest {
-    apiKey: string;
-    apiSecret: string;
+  apiKey: string;
+  apiSecret: string;
 }
 
 /**
  * Kodiak credentials response
  */
 export interface KodiakCredentialsResponse {
-    apiKey: string;
-    apiSecretMasked: string;
+  apiKey: string;
+  apiSecretMasked: string;
 }
 
 // ===========================================
@@ -121,9 +121,9 @@ export interface KodiakCredentialsResponse {
  * Get balances response
  */
 export interface GetBalancesResponse {
-    balances: FrontendBalance[];
-    total: number;
-    currency: string;
+  balances: FrontendBalance[];
+  total: number;
+  currency: string;
 }
 
 // ===========================================
@@ -134,42 +134,42 @@ export interface GetBalancesResponse {
  * Bot instance creation request
  */
 export interface CreateBotRequest {
-    strategyId: string;
-    name?: string;
-    config?: any; // Strategy-specific configuration
-    riskLimits?: FrontendRiskLimits;
+  strategyId: string;
+  name?: string;
+  config?: any; // Strategy-specific configuration
+  riskLimits?: FrontendRiskLimits;
 }
 
 /**
  * Bot instance response
  */
 export interface BotInstanceResponse {
-    id: string;
-    strategyId: string;
-    name: string;
-    status: BotActualState;
-    config: any;
-    riskLimits: FrontendRiskLimits;
-    position?: number;
-    exposure?: number;
-    lastHeartbeat?: Date;
-    createdAt: Date;
-    updatedAt: Date;
+  id: string;
+  strategyId: string;
+  name: string;
+  status: BotActualState;
+  config: any;
+  riskLimits: FrontendRiskLimits;
+  position?: number;
+  exposure?: number;
+  lastHeartbeat?: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 /**
  * Get bot instances response
  */
 export interface GetBotInstancesResponse {
-    bots: BotInstanceResponse[];
-    pagination: Pagination;
-    stats: {
-        total: number;
-        running: number;
-        stopped: number;
-        error: number;
-        paused: number;
-    };
+  bots: BotInstanceResponse[];
+  pagination: Pagination;
+  stats: {
+    total: number;
+    running: number;
+    stopped: number;
+    error: number;
+    paused: number;
+  };
 }
 
 // ===========================================
@@ -180,67 +180,67 @@ export interface GetBotInstancesResponse {
  * Create strategy request
  */
 export interface CreateStrategyRequest {
-    name: string;
+  name: string;
   type: "GRID" | "TREND_FOLLOWING" | "ARBITRAGE";
-    symbol: string;
-    config: FrontendStrategyConfig;
-    isActive?: boolean;
+  symbol: string;
+  config: FrontendStrategyConfig;
+  isActive?: boolean;
 }
 
 /**
  * Strategy response
  */
 export interface StrategyResponse {
-    id: string;
-    userId: string;
-    name: string;
+  id: string;
+  userId: string;
+  name: string;
   type: "GRID" | "TREND_FOLLOWING" | "ARBITRAGE";
-    symbol: string;
-    config: FrontendStrategyConfig;
-    isActive: boolean;
-    createdAt: Date;
-    updatedAt: Date;
+  symbol: string;
+  config: FrontendStrategyConfig;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 /**
  * Get strategies response
  */
 export interface GetStrategiesResponse {
-    strategies: StrategyResponse[];
-    pagination: Pagination;
-    stats: {
-        total: number;
-        active: number;
-        inactive: number;
-        byType: {
-            GRID: number;
-            TREND_FOLLOWING: number;
-            ARBITRAGE: number;
-        };
+  strategies: StrategyResponse[];
+  pagination: Pagination;
+  stats: {
+    total: number;
+    active: number;
+    inactive: number;
+    byType: {
+      GRID: number;
+      TREND_FOLLOWING: number;
+      ARBITRAGE: number;
     };
+  };
 }
 
 /**
  * Market price request
  */
 export interface GetMarketPriceRequest {
-    symbol: string;
+  symbol: string;
   timeFrame?: "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
-    limit?: number;
+  limit?: number;
 }
 
 /**
  * Market price response
  */
 export interface GetMarketPriceResponse {
-    symbol: string;
-    currentPrice: number;
-    priceChange24h: number;
-    priceChangePercentage24h: number;
-    high24h: number;
-    low24h: number;
-    volume24h: number;
-    chartData?: FrontendMarketDataPoint[];
+  symbol: string;
+  currentPrice: number;
+  priceChange24h: number;
+  priceChangePercentage24h: number;
+  high24h: number;
+  low24h: number;
+  volume24h: number;
+  chartData?: FrontendMarketDataPoint[];
 }
 
 // ===========================================
@@ -251,57 +251,57 @@ export interface GetMarketPriceResponse {
  * Get trades response
  */
 export interface GetTradesResponse {
-    trades: TradeResponse[];
-    pagination: Pagination;
-    stats: {
-        total: number;
-        profitable: number;
-        totalPnl: number;
-        avgPnl: number;
-    };
+  trades: TradeResponse[];
+  pagination: Pagination;
+  stats: {
+    total: number;
+    profitable: number;
+    totalPnl: number;
+    avgPnl: number;
+  };
 }
 
 /**
  * Trade response
  */
 export interface TradeResponse {
-    id: string;
-    userId: string;
-    orderId: string;
-    symbol: string;
+  id: string;
+  userId: string;
+  orderId: string;
+  symbol: string;
   side: "BUY" | "SELL";
-    quantity: number;
-    price: number;
-    fee: number;
-    pnl: number;
+  quantity: number;
+  price: number;
+  fee: number;
+  pnl: number;
   status: "EXECUTED" | "PENDING" | "CANCELED";
-    executedAt: Date;
+  executedAt: Date;
 }
 
 /**
  * Get positions response
  */
 export interface GetPositionsResponse {
-    positions: PositionResponse[];
-    total: number;
-    totalPnl: number;
+  positions: PositionResponse[];
+  total: number;
+  totalPnl: number;
 }
 
 /**
  * Position response
  */
 export interface PositionResponse {
-    id: string;
-    symbol: string;
+  id: string;
+  symbol: string;
   side: "LONG" | "SHORT";
-    quantity: number;
-    entryPrice: number;
-    markPrice: number;
-    leverage: number;
-    marginRatio: number;
-    liquidationPrice?: number;
-    pnl: number;
-    pnlPercentage: number;
+  quantity: number;
+  entryPrice: number;
+  markPrice: number;
+  leverage: number;
+  marginRatio: number;
+  liquidationPrice?: number;
+  pnl: number;
+  pnlPercentage: number;
 }
 
 // ===========================================
@@ -312,47 +312,47 @@ export interface PositionResponse {
  * Get analytics response
  */
 export interface GetAnalyticsResponse {
-    performance: FrontendPerformanceMetrics;
-    risk: FrontendRiskMetrics;
-    sector: FrontendSectorPerformance;
-    recentTrades: TradeResponse[];
+  performance: FrontendPerformanceMetrics;
+  risk: FrontendRiskMetrics;
+  sector: FrontendSectorPerformance;
+  recentTrades: TradeResponse[];
 }
 
 /**
  * Performance metrics
  */
 export interface FrontendPerformanceMetrics {
-    totalTrades: number;
-    totalPnl: number;
-    winRate: number;
-    maxDrawdown: number;
-    profitFactor: number;
-    sharpeRatio?: number;
+  totalTrades: number;
+  totalPnl: number;
+  winRate: number;
+  maxDrawdown: number;
+  profitFactor: number;
+  sharpeRatio?: number;
 }
 
 /**
  * Risk metrics
  */
 export interface FrontendRiskMetrics {
-    totalExposure: number;
-    maxLeverage: number;
-    VaR: number; // Value at Risk
-    expectedShortfall: number;
-    drawdownPercentage: number;
-    marginUtilization: number;
+  totalExposure: number;
+  maxLeverage: number;
+  VaR: number; // Value at Risk
+  expectedShortfall: number;
+  drawdownPercentage: number;
+  marginUtilization: number;
 }
 
 /**
  * Sector performance
  */
 export interface FrontendSectorPerformance {
-    total: number;
-    bySector: {
-        name: string;
-        count: number;
-        pnl: number;
-        percentage: number;
-    }[];
+  total: number;
+  bySector: {
+    name: string;
+    count: number;
+    pnl: number;
+    percentage: number;
+  }[];
 }
 
 // ===========================================
@@ -364,23 +364,23 @@ export interface FrontendSectorPerformance {
  */
 export interface SystemHealthResponse {
   status: "HEALTHY" | "DEGRADED" | "UNHEALTHY";
-    timestamp: Date;
-    uptime: number;
-    services: {
+  timestamp: Date;
+  uptime: number;
+  services: {
     api: "HEALTHY" | "DEGRADED" | "UNHEALTHY";
     database: "HEALTHY" | "DEGRADED" | "UNHEALTHY";
     engine: "HEALTHY" | "DEGRADED" | "UNHEALTHY";
     redis: "HEALTHY" | "DEGRADED" | "UNHEALTHY";
+  };
+  metrics: {
+    cpu: number;
+    memory: number;
+    disk: number;
+    network: {
+      in: number;
+      out: number;
     };
-    metrics: {
-        cpu: number;
-        memory: number;
-        disk: number;
-        network: {
-            in: number;
-            out: number;
-        };
-    };
+  };
 }
 
 // ===========================================
@@ -391,40 +391,40 @@ export interface SystemHealthResponse {
  * Tick data (real-time price updates)
  */
 export interface TickData {
-    symbol: string;
-    price: number;
-    volume: number;
-    timestamp: number;
-    bid: number;
-    ask: number;
-    change24h: number;
+  symbol: string;
+  price: number;
+  volume: number;
+  timestamp: number;
+  bid: number;
+  ask: number;
+  change24h: number;
 }
 
 /**
  * Kline/candlestick data
  */
 export interface KlineData {
-    symbol: string;
-    type: string;
-    open: number;
-    close: number;
-    high: number;
-    low: number;
-    volume: number;
-    amount: number;
-    startTime: number;
-    endTime: number;
-    interval?: string;
+  symbol: string;
+  type: string;
+  open: number;
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+  amount: number;
+  startTime: number;
+  endTime: number;
+  interval?: string;
 }
 
 /**
  * Mark price data
  */
 export interface MarkPriceData {
-    symbol: string;
-    price: number;
-    timestamp: number;
-    fundingRate?: number;
+  symbol: string;
+  price: number;
+  timestamp: number;
+  fundingRate?: number;
 }
 
 // ===========================================
@@ -435,8 +435,8 @@ export interface MarkPriceData {
  * Base interface for all WebSocket events
  */
 export interface FrontendWebSocketEvent {
-    type: string;
-    timestamp: number;
+  type: string;
+  timestamp: number;
 }
 
 /**
@@ -444,7 +444,7 @@ export interface FrontendWebSocketEvent {
  */
 export interface FrontendTradeExecutedEvent extends FrontendWebSocketEvent {
   type: "trade:executed";
-    data: TradeResponse;
+  data: TradeResponse;
 }
 
 /**
@@ -452,7 +452,7 @@ export interface FrontendTradeExecutedEvent extends FrontendWebSocketEvent {
  */
 export interface FrontendPositionUpdatedEvent extends FrontendWebSocketEvent {
   type: "position:updated";
-    data: PositionResponse;
+  data: PositionResponse;
 }
 
 /**
@@ -460,12 +460,12 @@ export interface FrontendPositionUpdatedEvent extends FrontendWebSocketEvent {
  */
 export interface FrontendBotStatusEvent extends FrontendWebSocketEvent {
   type: "bot:status";
-    data: {
-        botId: string;
-        status: BotActualState;
-        position?: number;
-        exposure?: number;
-    };
+  data: {
+    botId: string;
+    status: BotActualState;
+    position?: number;
+    exposure?: number;
+  };
 }
 
 /**
@@ -473,13 +473,13 @@ export interface FrontendBotStatusEvent extends FrontendWebSocketEvent {
  */
 export interface FrontendEngineStatusEvent extends FrontendWebSocketEvent {
   type: "engine:status";
-    data: {
-        running: boolean;
-        bots: number;
-        uptime: number;
-        cpuUsage?: number;
-        memoryUsage?: number;
-    };
+  data: {
+    running: boolean;
+    bots: number;
+    uptime: number;
+    cpuUsage?: number;
+    memoryUsage?: number;
+  };
 }
 
 /**
@@ -487,11 +487,11 @@ export interface FrontendEngineStatusEvent extends FrontendWebSocketEvent {
  */
 export interface FrontendErrorEvent extends FrontendWebSocketEvent {
   type: "error";
-    data: {
-        message: string;
-        code?: string;
-        details?: any;
-    };
+  data: {
+    message: string;
+    code?: string;
+    details?: any;
+  };
 }
 
 // ===========================================
@@ -499,54 +499,54 @@ export interface FrontendErrorEvent extends FrontendWebSocketEvent {
 // ===========================================
 
 export interface FrontendBalance {
-    total: number;
-    available: number;
-    locked: number;
-    currency: string;
-    lastUpdated: Date;
+  total: number;
+  available: number;
+  locked: number;
+  currency: string;
+  lastUpdated: Date;
 }
 
 export interface FrontendStrategyConfig {
-    leverage?: number;
-    gridSize?: number;
-    gridRange?: number;
-    orderQuantity?: number;
-    takeProfit?: number;
-    entryThreshold?: number;
-    exitThreshold?: number;
-    stopLoss?: number;
+  leverage?: number;
+  gridSize?: number;
+  gridRange?: number;
+  orderQuantity?: number;
+  takeProfit?: number;
+  entryThreshold?: number;
+  exitThreshold?: number;
+  stopLoss?: number;
 }
 
 export interface FrontendRiskLimits {
-    maxLeverage: number;
-    maxPositionSize: number;
-    maxDailyLoss: number;
-    stopLossPercentage: number;
-    takeProfitPercentage: number;
-    maxOrdersPerMinute: number;
+  maxLeverage: number;
+  maxPositionSize: number;
+  maxDailyLoss: number;
+  stopLossPercentage: number;
+  takeProfitPercentage: number;
+  maxOrdersPerMinute: number;
 }
 
 export interface FrontendUser {
-    id: string;
-    email: string;
+  id: string;
+  email: string;
   userLevel: "BASIC" | "REGISTERED" | "VERIFIED";
-    roles?: string[];
-    createdAt: Date;
-    updatedAt: Date;
+  roles?: string[];
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface FrontendKodiakCredentials {
-    apiKey: string;
-    apiSecretMasked: string;
+  apiKey: string;
+  apiSecretMasked: string;
 }
 
 export interface FrontendMarketDataPoint {
-    timestamp: number;
-    open: number;
-    high: number;
-    low: number;
-    close: number;
-    volume: number;
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
 }
 
 // ===========================================

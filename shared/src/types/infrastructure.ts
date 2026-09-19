@@ -20,66 +20,66 @@ import { BotActualState } from "../protocol/bot-state";
 // ===========================================
 
 export interface ICacheService {
-    /**
-     * Get a value from cache
-     */
-    get<T>(key: string): Promise<CacheResult<T>>;
+  /**
+   * Get a value from cache
+   */
+  get<T>(key: string): Promise<CacheResult<T>>;
 
-    /**
-     * Set a value in cache with optional TTL
-     */
+  /**
+   * Set a value in cache with optional TTL
+   */
   set<T>(
     key: string,
     value: T,
     ttlSeconds?: number
   ): Promise<CacheResult<boolean>>;
 
-    /**
-     * Delete a value from cache
-     */
-    delete(key: string): Promise<CacheResult<boolean>>;
+  /**
+   * Delete a value from cache
+   */
+  delete(key: string): Promise<CacheResult<boolean>>;
 
-    /**
-     * Check if a key exists in cache
-     */
-    exists(key: string): Promise<CacheResult<boolean>>;
+  /**
+   * Check if a key exists in cache
+   */
+  exists(key: string): Promise<CacheResult<boolean>>;
 
-    /**
-     * Set a value with TTL (convenience method)
-     */
+  /**
+   * Set a value with TTL (convenience method)
+   */
   setex<T>(
     key: string,
     ttlSeconds: number,
     value: T
   ): Promise<CacheResult<boolean>>;
 
-    /**
-     * Get multiple values by keys
-     */
-    mget<T>(keys: string[]): Promise<CacheResult<Record<string, T>>>;
+  /**
+   * Get multiple values by keys
+   */
+  mget<T>(keys: string[]): Promise<CacheResult<Record<string, T>>>;
 
-    /**
-     * Set multiple values
-     */
+  /**
+   * Set multiple values
+   */
   mset<T>(
     keyValues: Record<string, T>,
     ttlSeconds?: number
   ): Promise<CacheResult<boolean>>;
 
-    /**
-     * Atomic conditional update - only set if key doesn't exist or matches expected value
-     */
-    atomicConditionalUpdate<T>(
-        key: string,
-        newValue: T,
-        expectedValue?: T | null
-    ): Promise<CacheResult<boolean>>;
+  /**
+   * Atomic conditional update - only set if key doesn't exist or matches expected value
+   */
+  atomicConditionalUpdate<T>(
+    key: string,
+    newValue: T,
+    expectedValue?: T | null
+  ): Promise<CacheResult<boolean>>;
 }
 
 export interface CacheResult<T = unknown> {
-    success: boolean;
-    data?: T;
-    error?: string;
+  success: boolean;
+  data?: T;
+  error?: string;
 }
 
 // ===========================================
@@ -87,54 +87,54 @@ export interface CacheResult<T = unknown> {
 // ===========================================
 
 export interface IExternalApiService {
-    /**
-     * Get user balance from external exchange
-     */
-    getBalance(userId: string): Promise<ApiResult<Balance>>;
+  /**
+   * Get user balance from external exchange
+   */
+  getBalance(userId: string): Promise<ApiResult<Balance>>;
 
-    /**
-     * Get user positions from external exchange
-     */
-    getPositions(userId: string): Promise<ApiResult<Position[]>>;
+  /**
+   * Get user positions from external exchange
+   */
+  getPositions(userId: string): Promise<ApiResult<Position[]>>;
 
-    /**
-     * Get user trade history from external exchange
-     */
-    getTrades(userId: string, limit?: number): Promise<ApiResult<Trade[]>>;
+  /**
+   * Get user trade history from external exchange
+   */
+  getTrades(userId: string, limit?: number): Promise<ApiResult<Trade[]>>;
 
-    /**
-     * Get account information from external exchange
-     */
-    getAccountInfo(userId: string): Promise<ApiResult<AccountInfo>>;
+  /**
+   * Get account information from external exchange
+   */
+  getAccountInfo(userId: string): Promise<ApiResult<AccountInfo>>;
 
-    /**
-     * Test connectivity to external API
-     */
+  /**
+   * Test connectivity to external API
+   */
   testConnectivity(
     credentials: ExternalCredentials
   ): Promise<ApiResult<boolean>>;
 
-    /**
-     * Invalidate cached data for a user
-     */
-    invalidateUserCache(userId: string): Promise<void>;
+  /**
+   * Invalidate cached data for a user
+   */
+  invalidateUserCache(userId: string): Promise<void>;
 
-    /**
-     * Validate wallet is connected to correct chain
-     */
-    validateWalletChain(walletAddress: string, chainId: number): Promise<boolean>;
+  /**
+   * Validate wallet is connected to correct chain
+   */
+  validateWalletChain(walletAddress: string, chainId: number): Promise<boolean>;
 
-    /**
-     * Check NFT ownership
-     */
+  /**
+   * Check NFT ownership
+   */
   checkNFTOwnership(
     walletAddress: string,
     contractAddress: string
   ): Promise<boolean>;
 
-    /**
-     * Check token balance
-     */
+  /**
+   * Check token balance
+   */
   checkTokenBalance(
     walletAddress: string,
     tokenAddress: string,
@@ -143,10 +143,10 @@ export interface IExternalApiService {
 }
 
 export interface ApiResult<T = unknown> {
-    success: boolean;
-    data?: T;
-    error?: string;
-    timestamp: number;
+  success: boolean;
+  data?: T;
+  error?: string;
+  timestamp: number;
 }
 
 // ===========================================
@@ -154,32 +154,32 @@ export interface ApiResult<T = unknown> {
 // ===========================================
 
 export interface IHttpClient {
-    /**
-     * Make a GET request
-     */
-    get<T = unknown>(url: string, config?: HttpConfig): Promise<HttpResponse<T>>;
+  /**
+   * Make a GET request
+   */
+  get<T = unknown>(url: string, config?: HttpConfig): Promise<HttpResponse<T>>;
 
-    /**
-     * Make a POST request
-     */
+  /**
+   * Make a POST request
+   */
   post<T = unknown>(
     url: string,
     data?: unknown,
     config?: HttpConfig
   ): Promise<HttpResponse<T>>;
 
-    /**
-     * Make a PUT request
-     */
+  /**
+   * Make a PUT request
+   */
   put<T = unknown>(
     url: string,
     data?: unknown,
     config?: HttpConfig
   ): Promise<HttpResponse<T>>;
 
-    /**
-     * Make a DELETE request
-     */
+  /**
+   * Make a DELETE request
+   */
   delete<T = unknown>(
     url: string,
     config?: HttpConfig
@@ -187,17 +187,17 @@ export interface IHttpClient {
 }
 
 export interface HttpConfig {
-    headers?: Record<string, string>;
-    timeout?: number;
-    retries?: number;
-    baseURL?: string;
+  headers?: Record<string, string>;
+  timeout?: number;
+  retries?: number;
+  baseURL?: string;
 }
 
 export interface HttpResponse<T = unknown> {
-    status: number;
-    statusText: string;
-    data: T;
-    headers: Record<string, string>;
+  status: number;
+  statusText: string;
+  data: T;
+  headers: Record<string, string>;
 }
 
 // ===========================================
@@ -205,30 +205,30 @@ export interface HttpResponse<T = unknown> {
 // ===========================================
 
 export interface ILogger {
-    /**
-     * Debug level logging
-     */
-    debug(message: string, meta?: unknown): void;
+  /**
+   * Debug level logging
+   */
+  debug(message: string, meta?: unknown): void;
 
-    /**
-     * Info level logging
-     */
-    info(message: string, meta?: unknown): void;
+  /**
+   * Info level logging
+   */
+  info(message: string, meta?: unknown): void;
 
-    /**
-     * Warning level logging
-     */
-    warn(message: string, meta?: unknown): void;
+  /**
+   * Warning level logging
+   */
+  warn(message: string, meta?: unknown): void;
 
-    /**
-     * Error level logging
-     */
-    error(message: string, meta?: unknown): void;
+  /**
+   * Error level logging
+   */
+  error(message: string, meta?: unknown): void;
 
-    /**
-     * Create a child logger with context
-     */
-    child(meta: unknown): ILogger;
+  /**
+   * Create a child logger with context
+   */
+  child(meta: unknown): ILogger;
 }
 
 // ===========================================
@@ -236,15 +236,15 @@ export interface ILogger {
 // ===========================================
 
 export interface IPasswordService {
-    /**
-     * Hash a password
-     */
-    hash(password: string, rounds?: number): Promise<string>;
+  /**
+   * Hash a password
+   */
+  hash(password: string, rounds?: number): Promise<string>;
 
-    /**
-     * Verify a password against its hash
-     */
-    verify(password: string, hash: string): Promise<boolean>;
+  /**
+   * Verify a password against its hash
+   */
+  verify(password: string, hash: string): Promise<boolean>;
 }
 
 // ===========================================
@@ -252,30 +252,30 @@ export interface IPasswordService {
 // ===========================================
 
 export interface IEncryptionService {
-    /**
-     * Encrypt API key
-     */
-    encryptApiKey(apiKey: string): string;
+  /**
+   * Encrypt API key
+   */
+  encryptApiKey(apiKey: string): string;
 
-    /**
-     * Decrypt API key
-     */
-    decryptApiKey(encryptedApiKey: string): string;
+  /**
+   * Decrypt API key
+   */
+  decryptApiKey(encryptedApiKey: string): string;
 
-    /**
-     * Encrypt secret key
-     */
-    encryptSecretKey(secretKey: string): string;
+  /**
+   * Encrypt secret key
+   */
+  encryptSecretKey(secretKey: string): string;
 
-    /**
-     * Decrypt secret key
-     */
-    decryptSecretKey(encryptedSecretKey: string): string;
+  /**
+   * Decrypt secret key
+   */
+  decryptSecretKey(encryptedSecretKey: string): string;
 
-    /**
-     * Decrypt with version handling (for backward compatibility)
-     */
-    decryptWithVersion(encryptedData: string): Promise<string>;
+  /**
+   * Decrypt with version handling (for backward compatibility)
+   */
+  decryptWithVersion(encryptedData: string): Promise<string>;
 }
 
 // ===========================================
@@ -283,48 +283,48 @@ export interface IEncryptionService {
 // ===========================================
 
 export interface ITokenService {
-    /**
-     * Generate access token
-     */
-    generateAccessToken(payload: TokenPayload): string;
+  /**
+   * Generate access token
+   */
+  generateAccessToken(payload: TokenPayload): string;
 
-    /**
-     * Generate refresh token
-     */
-    generateRefreshToken(payload: TokenPayload): string;
+  /**
+   * Generate refresh token
+   */
+  generateRefreshToken(payload: TokenPayload): string;
 
-    /**
-     * Verify and decode token
-     *
-     * Verifies the token against the secret matching the expected token type and
-     * enforces the `type` claim. A refresh token is never accepted as an access
-     * token and vice versa.
-     *
-     * @param token - JWT token to verify
-     * @param expectedType - Which token type is acceptable at this call site (default: 'access')
-     * @returns TokenPayload if valid, of the expected type, and unexpired; null otherwise
-     */
-    verifyToken(token: string, expectedType?: TokenType): TokenPayload | null;
+  /**
+   * Verify and decode token
+   *
+   * Verifies the token against the secret matching the expected token type and
+   * enforces the `type` claim. A refresh token is never accepted as an access
+   * token and vice versa.
+   *
+   * @param token - JWT token to verify
+   * @param expectedType - Which token type is acceptable at this call site (default: 'access')
+   * @returns TokenPayload if valid, of the expected type, and unexpired; null otherwise
+   */
+  verifyToken(token: string, expectedType?: TokenType): TokenPayload | null;
 
-    /**
-     * Verify token with database validation
-     * 
-     * This method verifies the token and checks if the user still exists in the database.
-     * If the user doesn't exist (e.g., after database reset), the token is considered invalid.
-     * 
-     * @param token - JWT token to verify
-     * @param authService - Auth service instance to check user existence
-     * @returns TokenPayload if valid and user exists, null otherwise
-     */
+  /**
+   * Verify token with database validation
+   *
+   * This method verifies the token and checks if the user still exists in the database.
+   * If the user doesn't exist (e.g., after database reset), the token is considered invalid.
+   *
+   * @param token - JWT token to verify
+   * @param authService - Auth service instance to check user existence
+   * @returns TokenPayload if valid and user exists, null otherwise
+   */
   verifyTokenWithDatabaseValidation(
     token: string,
     authService: any
   ): Promise<TokenPayload | null>;
 
-    /**
-     * Hash token for storage (not for security, just for key length)
-     */
-    hashTokenForStorage(token: string): string;
+  /**
+   * Hash token for storage (not for security, just for key length)
+   */
+  hashTokenForStorage(token: string): string;
 }
 
 // ===========================================
@@ -332,37 +332,37 @@ export interface ITokenService {
 // ===========================================
 
 export interface ITradingEngineService {
-    /**
-     * Ensure trading engine is running
-     */
-    ensureEngineRunning(): Promise<void>;
+  /**
+   * Ensure trading engine is running
+   */
+  ensureEngineRunning(): Promise<void>;
 
-    /**
-     * Get engine status and health information
-     */
-    getEngineStatus(): Promise<{
-        running: boolean;
-        health?: {
-            status: string;
-            bots: number;
-            uptime: number;
-        };
-    }>;
+  /**
+   * Get engine status and health information
+   */
+  getEngineStatus(): Promise<{
+    running: boolean;
+    health?: {
+      status: string;
+      bots: number;
+      uptime: number;
+    };
+  }>;
 
-    /**
-     * Stop engine if no active bots
-     */
-    stopEngineIfNoActiveBots(): Promise<void>;
+  /**
+   * Stop engine if no active bots
+   */
+  stopEngineIfNoActiveBots(): Promise<void>;
 
-    /**
-     * Force stop trading engine
-     */
-    forceStopEngine(): Promise<void>;
+  /**
+   * Force stop trading engine
+   */
+  forceStopEngine(): Promise<void>;
 
-    /**
-     * Check if engine process is alive
-     */
-    isEngineProcessAlive(): boolean;
+  /**
+   * Check if engine process is alive
+   */
+  isEngineProcessAlive(): boolean;
 }
 
 // ===========================================
@@ -371,79 +371,79 @@ export interface ITradingEngineService {
 // ===========================================
 
 export interface IBotStatusService {
-    /**
-     * Start a bot instance
-     */
+  /**
+   * Start a bot instance
+   */
   startBot(
     botId: string,
     userId: string
   ): Promise<{ success: boolean; error?: string }>;
 
-    /**
-     * Stop a bot instance
-     */
+  /**
+   * Stop a bot instance
+   */
   stopBot(
     botId: string,
     userId: string
   ): Promise<{ success: boolean; error?: string }>;
 
-    /**
-     * Get comprehensive bot status information
-     */
+  /**
+   * Get comprehensive bot status information
+   */
   getBotStatusInfo(
     botId: string,
     userId: string
   ): Promise<{
-        status: BotActualState;
-        lastHeartbeat?: number;
-        errorMessage?: string;
-        performance?: {
-            totalTrades: number;
-            totalPnl: number;
-        };
-        [key: string]: unknown;
-    }>;
+    status: BotActualState;
+    lastHeartbeat?: number;
+    errorMessage?: string;
+    performance?: {
+      totalTrades: number;
+      totalPnl: number;
+    };
+    [key: string]: unknown;
+  }>;
 
-    /**
-     * Send heartbeat for bot health monitoring
-     */
+  /**
+   * Send heartbeat for bot health monitoring
+   */
   sendBotHeartbeat(
     botId: string,
     statusInfo?: {
-        timestamp?: number;
-        memoryUsage?: number;
-        cpuUsage?: number;
-        [key: string]: unknown;
+      timestamp?: number;
+      memoryUsage?: number;
+      cpuUsage?: number;
+      [key: string]: unknown;
     }
   ): Promise<{ success: boolean; error?: string }>;
 
-    /**
-     * Validate bot status and perform reconciliation
-     */
+  /**
+   * Validate bot status and perform reconciliation
+   */
   validateBotStatus(
     botData: {
-        id: string;
-        status: string;
-        lastHeartbeat?: number;
-        [key: string]: unknown;
+      id: string;
+      status: string;
+      lastHeartbeat?: number;
+      [key: string]: unknown;
     },
     currentTime: number
   ): Promise<{
-        updatedStatus: string;
-        errorMessage: string | null;
-        isStale: boolean;
-        lastHeartbeatAge: number;
-    }>;
+    updatedStatus: string;
+    errorMessage: string | null;
+    isStale: boolean;
+    lastHeartbeatAge: number;
+  }>;
 
-    /**
-     * Get bot statistics for monitoring
-     */
-    getBotStats(): Promise<{
-        totalBots: number;
-        runningBots: number;
-        errorBots: number;
-        staleBots: number;
-    }>;
+  /**
+   * Get bot statistics for monitoring
+   */
+  getBotStats(): Promise<{
+    totalBots: number;
+    runningBots: number;
+    errorBots: number;
+    staleBots: number;
+  }>;
 }
 
 // ===========================================
@@ -451,13 +451,13 @@ export interface IBotStatusService {
 // ===========================================
 
 export interface ISignatureVerificationService {
-    /**
-     * Verify that a signature is valid for the given wallet address and message
-     * @param walletAddress - The wallet address that should have signed the message
-     * @param signature - The signature to verify
-     * @param message - The message that was signed
-     * @returns Promise<boolean> - True if the signature is valid, false otherwise
-     */
+  /**
+   * Verify that a signature is valid for the given wallet address and message
+   * @param walletAddress - The wallet address that should have signed the message
+   * @param signature - The signature to verify
+   * @param message - The message that was signed
+   * @returns Promise<boolean> - True if the signature is valid, false otherwise
+   */
   verifySignature(
     walletAddress: string,
     signature: string,
@@ -470,59 +470,59 @@ export interface ISignatureVerificationService {
 // ===========================================
 
 export interface IBotPerformanceService {
-    /**
-     * Record trade execution for performance tracking
-     */
+  /**
+   * Record trade execution for performance tracking
+   */
   recordTrade(
     botId: string,
     tradeData: {
-        symbol: string;
+      symbol: string;
       side: "BUY" | "SELL";
-        quantity: number;
-        price: number;
-        pnl: number;
-        fee: number;
-        timestamp: number;
+      quantity: number;
+      price: number;
+      pnl: number;
+      fee: number;
+      timestamp: number;
     }
   ): Promise<void>;
 
-    /**
-     * Get bot performance metrics
-     */
+  /**
+   * Get bot performance metrics
+   */
   getBotPerformance(
     botId: string,
     timeframe: "1h" | "24h" | "7d" | "30d"
   ): Promise<{
-        totalTrades: number;
-        totalVolume: number;
-        totalPnl: number;
-        winRate: number;
-        averageTrade: number;
-        sharpeRatio?: number;
-        maxDrawdown: number;
-    }>;
+    totalTrades: number;
+    totalVolume: number;
+    totalPnl: number;
+    winRate: number;
+    averageTrade: number;
+    sharpeRatio?: number;
+    maxDrawdown: number;
+  }>;
 
-    /**
-     * Get performance summary for multiple bots
-     */
-    getPerformanceSummary(userId: string): Promise<{
-        totalBots: number;
-        activeBots: number;
-        totalPnl: number;
-        totalVolume: number;
-        bestPerformingBot: string;
-        worstPerformingBot: string;
-    }>;
+  /**
+   * Get performance summary for multiple bots
+   */
+  getPerformanceSummary(userId: string): Promise<{
+    totalBots: number;
+    activeBots: number;
+    totalPnl: number;
+    totalVolume: number;
+    bestPerformingBot: string;
+    worstPerformingBot: string;
+  }>;
 
-    /**
-     * Calculate risk metrics for bot
-     */
-    calculateRiskMetrics(botId: string): Promise<{
-        volatility: number;
-        maxDrawdown: number;
-        valueAtRisk: number;
-        expectedShortfall: number;
-    }>;
+  /**
+   * Calculate risk metrics for bot
+   */
+  calculateRiskMetrics(botId: string): Promise<{
+    volatility: number;
+    maxDrawdown: number;
+    valueAtRisk: number;
+    expectedShortfall: number;
+  }>;
 }
 
 import { UserLevel } from "../index";
@@ -530,13 +530,13 @@ import { UserLevel } from "../index";
 export type TokenType = "access" | "refresh";
 
 export interface TokenPayload {
-    userId: string;
-    email: string;
-    userLevel: UserLevel;
-    /** Token type claim - prevents refresh tokens from being accepted as access tokens (and vice versa) */
-    type?: TokenType;
-    exp?: number;
-    iat?: number;
+  userId: string;
+  email: string;
+  userLevel: UserLevel;
+  /** Token type claim - prevents refresh tokens from being accepted as access tokens (and vice versa) */
+  type?: TokenType;
+  exp?: number;
+  iat?: number;
 }
 
 // ===========================================
@@ -544,9 +544,9 @@ export interface TokenPayload {
 // ===========================================
 
 export interface IDatabaseConnection {
-    /**
-     * Execute a query
-     */
+  /**
+   * Execute a query
+   */
   query<T = unknown>(
     sql: string,
     params?: unknown[]
@@ -554,42 +554,42 @@ export interface IDatabaseConnection {
 }
 
 export interface DatabaseField {
-    name: string;
-    dataType: string;
-    columnID?: number;
-    [key: string]: unknown;
+  name: string;
+  dataType: string;
+  columnID?: number;
+  [key: string]: unknown;
 }
 
 export interface DatabaseResult<T = unknown> {
-    rows: T[];
-    rowCount: number;
-    fields?: DatabaseField[];
-    command?: string;
-    oid?: number;
+  rows: T[];
+  rowCount: number;
+  fields?: DatabaseField[];
+  command?: string;
+  oid?: number;
 }
 
 // Domain types are imported at the top
 // All domain classes (Balance, Position, Trade) are now imported from domain.ts
 
 export interface AccountInfo {
-    totalBalance: string;
-    totalPnl24H: string;
-    totalPnl30D: string;
-    totalPnlAll: string;
-    accountType: string;
-    balances: AccountBalance[];
+  totalBalance: string;
+  totalPnl24H: string;
+  totalPnl30D: string;
+  totalPnlAll: string;
+  accountType: string;
+  balances: AccountBalance[];
 }
 
 export interface AccountBalance {
-    asset: string;
-    free: string;
-    locked: string;
+  asset: string;
+  free: string;
+  locked: string;
 }
 
 export interface ExternalCredentials {
-    accountId: string;
-    apiKey: string;
-    secretKey: string;
+  accountId: string;
+  apiKey: string;
+  secretKey: string;
 }
 
 // UserLevel is already imported above for TokenPayload

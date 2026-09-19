@@ -58,8 +58,8 @@ router.get("/health/detailed", async (req: Request, res: Response) => {
         redis: controlPlaneStatus === "ready",
         description:
           controlPlaneStatus === "ready"
-          ? "Trading control plane is operational"
-          : "Trading control plane is NOT operational - bot commands will be rejected",
+            ? "Trading control plane is operational"
+            : "Trading control plane is NOT operational - bot commands will be rejected",
       },
       checks: health.checks,
     });

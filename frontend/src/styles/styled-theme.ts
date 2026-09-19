@@ -4,86 +4,86 @@ import { DefaultTheme } from "styled-components";
 
 // CSS-in-JS Theme Interface
 export interface StyledTheme extends DefaultTheme {
-    colors: {
-        primary: string;
-        primaryHover: string;
-        secondary: string;
-        secondaryHover: string;
-        accent: string;
-        danger: string;
-        warning: string;
-        info: string;
-        success: string;
+  colors: {
+    primary: string;
+    primaryHover: string;
+    secondary: string;
+    secondaryHover: string;
+    accent: string;
+    danger: string;
+    warning: string;
+    info: string;
+    success: string;
 
-        background: {
-            primary: string;
-            surface: string;
-            surfaceLight: string;
-            glass: string;
-            glassHover: string;
-            input: string;
-            inputFocus: string;
-            tableHeader: string;
-            tooltip: string;
-        };
-
-        text: {
-            primary: string;
-            secondary: string;
-            tertiary: string;
-        };
-
-        border: {
-            light: string;
-            medium: string;
-        };
-
-        shadow: {
-            glow: string;
-            lg: string;
-        };
+    background: {
+      primary: string;
+      surface: string;
+      surfaceLight: string;
+      glass: string;
+      glassHover: string;
+      input: string;
+      inputFocus: string;
+      tableHeader: string;
+      tooltip: string;
     };
 
-    spacing: {
-        xs: string;
-        sm: string;
-        md: string;
-        lg: string;
-        xl: string;
+    text: {
+      primary: string;
+      secondary: string;
+      tertiary: string;
     };
 
-    borderRadius: {
-        sm: string;
-        md: string;
-        lg: string;
-        xl: string;
+    border: {
+      light: string;
+      medium: string;
     };
 
-    fontSize: {
-        xs: string;
-        sm: string;
-        base: string;
-        lg: string;
-        xl: string;
+    shadow: {
+      glow: string;
+      lg: string;
+    };
+  };
+
+  spacing: {
+    xs: string;
+    sm: string;
+    md: string;
+    lg: string;
+    xl: string;
+  };
+
+  borderRadius: {
+    sm: string;
+    md: string;
+    lg: string;
+    xl: string;
+  };
+
+  fontSize: {
+    xs: string;
+    sm: string;
+    base: string;
+    lg: string;
+    xl: string;
     "2xl": string;
     "3xl": string;
     "4xl": string;
-    };
+  };
 
-    breakpoints: {
-        sm: string;
-        md: string;
-        lg: string;
-        xl: string;
+  breakpoints: {
+    sm: string;
+    md: string;
+    lg: string;
+    xl: string;
     "2xl": string;
     "3xl": string;
     "4xl": string;
-    };
+  };
 }
 
 // Light Theme
 export const lightTheme: StyledTheme = {
-    colors: {
+  colors: {
     primary: "#3b82f6",
     primaryHover: "#2563eb",
     secondary: "#10b981",
@@ -94,7 +94,7 @@ export const lightTheme: StyledTheme = {
     info: "#3b82f6",
     success: "#10b981",
 
-        background: {
+    background: {
       primary: "#ffffff",
       surface: "#f8fafc",
       surfaceLight: "#f1f5f9",
@@ -104,41 +104,41 @@ export const lightTheme: StyledTheme = {
       inputFocus: "rgba(241, 245, 249, 0.9)",
       tableHeader: "rgba(241, 245, 249, 0.8)",
       tooltip: "rgba(248, 250, 252, 0.95)",
-        },
+    },
 
-        text: {
+    text: {
       primary: "#1e293b",
       secondary: "#64748b",
       tertiary: "#94a3b8",
-        },
-
-        border: {
-      light: "rgba(0, 0, 0, 0.08)",
-      medium: "rgba(0, 0, 0, 0.12)",
-        },
-
-        shadow: {
-      glow: "0 0 20px rgba(59, 130, 246, 0.1)",
-      lg: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
-        },
     },
 
-    spacing: {
+    border: {
+      light: "rgba(0, 0, 0, 0.08)",
+      medium: "rgba(0, 0, 0, 0.12)",
+    },
+
+    shadow: {
+      glow: "0 0 20px rgba(59, 130, 246, 0.1)",
+      lg: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
+    },
+  },
+
+  spacing: {
     xs: "0.25rem",
     sm: "0.5rem",
     md: "1rem",
     lg: "1.5rem",
     xl: "2rem",
-    },
+  },
 
-    borderRadius: {
+  borderRadius: {
     sm: "0.375rem",
     md: "0.5rem",
     lg: "0.75rem",
     xl: "1rem",
-    },
+  },
 
-    fontSize: {
+  fontSize: {
     xs: "0.75rem",
     sm: "0.875rem",
     base: "1rem",
@@ -147,9 +147,9 @@ export const lightTheme: StyledTheme = {
     "2xl": "1.5rem",
     "3xl": "1.875rem",
     "4xl": "2.25rem",
-    },
+  },
 
-    breakpoints: {
+  breakpoints: {
     sm: "640px",
     md: "768px",
     lg: "1024px",
@@ -157,12 +157,12 @@ export const lightTheme: StyledTheme = {
     "2xl": "1536px",
     "3xl": "1920px",
     "4xl": "2560px",
-    },
+  },
 };
 
 // Dark Theme (Default)
 export const darkTheme: StyledTheme = {
-    colors: {
+  colors: {
     primary: "#6366f1",
     primaryHover: "#818cf8",
     secondary: "#10b981",
@@ -173,7 +173,7 @@ export const darkTheme: StyledTheme = {
     info: "#3b82f6",
     success: "#10b981",
 
-        background: {
+    background: {
       primary: "#0a0a0f",
       surface: "#13131a",
       surfaceLight: "#1a1a24",
@@ -183,41 +183,41 @@ export const darkTheme: StyledTheme = {
       inputFocus: "rgba(19, 19, 26, 0.9)",
       tableHeader: "rgba(19, 19, 26, 0.8)",
       tooltip: "rgba(30, 30, 46, 0.95)",
-        },
+    },
 
-        text: {
+    text: {
       primary: "#f8fafc",
       secondary: "#94a3b8",
       tertiary: "#64748b",
-        },
-
-        border: {
-      light: "rgba(255, 255, 255, 0.08)",
-      medium: "rgba(255, 255, 255, 0.12)",
-        },
-
-        shadow: {
-      glow: "0 0 20px rgba(99, 102, 241, 0.1)",
-      lg: "0 10px 25px -5px rgba(0, 0, 0, 0.5)",
-        },
     },
 
-    spacing: {
+    border: {
+      light: "rgba(255, 255, 255, 0.08)",
+      medium: "rgba(255, 255, 255, 0.12)",
+    },
+
+    shadow: {
+      glow: "0 0 20px rgba(99, 102, 241, 0.1)",
+      lg: "0 10px 25px -5px rgba(0, 0, 0, 0.5)",
+    },
+  },
+
+  spacing: {
     xs: "0.25rem",
     sm: "0.5rem",
     md: "1rem",
     lg: "1.5rem",
     xl: "2rem",
-    },
+  },
 
-    borderRadius: {
+  borderRadius: {
     sm: "0.375rem",
     md: "0.5rem",
     lg: "0.75rem",
     xl: "1rem",
-    },
+  },
 
-    fontSize: {
+  fontSize: {
     xs: "0.75rem",
     sm: "0.875rem",
     base: "1rem",
@@ -226,9 +226,9 @@ export const darkTheme: StyledTheme = {
     "2xl": "1.5rem",
     "3xl": "1.875rem",
     "4xl": "2.25rem",
-    },
+  },
 
-    breakpoints: {
+  breakpoints: {
     sm: "640px",
     md: "768px",
     lg: "1024px",
@@ -236,15 +236,15 @@ export const darkTheme: StyledTheme = {
     "2xl": "1536px",
     "3xl": "1920px",
     "4xl": "2560px",
-    },
+  },
 };
 
 // Helper function to get theme from CSS variables
 export const getThemeFromCSS = (): StyledTheme => {
-    const computedStyle = getComputedStyle(document.documentElement);
+  const computedStyle = getComputedStyle(document.documentElement);
 
-    return {
-        colors: {
+  return {
+    colors: {
       primary:
         computedStyle.getPropertyValue("--primary") || darkTheme.colors.primary,
       primaryHover:
@@ -263,9 +263,9 @@ export const getThemeFromCSS = (): StyledTheme => {
       warning:
         computedStyle.getPropertyValue("--warning") || darkTheme.colors.warning,
       info: computedStyle.getPropertyValue("--info") || darkTheme.colors.info,
-            success: darkTheme.colors.success,
+      success: darkTheme.colors.success,
 
-            background: {
+      background: {
         primary:
           computedStyle.getPropertyValue("--bg-primary") ||
           darkTheme.colors.background.primary,
@@ -293,9 +293,9 @@ export const getThemeFromCSS = (): StyledTheme => {
         tooltip:
           computedStyle.getPropertyValue("--bg-tooltip") ||
           darkTheme.colors.background.tooltip,
-            },
+      },
 
-            text: {
+      text: {
         primary:
           computedStyle.getPropertyValue("--text-primary") ||
           darkTheme.colors.text.primary,
@@ -305,32 +305,32 @@ export const getThemeFromCSS = (): StyledTheme => {
         tertiary:
           computedStyle.getPropertyValue("--text-tertiary") ||
           darkTheme.colors.text.tertiary,
-            },
+      },
 
-            border: {
+      border: {
         light:
           computedStyle.getPropertyValue("--border-light") ||
           darkTheme.colors.border.light,
         medium:
           computedStyle.getPropertyValue("--border-medium") ||
           darkTheme.colors.border.medium,
-            },
+      },
 
-            shadow: {
+      shadow: {
         glow:
           computedStyle.getPropertyValue("--shadow-glow") ||
           darkTheme.colors.shadow.glow,
         lg:
           computedStyle.getPropertyValue("--shadow-lg") ||
           darkTheme.colors.shadow.lg,
-            },
-        },
+      },
+    },
 
-        spacing: darkTheme.spacing,
-        borderRadius: darkTheme.borderRadius,
-        fontSize: darkTheme.fontSize,
-        breakpoints: darkTheme.breakpoints,
-    };
+    spacing: darkTheme.spacing,
+    borderRadius: darkTheme.borderRadius,
+    fontSize: darkTheme.fontSize,
+    breakpoints: darkTheme.breakpoints,
+  };
 };
 
 export default darkTheme;

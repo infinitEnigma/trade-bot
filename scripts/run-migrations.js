@@ -5,12 +5,12 @@
  * Executes SQL migration files in order
  */
 
-const fs = require('fs');
-const path = require('path');
-const { Pool } = require('pg');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const fs = require("fs");
+const path = require("path");
+const { Pool } = require("pg");
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 
-const MIGRATIONS_DIR = path.join(__dirname, '..', 'database', 'migrations');
+const MIGRATIONS_DIR = path.join(__dirname, "..", "database", "migrations");
 
 /**
  * Split a SQL file into individual statements, respecting single/double
@@ -20,7 +20,7 @@ const MIGRATIONS_DIR = path.join(__dirname, '..', 'database', 'migrations');
  */
 function splitStatements(sql) {
   const statements = [];
-  let current = '';
+  let current = "";
   let inSingle = false;
   let inDouble = false;
   let inLineComment = false;
@@ -29,22 +29,29 @@ function splitStatements(sql) {
 
   for (let i = 0; i < sql.length; i++) {
     const ch = sql[i];
-    const next = i + 1 < sql.length ? sql[i + 1] : '';
+    const next = i + 1 < sql.length ? sql[i + 1] : "";
 
     if (inLineComment) {
       current += ch;
-      if (ch === '\n') inLineComment = false;
+      if (ch === "\n") inLineComment = false;
       continue;
     }
     if (inBlockComment) {
       current += ch;
-      if (ch === '*' && next === '/') { current += next; i++; inBlockComment = false; }
+      if (ch === "*" && next === "/") {
+        current += next;
+        i++;
+        inBlockComment = false;
+      }
       continue;
     }
     if (inSingle) {
       current += ch;
       if (ch === "'") {
-        if (next === "'") { current += next; i++; } // escaped quote
+        if (next === "'") {
+          current += next;
+          i++;
+        } // escaped quote
         else inSingle = false;
       }
       continue;
@@ -55,21 +62,45 @@ function splitStatements(sql) {
       continue;
     }
     if (dollarTag) {
-      if (sql.startsWith(dollarTag, i)) { current += dollarTag; i += dollarTag.length - 1; dollarTag = null; }
-      else current += ch;
+      if (sql.startsWith(dollarTag, i)) {
+        current += dollarTag;
+        i += dollarTag.length - 1;
+        dollarTag = null;
+      } else current += ch;
       continue;
     }
-    if (ch === '-' && next === '-') { inLineComment = true; current += ch; continue; }
-    if (ch === '/' && next === '*') { inBlockComment = true; current += ch; continue; }
-    if (ch === "'") { inSingle = true; current += ch; continue; }
-    if (ch === '"') { inDouble = true; current += ch; continue; }
-    if (ch === '$') {
-      const match = /^\$[A-Za-z_]*\$/.exec(sql.slice(i));
-      if (match) { dollarTag = match[0]; current += dollarTag; i += dollarTag.length - 1; continue; }
+    if (ch === "-" && next === "-") {
+      inLineComment = true;
+      current += ch;
+      continue;
     }
-    if (ch === ';') {
+    if (ch === "/" && next === "*") {
+      inBlockComment = true;
+      current += ch;
+      continue;
+    }
+    if (ch === "'") {
+      inSingle = true;
+      current += ch;
+      continue;
+    }
+    if (ch === '"') {
+      inDouble = true;
+      current += ch;
+      continue;
+    }
+    if (ch === "$") {
+      const match = /^\$[A-Za-z_]*\$/.exec(sql.slice(i));
+      if (match) {
+        dollarTag = match[0];
+        current += dollarTag;
+        i += dollarTag.length - 1;
+        continue;
+      }
+    }
+    if (ch === ";") {
       if (current.trim()) statements.push(current.trim());
-      current = '';
+      current = "";
       continue;
     }
     current += ch;
@@ -81,29 +112,30 @@ function splitStatements(sql) {
 }
 
 async function runMigrations() {
-  console.log('🚀 Starting database migrations...');
+  console.log("🚀 Starting database migrations...");
 
   // Create database connection
   const pool = new Pool({
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432'),
-    database: process.env.DB_NAME || 'trade_bot',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres',
+    host: process.env.DB_HOST || "localhost",
+    port: parseInt(process.env.DB_PORT || "5432"),
+    database: process.env.DB_NAME || "trade_bot",
+    user: process.env.DB_USER || "postgres",
+    password: process.env.DB_PASSWORD || "postgres",
   });
 
   try {
     // Test connection
-    await pool.query('SELECT 1');
-    console.log('✅ Database connection established');
+    await pool.query("SELECT 1");
+    console.log("✅ Database connection established");
 
     // Get migration files
-    const migrationFiles = fs.readdirSync(MIGRATIONS_DIR)
-      .filter(file => file.endsWith('.sql'))
+    const migrationFiles = fs
+      .readdirSync(MIGRATIONS_DIR)
+      .filter(file => file.endsWith(".sql"))
       .sort(); // Sort alphabetically (001_, 002_, etc.)
 
     if (migrationFiles.length === 0) {
-      console.log('❌ No migration files found');
+      console.log("❌ No migration files found");
       return;
     }
 
@@ -111,25 +143,34 @@ async function runMigrations() {
     migrationFiles.forEach(file => console.log(`   - ${file}`));
 
     // Migration ledger: skip files already applied to this database.
-    const force = process.argv.includes('--force') || process.env.FORCE_MIGRATIONS === '1';
+    const force =
+      process.argv.includes("--force") || process.env.FORCE_MIGRATIONS === "1";
     await ensureLedger(pool);
     const applied = await getAppliedMigrations(pool);
-    const baselined = await baselineLedgerIfNeeded(pool, migrationFiles, applied);
+    const baselined = await baselineLedgerIfNeeded(
+      pool,
+      migrationFiles,
+      applied
+    );
     const appliedSet = new Set(applied.concat(baselined));
 
     let pending = selectPendingFiles(migrationFiles, [...appliedSet]);
     if (force) {
-      console.log('♻️  --force / FORCE_MIGRATIONS=1: re-executing all migration files (ledger ignored)');
+      console.log(
+        "♻️  --force / FORCE_MIGRATIONS=1: re-executing all migration files (ledger ignored)"
+      );
       pending = migrationFiles;
     } else {
       const skipped = migrationFiles.length - pending.length;
       if (skipped > 0) {
-        console.log(`⏭️  Skipping ${skipped} already-applied migrations (tracked in ${LEDGER_TABLE})`);
+        console.log(
+          `⏭️  Skipping ${skipped} already-applied migrations (tracked in ${LEDGER_TABLE})`
+        );
       }
     }
 
     if (pending.length === 0) {
-      console.log('\n🎉 Nothing to do - database schema is up to date.');
+      console.log("\n🎉 Nothing to do - database schema is up to date.");
       return;
     }
 
@@ -138,7 +179,7 @@ async function runMigrations() {
       const filePath = path.join(MIGRATIONS_DIR, file);
       console.log(`\n🔄 Executing migration: ${file}`);
 
-      const sql = fs.readFileSync(filePath, 'utf8');
+      const sql = fs.readFileSync(filePath, "utf8");
       const statements = splitStatements(sql);
 
       if (statements.length === 0) {
@@ -154,12 +195,19 @@ async function runMigrations() {
           // Only tolerate genuine idempotency duplicates ("already exists",
           // seed-row "duplicate key"). Everything else - including
           // "does not exist" - is a real failure and must abort the run.
-          if (error.message.includes('already exists') ||
-              error.message.includes('duplicate key value')) {
-            console.log(`   ⚠️  Statement ${i + 1}/${statements.length} skipped (already applied): ${error.message.split('\n')[0]}`);
+          if (
+            error.message.includes("already exists") ||
+            error.message.includes("duplicate key value")
+          ) {
+            console.log(
+              `   ⚠️  Statement ${i + 1}/${statements.length} skipped (already applied): ${error.message.split("\n")[0]}`
+            );
           } else {
-            console.error(`   ❌ Statement ${i + 1}/${statements.length} failed:`, error.message);
-            console.error(`      Statement: ${statements[i].split('\n')[0]}`);
+            console.error(
+              `   ❌ Statement ${i + 1}/${statements.length} failed:`,
+              error.message
+            );
+            console.error(`      Statement: ${statements[i].split("\n")[0]}`);
             throw error;
           }
         }
@@ -170,14 +218,15 @@ async function runMigrations() {
       console.log(`✅ Migration ${file} completed successfully`);
     }
 
-    console.log(`\n🎉 All migrations completed successfully! (applied: ${pending.length}, ledger-tracked: ${migrationFiles.length - pending.length})`);
-    console.log('\n📊 Database schema ready. You can now:');
-    console.log('   - Start the server: npm run dev');
-    console.log('   - Register users and connect Kodiak accounts');
-    console.log('   - Create trading strategies and start bots');
-
+    console.log(
+      `\n🎉 All migrations completed successfully! (applied: ${pending.length}, ledger-tracked: ${migrationFiles.length - pending.length})`
+    );
+    console.log("\n📊 Database schema ready. You can now:");
+    console.log("   - Start the server: npm run dev");
+    console.log("   - Register users and connect Kodiak accounts");
+    console.log("   - Create trading strategies and start bots");
   } catch (error) {
-    console.error('❌ Migration failed:', error.message);
+    console.error("❌ Migration failed:", error.message);
     process.exit(1);
   } finally {
     await pool.end();
@@ -185,7 +234,7 @@ async function runMigrations() {
 }
 
 // Run migrations if called directly
-const LEDGER_TABLE = 'schema_migrations';
+const LEDGER_TABLE = "schema_migrations";
 
 /**
  * Pure decision: should the ledger be baselined (all current files marked
@@ -233,23 +282,32 @@ async function baselineLedgerIfNeeded(pool, migrationFiles, applied) {
   if (applied.length > 0) {
     return [];
   }
-  const coreSchema = await pool.query(`SELECT to_regclass('public.users') IS NOT NULL AS exists`);
+  const coreSchema = await pool.query(
+    `SELECT to_regclass('public.users') IS NOT NULL AS exists`
+  );
   if (!needsBaseline(applied.length, coreSchema.rows[0].exists)) {
     return [];
   }
   for (const file of migrationFiles) {
     await recordApplied(pool, file);
   }
-  console.log(`📓 Ledger baseline: ${migrationFiles.length} migrations marked as applied (pre-ledger schema detected)`);
+  console.log(
+    `📓 Ledger baseline: ${migrationFiles.length} migrations marked as applied (pre-ledger schema detected)`
+  );
   return migrationFiles;
 }
 
 // Run migrations if called directly
 if (require.main === module) {
   runMigrations().catch(error => {
-    console.error('Fatal error:', error);
+    console.error("Fatal error:", error);
     process.exit(1);
   });
 }
 
-module.exports = { runMigrations, splitStatements, needsBaseline, selectPendingFiles };
+module.exports = {
+  runMigrations,
+  splitStatements,
+  needsBaseline,
+  selectPendingFiles,
+};

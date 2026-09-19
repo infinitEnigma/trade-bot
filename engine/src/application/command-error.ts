@@ -10,11 +10,11 @@
  */
 
 export class CommandError extends Error {
-    readonly retryable: boolean;
+  readonly retryable: boolean;
 
-    constructor(retryable: boolean, message: string) {
-        super(message);
+  constructor(retryable: boolean, message: string) {
+    super(message);
     this.name = "CommandError";
-        this.retryable = retryable;
-    }
+    this.retryable = retryable;
+  }
 }

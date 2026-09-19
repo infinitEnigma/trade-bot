@@ -19,13 +19,13 @@ import { databaseLogger as logger } from "../../../core/logging/context-aware-lo
  * Provides position data access with proper error handling and type safety.
  */
 export class PositionRepositoryAdapter implements IPositionRepository {
-    /**
-     * Get all positions for a user
-     */
-    async getPositions(userId: string): Promise<Position[]> {
-        try {
-            const result = await query<PositionRow>(
-                `SELECT
+  /**
+   * Get all positions for a user
+   */
+  async getPositions(userId: string): Promise<Position[]> {
+    try {
+      const result = await query<PositionRow>(
+        `SELECT
                     symbol,
                     position_qty as quantity,
                     average_open_price as entryPrice,
@@ -37,26 +37,26 @@ export class PositionRepositoryAdapter implements IPositionRepository {
                 FROM kodiak_positions
                 WHERE user_id = $1
                 ORDER BY updated_at DESC`,
-                [userId]
-            );
+        [userId]
+      );
 
       return result.rows
         .map(row => this.mapRowToPosition(row))
         .filter(Boolean) as Position[];
-        } catch (error) {
+    } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to get positions: ${errorMessage}`);
-        }
+      throw new Error(`Failed to get positions: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Get position by symbol for a user
-     */
-    async getPosition(userId: string, symbol: string): Promise<Position | null> {
-        try {
-            const result = await query<PositionRow>(
-                `SELECT
+  /**
+   * Get position by symbol for a user
+   */
+  async getPosition(userId: string, symbol: string): Promise<Position | null> {
+    try {
+      const result = await query<PositionRow>(
+        `SELECT
                     symbol,
                     position_qty as quantity,
                     average_open_price as entryPrice,
@@ -67,102 +67,102 @@ export class PositionRepositoryAdapter implements IPositionRepository {
                     est_liq_price as liquidationPrice
                 FROM kodiak_positions
                 WHERE user_id = $1 AND symbol = $2`,
-                [userId, symbol]
-            );
+        [userId, symbol]
+      );
 
-            if (result.rows.length === 0) {
-                return null;
-            }
+      if (result.rows.length === 0) {
+        return null;
+      }
 
-            return this.mapRowToPosition(result.rows[0]);
-        } catch (error) {
+      return this.mapRowToPosition(result.rows[0]);
+    } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to get position: ${errorMessage}`);
-        }
+      throw new Error(`Failed to get position: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Update position data
-     */
-    async updatePosition(userId: string, position: Position): Promise<void> {
-        try {
-            // This would typically update the position in the database
-            // For now, positions are synced from external APIs
+  /**
+   * Update position data
+   */
+  async updatePosition(userId: string, position: Position): Promise<void> {
+    try {
+      // This would typically update the position in the database
+      // For now, positions are synced from external APIs
       logger.info(
         `Position update for user ${userId}, symbol ${position.symbol}`
       );
-        } catch (error) {
+    } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to update position: ${errorMessage}`);
-        }
+      throw new Error(`Failed to update position: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Close position for a user
-     */
-    async closePosition(userId: string, symbol: string): Promise<void> {
-        try {
-            // This would typically mark the position as closed or remove it
-            // For now, positions are managed by external APIs
-            logger.info(`Position close for user ${userId}, symbol ${symbol}`);
-        } catch (error) {
+  /**
+   * Close position for a user
+   */
+  async closePosition(userId: string, symbol: string): Promise<void> {
+    try {
+      // This would typically mark the position as closed or remove it
+      // For now, positions are managed by external APIs
+      logger.info(`Position close for user ${userId}, symbol ${symbol}`);
+    } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to close position: ${errorMessage}`);
-        }
+      throw new Error(`Failed to close position: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Map database row to Position domain object
-     */
-    private mapRowToPosition(row: PositionRow): Position | null {
-        try {
-            const symbol = row.symbol;
+  /**
+   * Map database row to Position domain object
+   */
+  private mapRowToPosition(row: PositionRow): Position | null {
+    try {
+      const symbol = row.symbol;
       const quantity = parseFloat(row.quantity || "0");
       const entryPrice = parseFloat(row.entryPrice || "0");
       const markPrice = parseFloat(row.markPrice || "0");
       const leverage = parseInt(row.leverage || "1");
 
-            if (!symbol || quantity === 0 || entryPrice === 0) {
-                return null;
-            }
+      if (!symbol || quantity === 0 || entryPrice === 0) {
+        return null;
+      }
 
-            // Determine side based on quantity (positive = LONG, negative = SHORT)
+      // Determine side based on quantity (positive = LONG, negative = SHORT)
       const side = quantity > 0 ? "LONG" : "SHORT";
 
-            return new Position(
-                symbol,
-                side,
-                Math.abs(quantity),
-                entryPrice,
-                markPrice,
-                leverage,
+      return new Position(
+        symbol,
+        side,
+        Math.abs(quantity),
+        entryPrice,
+        markPrice,
+        leverage,
         parseFloat(row.imr || "0"), // margin ratio
-                row.liquidationPrice ? parseFloat(row.liquidationPrice) : undefined
-            );
-        } catch (error) {
+        row.liquidationPrice ? parseFloat(row.liquidationPrice) : undefined
+      );
+    } catch (error) {
       logger.error(
         `Failed to map position row to domain object: ${error}`,
         error as Error
       );
-            return null;
-        }
+      return null;
     }
+  }
 }
 
 /**
  * Database row interface for position data
  */
 interface PositionRow {
-    symbol: string;
-    quantity: string;
-    entryPrice: string;
-    markPrice: string;
-    leverage: string;
-    imr: string;
-    liquidationPrice?: string;
+  symbol: string;
+  quantity: string;
+  entryPrice: string;
+  markPrice: string;
+  leverage: string;
+  imr: string;
+  liquidationPrice?: string;
 }
 // Export singleton instance
 export const positionRepositoryAdapter = new PositionRepositoryAdapter();

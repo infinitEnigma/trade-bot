@@ -45,7 +45,7 @@ router.get(
         logger.debug(
           "Wallet balance request from BASIC user, skipping rpc call",
           {
-          userId,
+            userId,
             userLevel,
           }
         );
@@ -68,7 +68,7 @@ router.get(
         throw new ValidationError(
           "No connected wallet found. Please connect your wallet in Settings.",
           {
-          userId,
+            userId,
             operation: "wallet_balance_fetch",
           }
         );
@@ -92,8 +92,8 @@ router.get(
           "Wallet balance fetch failed for VERIFIED user",
           error as Error,
           {
-          userId,
-          userLevel,
+            userId,
+            userLevel,
           }
         );
 
@@ -106,7 +106,7 @@ router.get(
           throw new ValidationError(
             "Wallet not connected. Please connect your wallet in Settings.",
             {
-            userId,
+              userId,
               operation: "wallet_balance_fetch",
             }
           );
@@ -134,9 +134,9 @@ router.get(
         logger.debug(
           "Wallet balance fetch skipped/failed for non-VERIFIED user",
           {
-          userId,
-          userLevel,
-          error: errorMessage,
+            userId,
+            userLevel,
+            error: errorMessage,
           }
         );
 
@@ -144,8 +144,8 @@ router.get(
         throw new ValidationError(
           "Wallet balance data requires VERIFIED account status",
           {
-          userId,
-          userLevel,
+            userId,
+            userLevel,
             operation: "wallet_balance_fetch",
           }
         );
@@ -181,7 +181,7 @@ router.post(
         throw new ValidationError(
           "No connected wallet found. Please connect your wallet in Settings.",
           {
-          userId,
+            userId,
             operation: "wallet_balance_refresh",
           }
         );

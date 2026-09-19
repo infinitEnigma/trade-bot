@@ -74,7 +74,7 @@ router.post(
         "Registration error",
         err instanceof Error ? err : undefined,
         {
-        email: req.body?.email,
+          email: req.body?.email,
         }
       );
       const internalError = new ValidationError("Registration failed");
@@ -87,55 +87,55 @@ router.post(
 
 // POST /api/auth/login
 router.post("/login", validators.login, async (req: Request, res: Response) => {
-    authLogger.info("Login attempt", { email: req.body?.email });
-    try {
+  authLogger.info("Login attempt", { email: req.body?.email });
+  try {
     const result = await authService.login({
       email: req.body.email,
       password: req.body.password,
     });
-      authLogger.info("Login result", {
-        email: req.body.email,
-        success: result.success,
-        message: result.success ? "success" : result.message,
-      });
+    authLogger.info("Login result", {
+      email: req.body.email,
+      success: result.success,
+      message: result.success ? "success" : result.message,
+    });
 
-      if (!result.success) {
+    if (!result.success) {
       const authError = new ValidationError(
         result.message || "Invalid credentials"
       );
 
-        // Record failed login attempt for progressive backoff
-        // This will be handled by the rate limiter middleware automatically
-        // when progressiveBackoff is enabled for auth endpoints
+      // Record failed login attempt for progressive backoff
+      // This will be handled by the rate limiter middleware automatically
+      // when progressiveBackoff is enabled for auth endpoints
 
       return res
         .status(authError.statusCode)
         .json(createErrorResponse(authError, getCorrelationId()));
-      }
+    }
 
-      authLogger.info("Login successful", {
-        email: result.user?.email,
-        userId: result.user?.id,
-      });
+    authLogger.info("Login successful", {
+      email: result.user?.email,
+      userId: result.user?.id,
+    });
 
-      // Clear failure counter on successful auth
-      const identifier = `ip:${req.ip}`;
-      await progressiveAuthLimiter.recordSuccess(identifier);
+    // Clear failure counter on successful auth
+    const identifier = `ip:${req.ip}`;
+    await progressiveAuthLimiter.recordSuccess(identifier);
 
-      // Set httpOnly cookies for security
-      if (!result.tokens) {
-        authLogger.error("Login successful but tokens missing");
+    // Set httpOnly cookies for security
+    if (!result.tokens) {
+      authLogger.error("Login successful but tokens missing");
       const internalError = new ValidationError(
         "Login successful but tokens missing"
-        );
+      );
       return res
         .status(internalError.statusCode)
         .json(createErrorResponse(internalError, getCorrelationId()));
-      }
+    }
 
-      // Check if user is VERIFIED and automatically check admin qualification
-      if (result.user?.userLevel === UserLevel.VERIFIED) {
-        try {
+    // Check if user is VERIFIED and automatically check admin qualification
+    if (result.user?.userLevel === UserLevel.VERIFIED) {
+      try {
         const roleQualificationService =
           serviceProvider.getRoleQualificationService();
         const adminQualification =
@@ -144,15 +144,15 @@ router.post("/login", validators.login, async (req: Request, res: Response) => {
             UserRole.SYSTEM_ADMIN
           );
 
-          if (adminQualification.qualified) {
+        if (adminQualification.qualified) {
           const roleManagementService =
             serviceProvider.getRoleManagementService();
-            await roleManagementService.assignRole(
-              result.user.id,
-              UserRole.SYSTEM_ADMIN,
+          await roleManagementService.assignRole(
+            result.user.id,
+            UserRole.SYSTEM_ADMIN,
             "system",
-              adminQualification.criteria as unknown as JSON
-            );
+            adminQualification.criteria as unknown as JSON
+          );
 
           authLogger.info(
             "User automatically qualified for SYSTEM_ADMIN role on login",
@@ -160,8 +160,8 @@ router.post("/login", validators.login, async (req: Request, res: Response) => {
               userId: result.user.id,
             }
           );
-          }
-        } catch (error) {
+        }
+      } catch (error) {
         authLogger.warn(
           "Failed to automatically check admin qualification on login",
           {
@@ -169,36 +169,36 @@ router.post("/login", validators.login, async (req: Request, res: Response) => {
             error: error instanceof Error ? error.message : String(error),
           }
         );
-        }
       }
+    }
 
-      res.cookie("accessToken", result.tokens.accessToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 4 * 60 * 60 * 1000, // 4 hours
-      });
+    res.cookie("accessToken", result.tokens.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 4 * 60 * 60 * 1000, // 4 hours
+    });
 
-      res.cookie("refreshToken", result.tokens.refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      });
+    res.cookie("refreshToken", result.tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
 
-      res.json({
-        success: true,
-        data: { user: result.user },
-      });
-    } catch (err) {
-      authLogger.error("Login error", err instanceof Error ? err : undefined, {
-        email: req.body?.email,
-      });
-      const internalError = new ValidationError("Login failed");
+    res.json({
+      success: true,
+      data: { user: result.user },
+    });
+  } catch (err) {
+    authLogger.error("Login error", err instanceof Error ? err : undefined, {
+      email: req.body?.email,
+    });
+    const internalError = new ValidationError("Login failed");
     res
       .status(internalError.statusCode)
       .json(createErrorResponse(internalError, getCorrelationId()));
-    }
+  }
 });
 
 // POST /api/auth/refresh
@@ -394,7 +394,7 @@ router.post(
         "Qualification check error",
         error instanceof Error ? error : undefined,
         {
-        userId: req.user?.userId,
+          userId: req.user?.userId,
         }
       );
       const internalError = new ValidationError("Qualification check failed");
@@ -521,7 +521,7 @@ router.get(
         "Get me error",
         error instanceof Error ? error : undefined,
         {
-        userId: req.user?.userId,
+          userId: req.user?.userId,
         }
       );
       const internalError = new ValidationError("Failed to get user data");
@@ -598,7 +598,7 @@ router.post(
         "Admin qualification check error",
         error instanceof Error ? error : undefined,
         {
-        userId: req.user?.userId,
+          userId: req.user?.userId,
         }
       );
       const internalError = new ValidationError(

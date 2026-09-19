@@ -1,382 +1,443 @@
 /** @format */
 
-import { Request, Response } from 'express';
-import { userProfileRoutes } from '../../../src/interfaces/http/users/profile';
-import { serviceProvider } from '../../../src/core/service-provider';
+import { Request, Response } from "express";
+import { userProfileRoutes } from "../../../src/interfaces/http/users/profile";
+import { serviceProvider } from "../../../src/core/service-provider";
 
 // Mock @noble/ed25519 module to avoid Jest parse errors
-jest.mock('@noble/ed25519', () => ({
-    sign: jest.fn(),
-    verify: jest.fn(),
-    getPublicKey: jest.fn(),
-    keygen: jest.fn(),
-    etc: jest.fn(),
-    getPublicKeyAsync: jest.fn(),
-    hash: jest.fn(),
-    hashes: jest.fn(),
-    keygenAsync: jest.fn(),
-    Point: jest.fn(),
-    signAsync: jest.fn(),
-    utils: jest.fn(),
-    verifyAsync: jest.fn(),
+jest.mock("@noble/ed25519", () => ({
+  sign: jest.fn(),
+  verify: jest.fn(),
+  getPublicKey: jest.fn(),
+  keygen: jest.fn(),
+  etc: jest.fn(),
+  getPublicKeyAsync: jest.fn(),
+  hash: jest.fn(),
+  hashes: jest.fn(),
+  keygenAsync: jest.fn(),
+  Point: jest.fn(),
+  signAsync: jest.fn(),
+  utils: jest.fn(),
+  verifyAsync: jest.fn(),
 }));
 
 // Mock all dependencies
-jest.mock('../../../src/core/service-provider', () => ({
-    serviceProvider: {
-        getUserProfileService: jest.fn(),
-        getAuthService: jest.fn(),
-    },
+jest.mock("../../../src/core/service-provider", () => ({
+  serviceProvider: {
+    getUserProfileService: jest.fn(),
+    getAuthService: jest.fn(),
+  },
 }));
 
 // Mock user profile service
 const mockUserProfileService = {
-    getUserProfile: jest.fn(),
-    updateUserProfile: jest.fn(),
-    verifyWalletOwnership: jest.fn(),
+  getUserProfile: jest.fn(),
+  updateUserProfile: jest.fn(),
+  verifyWalletOwnership: jest.fn(),
 };
 
 // Mock auth service (wallet unlink)
 const mockAuthService = {
-    unlinkWallet: jest.fn(),
+  unlinkWallet: jest.fn(),
 };
 
-describe('User Profile Controller', () => {
-    let req: Partial<Request> & { user?: any };
-    let res: Partial<Response>;
-    let next: jest.Mock;
+describe("User Profile Controller", () => {
+  let req: Partial<Request> & { user?: any };
+  let res: Partial<Response>;
+  let next: jest.Mock;
 
-    beforeEach(() => {
-        req = {
-            body: {},
-            params: {},
-            headers: {},
-            ip: '127.0.0.1',
-        };
-        res = {
-            status: jest.fn().mockReturnThis(),
-            json: jest.fn(),
-        };
-        next = jest.fn();
+  beforeEach(() => {
+    req = {
+      body: {},
+      params: {},
+      headers: {},
+      ip: "127.0.0.1",
+    };
+    res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    next = jest.fn();
 
-        // Reset all mocks
-        jest.clearAllMocks();
+    // Reset all mocks
+    jest.clearAllMocks();
 
-        // Set up service provider mock
-        (serviceProvider.getUserProfileService as jest.Mock).mockReturnValue(mockUserProfileService);
-        (serviceProvider.getAuthService as jest.Mock).mockReturnValue(mockAuthService);
+    // Set up service provider mock
+    (serviceProvider.getUserProfileService as jest.Mock).mockReturnValue(
+      mockUserProfileService
+    );
+    (serviceProvider.getAuthService as jest.Mock).mockReturnValue(
+      mockAuthService
+    );
 
-        // Mock authenticated user
-        req.user = {
-            userId: 'user-123',
-            email: 'test@example.com',
-            userLevel: 'VERIFIED',
-            roles: [],
-        };
+    // Mock authenticated user
+    req.user = {
+      userId: "user-123",
+      email: "test@example.com",
+      userLevel: "VERIFIED",
+      roles: [],
+    };
+  });
+
+  describe("GET /api/user/profile", () => {
+    it("should return user profile for authenticated user", async () => {
+      const mockProfile = {
+        id: "user-123",
+        email: "test@example.com",
+        userLevel: "VERIFIED",
+        roles: [],
+        hasKodiak: false,
+        kodiakStatus: null,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-02"),
+      };
+
+      mockUserProfileService.getUserProfile.mockResolvedValue(mockProfile);
+
+      const profileRoute = userProfileRoutes.stack.find(
+        (route: any) =>
+          route.route &&
+          route.route.path === "/profile" &&
+          route.route.methods.get
+      );
+
+      if (!profileRoute || !profileRoute.route) {
+        throw new Error("Profile route not found");
+      }
+
+      const profileHandler = profileRoute.route.stack[1].handle; // Skip auth middleware
+
+      await profileHandler(req as Request, res as Response, next);
+
+      expect(mockUserProfileService.getUserProfile).toHaveBeenCalledWith(
+        "user-123"
+      );
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: {
+          user: {
+            id: mockProfile.id,
+            email: mockProfile.email,
+            userLevel: mockProfile.userLevel,
+            roles: mockProfile.roles,
+            createdAt: mockProfile.createdAt,
+            updatedAt: mockProfile.updatedAt,
+          },
+          kodiakStatus: mockProfile.kodiakStatus,
+        },
+      });
     });
 
-    describe('GET /api/user/profile', () => {
-        it('should return user profile for authenticated user', async () => {
-            const mockProfile = {
-                id: 'user-123',
-                email: 'test@example.com',
-                userLevel: 'VERIFIED',
-                roles: [],
-                hasKodiak: false,
-                kodiakStatus: null,
-                createdAt: new Date('2024-01-01'),
-                updatedAt: new Date('2024-01-02'),
-            };
+    it("should handle profile retrieval errors", async () => {
+      mockUserProfileService.getUserProfile.mockRejectedValue(
+        new Error("Failed to get profile")
+      );
 
-            mockUserProfileService.getUserProfile.mockResolvedValue(mockProfile);
+      const profileRoute = userProfileRoutes.stack.find(
+        (route: any) =>
+          route.route &&
+          route.route.path === "/profile" &&
+          route.route.methods.get
+      );
 
-            const profileRoute = userProfileRoutes.stack.find((route: any) =>
-                route.route && route.route.path === '/profile' && route.route.methods.get
-            );
+      if (!profileRoute || !profileRoute.route) {
+        throw new Error("Profile route not found");
+      }
 
-            if (!profileRoute || !profileRoute.route) {
-                throw new Error('Profile route not found');
-            }
+      const profileHandler = profileRoute.route.stack[1].handle; // Skip auth middleware
 
-            const profileHandler = profileRoute.route.stack[1].handle; // Skip auth middleware
+      await profileHandler(req as Request, res as Response, next);
 
-            await profileHandler(req as Request, res as Response, next);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+        })
+      );
+    });
+  });
 
-            expect(mockUserProfileService.getUserProfile).toHaveBeenCalledWith('user-123');
-            expect(res.json).toHaveBeenCalledWith({
-                success: true,
-                data: {
-                    user: {
-                        id: mockProfile.id,
-                        email: mockProfile.email,
-                        userLevel: mockProfile.userLevel,
-                        roles: mockProfile.roles,
-                        createdAt: mockProfile.createdAt,
-                        updatedAt: mockProfile.updatedAt,
-                    },
-                    kodiakStatus: mockProfile.kodiakStatus,
-                },
-            });
-        });
+  describe("POST /api/user/profile/update", () => {
+    it("should update user profile", async () => {
+      const mockUpdateResult = {
+        success: true,
+        message: "Profile updated successfully",
+        data: {
+          email: "updated@example.com",
+          updatedAt: new Date().toISOString(),
+        },
+      };
 
-        it('should handle profile retrieval errors', async () => {
-            mockUserProfileService.getUserProfile.mockRejectedValue(new Error('Failed to get profile'));
+      mockUserProfileService.updateUserProfile.mockResolvedValue(
+        mockUpdateResult
+      );
 
-            const profileRoute = userProfileRoutes.stack.find((route: any) =>
-                route.route && route.route.path === '/profile' && route.route.methods.get
-            );
+      req.body = {
+        email: "updated@example.com",
+      };
 
-            if (!profileRoute || !profileRoute.route) {
-                throw new Error('Profile route not found');
-            }
+      const updateRoute = userProfileRoutes.stack.find(
+        (route: any) =>
+          route.route &&
+          route.route.path === "/profile/update" &&
+          route.route.methods.post
+      );
 
-            const profileHandler = profileRoute.route.stack[1].handle; // Skip auth middleware
+      if (!updateRoute || !updateRoute.route) {
+        throw new Error("Update route not found");
+      }
 
-            await profileHandler(req as Request, res as Response, next);
+      const updateHandler = updateRoute.route.stack[1].handle; // Skip auth middleware
 
-            expect(res.status).toHaveBeenCalledWith(500);
-            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                success: false,
-            }));
-        });
+      await updateHandler(req as Request, res as Response, next);
+
+      expect(mockUserProfileService.updateUserProfile).toHaveBeenCalledWith(
+        "user-123",
+        {
+          email: "updated@example.com",
+        }
+      );
+      expect(res.json).toHaveBeenCalledWith(mockUpdateResult);
     });
 
-    describe('POST /api/user/profile/update', () => {
-        it('should update user profile', async () => {
-            const mockUpdateResult = {
-                success: true,
-                message: 'Profile updated successfully',
-                data: {
-                    email: 'updated@example.com',
-                    updatedAt: new Date().toISOString(),
-                },
-            };
+    it("should handle profile update errors", async () => {
+      const mockUpdateResult = {
+        success: false,
+        message: "Email already in use",
+        error: "Email already in use",
+      };
 
-            mockUserProfileService.updateUserProfile.mockResolvedValue(mockUpdateResult);
+      mockUserProfileService.updateUserProfile.mockResolvedValue(
+        mockUpdateResult
+      );
 
-            req.body = {
-                email: 'updated@example.com',
-            };
+      req.body = {
+        email: "existing@example.com",
+      };
 
-            const updateRoute = userProfileRoutes.stack.find((route: any) =>
-                route.route && route.route.path === '/profile/update' && route.route.methods.post
-            );
+      const updateRoute = userProfileRoutes.stack.find(
+        (route: any) =>
+          route.route &&
+          route.route.path === "/profile/update" &&
+          route.route.methods.post
+      );
 
-            if (!updateRoute || !updateRoute.route) {
-                throw new Error('Update route not found');
-            }
+      if (!updateRoute || !updateRoute.route) {
+        throw new Error("Update route not found");
+      }
 
-            const updateHandler = updateRoute.route.stack[1].handle; // Skip auth middleware
+      const updateHandler = updateRoute.route.stack[1].handle; // Skip auth middleware
 
-            await updateHandler(req as Request, res as Response, next);
+      await updateHandler(req as Request, res as Response, next);
 
-            expect(mockUserProfileService.updateUserProfile).toHaveBeenCalledWith('user-123', {
-                email: 'updated@example.com',
-            });
-            expect(res.json).toHaveBeenCalledWith(mockUpdateResult);
-        });
-
-        it('should handle profile update errors', async () => {
-            const mockUpdateResult = {
-                success: false,
-                message: 'Email already in use',
-                error: 'Email already in use',
-            };
-
-            mockUserProfileService.updateUserProfile.mockResolvedValue(mockUpdateResult);
-
-            req.body = {
-                email: 'existing@example.com',
-            };
-
-            const updateRoute = userProfileRoutes.stack.find((route: any) =>
-                route.route && route.route.path === '/profile/update' && route.route.methods.post
-            );
-
-            if (!updateRoute || !updateRoute.route) {
-                throw new Error('Update route not found');
-            }
-
-            const updateHandler = updateRoute.route.stack[1].handle; // Skip auth middleware
-
-            await updateHandler(req as Request, res as Response, next);
-
-            expect(res.status).toHaveBeenCalledWith(400);
-            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                success: false,
-                error: 'Email already in use',
-            }));
-        });
-
-        it('should handle validation errors', async () => {
-            req.body = {
-                newPassword: 'newpassword', // Missing currentPassword
-            };
-
-            const updateRoute = userProfileRoutes.stack.find((route: any) =>
-                route.route && route.route.path === '/profile/update' && route.route.methods.post
-            );
-
-            if (!updateRoute || !updateRoute.route) {
-                throw new Error('Update route not found');
-            }
-
-            const updateHandler = updateRoute.route.stack[1].handle; // Skip auth middleware
-
-            await updateHandler(req as Request, res as Response, next);
-
-            expect(res.status).toHaveBeenCalledWith(400);
-            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                success: false,
-            }));
-        });
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: "Email already in use",
+        })
+      );
     });
 
-    describe('POST /api/user/verify-wallet', () => {
-        it('should verify wallet ownership', async () => {
-            const mockVerificationResult = {
-                success: true,
-                message: 'Wallet verified successfully',
-            };
+    it("should handle validation errors", async () => {
+      req.body = {
+        newPassword: "newpassword", // Missing currentPassword
+      };
 
-            mockUserProfileService.verifyWalletOwnership.mockResolvedValue(mockVerificationResult);
+      const updateRoute = userProfileRoutes.stack.find(
+        (route: any) =>
+          route.route &&
+          route.route.path === "/profile/update" &&
+          route.route.methods.post
+      );
 
-            req.body = {
-                walletAddress: '0x1234567890123456789012345678901234567890',
-                signature: '0xabcdef1234567890',
-                message: 'Sign this message to verify your wallet',
-            };
+      if (!updateRoute || !updateRoute.route) {
+        throw new Error("Update route not found");
+      }
 
-            const verifyWalletRoute = userProfileRoutes.stack.find((route: any) =>
-                route.route && route.route.path === '/verify-wallet' && route.route.methods.post
-            );
+      const updateHandler = updateRoute.route.stack[1].handle; // Skip auth middleware
 
-            if (!verifyWalletRoute || !verifyWalletRoute.route) {
-                throw new Error('Verify wallet route not found');
-            }
+      await updateHandler(req as Request, res as Response, next);
 
-            const verifyWalletHandler = verifyWalletRoute.route.stack[1].handle; // Skip auth middleware
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+        })
+      );
+    });
+  });
 
-            await verifyWalletHandler(req as Request, res as Response, next);
+  describe("POST /api/user/verify-wallet", () => {
+    it("should verify wallet ownership", async () => {
+      const mockVerificationResult = {
+        success: true,
+        message: "Wallet verified successfully",
+      };
 
-            expect(mockUserProfileService.verifyWalletOwnership).toHaveBeenCalledWith(
-                'user-123',
-                '0x1234567890123456789012345678901234567890',
-                '0xabcdef1234567890',
-                'Sign this message to verify your wallet'
-            );
-            expect(res.json).toHaveBeenCalledWith(mockVerificationResult);
-        });
+      mockUserProfileService.verifyWalletOwnership.mockResolvedValue(
+        mockVerificationResult
+      );
 
-        it('should handle wallet verification errors', async () => {
-            const mockVerificationResult = {
-                success: false,
-                message: 'Invalid signature',
-            };
+      req.body = {
+        walletAddress: "0x1234567890123456789012345678901234567890",
+        signature: "0xabcdef1234567890",
+        message: "Sign this message to verify your wallet",
+      };
 
-            mockUserProfileService.verifyWalletOwnership.mockResolvedValue(mockVerificationResult);
+      const verifyWalletRoute = userProfileRoutes.stack.find(
+        (route: any) =>
+          route.route &&
+          route.route.path === "/verify-wallet" &&
+          route.route.methods.post
+      );
 
-            req.body = {
-                walletAddress: '0x1234567890123456789012345678901234567890',
-                signature: 'invalid-signature',
-                message: 'Sign this message to verify your wallet',
-            };
+      if (!verifyWalletRoute || !verifyWalletRoute.route) {
+        throw new Error("Verify wallet route not found");
+      }
 
-            const verifyWalletRoute = userProfileRoutes.stack.find((route: any) =>
-                route.route && route.route.path === '/verify-wallet' && route.route.methods.post
-            );
+      const verifyWalletHandler = verifyWalletRoute.route.stack[1].handle; // Skip auth middleware
 
-            if (!verifyWalletRoute || !verifyWalletRoute.route) {
-                throw new Error('Verify wallet route not found');
-            }
+      await verifyWalletHandler(req as Request, res as Response, next);
 
-            const verifyWalletHandler = verifyWalletRoute.route.stack[1].handle; // Skip auth middleware
-
-            await verifyWalletHandler(req as Request, res as Response, next);
-
-            expect(res.status).toHaveBeenCalledWith(400);
-            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                success: false,
-                error: 'Invalid signature',
-            }));
-        });
-
-        it('should handle validation errors for wallet verification', async () => {
-            req.body = {
-                walletAddress: '0x1234567890123456789012345678901234567890',
-                signature: '0xabcdef1234567890',
-                // Missing message
-            };
-
-            const verifyWalletRoute = userProfileRoutes.stack.find((route: any) =>
-                route.route && route.route.path === '/verify-wallet' && route.route.methods.post
-            );
-
-            if (!verifyWalletRoute || !verifyWalletRoute.route) {
-                throw new Error('Verify wallet route not found');
-            }
-
-            const verifyWalletHandler = verifyWalletRoute.route.stack[1].handle; // Skip auth middleware
-
-            await verifyWalletHandler(req as Request, res as Response, next);
-
-            expect(res.status).toHaveBeenCalledWith(400);
-            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                success: false,
-            }));
-        });
+      expect(mockUserProfileService.verifyWalletOwnership).toHaveBeenCalledWith(
+        "user-123",
+        "0x1234567890123456789012345678901234567890",
+        "0xabcdef1234567890",
+        "Sign this message to verify your wallet"
+      );
+      expect(res.json).toHaveBeenCalledWith(mockVerificationResult);
     });
 
-    describe('POST /api/user/unlink-wallet', () => {
-        it('should unlink wallet', async () => {
-            const mockUnlinkResult = {
-                success: true,
-                message: 'Wallet unlinked from your account.',
-            };
+    it("should handle wallet verification errors", async () => {
+      const mockVerificationResult = {
+        success: false,
+        message: "Invalid signature",
+      };
 
-            mockAuthService.unlinkWallet.mockResolvedValue(mockUnlinkResult);
+      mockUserProfileService.verifyWalletOwnership.mockResolvedValue(
+        mockVerificationResult
+      );
 
-            const unlinkRoute = userProfileRoutes.stack.find((route: any) =>
-                route.route && route.route.path === '/unlink-wallet' && route.route.methods.post
-            );
+      req.body = {
+        walletAddress: "0x1234567890123456789012345678901234567890",
+        signature: "invalid-signature",
+        message: "Sign this message to verify your wallet",
+      };
 
-            if (!unlinkRoute || !unlinkRoute.route) {
-                throw new Error('Unlink wallet route not found');
-            }
+      const verifyWalletRoute = userProfileRoutes.stack.find(
+        (route: any) =>
+          route.route &&
+          route.route.path === "/verify-wallet" &&
+          route.route.methods.post
+      );
 
-            const unlinkHandler = unlinkRoute.route.stack[1].handle; // Skip auth middleware
+      if (!verifyWalletRoute || !verifyWalletRoute.route) {
+        throw new Error("Verify wallet route not found");
+      }
 
-            await unlinkHandler(req as Request, res as Response, next);
+      const verifyWalletHandler = verifyWalletRoute.route.stack[1].handle; // Skip auth middleware
 
-            expect(mockAuthService.unlinkWallet).toHaveBeenCalledWith('user-123');
-            expect(res.json).toHaveBeenCalledWith(mockUnlinkResult);
-        });
+      await verifyWalletHandler(req as Request, res as Response, next);
 
-        it('should handle wallet unlink errors', async () => {
-            const mockUnlinkResult = {
-                success: false,
-                message: 'No linked wallet found',
-            };
-
-            mockAuthService.unlinkWallet.mockResolvedValue(mockUnlinkResult);
-
-            const unlinkRoute = userProfileRoutes.stack.find((route: any) =>
-                route.route && route.route.path === '/unlink-wallet' && route.route.methods.post
-            );
-
-            if (!unlinkRoute || !unlinkRoute.route) {
-                throw new Error('Unlink wallet route not found');
-            }
-
-            const unlinkHandler = unlinkRoute.route.stack[1].handle; // Skip auth middleware
-
-            await unlinkHandler(req as Request, res as Response, next);
-
-            expect(res.status).toHaveBeenCalledWith(400);
-            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                success: false,
-                error: 'No linked wallet found',
-            }));
-        });
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: "Invalid signature",
+        })
+      );
     });
+
+    it("should handle validation errors for wallet verification", async () => {
+      req.body = {
+        walletAddress: "0x1234567890123456789012345678901234567890",
+        signature: "0xabcdef1234567890",
+        // Missing message
+      };
+
+      const verifyWalletRoute = userProfileRoutes.stack.find(
+        (route: any) =>
+          route.route &&
+          route.route.path === "/verify-wallet" &&
+          route.route.methods.post
+      );
+
+      if (!verifyWalletRoute || !verifyWalletRoute.route) {
+        throw new Error("Verify wallet route not found");
+      }
+
+      const verifyWalletHandler = verifyWalletRoute.route.stack[1].handle; // Skip auth middleware
+
+      await verifyWalletHandler(req as Request, res as Response, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+        })
+      );
+    });
+  });
+
+  describe("POST /api/user/unlink-wallet", () => {
+    it("should unlink wallet", async () => {
+      const mockUnlinkResult = {
+        success: true,
+        message: "Wallet unlinked from your account.",
+      };
+
+      mockAuthService.unlinkWallet.mockResolvedValue(mockUnlinkResult);
+
+      const unlinkRoute = userProfileRoutes.stack.find(
+        (route: any) =>
+          route.route &&
+          route.route.path === "/unlink-wallet" &&
+          route.route.methods.post
+      );
+
+      if (!unlinkRoute || !unlinkRoute.route) {
+        throw new Error("Unlink wallet route not found");
+      }
+
+      const unlinkHandler = unlinkRoute.route.stack[1].handle; // Skip auth middleware
+
+      await unlinkHandler(req as Request, res as Response, next);
+
+      expect(mockAuthService.unlinkWallet).toHaveBeenCalledWith("user-123");
+      expect(res.json).toHaveBeenCalledWith(mockUnlinkResult);
+    });
+
+    it("should handle wallet unlink errors", async () => {
+      const mockUnlinkResult = {
+        success: false,
+        message: "No linked wallet found",
+      };
+
+      mockAuthService.unlinkWallet.mockResolvedValue(mockUnlinkResult);
+
+      const unlinkRoute = userProfileRoutes.stack.find(
+        (route: any) =>
+          route.route &&
+          route.route.path === "/unlink-wallet" &&
+          route.route.methods.post
+      );
+
+      if (!unlinkRoute || !unlinkRoute.route) {
+        throw new Error("Unlink wallet route not found");
+      }
+
+      const unlinkHandler = unlinkRoute.route.stack[1].handle; // Skip auth middleware
+
+      await unlinkHandler(req as Request, res as Response, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: "No linked wallet found",
+        })
+      );
+    });
+  });
 });

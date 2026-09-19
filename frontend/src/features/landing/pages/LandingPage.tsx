@@ -3,7 +3,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import {ElectricalNetworkBackground} from "../../../shared/components/layout";
+import { ElectricalNetworkBackground } from "../../../shared/components/layout";
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();

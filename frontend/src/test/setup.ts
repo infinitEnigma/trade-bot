@@ -6,64 +6,66 @@ import { afterEach, vi } from "vitest";
 
 // Cleanup after each test to prevent DOM leaks
 afterEach(() => {
-    cleanup();
+  cleanup();
 });
 
 // Global mocks for browser APIs
 global.ResizeObserver = class {
-    constructor(_callback: ResizeObserverCallback) { }
-    observe() { }
-    unobserve() { }
-    disconnect() { }
+  constructor(_callback: ResizeObserverCallback) {}
+  observe() {}
+  unobserve() {}
+  disconnect() {}
 };
 
 // Mock localStorage
 const localStorageMock = (() => {
-    let store: Record<string, string> = {};
-    return {
-        getItem: (key: string) => store[key] || null,
-        setItem: (key: string, value: string) => {
-            store[key] = value.toString();
-        },
-        removeItem: (key: string) => {
-            delete store[key];
-        },
-        clear: () => {
-            store = {};
-        },
-    };
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] || null,
+    setItem: (key: string, value: string) => {
+      store[key] = value.toString();
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    },
+  };
 })();
 
 Object.defineProperty(window, "localStorage", {
-    value: localStorageMock,
+  value: localStorageMock,
 });
 
 Object.defineProperty(window, "sessionStorage", {
-    value: localStorageMock,
+  value: localStorageMock,
 });
 
 // Mock IntersectionObserver
 global.IntersectionObserver = class {
-    constructor(_callback: IntersectionObserverCallback) { }
-    observe() { }
-    unobserve() { }
-    disconnect() { }
-    takeRecords() { return []; }
+  constructor(_callback: IntersectionObserverCallback) {}
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return [];
+  }
 } as unknown as typeof IntersectionObserver;
 
 // Mock matchMedia
 Object.defineProperty(window, "matchMedia", {
-    writable: true,
-    value: vi.fn().mockImplementation((query: string) => ({
-        matches: false,
-        media: query,
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-    })),
+  writable: true,
+  value: vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
 });
 
 // Mock fetch
@@ -71,14 +73,14 @@ global.fetch = vi.fn();
 
 // Mock location
 Object.defineProperty(window, "location", {
-    value: {
-        pathname: "/",
-        href: "http://localhost",
-        search: "",
-        hash: "",
-        assign: vi.fn(),
-        replace: vi.fn(),
-        reload: vi.fn(),
-    },
-    writable: true,
+  value: {
+    pathname: "/",
+    href: "http://localhost",
+    search: "",
+    hash: "",
+    assign: vi.fn(),
+    replace: vi.fn(),
+    reload: vi.fn(),
+  },
+  writable: true,
 });
