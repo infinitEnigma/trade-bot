@@ -11,13 +11,6 @@ const middlewareLogger = new ContextAwareLogger("middleware-config");
 /**
  * Express Layer type for middleware stack validation
  */
-interface ExpressLayer {
-  name?: string;
-  regexp?: RegExp;
-  handle?: unknown;
-  route?: unknown;
-  [key: string]: unknown;
-}
 
 /**
  * ===========================================
@@ -382,7 +375,7 @@ export class MiddlewareConfig {
   /**
    * Validate middleware configuration
    */
-  static validateConfiguration(app: Express): {
+  static validateConfiguration(_app: Express): {
     isValid: boolean;
     issues: string[];
   } {

@@ -303,9 +303,9 @@ describe("utils.ts", () => {
       //const futureToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiO" + (Math.floor(Date.now() / 1000) + 3600);
 
       // Create a token that expired 1 hour ago
-      const expiredToken =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiO" +
-        (Math.floor(Date.now() / 1000) - 3600);
+      const expiredToken = `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiO${
+        Math.floor(Date.now() / 1000) - 3600
+      }`;
 
       expect(isTokenExpired(expiredToken)).toBe(true);
     });

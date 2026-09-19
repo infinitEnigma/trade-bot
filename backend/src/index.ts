@@ -356,7 +356,6 @@ MiddlewareConfig.configure(app, {
 // ===========================================
 
 // Register routes asynchronously
-let routeRegistrationPromise: Promise<void>;
 (async () => {
   try {
     await RouteConfig.register(app, {
@@ -364,14 +363,12 @@ let routeRegistrationPromise: Promise<void>;
       enableHealthRoutes: true,
       io, // Pass Socket.IO server for routes that need it
     });
-    routeRegistrationPromise = Promise.resolve();
   } catch (error) {
     logger.error(
       "Failed to register routes",
       error instanceof Error ? error : new Error(String(error))
     );
-    process.exitCode = 1;
-    routeRegistrationPromise = Promise.resolve(); // Don't reject to avoid unhandled rejection
+    process.exitCode = 1; // Don't reject to avoid unhandled rejection
   }
 })();
 
@@ -493,7 +490,7 @@ export const startServer = (): Promise<typeof httpServer> => {
  * Stops the HTTP and WebSocket server gracefully
  * @returns A promise that resolves when the server is stopped
  */
-export const stopServer = (...args: any[]): Promise<void> => {
+export const stopServer = (): Promise<void> => {
   return new Promise((resolve, reject) => {
     // Check if server is actually running before trying to close
     // This prevents errors in test environments where server might not have been started
@@ -515,7 +512,7 @@ export const stopServer = (...args: any[]): Promise<void> => {
           resolve();
         }
       });
-    } catch (error) {
+    } catch {
       // If we get any error during close (including "Server is not running"), resolve
       resolve();
     }

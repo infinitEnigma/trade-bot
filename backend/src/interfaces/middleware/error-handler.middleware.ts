@@ -168,7 +168,7 @@ export class ErrorHandlerMiddleware {
   /**
    * Log error with comprehensive context
    */
-  private logError(error: Error, req: Request, correlationId?: string): void {
+  private logError(error: Error, req: Request, _correlationId?: string): void {
     const isOperational = isOperationalError(error);
 
     const logData = {

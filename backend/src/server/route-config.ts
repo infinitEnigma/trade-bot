@@ -2,7 +2,7 @@
 
 import { Express } from "express";
 import { Server } from "socket.io";
-import { logger, ContextAwareLogger } from "../core/logging";
+import { ContextAwareLogger } from "../core/logging";
 
 /**
  * ===========================================

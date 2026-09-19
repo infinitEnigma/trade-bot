@@ -30,16 +30,13 @@
 import { Response, NextFunction } from "express";
 import { redisService } from "../../infrastructure";
 import { AuthenticatedRequest } from "../../interfaces/middleware";
-import { UserLevel } from "@trade-bot/shared";
 import { securityLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 // Import extracted modules
 import { RateLimitConfig } from "./rate-limiter/rate-limit.types";
 import { memoryRateLimiter } from "./rate-limiter/memory-rate-limiter";
 import { progressiveAuthLimiter } from "./rate-limiter/progressive-auth-limiter";
-import { redisHealthMonitor } from "./rate-limiter/redis-health-monitor";
 import { RATE_LIMIT_CONFIGS } from "./rate-limiter/rate-limit.config";
-import { error } from "node:console";
 
 // Re-export for backward compatibility
 export { progressiveAuthLimiter };

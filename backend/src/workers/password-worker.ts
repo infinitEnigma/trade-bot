@@ -530,7 +530,7 @@ class PasswordWorkerPool extends EventEmitter {
           action: "healthCheck",
           data: {},
         });
-      } catch (error) {
+      } catch {
         clearTimeout(timeout);
         resolve(false);
       }
@@ -657,7 +657,7 @@ class PasswordWorkerPool extends EventEmitter {
     this.taskQueue.length = 0;
 
     // Clear active tasks
-    for (const [taskId, task] of this.activeTasks) {
+    for (const [, task] of this.activeTasks) {
       task.reject(new Error("Worker pool shutting down"));
     }
     this.activeTasks.clear();
@@ -712,7 +712,7 @@ class PasswordWorkerPool extends EventEmitter {
       this.taskQueue.length = 0;
 
       // Clear active tasks
-      for (const [taskId, task] of this.activeTasks) {
+      for (const [, task] of this.activeTasks) {
         try {
           task.reject(
             new Error("Worker pool shutting down during test cleanup")
@@ -755,7 +755,7 @@ class PasswordWorkerPool extends EventEmitter {
                 clearTimeout(timeout);
                 resolve();
               });
-          } catch (error) {
+          } catch {
             clearTimeout(timeout);
             resolve();
           }

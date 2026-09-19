@@ -5,7 +5,6 @@ import { Loader2 } from "lucide-react";
 import { Card } from "../ui";
 import { Trade } from "../../../features/dashboard/types/dashboard.types";
 import { useAuth } from "@/features/auth";
-import { UserLevel } from "@/shared/types";
 
 interface RecentTradesProps {
   trades: Trade[];
@@ -21,8 +20,10 @@ export const RecentTrades: React.FC<RecentTradesProps> = ({
 }) => {
   const { user } = useAuth();
 
-  if (!user && !UserLevel.VERIFIED) return null;
+  // Timestamp used as fallback for trades without timestamps
   const [currentTime] = useState(() => Date.now());
+
+  if (!user) return null;
   return (
     <Card>
       <h2 className="text-lg font-semibold text-text mb-4">Recent Trades</h2>

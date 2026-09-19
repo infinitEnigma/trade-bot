@@ -298,7 +298,6 @@ router.get("/health/external", async (req: Request, res: Response) => {
 router.get("/metrics", async (req: Request, res: Response) => {
   try {
     const metrics = await getHealthService().getPerformanceMetrics();
-    const info = await getHealthService().getSystemInfo();
 
     const uptime = Math.floor((Date.now() - START_TIME) / 1000);
 

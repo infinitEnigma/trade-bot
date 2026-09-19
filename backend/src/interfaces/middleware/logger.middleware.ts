@@ -5,7 +5,6 @@ import { httpLogger as contextHttpLogger } from "../../core/logging";
 import {
   generateCorrelationId,
   runWithContext,
-  getContextForLogging,
 } from "../../shared/utils/context";
 
 /**

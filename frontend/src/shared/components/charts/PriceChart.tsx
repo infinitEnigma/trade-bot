@@ -188,12 +188,16 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
     const lastWsTimestampRef = useRef<number>(0);
 
     // Re-seed whenever symbol / resolution / historical data changes
+    // (microtask keeps the setState out of the synchronous effect body)
     useEffect(() => {
       if (chartData.length > 0) {
-        setLiveChartData(chartData);
-        lastLiveTimestampRef.current =
-          chartData[chartData.length - 1].timestamp;
-        lastWsTimestampRef.current = chartData[chartData.length - 1].timestamp;
+        queueMicrotask(() => {
+          setLiveChartData(chartData);
+          lastLiveTimestampRef.current =
+            chartData[chartData.length - 1].timestamp;
+          lastWsTimestampRef.current =
+            chartData[chartData.length - 1].timestamp;
+        });
       }
     }, [chartData]);
 

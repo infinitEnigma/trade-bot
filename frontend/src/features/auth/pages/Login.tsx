@@ -28,11 +28,29 @@ const Login: React.FC = () => {
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  const [validation, setValidation] = useState<SimpleValidationState>({
-    email: { isValid: false, message: "", touched: false },
-    password: { isValid: true, message: "", touched: false },
-    form: { isValid: false },
-  });
+  // Validation is derived directly from email/password during render
+  // (no state -> no cascading renders; react-compiler friendly)
+  const isValidEmail = email.includes("@") && email.includes(".");
+  const isValidPassword = password.length >= 6;
+  const validation: SimpleValidationState = {
+    email: {
+      isValid: isValidEmail,
+      message:
+        email && !isValidEmail ? "Please enter a valid email address" : "",
+      touched: email.length > 0,
+    },
+    password: {
+      isValid: isValidPassword,
+      message:
+        password && !isValidPassword
+          ? "Password must be at least 6 characters"
+          : "",
+      touched: password.length > 0,
+    },
+    form: {
+      isValid: isValidEmail && isValidPassword,
+    },
+  };
 
   // Redirect when authentication succeeds
   useEffect(() => {
@@ -40,37 +58,6 @@ const Login: React.FC = () => {
       navigate("/dashboard");
     }
   }, [isAuthenticated, navigate]);
-
-  // Update email validation when email changes
-  useEffect(() => {
-    const isValidEmail = email.includes("@") && email.includes(".");
-    const emailMessage =
-      email && !isValidEmail ? "Please enter a valid email address" : "";
-
-    // Basic password validation (at least 6 characters)
-    const isValidPassword = password.length >= 6;
-    const passwordMessage =
-      password && !isValidPassword
-        ? "Password must be at least 6 characters"
-        : "";
-
-    setValidation(prev => ({
-      ...prev,
-      email: {
-        isValid: isValidEmail,
-        message: emailMessage,
-        touched: email.length > 0,
-      },
-      password: {
-        isValid: isValidPassword,
-        message: passwordMessage,
-        touched: password.length > 0,
-      },
-      form: {
-        isValid: isValidEmail && isValidPassword,
-      },
-    }));
-  }, [email, password]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

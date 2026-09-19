@@ -38,8 +38,8 @@ export const useBalance = (autoRefresh: boolean = true) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Unique ID for this hook instance
-  const hookId = `balance-hook-${Math.random().toString(36).substr(2, 9)}`;
+  // Unique ID for this hook instance is generated inside the subscription
+  // effect (effects may be impure; render must stay pure)
 
   // Initial fetch (only for VERIFIED users)
   const fetchBalance = useCallback(async () => {
@@ -98,7 +98,10 @@ export const useBalance = (autoRefresh: boolean = true) => {
 
   // Initial fetch
   useEffect(() => {
-    fetchBalance();
+    // Fetch asynchronously so the effect body stays free of cascading
+    // state updates from the manager's synchronous notifications
+    const t = setTimeout(fetchBalance, 0);
+    return () => clearTimeout(t);
   }, [fetchBalance]);
 
   // Subscribe to global balance manager for auto-refresh
@@ -106,6 +109,10 @@ export const useBalance = (autoRefresh: boolean = true) => {
     if (!autoRefresh || user?.userLevel !== UserLevel.VERIFIED) {
       return;
     }
+
+    // Generate the subscription id inside the effect (effects may be
+    // impure; render must stay pure)
+    const hookId = `balance-hook-${Math.random().toString(36).substr(2, 9)}`;
 
     console.log(`💰 useBalance: Subscribing ${hookId} to global manager`);
 
@@ -136,7 +143,7 @@ export const useBalance = (autoRefresh: boolean = true) => {
       console.log(`💰 useBalance: Unsubscribing ${hookId}`);
       unsubscribe();
     };
-  }, [autoRefresh, user?.userLevel, hookId]);
+  }, [autoRefresh, user?.userLevel]);
 
   return {
     balance,

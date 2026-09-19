@@ -19,7 +19,8 @@
  * keeps working, and `this.*` cross-calls resolve to facade members.
  */
 
-import { redisService } from "../cache/redis.service";
+/* eslint-disable @typescript-eslint/no-unsafe-declaration-merging -- intentional mixin: method bags are mounted onto the prototype below and merged into the instance type */
+
 import { kodiakCache } from "./kodiak-cache";
 import { externalTrafficObserver } from "./external-traffic-observer";
 import { integrationLogger as logger } from "../../core/logging/context-aware-logger.service";

@@ -33,6 +33,7 @@ export const ElectricalNetworkBackground: React.FC = () => {
   const pulsesRef = useRef<Pulse[]>([]);
   const mouseRef = useRef<MouseState>({ x: 0, y: 0, active: false });
   const timeRef = useRef<number>(0);
+  const drawRef = useRef<() => void>(() => {});
 
   const NODE_COUNT = 48;
   const CONNECTION_RADIUS = 180;
@@ -268,8 +269,12 @@ export const ElectricalNetworkBackground: React.FC = () => {
       }
     });
 
-    animationRef.current = requestAnimationFrame(draw);
+    animationRef.current = requestAnimationFrame(() => drawRef.current());
   }, [getConnectionStrength]);
+
+  useEffect(() => {
+    drawRef.current = draw;
+  }, [draw]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

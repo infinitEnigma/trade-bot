@@ -135,7 +135,7 @@ export class AuditLogRepositoryAdapter implements IAuditLogRepository {
     userId: string,
     event: string,
     ipAddress?: string,
-    userAgent?: string
+    _userAgent?: string
   ): Promise<void> {
     await this.logEvent({
       userId,

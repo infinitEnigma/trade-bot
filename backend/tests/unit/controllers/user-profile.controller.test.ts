@@ -34,6 +34,7 @@ const mockUserProfileService = {
   getUserProfile: jest.fn(),
   updateUserProfile: jest.fn(),
   verifyWalletOwnership: jest.fn(),
+  invalidateUserProfileCache: jest.fn(),
 };
 
 // Mock auth service (wallet unlink)

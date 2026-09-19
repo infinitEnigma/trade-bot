@@ -16,15 +16,10 @@ import {
   Trade,
   AccountInfo,
   ExternalCredentials,
-  OrderStatus,
-  OrderSide,
 } from "@trade-bot/shared";
 import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
 import { integrationLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import {
-  KodiakBalance,
-  KodiakPosition,
-  KodiakTrade,
   KodiakAccountInfo,
   KodiakApiAccountInfoResponse,
 } from "../../../infrastructure/external/kodiak-integration.service";

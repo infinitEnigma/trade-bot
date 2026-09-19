@@ -148,13 +148,11 @@ describe("BotLifecycleService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     engineProtocol = {
-      sendCommand: jest
-        .fn()
-        .mockResolvedValue({
-          success: true,
-          messageId: "m1",
-          correlationId: "c1",
-        }),
+      sendCommand: jest.fn().mockResolvedValue({
+        success: true,
+        messageId: "m1",
+        correlationId: "c1",
+      }),
     };
     service = new BotLifecycleService(
       engineProtocol as unknown as EngineProtocolService

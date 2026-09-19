@@ -12,7 +12,6 @@ import {
   WEBSOCKET_CONSTANTS,
   WebSocketUtils,
 } from "./types";
-import { externalTrafficObserver } from "../../external/external-traffic-observer";
 
 /**
  * WebSocket Event Handlers

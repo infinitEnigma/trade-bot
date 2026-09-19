@@ -214,7 +214,8 @@ export function useBotLifecycle(botId?: string) {
     websocketClient.onStatusChange(handleStatusChange);
 
     const initialStatus = websocketClient.getStatus();
-    handleStatusChange(initialStatus);
+    // Apply outside the synchronous effect body to avoid cascading renders
+    queueMicrotask(() => handleStatusChange(initialStatus));
 
     return () => {
       websocketClient.offBotStateChanged(handleBotStateChanged);

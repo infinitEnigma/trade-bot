@@ -484,7 +484,6 @@ export const useWebSocketPriceUpdates = ({
     // Only connect if user is authenticated
     if (!isAuthenticated) {
       console.log("📡 WebSocket: User not authenticated, skipping connection");
-      setConnectionStatus("disconnected");
       return;
     }
 

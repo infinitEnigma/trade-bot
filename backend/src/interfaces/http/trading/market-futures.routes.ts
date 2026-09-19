@@ -2,10 +2,7 @@
 import { Router, Request, Response } from "express";
 import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
-import {
-  authMiddleware,
-  AuthenticatedRequest,
-} from "../../middleware/auth.middleware";
+import { authMiddleware } from "../../middleware/auth.middleware";
 import {
   DEFAULT_SYMBOL,
   errMessage,

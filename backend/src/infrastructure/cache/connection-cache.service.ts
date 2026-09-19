@@ -232,7 +232,7 @@ export class ConnectionCacheService {
    * In production, you might want to maintain a separate index of user cache keys
    */
   private async getUserCacheEntries(
-    userId: string
+    _userId: string
   ): Promise<ConnectionCacheEntry[]> {
     // For now, return empty array since we can't efficiently scan keys
     // In a production system, you would maintain a separate index

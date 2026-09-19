@@ -213,7 +213,7 @@ process.on("uncaughtException", error => {
   // This allows for better error recovery
 });
 
-process.on("unhandledRejection", (reason, promise) => {
+process.on("unhandledRejection", (reason, _promise) => {
   console.error("Worker unhandled promise rejection:", reason);
   isHealthy = false;
 
