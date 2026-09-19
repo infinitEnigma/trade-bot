@@ -21,7 +21,7 @@ Trade Bot is a **full-stack, chain-agnostic automated trading platform** for per
 | **Trading Engine**   | TypeScript (Node.js)                  | ⚠️ In Development | [📖 Engine Docs](engine/README.md)     |
 | **Shared Contracts** | TypeScript types                      | ✅ Functional     | -                                      |
 
-> **Maturity Assessment**: The architecture is a **chain- and exchange-agnostic distributed system** with proper backend-engine coordination. The Backend ↔ Engine protocol (Redis Streams, explicit state transitions, ACKs, correlation IDs, engine epochs, heartbeats) is the strongest architectural area. However, several critical correctness and operational issues remain before this can be considered production-grade. See [Known Issues & Priorities](#known-issues--priorities) below.
+> **Maturity Assessment**: The architecture is a **chain- and exchange-agnostic distributed system** with proper backend-engine coordination. The Backend ↔ Engine protocol (Redis Streams, explicit state transitions, ACKs, correlation IDs, engine epochs, heartbeats) is the strongest architectural area. As of 2026-09, all 22 tracked architectural and security findings have been resolved (see the archive under [Known Issues](#known-issues--priorities)), `npm audit` reports **0 vulnerabilities**, and the codebase is fully formatted and lint-clean (0 errors) with **2,567 passing tests**.
 
 ---
 
@@ -245,7 +245,17 @@ npm run format          # Format all packages
 
 ## Known Issues & Priorities
 
-Based on architectural review, the following issues are tracked:
+Most findings from the architectural and security reviews (2026-09) have been
+resolved — 22 of 24 tracked issues are ✅ Fixed and collapsed into the
+[archive](#resolved-issues-archive) below. Remaining open items:
+
+| Priority | Issue                           | Description                                                                                                                                   |
+| -------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🟡 P2    | **Shared Package Scope**        | `@trade-bot/shared` is a god package (protocol types, domain models, API contracts, error classes, logging types). Should be split by domain. |
+| 🟡 P2    | **Docs not version-controlled** | `.gitignore` ignores all of `docs/`, so durable documentation is invisible to repo consumers. Needs a decision on what to track.              |
+
+<details>
+<summary><strong>Resolved Issues Archive (2026-09)</strong></summary>
 
 ### ✅ Recently Fixed
 
@@ -310,6 +320,29 @@ Findings from a security-focused code review, prioritized per severity:
 | **Non-atomic Redis mutex release**                                                                 | Token-refresh mutex was released with plain `DEL` (no owner token), so an expired lock could be released by a non-owner.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | ✅ Fixed: Locks are acquired with a random owner token and released via a compare-and-delete Lua script (`eval(RELEASE_LOCK_SCRIPT, { keys, arguments })`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | **Hardcoded lightweight-endpoint paths**                                                           | The `/api/user/kodiak/*` path list was inlined 3× in `auth.middleware.ts`, breaking exchange-agnosticism.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | ✅ Fixed: Centralized in a `LIGHTWEIGHT_ENDPOINT_PREFIXES` constant with an `isLightweightEndpoint()` helper.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
+</details>
+
+## Test Coverage
+
+Fresh report (2026-09, full-suite runs):
+
+| Workspace         | Suites | Tests | Statements | Branch | Functions | Lines |
+| ----------------- | ------ | ----- | ---------- | ------ | --------- | ----- |
+| Backend (Jest)    | 120    | 2,371 | 85.0%      | 67.3%  | 86.8%     | 85.2% |
+| Engine (Jest)     | 3      | 19    | 74.4%      | 59.8%  | 84.8%     | 75.8% |
+| Frontend (Vitest) | 16     | 177   | 61.6%      | 50.7%  | 60.9%     | 62.0% |
+
+Regenerate locally:
+
+```sh
+cd backend  && npx jest --coverage        # report in backend/coverage/
+cd engine   && npx jest --coverage        # report in engine/coverage/
+cd frontend && npx vitest run --coverage   # report in frontend/coverage/
+```
+
+Weakest areas are the frontend components/hooks layer (61.6%) — expanding
+component and hook tests is the top coverage priority (see Roadmap).
+
 ---
 
 ## Roadmap
@@ -330,7 +363,7 @@ Findings from a security-focused code review, prioritized per severity:
 
 - [x] Consolidate old/new bot status models in shared package
 - [x] Complete command timeout → ERROR/UNKNOWN transition semantics
-- [ ] Expand test coverage
+- [x] Expand test coverage (baseline: 2,567 tests, 85.0%/74.4%/61.6% stmts across backend/engine/frontend — frontend components/hooks are the next priority)
 
 ### Medium-Term
 
@@ -375,11 +408,33 @@ Per recent architectural review:
 4. Push branch: `git push origin feature/your-feature`
 5. Open a pull request
 
+### Mandatory Pre-Commit Gates
+
+**Every commit must pass all four gates from the repo root before `git commit`:**
+
+| Gate   | Command                | Requirement                                          |
+| ------ | ---------------------- | ---------------------------------------------------- |
+| Format | `npm run format:check` | Prettier-clean (0 unformatted files)                 |
+| Lint   | `npm run lint`         | ESLint **0 errors** (warnings allowed, tracked)      |
+| Build  | `npm run build`        | `tsc` + `vite` compile cleanly across all workspaces |
+| Tests  | `npm test`             | All test suites pass                                 |
+
+If a gate fails, fix it before committing — **never commit red**. (Prettier can auto-fix formatting with `npm run format`; ESLint fixes with `npm run lint:fix`.)
+
+### Change Rules
+
+- **Update related documentation in the same commit**: if your change alters behavior, APIs, architecture, tooling, or scripts, update the README and any affected docs to match.
+- **New features ship with tests**: every new feature, endpoint, hook, or service must include tests (unit at minimum; integration tests where external systems — PostgreSQL, Redis — are involved).
+- **One logical change per commit**; use conventional prefixes: `feat:`, `fix:`, `chore:`, `docs:`, `style:`, `refactor:`, `test:`.
+- Dependencies: prefer minor/patch updates; majors require a peer-constraint check and a dedicated PR.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
 ### Code Standards
 
 - TypeScript strict mode enabled
-- ESLint configuration enforced
-- Prettier formatting on commit
+- ESLint configuration enforced (0 errors required; flat config in `eslint.base.mjs` + per-workspace configs)
+- Prettier formatting enforced (`.prettierrc`, 2-space, 80 cols)
 - Comprehensive error handling
 - Detailed logging for debugging
 
