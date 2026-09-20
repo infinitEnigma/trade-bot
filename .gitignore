@@ -29,6 +29,12 @@ backend/logs/
 *.swp
 *.swo
 
+# Merge / patch / editor backup artifacts
+*.orig
+*.rej
+*.bak
+*.patch
+
 # TypeScript
 *.tsbuildinfo
 tsconfig.tsbuildinfo
