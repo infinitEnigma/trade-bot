@@ -242,23 +242,51 @@ export interface IKodiakCredentialsRepository {
 // BOT INSTANCE REPOSITORY
 // ===========================================
 
+/**
+ * Raw `bot_instances` row (snake_case DB columns) as returned by the
+ * repository layer. The `strategy_*` fields are populated by the list/detail
+ * queries, which join the `strategies` table.
+ */
+export interface BotInstanceRecord {
+  id: string;
+  strategy_id: string;
+  user_id: string;
+  status: string;
+  running_time: number;
+  total_trades: number;
+  total_pnl: number;
+  created_at: Date;
+  updated_at: Date;
+  /** Canonical lifecycle states; present on `SELECT *` row reads. */
+  desired_state?: string;
+  actual_state?: string;
+  /** Id of the engine currently owning the instance (may be null). */
+  engine_id?: string | null;
+  /** Joined from `strategies.name` (list/detail queries only). */
+  strategy_name?: string;
+  /** Joined from `strategies.type` (list/detail queries only). */
+  strategy_type?: string;
+  /** Joined from `strategies.config` (list/detail queries only). */
+  strategy_config?: Record<string, unknown>;
+}
+
 export interface IBotInstanceRepository {
   /**
    * Get all bot instances for a user
    */
-  getBotInstances(userId: string): Promise<any[]>;
+  getBotInstances(userId: string): Promise<BotInstanceRecord[]>;
 
   /**
    * Get bot instance by ID
    */
-  getBotInstance(id: string): Promise<any | null>;
+  getBotInstance(id: string): Promise<BotInstanceRecord | null>;
 
   /**
    * Create a new bot instance
    */
   createBotInstance(
-    bot: Omit<any, "id" | "createdAt" | "updatedAt">
-  ): Promise<any>;
+    bot: Omit<BotInstanceRecord, "created_at" | "updated_at">
+  ): Promise<BotInstanceRecord>;
 
   /**
    * Update bot instance status
@@ -281,7 +309,7 @@ export interface IBotInstanceRepository {
   /**
    * Get active bot instances
    */
-  getActiveBotInstances(): Promise<any[]>;
+  getActiveBotInstances(): Promise<BotInstanceRecord[]>;
 }
 
 // ===========================================

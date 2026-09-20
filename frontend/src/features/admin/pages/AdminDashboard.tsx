@@ -324,7 +324,7 @@ const AdminDashboard: React.FC = () => {
                     </h3>
                     <div className="space-y-3">
                       {Object.entries(servicesData.services).map(
-                        ([name, service]: [string, any]) => (
+                        ([name, service]) => (
                           <div
                             key={name}
                             className="flex items-center justify-between"

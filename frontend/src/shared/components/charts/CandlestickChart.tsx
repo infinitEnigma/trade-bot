@@ -263,7 +263,9 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     } catch {
       // Silently ignore update errors (e.g. chart not yet fully ready)
     }
-  }, [markPriceData]);
+    // `chartData` is read above (last candle), so it is a genuine dependency:
+    // a redraw must re-apply the current mark price to the newest candle.
+  }, [chartData, markPriceData]);
 
   return (
     <div className="w-full bg-surface rounded-lg shadow-sm border border-white/10">

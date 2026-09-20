@@ -17,6 +17,7 @@ import {
 } from "@trade-bot/shared";
 import {
   RedisStreamOperations,
+  StreamMessage,
   ENGINE_COMMANDS_STREAM,
   ENGINE_COMMANDS_CONSUMER_GROUP,
 } from "../infrastructure/redis/streams";
@@ -84,13 +85,13 @@ export async function listenForCommands(
 async function processMessage(
   streamOps: RedisStreamOperations,
   botManager: BotManager,
-  msg: any,
+  msg: StreamMessage,
   processedMessageIds: Set<string>
 ): Promise<void> {
-  let data: any;
+  let data: BotCommand | undefined;
   try {
-    data = msg.data;
-    if (!isBotCommand(data)) {
+    data = isBotCommand(msg.data) ? msg.data : undefined;
+    if (!data) {
       logger.warn("Ignoring malformed command", { streamId: msg.id });
       await safeAck(streamOps, msg.id);
       return;
@@ -116,8 +117,8 @@ async function processMessage(
     // is not retried forever. Transient infrastructure failures stay
     // pending so recoverPending can reclaim and retry them.
     const retryable =
-      data && error instanceof CommandError ? error.retryable : true;
-    if (!retryable) {
+      !data || !(error instanceof CommandError) ? true : error.retryable;
+    if (!retryable && data) {
       processedMessageIds.add(data.messageId);
       await safeAck(streamOps, msg.id);
     }

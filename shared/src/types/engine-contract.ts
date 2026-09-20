@@ -37,7 +37,8 @@ export interface EngineCommand {
 export interface StartEngineCommand extends EngineCommand {
   type: "START_ENGINE";
   strategyId: string;
-  config: any; // Strategy-specific configuration
+  /** Strategy-specific configuration (non-secret). */
+  config: Record<string, unknown>;
   riskLimits: RiskLimits;
   credentials: {
     accountId: string;
@@ -60,7 +61,8 @@ export interface StartBotCommand extends EngineCommand {
   type: "START_BOT";
   botId: string;
   strategyId: string;
-  config: any;
+  /** Strategy-specific configuration (non-secret). */
+  config: Record<string, unknown>;
   riskLimits: RiskLimits;
   credentials: {
     accountId: string;
@@ -92,7 +94,8 @@ export interface EmergencyStopCommand extends EngineCommand {
 export interface UpdateStrategyConfigCommand extends EngineCommand {
   type: "UPDATE_STRATEGY_CONFIG";
   botId: string;
-  config: any;
+  /** Strategy-specific configuration (non-secret). */
+  config: Record<string, unknown>;
 }
 
 // ===========================================
@@ -273,97 +276,112 @@ export interface BotStatus {
 // TYPE GUARDS
 // ===========================================
 
-export function isEngineCommand(obj: any): obj is EngineCommand {
+/**
+ * Guards accept `unknown` (values arrive from the wire) and narrow through a
+ * partial view of the target shape, so no `any` leaks into the contract.
+ */
+
+export function isEngineCommand(obj: unknown): obj is EngineCommand {
+  const candidate = obj as Partial<EngineCommand> | null;
   return (
-    obj &&
-    typeof obj === "object" &&
-    typeof obj.type === "string" &&
-    typeof obj.engineId === "string" &&
-    typeof obj.timestamp === "number"
+    typeof candidate === "object" &&
+    candidate !== null &&
+    typeof candidate.type === "string" &&
+    typeof candidate.engineId === "string" &&
+    typeof candidate.timestamp === "number"
   );
 }
 
-export function isEngineEvent(obj: any): obj is EngineEvent {
+export function isEngineEvent(obj: unknown): obj is EngineEvent {
+  const candidate = obj as Partial<EngineEvent> | null;
   return (
-    obj &&
-    typeof obj === "object" &&
-    typeof obj.type === "string" &&
-    typeof obj.engineId === "string" &&
-    typeof obj.timestamp === "number"
+    typeof candidate === "object" &&
+    candidate !== null &&
+    typeof candidate.type === "string" &&
+    typeof candidate.engineId === "string" &&
+    typeof candidate.timestamp === "number"
   );
 }
 
-export function isStartEngineCommand(obj: any): obj is StartEngineCommand {
+export function isStartEngineCommand(obj: unknown): obj is StartEngineCommand {
+  const candidate = obj as Partial<StartEngineCommand> | null;
   return (
-    obj &&
-    typeof obj === "object" &&
-    obj.type === "START_ENGINE" &&
-    typeof obj.engineId === "string" &&
-    typeof obj.timestamp === "number" &&
-    typeof obj.strategyId === "string" &&
-    obj.config &&
-    obj.credentials
+    typeof candidate === "object" &&
+    candidate !== null &&
+    candidate.type === "START_ENGINE" &&
+    typeof candidate.engineId === "string" &&
+    typeof candidate.timestamp === "number" &&
+    typeof candidate.strategyId === "string" &&
+    !!candidate.config &&
+    !!candidate.credentials
   );
 }
 
-export function isStopEngineCommand(obj: any): obj is StopEngineCommand {
+export function isStopEngineCommand(obj: unknown): obj is StopEngineCommand {
+  const candidate = obj as Partial<StopEngineCommand> | null;
   return (
-    obj &&
-    typeof obj === "object" &&
-    obj.type === "STOP_ENGINE" &&
-    typeof obj.engineId === "string" &&
-    typeof obj.timestamp === "number"
+    typeof candidate === "object" &&
+    candidate !== null &&
+    candidate.type === "STOP_ENGINE" &&
+    typeof candidate.engineId === "string" &&
+    typeof candidate.timestamp === "number"
   );
 }
 
-export function isStartBotCommand(obj: any): obj is StartBotCommand {
+export function isStartBotCommand(obj: unknown): obj is StartBotCommand {
+  const candidate = obj as Partial<StartBotCommand> | null;
   return (
-    obj &&
-    typeof obj === "object" &&
-    obj.type === "START_BOT" &&
-    typeof obj.engineId === "string" &&
-    typeof obj.timestamp === "number" &&
-    typeof obj.botId === "string" &&
-    typeof obj.strategyId === "string" &&
-    obj.config &&
-    obj.credentials
+    typeof candidate === "object" &&
+    candidate !== null &&
+    candidate.type === "START_BOT" &&
+    typeof candidate.engineId === "string" &&
+    typeof candidate.timestamp === "number" &&
+    typeof candidate.botId === "string" &&
+    typeof candidate.strategyId === "string" &&
+    !!candidate.config &&
+    !!candidate.credentials
   );
 }
 
-export function isStopBotCommand(obj: any): obj is StopBotCommand {
+export function isStopBotCommand(obj: unknown): obj is StopBotCommand {
+  const candidate = obj as Partial<StopBotCommand> | null;
   return (
-    obj &&
-    typeof obj === "object" &&
-    obj.type === "STOP_BOT" &&
-    typeof obj.engineId === "string" &&
-    typeof obj.timestamp === "number" &&
-    typeof obj.botId === "string"
+    typeof candidate === "object" &&
+    candidate !== null &&
+    candidate.type === "STOP_BOT" &&
+    typeof candidate.engineId === "string" &&
+    typeof candidate.timestamp === "number" &&
+    typeof candidate.botId === "string"
   );
 }
 
-export function isEmergencyStopCommand(obj: any): obj is EmergencyStopCommand {
+export function isEmergencyStopCommand(
+  obj: unknown
+): obj is EmergencyStopCommand {
+  const candidate = obj as Partial<EmergencyStopCommand> | null;
   return (
-    obj &&
-    typeof obj === "object" &&
-    obj.type === "EMERGENCY_STOP" &&
-    typeof obj.engineId === "string" &&
-    typeof obj.timestamp === "number" &&
+    typeof candidate === "object" &&
+    candidate !== null &&
+    candidate.type === "EMERGENCY_STOP" &&
+    typeof candidate.engineId === "string" &&
+    typeof candidate.timestamp === "number" &&
     ["CANCEL_ALL_ORDERS", "CLOSE_POSITIONS", "FULL_SHUTDOWN"].includes(
-      obj.action
+      candidate.action as string
     )
   );
 }
 
 export function isUpdateStrategyConfigCommand(
-  obj: any
+  obj: unknown
 ): obj is UpdateStrategyConfigCommand {
+  const candidate = obj as Partial<UpdateStrategyConfigCommand> | null;
   return (
-    obj &&
-    typeof obj === "object" &&
-    obj.type === "UPDATE_STRATEGY_CONFIG" &&
-    typeof obj.engineId === "string" &&
-    typeof obj.timestamp === "number" &&
-    typeof obj.botId === "string" &&
-    obj.config
+    typeof candidate === "object" &&
+    candidate !== null &&
+    candidate.type === "UPDATE_STRATEGY_CONFIG" &&
+    typeof candidate.engineId === "string" &&
+    typeof candidate.timestamp === "number" &&
+    typeof candidate.botId === "string" &&
+    !!candidate.config
   );
 }

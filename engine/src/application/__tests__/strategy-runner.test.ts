@@ -59,8 +59,9 @@ describe("StrategyRunner", () => {
     expect(runner.isTickRunning).toBe(true);
     expect(onSkip).not.toHaveBeenCalled(); // structural single-flight: nothing to skip
 
-    // Release the long-running tick and let the loop continue.
-    releases.shift()!();
+    const release = releases.shift();
+    expect(release).toBeDefined();
+    release?.();
     await jest.advanceTimersByTimeAsync(0);
 
     // A fresh tick is now scheduled again (non-overlapping).
@@ -68,7 +69,9 @@ describe("StrategyRunner", () => {
     expect(ticks).toBe(2);
     expect(maxRunning).toBe(1);
 
-    releases.shift()!(); // let the second tick settle
+    const releaseSecond = releases.shift();
+    expect(releaseSecond).toBeDefined();
+    releaseSecond?.(); // let the second tick settle
     await jest.advanceTimersByTimeAsync(0);
     runner.stop();
   });

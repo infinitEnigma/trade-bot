@@ -58,7 +58,21 @@ klineHistoryRoutes.get(
         dataType: typeof response.data,
         symbol: symbolStr,
       });
-      const tvData = response.data!;
+      if (!response.data) {
+        marketLogger.error(
+          "TradingView response missing data payload",
+          undefined,
+          {
+            dataType: typeof response.data,
+            operation: "tv_data_validation",
+          }
+        );
+        return res.status(500).json({
+          success: false,
+          error: "Market data API returned invalid format",
+        });
+      }
+      const tvData = response.data;
       if (typeof tvData !== "object") {
         marketLogger.error(
           "Invalid TradingView response - not an object",

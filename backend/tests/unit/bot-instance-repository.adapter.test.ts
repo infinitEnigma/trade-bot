@@ -123,7 +123,7 @@ describe("BotInstanceRepositoryAdapter", () => {
       const botInstance = await adapter.getBotInstance(botId);
 
       expect(botInstance).toEqual(mockBotInstance);
-      expect(botInstance.id).toBe("bot-1");
+      expect(botInstance?.id).toBe("bot-1");
     });
 
     it("should throw error when query fails", async () => {
@@ -143,13 +143,13 @@ describe("BotInstanceRepositoryAdapter", () => {
         id: "new-bot",
         strategy_id: "strategy-1",
         user_id: "test-user-id",
-      };
-      const createdBot = {
-        ...mockBotData,
         status: "RUNNING",
         running_time: 0,
         total_trades: 0,
         total_pnl: 0,
+      };
+      const createdBot = {
+        ...mockBotData,
         created_at: "2026-02-04T11:00:00Z",
         updated_at: "2026-02-04T11:00:00Z",
       };
@@ -189,6 +189,10 @@ describe("BotInstanceRepositoryAdapter", () => {
         id: "new-bot",
         strategy_id: "strategy-1",
         user_id: "test-user-id",
+        status: "RUNNING",
+        running_time: 0,
+        total_trades: 0,
+        total_pnl: 0,
       };
 
       await expect(adapter.createBotInstance(mockBotData)).rejects.toThrow(
@@ -203,6 +207,10 @@ describe("BotInstanceRepositoryAdapter", () => {
         id: "new-bot",
         strategy_id: "strategy-1",
         user_id: "test-user-id",
+        status: "RUNNING",
+        running_time: 0,
+        total_trades: 0,
+        total_pnl: 0,
       };
 
       await expect(adapter.createBotInstance(mockBotData)).rejects.toThrow(

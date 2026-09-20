@@ -10,7 +10,12 @@
 
 import jwt from "jsonwebtoken";
 import { createHash } from "crypto";
-import { ITokenService, TokenPayload, TokenType } from "@trade-bot/shared";
+import {
+  ITokenService,
+  TokenPayload,
+  TokenType,
+  TokenValidationUserLookup,
+} from "@trade-bot/shared";
 
 /**
  * JWT Token Adapter
@@ -116,7 +121,7 @@ export class JwtTokenAdapter implements ITokenService {
    */
   async verifyTokenWithDatabaseValidation(
     token: string,
-    authService: any
+    authService: TokenValidationUserLookup
   ): Promise<TokenPayload | null> {
     try {
       const payload = this.verifyToken(token, "access");

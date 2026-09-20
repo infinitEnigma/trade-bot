@@ -390,7 +390,7 @@ describe("Bots Controller", () => {
       it("should return bot status", async () => {
         const mockBot = {
           id: "bot-1",
-          userId: "user-123",
+          user_id: "user-123",
           strategy_id: "strategy-1",
           status: "RUNNING",
           last_heartbeat: new Date(),

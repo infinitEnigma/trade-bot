@@ -16,6 +16,8 @@ import {
   IStrategyRepository,
   IBotInstanceRepository,
   ILogger,
+  Strategy,
+  StrategyConfig,
 } from "@trade-bot/shared";
 
 export interface StrategyServiceDependencies {
@@ -24,13 +26,23 @@ export interface StrategyServiceDependencies {
   logger: ILogger;
 }
 
+/** Placeholder performance metrics returned by `getStrategyPerformance`. */
+export interface StrategyPerformanceMetrics {
+  totalTrades: number;
+  totalPnL: number;
+  winRate: number;
+  avgTrade: number;
+  bestTrade: number;
+  worstTrade: number;
+}
+
 export class StrategyService {
   constructor(private deps: StrategyServiceDependencies) {}
 
   /**
    * Get all strategies for a user
    */
-  async getStrategies(userId: string): Promise<any[]> {
+  async getStrategies(userId: string): Promise<Strategy[]> {
     try {
       const strategies =
         await this.deps.strategyRepository.getStrategies(userId);
@@ -51,7 +63,7 @@ export class StrategyService {
   /**
    * Get strategy by ID
    */
-  async getStrategy(id: string): Promise<any | null> {
+  async getStrategy(id: string): Promise<Strategy | null> {
     try {
       const strategy = await this.deps.strategyRepository.getStrategy(id);
       this.deps.logger.debug("Strategy retrieved successfully", {
@@ -70,7 +82,10 @@ export class StrategyService {
   /**
    * Create a new strategy
    */
-  async createStrategy(userId: string, strategyData: any): Promise<any> {
+  async createStrategy(
+    userId: string,
+    strategyData: Omit<Strategy, "id" | "userId" | "createdAt" | "updatedAt">
+  ): Promise<Strategy> {
     try {
       const strategy = await this.deps.strategyRepository.createStrategy({
         userId,
@@ -94,7 +109,10 @@ export class StrategyService {
   /**
    * Update strategy
    */
-  async updateStrategy(id: string, updates: any): Promise<any> {
+  async updateStrategy(
+    id: string,
+    updates: Partial<StrategyConfig>
+  ): Promise<Strategy | null> {
     try {
       await this.deps.strategyRepository.updateStrategy(id, updates);
       const updatedStrategy =
@@ -165,7 +183,9 @@ export class StrategyService {
   /**
    * Get strategy performance metrics
    */
-  async getStrategyPerformance(id: string): Promise<any> {
+  async getStrategyPerformance(
+    id: string
+  ): Promise<StrategyPerformanceMetrics> {
     try {
       // This would typically query trade repository for performance data
       // For now, return placeholder data

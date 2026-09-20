@@ -12,7 +12,7 @@
 // ===========================================
 
 import { Balance, Position } from "./domain";
-import { Trade } from "../index";
+import { Trade, User } from "../index";
 import { BotActualState } from "../protocol/bot-state";
 
 // ===========================================
@@ -282,6 +282,17 @@ export interface IEncryptionService {
 // TOKEN SECURITY INFRASTRUCTURE
 // ===========================================
 
+/**
+ * Minimal user-lookup surface required for token database validation.
+ *
+ * Structural (rather than the concrete auth service) so the shared package has
+ * no dependency on backend implementations: any object exposing `getUserById`
+ * — the auth service included — satisfies it.
+ */
+export interface TokenValidationUserLookup {
+  getUserById(userId: string): Promise<User | null>;
+}
+
 export interface ITokenService {
   /**
    * Generate access token
@@ -318,7 +329,7 @@ export interface ITokenService {
    */
   verifyTokenWithDatabaseValidation(
     token: string,
-    authService: any
+    authService: TokenValidationUserLookup
   ): Promise<TokenPayload | null>;
 
   /**

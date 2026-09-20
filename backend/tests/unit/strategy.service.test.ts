@@ -5,6 +5,21 @@ import {
   createStrategyService,
   StrategyServiceDependencies,
 } from "../../src/core/strategies/strategy.service";
+import { Strategy, StrategyType } from "@trade-bot/shared";
+
+/**
+ * Complete strategy fixture satisfying the shared `Strategy` contract.
+ */
+const baseStrategy: Strategy = {
+  id: "strategy-123",
+  userId: "user-123",
+  name: "Test Strategy",
+  type: StrategyType.GRID,
+  config: { symbol: "PERP_BTC_USDC" },
+  active: true,
+  createdAt: new Date("2026-01-01T00:00:00Z"),
+  updatedAt: new Date("2026-01-02T00:00:00Z"),
+};
 
 describe("StrategyService", () => {
   // Create mock dependencies for the StrategyService
@@ -58,8 +73,8 @@ describe("StrategyService", () => {
 
       const testUserId = "user-123";
       const mockStrategies = [
-        { id: "strategy-1", userId: testUserId, name: "Test Strategy 1" },
-        { id: "strategy-2", userId: testUserId, name: "Test Strategy 2" },
+        { ...baseStrategy, id: "strategy-1", name: "Test Strategy 1" },
+        { ...baseStrategy, id: "strategy-2", name: "Test Strategy 2" },
       ];
       (deps.strategyRepository.getStrategies as jest.Mock).mockResolvedValue(
         mockStrategies
@@ -97,11 +112,7 @@ describe("StrategyService", () => {
       const strategyService = new StrategyService(deps);
 
       const testStrategyId = "strategy-123";
-      const mockStrategy = {
-        id: testStrategyId,
-        userId: "user-123",
-        name: "Test Strategy",
-      };
+      const mockStrategy = { ...baseStrategy, id: testStrategyId };
       (deps.strategyRepository.getStrategy as jest.Mock).mockResolvedValue(
         mockStrategy
       );
@@ -157,11 +168,15 @@ describe("StrategyService", () => {
       const testUserId = "user-123";
       const testStrategyData = {
         name: "New Strategy",
-        description: "Test strategy",
+        type: StrategyType.GRID,
+        config: { symbol: "PERP_BTC_USDC" },
+        active: true,
       };
       const mockStrategy = {
         id: "strategy-456",
         userId: testUserId,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-02T00:00:00Z"),
         ...testStrategyData,
       };
       (deps.strategyRepository.createStrategy as jest.Mock).mockResolvedValue(
@@ -188,7 +203,12 @@ describe("StrategyService", () => {
       const strategyService = new StrategyService(deps);
 
       const testUserId = "user-123";
-      const testStrategyData = { name: "New Strategy" };
+      const testStrategyData = {
+        name: "New Strategy",
+        type: StrategyType.GRID,
+        config: { symbol: "PERP_BTC_USDC" },
+        active: true,
+      };
       const testError = new Error("Failed to save strategy");
       (deps.strategyRepository.createStrategy as jest.Mock).mockRejectedValue(
         testError
@@ -207,14 +227,11 @@ describe("StrategyService", () => {
       const strategyService = new StrategyService(deps);
 
       const testStrategyId = "strategy-123";
-      const testUpdates = {
-        name: "Updated Strategy",
-        description: "Updated description",
-      };
+      const testUpdates = { symbol: "PERP_ETH_USDC" };
       const mockUpdatedStrategy = {
+        ...baseStrategy,
         id: testStrategyId,
-        userId: "user-123",
-        ...testUpdates,
+        config: { symbol: "PERP_ETH_USDC" },
       };
       (deps.strategyRepository.updateStrategy as jest.Mock).mockResolvedValue(
         undefined
@@ -244,7 +261,7 @@ describe("StrategyService", () => {
       const strategyService = new StrategyService(deps);
 
       const testStrategyId = "strategy-123";
-      const testUpdates = { name: "Updated Strategy" };
+      const testUpdates = { symbol: "PERP_ETH_USDC" };
       const testError = new Error("Failed to update strategy");
       (deps.strategyRepository.updateStrategy as jest.Mock).mockRejectedValue(
         testError

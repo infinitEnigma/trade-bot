@@ -565,6 +565,7 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
         process.exitCode = 1;
       } else {
         logger.warn("Process will exit due to shutdown timeout");
+        // eslint-disable-next-line no-process-exit -- process entrypoint: forced exit when the graceful shutdown deadline expires
         process.exit(1); // Force exit after timeout
         //process.exitCode = 1;
       }
@@ -630,6 +631,7 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
 
     // Don't call process.exit() in test environment to avoid test failure
     if (process.env.NODE_ENV !== "test") {
+      // eslint-disable-next-line no-process-exit -- process entrypoint: clean exit after successful graceful shutdown
       process.exit(0); // Exit cleanly after successful shutdown
     }
   } catch (error) {
@@ -648,6 +650,7 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
     if (process.env.NODE_ENV === "test") {
       throw error;
     } else {
+      // eslint-disable-next-line no-process-exit -- process entrypoint: exit non-zero when graceful shutdown failed
       process.exit(1); // Exit with error code
     }
   }

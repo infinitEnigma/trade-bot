@@ -54,6 +54,7 @@ async function main(): Promise<void> {
     logger.error("Failed to start Trading Engine", {
       error: error instanceof Error ? error.message : String(error),
     });
+    // eslint-disable-next-line no-process-exit -- entrypoint must exit non-zero on fatal startup failure
     process.exit(1);
   }
 }
@@ -74,6 +75,7 @@ const shutdown = async (signal: string): Promise<void> => {
       "graceful_shutdown"
     );
   }
+  // eslint-disable-next-line no-process-exit -- graceful engine shutdown must terminate the process after cleanup
   process.exit(0);
 };
 

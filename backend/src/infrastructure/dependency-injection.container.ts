@@ -54,7 +54,10 @@ import { PositionValidatorService } from "../core/strategies/position-validator.
 import { PositionSyncService } from "../core/strategies/position-sync.service.pure";
 import { EngineManager } from "../core/strategies/engine-manager.service.pure";
 import { UserProfileService } from "../core/user/user-profile.service";
-import { UserKodiakService } from "../core/user/user-kodiak.service";
+import {
+  CachedKodiakConnectionResult,
+  UserKodiakService,
+} from "../core/user/user-kodiak.service";
 
 /**
  * Dependency Injection Container
@@ -357,8 +360,9 @@ export class DependencyInjectionContainer {
       cache: {
         getCachedResult: async (userId: string, accountId: string) => {
           const cacheKey = `kodiak:connection:${userId}:${accountId}`;
-          const result = await this.cacheService.get(cacheKey);
-          return result.success ? result.data : null;
+          const result =
+            await this.cacheService.get<CachedKodiakConnectionResult>(cacheKey);
+          return (result.success ? result.data : null) ?? null;
         },
         setCachedResult: async (
           userId: string,

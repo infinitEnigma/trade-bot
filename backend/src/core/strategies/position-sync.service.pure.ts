@@ -20,6 +20,7 @@ import {
   ICacheService,
   IExternalApiService,
   ILogger,
+  AccountInfo,
   Position,
 } from "@trade-bot/shared";
 
@@ -65,6 +66,22 @@ export interface PositionSyncResult {
   errors: string[];
   syncTimestamp: Date;
 }
+
+/**
+ * Position payload accepted by `storePositionInDatabase`.
+ *
+ * The declared contract is the domain `Position`, but providers have
+ * historically used alternative field names for the same values, so those are
+ * kept as optional fallbacks and legacy payloads keep syncing.
+ */
+export type SyncablePositionData = Pick<
+  Position,
+  "symbol" | "quantity" | "entryPrice" | "markPrice"
+> & {
+  positionQty?: number;
+  positionAmt?: number;
+  averageOpenPrice?: number;
+};
 
 /**
  * Pure Position Sync Service
@@ -188,7 +205,7 @@ export class PositionSyncService {
    */
   private async storePositionInDatabase(
     userId: string,
-    positionData: any
+    positionData: SyncablePositionData
   ): Promise<void> {
     const position = new Position(
       positionData.symbol,
@@ -229,7 +246,7 @@ export class PositionSyncService {
    */
   private async storeAccountInfoInDatabase(
     userId: string,
-    accountData: any
+    accountData: AccountInfo
   ): Promise<void> {
     // This would be implemented through account repository when available
     // For now, we'll use a default implementation

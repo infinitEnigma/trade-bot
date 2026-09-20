@@ -513,8 +513,12 @@ class PasswordWorkerPool extends EventEmitter {
         resolve(false);
       }, responsivenessTimeout);
 
-      const handleMessage = (message: any) => {
-        if (message && message.type === "healthCheckResponse") {
+      const handleMessage = (message: unknown) => {
+        if (
+          typeof message === "object" &&
+          message !== null &&
+          (message as { type?: unknown }).type === "healthCheckResponse"
+        ) {
           clearTimeout(timeout);
           worker.off("message", handleMessage);
           resolve(true);
@@ -728,7 +732,7 @@ class PasswordWorkerPool extends EventEmitter {
       this.activeTasks.clear();
 
       // Terminate all workers with simple, reliable logic
-      console.info(`🔧 Terminating ${this.workers.length} workers...`);
+      logger.info(`Terminating ${this.workers.length} workers...`);
       const terminationPromises = this.workers.map(worker => {
         return new Promise<void>(resolve => {
           // Set a hard timeout to ensure we don't get stuck

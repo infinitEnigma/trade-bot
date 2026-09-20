@@ -73,7 +73,10 @@ export class KeyManagementService {
   }
 
   // For testing purposes only
-  setCryptoFunctions(options: { hkdf?: any; scrypt?: any }): void {
+  setCryptoFunctions(options: {
+    hkdf?: KeyManagementService["hkdf"];
+    scrypt?: KeyManagementService["scrypt"];
+  }): void {
     if (options.hkdf) {
       this.hkdf = options.hkdf;
     }

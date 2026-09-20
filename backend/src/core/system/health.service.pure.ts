@@ -15,13 +15,45 @@ export interface HealthServiceDependencies {
   // We should also abstract the database query, but for now, let's fix the logger and cache
 }
 
+/** Outcome of a single health check. */
+export interface HealthCheckResult {
+  status: "healthy" | "unhealthy";
+  details?: string;
+  error?: string;
+}
+
+/** Aggregate system health report. */
+export interface SystemHealthStatus {
+  status: "healthy" | "unhealthy";
+  timestamp: Date;
+  checks: Record<string, HealthCheckResult>;
+}
+
+/** Runtime environment snapshot. */
+export interface SystemInfoSnapshot {
+  version: string;
+  nodeVersion: string;
+  platform: string;
+  architecture: string;
+  uptime: number;
+  memoryUsage: NodeJS.MemoryUsage;
+  environment: string;
+}
+
+/** Process performance metrics snapshot. */
+export interface PerformanceMetricsSnapshot {
+  cpu: number;
+  memory: NodeJS.MemoryUsage;
+  eventLoop: number;
+}
+
 export class HealthService {
   constructor(private deps: HealthServiceDependencies) {}
 
   /**
    * Get overall system health status
    */
-  async getSystemHealth(): Promise<any> {
+  async getSystemHealth(): Promise<SystemHealthStatus> {
     const healthChecks = {
       api: this.checkApiStatus(),
       database: this.checkDatabaseStatus(),
@@ -32,22 +64,25 @@ export class HealthService {
     const results = await Promise.allSettled(Object.values(healthChecks));
     const keys = Object.keys(healthChecks);
 
-    const healthStatus = keys.reduce((acc: any, key: string, index: number) => {
-      acc[key] =
-        results[index].status === "fulfilled"
-          ? { status: "healthy", details: results[index].value }
-          : {
-              status: "unhealthy",
-              error:
-                results[index].reason instanceof Error
-                  ? results[index].reason.message
-                  : String(results[index].reason),
-            };
-      return acc;
-    }, {});
+    const healthStatus = keys.reduce<Record<string, HealthCheckResult>>(
+      (acc, key, index) => {
+        acc[key] =
+          results[index].status === "fulfilled"
+            ? { status: "healthy", details: results[index].value }
+            : {
+                status: "unhealthy",
+                error:
+                  results[index].reason instanceof Error
+                    ? results[index].reason.message
+                    : String(results[index].reason),
+              };
+        return acc;
+      },
+      {}
+    );
 
     const overallStatus = Object.values(healthStatus).every(
-      (check: any) => check.status === "healthy"
+      check => check.status === "healthy"
     )
       ? "healthy"
       : "unhealthy";
@@ -116,7 +151,7 @@ export class HealthService {
   /**
    * Get detailed system information
    */
-  async getSystemInfo(): Promise<any> {
+  async getSystemInfo(): Promise<SystemInfoSnapshot> {
     try {
       const info = {
         version: process.env.npm_package_version || "unknown",
@@ -141,7 +176,7 @@ export class HealthService {
   /**
    * Get performance metrics
    */
-  async getPerformanceMetrics(): Promise<any> {
+  async getPerformanceMetrics(): Promise<PerformanceMetricsSnapshot> {
     try {
       const metrics = {
         cpu: this.getCpuUsage(),

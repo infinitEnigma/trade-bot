@@ -11,7 +11,21 @@
  * @format
  */
 
-import { IBotInstanceRepository, ILogger } from "@trade-bot/shared";
+import {
+  BotHeartbeatEvent,
+  BotStartedEvent,
+  BotStoppedEvent,
+  EngineErrorEvent,
+  EngineEvent,
+  EngineStartedEvent,
+  EngineStoppedEvent,
+  IBotInstanceRepository,
+  ILogger,
+  PerformanceSnapshotEvent,
+  PositionUpdatedEvent,
+  StartBotCommand,
+  TradeExecutedEvent,
+} from "@trade-bot/shared";
 import {
   ProcessSpawner,
   HealthMonitor,
@@ -29,6 +43,22 @@ interface EngineStatus {
     uptime: number;
   };
 }
+
+/**
+ * Discriminated union of the legacy engine → backend runtime events handled by
+ * this manager. The stream layer only guarantees the base `EngineEvent` shape,
+ * so the discriminant is validated by the handler's `switch`.
+ */
+type EngineRuntimeEvent =
+  | EngineStartedEvent
+  | EngineStoppedEvent
+  | BotStartedEvent
+  | BotStoppedEvent
+  | BotHeartbeatEvent
+  | EngineErrorEvent
+  | TradeExecutedEvent
+  | PositionUpdatedEvent
+  | PerformanceSnapshotEvent;
 
 export interface EngineManagerServiceDependencies {
   botInstanceRepository: IBotInstanceRepository;
@@ -292,7 +322,7 @@ export class EngineManager {
 
         if (result.success && result.messages && result.messages.length > 0) {
           for (const message of result.messages) {
-            this.handleEngineEvent(message.data);
+            this.handleEngineEvent(message.data as EngineRuntimeEvent);
           }
         }
       } catch (error) {
@@ -306,7 +336,7 @@ export class EngineManager {
   /**
    * Handle incoming engine events
    */
-  private handleEngineEvent(event: any): void {
+  private handleEngineEvent(event: EngineRuntimeEvent): void {
     try {
       this.deps.logger.debug("Received engine event", {
         type: event.type,
@@ -344,7 +374,7 @@ export class EngineManager {
           break;
         default:
           this.deps.logger.warn("Unknown engine event type", {
-            type: event.type,
+            type: (event as EngineEvent).type,
           });
       }
     } catch (error) {
@@ -357,7 +387,7 @@ export class EngineManager {
   /**
    * Handle engine started event
    */
-  private handleEngineStarted(event: any): void {
+  private handleEngineStarted(event: EngineStartedEvent): void {
     this.engineId = event.engineId;
     this.engineStatus = {
       running: true,
@@ -377,7 +407,7 @@ export class EngineManager {
   /**
    * Handle engine stopped event
    */
-  private handleEngineStopped(event: any): void {
+  private handleEngineStopped(event: EngineStoppedEvent): void {
     this.engineStatus.running = false;
     this.deps.logger.info("Engine stopped", {
       engineId: event.engineId,
@@ -389,7 +419,7 @@ export class EngineManager {
   /**
    * Handle bot started event
    */
-  private handleBotStarted(event: any): void {
+  private handleBotStarted(event: BotStartedEvent): void {
     this.deps.logger.info("Bot started", {
       botId: event.botId,
       strategyId: event.strategyId,
@@ -401,7 +431,7 @@ export class EngineManager {
   /**
    * Handle bot stopped event
    */
-  private handleBotStopped(event: any): void {
+  private handleBotStopped(event: BotStoppedEvent): void {
     this.deps.logger.info("Bot stopped", {
       botId: event.botId,
       reason: event.reason,
@@ -411,7 +441,7 @@ export class EngineManager {
   /**
    * Handle bot heartbeat event
    */
-  private handleBotHeartbeat(event: any): void {
+  private handleBotHeartbeat(event: BotHeartbeatEvent): void {
     this.deps.logger.debug("Bot heartbeat received", {
       botId: event.botId,
       status: event.status,
@@ -424,7 +454,7 @@ export class EngineManager {
   /**
    * Handle engine error event
    */
-  private handleEngineError(event: any): void {
+  private handleEngineError(event: EngineErrorEvent): void {
     this.deps.logger.error("Engine error", {
       botId: event.botId,
       error: event.error,
@@ -435,7 +465,7 @@ export class EngineManager {
   /**
    * Handle trade executed event
    */
-  private handleTradeExecuted(event: any): void {
+  private handleTradeExecuted(event: TradeExecutedEvent): void {
     this.deps.logger.info("Trade executed", {
       botId: event.botId,
       symbol: event.symbol,
@@ -451,7 +481,7 @@ export class EngineManager {
   /**
    * Handle position updated event
    */
-  private handlePositionUpdated(event: any): void {
+  private handlePositionUpdated(event: PositionUpdatedEvent): void {
     this.deps.logger.debug("Position updated", {
       botId: event.botId,
       symbol: event.symbol,
@@ -466,7 +496,7 @@ export class EngineManager {
   /**
    * Handle performance snapshot event
    */
-  private handlePerformanceSnapshot(event: any): void {
+  private handlePerformanceSnapshot(event: PerformanceSnapshotEvent): void {
     this.deps.logger.debug("Performance snapshot received", {
       botId: event.botId,
       metrics: event.metrics,
@@ -527,8 +557,8 @@ export class EngineManager {
   async sendStartBotCommand(
     botId: string,
     strategyId: string,
-    config: any,
-    credentials: any
+    config: Record<string, unknown>,
+    credentials: StartBotCommand["credentials"]
   ): Promise<void> {
     const command = {
       type: "START_BOT",
@@ -626,7 +656,7 @@ export class EngineManager {
    */
   async sendUpdateStrategyConfigCommand(
     botId: string,
-    config: any
+    config: Record<string, unknown>
   ): Promise<void> {
     const command = {
       type: "UPDATE_STRATEGY_CONFIG",

@@ -537,7 +537,7 @@ router.get(
       const botManagementService = serviceProvider.getBotManagementService();
       const botInstance = await botManagementService.getBotInstance(botId);
 
-      if (!botInstance || botInstance.userId !== userId) {
+      if (!botInstance || botInstance.user_id !== userId) {
         const notFoundError = new NotFoundError("Bot not found");
         return res
           .status(notFoundError.statusCode)

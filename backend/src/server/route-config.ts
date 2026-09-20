@@ -43,6 +43,21 @@ export interface RouteConfigOptions {
 }
 
 /**
+ * Express keeps its router on a private `_router` property. The route
+ * introspection helpers below need it, so they reach it through this
+ * structural view instead of `any`.
+ */
+interface ExpressRouterLayer {
+  name?: string;
+  regexp?: RegExp;
+  route?: { path: string; methods: Record<string, unknown> };
+}
+
+interface ExpressWithRouter {
+  _router?: { stack?: ExpressRouterLayer[] };
+}
+
+/**
  * Route Configuration Service
  * Handles all HTTP route registration and mounting
  */
@@ -379,12 +394,13 @@ export class RouteConfig {
 
     // Force Express to initialize the router if it hasn't been already
     // This is necessary for testing purposes
-    if (!(app as any)._router) {
+    const appWithRouter = app as ExpressWithRouter;
+    if (!appWithRouter._router) {
       app.use((req, res, next) => next());
     }
 
     // Walk through the Express app's router stack
-    const stack = (app as any)._router?.stack;
+    const stack = appWithRouter._router?.stack;
     if (stack) {
       for (const layer of stack) {
         if (layer.route) {

@@ -36,6 +36,13 @@ interface KodiakStatusCache {
 const STATUS_CACHE_TTL = 10000; // 10 seconds cache
 
 export { KodiakCredentials };
+
+/** Cached Kodiak connection attempt outcome. */
+export interface CachedKodiakConnectionResult {
+  success: boolean;
+  error?: string;
+}
+
 export interface KodiakUserConfig {
   userId: string;
   kodiakAccountId: string;
@@ -61,7 +68,10 @@ export interface UserKodiakServiceDependencies {
     getConnectionStatus: (userId: string) => Promise<KodiakConnectionStatus>;
   };
   cache: {
-    getCachedResult: (userId: string, accountId: string) => Promise<any>;
+    getCachedResult: (
+      userId: string,
+      accountId: string
+    ) => Promise<CachedKodiakConnectionResult | null>;
     setCachedResult: (
       userId: string,
       accountId: string,

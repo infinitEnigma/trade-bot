@@ -25,7 +25,7 @@ export const FRONTEND_BACKEND_CONTRACT_VERSION = "1.0.0";
 /**
  * Base response interface for all API responses
  */
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   data: T;
   message?: string;
@@ -38,7 +38,7 @@ export interface ApiError {
   success: false;
   error: string;
   code?: string;
-  details?: any;
+  details?: unknown;
 }
 
 /**
@@ -136,7 +136,8 @@ export interface GetBalancesResponse {
 export interface CreateBotRequest {
   strategyId: string;
   name?: string;
-  config?: any; // Strategy-specific configuration
+  /** Strategy-specific configuration (non-secret). */
+  config?: Record<string, unknown>;
   riskLimits?: FrontendRiskLimits;
 }
 
@@ -148,7 +149,8 @@ export interface BotInstanceResponse {
   strategyId: string;
   name: string;
   status: BotActualState;
-  config: any;
+  /** Strategy-specific configuration (non-secret). */
+  config: Record<string, unknown>;
   riskLimits: FrontendRiskLimits;
   position?: number;
   exposure?: number;
@@ -490,7 +492,7 @@ export interface FrontendErrorEvent extends FrontendWebSocketEvent {
   data: {
     message: string;
     code?: string;
-    details?: any;
+    details?: unknown;
   };
 }
 
@@ -553,48 +555,67 @@ export interface FrontendMarketDataPoint {
 // TYPE GUARDS
 // ===========================================
 
-export function isApiResponse(obj: any): obj is ApiResponse {
-  return obj && typeof obj === "object" && typeof obj.success === "boolean";
-}
+/**
+ * Guards accept `unknown` (values arrive from the wire) and narrow through a
+ * partial view of the target shape, so no `any` leaks into the contract.
+ */
 
-export function isApiError(obj: any): obj is ApiError {
+export function isApiResponse(obj: unknown): obj is ApiResponse {
+  const candidate = obj as Partial<ApiResponse<unknown>> | null;
   return (
-    obj &&
-    typeof obj === "object" &&
-    obj.success === false &&
-    typeof obj.error === "string"
+    typeof candidate === "object" &&
+    candidate !== null &&
+    typeof candidate.success === "boolean"
   );
 }
 
-export function isLoginRequest(obj: any): obj is LoginRequest {
+export function isApiError(obj: unknown): obj is ApiError {
+  const candidate = obj as Partial<ApiError> | null;
   return (
-    obj &&
-    typeof obj === "object" &&
-    typeof obj.email === "string" &&
-    typeof obj.password === "string"
+    typeof candidate === "object" &&
+    candidate !== null &&
+    candidate.success === false &&
+    typeof candidate.error === "string"
   );
 }
 
-export function isRegisterRequest(obj: any): obj is RegisterRequest {
+export function isLoginRequest(obj: unknown): obj is LoginRequest {
+  const candidate = obj as Partial<LoginRequest> | null;
   return (
-    obj &&
-    typeof obj === "object" &&
-    typeof obj.email === "string" &&
-    typeof obj.password === "string"
+    typeof candidate === "object" &&
+    candidate !== null &&
+    typeof candidate.email === "string" &&
+    typeof candidate.password === "string"
   );
 }
 
-export function isCreateBotRequest(obj: any): obj is CreateBotRequest {
-  return obj && typeof obj === "object" && typeof obj.strategyId === "string";
+export function isRegisterRequest(obj: unknown): obj is RegisterRequest {
+  const candidate = obj as Partial<RegisterRequest> | null;
+  return (
+    typeof candidate === "object" &&
+    candidate !== null &&
+    typeof candidate.email === "string" &&
+    typeof candidate.password === "string"
+  );
+}
+
+export function isCreateBotRequest(obj: unknown): obj is CreateBotRequest {
+  const candidate = obj as Partial<CreateBotRequest> | null;
+  return (
+    typeof candidate === "object" &&
+    candidate !== null &&
+    typeof candidate.strategyId === "string"
+  );
 }
 
 export function isCreateStrategyRequest(
-  obj: any
+  obj: unknown
 ): obj is CreateStrategyRequest {
+  const candidate = obj as Partial<CreateStrategyRequest> | null;
   return (
-    obj &&
-    typeof obj === "object" &&
-    typeof obj.name === "string" &&
-    ["GRID", "TREND_FOLLOWING", "ARBITRAGE"].includes(obj.type)
+    typeof candidate === "object" &&
+    candidate !== null &&
+    typeof candidate.name === "string" &&
+    ["GRID", "TREND_FOLLOWING", "ARBITRAGE"].includes(candidate.type as string)
   );
 }

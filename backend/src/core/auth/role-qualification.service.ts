@@ -34,6 +34,21 @@ export interface RoleQualificationServiceDependencies {
 }
 
 /**
+ * Subset of the Etherscan `tokennfttx` response this service relies on
+ * (https://docs.etherscan.io — `status` is `"1"` on success, `result` holds the
+ * transfer list).
+ */
+interface EtherscanNftTransferResponse {
+  status: string;
+  message?: string;
+  result?: Array<{
+    contractAddress: string;
+    to: string;
+    tokenID: string;
+  }>;
+}
+
+/**
  * Role Qualification Service
  *
  * Implements role qualification business logic using dependency injection.
@@ -288,7 +303,7 @@ export class RoleQualificationService implements IRoleQualificationService {
         return false;
       }
 
-      const data = (await response.json()) as any;
+      const data = (await response.json()) as EtherscanNftTransferResponse;
       if (data.status !== "1" || !data.result || !Array.isArray(data.result)) {
         this.deps.logger.debug("Etherscan API response invalid", {
           status: data.status,
@@ -298,7 +313,7 @@ export class RoleQualificationService implements IRoleQualificationService {
       }
 
       // Check if the wallet has received the specific token
-      const hasToken = data.result.some((tx: any) => {
+      const hasToken = data.result.some(tx => {
         return (
           tx.contractAddress.toLowerCase() === contractAddress.toLowerCase() &&
           tx.to.toLowerCase() === walletAddress.toLowerCase() &&

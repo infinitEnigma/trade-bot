@@ -14,6 +14,7 @@
  */
 
 import {
+  BotInstanceRecord,
   IBotInstanceRepository,
   IStrategyRepository,
   IAuditLogRepository,
@@ -27,13 +28,36 @@ export interface BotManagementServiceDependencies {
   logger: ILogger;
 }
 
+/** Lifecycle snapshot returned by {@link BotManagementService.getBotStatus}. */
+export interface BotStatusSnapshot extends BotInstanceRecord {
+  statusValidation: {
+    isStale: boolean;
+    lastHeartbeatAge: number;
+    engineHealth: {
+      running: boolean;
+      lastHealthCheck: number;
+      status: string;
+    };
+  };
+}
+
+/** Metrics returned by {@link BotManagementService.getBotPerformance}. */
+export interface BotPerformanceMetrics {
+  totalTrades: number;
+  totalPnL: number;
+  winRate: number;
+  avgTrade: number;
+  bestTrade: number;
+  worstTrade: number;
+}
+
 export class BotManagementService {
   constructor(private deps: BotManagementServiceDependencies) {}
 
   /**
    * Get all bot instances for a user
    */
-  async getBotInstances(userId: string): Promise<any[]> {
+  async getBotInstances(userId: string): Promise<BotInstanceRecord[]> {
     try {
       const botInstances =
         await this.deps.botInstanceRepository.getBotInstances(userId);
@@ -54,7 +78,7 @@ export class BotManagementService {
   /**
    * Get bot instance by ID
    */
-  async getBotInstance(id: string): Promise<any | null> {
+  async getBotInstance(id: string): Promise<BotInstanceRecord | null> {
     try {
       const botInstance =
         await this.deps.botInstanceRepository.getBotInstance(id);
@@ -78,7 +102,7 @@ export class BotManagementService {
     userId: string,
     strategyId: string,
     notionalAmount: number
-  ): Promise<any> {
+  ): Promise<BotInstanceRecord> {
     try {
       // Verify strategy belongs to user
       const strategy =
@@ -182,7 +206,7 @@ export class BotManagementService {
   /**
    * Get bot status
    */
-  async getBotStatus(botId: string): Promise<any> {
+  async getBotStatus(botId: string): Promise<BotStatusSnapshot> {
     try {
       const botInstance =
         await this.deps.botInstanceRepository.getBotInstance(botId);
@@ -217,7 +241,7 @@ export class BotManagementService {
   /**
    * Get bot performance metrics
    */
-  async getBotPerformance(botId: string): Promise<any> {
+  async getBotPerformance(botId: string): Promise<BotPerformanceMetrics> {
     try {
       const botInstance =
         await this.deps.botInstanceRepository.getBotInstance(botId);

@@ -8,7 +8,7 @@
  * @format
  */
 
-import { IBotInstanceRepository } from "@trade-bot/shared";
+import { BotInstanceRecord, IBotInstanceRepository } from "@trade-bot/shared";
 import { query } from "../../../database/pool";
 import { tradingLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
@@ -22,9 +22,9 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
   /**
    * Get all bot instances for a user
    */
-  async getBotInstances(userId: string): Promise<any[]> {
+  async getBotInstances(userId: string): Promise<BotInstanceRecord[]> {
     try {
-      const result = await query(
+      const result = await query<BotInstanceRecord>(
         `
                 SELECT bi.*, s.name as strategy_name, s.type as strategy_type, s.config as strategy_config
                 FROM bot_instances bi
@@ -47,9 +47,9 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
   /**
    * Get bot instance by ID
    */
-  async getBotInstance(id: string): Promise<any | null> {
+  async getBotInstance(id: string): Promise<BotInstanceRecord | null> {
     try {
-      const result = await query(
+      const result = await query<BotInstanceRecord>(
         `
                 SELECT bi.*, s.name as strategy_name, s.type as strategy_type, s.config as strategy_config
                 FROM bot_instances bi
@@ -76,10 +76,10 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
    * Create a new bot instance
    */
   async createBotInstance(
-    bot: Omit<any, "id" | "createdAt" | "updatedAt">
-  ): Promise<any> {
+    bot: Omit<BotInstanceRecord, "created_at" | "updated_at">
+  ): Promise<BotInstanceRecord> {
     try {
-      const result = await query(
+      const result = await query<BotInstanceRecord>(
         `
                 INSERT INTO bot_instances (id, strategy_id, user_id, status, running_time, total_trades, total_pnl)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -136,7 +136,7 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
     try {
       // Build update query dynamically based on provided fields
       const updateFields: string[] = [];
-      const updateValues: any[] = [];
+      const updateValues: unknown[] = [];
       let valueIndex = 1;
 
       if (metrics.runningTime !== undefined) {
@@ -193,9 +193,9 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
   /**
    * Get active bot instances
    */
-  async getActiveBotInstances(): Promise<any[]> {
+  async getActiveBotInstances(): Promise<BotInstanceRecord[]> {
     try {
-      const result = await query(`
+      const result = await query<BotInstanceRecord>(`
                 SELECT * FROM bot_instances 
                 WHERE status IN ('RUNNING', 'STARTING')
             `);

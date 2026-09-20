@@ -203,7 +203,7 @@ export class TradeRepositoryAdapter implements ITradeRepository {
         isNaN(quantity) ||
         isNaN(price) ||
         isNaN(fee) ||
-        (row.pnl && isNaN(pnl!))
+        (pnl !== undefined && isNaN(pnl))
       ) {
         logger.warn(
           "Invalid trade row - numeric fields contain non-numeric values"

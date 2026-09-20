@@ -15,10 +15,18 @@ import { testsLogger as logger } from "./core/logging/context-aware-logger.servi
 
 // Extend global interface for test cleanup
 declare global {
-  var WebSocketInstances: any[];
-  var redisClients: any[];
-  var dbClients: any[];
-  var io: any; // Declare io for test purposes
+  /** Test-scoped registries of live connections to drain on teardown. */
+  var WebSocketInstances: Array<{
+    cleanupForTests?: () => unknown;
+    [key: string]: unknown;
+  }>;
+  var redisClients: Array<{
+    disconnect?: () => unknown;
+    [key: string]: unknown;
+  }>;
+  var dbClients: Array<{ end?: () => unknown; [key: string]: unknown }>;
+  /** Socket.IO server instance stashed by tests for teardown. */
+  var io: { disconnectSockets?: (close?: boolean) => unknown } | undefined;
 }
 
 // Only run cleanup in test environment
@@ -73,7 +81,7 @@ if (process.env.NODE_ENV === "test" || process.env.JEST_WORKER_ID) {
     try {
       // Final cleanup sequence
       await passwordWorkerPool.cleanupForTests();
-      (credentialCacheService as any).cleanupForTests();
+      credentialCacheService.cleanupForTests();
       errorNotificationService.cleanupForTests();
       memoryRateLimiter.cleanupForTests();
       await cleanupDatabasePool();
@@ -263,7 +271,7 @@ async function cleanupWebSocketConnections(): Promise<void> {
 
     // Check for any global WebSocket instances
     if (global.WebSocketInstances) {
-      const instances = global.WebSocketInstances as any[];
+      const instances = global.WebSocketInstances;
       for (const instance of instances) {
         if (instance && typeof instance.cleanupForTests === "function") {
           instance.cleanupForTests();
@@ -274,7 +282,7 @@ async function cleanupWebSocketConnections(): Promise<void> {
 
     // Cleanup any Socket.IO server instances
     if (global.io) {
-      const io = global.io as any;
+      const io = global.io;
       if (io && typeof io.disconnectSockets === "function") {
         io.disconnectSockets(true);
       }
@@ -311,13 +319,15 @@ async function cleanupRedisConnections(): Promise<void> {
 
     // Cleanup any remaining Redis client connections
     if (global.redisClients) {
-      const clients = global.redisClients as any[];
+      const clients = global.redisClients;
       for (const client of clients) {
         if (client && typeof client.disconnect === "function") {
           try {
             await client.disconnect();
           } catch (_error) {
-            console.warn("Warning: Failed to disconnect Redis client:", _error);
+            logger.warn("Failed to disconnect Redis client", {
+              error: _error instanceof Error ? _error.message : String(_error),
+            });
           }
         }
       }
@@ -326,13 +336,15 @@ async function cleanupRedisConnections(): Promise<void> {
 
     // Cleanup any remaining database client connections
     if (global.dbClients) {
-      const clients = global.dbClients as any[];
+      const clients = global.dbClients;
       for (const client of clients) {
         if (client && typeof client.end === "function") {
           try {
             await client.end();
           } catch (_error) {
-            console.warn("Warning: Failed to end database client:", _error);
+            logger.warn("Failed to end database client", {
+              error: _error instanceof Error ? _error.message : String(_error),
+            });
           }
         }
       }

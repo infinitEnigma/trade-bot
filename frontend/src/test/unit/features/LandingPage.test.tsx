@@ -1,6 +1,7 @@
 /** @format */
 
 import { describe, it, expect, vi, Mock } from "vitest";
+import type { ComponentProps } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { LandingPage } from "../../../features/landing/pages/LandingPage";
 import { useNavigate } from "react-router-dom";
@@ -16,15 +17,21 @@ vi.mock("react-router-dom", async () => {
 
 // Mock framer-motion to disable animations in tests
 vi.mock("framer-motion", async () => {
-  const actual: any = await vi.importActual("framer-motion");
+  const actual =
+    await vi.importActual<typeof import("framer-motion")>("framer-motion");
+  // Render motion elements as plain DOM nodes, forwarding the remaining props
+  // exactly as the previous inline `any`-typed stubs did.
+  const MotionStub = ({ children, ...props }: ComponentProps<"div">) => (
+    <div {...props}>{children}</div>
+  );
   return {
     ...actual,
     motion: {
       ...actual.motion,
-      div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-      h1: ({ children, ...props }: any) => <h1 {...props}>{children}</h1>,
-      h2: ({ children, ...props }: any) => <h2 {...props}>{children}</h2>,
-      p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
+      div: MotionStub,
+      h1: MotionStub,
+      h2: MotionStub,
+      p: MotionStub,
     },
   };
 });

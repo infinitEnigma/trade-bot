@@ -14,6 +14,34 @@ export interface MarketServiceDependencies {
   logger: ILogger;
 }
 
+/** Market price tick returned by {@link MarketService.getMarketPrices}. */
+export interface MarketPrice {
+  symbol: string;
+  price: number;
+  change24h: number;
+}
+
+/** Pair metadata returned by {@link MarketService.getAvailableTradingPairs}. */
+export interface TradingPair {
+  symbol: string;
+  base: string;
+  quote: string;
+  status: string;
+}
+
+/** One price level of the order book depth. */
+export interface MarketDepthLevel {
+  price: number;
+  quantity: number;
+}
+
+/** Order book depth returned by {@link MarketService.getMarketDepth}. */
+export interface MarketDepthSnapshot {
+  symbol: string;
+  bids: MarketDepthLevel[];
+  asks: MarketDepthLevel[];
+}
+
 export class MarketService {
   constructor(private deps: MarketServiceDependencies) {}
 
@@ -37,7 +65,7 @@ export class MarketService {
   /**
    * Get market prices for symbols
    */
-  async getMarketPrices(symbols: string[] = []): Promise<any[]> {
+  async getMarketPrices(symbols: string[] = []): Promise<MarketPrice[]> {
     try {
       // For now, return mock price data
       const mockPrices = [
@@ -71,7 +99,7 @@ export class MarketService {
   /**
    * Get available trading pairs
    */
-  async getAvailableTradingPairs(): Promise<any[]> {
+  async getAvailableTradingPairs(): Promise<TradingPair[]> {
     try {
       // For now, return mock trading pairs
       const tradingPairs = [
@@ -98,11 +126,14 @@ export class MarketService {
   /**
    * Get market depth for a symbol
    */
-  async getMarketDepth(symbol: string, limit: number = 20): Promise<any> {
+  async getMarketDepth(
+    symbol: string,
+    limit: number = 20
+  ): Promise<MarketDepthSnapshot> {
     try {
       // For now, return mock market depth data
-      const bids = [];
-      const asks = [];
+      const bids: MarketDepthLevel[] = [];
+      const asks: MarketDepthLevel[] = [];
       const basePrice = symbol === "BTC/USDT" ? 50000 : 3000;
 
       for (let i = 1; i <= limit; i++) {

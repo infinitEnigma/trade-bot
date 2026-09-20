@@ -11,6 +11,7 @@
 import {
   BotEventType,
   BotActualState,
+  BotEventPayload,
   createBotEvent,
 } from "@trade-bot/shared";
 import {
@@ -49,10 +50,10 @@ export interface PublishResult {
 export async function publishEvent(
   streamOps: RedisStreamOperations,
   type: BotEventType,
-  payload: Record<string, unknown>,
+  payload: BotEventPayload,
   correlationId: string
 ): Promise<PublishResult> {
-  const event = createBotEvent(type, payload as any, correlationId);
+  const event = createBotEvent(type, payload, correlationId);
 
   let lastError: string | undefined;
   for (let attempt = 0; attempt < EVENT_PUBLISH_MAX_RETRIES; attempt++) {
@@ -142,10 +143,15 @@ export async function publishFailed(
 
 /**
  * Publish STATE_CHANGED event.
+ *
+ * The payload must carry the emitting engine's identity and epoch; the backend
+ * validates authority from them, so callers have to supply both.
  */
 export async function publishStateChanged(
   streamOps: RedisStreamOperations,
   botId: string,
+  engineId: string,
+  engineEpoch: number,
   from: BotActualState,
   to: BotActualState,
   correlationId: string,
@@ -156,6 +162,8 @@ export async function publishStateChanged(
     "STATE_CHANGED",
     {
       botId,
+      engineId,
+      engineEpoch,
       from,
       to,
       reason: reason || "",

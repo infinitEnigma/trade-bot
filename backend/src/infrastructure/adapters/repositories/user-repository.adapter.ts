@@ -170,7 +170,7 @@ export class UserRepositoryAdapter implements IUserRepository {
     try {
       // Build update query dynamically based on provided fields
       const updateFields: string[] = [];
-      const updateValues: any[] = [];
+      const updateValues: unknown[] = [];
       let valueIndex = 1;
 
       if (updates.email) {

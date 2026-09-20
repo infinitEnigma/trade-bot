@@ -75,13 +75,17 @@ export class KodiakIntegrationService {
   }> {
     if (!this.cryptoModule) {
       this.cryptoModule = await import("crypto");
+    }
+    if (!this.bs58Module) {
       this.bs58Module = await import("bs58");
+    }
+    if (!this.ed25519Module) {
       this.ed25519Module = await import("@noble/ed25519");
     }
     return {
-      cryptoModule: this.cryptoModule!,
-      bs58Module: this.bs58Module!,
-      ed25519Module: this.ed25519Module!,
+      cryptoModule: this.cryptoModule,
+      bs58Module: this.bs58Module,
+      ed25519Module: this.ed25519Module,
     };
   }
 

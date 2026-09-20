@@ -47,6 +47,16 @@ export interface PositionValidationResult {
 }
 
 /**
+ * Position subset used for exposure calculations. `positionQty` is the raw
+ * provider field name, so it is accepted explicitly instead of being derived
+ * from the domain `Position` class.
+ */
+export interface ExposurePosition {
+  positionQty: number;
+  markPrice: number;
+}
+
+/**
  * Pure Position Validator Service
  *
  * Implements position validation business logic using dependency injection.
@@ -311,7 +321,7 @@ export class PositionValidatorService {
    */
   async calculateAccountLimitsFromPositions(
     userId: string,
-    positions: any[]
+    positions: readonly ExposurePosition[]
   ): Promise<AccountLimits> {
     try {
       // Get account information (balance, leverage, etc.)

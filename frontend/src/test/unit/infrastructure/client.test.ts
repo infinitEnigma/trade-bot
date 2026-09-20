@@ -8,6 +8,30 @@ vi.spyOn(console, "log").mockImplementation(() => {});
 vi.spyOn(console, "warn").mockImplementation(() => {});
 vi.spyOn(console, "error").mockImplementation(() => {});
 
+/**
+ * Axios stores registered interceptors in a private `handlers` array. Reach
+ * into it through a structural view so the tests can invoke the callbacks
+ * directly without resorting to `any`.
+ *
+ * The callbacks pass through either an axios request config or a response;
+ * `data` is the only member the tests inspect, so a permissive index signature
+ * keeps both directions assignable.
+ */
+interface InterceptorValue {
+  data?: unknown;
+  [key: string]: unknown;
+}
+
+interface InterceptorEntry {
+  fulfilled?: (
+    value: InterceptorValue
+  ) => InterceptorValue | Promise<InterceptorValue>;
+  rejected?: (error: unknown) => unknown;
+}
+
+const interceptorHandlers = (manager: unknown): InterceptorEntry[] =>
+  (manager as { handlers?: InterceptorEntry[] }).handlers ?? [];
+
 describe("HttpClient", () => {
   describe("Singleton Pattern", () => {
     it("should return the same instance when getInstance is called multiple times", () => {
@@ -29,9 +53,11 @@ describe("HttpClient", () => {
       const client = httpClient.getClient();
 
       // Get the request interceptor function
-      const requestInterceptors = (client.interceptors.request as any).handlers;
+      const requestInterceptors = interceptorHandlers(
+        client.interceptors.request
+      );
       const requestInterceptor = requestInterceptors.find(
-        (interceptor: any) => interceptor.fulfilled
+        (interceptor: InterceptorEntry) => interceptor.fulfilled
       )?.fulfilled;
 
       expect(requestInterceptor).toBeDefined();
@@ -56,9 +82,11 @@ describe("HttpClient", () => {
       const client = httpClient.getClient();
 
       // Get the request interceptor error handler
-      const requestInterceptors = (client.interceptors.request as any).handlers;
+      const requestInterceptors = interceptorHandlers(
+        client.interceptors.request
+      );
       const errorInterceptor = requestInterceptors.find(
-        (interceptor: any) => interceptor.rejected
+        (interceptor: InterceptorEntry) => interceptor.rejected
       )?.rejected;
 
       expect(errorInterceptor).toBeDefined();
@@ -89,10 +117,11 @@ describe("HttpClient", () => {
 
         // Get the interceptor functions from axios
         // Axios interceptors are stored in interceptor.fulfilled and interceptor.rejected arrays
-        const responseInterceptors = (client.interceptors.response as any)
-          .handlers;
+        const responseInterceptors = interceptorHandlers(
+          client.interceptors.response
+        );
         const successInterceptor = responseInterceptors.find(
-          (interceptor: any) => interceptor.fulfilled
+          (interceptor: InterceptorEntry) => interceptor.fulfilled
         )?.fulfilled;
 
         expect(successInterceptor).toBeDefined();
@@ -130,10 +159,11 @@ describe("HttpClient", () => {
           withCredentials: true,
         };
 
-        const responseInterceptors = (client.interceptors.response as any)
-          .handlers;
+        const responseInterceptors = interceptorHandlers(
+          client.interceptors.response
+        );
         const successInterceptor = responseInterceptors.find(
-          (interceptor: any) => interceptor.fulfilled
+          (interceptor: InterceptorEntry) => interceptor.fulfilled
         )?.fulfilled;
 
         const result = await successInterceptor!({
@@ -175,10 +205,11 @@ describe("HttpClient", () => {
           config: { url: "/api/test" },
         };
 
-        const responseInterceptors = (client.interceptors.response as any)
-          .handlers;
+        const responseInterceptors = interceptorHandlers(
+          client.interceptors.response
+        );
         const errorInterceptor = responseInterceptors.find(
-          (interceptor: any) => interceptor.rejected
+          (interceptor: InterceptorEntry) => interceptor.rejected
         )?.rejected;
 
         await expect(errorInterceptor!(mockError)).rejects.toHaveProperty(
@@ -199,10 +230,11 @@ describe("HttpClient", () => {
           code: "ERR_NETWORK",
         };
 
-        const responseInterceptors = (client.interceptors.response as any)
-          .handlers;
+        const responseInterceptors = interceptorHandlers(
+          client.interceptors.response
+        );
         const errorInterceptor = responseInterceptors.find(
-          (interceptor: any) => interceptor.rejected
+          (interceptor: InterceptorEntry) => interceptor.rejected
         )?.rejected;
 
         await expect(errorInterceptor!(mockError)).rejects.toEqual(mockError);
@@ -218,10 +250,11 @@ describe("HttpClient", () => {
           config: { url: "/api/auth/login", _retry: false },
         };
 
-        const responseInterceptors = (client.interceptors.response as any)
-          .handlers;
+        const responseInterceptors = interceptorHandlers(
+          client.interceptors.response
+        );
         const errorInterceptor = responseInterceptors.find(
-          (interceptor: any) => interceptor.rejected
+          (interceptor: InterceptorEntry) => interceptor.rejected
         )?.rejected;
 
         await expect(errorInterceptor!(mockError)).rejects.toEqual(mockError);
@@ -239,10 +272,11 @@ describe("HttpClient", () => {
           config: { url: "/api/user/profile", _retry: false },
         };
 
-        const responseInterceptors = (client.interceptors.response as any)
-          .handlers;
+        const responseInterceptors = interceptorHandlers(
+          client.interceptors.response
+        );
         const errorInterceptor = responseInterceptors.find(
-          (interceptor: any) => interceptor.rejected
+          (interceptor: InterceptorEntry) => interceptor.rejected
         )?.rejected;
 
         await expect(errorInterceptor!(mockError)).rejects.toEqual(mockError);
@@ -266,10 +300,11 @@ describe("HttpClient", () => {
           config: { url: "/api/market/data", _retry: false },
         };
 
-        const responseInterceptors = (client.interceptors.response as any)
-          .handlers;
+        const responseInterceptors = interceptorHandlers(
+          client.interceptors.response
+        );
         const errorInterceptor = responseInterceptors.find(
-          (interceptor: any) => interceptor.rejected
+          (interceptor: InterceptorEntry) => interceptor.rejected
         )?.rejected;
 
         await expect(errorInterceptor!(mockError)).rejects.toEqual(mockError);
@@ -291,10 +326,11 @@ describe("HttpClient", () => {
           config: { url: "/api/restricted" },
         };
 
-        const responseInterceptors = (client.interceptors.response as any)
-          .handlers;
+        const responseInterceptors = interceptorHandlers(
+          client.interceptors.response
+        );
         const errorInterceptor = responseInterceptors.find(
-          (interceptor: any) => interceptor.rejected
+          (interceptor: InterceptorEntry) => interceptor.rejected
         )?.rejected;
 
         await expect(errorInterceptor!(mockError)).rejects.toEqual(mockError);
@@ -308,10 +344,11 @@ describe("HttpClient", () => {
           config: { url: "/api/auth/login" },
         };
 
-        const responseInterceptors = (client.interceptors.response as any)
-          .handlers;
+        const responseInterceptors = interceptorHandlers(
+          client.interceptors.response
+        );
         const errorInterceptor = responseInterceptors.find(
-          (interceptor: any) => interceptor.rejected
+          (interceptor: InterceptorEntry) => interceptor.rejected
         )?.rejected;
 
         await expect(errorInterceptor!(mockError)).rejects.toEqual(mockError);

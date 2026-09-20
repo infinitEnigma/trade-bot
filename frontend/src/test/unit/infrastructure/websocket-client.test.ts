@@ -13,12 +13,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
  * test starts from a pristine instance.
  */
 
-const socketInstances: any[] = [];
+const socketInstances: FakeSocket[] = [];
 
 vi.mock("socket.io-client", () => ({
   io: vi.fn(() => {
-    const handlers: Record<string, Array<(...args: any[]) => void>> = {};
-    const anyHandlers: Array<(event: string, ...args: any[]) => void> = [];
+    const handlers: Record<string, Array<(...args: unknown[]) => void>> = {};
+    const anyHandlers: Array<(event: string, ...args: unknown[]) => void> = [];
     const socket = {
       connected: false,
       connect: vi.fn(),
@@ -27,13 +27,13 @@ vi.mock("socket.io-client", () => ({
         handlers["disconnect"]?.forEach(fn => fn("io client disconnect"));
       }),
       emit: vi.fn(),
-      on: vi.fn((event: string, fn: (...args: any[]) => void) => {
+      on: vi.fn((event: string, fn: (...args: unknown[]) => void) => {
         (handlers[event] ??= []).push(fn);
       }),
-      onAny: vi.fn((fn: (event: string, ...args: any[]) => void) => {
+      onAny: vi.fn((fn: (event: string, ...args: unknown[]) => void) => {
         anyHandlers.push(fn);
       }),
-      __emit: (event: string, ...args: any[]) => {
+      __emit: (event: string, ...args: unknown[]) => {
         anyHandlers.forEach(fn => fn(event, ...args));
         handlers[event]?.forEach(fn => fn(...args));
       },
@@ -54,7 +54,24 @@ import {
   WebSocketStatus,
 } from "../../../infrastructure/websocket/client";
 
-function lastSocket(): any {
+/**
+ * Fake socket surface created by the mocked `io()` factory. The `__`-prefixed
+ * members are test-only affordances for driving events synchronously.
+ */
+type SocketHandler = (...args: unknown[]) => void;
+
+interface FakeSocket {
+  connected: boolean;
+  connect: ReturnType<typeof vi.fn>;
+  disconnect: ReturnType<typeof vi.fn>;
+  emit: ReturnType<typeof vi.fn>;
+  on: ReturnType<typeof vi.fn>;
+  onAny: ReturnType<typeof vi.fn>;
+  __emit: (event: string, ...args: unknown[]) => void;
+  __handlers: Record<string, SocketHandler[]>;
+}
+
+function lastSocket(): FakeSocket {
   return socketInstances[socketInstances.length - 1];
 }
 
@@ -67,7 +84,9 @@ describe("WebSocketClient reconnect hardening", () => {
     socketInstances.length = 0;
     vi.mocked(io).mockClear();
     // Fresh private instance via the class constructor bypass.
-    client = new (WebSocketClient as any)();
+    const PrivateWebSocketClient =
+      WebSocketClient as unknown as new () => WebSocketClient;
+    client = new PrivateWebSocketClient();
     statusSpy = vi.fn();
     client.onStatusChange(statusSpy);
   });
