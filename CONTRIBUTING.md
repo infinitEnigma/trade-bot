@@ -4,14 +4,19 @@
 
 **Every commit must pass all four gates from the repo root before `git commit`:**
 
-| #   | Gate   | Command                | Requirement                                                                                              |
-| --- | ------ | ---------------------- | -------------------------------------------------------------------------------------------------------- |
-| 1   | Format | `npm run format:check` | Prettier-clean (0 unformatted files)                                                                     |
-| 2   | Lint   | `npm run lint`         | ESLint **0 errors and 0 warnings** (`--max-warnings 0` in every workspace lint script; warnings fail CI) |
-| 3   | Build  | `npm run build`        | `tsc` + `vite` compile cleanly across all workspaces (backend, frontend, engine, shared)                 |
-| 4   | Tests  | `npm test`             | All test suites pass                                                                                     |
+| #   | Gate   | Command                | Requirement                                                                              |
+| --- | ------ | ---------------------- | ---------------------------------------------------------------------------------------- |
+| 1   | Format | `npm run format:check` | Prettier-clean (0 unformatted files)                                                     |
+| 2   | Lint   | `npm run lint`         | ESLint **0 errors and 0 warnings** (`--max-warnings 0` in every workspace lint script)   |
+| 3   | Build  | `npm run build`        | `tsc` + `vite` compile cleanly across all workspaces (backend, frontend, engine, shared) |
+| 4   | Tests  | `npm test`             | All test suites pass                                                                     |
 
 If a gate fails, fix it before committing — **never commit red**.
+
+The gates are enforced locally and in review: there is no CI workflow yet, so
+run all four before every push. Run the test gate as `CI=true npm test` (or from
+a non-interactive shell) — Vitest starts in watch mode on a TTY. The backend
+integration suite needs PostgreSQL and Redis reachable via `.env`.
 
 ### `any` Is Banned (`no-explicit-any: error`)
 

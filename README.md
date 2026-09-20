@@ -21,7 +21,7 @@ Trade Bot is a **full-stack, chain-agnostic automated trading platform** for per
 | **Trading Engine**   | TypeScript (Node.js)                  | ⚠️ In Development | [📖 Engine Docs](engine/README.md)     |
 | **Shared Contracts** | TypeScript types                      | ✅ Functional     | -                                      |
 
-> **Maturity Assessment**: The architecture is a **chain- and exchange-agnostic distributed system** with proper backend-engine coordination. The Backend ↔ Engine protocol (Redis Streams, explicit state transitions, ACKs, correlation IDs, engine epochs, heartbeats) is the strongest architectural area. As of 2026-09, all 22 tracked architectural and security findings have been resolved (see the archive under [Known Issues](#known-issues--priorities)), `npm audit` reports **0 vulnerabilities**, and the codebase is fully formatted and lint-clean (0 errors) with **2,567 passing tests**.
+> **Maturity Assessment**: The architecture is a **chain- and exchange-agnostic distributed system** with proper backend-engine coordination. The Backend ↔ Engine protocol (Redis Streams, explicit state transitions, ACKs, correlation IDs, engine epochs, heartbeats) is the strongest architectural area. As of 2026-09, all 22 tracked architectural and security findings have been resolved (see the archive under [Known Issues](#known-issues--priorities)), `npm audit` reports **0 vulnerabilities**, and the codebase is fully formatted and lint-clean (0 errors, 0 warnings) with **2,567 passing tests**.
 
 ---
 
@@ -222,9 +222,10 @@ npm run build           # Build all packages
 npm run test            # Run full test suite
 
 # Linting & Formatting
-npm run lint            # Lint all packages
+npm run lint            # Lint all packages (0 errors, 0 warnings)
 npm run lint:fix        # Fix lint issues
 npm run format          # Format all packages
+npm run format:check    # Verify formatting without writing
 ```
 
 ---
@@ -412,14 +413,14 @@ Per recent architectural review:
 
 **Every commit must pass all four gates from the repo root before `git commit`:**
 
-| Gate   | Command                | Requirement                                          |
-| ------ | ---------------------- | ---------------------------------------------------- |
-| Format | `npm run format:check` | Prettier-clean (0 unformatted files)                 |
-| Lint   | `npm run lint`         | ESLint **0 errors** (warnings allowed, tracked)      |
-| Build  | `npm run build`        | `tsc` + `vite` compile cleanly across all workspaces |
-| Tests  | `npm test`             | All test suites pass                                 |
+| Gate   | Command                | Requirement                                             |
+| ------ | ---------------------- | ------------------------------------------------------- |
+| Format | `npm run format:check` | Prettier-clean (0 unformatted files)                    |
+| Lint   | `npm run lint`         | ESLint **0 errors and 0 warnings** (`--max-warnings 0`) |
+| Build  | `npm run build`        | `tsc` + `vite` compile cleanly across all workspaces    |
+| Tests  | `npm test`             | All test suites pass                                    |
 
-If a gate fails, fix it before committing — **never commit red**. (Prettier can auto-fix formatting with `npm run format`; ESLint fixes with `npm run lint:fix`.)
+If a gate fails, fix it before committing — **never commit red**. (Prettier can auto-fix formatting with `npm run format`; ESLint fixes with `npm run lint:fix`.) Run the test gate as `CI=true npm test` — Vitest starts in watch mode on a TTY.
 
 ### Change Rules
 
@@ -433,7 +434,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 ### Code Standards
 
 - TypeScript strict mode enabled
-- ESLint configuration enforced (0 errors required; flat config in `eslint.base.mjs` + per-workspace configs)
+- ESLint enforced with **0 errors and 0 warnings** (`--max-warnings 0`; flat config in `eslint.base.mjs` + per-workspace configs)
 - Prettier formatting enforced (`.prettierrc`, 2-space, 80 cols)
 - Comprehensive error handling
 - Detailed logging for debugging
