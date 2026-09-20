@@ -4,14 +4,32 @@
 
 **Every commit must pass all four gates from the repo root before `git commit`:**
 
-| #   | Gate   | Command                | Requirement                                                                              |
-| --- | ------ | ---------------------- | ---------------------------------------------------------------------------------------- |
-| 1   | Format | `npm run format:check` | Prettier-clean (0 unformatted files)                                                     |
-| 2   | Lint   | `npm run lint`         | ESLint **0 errors** (warnings allowed, tracked)                                          |
-| 3   | Build  | `npm run build`        | `tsc` + `vite` compile cleanly across all workspaces (backend, frontend, engine, shared) |
-| 4   | Tests  | `npm test`             | All test suites pass                                                                     |
+| #   | Gate   | Command                | Requirement                                                                                              |
+| --- | ------ | ---------------------- | -------------------------------------------------------------------------------------------------------- |
+| 1   | Format | `npm run format:check` | Prettier-clean (0 unformatted files)                                                                     |
+| 2   | Lint   | `npm run lint`         | ESLint **0 errors and 0 warnings** (`--max-warnings 0` in every workspace lint script; warnings fail CI) |
+| 3   | Build  | `npm run build`        | `tsc` + `vite` compile cleanly across all workspaces (backend, frontend, engine, shared)                 |
+| 4   | Tests  | `npm test`             | All test suites pass                                                                                     |
 
 If a gate fails, fix it before committing — **never commit red**.
+
+### `any` Is Banned (`no-explicit-any: error`)
+
+`@typescript-eslint/no-explicit-any` is set to `error` in the shared base config
+(`eslint.base.mjs`) and the frontend config. Typing guidance:
+
+- **Wire/DB/external payloads:** use `unknown` plus narrowing/type guards, e.g.
+  `Partial<T>` candidate checks in the protocol guards.
+- **Config blobs:** use `Record<string, unknown>` instead of `any`.
+- **Repository rows:** use the shared contract interfaces (e.g. `BotInstanceRecord`,
+  `Strategy` from `@trade-bot/shared`).
+- **Tests:** build fixtures that satisfy the real contracts (`BotInstanceRecord`,
+  `Strategy`, `StrategyConfig`, …); keep mocks consistent with production shapes
+  (e.g. DB rows are `snake_case`, so ownership checks use `user_id`, `strategy_id`).
+
+Exceptions must be narrow and justified: a scoped
+`// eslint-disable-next-line <rule> -- <reason>` (never a broad/global disable),
+or — only in real process entrypoints/shutdown paths — `no-process-exit`.
 
 Quick fixes:
 
