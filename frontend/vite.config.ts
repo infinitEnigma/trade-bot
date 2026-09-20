@@ -10,91 +10,124 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: [
       { find: "@", replacement: path.resolve(__dirname, "./src") },
-      { find: "@trade-bot/shared", replacement: path.resolve(__dirname, "../shared/dist/index.js") },
+      {
+        find: "@trade-bot/shared",
+        replacement: path.resolve(__dirname, "../shared/dist/index.js"),
+      },
     ],
   },
   test: {
     globals: true,
-    environment: 'jsdom',
-    setupFiles: './src/test/setup.ts',
+    environment: "jsdom",
+    setupFiles: "./src/test/setup.ts",
     coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html'],
-      exclude: [
-        'node_modules/',
-        'dist/',
-        'src/test/',
-        'src/vite-env.d.ts'
-      ]
+      provider: "v8",
+      reporter: ["text", "json", "html"],
+      exclude: ["node_modules/", "dist/", "src/test/", "src/vite-env.d.ts"],
     },
     clearMocks: true,
-    mockReset: true
+    mockReset: true,
   },
   build: {
     rollupOptions: {
       output: {
-        manualChunks: (id) => {
+        manualChunks: id => {
           // Core React libraries (must be first to avoid circular deps)
-          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') ||
-            id.includes('node_modules/scheduler') || id.includes('node_modules/use-sync-external-store')) {
-            return 'vendor';
+          if (
+            id.includes("node_modules/react") ||
+            id.includes("node_modules/react-dom") ||
+            id.includes("node_modules/scheduler") ||
+            id.includes("node_modules/use-sync-external-store")
+          ) {
+            return "vendor";
           }
 
           // React ecosystem
-          if (id.includes('node_modules/react-router-dom')) {
-            return 'router';
+          if (id.includes("node_modules/react-router-dom")) {
+            return "router";
           }
-          if (id.includes('node_modules/@tanstack/react-query') ||
-            id.includes('node_modules/@tanstack/query-core')) {
-            return 'query';
+          if (
+            id.includes("node_modules/@tanstack/react-query") ||
+            id.includes("node_modules/@tanstack/query-core")
+          ) {
+            return "query";
           }
 
           // Web3 libraries (keep separate from query to avoid circular deps)
-          if (id.includes('node_modules/wagmi') || id.includes('node_modules/@wagmi')) {
-            return 'wagmi';
+          if (
+            id.includes("node_modules/wagmi") ||
+            id.includes("node_modules/@wagmi")
+          ) {
+            return "wagmi";
           }
-          if (id.includes('node_modules/ethers') || id.includes('node_modules/viem') ||
-            id.includes('node_modules/@noble') || id.includes('node_modules/ox')) {
-            return 'web3-core';
+          if (
+            id.includes("node_modules/ethers") ||
+            id.includes("node_modules/viem") ||
+            id.includes("node_modules/@noble") ||
+            id.includes("node_modules/ox")
+          ) {
+            return "web3-core";
           }
 
           // Chart libraries
-          if (id.includes('node_modules/lightweight-charts') || id.includes('node_modules/fancy-canvas')) {
-            return 'charts-lightweight';
+          if (
+            id.includes("node_modules/lightweight-charts") ||
+            id.includes("node_modules/fancy-canvas")
+          ) {
+            return "charts-lightweight";
           }
-          if (id.includes('node_modules/recharts') || id.includes('node_modules/victory-vendor') ||
-            id.includes('node_modules/d3-')) {
-            return 'charts-recharts';
+          if (
+            id.includes("node_modules/recharts") ||
+            id.includes("node_modules/victory-vendor") ||
+            id.includes("node_modules/d3-")
+          ) {
+            return "charts-recharts";
           }
 
           // UI libraries
-          if (id.includes('node_modules/@radix-ui') || id.includes('node_modules/framer-motion') ||
-            id.includes('node_modules/motion-')) {
-            return 'ui';
+          if (
+            id.includes("node_modules/@radix-ui") ||
+            id.includes("node_modules/framer-motion") ||
+            id.includes("node_modules/motion-")
+          ) {
+            return "ui";
           }
 
           // Utilities and smaller libraries
-          if (id.includes('node_modules/axios') || id.includes('node_modules/socket.io') ||
-            id.includes('node_modules/engine.io') || id.includes('node_modules/date-fns') ||
-            id.includes('node_modules/zod') || id.includes('node_modules/sonner') ||
-            id.includes('node_modules/lucide-react') || id.includes('node_modules/class-variance-authority') ||
-            id.includes('node_modules/clsx') || id.includes('node_modules/tailwind-merge')) {
-            return 'utils';
+          if (
+            id.includes("node_modules/axios") ||
+            id.includes("node_modules/socket.io") ||
+            id.includes("node_modules/engine.io") ||
+            id.includes("node_modules/date-fns") ||
+            id.includes("node_modules/zod") ||
+            id.includes("node_modules/sonner") ||
+            id.includes("node_modules/lucide-react") ||
+            id.includes("node_modules/class-variance-authority") ||
+            id.includes("node_modules/clsx") ||
+            id.includes("node_modules/tailwind-merge")
+          ) {
+            return "utils";
           }
 
           // State management (keep separate from React to avoid circular deps)
-          if (id.includes('node_modules/zustand') || id.includes('node_modules/redux')) {
-            return 'state';
+          if (
+            id.includes("node_modules/zustand") ||
+            id.includes("node_modules/redux")
+          ) {
+            return "state";
           }
 
           // Form handling
-          if (id.includes('node_modules/react-hook-form') || id.includes('node_modules/@hookform')) {
-            return 'forms';
+          if (
+            id.includes("node_modules/react-hook-form") ||
+            id.includes("node_modules/@hookform")
+          ) {
+            return "forms";
           }
 
           // Catch-all for any remaining node_modules (keep minimal)
-          if (id.includes('node_modules')) {
-            return 'vendor-misc';
+          if (id.includes("node_modules")) {
+            return "vendor-misc";
           }
         },
       },

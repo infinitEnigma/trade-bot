@@ -17,19 +17,32 @@
  */
 
 // Export authentication middleware
-export { authMiddleware, AuthenticatedRequest } from './auth.middleware';
+export { authMiddleware, AuthenticatedRequest } from "./auth.middleware";
 
 // Export security middleware
-export { csrfMiddleware, csrfTokenMiddleware, CSRFRequest } from './csrf.middleware';
+export {
+  csrfMiddleware,
+  csrfTokenMiddleware,
+  CSRFRequest,
+} from "./csrf.middleware";
 
 // Export logging middleware
-export { httpLogger, errorLogger } from './logger.middleware';
+export { httpLogger, errorLogger } from "./logger.middleware";
 
 // Export context middleware
-export { contextMiddleware } from './context.middleware';
+export { contextMiddleware } from "./context.middleware";
 
 // Export role protection middleware
-export { requireRole, requireAnyRole, hasRole, hasAnyRole } from './role-protection.middleware';
+export {
+  requireRole,
+  requireAnyRole,
+  hasRole,
+  hasAnyRole,
+} from "./role-protection.middleware";
 
 // Export validation middleware
-export { validateRequest, commonSchemas, validators } from './validation.middleware';
+export {
+  validateRequest,
+  commonSchemas,
+  validators,
+} from "./validation.middleware";

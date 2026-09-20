@@ -23,22 +23,25 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
   }, []);
 
   // Add new error
-  const addError = useCallback((errorData: Omit<ErrorState, 'id' | 'timestamp'>): string => {
-    const id = generateId();
-    const newError: ErrorState = {
-      ...errorData,
-      id,
-      timestamp: new Date(),
-    };
+  const addError = useCallback(
+    (errorData: Omit<ErrorState, "id" | "timestamp">): string => {
+      const id = generateId();
+      const newError: ErrorState = {
+        ...errorData,
+        id,
+        timestamp: new Date(),
+      };
 
-    setErrors(prev => {
-      const updated = [newError, ...prev];
-      // Keep only the most recent maxErrors
-      return updated.slice(0, maxErrors);
-    });
+      setErrors(prev => {
+        const updated = [newError, ...prev];
+        // Keep only the most recent maxErrors
+        return updated.slice(0, maxErrors);
+      });
 
-    return id;
-  }, [generateId, maxErrors]);
+      return id;
+    },
+    [generateId, maxErrors]
+  );
 
   // Remove error by ID
   const removeError = useCallback((id: string) => {
@@ -51,138 +54,165 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
   }, []);
 
   // Update error by ID
-  const updateError = useCallback((id: string, updates: Partial<ErrorState>) => {
-    setErrors(prev => prev.map(error =>
-      error.id === id ? { ...error, ...updates } : error
-    ));
-  }, []);
+  const updateError = useCallback(
+    (id: string, updates: Partial<ErrorState>) => {
+      setErrors(prev =>
+        prev.map(error => (error.id === id ? { ...error, ...updates } : error))
+      );
+    },
+    []
+  );
 
   // Calculate exponential backoff delay
-  const calculateBackoffDelay = useCallback((retryCount: number, baseDelay: number = 1000): number => {
-    const multiplier = Math.pow(2, retryCount); // Exponential backoff
-    const jitter = Math.random() * 0.1 * baseDelay; // Add 10% jitter
-    return Math.min(baseDelay * multiplier + jitter, 30000); // Cap at 30 seconds
-  }, []);
+  const calculateBackoffDelay = useCallback(
+    (retryCount: number, baseDelay: number = 1000): number => {
+      const multiplier = Math.pow(2, retryCount); // Exponential backoff
+      const jitter = Math.random() * 0.1 * baseDelay; // Add 10% jitter
+      return Math.min(baseDelay * multiplier + jitter, 30000); // Cap at 30 seconds
+    },
+    []
+  );
 
   // Check circuit breaker state
-  const getCircuitBreakerState = useCallback((error: ErrorState): 'closed' | 'open' | 'half-open' => {
-    const now = Date.now();
-    const consecutiveFailures = error.consecutiveFailures || 0;
-    const lastFailure = error.lastFailureAt?.getTime() || 0;
+  const getCircuitBreakerState = useCallback(
+    (error: ErrorState): "closed" | "open" | "half-open" => {
+      const now = Date.now();
+      const consecutiveFailures = error.consecutiveFailures || 0;
+      const lastFailure = error.lastFailureAt?.getTime() || 0;
 
-    // Circuit breaker thresholds
-    const failureThreshold = 5; // Open after 5 consecutive failures
-    const recoveryTimeout = 60000; // Try half-open after 60 seconds
+      // Circuit breaker thresholds
+      const failureThreshold = 5; // Open after 5 consecutive failures
+      const recoveryTimeout = 60000; // Try half-open after 60 seconds
 
-    if (consecutiveFailures >= failureThreshold) {
-      if (now - lastFailure > recoveryTimeout) {
-        return 'half-open'; // Time to try again
+      if (consecutiveFailures >= failureThreshold) {
+        if (now - lastFailure > recoveryTimeout) {
+          return "half-open"; // Time to try again
+        }
+        return "open"; // Still in failure state
       }
-      return 'open'; // Still in failure state
-    }
 
-    return 'closed'; // Normal operation
-  }, []);
+      return "closed"; // Normal operation
+    },
+    []
+  );
 
   // Retry error with advanced patterns (calls retry function if available)
-  const retryError = useCallback(async (id: string) => {
-    const error = errors.find(e => e.id === id);
-    if (!error?.actions) return;
+  const retryError = useCallback(
+    async (id: string) => {
+      const error = errors.find(e => e.id === id);
+      if (!error?.actions) return;
 
-    const now = Date.now();
-    const currentRetries = error.retryCount || 0;
-    const maxRetries = error.maxRetries || 3;
-    const consecutiveFailures = error.consecutiveFailures || 0;
+      const now = Date.now();
+      const currentRetries = error.retryCount || 0;
+      const maxRetries = error.maxRetries || 3;
+      const consecutiveFailures = error.consecutiveFailures || 0;
 
-    // Check circuit breaker state
-    const circuitState = getCircuitBreakerState(error);
-    if (circuitState === 'open') {
-      console.warn(`Circuit breaker open for error ${id}, skipping retry`);
-      updateError(id, {
-        message: `${error.message} Circuit breaker open`,
-        circuitBreakerState: 'open'
-      });
-      return;
-    }
-
-    // Check if we're within retry limits
-    if (currentRetries >= maxRetries && circuitState !== 'half-open') {
-      console.warn(`Max retries exceeded for error ${id}`);
-      updateError(id, {
-        status: 'failed',
-        message: `${error.message}  Max retries: ${maxRetries}`,
-        circuitBreakerState: 'open'
-      });
-      return;
-    }
-
-    // Check next retry timing
-    const nextRetryAt = error.nextRetryAt?.getTime() || 0;
-    if (now < nextRetryAt) {
-      const remainingMs = nextRetryAt - now;
-      console.warn(`Next retry not ready for error ${id}, ${remainingMs}ms remaining`);
-      return;
-    }
-
-    const retryAction = error.actions.find(action =>
-      action.label.toLowerCase().includes('try again') ||
-      action.label.toLowerCase().includes('retry')
-    );
-
-    if (retryAction) {
-      try {
-        // Calculate backoff delay for next retry
-        const backoffMultiplier = error.backoffMultiplier || 1;
-        const baseDelay = error.retryCooldownMs || 1000;
-        const backoffDelay = calculateBackoffDelay(currentRetries, baseDelay * backoffMultiplier);
-
-        // Update error status to pending with circuit breaker state
+      // Check circuit breaker state
+      const circuitState = getCircuitBreakerState(error);
+      if (circuitState === "open") {
+        console.warn(`Circuit breaker open for error ${id}, skipping retry`);
         updateError(id, {
-          status: 'pending',
-          retryCount: currentRetries + 1,
-          lastRetryAt: new Date(),
-          nextRetryAt: new Date(now + backoffDelay),
-          message: `${error.message} Retrying...`,
-          circuitBreakerState: circuitState === 'half-open' ? 'half-open' : 'closed',
-          backoffMultiplier
+          message: `${error.message} Circuit breaker open`,
+          circuitBreakerState: "open",
         });
-
-        // Execute retry action
-        await retryAction.onClick();
-
-        // On success, reset circuit breaker and update status
-        updateError(id, {
-          status: 'success',
-          consecutiveFailures: 0,
-          circuitBreakerState: 'closed',
-          message: error.message?.replace(' (Retrying...)', ' (Success!)'),
-          nextRetryAt: undefined // Clear next retry time
-        });
-
-        // Auto-remove successful retries after 2 seconds
-        setTimeout(() => {
-          removeError(id);
-        }, 2000);
-
-      } catch {
-        // On failure, update circuit breaker state
-        const newConsecutiveFailures = consecutiveFailures + 1;
-        const newCircuitState = getCircuitBreakerState({
-          ...error,
-          consecutiveFailures: newConsecutiveFailures,
-          lastFailureAt: new Date()
-        });
-
-        updateError(id, {
-          status: 'failed',
-          consecutiveFailures: newConsecutiveFailures,
-          lastFailureAt: new Date(),
-          circuitBreakerState: newCircuitState,
-          message: error.message?.replace(' (Retrying...)', ` (Retry failed - ${newConsecutiveFailures} failures)`)
-        });
+        return;
       }
-    }
-  }, [errors, removeError, updateError, calculateBackoffDelay, getCircuitBreakerState]);
+
+      // Check if we're within retry limits
+      if (currentRetries >= maxRetries && circuitState !== "half-open") {
+        console.warn(`Max retries exceeded for error ${id}`);
+        updateError(id, {
+          status: "failed",
+          message: `${error.message}  Max retries: ${maxRetries}`,
+          circuitBreakerState: "open",
+        });
+        return;
+      }
+
+      // Check next retry timing
+      const nextRetryAt = error.nextRetryAt?.getTime() || 0;
+      if (now < nextRetryAt) {
+        const remainingMs = nextRetryAt - now;
+        console.warn(
+          `Next retry not ready for error ${id}, ${remainingMs}ms remaining`
+        );
+        return;
+      }
+
+      const retryAction = error.actions.find(
+        action =>
+          action.label.toLowerCase().includes("try again") ||
+          action.label.toLowerCase().includes("retry")
+      );
+
+      if (retryAction) {
+        try {
+          // Calculate backoff delay for next retry
+          const backoffMultiplier = error.backoffMultiplier || 1;
+          const baseDelay = error.retryCooldownMs || 1000;
+          const backoffDelay = calculateBackoffDelay(
+            currentRetries,
+            baseDelay * backoffMultiplier
+          );
+
+          // Update error status to pending with circuit breaker state
+          updateError(id, {
+            status: "pending",
+            retryCount: currentRetries + 1,
+            lastRetryAt: new Date(),
+            nextRetryAt: new Date(now + backoffDelay),
+            message: `${error.message} Retrying...`,
+            circuitBreakerState:
+              circuitState === "half-open" ? "half-open" : "closed",
+            backoffMultiplier,
+          });
+
+          // Execute retry action
+          await retryAction.onClick();
+
+          // On success, reset circuit breaker and update status
+          updateError(id, {
+            status: "success",
+            consecutiveFailures: 0,
+            circuitBreakerState: "closed",
+            message: error.message?.replace(" (Retrying...)", " (Success!)"),
+            nextRetryAt: undefined, // Clear next retry time
+          });
+
+          // Auto-remove successful retries after 2 seconds
+          setTimeout(() => {
+            removeError(id);
+          }, 2000);
+        } catch {
+          // On failure, update circuit breaker state
+          const newConsecutiveFailures = consecutiveFailures + 1;
+          const newCircuitState = getCircuitBreakerState({
+            ...error,
+            consecutiveFailures: newConsecutiveFailures,
+            lastFailureAt: new Date(),
+          });
+
+          updateError(id, {
+            status: "failed",
+            consecutiveFailures: newConsecutiveFailures,
+            lastFailureAt: new Date(),
+            circuitBreakerState: newCircuitState,
+            message: error.message?.replace(
+              " (Retrying...)",
+              ` (Retry failed - ${newConsecutiveFailures} failures)`
+            ),
+          });
+        }
+      }
+    },
+    [
+      errors,
+      removeError,
+      updateError,
+      calculateBackoffDelay,
+      getCircuitBreakerState,
+    ]
+  );
 
   // Auto-dismiss errors after timeout
   useEffect(() => {
@@ -190,10 +220,12 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
 
     const interval = setInterval(() => {
       const now = Date.now();
-      setErrors(prev => prev.filter(error => {
-        const errorTime = error.timestamp.getTime();
-        return (now - errorTime) < autoDismissTimeout;
-      }));
+      setErrors(prev =>
+        prev.filter(error => {
+          const errorTime = error.timestamp.getTime();
+          return now - errorTime < autoDismissTimeout;
+        })
+      );
     }, 1000); // Check every second
 
     return () => clearInterval(interval);
@@ -202,13 +234,13 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
   // Keyboard shortcut to clear errors (Escape key)
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && errors.length > 0) {
+      if (event.key === "Escape" && errors.length > 0) {
         clearErrors();
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [errors.length, clearErrors]);
 
   const value = {
@@ -223,31 +255,29 @@ export const ErrorProvider: React.FC<ErrorProviderProps> = ({
   };
 
   return (
-    <ErrorContext.Provider value={value}>
-      {children}
-    </ErrorContext.Provider>
+    <ErrorContext.Provider value={value}>{children}</ErrorContext.Provider>
   );
 };
-
 
 // Error notification component
 interface ErrorNotificationsProps {
   className?: string;
-  position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'top-center';
+  position?:
+    "top-right" | "top-left" | "bottom-right" | "bottom-left" | "top-center";
 }
 
 export const ErrorNotifications: React.FC<ErrorNotificationsProps> = ({
   className = "",
-  position = 'top-right'
+  position = "top-right",
 }) => {
   const { errors, removeError } = useErrorContext();
 
   const positionClasses = {
-    'top-right': 'top-4 right-4',
-    'top-left': 'top-4 left-4',
-    'bottom-right': 'bottom-4 right-4',
-    'bottom-left': 'bottom-4 left-4',
-    'top-center': 'top-4 left-1/2 transform -translate-x-1/2',
+    "top-right": "top-4 right-4",
+    "top-left": "top-4 left-4",
+    "bottom-right": "bottom-4 right-4",
+    "bottom-left": "bottom-4 left-4",
+    "top-center": "top-4 left-1/2 transform -translate-x-1/2",
   };
 
   if (errors.length === 0) return null;
@@ -255,36 +285,34 @@ export const ErrorNotifications: React.FC<ErrorNotificationsProps> = ({
   return (
     <div className={`fixed z-50 ${positionClasses[position]} ${className}`}>
       <div className="space-y-2 max-w-sm">
-        {errors.map((error) => (
+        {errors.map(error => (
           <div
             key={error.id}
             className="bg-surface border border-white/10 rounded-lg p-4 shadow-lg backdrop-blur-sm animate-in slide-in-from-right-2 duration-300"
           >
             <div className="flex items-start gap-3">
               <div className="shrink-0 mt-0.5">
-                {error.status === 'pending' ? (
+                {error.status === "pending" ? (
                   <div className="w-5 h-5 bg-blue-500/20 rounded-full flex items-center justify-center">
                     <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
                   </div>
-                ) : error.status === 'success' ? (
+                ) : error.status === "success" ? (
                   <div className="w-5 h-5 bg-green-500/20 rounded-full flex items-center justify-center">
                     <span className="text-green-400 text-xs">✓</span>
                   </div>
-                ) : error.icon || (
-                  <div className="w-5 h-5 bg-red-500/20 rounded-full flex items-center justify-center">
-                    <span className="text-red-400 text-xs">!</span>
-                  </div>
+                ) : (
+                  error.icon || (
+                    <div className="w-5 h-5 bg-red-500/20 rounded-full flex items-center justify-center">
+                      <span className="text-red-400 text-xs">!</span>
+                    </div>
+                  )
                 )}
               </div>
 
               <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-medium text-text">
-                  {error.title}
-                </h4>
+                <h4 className="text-sm font-medium text-text">{error.title}</h4>
                 {error.message && (
-                  <p className="text-sm text-textMuted mt-1">
-                    {error.message}
-                  </p>
+                  <p className="text-sm text-textMuted mt-1">{error.message}</p>
                 )}
               </div>
 
@@ -293,8 +321,18 @@ export const ErrorNotifications: React.FC<ErrorNotificationsProps> = ({
                 className="shrink-0 text-textMuted hover:text-text transition-colors"
                 aria-label="Dismiss error"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
@@ -312,11 +350,11 @@ export const ErrorNotifications: React.FC<ErrorNotificationsProps> = ({
                     }}
                     disabled={action.disabled}
                     className={`px-3 py-1 text-xs rounded transition-colors ${
-                      action.variant === 'primary'
-                        ? 'bg-primary hover:bg-primary/80 text-white'
-                        : action.variant === 'secondary'
-                        ? 'bg-surface hover:bg-surface/80 text-text'
-                        : 'text-primary hover:text-primary/80 underline'
+                      action.variant === "primary"
+                        ? "bg-primary hover:bg-primary/80 text-white"
+                        : action.variant === "secondary"
+                          ? "bg-surface hover:bg-surface/80 text-text"
+                          : "text-primary hover:text-primary/80 underline"
                     }`}
                   >
                     {action.icon && <span className="mr-1">{action.icon}</span>}
@@ -331,4 +369,3 @@ export const ErrorNotifications: React.FC<ErrorNotificationsProps> = ({
     </div>
   );
 };
-

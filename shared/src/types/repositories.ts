@@ -10,79 +10,84 @@
  */
 
 import {
-    User,
-    UserLevel,
-    UserRegistration,
-    Position,
-    Trade,
-    OrderStatus as TradeStatus,
-    Strategy,
-    StrategyConfig,
-    KodiakCredentials
-} from '../index';
+  User,
+  UserLevel,
+  UserRegistration,
+  Position,
+  Trade,
+  OrderStatus as TradeStatus,
+  Strategy,
+  StrategyConfig,
+  KodiakCredentials,
+} from "../index";
 
-import { Balance } from './domain';
+import { Balance } from "./domain";
 
 // ===========================================
 // USER REPOSITORY
 // ===========================================
 
 export interface IUserRepository {
-    /**
-     * Find user by email address
-     */
-    findByEmail(email: string): Promise<User | null>;
+  /**
+   * Find user by email address
+   */
+  findByEmail(email: string): Promise<User | null>;
 
-    /**
-     * Find user by email with password hash for authentication
-     */
-    findByEmailWithPassword(email: string): Promise<(User & { passwordHash: string }) | null>;
+  /**
+   * Find user by email with password hash for authentication
+   */
+  findByEmailWithPassword(
+    email: string
+  ): Promise<(User & { passwordHash: string }) | null>;
 
-    /**
-     * Find user by ID
-     */
-    findById(id: string): Promise<User | null>;
+  /**
+   * Find user by ID
+   */
+  findById(id: string): Promise<User | null>;
 
-    /**
-     * Create a new user
-     */
-    create(user: UserRegistration): Promise<User>;
+  /**
+   * Create a new user
+   */
+  create(user: UserRegistration): Promise<User>;
 
-    /**
-     * Update user's level (BASIC, REGISTERED, VERIFIED)
-     */
-    updateUserLevel(id: string, level: UserLevel): Promise<boolean>;
+  /**
+   * Update user's level (BASIC, REGISTERED, VERIFIED)
+   */
+  updateUserLevel(id: string, level: UserLevel): Promise<boolean>;
 
-    /**
-     * Update user profile information
-     */
-    updateProfile(id: string, updates: Partial<{ email: string; userLevel: UserLevel }>): Promise<User | null>;
+  /**
+   * Update user profile information
+   */
+  updateProfile(
+    id: string,
+    updates: Partial<{ email: string; userLevel: UserLevel }>
+  ): Promise<User | null>;
 
-    /**
-     * Get authenticated user data with roles and credentials info
-     */
-    getAuthenticatedUserData(id: string): Promise<{
-        user: User;
-        roles: string[];
-        hasCredentials: boolean;
-        kodiakAccountId?: string;
-        kodiakVerified?: boolean;
-    } | null>;
+  /**
+   * Get authenticated user data with roles and credentials info
+   */
+  getAuthenticatedUserData(id: string): Promise<{
+    user: User;
+    roles: string[];
+    hasCredentials: boolean;
+    kodiakAccountId?: string;
+    kodiakVerified?: boolean;
+  } | null>;
 
-    /**
-     * Get user's linked wallet address
-     */
-    getWalletAddress(userId: string): Promise<string | null>;
+  /**
+   * Get user's linked wallet address
+   */
+  getWalletAddress(userId: string): Promise<string | null>;
 
-    /**
-     * Link a wallet address to a user (upsert)
-     */
-    setWalletAddress(userId: string, walletAddress: string): Promise<boolean>;
+  /**
+   * Link a wallet address to a user (upsert)
+   */
+  setWalletAddress(userId: string, walletAddress: string): Promise<boolean>;
 
-    /**
-     * Remove the wallet linked to a user
-     */
-    clearWalletAddress(userId: string): Promise<boolean>;
+  /**
+   * Remove the wallet linked to a user
+   */
+  clearWalletAddress(userId: string): Promise<boolean>;
 }
 
 // ===========================================
@@ -90,20 +95,20 @@ export interface IUserRepository {
 // ===========================================
 
 export interface IBalanceRepository {
-    /**
-     * Get user's current balance
-     */
-    getBalance(userId: string): Promise<Balance>;
+  /**
+   * Get user's current balance
+   */
+  getBalance(userId: string): Promise<Balance>;
 
-    /**
-     * Update user's balance
-     */
-    updateBalance(userId: string, balance: Balance): Promise<void>;
+  /**
+   * Update user's balance
+   */
+  updateBalance(userId: string, balance: Balance): Promise<void>;
 
-    /**
-     * Get balance history for a user
-     */
-    getBalanceHistory(userId: string, limit?: number): Promise<BalanceHistory[]>;
+  /**
+   * Get balance history for a user
+   */
+  getBalanceHistory(userId: string, limit?: number): Promise<BalanceHistory[]>;
 }
 
 // ===========================================
@@ -111,25 +116,25 @@ export interface IBalanceRepository {
 // ===========================================
 
 export interface IPositionRepository {
-    /**
-     * Get all positions for a user
-     */
-    getPositions(userId: string): Promise<Position[]>;
+  /**
+   * Get all positions for a user
+   */
+  getPositions(userId: string): Promise<Position[]>;
 
-    /**
-     * Get position by symbol for a user
-     */
-    getPosition(userId: string, symbol: string): Promise<Position | null>;
+  /**
+   * Get position by symbol for a user
+   */
+  getPosition(userId: string, symbol: string): Promise<Position | null>;
 
-    /**
-     * Update position data
-     */
-    updatePosition(userId: string, position: Position): Promise<void>;
+  /**
+   * Update position data
+   */
+  updatePosition(userId: string, position: Position): Promise<void>;
 
-    /**
-     * Close position for a user
-     */
-    closePosition(userId: string, symbol: string): Promise<void>;
+  /**
+   * Close position for a user
+   */
+  closePosition(userId: string, symbol: string): Promise<void>;
 }
 
 // ===========================================
@@ -137,25 +142,29 @@ export interface IPositionRepository {
 // ===========================================
 
 export interface ITradeRepository {
-    /**
-     * Get trades for a user
-     */
-    getTrades(userId: string, limit?: number): Promise<Trade[]>;
+  /**
+   * Get trades for a user
+   */
+  getTrades(userId: string, limit?: number): Promise<Trade[]>;
 
-    /**
-     * Get trades for a specific strategy
-     */
-    getTradesByStrategy(userId: string, strategyId: string, limit?: number): Promise<Trade[]>;
+  /**
+   * Get trades for a specific strategy
+   */
+  getTradesByStrategy(
+    userId: string,
+    strategyId: string,
+    limit?: number
+  ): Promise<Trade[]>;
 
-    /**
-     * Create a new trade record
-     */
-    createTrade(trade: Omit<Trade, 'id' | 'executedAt'>): Promise<Trade>;
+  /**
+   * Create a new trade record
+   */
+  createTrade(trade: Omit<Trade, "id" | "executedAt">): Promise<Trade>;
 
-    /**
-     * Update trade status
-     */
-    updateTradeStatus(tradeId: string, status: TradeStatus): Promise<void>;
+  /**
+   * Update trade status
+   */
+  updateTradeStatus(tradeId: string, status: TradeStatus): Promise<void>;
 }
 
 // ===========================================
@@ -163,35 +172,37 @@ export interface ITradeRepository {
 // ===========================================
 
 export interface IStrategyRepository {
-    /**
-     * Get all strategies for a user
-     */
-    getStrategies(userId: string): Promise<Strategy[]>;
+  /**
+   * Get all strategies for a user
+   */
+  getStrategies(userId: string): Promise<Strategy[]>;
 
-    /**
-     * Get strategy by ID
-     */
-    getStrategy(id: string): Promise<Strategy | null>;
+  /**
+   * Get strategy by ID
+   */
+  getStrategy(id: string): Promise<Strategy | null>;
 
-    /**
-     * Create a new strategy
-     */
-    createStrategy(strategy: Omit<Strategy, 'id' | 'createdAt' | 'updatedAt'>): Promise<Strategy>;
+  /**
+   * Create a new strategy
+   */
+  createStrategy(
+    strategy: Omit<Strategy, "id" | "createdAt" | "updatedAt">
+  ): Promise<Strategy>;
 
-    /**
-     * Update strategy configuration
-     */
-    updateStrategy(id: string, updates: Partial<StrategyConfig>): Promise<void>;
+  /**
+   * Update strategy configuration
+   */
+  updateStrategy(id: string, updates: Partial<StrategyConfig>): Promise<void>;
 
-    /**
-     * Delete strategy
-     */
-    deleteStrategy(id: string): Promise<void>;
+  /**
+   * Delete strategy
+   */
+  deleteStrategy(id: string): Promise<void>;
 
-    /**
-     * Toggle strategy active status
-     */
-    toggleStrategy(id: string, active: boolean): Promise<void>;
+  /**
+   * Toggle strategy active status
+   */
+  toggleStrategy(id: string, active: boolean): Promise<void>;
 }
 
 // ===========================================
@@ -199,71 +210,106 @@ export interface IStrategyRepository {
 // ===========================================
 
 export interface IKodiakCredentialsRepository {
-    /**
-     * Get Kodiak credentials for a user
-     */
-    getCredentials(userId: string): Promise<KodiakCredentials | null>;
+  /**
+   * Get Kodiak credentials for a user
+   */
+  getCredentials(userId: string): Promise<KodiakCredentials | null>;
 
-    /**
-     * Save Kodiak credentials for a user
-     */
-    saveCredentials(credentials: Omit<KodiakCredentials, 'id' | 'createdAt' | 'updatedAt'>): Promise<KodiakCredentials>;
+  /**
+   * Save Kodiak credentials for a user
+   */
+  saveCredentials(
+    credentials: Omit<KodiakCredentials, "id" | "createdAt" | "updatedAt">
+  ): Promise<KodiakCredentials>;
 
-    /**
-     * Update credentials verification status
-     */
-    updateVerificationStatus(userId: string, verified: boolean): Promise<void>;
+  /**
+   * Update credentials verification status
+   */
+  updateVerificationStatus(userId: string, verified: boolean): Promise<void>;
 
-    /**
-     * Update wallet address for credentials
-     */
-    updateWalletAddress(userId: string, walletAddress: string): Promise<void>;
+  /**
+   * Update wallet address for credentials
+   */
+  updateWalletAddress(userId: string, walletAddress: string): Promise<void>;
 
-    /**
-     * Delete credentials for a user
-     */
-    deleteCredentials(userId: string): Promise<void>;
+  /**
+   * Delete credentials for a user
+   */
+  deleteCredentials(userId: string): Promise<void>;
 }
 
 // ===========================================
 // BOT INSTANCE REPOSITORY
 // ===========================================
 
+/**
+ * Raw `bot_instances` row (snake_case DB columns) as returned by the
+ * repository layer. The `strategy_*` fields are populated by the list/detail
+ * queries, which join the `strategies` table.
+ */
+export interface BotInstanceRecord {
+  id: string;
+  strategy_id: string;
+  user_id: string;
+  status: string;
+  running_time: number;
+  total_trades: number;
+  total_pnl: number;
+  created_at: Date;
+  updated_at: Date;
+  /** Canonical lifecycle states; present on `SELECT *` row reads. */
+  desired_state?: string;
+  actual_state?: string;
+  /** Id of the engine currently owning the instance (may be null). */
+  engine_id?: string | null;
+  /** Joined from `strategies.name` (list/detail queries only). */
+  strategy_name?: string;
+  /** Joined from `strategies.type` (list/detail queries only). */
+  strategy_type?: string;
+  /** Joined from `strategies.config` (list/detail queries only). */
+  strategy_config?: Record<string, unknown>;
+}
+
 export interface IBotInstanceRepository {
-    /**
-     * Get all bot instances for a user
-     */
-    getBotInstances(userId: string): Promise<any[]>;
+  /**
+   * Get all bot instances for a user
+   */
+  getBotInstances(userId: string): Promise<BotInstanceRecord[]>;
 
-    /**
-     * Get bot instance by ID
-     */
-    getBotInstance(id: string): Promise<any | null>;
+  /**
+   * Get bot instance by ID
+   */
+  getBotInstance(id: string): Promise<BotInstanceRecord | null>;
 
-    /**
-     * Create a new bot instance
-     */
-    createBotInstance(bot: Omit<any, 'id' | 'createdAt' | 'updatedAt'>): Promise<any>;
+  /**
+   * Create a new bot instance
+   */
+  createBotInstance(
+    bot: Omit<BotInstanceRecord, "created_at" | "updated_at">
+  ): Promise<BotInstanceRecord>;
 
-    /**
-     * Update bot instance status
-     */
-    updateBotStatus(id: string, status: string): Promise<void>;
+  /**
+   * Update bot instance status
+   */
+  updateBotStatus(id: string, status: string): Promise<void>;
 
-    /**
-     * Update bot instance performance metrics
-     */
-    updateBotPerformance(id: string, metrics: { runningTime?: number; totalTrades?: number; totalPnL?: number }): Promise<void>;
+  /**
+   * Update bot instance performance metrics
+   */
+  updateBotPerformance(
+    id: string,
+    metrics: { runningTime?: number; totalTrades?: number; totalPnL?: number }
+  ): Promise<void>;
 
-    /**
-     * Delete bot instance
-     */
-    deleteBotInstance(id: string): Promise<void>;
+  /**
+   * Delete bot instance
+   */
+  deleteBotInstance(id: string): Promise<void>;
 
-    /**
-     * Get active bot instances
-     */
-    getActiveBotInstances(): Promise<any[]>;
+  /**
+   * Get active bot instances
+   */
+  getActiveBotInstances(): Promise<BotInstanceRecord[]>;
 }
 
 // ===========================================
@@ -271,15 +317,15 @@ export interface IBotInstanceRepository {
 // ===========================================
 
 export interface IAuditLogRepository {
-    /**
-     * Log an audit event
-     */
-    logEvent(event: Omit<AuditLogEntry, 'id' | 'timestamp'>): Promise<void>;
+  /**
+   * Log an audit event
+   */
+  logEvent(event: Omit<AuditLogEntry, "id" | "timestamp">): Promise<void>;
 
-    /**
-     * Get audit logs for a user
-     */
-    getUserLogs(userId: string, limit?: number): Promise<AuditLogEntry[]>;
+  /**
+   * Get audit logs for a user
+   */
+  getUserLogs(userId: string, limit?: number): Promise<AuditLogEntry[]>;
 }
 
 // ===========================================
@@ -288,20 +334,20 @@ export interface IAuditLogRepository {
 
 // Additional domain types for repositories
 export interface BalanceHistory {
-    id: string;
-    userId: string;
-    balance: Balance;
-    changeReason: string;
-    changeAmount: number;
-    timestamp: Date;
+  id: string;
+  userId: string;
+  balance: Balance;
+  changeReason: string;
+  changeAmount: number;
+  timestamp: Date;
 }
 
 export interface AuditLogEntry {
-    id: string;
-    userId: string | null;
-    action: string;
-    details: Record<string, unknown>;
-    timestamp: Date;
-    ipAddress?: string;
-    userAgent?: string;
+  id: string;
+  userId: string | null;
+  action: string;
+  details: Record<string, unknown>;
+  timestamp: Date;
+  ipAddress?: string;
+  userAgent?: string;
 }

@@ -24,7 +24,7 @@
 import axios, { AxiosInstance } from "axios";
 import { OrderRequest, OrderResponse } from "../../types/strategy";
 import { createHash } from "crypto";
-import { getPublicKeyAsync, signAsync } from "@noble/ed25519";
+import { signAsync } from "@noble/ed25519";
 import { logger } from "../../utils/logger";
 
 interface OrderlyPosition {
@@ -115,7 +115,8 @@ export class OrderlyClient {
       return Buffer.from(signature).toString("base64url");
     } catch (error) {
       throw new Error(
-        `Failed to generate Kodiak signature: ${error instanceof Error ? error.message : String(error)
+        `Failed to generate Kodiak signature: ${
+          error instanceof Error ? error.message : String(error)
         }`
       );
     }

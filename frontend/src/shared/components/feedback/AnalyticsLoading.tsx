@@ -17,7 +17,9 @@ export const AnalyticsLoading: React.FC<AnalyticsLoadingProps> = ({
   const progressPercent = Math.round(progress * 100);
 
   return (
-    <div className={`flex flex-col items-center justify-center py-12 ${className}`}>
+    <div
+      className={`flex flex-col items-center justify-center py-12 ${className}`}
+    >
       <div className="w-16 h-16 mb-6 bg-surface/50 rounded-full flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
@@ -38,15 +40,17 @@ export const AnalyticsLoading: React.FC<AnalyticsLoadingProps> = ({
       </div>
 
       {/* Progress Text */}
-      <div className="text-sm text-textMuted">
-        {progressPercent}% complete
-      </div>
+      <div className="text-sm text-textMuted">{progressPercent}% complete</div>
 
       {/* Loading Steps */}
       <div className="mt-6 space-y-2 text-xs text-textMuted">
         {progress < 0.3 && <div>• Loading historical price data...</div>}
-        {progress >= 0.3 && progress < 0.7 && <div>• Calculating performance metrics...</div>}
-        {progress >= 0.7 && progress < 1 && <div>• Analyzing risk factors...</div>}
+        {progress >= 0.3 && progress < 0.7 && (
+          <div>• Calculating performance metrics...</div>
+        )}
+        {progress >= 0.7 && progress < 1 && (
+          <div>• Analyzing risk factors...</div>
+        )}
         {progress >= 1 && <div>• Finalizing analytics...</div>}
       </div>
     </div>

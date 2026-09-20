@@ -70,11 +70,11 @@ User level is owned by the auth domain and enforced on every privileged route.
 BASIC ──connect wallet + sign message──▶ REGISTERED ──verify Kodiak keys──▶ VERIFIED
 ```
 
-| Level | Requirement | Notes |
-|-------|-------------|-------|
-| **BASIC** | Email + password | Public-source data only |
+| Level          | Requirement                                         | Notes                                            |
+| -------------- | --------------------------------------------------- | ------------------------------------------------ |
+| **BASIC**      | Email + password                                    | Public-source data only                          |
 | **REGISTERED** | Linked wallet, ownership proven by a signed message | Exchange credential setup (Settings) is unlocked |
-| **VERIFIED** | Verified Kodiak API credentials | Strategies, bot configuration, private data |
+| **VERIFIED**   | Verified Kodiak API credentials                     | Strategies, bot configuration, private data      |
 
 Wallet linking is stored in its own `wallet_addresses` table (migration `010_wallet_addresses.sql`), independent of `kodiak_credentials`, so a wallet can be linked without supplying exchange keys. `POST /api/user/unlink-wallet` is an explicit, audited action that downgrades the account (`VERIFIED → REGISTERED`, `REGISTERED → BASIC`).
 
@@ -145,6 +145,7 @@ connections, market subscriptions) are exposed at `GET /api/system/metrics` unde
 ## Quick Start
 
 ### Prerequisites
+
 - Node.js ≥ 25.0.9
 - PostgreSQL 14+
 - Redis 5.0+
@@ -199,26 +200,31 @@ npm run build && npm start
 ## API Endpoints
 
 ### Authentication
+
 - `POST /api/auth/register` - User registration
 - `POST /api/auth/login` - User login
 - `POST /api/auth/refresh` - Refresh access token
 - `POST /api/auth/logout` - Logout
 
 ### Bot Management
+
 - `POST /api/bot/start` - Start a bot (returns 202 Accepted)
 - `POST /api/bot/stop` - Stop a bot (returns 202 Accepted)
 - `GET /api/bot/status/:botId` - Get bot status
 
 ### User Profile & Access Tiers
+
 - `GET /api/user/profile` - Authenticated user profile (includes `userLevel`)
 - `POST /api/user/profile/update` - Update profile fields
 - `POST /api/user/verify-wallet` - Verify a signed message and link the wallet (`BASIC → REGISTERED`)
 - `POST /api/user/unlink-wallet` - Unlink the wallet (audited); downgrades the level (`VERIFIED → REGISTERED`, `REGISTERED → BASIC`)
 
 ### Engine (internal)
+
 - `GET /api/bot/engine/credentials/:botId` - Engine fetches credentials out-of-band
 
 ### Other
+
 - `GET /api/system/health` - Health check
 - `GET /api/market/ticker` - Market data
 - `GET /api/wallet/balance` - Wallet balance
@@ -227,16 +233,16 @@ npm run build && npm start
 
 ## Known Issues
 
-| Priority | Issue | Description |
-|----------|-------|-------------|
-| 🔴 P0 | Reconciliation Disabled | ✅ Fixed: `LifecycleReconciliationService` now repairs desired/actual drift (bounded stop reissues, stuck->UNKNOWN via CAS, audit events). The superseded `BotReconciliationWorker` has been deleted (along with its tests and route-module startup hooks). |
-| 🟠 P1 | Redis Failure Semantics | ✅ Fixed: Bot start/stop endpoints return 503 when Redis unavailable. Health endpoint includes `controlPlane` status. |
-| 🟡 P2 | Dead Code | ✅ Fixed: Removed the dormant Orderly `market-stream` subsystem, the superseded `BotReconciliationWorker`, the `service-selector` rollout shim, unused WebSocket/DI getters, and one-off Redis debug scripts. |
+| Priority | Issue                   | Description                                                                                                                                                                                                                                                 |
+| -------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🔴 P0    | Reconciliation Disabled | ✅ Fixed: `LifecycleReconciliationService` now repairs desired/actual drift (bounded stop reissues, stuck->UNKNOWN via CAS, audit events). The superseded `BotReconciliationWorker` has been deleted (along with its tests and route-module startup hooks). |
+| 🟠 P1    | Redis Failure Semantics | ✅ Fixed: Bot start/stop endpoints return 503 when Redis unavailable. Health endpoint includes `controlPlane` status.                                                                                                                                       |
+| 🟡 P2    | Dead Code               | ✅ Fixed: Removed the dormant Orderly `market-stream` subsystem, the superseded `BotReconciliationWorker`, the `service-selector` rollout shim, unused WebSocket/DI getters, and one-off Redis debug scripts.                                               |
 
 ### ✅ Recently Fixed
 
-| Issue | Fix |
-|-------|-----|
+| Issue                     | Fix                                                                                                                                                                                                 |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Command Timeout Semantics | Added timeout reason tracking (STATE_MISMATCH, STOP_INCOMPLETE, ENGINE_NO_RESPONSE, COMMAND_NEVER_DELIVERED) with appropriate target states (UNKNOWN for unclear states, ERROR for engine failures) |
 
 ---

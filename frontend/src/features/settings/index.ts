@@ -9,19 +9,22 @@
 
 // Types
 export type {
-    KodiakCredentials,
-    KodiakStatus,
-    AccountOverview,
-    ProfileFormData,
-    ProfileUpdatePayload,
-    SettingsState,
-    ProfileState,
-    SettingsActions,
-    ProfileActions,
+  KodiakCredentials,
+  KodiakStatus,
+  AccountOverview,
+  ProfileFormData,
+  ProfileUpdatePayload,
+  SettingsState,
+  ProfileState,
+  SettingsActions,
+  ProfileActions,
 } from "./types/settings.types";
 
 // Components
-export { AccountOverview as AccountOverviewCard, KodiakCredentials as KodiakCredentialsCard } from "./components";
+export {
+  AccountOverview as AccountOverviewCard,
+  KodiakCredentials as KodiakCredentialsCard,
+} from "./components";
 
 // Hooks
 export { useSettings } from "./hooks";

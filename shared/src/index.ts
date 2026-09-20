@@ -236,7 +236,7 @@ export interface DashboardData {
     totalBalance: number;
     totalPnl: number;
     availableBalance: number;
-    positions: import('./types/domain').Position[];
+    positions: import("./types/domain").Position[];
   };
   recentTrades: Trade[];
   activeStrategies: Strategy[];
@@ -246,61 +246,61 @@ export interface DashboardData {
 // Infrastructure Interfaces - Contract Layer
 // ============================================
 
-export * from './types/infrastructure';
+export * from "./types/infrastructure";
 
 // ============================================
 // Role Management Interfaces & Domain Models
 // ============================================
 
-export * from './types/role-management';
+export * from "./types/role-management";
 
 // ============================================
 // Repository Interfaces - Data Access Contracts
 // ============================================
 
-export * from './types/repositories';
+export * from "./types/repositories";
 
 // ============================================
 // Domain Models - Rich Business Objects
 // ============================================
 
-export * from './types/domain';
+export * from "./types/domain";
 
 // ============================================
 // Error Handling Types & Classes
 // ============================================
 
-export * from './types/errors';
+export * from "./types/errors";
 
 // ============================================
 // Logging Types & Utilities
 // ============================================
 
-export * from './types/logging';
+export * from "./types/logging";
 
 // ============================================
 // Bot Lifecycle Protocol (Backend ⇄ Engine)
 // ============================================
 
-export * from './protocol/bot-state';
-export * from './protocol/bot-command';
-export * from './protocol/bot-event';
-export * from './protocol/engine-lifecycle';
+export * from "./protocol/bot-state";
+export * from "./protocol/bot-command";
+export * from "./protocol/bot-event";
+export * from "./protocol/engine-lifecycle";
 
 // Canonical bot lifecycle state (replaces legacy BotStatus)
-export { BotActualState, BotDesiredState } from './protocol/bot-state';
+export { BotActualState, BotDesiredState } from "./protocol/bot-state";
 
 // ============================================
 // Engine Integration Contract
 // ============================================
 
-export * from './types/engine-contract';
+export * from "./types/engine-contract";
 
 // ============================================
 // Frontend-Backend Integration Contract
 // ============================================
 
-export * from './types/frontend-backend-contract';
+export * from "./types/frontend-backend-contract";
 
 // Explicitly export error classes for better discoverability
 /*export {

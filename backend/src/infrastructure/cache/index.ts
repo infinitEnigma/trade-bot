@@ -16,13 +16,16 @@
  */
 
 // Export cache infrastructure services
-export { redisService } from './redis.service';
-export { cacheInvalidationService } from './cache-invalidation.service';
-export { credentialCacheService } from './credential-cache.service';
+export { redisService } from "./redis.service";
+export { cacheInvalidationService } from "./cache-invalidation.service";
+export { credentialCacheService } from "./credential-cache.service";
 
 // Export Redis sub-services
-export * from './redis/index';
+export * from "./redis/index";
 
 // Export types
-export type { CacheConfig, CacheEntry } from './redis.service';
-export type { InvalidationRule, CacheStrategy } from './cache-invalidation.service';
+export type { CacheConfig, CacheEntry } from "./redis.service";
+export type {
+  InvalidationRule,
+  CacheStrategy,
+} from "./cache-invalidation.service";

@@ -16,7 +16,13 @@
  */
 
 import "dotenv/config";
-import { createCipheriv, createDecipheriv, randomBytes, scrypt, scryptSync as cryptoScryptSync } from "crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  scrypt,
+  scryptSync as cryptoScryptSync,
+} from "crypto";
 import { promisify } from "util";
 import { securityLogger as logger } from "../../core/logging/context-aware-logger.service";
 import { query } from "../../database/pool";
@@ -81,7 +87,9 @@ export class SecureCredentials {
    * Execute a callback function with access to credentials
    * Automatically destroys credentials after use (recommended pattern)
    */
-  async use<T>(callback: (creds: { [key: string]: string }) => Promise<T>): Promise<T> {
+  async use<T>(
+    callback: (creds: { [key: string]: string }) => Promise<T>
+  ): Promise<T> {
     this.checkDestroyed();
     try {
       return await callback(this.credentials);
@@ -131,7 +139,9 @@ export class SecureCredentials {
    */
   private checkDestroyed(): void {
     if (this.destroyed) {
-      throw new Error('SecureCredentials: Credentials have been destroyed and cannot be accessed');
+      throw new Error(
+        "SecureCredentials: Credentials have been destroyed and cannot be accessed"
+      );
     }
   }
 
@@ -140,10 +150,12 @@ export class SecureCredentials {
    * Prevents forensic recovery of sensitive data from memory
    */
   private wipeString(str: string): string {
-    if (!str) return '';
+    if (!str) return "";
 
     // Overwrite with random bytes of same length
-    const randomData = randomBytes(str.length).toString('hex').substring(0, str.length);
+    const randomData = randomBytes(str.length)
+      .toString("hex")
+      .substring(0, str.length);
     return randomData;
   }
 }
@@ -151,7 +163,10 @@ export class SecureCredentials {
 /**
  * Decrypt user Kodiak credentials (internal helper)
  */
-async function decryptUserCredentials(userId: string, queryFunction: typeof query = query): Promise<{ [key: string]: string }> {
+async function decryptUserCredentials(
+  userId: string,
+  queryFunction: typeof query = query
+): Promise<{ [key: string]: string }> {
   try {
     const result = await queryFunction<{
       account_id: string;
@@ -164,7 +179,7 @@ async function decryptUserCredentials(userId: string, queryFunction: typeof quer
     );
 
     if (result.rows.length === 0) {
-      throw new Error('No verified Kodiak credentials found');
+      throw new Error("No verified Kodiak credentials found");
     }
 
     const row = result.rows[0];
@@ -172,9 +187,15 @@ async function decryptUserCredentials(userId: string, queryFunction: typeof quer
 
     // Decrypt using version-aware decryption
     const _encryptionVersion = row.encryption_version || 1;
-    const accountId = await encryptionService.decryptWithVersion(row.account_id);
-    const apiKey = await encryptionService.decryptWithVersion(row.api_key_encrypted);
-    const secretKey = await encryptionService.decryptWithVersion(row.secret_key_encrypted);
+    const accountId = await encryptionService.decryptWithVersion(
+      row.account_id
+    );
+    const apiKey = await encryptionService.decryptWithVersion(
+      row.api_key_encrypted
+    );
+    const secretKey = await encryptionService.decryptWithVersion(
+      row.secret_key_encrypted
+    );
 
     return {
       accountId,
@@ -341,11 +362,14 @@ export class EncryptionService {
   /**
    * Encrypt data with version information for key rotation support
    */
-  async encryptWithVersion(plaintext: string, version?: number): Promise<string> {
+  async encryptWithVersion(
+    plaintext: string,
+    version?: number
+  ): Promise<string> {
     const v = version ?? this.currentKeyVersion;
     const key = await this.getVersionedKey(v);
     const salt = randomBytes(SALT_LENGTH);
-    const derivedKey = await scryptAsync(key, salt, 32) as Buffer;
+    const derivedKey = (await scryptAsync(key, salt, 32)) as Buffer;
     const iv = randomBytes(IV_LENGTH);
 
     const cipher = createCipheriv(ALGORITHM, derivedKey, iv);
@@ -384,7 +408,7 @@ export class EncryptionService {
     const encrypted = buffer.subarray(1 + SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
 
     const key = await this.getVersionedKey(version);
-    const derivedKey = await scryptAsync(key, salt, 32) as Buffer;
+    const derivedKey = (await scryptAsync(key, salt, 32)) as Buffer;
 
     const decipher = createDecipheriv(ALGORITHM, derivedKey, iv);
     decipher.setAuthTag(tag);
@@ -450,7 +474,8 @@ export class EncryptionService {
 
       const lastRotation = new Date(result.rows[0].created_at);
       const now = new Date();
-      const monthsSinceRotation = (now.getTime() - lastRotation.getTime()) / (1000 * 60 * 60 * 24 * 30);
+      const monthsSinceRotation =
+        (now.getTime() - lastRotation.getTime()) / (1000 * 60 * 60 * 24 * 30);
 
       return monthsSinceRotation >= KEY_ROTATION_INTERVAL_MONTHS;
     } catch (error) {
@@ -533,8 +558,14 @@ export class EncryptionService {
               ? this.decryptSecretKey(cred.secret_key_encrypted)
               : await this.decryptWithVersion(cred.secret_key_encrypted);
 
-          const newApiKeyEncrypted = await this.encryptWithVersion(apiKey, newVersion);
-          const newSecretKeyEncrypted = await this.encryptWithVersion(secretKey, newVersion);
+          const newApiKeyEncrypted = await this.encryptWithVersion(
+            apiKey,
+            newVersion
+          );
+          const newSecretKeyEncrypted = await this.encryptWithVersion(
+            secretKey,
+            newVersion
+          );
 
           await this.queryFn(
             "UPDATE kodiak_credentials SET api_key_encrypted = $1, secret_key_encrypted = $2, encryption_version = $3 WHERE id = $4",
@@ -547,10 +578,14 @@ export class EncryptionService {
         } catch (error) {
           // One credential failing must not abort the whole rotation;
           // it stays on the old version and is still decryptable
-          logger.error("Failed to re-encrypt credential during rotation", error as Error, {
-            credentialId: cred.id,
-            error: (error as Error).message,
-          });
+          logger.error(
+            "Failed to re-encrypt credential during rotation",
+            error as Error,
+            {
+              credentialId: cred.id,
+              error: (error as Error).message,
+            }
+          );
         }
       }
 
@@ -602,12 +637,18 @@ export class EncryptionService {
 
           // Re-encrypt with new versioned method
           const newApiKeyEncrypted = await this.encryptWithVersion(apiKey);
-          const newSecretKeyEncrypted = await this.encryptWithVersion(secretKey);
+          const newSecretKeyEncrypted =
+            await this.encryptWithVersion(secretKey);
 
           // Update database
           await this.queryFn(
             "UPDATE kodiak_credentials SET api_key_encrypted = $1, secret_key_encrypted = $2, encryption_version = $3 WHERE id = $4",
-            [newApiKeyEncrypted, newSecretKeyEncrypted, CURRENT_KEY_VERSION, cred.id]
+            [
+              newApiKeyEncrypted,
+              newSecretKeyEncrypted,
+              CURRENT_KEY_VERSION,
+              cred.id,
+            ]
           );
 
           logger.debug("Migrated credential encryption", {

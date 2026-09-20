@@ -1,821 +1,1048 @@
 /** @format */
 
-import { KodiakConnectionService } from '../../src/infrastructure/external/kodiak-connection.service';
-import { query } from '../../src/database/pool';
-import { kodiakIntegrationService } from '../../src/infrastructure/external/kodiak-integration.service';
-import { encryptionService } from '../../src/infrastructure/security/encryption.service';
-import { contextLogger } from '../../src/core/logging/context-aware-logger.service';
-import { UserLevel } from '@trade-bot/shared';
+import { KodiakConnectionService } from "../../src/infrastructure/external/kodiak-connection.service";
+import { query } from "../../src/database/pool";
+import { kodiakIntegrationService } from "../../src/infrastructure/external/kodiak-integration.service";
+import { encryptionService } from "../../src/infrastructure/security/encryption.service";
+import { contextLogger } from "../../src/core/logging/context-aware-logger.service";
+import { UserLevel } from "@trade-bot/shared";
 
 // Mock dependencies
-jest.mock('../../src/database/pool');
+jest.mock("../../src/database/pool");
 // Mock the DI container so getAuthService() resolves a controllable mock
-jest.mock('../../src/infrastructure/dependency-injection.container', () => ({
-    diContainer: {
-        authService: {
-            verifyWalletOwnership: jest.fn(),
-        },
+jest.mock("../../src/infrastructure/dependency-injection.container", () => ({
+  diContainer: {
+    authService: {
+      verifyWalletOwnership: jest.fn(),
     },
+  },
 }));
-jest.mock('../../src/infrastructure/external/kodiak-integration.service');
-jest.mock('../../src/infrastructure/security/encryption.service');
-jest.mock('../../src/infrastructure/cache/redis.service', () => ({
-    redisService: {
-        get: jest.fn(),
-        setex: jest.fn(),
-        del: jest.fn(),
-    }
+jest.mock("../../src/infrastructure/external/kodiak-integration.service");
+jest.mock("../../src/infrastructure/security/encryption.service");
+jest.mock("../../src/infrastructure/cache/redis.service", () => ({
+  redisService: {
+    get: jest.fn(),
+    setex: jest.fn(),
+    del: jest.fn(),
+  },
 }));
 
 // Mock both old and new logging systems
-jest.mock('../../src/core/logging', () => ({
-    contextLogger: {
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn(),
-    },
-    logger: {
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn(),
-    },
+jest.mock("../../src/core/logging", () => ({
+  contextLogger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
 }));
 
-jest.mock('../../src/core/logging/logger.service', () => ({
-    __esModule: true,
-    default: {
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn(),
-    },
+jest.mock("../../src/core/logging/logger.service", () => ({
+  __esModule: true,
+  default: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
 }));
 
 // Mock the context-aware-logger.service directly
-jest.mock('../../src/core/logging/context-aware-logger.service', () => ({
-    ContextAwareLogger: jest.fn().mockImplementation(() => ({
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn(),
-    })),
-    contextLogger: {
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn(),
-    },
-    securityLogger: {
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn(),
-    },
-    redisLogger: {
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn(),
-    },
-    cacheLogger: {
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn(),
-    },
+jest.mock("../../src/core/logging/context-aware-logger.service", () => ({
+  ContextAwareLogger: jest.fn().mockImplementation(() => ({
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  })),
+  contextLogger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+  securityLogger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+  redisLogger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+  cacheLogger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
 }));
 
 // Mock @noble/ed25519 module to avoid Jest parse errors
-jest.mock('@noble/ed25519', () => ({
-    sign: jest.fn(),
-    verify: jest.fn(),
-    getPublicKey: jest.fn(),
-    keygen: jest.fn(),
-    etc: jest.fn(),
-    getPublicKeyAsync: jest.fn(),
-    hash: jest.fn(),
-    hashes: jest.fn(),
-    keygenAsync: jest.fn(),
-    Point: jest.fn(),
-    signAsync: jest.fn(),
-    utils: jest.fn(),
-    verifyAsync: jest.fn(),
+jest.mock("@noble/ed25519", () => ({
+  sign: jest.fn(),
+  verify: jest.fn(),
+  getPublicKey: jest.fn(),
+  keygen: jest.fn(),
+  etc: jest.fn(),
+  getPublicKeyAsync: jest.fn(),
+  hash: jest.fn(),
+  hashes: jest.fn(),
+  keygenAsync: jest.fn(),
+  Point: jest.fn(),
+  signAsync: jest.fn(),
+  utils: jest.fn(),
+  verifyAsync: jest.fn(),
 }));
 
-describe('KodiakConnectionService', () => {
-    let service: KodiakConnectionService;
+describe("KodiakConnectionService", () => {
+  let service: KodiakConnectionService;
 
-    beforeEach(() => {
-        service = new KodiakConnectionService();
-        jest.clearAllMocks();
+  beforeEach(() => {
+    service = new KodiakConnectionService();
+    jest.clearAllMocks();
+  });
+
+  describe("connectKodiak", () => {
+    const mockConnectionData = {
+      accountId:
+        "0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb",
+      apiKey: "ed25519:2pf9vHjZbtLDyTjWNAWJKVXSQRT23CzdGhLrVM6qTfGS",
+      secretKey: "92b3z141HQ66LSsEcp4hEhuoxL1uDi96Lq6DU4vLMcKV",
+      walletSignature: "test-signature",
+    };
+
+    it("should successfully connect and verify Kodiak credentials (REGISTERED -> VERIFIED)", async () => {
+      const mockAuthService = {
+        getUserById: jest.fn().mockResolvedValue({
+          userLevel: UserLevel.REGISTERED,
+        }),
+        updateUserLevel: jest.fn().mockResolvedValue(undefined),
+        invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
+      };
+
+      (
+        require("../../src/infrastructure/dependency-injection.container")
+          .diContainer as any
+      ).authService = mockAuthService;
+      (
+        kodiakIntegrationService.testConnectivity as jest.Mock
+      ).mockResolvedValue({
+        success: true,
+      });
+      (encryptionService.encryptApiKey as jest.Mock).mockReturnValue(
+        "encrypted-api-key"
+      );
+      (encryptionService.encryptSecretKey as jest.Mock).mockReturnValue(
+        "encrypted-secret-key"
+      );
+      (query as jest.Mock).mockResolvedValue({ rows: [] });
+
+      const result = await service.connectKodiak(
+        "test-user-id",
+        mockConnectionData
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.message).toBe(
+        "Kodiak credentials connected and verified successfully"
+      );
+      expect(result.data?.verified).toBe(true);
+      expect(result.data?.userLevel).toBe("VERIFIED");
+
+      // Verify database operations
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("INSERT INTO kodiak_credentials"),
+        expect.arrayContaining([
+          "test-user-id",
+          "0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb",
+          "encrypted-api-key",
+          "encrypted-secret-key",
+          "test-signature",
+          false, // initially not verified
+        ])
+      );
+      expect(query).toHaveBeenCalledWith(
+        "UPDATE kodiak_credentials SET verified = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2",
+        [true, "test-user-id"]
+      );
+
+      // Verify user level update (REGISTERED -> VERIFIED)
+      expect(mockAuthService.updateUserLevel).toHaveBeenCalledWith(
+        "test-user-id",
+        UserLevel.VERIFIED
+      );
+      expect(mockAuthService.invalidateUserDataCache).toHaveBeenCalledWith(
+        "test-user-id"
+      );
     });
 
-    describe('connectKodiak', () => {
-        const mockConnectionData = {
-            accountId: '0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
-            apiKey: 'ed25519:2pf9vHjZbtLDyTjWNAWJKVXSQRT23CzdGhLrVM6qTfGS',
-            secretKey: '92b3z141HQ66LSsEcp4hEhuoxL1uDi96Lq6DU4vLMcKV',
-            walletSignature: 'test-signature',
-        };
+    it("should reject Kodiak connection for BASIC users (wallet first)", async () => {
+      const mockAuthService = {
+        getUserById: jest.fn().mockResolvedValue({
+          userLevel: UserLevel.BASIC,
+        }),
+        updateUserLevel: jest.fn().mockResolvedValue(undefined),
+        invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
+      };
 
-        it('should successfully connect and verify Kodiak credentials (REGISTERED -> VERIFIED)', async () => {
-            const mockAuthService = {
-                getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.REGISTERED,
-                }),
-                updateUserLevel: jest.fn().mockResolvedValue(undefined),
-                invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
-            };
+      (
+        require("../../src/infrastructure/dependency-injection.container")
+          .diContainer as any
+      ).authService = mockAuthService;
 
-            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
-            (kodiakIntegrationService.testConnectivity as jest.Mock).mockResolvedValue({
-                success: true,
-            });
-            (encryptionService.encryptApiKey as jest.Mock).mockReturnValue('encrypted-api-key');
-            (encryptionService.encryptSecretKey as jest.Mock).mockReturnValue('encrypted-secret-key');
-            (query as jest.Mock).mockResolvedValue({ rows: [] });
+      const result = await service.connectKodiak(
+        "test-user-id",
+        mockConnectionData
+      );
 
-            const result = await service.connectKodiak('test-user-id', mockConnectionData);
-
-            expect(result.success).toBe(true);
-            expect(result.message).toBe('Kodiak credentials connected and verified successfully');
-            expect(result.data?.verified).toBe(true);
-            expect(result.data?.userLevel).toBe('VERIFIED');
-
-            // Verify database operations
-            expect(query).toHaveBeenCalledWith(
-                expect.stringContaining('INSERT INTO kodiak_credentials'),
-                expect.arrayContaining([
-                    'test-user-id',
-                    '0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
-                    'encrypted-api-key',
-                    'encrypted-secret-key',
-                    'test-signature',
-                    false, // initially not verified
-                ])
-            );
-            expect(query).toHaveBeenCalledWith(
-                'UPDATE kodiak_credentials SET verified = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
-                [true, 'test-user-id']
-            );
-
-            // Verify user level update (REGISTERED -> VERIFIED)
-            expect(mockAuthService.updateUserLevel).toHaveBeenCalledWith(
-                'test-user-id',
-                UserLevel.VERIFIED
-            );
-            expect(mockAuthService.invalidateUserDataCache).toHaveBeenCalledWith('test-user-id');
-        });
-
-        it('should reject Kodiak connection for BASIC users (wallet first)', async () => {
-            const mockAuthService = {
-                getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.BASIC,
-                }),
-                updateUserLevel: jest.fn().mockResolvedValue(undefined),
-                invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
-            };
-
-            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
-
-            const result = await service.connectKodiak('test-user-id', mockConnectionData);
-
-            expect(result.success).toBe(false);
-            expect(result.message).toBe('Please connect and verify your wallet on the Dashboard first.');
-            expect(mockAuthService.updateUserLevel).not.toHaveBeenCalled();
-        });
-
-        it('should store credentials but mark as unverified when verification fails', async () => {
-            const mockAuthService = {
-                getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.REGISTERED,
-                }),
-                updateUserLevel: jest.fn().mockResolvedValue(undefined),
-                invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
-            };
-
-            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
-            (kodiakIntegrationService.testConnectivity as jest.Mock).mockResolvedValue({
-                success: false,
-                error: 'Invalid API key',
-            });
-            (encryptionService.encryptApiKey as jest.Mock).mockReturnValue('encrypted-api-key');
-            (encryptionService.encryptSecretKey as jest.Mock).mockReturnValue('encrypted-secret-key');
-            (query as jest.Mock).mockResolvedValue({ rows: [] });
-
-            const result = await service.connectKodiak('test-user-id', mockConnectionData);
-
-            expect(result.success).toBe(false);
-            expect(result.message).toBe('Kodiak credential verification failed. Please check your credentials.');
-            expect(result.data?.verified).toBe(false);
-            expect(result.error).toBe('Invalid API key');
-
-            // Verify credentials were stored (then rolled back) - unverified
-            // credentials must not remain in the table
-            expect(query).toHaveBeenCalledWith(
-                expect.stringContaining('INSERT INTO kodiak_credentials'),
-                expect.arrayContaining([
-                    'test-user-id',
-                    '0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
-                    'encrypted-api-key',
-                    'encrypted-secret-key',
-                    'test-signature',
-                    false, // verified = false
-                ])
-            );
-
-            // Rollback: the unverified credentials are removed again
-            expect(query).toHaveBeenCalledWith(
-                expect.stringContaining('DELETE FROM kodiak_credentials'),
-                ['test-user-id']
-            );
-
-            // User level should not be updated
-            expect(mockAuthService.updateUserLevel).not.toHaveBeenCalled();
-        });
-
-        it('should validate input data before processing', async () => {
-            const invalidConnectionData = {
-                accountId: '',
-                apiKey: 'test-api-key',
-                secretKey: 'test-secret-key',
-            };
-
-            const result = await service.connectKodiak('test-user-id', invalidConnectionData);
-
-            expect(result.success).toBe(false);
-            expect(result.message).toBe('Account ID, API key, and secret key are required');
-            expect(result.error).toBe('Account ID, API key, and secret key are required');
-            expect(query).not.toHaveBeenCalled();
-        });
-
-        it('should handle database errors gracefully', async () => {
-            const mockAuthService = {
-                getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.REGISTERED,
-                }),
-                updateUserLevel: jest.fn().mockResolvedValue(undefined),
-                invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
-            };
-
-            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
-            (kodiakIntegrationService.testConnectivity as jest.Mock).mockResolvedValue({
-                success: true,
-            });
-            (encryptionService.encryptApiKey as jest.Mock).mockReturnValue('encrypted-api-key');
-            (encryptionService.encryptSecretKey as jest.Mock).mockReturnValue('encrypted-secret-key');
-            (query as jest.Mock).mockRejectedValue(new Error('Database connection failed'));
-
-            const result = await service.connectKodiak('test-user-id', mockConnectionData);
-
-            expect(result.success).toBe(false);
-            expect(result.message).toBe('Failed to connect Kodiak credentials');
-            expect(result.error).toBe('Internal server error during connection');
-            expect(contextLogger.error).toHaveBeenCalledWith('Kodiak connection error', new Error('Database connection failed'), {
-                userId: 'test-user-id',
-                accountId: '0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
-            });
-        });
-
-        it('should fetch and store wallet address from Kodiak API', async () => {
-            const mockAuthService = {
-                getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.REGISTERED,
-                }),
-                updateUserLevel: jest.fn().mockResolvedValue(undefined),
-                invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
-            };
-
-            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
-            (kodiakIntegrationService.testConnectivity as jest.Mock).mockResolvedValue({
-                success: true,
-            });
-            (kodiakIntegrationService.getPublicAccountInfo as jest.Mock).mockResolvedValue({
-                success: true,
-                data: {
-                    address: '0x1234567890abcdef1234567890abcdef12345678',
-                    account_id: 'test-account-id',
-                },
-            });
-            (encryptionService.encryptApiKey as jest.Mock).mockReturnValue('encrypted-api-key');
-            (encryptionService.encryptSecretKey as jest.Mock).mockReturnValue('encrypted-secret-key');
-            (query as jest.Mock)
-                .mockResolvedValueOnce({ rows: [] }) // Initial insert
-                .mockResolvedValueOnce({ rows: [] }); // Wallet address update
-
-            const result = await service.connectKodiak('test-user-id', mockConnectionData);
-
-            expect(result.success).toBe(true);
-            expect(query).toHaveBeenCalledWith(
-                expect.stringContaining('UPDATE kodiak_credentials SET wallet_address'),
-                expect.arrayContaining([
-                    '0x1234567890abcdef1234567890abcdef12345678',
-                    'test-user-id',
-                ])
-            );
-        });
-
-        it('should handle wallet address fetching errors gracefully', async () => {
-            const mockAuthService = {
-                getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.REGISTERED,
-                }),
-                updateUserLevel: jest.fn().mockResolvedValue(undefined),
-                invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
-            };
-
-            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
-            (kodiakIntegrationService.testConnectivity as jest.Mock).mockResolvedValue({
-                success: true,
-            });
-            (kodiakIntegrationService.getPublicAccountInfo as jest.Mock).mockResolvedValue({
-                success: false,
-                error: 'API error',
-            });
-            (encryptionService.encryptApiKey as jest.Mock).mockReturnValue('encrypted-api-key');
-            (encryptionService.encryptSecretKey as jest.Mock).mockReturnValue('encrypted-secret-key');
-            (query as jest.Mock)
-                .mockResolvedValueOnce({ rows: [] }) // Initial insert
-                .mockResolvedValueOnce({ rows: [] }); // Wallet address update
-
-            const result = await service.connectKodiak('test-user-id', mockConnectionData);
-
-            expect(result.success).toBe(true);
-            expect(contextLogger.warn).toHaveBeenCalledWith('Failed to fetch Kodiak public account info for wallet address', {
-                userId: 'test-user-id',
-                accountId: '0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb',
-            });
-        });
+      expect(result.success).toBe(false);
+      expect(result.message).toBe(
+        "Please connect and verify your wallet on the Dashboard first."
+      );
+      expect(mockAuthService.updateUserLevel).not.toHaveBeenCalled();
     });
 
-    describe('disconnectKodiak', () => {
-        it('should successfully disconnect Kodiak and downgrade VERIFIED user to REGISTERED', async () => {
-            const mockAuthService = {
-                getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.VERIFIED,
-                }),
-                updateUserLevel: jest.fn().mockResolvedValue(undefined),
-                invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
-            };
+    it("should store credentials but mark as unverified when verification fails", async () => {
+      const mockAuthService = {
+        getUserById: jest.fn().mockResolvedValue({
+          userLevel: UserLevel.REGISTERED,
+        }),
+        updateUserLevel: jest.fn().mockResolvedValue(undefined),
+        invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
+      };
 
-            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
-            (query as jest.Mock).mockResolvedValue({ rows: [] });
+      (
+        require("../../src/infrastructure/dependency-injection.container")
+          .diContainer as any
+      ).authService = mockAuthService;
+      (
+        kodiakIntegrationService.testConnectivity as jest.Mock
+      ).mockResolvedValue({
+        success: false,
+        error: "Invalid API key",
+      });
+      (encryptionService.encryptApiKey as jest.Mock).mockReturnValue(
+        "encrypted-api-key"
+      );
+      (encryptionService.encryptSecretKey as jest.Mock).mockReturnValue(
+        "encrypted-secret-key"
+      );
+      (query as jest.Mock).mockResolvedValue({ rows: [] });
 
-            const result = await service.disconnectKodiak('test-user-id');
+      const result = await service.connectKodiak(
+        "test-user-id",
+        mockConnectionData
+      );
 
-            expect(result.success).toBe(true);
-            expect(result.message).toBe('Kodiak credentials disconnected');
+      expect(result.success).toBe(false);
+      expect(result.message).toBe(
+        "Kodiak credential verification failed. Please check your credentials."
+      );
+      expect(result.data?.verified).toBe(false);
+      expect(result.error).toBe("Invalid API key");
 
-            // Verify credentials deletion
-            expect(query).toHaveBeenCalledWith(
-                'DELETE FROM kodiak_credentials WHERE user_id = $1',
-                ['test-user-id']
-            );
+      // Verify credentials were stored (then rolled back) - unverified
+      // credentials must not remain in the table
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("INSERT INTO kodiak_credentials"),
+        expect.arrayContaining([
+          "test-user-id",
+          "0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb",
+          "encrypted-api-key",
+          "encrypted-secret-key",
+          "test-signature",
+          false, // verified = false
+        ])
+      );
 
-            // Verify user level downgrade (VERIFIED -> REGISTERED, wallet stays)
-            expect(mockAuthService.updateUserLevel).toHaveBeenCalledWith(
-                'test-user-id',
-                UserLevel.REGISTERED
-            );
-            expect(mockAuthService.invalidateUserDataCache).toHaveBeenCalledWith('test-user-id');
-        });
+      // Rollback: the unverified credentials are removed again
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("DELETE FROM kodiak_credentials"),
+        ["test-user-id"]
+      );
 
-        it('should keep REGISTERED user at REGISTERED when wallet is still linked', async () => {
-            const mockAuthService = {
-                getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.REGISTERED,
-                }),
-                updateUserLevel: jest.fn().mockResolvedValue(undefined),
-                invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
-            };
-
-            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
-            // DELETE succeeds, wallet_addresses lookup finds a linked wallet
-            (query as jest.Mock)
-                .mockResolvedValueOnce({ rows: [] })
-                .mockResolvedValueOnce({ rows: [{ wallet_address: '0xabc' }] });
-
-            const result = await service.disconnectKodiak('test-user-id');
-
-            expect(result.success).toBe(true);
-            expect(mockAuthService.updateUserLevel).toHaveBeenCalledWith(
-                'test-user-id',
-                UserLevel.REGISTERED
-            );
-        });
-
-        it('should downgrade REGISTERED user without wallet to BASIC', async () => {
-            const mockAuthService = {
-                getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.REGISTERED,
-                }),
-                updateUserLevel: jest.fn().mockResolvedValue(undefined),
-                invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
-            };
-
-            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
-            // DELETE succeeds, no linked wallet, no legacy wallet
-            (query as jest.Mock)
-                .mockResolvedValueOnce({ rows: [] })
-                .mockResolvedValueOnce({ rows: [] })
-                .mockResolvedValueOnce({ rows: [] });
-
-            const result = await service.disconnectKodiak('test-user-id');
-
-            expect(result.success).toBe(true);
-            expect(mockAuthService.updateUserLevel).toHaveBeenCalledWith(
-                'test-user-id',
-                UserLevel.BASIC
-            );
-        });
-
-        it('should handle database errors during disconnection', async () => {
-            const mockAuthService = {
-                getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.REGISTERED,
-                }),
-                updateUserLevel: jest.fn().mockResolvedValue(undefined),
-                invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
-            };
-
-            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
-            (query as jest.Mock).mockRejectedValue(new Error('Database error'));
-
-            const result = await service.disconnectKodiak('test-user-id');
-
-            expect(result.success).toBe(false);
-            expect(result.message).toBe('Failed to disconnect Kodiak credentials');
-            expect(result.error).toBe('Internal server error during disconnection');
-            expect(contextLogger.error).toHaveBeenCalledWith('Kodiak disconnection error', new Error('Database error'), {
-                userId: 'test-user-id',
-            });
-        });
+      // User level should not be updated
+      expect(mockAuthService.updateUserLevel).not.toHaveBeenCalled();
     });
 
-    describe('getConnectionStatus', () => {
-        it('should return connected status with verified credentials', async () => {
-            const mockRow = {
-                account_id: 'test-account-id',
-                verified: true,
-                created_at: '2023-01-01T00:00:00Z',
-            };
+    it("should validate input data before processing", async () => {
+      const invalidConnectionData = {
+        accountId: "",
+        apiKey: "test-api-key",
+        secretKey: "test-secret-key",
+      };
 
-            (query as jest.Mock).mockResolvedValue({ rows: [mockRow] });
+      const result = await service.connectKodiak(
+        "test-user-id",
+        invalidConnectionData
+      );
 
-            const result = await service.getConnectionStatus('test-user-id');
-
-            expect(result).toEqual({
-                connected: true,
-                accountId: 'test-account-id',
-                verified: true,
-                connectedAt: '2023-01-01T00:00:00Z',
-            });
-        });
-
-        it('should return disconnected status when no credentials found', async () => {
-            (query as jest.Mock).mockResolvedValue({ rows: [] });
-
-            const result = await service.getConnectionStatus('test-user-id');
-
-            expect(result).toEqual({ connected: false });
-        });
-
-        it('should handle database errors gracefully', async () => {
-            (query as jest.Mock).mockRejectedValue(new Error('Database error'));
-
-            const result = await service.getConnectionStatus('test-user-id');
-
-            expect(result).toEqual({ connected: false });
-            expect(contextLogger.error).toHaveBeenCalledWith('Failed to get Kodiak connection status', new Error('Database error'), {
-                userId: 'test-user-id',
-            });
-        });
+      expect(result.success).toBe(false);
+      expect(result.message).toBe(
+        "Account ID, API key, and secret key are required"
+      );
+      expect(result.error).toBe(
+        "Account ID, API key, and secret key are required"
+      );
+      expect(query).not.toHaveBeenCalled();
     });
 
-    describe('hasVerifiedConnection', () => {
-        it('should return true when user has verified connection', async () => {
-            (query as jest.Mock).mockResolvedValue({ rows: [{ verified: true }] });
+    it("should handle database errors gracefully", async () => {
+      const mockAuthService = {
+        getUserById: jest.fn().mockResolvedValue({
+          userLevel: UserLevel.REGISTERED,
+        }),
+        updateUserLevel: jest.fn().mockResolvedValue(undefined),
+        invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
+      };
 
-            const result = await service.hasVerifiedConnection('test-user-id');
+      (
+        require("../../src/infrastructure/dependency-injection.container")
+          .diContainer as any
+      ).authService = mockAuthService;
+      (
+        kodiakIntegrationService.testConnectivity as jest.Mock
+      ).mockResolvedValue({
+        success: true,
+      });
+      (encryptionService.encryptApiKey as jest.Mock).mockReturnValue(
+        "encrypted-api-key"
+      );
+      (encryptionService.encryptSecretKey as jest.Mock).mockReturnValue(
+        "encrypted-secret-key"
+      );
+      (query as jest.Mock).mockRejectedValue(
+        new Error("Database connection failed")
+      );
 
-            expect(result).toBe(true);
-        });
+      const result = await service.connectKodiak(
+        "test-user-id",
+        mockConnectionData
+      );
 
-        it('should return false when user has no verified connection', async () => {
-            (query as jest.Mock).mockResolvedValue({ rows: [] });
-
-            const result = await service.hasVerifiedConnection('test-user-id');
-
-            expect(result).toBe(false);
-        });
-
-        it('should handle database errors gracefully', async () => {
-            (query as jest.Mock).mockRejectedValue(new Error('Database error'));
-
-            const result = await service.hasVerifiedConnection('test-user-id');
-
-            expect(result).toBe(false);
-            expect(contextLogger.error).toHaveBeenCalledWith('Failed to check Kodiak connection status', new Error('Database error'), {
-                userId: 'test-user-id',
-            });
-        });
+      expect(result.success).toBe(false);
+      expect(result.message).toBe("Failed to connect Kodiak credentials");
+      expect(result.error).toBe("Internal server error during connection");
+      expect(contextLogger.error).toHaveBeenCalledWith(
+        "Kodiak connection error",
+        new Error("Database connection failed"),
+        {
+          userId: "test-user-id",
+          accountId:
+            "0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb",
+        }
+      );
     });
 
-    describe('getConnectionStats', () => {
-        it('should return connection statistics', async () => {
-            (query as jest.Mock)
-                .mockResolvedValueOnce({ rows: [{ count: '10' }] }) // totalConnections
-                .mockResolvedValueOnce({ rows: [{ count: '8' }] }) // verifiedConnections
-                .mockResolvedValueOnce({ rows: [{ count: '2' }] }); // pendingConnections
+    it("should fetch and store wallet address from Kodiak API", async () => {
+      const mockAuthService = {
+        getUserById: jest.fn().mockResolvedValue({
+          userLevel: UserLevel.REGISTERED,
+        }),
+        updateUserLevel: jest.fn().mockResolvedValue(undefined),
+        invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
+      };
 
-            const result = await service.getConnectionStats();
+      (
+        require("../../src/infrastructure/dependency-injection.container")
+          .diContainer as any
+      ).authService = mockAuthService;
+      (
+        kodiakIntegrationService.testConnectivity as jest.Mock
+      ).mockResolvedValue({
+        success: true,
+      });
+      (
+        kodiakIntegrationService.getPublicAccountInfo as jest.Mock
+      ).mockResolvedValue({
+        success: true,
+        data: {
+          address: "0x1234567890abcdef1234567890abcdef12345678",
+          account_id: "test-account-id",
+        },
+      });
+      (encryptionService.encryptApiKey as jest.Mock).mockReturnValue(
+        "encrypted-api-key"
+      );
+      (encryptionService.encryptSecretKey as jest.Mock).mockReturnValue(
+        "encrypted-secret-key"
+      );
+      (query as jest.Mock)
+        .mockResolvedValueOnce({ rows: [] }) // Initial insert
+        .mockResolvedValueOnce({ rows: [] }); // Wallet address update
 
-            expect(result).toEqual({
-                totalConnections: 10,
-                verifiedConnections: 8,
-                pendingConnections: 2,
-            });
-        });
+      const result = await service.connectKodiak(
+        "test-user-id",
+        mockConnectionData
+      );
 
-        it('should handle database errors gracefully', async () => {
-            (query as jest.Mock).mockRejectedValue(new Error('Database error'));
-
-            const result = await service.getConnectionStats();
-
-            expect(result).toEqual({
-                totalConnections: 0,
-                verifiedConnections: 0,
-                pendingConnections: 0,
-            });
-            expect(contextLogger.error).toHaveBeenCalledWith('Failed to get connection stats', new Error('Database error'));
-        });
+      expect(result.success).toBe(true);
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE kodiak_credentials SET wallet_address"),
+        expect.arrayContaining([
+          "0x1234567890abcdef1234567890abcdef12345678",
+          "test-user-id",
+        ])
+      );
     });
 
-    describe('cleanupInvalidConnections', () => {
-        it('should clean up unverified connections older than 30 days', async () => {
-            (query as jest.Mock).mockResolvedValue({ rowCount: 5 });
+    it("should handle wallet address fetching errors gracefully", async () => {
+      const mockAuthService = {
+        getUserById: jest.fn().mockResolvedValue({
+          userLevel: UserLevel.REGISTERED,
+        }),
+        updateUserLevel: jest.fn().mockResolvedValue(undefined),
+        invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
+      };
 
-            const result = await service.cleanupInvalidConnections();
+      (
+        require("../../src/infrastructure/dependency-injection.container")
+          .diContainer as any
+      ).authService = mockAuthService;
+      (
+        kodiakIntegrationService.testConnectivity as jest.Mock
+      ).mockResolvedValue({
+        success: true,
+      });
+      (
+        kodiakIntegrationService.getPublicAccountInfo as jest.Mock
+      ).mockResolvedValue({
+        success: false,
+        error: "API error",
+      });
+      (encryptionService.encryptApiKey as jest.Mock).mockReturnValue(
+        "encrypted-api-key"
+      );
+      (encryptionService.encryptSecretKey as jest.Mock).mockReturnValue(
+        "encrypted-secret-key"
+      );
+      (query as jest.Mock)
+        .mockResolvedValueOnce({ rows: [] }) // Initial insert
+        .mockResolvedValueOnce({ rows: [] }); // Wallet address update
 
-            expect(result).toEqual({ cleaned: 5 });
-            expect(contextLogger.info).toHaveBeenCalledWith('Cleaned up invalid Kodiak connections', {
-                cleanedCount: 5,
-                olderThan: expect.any(String),
-            });
-        });
+      const result = await service.connectKodiak(
+        "test-user-id",
+        mockConnectionData
+      );
 
-        it('should handle database errors gracefully', async () => {
-            (query as jest.Mock).mockRejectedValue(new Error('Database error'));
+      expect(result.success).toBe(true);
+      expect(contextLogger.warn).toHaveBeenCalledWith(
+        "Failed to fetch Kodiak public account info for wallet address",
+        {
+          userId: "test-user-id",
+          accountId:
+            "0xc811b32e207c0b7bfcd602fbaf0e480e6fbbe545dab6eff440e190a037f5b5fb",
+        }
+      );
+    });
+  });
 
-            const result = await service.cleanupInvalidConnections();
+  describe("disconnectKodiak", () => {
+    it("should successfully disconnect Kodiak and downgrade VERIFIED user to REGISTERED", async () => {
+      const mockAuthService = {
+        getUserById: jest.fn().mockResolvedValue({
+          userLevel: UserLevel.VERIFIED,
+        }),
+        updateUserLevel: jest.fn().mockResolvedValue(undefined),
+        invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
+      };
 
-            expect(result).toEqual({ cleaned: 0 });
-            expect(contextLogger.error).toHaveBeenCalledWith('Failed to cleanup invalid connections', new Error('Database error'));
-        });
+      (
+        require("../../src/infrastructure/dependency-injection.container")
+          .diContainer as any
+      ).authService = mockAuthService;
+      (query as jest.Mock).mockResolvedValue({ rows: [] });
+
+      const result = await service.disconnectKodiak("test-user-id");
+
+      expect(result.success).toBe(true);
+      expect(result.message).toBe("Kodiak credentials disconnected");
+
+      // Verify credentials deletion
+      expect(query).toHaveBeenCalledWith(
+        "DELETE FROM kodiak_credentials WHERE user_id = $1",
+        ["test-user-id"]
+      );
+
+      // Verify user level downgrade (VERIFIED -> REGISTERED, wallet stays)
+      expect(mockAuthService.updateUserLevel).toHaveBeenCalledWith(
+        "test-user-id",
+        UserLevel.REGISTERED
+      );
+      expect(mockAuthService.invalidateUserDataCache).toHaveBeenCalledWith(
+        "test-user-id"
+      );
     });
 
-    describe('reverifyConnections', () => {
-        it('should re-verify existing connections', async () => {
-            const mockConnections = {
-                rows: [
-                    { user_id: 'user1', account_id: 'account1' },
-                    { user_id: 'user2', account_id: 'account2' },
-                ],
-            };
+    it("should keep REGISTERED user at REGISTERED when wallet is still linked", async () => {
+      const mockAuthService = {
+        getUserById: jest.fn().mockResolvedValue({
+          userLevel: UserLevel.REGISTERED,
+        }),
+        updateUserLevel: jest.fn().mockResolvedValue(undefined),
+        invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
+      };
 
-            (query as jest.Mock)
-                .mockResolvedValueOnce(mockConnections) // Get connections
-                .mockResolvedValueOnce({ rows: [{ account_id: 'user1', api_key_encrypted: 'key1', secret_key_encrypted: 'secret1' }] }) // getUserCredentials for user1
-                .mockResolvedValueOnce({ rows: [{ account_id: 'user2', api_key_encrypted: 'key2', secret_key_encrypted: 'secret2' }] }) // getUserCredentials for user2
-                .mockResolvedValueOnce({ rows: [] }) // Update user1 (success)
-                .mockResolvedValueOnce({ rows: [] }); // Update user2 (fail)
+      (
+        require("../../src/infrastructure/dependency-injection.container")
+          .diContainer as any
+      ).authService = mockAuthService;
+      // DELETE succeeds, wallet_addresses lookup finds a linked wallet
+      (query as jest.Mock)
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ wallet_address: "0xabc" }] });
 
-            (kodiakIntegrationService.getUserCredentials as jest.Mock)
-                .mockResolvedValueOnce({
-                    accountId: 'account1',
-                    apiKey: 'decrypted-key1',
-                    secretKey: 'decrypted-secret1',
-                })
-                .mockResolvedValueOnce({
-                    accountId: 'account2',
-                    apiKey: 'decrypted-key2',
-                    secretKey: 'decrypted-secret2',
-                });
+      const result = await service.disconnectKodiak("test-user-id");
 
-            (kodiakIntegrationService.testConnectivity as jest.Mock)
-                .mockResolvedValueOnce({ success: true })
-                .mockResolvedValueOnce({ success: false });
-
-            const result = await service.reverifyConnections();
-
-            expect(result).toEqual({ reVerified: 1, failed: 1 });
-            expect(contextLogger.info).toHaveBeenCalledWith('Connection re-verification completed', {
-                totalChecked: 2,
-                reVerified: 1,
-                failed: 1,
-            });
-        });
-
-        it('should handle database errors gracefully', async () => {
-            // Mock the first query call to throw an error
-            (query as jest.Mock).mockRejectedValueOnce(new Error('Database error'));
-
-            const result = await service.reverifyConnections();
-
-            expect(result).toEqual({ reVerified: 0, failed: 0 });
-            expect(contextLogger.error).not.toHaveBeenCalledWith('Failed to re-verify connections', new Error('Database error'), {
-                totalChecked: 0,
-                reVerified: 0,
-                failed: 0,
-            });
-        });
+      expect(result.success).toBe(true);
+      expect(mockAuthService.updateUserLevel).toHaveBeenCalledWith(
+        "test-user-id",
+        UserLevel.REGISTERED
+      );
     });
 
-    describe('validateConnectionData', () => {
-        it('should validate valid connection data', () => {
-            const result = (service as any).validateConnectionData({
-                accountId: 'test-account-id',
-                apiKey: 'ed25519:test-api-key',
-                secretKey: 'test-secret-key-that-is-long-enough-for-validation',
-            });
+    it("should downgrade REGISTERED user without wallet to BASIC", async () => {
+      const mockAuthService = {
+        getUserById: jest.fn().mockResolvedValue({
+          userLevel: UserLevel.REGISTERED,
+        }),
+        updateUserLevel: jest.fn().mockResolvedValue(undefined),
+        invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
+      };
 
-            expect(result).toEqual({ valid: true });
-        });
+      (
+        require("../../src/infrastructure/dependency-injection.container")
+          .diContainer as any
+      ).authService = mockAuthService;
+      // DELETE succeeds, no linked wallet, no legacy wallet
+      (query as jest.Mock)
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
 
-        it('should reject connection data with missing fields', () => {
-            const result = (service as any).validateConnectionData({
-                accountId: '',
-                apiKey: 'test-api-key',
-                secretKey: 'test-secret-key',
-            });
+      const result = await service.disconnectKodiak("test-user-id");
 
-            expect(result).toEqual({
-                valid: false,
-                error: 'Account ID, API key, and secret key are required',
-            });
-        });
-
-        it('should reject connection data with invalid format', () => {
-            const result = (service as any).validateConnectionData({
-                accountId: 'short',
-                apiKey: 'short',
-                secretKey: 'short',
-            });
-
-            expect(result).toEqual({
-                valid: false,
-                error: 'Account ID appears to be invalid',
-            });
-        });
+      expect(result.success).toBe(true);
+      expect(mockAuthService.updateUserLevel).toHaveBeenCalledWith(
+        "test-user-id",
+        UserLevel.BASIC
+      );
     });
 
-    describe('updateUserLevel', () => {
-        it('should update user level successfully', async () => {
-            const mockAuthService = {
-                getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.BASIC,
-                }),
-                updateUserLevel: jest.fn().mockResolvedValue(undefined),
-            };
+    it("should handle database errors during disconnection", async () => {
+      const mockAuthService = {
+        getUserById: jest.fn().mockResolvedValue({
+          userLevel: UserLevel.REGISTERED,
+        }),
+        updateUserLevel: jest.fn().mockResolvedValue(undefined),
+        invalidateUserDataCache: jest.fn().mockResolvedValue(undefined),
+      };
 
-            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
+      (
+        require("../../src/infrastructure/dependency-injection.container")
+          .diContainer as any
+      ).authService = mockAuthService;
+      (query as jest.Mock).mockRejectedValue(new Error("Database error"));
 
-            await (service as any).updateUserLevel('test-user-id', UserLevel.REGISTERED);
+      const result = await service.disconnectKodiak("test-user-id");
 
-            expect(mockAuthService.updateUserLevel).toHaveBeenCalledWith(
-                'test-user-id',
-                UserLevel.REGISTERED
-            );
-            expect(contextLogger.info).toHaveBeenCalledWith('User level updated from BASIC to REGISTERED', {
-                userId: 'test-user-id',
-            });
-        });
+      expect(result.success).toBe(false);
+      expect(result.message).toBe("Failed to disconnect Kodiak credentials");
+      expect(result.error).toBe("Internal server error during disconnection");
+      expect(contextLogger.error).toHaveBeenCalledWith(
+        "Kodiak disconnection error",
+        new Error("Database error"),
+        {
+          userId: "test-user-id",
+        }
+      );
+    });
+  });
 
-        it('should not update if level is already the same', async () => {
-            const mockAuthService = {
-                getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.REGISTERED,
-                }),
-                updateUserLevel: jest.fn().mockResolvedValue(undefined),
-            };
+  describe("getConnectionStatus", () => {
+    it("should return connected status with verified credentials", async () => {
+      const mockRow = {
+        account_id: "test-account-id",
+        verified: true,
+        created_at: "2023-01-01T00:00:00Z",
+      };
 
-            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
+      (query as jest.Mock).mockResolvedValue({ rows: [mockRow] });
 
-            await (service as any).updateUserLevel('test-user-id', UserLevel.REGISTERED);
+      const result = await service.getConnectionStatus("test-user-id");
 
-            expect(mockAuthService.updateUserLevel).not.toHaveBeenCalled();
-            expect(contextLogger.info).toHaveBeenCalledWith('User level already REGISTERED, no update needed', {
-                userId: 'test-user-id',
-            });
-        });
-
-        it('should handle invalid level transitions', async () => {
-            const mockAuthService = {
-                getUserById: jest.fn().mockResolvedValue({
-                    userLevel: UserLevel.REGISTERED,
-                }),
-                updateUserLevel: jest.fn().mockResolvedValue(undefined),
-            };
-
-            (require('../../src/infrastructure/dependency-injection.container').diContainer as any).authService = mockAuthService;
-
-            await expect(
-                (service as any).updateUserLevel('test-user-id', UserLevel.BASIC)
-            ).rejects.toThrow('Invalid user level transition from REGISTERED to BASIC');
-
-            expect(mockAuthService.updateUserLevel).not.toHaveBeenCalled();
-        });
+      expect(result).toEqual({
+        connected: true,
+        accountId: "test-account-id",
+        verified: true,
+        connectedAt: "2023-01-01T00:00:00Z",
+      });
     });
 
-    describe('isValidLevelTransition', () => {
-        it('should validate valid level transitions', () => {
-            expect((service as any).isValidLevelTransition(UserLevel.BASIC, UserLevel.REGISTERED)).toBe(true);
-            expect((service as any).isValidLevelTransition(UserLevel.REGISTERED, UserLevel.VERIFIED)).toBe(true);
-        });
+    it("should return disconnected status when no credentials found", async () => {
+      (query as jest.Mock).mockResolvedValue({ rows: [] });
 
-        it('should reject invalid level transitions', () => {
-            expect((service as any).isValidLevelTransition(UserLevel.REGISTERED, UserLevel.BASIC)).toBe(false);
-            expect((service as any).isValidLevelTransition(UserLevel.VERIFIED, UserLevel.REGISTERED)).toBe(false);
-            expect((service as any).isValidLevelTransition(UserLevel.BASIC, UserLevel.VERIFIED)).toBe(false);
-        });
+      const result = await service.getConnectionStatus("test-user-id");
+
+      expect(result).toEqual({ connected: false });
     });
 
-    describe('fetchAndStoreWalletAddress', () => {
-        it('should fetch and store wallet address successfully', async () => {
-            const mockCredentials = {
-                accountId: 'test-account-id',
-                apiKey: 'test-api-key',
-                secretKey: 'test-secret-key',
-            };
+    it("should handle database errors gracefully", async () => {
+      (query as jest.Mock).mockRejectedValue(new Error("Database error"));
 
-            (kodiakIntegrationService.getPublicAccountInfo as jest.Mock).mockResolvedValue({
-                success: true,
-                data: {
-                    address: '0x1234567890abcdef1234567890abcdef12345678',
-                    account_id: 'test-account-id',
-                },
-            });
-            (query as jest.Mock).mockResolvedValue({ rows: [] });
+      const result = await service.getConnectionStatus("test-user-id");
 
-            await (service as any).fetchAndStoreWalletAddress('test-user-id', mockCredentials);
-
-            expect(query).toHaveBeenCalledWith(
-                'UPDATE kodiak_credentials SET wallet_address = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
-                ['0x1234567890abcdef1234567890abcdef12345678', 'test-user-id']
-            );
-            expect(contextLogger.info).toHaveBeenCalledWith('Wallet address fetched and stored from Kodiak public API', {
-                userId: 'test-user-id',
-                accountId: 'test-account-id',
-                walletAddress: '0x1234567890abcdef1234567890abcdef12345678',
-            });
-        });
-
-        it('should handle invalid wallet address format', async () => {
-            const mockCredentials = {
-                accountId: 'test-account-id',
-                apiKey: 'test-api-key',
-                secretKey: 'test-secret-key',
-            };
-
-            (kodiakIntegrationService.getPublicAccountInfo as jest.Mock).mockResolvedValue({
-                success: true,
-                data: {
-                    address: 'invalid-address',
-                    account_id: 'test-account-id',
-                },
-            });
-
-            await (service as any).fetchAndStoreWalletAddress('test-user-id', mockCredentials);
-
-            expect(query).not.toHaveBeenCalled();
-            expect(contextLogger.warn).toHaveBeenCalledWith('Invalid wallet address format from Kodiak API', {
-                userId: 'test-user-id',
-                accountId: 'test-account-id',
-                walletAddress: 'invalid-address',
-            });
-        });
-
-        it('should handle API errors gracefully', async () => {
-            const mockCredentials = {
-                accountId: 'test-account-id',
-                apiKey: 'test-api-key',
-                secretKey: 'test-secret-key',
-            };
-
-            (kodiakIntegrationService.getPublicAccountInfo as jest.Mock).mockResolvedValue({
-                success: false,
-                error: 'API error',
-            });
-
-            await (service as any).fetchAndStoreWalletAddress('test-user-id', mockCredentials);
-
-            expect(contextLogger.error).not.toHaveBeenCalledWith('Failed to fetch and store wallet address', new Error('API error'), {
-                userId: 'test-user-id',
-                accountId: 'test-account-id',
-            }
-            );
-        });
+      expect(result).toEqual({ connected: false });
+      expect(contextLogger.error).toHaveBeenCalledWith(
+        "Failed to get Kodiak connection status",
+        new Error("Database error"),
+        {
+          userId: "test-user-id",
+        }
+      );
     });
+  });
+
+  describe("hasVerifiedConnection", () => {
+    it("should return true when user has verified connection", async () => {
+      (query as jest.Mock).mockResolvedValue({ rows: [{ verified: true }] });
+
+      const result = await service.hasVerifiedConnection("test-user-id");
+
+      expect(result).toBe(true);
+    });
+
+    it("should return false when user has no verified connection", async () => {
+      (query as jest.Mock).mockResolvedValue({ rows: [] });
+
+      const result = await service.hasVerifiedConnection("test-user-id");
+
+      expect(result).toBe(false);
+    });
+
+    it("should handle database errors gracefully", async () => {
+      (query as jest.Mock).mockRejectedValue(new Error("Database error"));
+
+      const result = await service.hasVerifiedConnection("test-user-id");
+
+      expect(result).toBe(false);
+      expect(contextLogger.error).toHaveBeenCalledWith(
+        "Failed to check Kodiak connection status",
+        new Error("Database error"),
+        {
+          userId: "test-user-id",
+        }
+      );
+    });
+  });
+
+  describe("getConnectionStats", () => {
+    it("should return connection statistics", async () => {
+      (query as jest.Mock)
+        .mockResolvedValueOnce({ rows: [{ count: "10" }] }) // totalConnections
+        .mockResolvedValueOnce({ rows: [{ count: "8" }] }) // verifiedConnections
+        .mockResolvedValueOnce({ rows: [{ count: "2" }] }); // pendingConnections
+
+      const result = await service.getConnectionStats();
+
+      expect(result).toEqual({
+        totalConnections: 10,
+        verifiedConnections: 8,
+        pendingConnections: 2,
+      });
+    });
+
+    it("should handle database errors gracefully", async () => {
+      (query as jest.Mock).mockRejectedValue(new Error("Database error"));
+
+      const result = await service.getConnectionStats();
+
+      expect(result).toEqual({
+        totalConnections: 0,
+        verifiedConnections: 0,
+        pendingConnections: 0,
+      });
+      expect(contextLogger.error).toHaveBeenCalledWith(
+        "Failed to get connection stats",
+        new Error("Database error")
+      );
+    });
+  });
+
+  describe("cleanupInvalidConnections", () => {
+    it("should clean up unverified connections older than 30 days", async () => {
+      (query as jest.Mock).mockResolvedValue({ rowCount: 5 });
+
+      const result = await service.cleanupInvalidConnections();
+
+      expect(result).toEqual({ cleaned: 5 });
+      expect(contextLogger.info).toHaveBeenCalledWith(
+        "Cleaned up invalid Kodiak connections",
+        {
+          cleanedCount: 5,
+          olderThan: expect.any(String),
+        }
+      );
+    });
+
+    it("should handle database errors gracefully", async () => {
+      (query as jest.Mock).mockRejectedValue(new Error("Database error"));
+
+      const result = await service.cleanupInvalidConnections();
+
+      expect(result).toEqual({ cleaned: 0 });
+      expect(contextLogger.error).toHaveBeenCalledWith(
+        "Failed to cleanup invalid connections",
+        new Error("Database error")
+      );
+    });
+  });
+
+  describe("reverifyConnections", () => {
+    it("should re-verify existing connections", async () => {
+      const mockConnections = {
+        rows: [
+          { user_id: "user1", account_id: "account1" },
+          { user_id: "user2", account_id: "account2" },
+        ],
+      };
+
+      (query as jest.Mock)
+        .mockResolvedValueOnce(mockConnections) // Get connections
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              account_id: "user1",
+              api_key_encrypted: "key1",
+              secret_key_encrypted: "secret1",
+            },
+          ],
+        }) // getUserCredentials for user1
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              account_id: "user2",
+              api_key_encrypted: "key2",
+              secret_key_encrypted: "secret2",
+            },
+          ],
+        }) // getUserCredentials for user2
+        .mockResolvedValueOnce({ rows: [] }) // Update user1 (success)
+        .mockResolvedValueOnce({ rows: [] }); // Update user2 (fail)
+
+      (kodiakIntegrationService.getUserCredentials as jest.Mock)
+        .mockResolvedValueOnce({
+          accountId: "account1",
+          apiKey: "decrypted-key1",
+          secretKey: "decrypted-secret1",
+        })
+        .mockResolvedValueOnce({
+          accountId: "account2",
+          apiKey: "decrypted-key2",
+          secretKey: "decrypted-secret2",
+        });
+
+      (kodiakIntegrationService.testConnectivity as jest.Mock)
+        .mockResolvedValueOnce({ success: true })
+        .mockResolvedValueOnce({ success: false });
+
+      const result = await service.reverifyConnections();
+
+      expect(result).toEqual({ reVerified: 1, failed: 1 });
+      expect(contextLogger.info).toHaveBeenCalledWith(
+        "Connection re-verification completed",
+        {
+          totalChecked: 2,
+          reVerified: 1,
+          failed: 1,
+        }
+      );
+    });
+
+    it("should handle database errors gracefully", async () => {
+      // Mock the first query call to throw an error
+      (query as jest.Mock).mockRejectedValueOnce(new Error("Database error"));
+
+      const result = await service.reverifyConnections();
+
+      expect(result).toEqual({ reVerified: 0, failed: 0 });
+      expect(contextLogger.error).not.toHaveBeenCalledWith(
+        "Failed to re-verify connections",
+        new Error("Database error"),
+        {
+          totalChecked: 0,
+          reVerified: 0,
+          failed: 0,
+        }
+      );
+    });
+  });
+
+  describe("validateConnectionData", () => {
+    it("should validate valid connection data", () => {
+      const result = (service as any).validateConnectionData({
+        accountId: "test-account-id",
+        apiKey: "ed25519:test-api-key",
+        secretKey: "test-secret-key-that-is-long-enough-for-validation",
+      });
+
+      expect(result).toEqual({ valid: true });
+    });
+
+    it("should reject connection data with missing fields", () => {
+      const result = (service as any).validateConnectionData({
+        accountId: "",
+        apiKey: "test-api-key",
+        secretKey: "test-secret-key",
+      });
+
+      expect(result).toEqual({
+        valid: false,
+        error: "Account ID, API key, and secret key are required",
+      });
+    });
+
+    it("should reject connection data with invalid format", () => {
+      const result = (service as any).validateConnectionData({
+        accountId: "short",
+        apiKey: "short",
+        secretKey: "short",
+      });
+
+      expect(result).toEqual({
+        valid: false,
+        error: "Account ID appears to be invalid",
+      });
+    });
+  });
+
+  describe("updateUserLevel", () => {
+    it("should update user level successfully", async () => {
+      const mockAuthService = {
+        getUserById: jest.fn().mockResolvedValue({
+          userLevel: UserLevel.BASIC,
+        }),
+        updateUserLevel: jest.fn().mockResolvedValue(undefined),
+      };
+
+      (
+        require("../../src/infrastructure/dependency-injection.container")
+          .diContainer as any
+      ).authService = mockAuthService;
+
+      await (service as any).updateUserLevel(
+        "test-user-id",
+        UserLevel.REGISTERED
+      );
+
+      expect(mockAuthService.updateUserLevel).toHaveBeenCalledWith(
+        "test-user-id",
+        UserLevel.REGISTERED
+      );
+      expect(contextLogger.info).toHaveBeenCalledWith(
+        "User level updated from BASIC to REGISTERED",
+        {
+          userId: "test-user-id",
+        }
+      );
+    });
+
+    it("should not update if level is already the same", async () => {
+      const mockAuthService = {
+        getUserById: jest.fn().mockResolvedValue({
+          userLevel: UserLevel.REGISTERED,
+        }),
+        updateUserLevel: jest.fn().mockResolvedValue(undefined),
+      };
+
+      (
+        require("../../src/infrastructure/dependency-injection.container")
+          .diContainer as any
+      ).authService = mockAuthService;
+
+      await (service as any).updateUserLevel(
+        "test-user-id",
+        UserLevel.REGISTERED
+      );
+
+      expect(mockAuthService.updateUserLevel).not.toHaveBeenCalled();
+      expect(contextLogger.info).toHaveBeenCalledWith(
+        "User level already REGISTERED, no update needed",
+        {
+          userId: "test-user-id",
+        }
+      );
+    });
+
+    it("should handle invalid level transitions", async () => {
+      const mockAuthService = {
+        getUserById: jest.fn().mockResolvedValue({
+          userLevel: UserLevel.REGISTERED,
+        }),
+        updateUserLevel: jest.fn().mockResolvedValue(undefined),
+      };
+
+      (
+        require("../../src/infrastructure/dependency-injection.container")
+          .diContainer as any
+      ).authService = mockAuthService;
+
+      await expect(
+        (service as any).updateUserLevel("test-user-id", UserLevel.BASIC)
+      ).rejects.toThrow(
+        "Invalid user level transition from REGISTERED to BASIC"
+      );
+
+      expect(mockAuthService.updateUserLevel).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("isValidLevelTransition", () => {
+    it("should validate valid level transitions", () => {
+      expect(
+        (service as any).isValidLevelTransition(
+          UserLevel.BASIC,
+          UserLevel.REGISTERED
+        )
+      ).toBe(true);
+      expect(
+        (service as any).isValidLevelTransition(
+          UserLevel.REGISTERED,
+          UserLevel.VERIFIED
+        )
+      ).toBe(true);
+    });
+
+    it("should reject invalid level transitions", () => {
+      expect(
+        (service as any).isValidLevelTransition(
+          UserLevel.REGISTERED,
+          UserLevel.BASIC
+        )
+      ).toBe(false);
+      expect(
+        (service as any).isValidLevelTransition(
+          UserLevel.VERIFIED,
+          UserLevel.REGISTERED
+        )
+      ).toBe(false);
+      expect(
+        (service as any).isValidLevelTransition(
+          UserLevel.BASIC,
+          UserLevel.VERIFIED
+        )
+      ).toBe(false);
+    });
+  });
+
+  describe("fetchAndStoreWalletAddress", () => {
+    it("should fetch and store wallet address successfully", async () => {
+      const mockCredentials = {
+        accountId: "test-account-id",
+        apiKey: "test-api-key",
+        secretKey: "test-secret-key",
+      };
+
+      (
+        kodiakIntegrationService.getPublicAccountInfo as jest.Mock
+      ).mockResolvedValue({
+        success: true,
+        data: {
+          address: "0x1234567890abcdef1234567890abcdef12345678",
+          account_id: "test-account-id",
+        },
+      });
+      (query as jest.Mock).mockResolvedValue({ rows: [] });
+
+      await (service as any).fetchAndStoreWalletAddress(
+        "test-user-id",
+        mockCredentials
+      );
+
+      expect(query).toHaveBeenCalledWith(
+        "UPDATE kodiak_credentials SET wallet_address = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2",
+        ["0x1234567890abcdef1234567890abcdef12345678", "test-user-id"]
+      );
+      expect(contextLogger.info).toHaveBeenCalledWith(
+        "Wallet address fetched and stored from Kodiak public API",
+        {
+          userId: "test-user-id",
+          accountId: "test-account-id",
+          walletAddress: "0x1234567890abcdef1234567890abcdef12345678",
+        }
+      );
+    });
+
+    it("should handle invalid wallet address format", async () => {
+      const mockCredentials = {
+        accountId: "test-account-id",
+        apiKey: "test-api-key",
+        secretKey: "test-secret-key",
+      };
+
+      (
+        kodiakIntegrationService.getPublicAccountInfo as jest.Mock
+      ).mockResolvedValue({
+        success: true,
+        data: {
+          address: "invalid-address",
+          account_id: "test-account-id",
+        },
+      });
+
+      await (service as any).fetchAndStoreWalletAddress(
+        "test-user-id",
+        mockCredentials
+      );
+
+      expect(query).not.toHaveBeenCalled();
+      expect(contextLogger.warn).toHaveBeenCalledWith(
+        "Invalid wallet address format from Kodiak API",
+        {
+          userId: "test-user-id",
+          accountId: "test-account-id",
+          walletAddress: "invalid-address",
+        }
+      );
+    });
+
+    it("should handle API errors gracefully", async () => {
+      const mockCredentials = {
+        accountId: "test-account-id",
+        apiKey: "test-api-key",
+        secretKey: "test-secret-key",
+      };
+
+      (
+        kodiakIntegrationService.getPublicAccountInfo as jest.Mock
+      ).mockResolvedValue({
+        success: false,
+        error: "API error",
+      });
+
+      await (service as any).fetchAndStoreWalletAddress(
+        "test-user-id",
+        mockCredentials
+      );
+
+      expect(contextLogger.error).not.toHaveBeenCalledWith(
+        "Failed to fetch and store wallet address",
+        new Error("API error"),
+        {
+          userId: "test-user-id",
+          accountId: "test-account-id",
+        }
+      );
+    });
+  });
 });

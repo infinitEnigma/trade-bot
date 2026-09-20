@@ -40,11 +40,11 @@ const getRequiredEnv = (key: string): string => {
 
 // PostgreSQL statement timeout configuration
 export enum QueryTimeout {
-  FAST = 5000,        // 5 seconds - simple queries, auth, cache operations
-  MEDIUM = 15000,     // 15 seconds - complex joins, aggregations
-  SLOW = 30000,       // 30 seconds - default for most operations
-  COMPLEX = 60000,    // 60 seconds - heavy analytics, reports
-  REPORT = 300000,    // 5 minutes - long-running reports, data exports
+  FAST = 5000, // 5 seconds - simple queries, auth, cache operations
+  MEDIUM = 15000, // 15 seconds - complex joins, aggregations
+  SLOW = 30000, // 30 seconds - default for most operations
+  COMPLEX = 60000, // 60 seconds - heavy analytics, reports
+  REPORT = 300000, // 5 minutes - long-running reports, data exports
 }
 
 export interface QueryTimeoutConfig {
@@ -58,12 +58,12 @@ export interface QueryTimeoutConfig {
 
 // Default timeout configuration
 const DEFAULT_TIMEOUT_CONFIG: QueryTimeoutConfig = {
-  default: QueryTimeout.SLOW,    // 30 seconds
-  fast: QueryTimeout.FAST,       // 5 seconds
-  medium: QueryTimeout.MEDIUM,   // 15 seconds
-  slow: QueryTimeout.SLOW,       // 30 seconds
+  default: QueryTimeout.SLOW, // 30 seconds
+  fast: QueryTimeout.FAST, // 5 seconds
+  medium: QueryTimeout.MEDIUM, // 15 seconds
+  slow: QueryTimeout.SLOW, // 30 seconds
   complex: QueryTimeout.COMPLEX, // 60 seconds
-  report: QueryTimeout.REPORT,   // 5 minutes
+  report: QueryTimeout.REPORT, // 5 minutes
 };
 
 // Current timeout configuration (can be made configurable)
@@ -75,7 +75,9 @@ let currentTimeoutConfig = { ...DEFAULT_TIMEOUT_CONFIG };
  */
 export function initializePool(): Pool {
   if (pool) {
-    databaseLogger.warn("Pool already initialized, returning existing instance");
+    databaseLogger.warn(
+      "Pool already initialized, returning existing instance"
+    );
     return pool;
   }
 
@@ -111,17 +113,19 @@ export function initializePool(): Pool {
     throw new DatabaseError("Database connection pool error", {
       service: "postgresql",
       operation: "pool_error_handler",
-      received: err.message
+      received: err.message,
     });
   });
 
   // ✅ Connect event handler - set per-connection timeouts
-  pool.on("connect", async (client) => {
+  pool.on("connect", async client => {
     poolMetrics.totalConnections++;
 
     try {
       // Set PostgreSQL session timeouts on each new connection
-      await client.query(`SET statement_timeout = ${currentTimeoutConfig.default}`);
+      await client.query(
+        `SET statement_timeout = ${currentTimeoutConfig.default}`
+      );
       await client.query(`SET lock_timeout = 10000`); // 10 seconds for locks
 
       databaseLogger.debug("Database connection timeouts configured", {
@@ -218,7 +222,11 @@ export async function queryWithTimeout<T = unknown>(
   let timeoutId: NodeJS.Timeout | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
-      reject(new Error(`Query timeout after ${timeoutMs}ms: ${text.substring(0, 100)}...`));
+      reject(
+        new Error(
+          `Query timeout after ${timeoutMs}ms: ${text.substring(0, 100)}...`
+        )
+      );
     }, timeoutMs);
   });
 
@@ -237,7 +245,7 @@ export async function queryWithTimeout<T = unknown>(
     if (timeoutId !== null) {
       clearTimeout(timeoutId); // Clear timeout when query fails or times out
     }
-    if (error instanceof Error && error.message.includes('Query timeout')) {
+    if (error instanceof Error && error.message.includes("Query timeout")) {
       databaseLogger.error("Database query timeout", error, {
         query: text.substring(0, 200),
         timeoutMs,
@@ -297,7 +305,9 @@ export async function getClientWithMetrics(): Promise<PoolClient> {
       if (checkoutTime) {
         const duration = Date.now() - checkoutTime;
         poolMetrics.connectionCheckoutTimes.delete(clientId);
-        databaseLogger.debug("Connection checkout duration", { durationMs: duration });
+        databaseLogger.debug("Connection checkout duration", {
+          durationMs: duration,
+        });
       }
       originalRelease();
     };
@@ -339,9 +349,7 @@ function updatePoolMetrics(): void {
         poolMetrics.connectionWaitTimes.slice(-100);
     }
   } catch (error) {
-    databaseLogger.error("Failed to update pool metrics",
-      error as Error
-    );
+    databaseLogger.error("Failed to update pool metrics", error as Error);
   }
 }
 
@@ -385,9 +393,9 @@ export function getPoolMetrics(): {
   const averageWaitTime =
     poolMetrics.connectionWaitTimes.length > 0
       ? Math.round(
-        poolMetrics.connectionWaitTimes.reduce((a, b) => a + b, 0) /
-        poolMetrics.connectionWaitTimes.length
-      )
+          poolMetrics.connectionWaitTimes.reduce((a, b) => a + b, 0) /
+            poolMetrics.connectionWaitTimes.length
+        )
       : 0;
 
   const maxWaitTime =
@@ -399,7 +407,9 @@ export function getPoolMetrics(): {
   let status: "healthy" | "warning" | "critical" = "healthy";
 
   if (utilizationPercent > 95) {
-    issues.push(`Pool utilization is ${utilizationPercent}% (critical - ${activeConnections}/${poolMetrics.totalConnections} connections)`);
+    issues.push(
+      `Pool utilization is ${utilizationPercent}% (critical - ${activeConnections}/${poolMetrics.totalConnections} connections)`
+    );
     status = "critical";
     databaseLogger.warn("CRITICAL: Database connection pool nearly exhausted", {
       utilizationPercent,
@@ -408,7 +418,9 @@ export function getPoolMetrics(): {
       waitingClients: poolMetrics.waitingClients,
     });
   } else if (utilizationPercent > 80) {
-    issues.push(`Pool utilization is ${utilizationPercent}% (warning - ${activeConnections}/${poolMetrics.totalConnections} connections)`);
+    issues.push(
+      `Pool utilization is ${utilizationPercent}% (warning - ${activeConnections}/${poolMetrics.totalConnections} connections)`
+    );
     status = "warning";
     databaseLogger.warn("WARNING: Database connection pool usage high", {
       utilizationPercent,
@@ -468,7 +480,7 @@ export async function queryWithAutoTimeout<T = unknown>(
     customTimeout?: number;
   }
 ): Promise<DatabaseResult<T>> {
-  const category = options?.category || 'default';
+  const category = options?.category || "default";
   const timeoutMs = options?.customTimeout || currentTimeoutConfig[category];
 
   databaseLogger.debug("Executing query with auto timeout", {
@@ -483,30 +495,47 @@ export async function queryWithAutoTimeout<T = unknown>(
 /**
  * Execute a query with a specific timeout category
  */
-export async function queryFast<T = unknown>(text: string, params?: unknown[]): Promise<DatabaseResult<T>> {
-  return queryWithAutoTimeout(text, params, { category: 'fast' });
+export async function queryFast<T = unknown>(
+  text: string,
+  params?: unknown[]
+): Promise<DatabaseResult<T>> {
+  return queryWithAutoTimeout(text, params, { category: "fast" });
 }
 
-export async function queryMedium<T = unknown>(text: string, params?: unknown[]): Promise<DatabaseResult<T>> {
-  return queryWithAutoTimeout(text, params, { category: 'medium' });
+export async function queryMedium<T = unknown>(
+  text: string,
+  params?: unknown[]
+): Promise<DatabaseResult<T>> {
+  return queryWithAutoTimeout(text, params, { category: "medium" });
 }
 
-export async function querySlow<T = unknown>(text: string, params?: unknown[]): Promise<DatabaseResult<T>> {
-  return queryWithAutoTimeout(text, params, { category: 'slow' });
+export async function querySlow<T = unknown>(
+  text: string,
+  params?: unknown[]
+): Promise<DatabaseResult<T>> {
+  return queryWithAutoTimeout(text, params, { category: "slow" });
 }
 
-export async function queryComplex<T = unknown>(text: string, params?: unknown[]): Promise<DatabaseResult<T>> {
-  return queryWithAutoTimeout(text, params, { category: 'complex' });
+export async function queryComplex<T = unknown>(
+  text: string,
+  params?: unknown[]
+): Promise<DatabaseResult<T>> {
+  return queryWithAutoTimeout(text, params, { category: "complex" });
 }
 
-export async function queryReport<T = unknown>(text: string, params?: unknown[]): Promise<DatabaseResult<T>> {
-  return queryWithAutoTimeout(text, params, { category: 'report' });
+export async function queryReport<T = unknown>(
+  text: string,
+  params?: unknown[]
+): Promise<DatabaseResult<T>> {
+  return queryWithAutoTimeout(text, params, { category: "report" });
 }
 
 /**
  * Get a client with custom timeout settings
  */
-export async function getClientWithTimeout(timeoutMs: number = currentTimeoutConfig.default): Promise<PoolClient> {
+export async function getClientWithTimeout(
+  timeoutMs: number = currentTimeoutConfig.default
+): Promise<PoolClient> {
   const client = await getClient();
 
   try {
@@ -514,10 +543,14 @@ export async function getClientWithTimeout(timeoutMs: number = currentTimeoutCon
     await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
     databaseLogger.debug("Client timeout configured", { timeoutMs });
   } catch (error) {
-    databaseLogger.error("Failed to set client timeout, using pool default", error as Error, {
-      timeoutMs,
-      error: (error as Error).message,
-    });
+    databaseLogger.error(
+      "Failed to set client timeout, using pool default",
+      error as Error,
+      {
+        timeoutMs,
+        error: (error as Error).message,
+      }
+    );
   }
 
   return client;
@@ -526,7 +559,9 @@ export async function getClientWithTimeout(timeoutMs: number = currentTimeoutCon
 /**
  * Update timeout configuration (runtime configurable)
  */
-export function updateTimeoutConfig(newConfig: Partial<QueryTimeoutConfig>): void {
+export function updateTimeoutConfig(
+  newConfig: Partial<QueryTimeoutConfig>
+): void {
   currentTimeoutConfig = { ...currentTimeoutConfig, ...newConfig };
 
   databaseLogger.info("Database timeout configuration updated", {
@@ -551,7 +586,7 @@ export function getTimeoutStats(): {
   config: QueryTimeoutConfig;
   recommendations: string[];
   health: {
-    status: 'healthy' | 'warning' | 'critical';
+    status: "healthy" | "warning" | "critical";
     issues: string[];
   };
 } {
@@ -560,21 +595,21 @@ export function getTimeoutStats(): {
 
   // Check for potentially problematic timeout settings
   if (currentTimeoutConfig.default > 60000) {
-    issues.push('Default timeout > 60s may allow runaway queries');
-    recommendations.push('Consider reducing default timeout to 30s');
+    issues.push("Default timeout > 60s may allow runaway queries");
+    recommendations.push("Consider reducing default timeout to 30s");
   }
 
   if (currentTimeoutConfig.fast > 10000) {
-    issues.push('Fast query timeout > 10s defeats the purpose');
-    recommendations.push('Fast queries should timeout < 10s');
+    issues.push("Fast query timeout > 10s defeats the purpose");
+    recommendations.push("Fast queries should timeout < 10s");
   }
 
   if (currentTimeoutConfig.report < 60000) {
-    issues.push('Report timeout < 60s may interrupt long-running reports');
-    recommendations.push('Consider increasing report timeout to 5+ minutes');
+    issues.push("Report timeout < 60s may interrupt long-running reports");
+    recommendations.push("Consider increasing report timeout to 5+ minutes");
   }
 
-  const status = issues.length > 0 ? 'warning' : 'healthy';
+  const status = issues.length > 0 ? "warning" : "healthy";
 
   return {
     config: getTimeoutConfig(),
@@ -612,7 +647,7 @@ function stopMetricsInterval(): void {
 
 // Start metrics interval by default (for production)
 // Only start in production environment, not in test environment
-if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
+if (process.env.NODE_ENV !== "test" && !process.env.JEST_WORKER_ID) {
   startMetricsInterval();
 } else {
   // In test environment, ensure metrics interval is stopped

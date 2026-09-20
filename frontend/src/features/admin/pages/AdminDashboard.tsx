@@ -16,7 +16,7 @@ import {
   HardDrive,
   Users as UsersIcon,
   Bot,
-  Zap
+  Zap,
 } from "lucide-react";
 import { systemApi } from "../../../infrastructure/api/system";
 import { Card } from "../../../shared/components/ui/Card";
@@ -50,12 +50,20 @@ const AdminDashboard: React.FC = () => {
   });
 
   const tabs = [
-    { id: "overview", label: "Overview", icon: <LayoutDashboard className="w-4 h-4" /> },
+    {
+      id: "overview",
+      label: "Overview",
+      icon: <LayoutDashboard className="w-4 h-4" />,
+    },
     { id: "users", label: "Users", icon: <UsersIcon className="w-4 h-4" /> },
     { id: "system", label: "System", icon: <Server className="w-4 h-4" /> },
     { id: "security", label: "Security", icon: <Shield className="w-4 h-4" /> },
     { id: "bots", label: "Bots", icon: <Bot className="w-4 h-4" /> },
-    { id: "settings", label: "Settings", icon: <Settings className="w-4 h-4" /> },
+    {
+      id: "settings",
+      label: "Settings",
+      icon: <Settings className="w-4 h-4" />,
+    },
   ];
 
   const renderStatusIndicator = (status: string) => {
@@ -68,17 +76,21 @@ const AdminDashboard: React.FC = () => {
       ERROR: <AlertTriangle className="w-4 h-4 text-red-500" />,
     };
 
-    return statusMap[status as keyof typeof statusMap] || <AlertTriangle className="w-4 h-4 text-gray-500" />;
+    return (
+      statusMap[status as keyof typeof statusMap] || (
+        <AlertTriangle className="w-4 h-4 text-gray-500" />
+      )
+    );
   };
 
   return (
     <Container
       size={{
-        default: 'lg',
-        xl: 'xl',
-        '2xl': '2xl',
-        '3xl': '3xl',
-        '4xl': '4xl'
+        default: "lg",
+        xl: "xl",
+        "2xl": "2xl",
+        "3xl": "3xl",
+        "4xl": "4xl",
       }}
       className="py-2 space-y-4"
     >
@@ -102,15 +114,16 @@ const AdminDashboard: React.FC = () => {
         {/* Navigation Tabs */}
         <div className="mb-8">
           <nav className="flex items-center gap-2 p-1 bg-white/5 rounded-lg">
-            {tabs.map((tab) => (
+            {tabs.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`
                   flex items-center gap-2 px-4 py-2 rounded-md transition-all
-                  ${activeTab === tab.id
-                    ? "bg-primary/20 text-primary border border-primary/30"
-                    : "text-text-secondary hover:text-text-primary hover:bg-white/5"
+                  ${
+                    activeTab === tab.id
+                      ? "bg-primary/20 text-primary border border-primary/30"
+                      : "text-text-secondary hover:text-text-primary hover:bg-white/5"
                   }
                 `}
               >
@@ -130,12 +143,18 @@ const AdminDashboard: React.FC = () => {
           >
             {/* System Health Cards */}
             <div className="mb-8">
-              <SectionHeader title="System Health" subtitle="Real-time system status" />
-              
+              <SectionHeader
+                title="System Health"
+                subtitle="Real-time system status"
+              />
+
               {healthLoading ? (
                 <Grid cols={{ default: 1, md: 2, lg: 4 }} gap={6}>
                   {[1, 2, 3, 4].map(i => (
-                    <Card key={i} className="p-6 flex items-center justify-center">
+                    <Card
+                      key={i}
+                      className="p-6 flex items-center justify-center"
+                    >
                       <LoadingSpinner />
                     </Card>
                   ))}
@@ -149,8 +168,12 @@ const AdminDashboard: React.FC = () => {
                       </div>
                       {renderStatusIndicator(healthData.services.api)}
                     </div>
-                    <h3 className="text-lg font-bold text-text mb-1">API Service</h3>
-                    <p className="text-xs text-textMuted capitalize">{healthData.services.api}</p>
+                    <h3 className="text-lg font-bold text-text mb-1">
+                      API Service
+                    </h3>
+                    <p className="text-xs text-textMuted capitalize">
+                      {healthData.services.api}
+                    </p>
                   </Card>
 
                   <Card className="p-6">
@@ -160,8 +183,12 @@ const AdminDashboard: React.FC = () => {
                       </div>
                       {renderStatusIndicator(healthData.services.database)}
                     </div>
-                    <h3 className="text-lg font-bold text-text mb-1">Database</h3>
-                    <p className="text-xs text-textMuted capitalize">{healthData.services.database}</p>
+                    <h3 className="text-lg font-bold text-text mb-1">
+                      Database
+                    </h3>
+                    <p className="text-xs text-textMuted capitalize">
+                      {healthData.services.database}
+                    </p>
                   </Card>
 
                   <Card className="p-6">
@@ -172,7 +199,9 @@ const AdminDashboard: React.FC = () => {
                       {renderStatusIndicator(healthData.services.engine)}
                     </div>
                     <h3 className="text-lg font-bold text-text mb-1">Engine</h3>
-                    <p className="text-xs text-textMuted capitalize">{healthData.services.engine}</p>
+                    <p className="text-xs text-textMuted capitalize">
+                      {healthData.services.engine}
+                    </p>
                   </Card>
 
                   <Card className="p-6">
@@ -183,7 +212,9 @@ const AdminDashboard: React.FC = () => {
                       {renderStatusIndicator(healthData.services.redis)}
                     </div>
                     <h3 className="text-lg font-bold text-text mb-1">Redis</h3>
-                    <p className="text-xs text-textMuted capitalize">{healthData.services.redis}</p>
+                    <p className="text-xs text-textMuted capitalize">
+                      {healthData.services.redis}
+                    </p>
                   </Card>
                 </Grid>
               ) : (
@@ -201,12 +232,18 @@ const AdminDashboard: React.FC = () => {
 
             {/* Performance Metrics */}
             <div className="mb-8">
-              <SectionHeader title="Performance Metrics" subtitle="System resource utilization" />
-              
+              <SectionHeader
+                title="Performance Metrics"
+                subtitle="System resource utilization"
+              />
+
               {metricsLoading ? (
                 <Grid cols={{ default: 1, md: 2, lg: 3 }} gap={6}>
                   {[1, 2, 3].map(i => (
-                    <Card key={i} className="p-6 flex items-center justify-center">
+                    <Card
+                      key={i}
+                      className="p-6 flex items-center justify-center"
+                    >
                       <LoadingSpinner />
                     </Card>
                   ))}
@@ -219,7 +256,9 @@ const AdminDashboard: React.FC = () => {
                         <Cpu className="w-5 h-5 text-red-500" />
                       </div>
                     </div>
-                    <h3 className="text-lg font-bold text-text mb-1">CPU Usage</h3>
+                    <h3 className="text-lg font-bold text-text mb-1">
+                      CPU Usage
+                    </h3>
                     <p className="text-xs text-textMuted">{metricsData.cpu}%</p>
                   </Card>
 
@@ -229,8 +268,12 @@ const AdminDashboard: React.FC = () => {
                         <MemoryStick className="w-5 h-5 text-green-500" />
                       </div>
                     </div>
-                    <h3 className="text-lg font-bold text-text mb-1">Memory Usage</h3>
-                    <p className="text-xs text-textMuted">{metricsData.memory}%</p>
+                    <h3 className="text-lg font-bold text-text mb-1">
+                      Memory Usage
+                    </h3>
+                    <p className="text-xs text-textMuted">
+                      {metricsData.memory}%
+                    </p>
                   </Card>
 
                   <Card className="p-6">
@@ -239,8 +282,12 @@ const AdminDashboard: React.FC = () => {
                         <HardDrive className="w-5 h-5 text-blue-500" />
                       </div>
                     </div>
-                    <h3 className="text-lg font-bold text-text mb-1">Disk Usage</h3>
-                    <p className="text-xs text-textMuted">{metricsData.disk}%</p>
+                    <h3 className="text-lg font-bold text-text mb-1">
+                      Disk Usage
+                    </h3>
+                    <p className="text-xs text-textMuted">
+                      {metricsData.disk}%
+                    </p>
                   </Card>
                 </Grid>
               ) : (
@@ -258,8 +305,11 @@ const AdminDashboard: React.FC = () => {
 
             {/* System Information */}
             <div className="mb-8">
-              <SectionHeader title="System Information" subtitle="Current system details" />
-              
+              <SectionHeader
+                title="System Information"
+                subtitle="Current system details"
+              />
+
               {servicesLoading ? (
                 <Card className="p-6">
                   <div className="flex items-center justify-center">
@@ -269,34 +319,61 @@ const AdminDashboard: React.FC = () => {
               ) : servicesData ? (
                 <Grid cols={{ default: 1, lg: 2 }} gap={6}>
                   <Card className="p-6">
-                    <h3 className="text-lg font-bold text-text mb-4">Services Status</h3>
+                    <h3 className="text-lg font-bold text-text mb-4">
+                      Services Status
+                    </h3>
                     <div className="space-y-3">
-                      {Object.entries(servicesData.services).map(([name, service]: [string, any]) => (
-                        <div key={name} className="flex items-center justify-between">
-                          <span className="text-sm text-text">{name}</span>
-                          <div className="flex items-center gap-2">
-                            {renderStatusIndicator(service.implementation === 'legacy' ? 'INACTIVE' : 'ACTIVE')}
-                            <span className="text-xs text-textMuted">{service.implementation}</span>
+                      {Object.entries(servicesData.services).map(
+                        ([name, service]) => (
+                          <div
+                            key={name}
+                            className="flex items-center justify-between"
+                          >
+                            <span className="text-sm text-text">{name}</span>
+                            <div className="flex items-center gap-2">
+                              {renderStatusIndicator(
+                                service.implementation === "legacy"
+                                  ? "INACTIVE"
+                                  : "ACTIVE"
+                              )}
+                              <span className="text-xs text-textMuted">
+                                {service.implementation}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      )}
                     </div>
                   </Card>
 
                   <Card className="p-6">
-                    <h3 className="text-lg font-bold text-text mb-4">Migration Progress</h3>
+                    <h3 className="text-lg font-bold text-text mb-4">
+                      Migration Progress
+                    </h3>
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-text">Pure Services Enabled</span>
-                        <span className="text-sm font-medium">{servicesData.summary.pureServicesEnabled}</span>
+                        <span className="text-sm text-text">
+                          Pure Services Enabled
+                        </span>
+                        <span className="text-sm font-medium">
+                          {servicesData.summary.pureServicesEnabled}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-text">Total Services</span>
-                        <span className="text-sm font-medium">{servicesData.summary.totalServices}</span>
+                        <span className="text-sm text-text">
+                          Total Services
+                        </span>
+                        <span className="text-sm font-medium">
+                          {servicesData.summary.totalServices}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-text">Migration Progress</span>
-                        <span className="text-sm font-medium">{servicesData.summary.migrationProgress}</span>
+                        <span className="text-sm text-text">
+                          Migration Progress
+                        </span>
+                        <span className="text-sm font-medium">
+                          {servicesData.summary.migrationProgress}
+                        </span>
                       </div>
                     </div>
                   </Card>
@@ -324,14 +401,17 @@ const AdminDashboard: React.FC = () => {
             transition={{ duration: 0.4 }}
           >
             <Card className="p-6">
-              <h3 className="text-lg font-bold text-text mb-4">User Management</h3>
+              <h3 className="text-lg font-bold text-text mb-4">
+                User Management
+              </h3>
               <div className="text-center py-8">
                 <UsersIcon className="w-12 h-12 text-textMuted mx-auto mb-4" />
                 <h4 className="text-lg font-semibold text-text mb-2">
                   User Management Coming Soon
                 </h4>
                 <p className="text-textMuted">
-                  This feature will allow you to manage users, roles, and permissions
+                  This feature will allow you to manage users, roles, and
+                  permissions
                 </p>
               </div>
             </Card>
@@ -346,14 +426,17 @@ const AdminDashboard: React.FC = () => {
             transition={{ duration: 0.4 }}
           >
             <Card className="p-6">
-              <h3 className="text-lg font-bold text-text mb-4">System Management</h3>
+              <h3 className="text-lg font-bold text-text mb-4">
+                System Management
+              </h3>
               <div className="text-center py-8">
                 <Server className="w-12 h-12 text-textMuted mx-auto mb-4" />
                 <h4 className="text-lg font-semibold text-text mb-2">
                   System Management Coming Soon
                 </h4>
                 <p className="text-textMuted">
-                  This feature will allow you to manage system configuration and maintenance
+                  This feature will allow you to manage system configuration and
+                  maintenance
                 </p>
               </div>
             </Card>
@@ -368,14 +451,17 @@ const AdminDashboard: React.FC = () => {
             transition={{ duration: 0.4 }}
           >
             <Card className="p-6">
-              <h3 className="text-lg font-bold text-text mb-4">Security & Monitoring</h3>
+              <h3 className="text-lg font-bold text-text mb-4">
+                Security & Monitoring
+              </h3>
               <div className="text-center py-8">
                 <Shield className="w-12 h-12 text-textMuted mx-auto mb-4" />
                 <h4 className="text-lg font-semibold text-text mb-2">
                   Security Monitoring Coming Soon
                 </h4>
                 <p className="text-textMuted">
-                  This feature will allow you to monitor security events and audit logs
+                  This feature will allow you to monitor security events and
+                  audit logs
                 </p>
               </div>
             </Card>
@@ -390,14 +476,17 @@ const AdminDashboard: React.FC = () => {
             transition={{ duration: 0.4 }}
           >
             <Card className="p-6">
-              <h3 className="text-lg font-bold text-text mb-4">Bot Management</h3>
+              <h3 className="text-lg font-bold text-text mb-4">
+                Bot Management
+              </h3>
               <div className="text-center py-8">
                 <Bot className="w-12 h-12 text-textMuted mx-auto mb-4" />
                 <h4 className="text-lg font-semibold text-text mb-2">
                   Bot Management Coming Soon
                 </h4>
                 <p className="text-textMuted">
-                  This feature will allow you to manage bot instances and engine status
+                  This feature will allow you to manage bot instances and engine
+                  status
                 </p>
               </div>
             </Card>
@@ -412,14 +501,17 @@ const AdminDashboard: React.FC = () => {
             transition={{ duration: 0.4 }}
           >
             <Card className="p-6">
-              <h3 className="text-lg font-bold text-text mb-4">System Settings</h3>
+              <h3 className="text-lg font-bold text-text mb-4">
+                System Settings
+              </h3>
               <div className="text-center py-8">
                 <Settings className="w-12 h-12 text-textMuted mx-auto mb-4" />
                 <h4 className="text-lg font-semibold text-text mb-2">
                   System Settings Coming Soon
                 </h4>
                 <p className="text-textMuted">
-                  This feature will allow you to configure system settings and environment variables
+                  This feature will allow you to configure system settings and
+                  environment variables
                 </p>
               </div>
             </Card>

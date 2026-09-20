@@ -13,13 +13,13 @@ export { authService } from "./services";
 
 // Types
 export type {
-    AuthUser,
-    LoginCredentials,
-    RegisterData,
-    AuthState,
-    AuthActions,
-    AuthContextType,
-    QualificationStatus
+  AuthUser,
+  LoginCredentials,
+  RegisterData,
+  AuthState,
+  AuthActions,
+  AuthContextType,
+  QualificationStatus,
 } from "./types";
 
 // Components (to be added)

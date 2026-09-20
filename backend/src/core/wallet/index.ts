@@ -16,7 +16,15 @@
  */
 
 // Export wallet-related services
-export { WalletQualificationService, createWalletQualificationService } from './wallet-qualification.service.pure';
+export {
+  WalletQualificationService,
+  createWalletQualificationService,
+} from "./wallet-qualification.service.pure";
 
 // Export types
-export type { QualificationResult, QualificationStatus, WalletRequirements, WalletQualificationServiceDependencies } from './wallet-qualification.service.pure';
+export type {
+  QualificationResult,
+  QualificationStatus,
+  WalletRequirements,
+  WalletQualificationServiceDependencies,
+} from "./wallet-qualification.service.pure";

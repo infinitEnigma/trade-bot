@@ -3,7 +3,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import {ElectricalNetworkBackground} from "../../../shared/components/layout";
+import { ElectricalNetworkBackground } from "../../../shared/components/layout";
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -38,32 +38,38 @@ export const LandingPage: React.FC = () => {
     {
       icon: "🔄",
       title: "Automated Trading",
-      description: "Rewire your trading strategy with intelligent algorithms that execute trades automatically based on your predefined rules.",
+      description:
+        "Rewire your trading strategy with intelligent algorithms that execute trades automatically based on your predefined rules.",
     },
     {
       icon: "📊",
       title: "Smart Analytics",
-      description: "Gain deep insights into market trends with real-time data visualization and performance analytics.",
+      description:
+        "Gain deep insights into market trends with real-time data visualization and performance analytics.",
     },
     {
       icon: "🤖",
       title: "AI-Powered Strategies",
-      description: "Leverage machine learning models to optimize your trading decisions and maximize returns.",
+      description:
+        "Leverage machine learning models to optimize your trading decisions and maximize returns.",
     },
     {
       icon: "💡",
       title: "Educational Resources",
-      description: "Rewire your financial knowledge with comprehensive tutorials and market analysis.",
+      description:
+        "Rewire your financial knowledge with comprehensive tutorials and market analysis.",
     },
     {
       icon: "🔒",
       title: "Secure Platform",
-      description: "Bank-level security ensures your funds and personal information are always protected.",
+      description:
+        "Bank-level security ensures your funds and personal information are always protected.",
     },
     {
       icon: "🌐",
       title: "Global Markets",
-      description: "Access multiple cryptocurrency exchanges and trade on the world's largest digital asset markets.",
+      description:
+        "Access multiple cryptocurrency exchanges and trade on the world's largest digital asset markets.",
     },
   ];
 
@@ -125,11 +131,15 @@ export const LandingPage: React.FC = () => {
             variants={itemVariants}
             className="text-xl text-text-secondary mb-10 max-w-3xl mx-auto leading-relaxed"
           >
-            Discover a smarter way to trade. Our automated platform combines cutting-edge technology
-            with intuitive design to help you rewire your approach to cryptocurrency trading.
+            Discover a smarter way to trade. Our automated platform combines
+            cutting-edge technology with intuitive design to help you rewire
+            your approach to cryptocurrency trading.
           </motion.p>
 
-          <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
+          <motion.div
+            variants={itemVariants}
+            className="flex flex-col sm:flex-row gap-4 justify-center mb-16"
+          >
             <button
               onClick={handleLogin}
               className="px-8 py-4 bg-gradient-to-r from-primary to-accent text-white rounded-xl font-semibold text-lg hover:shadow-xl hover:shadow-primary/30 transition-all duration-300 transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
@@ -159,8 +169,12 @@ export const LandingPage: React.FC = () => {
               <div className="w-16 h-16 bg-gradient-to-br from-primary/20 to-accent/20 rounded-xl flex items-center justify-center mb-6">
                 <span className="text-2xl">{feature.icon}</span>
               </div>
-              <h3 className="text-xl font-semibold text-white mb-3">{feature.title}</h3>
-              <p className="text-text-secondary leading-relaxed">{feature.description}</p>
+              <h3 className="text-xl font-semibold text-white mb-3">
+                {feature.title}
+              </h3>
+              <p className="text-text-secondary leading-relaxed">
+                {feature.description}
+              </p>
             </motion.div>
           ))}
         </motion.div>
@@ -173,18 +187,30 @@ export const LandingPage: React.FC = () => {
           viewport={{ once: true }}
           className="max-w-4xl mx-auto text-center mb-20"
         >
-          <motion.h2 variants={itemVariants} className="text-3xl font-bold text-white mb-6">
+          <motion.h2
+            variants={itemVariants}
+            className="text-3xl font-bold text-white mb-6"
+          >
             Why Choose Rewire?
           </motion.h2>
-          <motion.p variants={itemVariants} className="text-lg text-text-secondary mb-8 leading-relaxed">
-            At Rewire, we believe in empowering traders with tools that help them rewire their
-            financial habits and achieve their goals. Our platform is designed to be both powerful
-            and accessible, whether you're a seasoned trader or just getting started.
+          <motion.p
+            variants={itemVariants}
+            className="text-lg text-text-secondary mb-8 leading-relaxed"
+          >
+            At Rewire, we believe in empowering traders with tools that help
+            them rewire their financial habits and achieve their goals. Our
+            platform is designed to be both powerful and accessible, whether
+            you're a seasoned trader or just getting started.
           </motion.p>
-          <motion.div variants={itemVariants} className="flex flex-wrap justify-center gap-4">
+          <motion.div
+            variants={itemVariants}
+            className="flex flex-wrap justify-center gap-4"
+          >
             <div className="px-6 py-3 bg-white/5 rounded-lg">
               <div className="text-3xl font-bold text-primary">99.9%</div>
-              <div className="text-sm text-text-secondary">Uptime Guarantee</div>
+              <div className="text-sm text-text-secondary">
+                Uptime Guarantee
+              </div>
             </div>
             <div className="px-6 py-3 bg-white/5 rounded-lg">
               <div className="text-3xl font-bold text-accent">24/7</div>
@@ -206,9 +232,12 @@ export const LandingPage: React.FC = () => {
           className="bg-gradient-to-r from-primary/20 to-accent/20 rounded-2xl p-12 border border-primary/30"
         >
           <motion.div variants={itemVariants} className="text-center">
-            <h2 className="text-3xl font-bold text-white mb-4">Ready to Rewire Your Trading?</h2>
+            <h2 className="text-3xl font-bold text-white mb-4">
+              Ready to Rewire Your Trading?
+            </h2>
             <p className="text-lg text-text-secondary mb-8 max-w-2xl mx-auto">
-              Join thousands of traders who have transformed their approach with our automated platform.
+              Join thousands of traders who have transformed their approach with
+              our automated platform.
             </p>
             <button
               onClick={handleLogin}
@@ -233,14 +262,23 @@ export const LandingPage: React.FC = () => {
               </span>
             </div>
             <div className="flex space-x-6 text-text-secondary">
-              <a href="#" className="hover:text-primary transition-colors">Terms</a>
-              <a href="#" className="hover:text-primary transition-colors">Privacy</a>
-              <a href="#" className="hover:text-primary transition-colors">Contact</a>
-              <a href="#" className="hover:text-primary transition-colors">Support</a>
+              <a href="#" className="hover:text-primary transition-colors">
+                Terms
+              </a>
+              <a href="#" className="hover:text-primary transition-colors">
+                Privacy
+              </a>
+              <a href="#" className="hover:text-primary transition-colors">
+                Contact
+              </a>
+              <a href="#" className="hover:text-primary transition-colors">
+                Support
+              </a>
             </div>
           </div>
           <div className="mt-8 text-center text-text-tertiary text-sm">
-            © 2024 Rewire. All rights reserved. Trading involves risk. Please invest responsibly.
+            © 2024 Rewire. All rights reserved. Trading involves risk. Please
+            invest responsibly.
           </div>
         </div>
       </footer>

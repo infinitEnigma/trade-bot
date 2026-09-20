@@ -8,89 +8,92 @@
  */
 
 interface PendingRequest<T> {
-    promise: Promise<T>;
-    timestamp: number;
-    clientId: string;
+  promise: Promise<T>;
+  timestamp: number;
+  clientId: string;
 }
 
 class GlobalRequestManager {
-    private static instance: GlobalRequestManager;
-    private pendingRequests = new Map<string, PendingRequest<unknown>>();
-    private requestTimeout = 30000; // 30 seconds
+  private static instance: GlobalRequestManager;
+  private pendingRequests = new Map<string, PendingRequest<unknown>>();
+  private requestTimeout = 30000; // 30 seconds
 
-    private constructor() { }
+  private constructor() {}
 
-    static getInstance(): GlobalRequestManager {
-        if (!GlobalRequestManager.instance) {
-            GlobalRequestManager.instance = new GlobalRequestManager();
-        }
-        return GlobalRequestManager.instance;
+  static getInstance(): GlobalRequestManager {
+    if (!GlobalRequestManager.instance) {
+      GlobalRequestManager.instance = new GlobalRequestManager();
+    }
+    return GlobalRequestManager.instance;
+  }
+
+  /**
+   * Deduplicate a request globally
+   * Returns existing promise if same request is pending
+   */
+  async deduplicateRequest<T>(
+    key: string,
+    requestFn: () => Promise<T>,
+    clientId: string = "unknown"
+  ): Promise<T> {
+    const existing = this.pendingRequests.get(key) as
+      PendingRequest<T> | undefined;
+
+    if (existing && Date.now() - existing.timestamp < this.requestTimeout) {
+      console.log(
+        `🔄 Global deduplication: reusing request for ${key} from ${existing.clientId}`
+      );
+      return existing.promise;
     }
 
-    /**
-     * Deduplicate a request globally
-     * Returns existing promise if same request is pending
-     */
-    async deduplicateRequest<T>(
-        key: string,
-        requestFn: () => Promise<T>,
-        clientId: string = 'unknown'
-    ): Promise<T> {
-        const existing = this.pendingRequests.get(key) as PendingRequest<T> | undefined;
-
-        if (existing && (Date.now() - existing.timestamp) < this.requestTimeout) {
-            console.log(`🔄 Global deduplication: reusing request for ${key} from ${existing.clientId}`);
-            return existing.promise;
-        }
-
-        // Clean up expired requests
-        if (existing) {
-            this.pendingRequests.delete(key);
-        }
-
-        const promise = this.executeRequest(key, requestFn, clientId);
-        this.pendingRequests.set(key, {
-            promise,
-            timestamp: Date.now(),
-            clientId
-        });
-
-        return promise;
+    // Clean up expired requests
+    if (existing) {
+      this.pendingRequests.delete(key);
     }
 
-    private async executeRequest<T>(
-        key: string,
-        requestFn: () => Promise<T>,
-        clientId: string
-    ): Promise<T> {
-        try {
-            console.log(`🚀 Executing request: ${key} from ${clientId}`);
-            const result = await requestFn();
-            console.log(`✅ Request completed: ${key} ${JSON.stringify(result)}`);
-            return result;
-        } finally {
-            // Clean up after request completes (success or failure)
-            this.pendingRequests.delete(key);
-        }
-    }
+    const promise = this.executeRequest(key, requestFn, clientId);
+    this.pendingRequests.set(key, {
+      promise,
+      timestamp: Date.now(),
+      clientId,
+    });
 
-    /**
-     * Get statistics about pending requests
-     */
-    getStats(): { pendingCount: number; keys: string[] } {
-        return {
-            pendingCount: this.pendingRequests.size,
-            keys: Array.from(this.pendingRequests.keys())
-        };
-    }
+    return promise;
+  }
 
-    /**
-     * Clear all pending requests (useful for testing or forced cleanup)
-     */
-    clearAll(): void {
-        console.log(`🧹 Clearing ${this.pendingRequests.size} pending requests`);
-        this.pendingRequests.clear();
+  private async executeRequest<T>(
+    key: string,
+    requestFn: () => Promise<T>,
+    clientId: string
+  ): Promise<T> {
+    try {
+      console.log(`🚀 Executing request: ${key} from ${clientId}`);
+      const result = await requestFn();
+      console.log(`✅ Request completed: ${key} ${JSON.stringify(result)}`);
+      return result;
+    } finally {
+      // Clean up after request completes (success or failure)
+      this.pendingRequests.delete(key);
     }
+  }
+
+  /**
+   * Get statistics about pending requests
+   */
+  getStats(): { pendingCount: number; keys: string[] } {
+    return {
+      pendingCount: this.pendingRequests.size,
+      keys: Array.from(this.pendingRequests.keys()),
+    };
+  }
+
+  /**
+   * Clear all pending requests (useful for testing or forced cleanup)
+   */
+  clearAll(): void {
+    console.log(`🧹 Clearing ${this.pendingRequests.size} pending requests`);
+    this.pendingRequests.clear();
+  }
 }
 
 // Export singleton instance

@@ -2,7 +2,7 @@
 
 import React, { Suspense } from "react";
 import { Strategy, StrategyType } from "../../../shared/types";
-import { Zap, Edit, Trash2} from "lucide-react";
+import { Zap, Edit, Trash2 } from "lucide-react";
 import { Card } from "../../../shared/components/ui";
 import { BotControls } from "../bots/components/BotControls";
 import { getStrategyConfig, BotInstance } from "../types/strategies.types";
@@ -68,7 +68,7 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
         <div className="flex justify-between text-sm">
           <span className="text-textMuted">Symbol:</span>
           <span className="text-text font-medium">
-            {strategyConfig && 'symbol' in strategyConfig.config
+            {strategyConfig && "symbol" in strategyConfig.config
               ? (strategyConfig.config.symbol as string)
                   ?.replace("PERP_", "")
                   .replace("_USDC", "") || "N/A"
@@ -80,23 +80,25 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
             <div className="flex justify-between text-sm">
               <span className="text-textMuted">Grid Size:</span>
               <span className="text-text">
-                {strategyConfig && 'gridSize' in strategyConfig.config
+                {strategyConfig && "gridSize" in strategyConfig.config
                   ? (strategyConfig.config.gridSize as number) || 0
-                  : 0} levels
+                  : 0}{" "}
+                levels
               </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-textMuted">Range:</span>
               <span className="text-text">
-                {strategyConfig && 'gridRange' in strategyConfig.config
+                {strategyConfig && "gridRange" in strategyConfig.config
                   ? (strategyConfig.config.gridRange as number) || 0
-                  : 0}%
+                  : 0}
+                %
               </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-textMuted">Order Qty:</span>
               <span className="text-text">
-                {strategyConfig && 'orderQuantity' in strategyConfig.config
+                {strategyConfig && "orderQuantity" in strategyConfig.config
                   ? (strategyConfig.config.orderQuantity as number) || 0
                   : 0}
               </span>
@@ -107,7 +109,9 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
 
       {/* Bot Status */}
       {bot && (
-        <div className={`bg-surface rounded p-3 mb-4 ${getStrategyTypeColor(strategy.type)}`}>
+        <div
+          className={`bg-surface rounded p-3 mb-4 ${getStrategyTypeColor(strategy.type)}`}
+        >
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-text">Bot Status</span>
             <span

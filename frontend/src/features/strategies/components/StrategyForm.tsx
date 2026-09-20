@@ -167,11 +167,13 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
       reset();
     },
     onError: (error: unknown) => {
-      const errorMessage = error instanceof Error
-        ? error.message
-        : typeof error === 'object' && error !== null && 'response' in error
-          ? (error as { response: { data: { error: string } } }).response.data.error
-          : "Failed to create strategy";
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object" && error !== null && "response" in error
+            ? (error as { response: { data: { error: string } } }).response.data
+                .error
+            : "Failed to create strategy";
       toast.error(errorMessage);
     },
   });
@@ -208,11 +210,13 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
       reset();
     },
     onError: (error: unknown) => {
-      const errorMessage = error instanceof Error
-        ? error.message
-        : typeof error === 'object' && error !== null && 'response' in error
-          ? (error as { response: { data: { error: string } } }).response.data.error
-          : "Failed to update strategy";
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object" && error !== null && "response" in error
+            ? (error as { response: { data: { error: string } } }).response.data
+                .error
+            : "Failed to update strategy";
       toast.error(errorMessage);
     },
   });
@@ -289,10 +293,7 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
             <label className="block text-sm font-medium text-text-secondary mb-2">
               Trading Symbol
             </label>
-            <select
-              {...register("symbol")}
-              className="input w-full"
-            >
+            <select {...register("symbol")} className="input w-full">
               {AVAILABLE_SYMBOLS.map(symbol => (
                 <option key={symbol} value={symbol}>
                   {symbol.replace("PERP_", "").replace("_USDC", "")}
@@ -430,11 +431,7 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
 
           {/* Form Actions */}
           <div className="flex justify-end gap-3 pt-6 border-t border-border-light">
-            <button
-              type="button"
-              onClick={onClose}
-              className="btn-secondary"
-            >
+            <button type="button" onClick={onClose} className="btn-secondary">
               Cancel
             </button>
             <button

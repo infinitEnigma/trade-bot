@@ -15,7 +15,7 @@
     "db:drop": "ts-node scripts/drop-tables.ts",
     "db:seed": "ts-node src/database/seed.ts",
     "db:status": "ts-node scripts/migration-status.ts",
-    "lint": "eslint src",
+    "lint": "eslint src --max-warnings 0",
     "lint:fix": "eslint src --fix",
     "format": "prettier --write src",
     "format:check": "prettier --check src"

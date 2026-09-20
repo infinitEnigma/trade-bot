@@ -5,7 +5,6 @@ import { httpLogger as contextHttpLogger } from "../../core/logging";
 import {
   generateCorrelationId,
   runWithContext,
-  getContextForLogging,
 } from "../../shared/utils/context";
 
 /**
@@ -64,7 +63,7 @@ export function httpLogger(
         });
 
         // Call original end method
-        return originalEnd.call(this, chunk, encoding ?? 'utf8', cb);
+        return originalEnd.call(this, chunk, encoding ?? "utf8", cb);
       } as typeof res.end;
 
       next();

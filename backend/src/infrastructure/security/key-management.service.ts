@@ -73,7 +73,10 @@ export class KeyManagementService {
   }
 
   // For testing purposes only
-  setCryptoFunctions(options: { hkdf?: any; scrypt?: any }): void {
+  setCryptoFunctions(options: {
+    hkdf?: KeyManagementService["hkdf"];
+    scrypt?: KeyManagementService["scrypt"];
+  }): void {
     if (options.hkdf) {
       this.hkdf = options.hkdf;
     }
@@ -88,7 +91,10 @@ export class KeyManagementService {
    * partially initialized keys.
    */
   private async ensureInitialized(): Promise<void> {
-    if (this.initialized && this.derivedKeys.size === Object.values(KeyPurpose).length) {
+    if (
+      this.initialized &&
+      this.derivedKeys.size === Object.values(KeyPurpose).length
+    ) {
       return;
     }
     // If keys aren't derived yet (or derivation failed), (re)start derivation
@@ -133,10 +139,10 @@ export class KeyManagementService {
     let masterKeyBuffer: Buffer;
     try {
       // First try to parse as hex (more secure)
-      masterKeyBuffer = Buffer.from(envKey, 'hex');
+      masterKeyBuffer = Buffer.from(envKey, "hex");
     } catch {
       // Fallback to UTF-8 if not valid hex
-      masterKeyBuffer = Buffer.from(envKey, 'utf8');
+      masterKeyBuffer = Buffer.from(envKey, "utf8");
     }
 
     // Use scrypt to derive a secure key from the master key and salt
@@ -172,7 +178,10 @@ export class KeyManagementService {
 
         logger.debug(`Derived key for purpose: ${purpose}`);
       } catch (error) {
-        logger.error(`Failed to derive key for purpose ${purpose}`, error as Error);
+        logger.error(
+          `Failed to derive key for purpose ${purpose}`,
+          error as Error
+        );
         throw error;
       }
     }

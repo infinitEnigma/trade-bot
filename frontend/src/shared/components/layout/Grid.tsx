@@ -1,5 +1,5 @@
-import React from 'react';
-import { cn } from '../../utils';
+import React from "react";
+import { cn } from "../../utils";
 
 interface GridProps {
   children: React.ReactNode;
@@ -26,21 +26,17 @@ export const Grid: React.FC<GridProps> = ({
   cols = { default: 1, md: 2, lg: 3 },
   gap = 6,
   autoFit = false,
-  minWidth
+  minWidth,
 }) => {
-  const gapValue = typeof gap === 'number' ? `gap-${gap}` : gap;
+  const gapValue = typeof gap === "number" ? `gap-${gap}` : gap;
 
   if (autoFit && minWidth) {
     // Auto-fit grid for responsive cards
     return (
       <div
-        className={cn(
-          'grid',
-          `gap-${gap}`,
-          className
-        )}
+        className={cn("grid", `gap-${gap}`, className)}
         style={{
-          gridTemplateColumns: `repeat(auto-fit, minmax(${minWidth}, 1fr))`
+          gridTemplateColumns: `repeat(auto-fit, minmax(${minWidth}, 1fr))`,
         }}
       >
         {children}
@@ -58,12 +54,7 @@ export const Grid: React.FC<GridProps> = ({
   if (cols.xl) colClasses.push(`xl:grid-cols-${cols.xl}`);
 
   return (
-    <div className={cn(
-      'grid',
-      gapValue,
-      ...colClasses,
-      className
-    )}>
+    <div className={cn("grid", gapValue, ...colClasses, className)}>
       {children}
     </div>
   );

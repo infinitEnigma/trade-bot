@@ -19,8 +19,8 @@ const csrfTokens = new Tokens();
 const secureCookies = (): boolean => process.env.NODE_ENV === "production";
 
 export interface RefreshedSessionCookies {
-    accessToken: string;
-    refreshToken: string;
+  accessToken: string;
+  refreshToken: string;
 }
 
 /**
@@ -28,43 +28,43 @@ export interface RefreshedSessionCookies {
  * CSRF token pair so callers/tests can assert on rotation if needed.
  */
 export const setRefreshedSessionCookies = (
-    res: Response,
-    tokens: RefreshedSessionCookies,
+  res: Response,
+  tokens: RefreshedSessionCookies
 ): { csrfSecret: string; csrfToken: string } => {
-    // Set new httpOnly cookies
-    res.cookie("accessToken", tokens.accessToken, {
-        httpOnly: true,
-        secure: secureCookies(),
-        sameSite: "strict",
-        maxAge: ACCESS_COOKIE_MAX_AGE_MS,
-    });
+  // Set new httpOnly cookies
+  res.cookie("accessToken", tokens.accessToken, {
+    httpOnly: true,
+    secure: secureCookies(),
+    sameSite: "strict",
+    maxAge: ACCESS_COOKIE_MAX_AGE_MS,
+  });
 
-    res.cookie("refreshToken", tokens.refreshToken, {
-        httpOnly: true,
-        secure: secureCookies(),
-        sameSite: "strict",
-        maxAge: REFRESH_COOKIE_MAX_AGE_MS,
-    });
+  res.cookie("refreshToken", tokens.refreshToken, {
+    httpOnly: true,
+    secure: secureCookies(),
+    sameSite: "strict",
+    maxAge: REFRESH_COOKIE_MAX_AGE_MS,
+  });
 
-    // Refresh CSRF token and secret
-    const csrfSecret = csrfTokens.secretSync();
-    const csrfToken = csrfTokens.create(csrfSecret);
+  // Refresh CSRF token and secret
+  const csrfSecret = csrfTokens.secretSync();
+  const csrfToken = csrfTokens.create(csrfSecret);
 
-    res.cookie("csrfSecret", csrfSecret, {
-        httpOnly: true,
-        secure: secureCookies(),
-        sameSite: "strict",
-        maxAge: CSRF_COOKIE_MAX_AGE_MS,
-    });
+  res.cookie("csrfSecret", csrfSecret, {
+    httpOnly: true,
+    secure: secureCookies(),
+    sameSite: "strict",
+    maxAge: CSRF_COOKIE_MAX_AGE_MS,
+  });
 
-    res.cookie("csrfToken", csrfToken, {
-        httpOnly: false, // Client needs to read this
-        secure: secureCookies(),
-        sameSite: "strict",
-        maxAge: CSRF_COOKIE_MAX_AGE_MS,
-    });
+  res.cookie("csrfToken", csrfToken, {
+    httpOnly: false, // Client needs to read this
+    secure: secureCookies(),
+    sameSite: "strict",
+    maxAge: CSRF_COOKIE_MAX_AGE_MS,
+  });
 
-    return { csrfSecret, csrfToken };
+  return { csrfSecret, csrfToken };
 };
 
 /**
@@ -73,11 +73,16 @@ export const setRefreshedSessionCookies = (
  * frontend can force a clean re-login.
  */
 export const clearSessionCookies = (res: Response): void => {
-    for (const name of ["accessToken", "refreshToken", "csrfSecret", "csrfToken"]) {
-        res.clearCookie(name, {
-            httpOnly: name !== "csrfToken",
-            secure: secureCookies(),
-            sameSite: "strict",
-        });
-    }
+  for (const name of [
+    "accessToken",
+    "refreshToken",
+    "csrfSecret",
+    "csrfToken",
+  ]) {
+    res.clearCookie(name, {
+      httpOnly: name !== "csrfToken",
+      secure: secureCookies(),
+      sameSite: "strict",
+    });
+  }
 };

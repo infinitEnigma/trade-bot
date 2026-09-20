@@ -1,7 +1,14 @@
 /** @format */
 
 import React, { Suspense } from "react";
-import { TrendingUp, TrendingDown, Settings, X, Loader2, Target } from "lucide-react";
+import {
+  TrendingUp,
+  TrendingDown,
+  Settings,
+  X,
+  Loader2,
+  Target,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card } from "../ui";
 import { SectionHeader } from "../ui";
@@ -24,8 +31,8 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
   isLoading,
 }) => {
   const { user } = useAuth();
-    
-    if (!user && !UserLevel.VERIFIED) return null;
+
+  if (!user && !UserLevel.VERIFIED) return null;
   return (
     <Card>
       <SectionHeader
@@ -83,7 +90,8 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                         No Open Positions
                       </p>
                       <p className="text-xs text-textMuted mb-4">
-                        Start trading by creating a new strategy or opening a position manually.
+                        Start trading by creating a new strategy or opening a
+                        position manually.
                       </p>
                       <Link
                         to="/strategies"
@@ -100,9 +108,13 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                 const pnl = parseFloat(position.unsettled_pnl || "0");
                 const size = parseFloat(position.position_qty || "0");
                 const markPrice = parseFloat(position.mark_price || "0");
-                const entryPrice = parseFloat(position.average_open_price || "0");
+                const entryPrice = parseFloat(
+                  position.average_open_price || "0"
+                );
                 const pnlPercent =
-                  entryPrice > 0 ? ((markPrice - entryPrice) / entryPrice) * 100 : 0;
+                  entryPrice > 0
+                    ? ((markPrice - entryPrice) / entryPrice) * 100
+                    : 0;
 
                 return (
                   <tr key={index} className="group">
@@ -143,13 +155,15 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                     </td>
                     <td className="font-mono">{Math.abs(size).toFixed(4)}</td>
                     <td className="font-mono">
-                      ${entryPrice.toLocaleString(undefined, {
+                      $
+                      {entryPrice.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}
                     </td>
                     <td className="font-mono">
-                      ${markPrice.toLocaleString(undefined, {
+                      $
+                      {markPrice.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}

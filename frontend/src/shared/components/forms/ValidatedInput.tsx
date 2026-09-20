@@ -16,7 +16,7 @@ interface ValidatedInputProps {
   showStrengthIndicator?: boolean;
   strength?: {
     score: number;
-    strength: 'weak' | 'medium' | 'strong';
+    strength: "weak" | "medium" | "strong";
   };
   className?: string;
 }
@@ -32,13 +32,14 @@ export const ValidatedInput: React.FC<ValidatedInputProps> = ({
   required = false,
   showStrengthIndicator = false,
   strength,
-  className = ""
+  className = "",
 }) => {
   const inputId = React.useId();
   const errorId = React.useId();
 
   const getInputClasses = () => {
-    const baseClasses = "input w-full transition-all duration-200 focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background";
+    const baseClasses =
+      "input w-full transition-all duration-200 focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background";
 
     if (!validation.touched) {
       return baseClasses;
@@ -72,23 +73,27 @@ export const ValidatedInput: React.FC<ValidatedInputProps> = ({
   };
 
   const getStrengthBarColor = () => {
-    if (!strength) return 'bg-gray-300';
+    if (!strength) return "bg-gray-300";
 
     switch (strength.strength) {
-      case 'weak': return 'bg-red-500';
-      case 'medium': return 'bg-yellow-500';
-      case 'strong': return 'bg-green-500';
+      case "weak":
+        return "bg-red-500";
+      case "medium":
+        return "bg-yellow-500";
+      case "strong":
+        return "bg-green-500";
     }
   };
 
   return (
     <div className={`space-y-2 ${className}`}>
-      <label
-        htmlFor={inputId}
-        className="block text-sm font-medium text-text"
-      >
+      <label htmlFor={inputId} className="block text-sm font-medium text-text">
         {label}
-        {required && <span className="text-red-400 ml-1" aria-label="required">*</span>}
+        {required && (
+          <span className="text-red-400 ml-1" aria-label="required">
+            *
+          </span>
+        )}
       </label>
 
       <div className="relative">
@@ -96,12 +101,14 @@ export const ValidatedInput: React.FC<ValidatedInputProps> = ({
           id={inputId}
           type={type}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={e => onChange(e.target.value)}
           onBlur={onBlur}
           placeholder={placeholder}
           className={`${getInputClasses()} pr-10`}
           aria-invalid={!validation.isValid && validation.touched}
-          aria-describedby={!validation.isValid && validation.touched ? errorId : undefined}
+          aria-describedby={
+            !validation.isValid && validation.touched ? errorId : undefined
+          }
           required={required}
         />
 
@@ -116,11 +123,15 @@ export const ValidatedInput: React.FC<ValidatedInputProps> = ({
         <div className="space-y-2">
           <div className="flex justify-between text-xs">
             <span className="text-textMuted">Password Strength</span>
-            <span className={`font-medium capitalize ${
-              strength.strength === 'weak' ? 'text-red-400' :
-              strength.strength === 'medium' ? 'text-yellow-400' :
-              'text-green-400'
-            }`}>
+            <span
+              className={`font-medium capitalize ${
+                strength.strength === "weak"
+                  ? "text-red-400"
+                  : strength.strength === "medium"
+                    ? "text-yellow-400"
+                    : "text-green-400"
+              }`}
+            >
               {strength.strength}
             </span>
           </div>

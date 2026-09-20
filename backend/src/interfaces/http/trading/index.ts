@@ -1,2 +1,2 @@
-export { marketRoutes } from './market';
-export { strategyRoutes } from './strategies';
+export { marketRoutes } from "./market";
+export { strategyRoutes } from "./strategies";

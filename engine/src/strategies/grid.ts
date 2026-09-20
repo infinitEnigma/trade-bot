@@ -11,8 +11,15 @@ import {
   Trade,
 } from "../types/strategy";
 import { logger } from "../utils/logger";
-import { GridSnapshot, GridSnapshotLevel, GRID_SNAPSHOT_VERSION } from "../domain/grid-snapshot";
-import { loadGridSnapshot, saveGridSnapshot } from "../infrastructure/state/grid-state";
+import {
+  GridSnapshot,
+  GridSnapshotLevel,
+  GRID_SNAPSHOT_VERSION,
+} from "../domain/grid-snapshot";
+import {
+  loadGridSnapshot,
+  saveGridSnapshot,
+} from "../infrastructure/state/grid-state";
 
 export class GridTradingStrategy {
   private config: GridStrategyConfig;
@@ -27,7 +34,11 @@ export class GridTradingStrategy {
   private trades: Trade[] = [];
   private lastOrderCheck: Map<string, Date> = new Map();
 
-  constructor(botId: string, config: GridStrategyConfig, orderly: OrderlyClient) {
+  constructor(
+    botId: string,
+    config: GridStrategyConfig,
+    orderly: OrderlyClient
+  ) {
     this.botId = botId;
     this.config = config;
     this.orderly = orderly;
@@ -55,7 +66,7 @@ export class GridTradingStrategy {
       if (restored.length > 0) {
         this.levels = restored;
         const restoredCount = this.levels.filter(
-          (l) => l.buyOrderId || l.sellOrderId || l.filled
+          l => l.buyOrderId || l.sellOrderId || l.filled
         ).length;
         logger.info("Grid strategy initialized (restored from snapshot)", {
           symbol: this.config.symbol,
@@ -175,7 +186,10 @@ export class GridTradingStrategy {
    * This ensures that if a command is redelivered after a crash, the same
    * clientOrderId is generated and the exchange can detect the duplicate.
    */
-  private generateClientOrderId(levelIndex: number, side: "BUY" | "SELL"): string {
+  private generateClientOrderId(
+    levelIndex: number,
+    side: "BUY" | "SELL"
+  ): string {
     return `${this.botId}:${levelIndex}:${side}`;
   }
 
@@ -213,7 +227,7 @@ export class GridTradingStrategy {
       byPrice.set(entry.price, entry);
     }
 
-    return base.map((level) => {
+    return base.map(level => {
       const savedLevel = byPrice.get(level.price);
       if (savedLevel) {
         return {
@@ -511,4 +525,3 @@ export class GridTradingStrategy {
     return this.running;
   }
 }
-

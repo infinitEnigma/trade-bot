@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback } from "react";
 
 interface Node {
   x: number;
@@ -33,6 +33,7 @@ export const ElectricalNetworkBackground: React.FC = () => {
   const pulsesRef = useRef<Pulse[]>([]);
   const mouseRef = useRef<MouseState>({ x: 0, y: 0, active: false });
   const timeRef = useRef<number>(0);
+  const drawRef = useRef<() => void>(() => {});
 
   const NODE_COUNT = 48;
   const CONNECTION_RADIUS = 180;
@@ -80,7 +81,7 @@ export const ElectricalNetworkBackground: React.FC = () => {
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const { width, height } = canvas;
@@ -92,7 +93,7 @@ export const ElectricalNetworkBackground: React.FC = () => {
     ctx.clearRect(0, 0, width, height);
 
     // Update node positions
-    nodes.forEach((node) => {
+    nodes.forEach(node => {
       node.pulsePhase += node.pulseSpeed;
       node.x += node.vx;
       node.y += node.vy;
@@ -103,7 +104,8 @@ export const ElectricalNetworkBackground: React.FC = () => {
         const dy = node.y - mouse.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < MOUSE_INFLUENCE_RADIUS && dist > 0) {
-          const force = ((MOUSE_INFLUENCE_RADIUS - dist) / MOUSE_INFLUENCE_RADIUS) * 0.015;
+          const force =
+            ((MOUSE_INFLUENCE_RADIUS - dist) / MOUSE_INFLUENCE_RADIUS) * 0.015;
           node.vx += (dx / dist) * force;
           node.vy += (dy / dist) * force;
         }
@@ -143,8 +145,10 @@ export const ElectricalNetworkBackground: React.FC = () => {
         ctx.lineTo(nodes[j].x, nodes[j].y);
 
         const gradient = ctx.createLinearGradient(
-          nodes[i].x, nodes[i].y,
-          nodes[j].x, nodes[j].y
+          nodes[i].x,
+          nodes[i].y,
+          nodes[j].x,
+          nodes[j].y
         );
         gradient.addColorStop(0, `rgba(56, 189, 248, ${opacity})`);
         gradient.addColorStop(0.5, `rgba(99, 240, 180, ${opacity * 1.3})`);
@@ -178,7 +182,7 @@ export const ElectricalNetworkBackground: React.FC = () => {
     }
 
     // Draw & update pulses
-    pulsesRef.current = pulses.filter((pulse) => {
+    pulsesRef.current = pulses.filter(pulse => {
       pulse.progress += pulse.speed;
       if (pulse.progress >= 1) return false;
 
@@ -229,8 +233,12 @@ export const ElectricalNetworkBackground: React.FC = () => {
 
       // Node glow
       const grd = ctx.createRadialGradient(
-        node.x, node.y, 0,
-        node.x, node.y, glowRadius * 4.5
+        node.x,
+        node.y,
+        0,
+        node.x,
+        node.y,
+        glowRadius * 4.5
       );
       grd.addColorStop(0, `rgba(99, 240, 180, ${coreOpacity * 0.55})`);
       grd.addColorStop(0.5, `rgba(56, 189, 248, ${coreOpacity * 0.18})`);
@@ -261,8 +269,12 @@ export const ElectricalNetworkBackground: React.FC = () => {
       }
     });
 
-    animationRef.current = requestAnimationFrame(draw);
+    animationRef.current = requestAnimationFrame(() => drawRef.current());
   }, [getConnectionStrength]);
+
+  useEffect(() => {
+    drawRef.current = draw;
+  }, [draw]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -275,7 +287,7 @@ export const ElectricalNetworkBackground: React.FC = () => {
     };
 
     resize();
-    window.addEventListener('resize', resize);
+    window.addEventListener("resize", resize);
 
     const onMouseMove = (e: MouseEvent) => {
       mouseRef.current = { x: e.clientX, y: e.clientY, active: true };
@@ -288,20 +300,20 @@ export const ElectricalNetworkBackground: React.FC = () => {
       mouseRef.current = { x: t.clientX, y: t.clientY, active: true };
     };
 
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseleave', onMouseLeave);
-    window.addEventListener('touchmove', onTouchMove, { passive: true });
-    window.addEventListener('touchend', onMouseLeave);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseleave", onMouseLeave);
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
+    window.addEventListener("touchend", onMouseLeave);
 
     animationRef.current = requestAnimationFrame(draw);
 
     return () => {
       cancelAnimationFrame(animationRef.current);
-      window.removeEventListener('resize', resize);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseleave', onMouseLeave);
-      window.removeEventListener('touchmove', onTouchMove);
-      window.removeEventListener('touchend', onMouseLeave);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseleave", onMouseLeave);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onMouseLeave);
     };
   }, [draw, initNodes]);
 

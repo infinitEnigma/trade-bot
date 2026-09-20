@@ -24,10 +24,10 @@
  */
 
 // Export WebSocket infrastructure
-export * from './websocket.service';
-export * from './websocket/auth';
-export * from './websocket/handlers';
-export * from './websocket/types';
+export * from "./websocket.service";
+export * from "./websocket/auth";
+export * from "./websocket/handlers";
+export * from "./websocket/types";
 
 // Export messaging types and interfaces
-export * from '../../interfaces/websocket';
+export * from "../../interfaces/websocket";

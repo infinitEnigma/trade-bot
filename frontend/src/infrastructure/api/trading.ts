@@ -8,76 +8,94 @@ import { globalRequestManager } from "../request-manager";
  * Handles strategies, bots, and trading operations with global deduplication
  */
 export const tradingApi = {
-    // Strategy endpoints
-    async getStrategies() {
-        return globalRequestManager.deduplicateRequest(
-            "strategies:list",
-            () => httpClient.getClient().get("/api/strategies").then(r => r.data),
-            "tradingApi"
-        );
-    },
+  // Strategy endpoints
+  async getStrategies() {
+    return globalRequestManager.deduplicateRequest(
+      "strategies:list",
+      () =>
+        httpClient
+          .getClient()
+          .get("/api/strategies")
+          .then(r => r.data),
+      "tradingApi"
+    );
+  },
 
-    async createStrategy(data: {
-        name: string;
-        type: string;
-        config: Record<string, unknown>;
-    }) {
-        const response = await httpClient.getClient().post("/api/strategies", data);
-        return response.data;
-    },
+  async createStrategy(data: {
+    name: string;
+    type: string;
+    config: Record<string, unknown>;
+  }) {
+    const response = await httpClient.getClient().post("/api/strategies", data);
+    return response.data;
+  },
 
-    async updateStrategy(
-        strategyId: string,
-        data: {
-            name: string;
-            type: string;
-            config: Record<string, unknown>;
-        }
-    ) {
-        const response = await httpClient.getClient().put(
-            `/api/strategies/${strategyId}`,
-            data
-        );
-        return response.data;
-    },
+  async updateStrategy(
+    strategyId: string,
+    data: {
+      name: string;
+      type: string;
+      config: Record<string, unknown>;
+    }
+  ) {
+    const response = await httpClient
+      .getClient()
+      .put(`/api/strategies/${strategyId}`, data);
+    return response.data;
+  },
 
-    async deleteStrategy(strategyId: string) {
-        const response = await httpClient.getClient().delete(`/api/strategies/${strategyId}`);
-        return response.data;
-    },
+  async deleteStrategy(strategyId: string) {
+    const response = await httpClient
+      .getClient()
+      .delete(`/api/strategies/${strategyId}`);
+    return response.data;
+  },
 
-    // Bot endpoints
-    async getBotInstances() {
-        return globalRequestManager.deduplicateRequest(
-            "bots:instances",
-            () => httpClient.getClient().get("/api/bot/instances").then(r => r.data),
-            "tradingApi"
-        );
-    },
+  // Bot endpoints
+  async getBotInstances() {
+    return globalRequestManager.deduplicateRequest(
+      "bots:instances",
+      () =>
+        httpClient
+          .getClient()
+          .get("/api/bot/instances")
+          .then(r => r.data),
+      "tradingApi"
+    );
+  },
 
-    async getEngineStatus() {
-        return globalRequestManager.deduplicateRequest(
-            "bots:engine-status",
-            () => httpClient.getClient().get("/api/bot/engine/status").then(r => r.data),
-            "tradingApi"
-        );
-    },
+  async getEngineStatus() {
+    return globalRequestManager.deduplicateRequest(
+      "bots:engine-status",
+      () =>
+        httpClient
+          .getClient()
+          .get("/api/bot/engine/status")
+          .then(r => r.data),
+      "tradingApi"
+    );
+  },
 
-    async startBot(strategyId: string) {
-        const response = await httpClient.getClient().post("/api/bot/start", { strategyId });
-        return response.data;
-    },
+  async startBot(strategyId: string) {
+    const response = await httpClient
+      .getClient()
+      .post("/api/bot/start", { strategyId });
+    return response.data;
+  },
 
-    async stopBot(botId: string) {
-        const response = await httpClient.getClient().post("/api/bot/stop", { botId });
-        return response.data;
-    },
+  async stopBot(botId: string) {
+    const response = await httpClient
+      .getClient()
+      .post("/api/bot/stop", { botId });
+    return response.data;
+  },
 
-    async emergencyStop(botId: string) {
-        const response = await httpClient.getClient().post("/api/bot/emergency-stop", {
-            botId,
-        });
-        return response.data;
-    },
-
+  async emergencyStop(botId: string) {
+    const response = await httpClient
+      .getClient()
+      .post("/api/bot/emergency-stop", {
+        botId,
+      });
+    return response.data;
+  },
 };

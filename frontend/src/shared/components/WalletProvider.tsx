@@ -35,9 +35,7 @@ const queryClient = new QueryClient({
  */
 const WalletProvider = ({ children }: { children: React.ReactNode }) => (
   <WagmiProvider config={config}>
-    <QueryClientProvider client={queryClient}>
-      {children}
-    </QueryClientProvider>
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   </WagmiProvider>
 );
 

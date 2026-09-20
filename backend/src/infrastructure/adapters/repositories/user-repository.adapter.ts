@@ -9,22 +9,22 @@
  */
 
 import {
-    IUserRepository,
-    User,
-    UserLevel,
-    UserRegistration
-} from '@trade-bot/shared';
-import { query } from '../../../database/pool';
+  IUserRepository,
+  User,
+  UserLevel,
+  UserRegistration,
+} from "@trade-bot/shared";
+import { query } from "../../../database/pool";
 
 /**
  * Database row interface for user data
  */
 interface UserRow {
-    id: string;
-    email: string;
-    user_level: string;
-    created_at: string;
-    updated_at: string;
+  id: string;
+  email: string;
+  user_level: string;
+  created_at: string;
+  updated_at: string;
 }
 
 /**
@@ -34,181 +34,200 @@ interface UserRow {
  * Provides user data access with proper error handling and type safety.
  */
 export class UserRepositoryAdapter implements IUserRepository {
+  /**
+   * Find user by email address
+   */
+  async findByEmail(email: string): Promise<User | null> {
+    try {
+      const result = await query(
+        "SELECT id, email, user_level, created_at, updated_at FROM users WHERE email = $1",
+        [email]
+      );
 
-    /**
-     * Find user by email address
-     */
-    async findByEmail(email: string): Promise<User | null> {
-        try {
-            const result = await query(
-                'SELECT id, email, user_level, created_at, updated_at FROM users WHERE email = $1',
-                [email]
-            );
+      if (result.rows.length === 0) {
+        return null;
+      }
 
-            if (result.rows.length === 0) {
-                return null;
-            }
-
-            const row = result.rows[0] as UserRow;
-            return this.mapRowToUser(row);
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to find user by email: ${errorMessage}`);
-        }
+      const row = result.rows[0] as UserRow;
+      return this.mapRowToUser(row);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to find user by email: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Find user by email with password hash for authentication
-     */
-    async findByEmailWithPassword(email: string): Promise<(User & { passwordHash: string }) | null> {
-        try {
-            const result = await query(
-                'SELECT id, email, password_hash, user_level, created_at, updated_at FROM users WHERE email = $1',
-                [email]
-            );
+  /**
+   * Find user by email with password hash for authentication
+   */
+  async findByEmailWithPassword(
+    email: string
+  ): Promise<(User & { passwordHash: string }) | null> {
+    try {
+      const result = await query(
+        "SELECT id, email, password_hash, user_level, created_at, updated_at FROM users WHERE email = $1",
+        [email]
+      );
 
-            if (result.rows.length === 0) {
-                return null;
-            }
+      if (result.rows.length === 0) {
+        return null;
+      }
 
-            const row = result.rows[0] as UserRow & { password_hash?: string };
-            return {
-                ...this.mapRowToUser(row),
-                passwordHash: row.password_hash || ''
-            };
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to find user by email with password: ${errorMessage}`);
-        }
+      const row = result.rows[0] as UserRow & { password_hash?: string };
+      return {
+        ...this.mapRowToUser(row),
+        passwordHash: row.password_hash || "",
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Failed to find user by email with password: ${errorMessage}`
+      );
     }
+  }
 
-    /**
-     * Find user by ID
-     */
-    async findById(id: string): Promise<User | null> {
-        try {
-            const result = await query(
-                'SELECT id, email, user_level, created_at, updated_at FROM users WHERE id = $1',
-                [id]
-            );
+  /**
+   * Find user by ID
+   */
+  async findById(id: string): Promise<User | null> {
+    try {
+      const result = await query(
+        "SELECT id, email, user_level, created_at, updated_at FROM users WHERE id = $1",
+        [id]
+      );
 
-            if (result.rows.length === 0) {
-                return null;
-            }
+      if (result.rows.length === 0) {
+        return null;
+      }
 
-            const row = result.rows[0] as UserRow;
-            return this.mapRowToUser(row);
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to find user by ID: ${errorMessage}`);
-        }
+      const row = result.rows[0] as UserRow;
+      return this.mapRowToUser(row);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to find user by ID: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Create a new user
-     */
-    async create(userData: UserRegistration): Promise<User> {
-        try {
-            const result = await query(
-                'INSERT INTO users (email, password_hash, user_level, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id, email, user_level, created_at, updated_at',
-                [userData.email, userData.password, UserLevel.BASIC]
-            );
+  /**
+   * Create a new user
+   */
+  async create(userData: UserRegistration): Promise<User> {
+    try {
+      const result = await query(
+        "INSERT INTO users (email, password_hash, user_level, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id, email, user_level, created_at, updated_at",
+        [userData.email, userData.password, UserLevel.BASIC]
+      );
 
-            if (result.rows.length === 0) {
-                throw new Error('User creation failed - no rows returned');
-            }
+      if (result.rows.length === 0) {
+        throw new Error("User creation failed - no rows returned");
+      }
 
-            const row = result.rows[0] as UserRow;
-            return this.mapRowToUser(row);
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const row = result.rows[0] as UserRow;
+      return this.mapRowToUser(row);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
 
-            // Handle unique constraint violation
-            if (errorMessage.includes('duplicate key') || errorMessage.includes('unique constraint')) {
-                throw new Error('Email already exists');
-            }
+      // Handle unique constraint violation
+      if (
+        errorMessage.includes("duplicate key") ||
+        errorMessage.includes("unique constraint")
+      ) {
+        throw new Error("Email already exists");
+      }
 
-            throw new Error(`Failed to create user: ${errorMessage}`);
-        }
+      throw new Error(`Failed to create user: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Update user's level
-     */
-    async updateUserLevel(id: string, level: UserLevel): Promise<boolean> {
-        try {
-            const result = await query(
-                'UPDATE users SET user_level = $1, updated_at = NOW() WHERE id = $2',
-                [level, id]
-            );
+  /**
+   * Update user's level
+   */
+  async updateUserLevel(id: string, level: UserLevel): Promise<boolean> {
+    try {
+      const result = await query(
+        "UPDATE users SET user_level = $1, updated_at = NOW() WHERE id = $2",
+        [level, id]
+      );
 
-            return result.rowCount > 0;
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to update user level: ${errorMessage}`);
-        }
+      return result.rowCount > 0;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to update user level: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Update user profile information
-     */
-    async updateProfile(id: string, updates: Partial<{ email: string; userLevel: UserLevel }>): Promise<User | null> {
-        try {
-            // Build update query dynamically based on provided fields
-            const updateFields: string[] = [];
-            const updateValues: any[] = [];
-            let valueIndex = 1;
+  /**
+   * Update user profile information
+   */
+  async updateProfile(
+    id: string,
+    updates: Partial<{ email: string; userLevel: UserLevel }>
+  ): Promise<User | null> {
+    try {
+      // Build update query dynamically based on provided fields
+      const updateFields: string[] = [];
+      const updateValues: unknown[] = [];
+      let valueIndex = 1;
 
-            if (updates.email) {
-                updateFields.push(`email = $${valueIndex}`);
-                updateValues.push(updates.email.toLowerCase());
-                valueIndex++;
-            }
+      if (updates.email) {
+        updateFields.push(`email = $${valueIndex}`);
+        updateValues.push(updates.email.toLowerCase());
+        valueIndex++;
+      }
 
-            if (updates.userLevel) {
-                updateFields.push(`user_level = $${valueIndex}`);
-                updateValues.push(updates.userLevel);
-                valueIndex++;
-            }
+      if (updates.userLevel) {
+        updateFields.push(`user_level = $${valueIndex}`);
+        updateValues.push(updates.userLevel);
+        valueIndex++;
+      }
 
-            updateFields.push(`updated_at = NOW()`);
-            updateValues.push(id); // For the WHERE clause
+      updateFields.push(`updated_at = NOW()`);
+      updateValues.push(id); // For the WHERE clause
 
-            const result = await query(
-                `UPDATE users SET ${updateFields.join(', ')} WHERE id = $${valueIndex} RETURNING id, email, user_level, created_at, updated_at`,
-                updateValues
-            );
+      const result = await query(
+        `UPDATE users SET ${updateFields.join(", ")} WHERE id = $${valueIndex} RETURNING id, email, user_level, created_at, updated_at`,
+        updateValues
+      );
 
-            if (result.rows.length === 0) {
-                return null;
-            }
+      if (result.rows.length === 0) {
+        return null;
+      }
 
-            const row = result.rows[0] as UserRow;
-            return this.mapRowToUser(row);
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
+      const row = result.rows[0] as UserRow;
+      return this.mapRowToUser(row);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
 
-            // Handle unique constraint violation for email
-            if (errorMessage.includes('duplicate key') || errorMessage.includes('unique constraint')) {
-                throw new Error('Email already exists');
-            }
+      // Handle unique constraint violation for email
+      if (
+        errorMessage.includes("duplicate key") ||
+        errorMessage.includes("unique constraint")
+      ) {
+        throw new Error("Email already exists");
+      }
 
-            throw new Error(`Failed to update user profile: ${errorMessage}`);
-        }
+      throw new Error(`Failed to update user profile: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Get authenticated user data with roles and credentials info
-     */
-    async getAuthenticatedUserData(id: string): Promise<{
-        user: User;
-        roles: string[];
-        hasCredentials: boolean;
-        kodiakAccountId?: string;
-        kodiakVerified?: boolean;
-    } | null> {
-        try {
-            const result = await query(`
+  /**
+   * Get authenticated user data with roles and credentials info
+   */
+  async getAuthenticatedUserData(id: string): Promise<{
+    user: User;
+    roles: string[];
+    hasCredentials: boolean;
+    kodiakAccountId?: string;
+    kodiakVerified?: boolean;
+  } | null> {
+    try {
+      const result = await query(
+        `
                 SELECT
                     u.id,
                     u.email,
@@ -230,130 +249,139 @@ export class UserRepositoryAdapter implements IUserRepository {
                 LEFT JOIN kodiak_credentials kc ON u.id = kc.user_id
                 WHERE u.id = $1
                 GROUP BY u.id, u.email, u.user_level, u.created_at, u.updated_at, kc.id, kc.account_id, kc.verified
-            `, [id]);
+            `,
+        [id]
+      );
 
-            if (result.rows.length === 0) {
-                return null;
-            }
+      if (result.rows.length === 0) {
+        return null;
+      }
 
-            const row = result.rows[0] as {
-                id: string;
-                email: string;
-                user_level: string;
-                created_at: string;
-                updated_at: string;
-                roles?: string[];
-                has_credentials?: boolean;
-                kodiak_account_id?: string;
-                kodiak_verified?: boolean;
-            };
-            const user = this.mapRowToUser({
-                id: row.id,
-                email: row.email,
-                user_level: row.user_level,
-                created_at: row.created_at,
-                updated_at: row.updated_at
-            });
+      const row = result.rows[0] as {
+        id: string;
+        email: string;
+        user_level: string;
+        created_at: string;
+        updated_at: string;
+        roles?: string[];
+        has_credentials?: boolean;
+        kodiak_account_id?: string;
+        kodiak_verified?: boolean;
+      };
+      const user = this.mapRowToUser({
+        id: row.id,
+        email: row.email,
+        user_level: row.user_level,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      });
 
-            return {
-                user,
-                roles: row.roles || [],
-                hasCredentials: row.has_credentials || false,
-                kodiakAccountId: row.kodiak_account_id,
-                kodiakVerified: row.kodiak_verified
-            };
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to get authenticated user data: ${errorMessage}`);
-        }
+      return {
+        user,
+        roles: row.roles || [],
+        hasCredentials: row.has_credentials || false,
+        kodiakAccountId: row.kodiak_account_id,
+        kodiakVerified: row.kodiak_verified,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to get authenticated user data: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Get user's linked wallet address
-     *
-     * Reads from wallet_addresses (linked via signed-message verification).
-     * Falls back to kodiak_credentials for legacy rows created before the
-     * wallet-first flow (addresses fetched from the Kodiak API).
-     */
-    async getWalletAddress(userId: string): Promise<string | null> {
-        try {
-            const result = await query<{ wallet_address: string }>(
-                "SELECT wallet_address FROM wallet_addresses WHERE user_id = $1",
-                [userId]
-            );
+  /**
+   * Get user's linked wallet address
+   *
+   * Reads from wallet_addresses (linked via signed-message verification).
+   * Falls back to kodiak_credentials for legacy rows created before the
+   * wallet-first flow (addresses fetched from the Kodiak API).
+   */
+  async getWalletAddress(userId: string): Promise<string | null> {
+    try {
+      const result = await query<{ wallet_address: string }>(
+        "SELECT wallet_address FROM wallet_addresses WHERE user_id = $1",
+        [userId]
+      );
 
-            if (result.rows.length > 0 && result.rows[0].wallet_address) {
-                return result.rows[0].wallet_address;
-            }
+      if (result.rows.length > 0 && result.rows[0].wallet_address) {
+        return result.rows[0].wallet_address;
+      }
 
-            // Legacy fallback: wallets stored alongside Kodiak credentials
-            const legacy = await query<{ wallet_address: string }>(
-                "SELECT wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
-                [userId]
-            );
+      // Legacy fallback: wallets stored alongside Kodiak credentials
+      const legacy = await query<{ wallet_address: string }>(
+        "SELECT wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
+        [userId]
+      );
 
-            if (legacy.rows.length === 0) {
-                return null;
-            }
+      if (legacy.rows.length === 0) {
+        return null;
+      }
 
-            return legacy.rows[0].wallet_address;
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to get wallet address: ${errorMessage}`);
-        }
+      return legacy.rows[0].wallet_address;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to get wallet address: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Link a wallet address to a user (upsert)
-     */
-    async setWalletAddress(userId: string, walletAddress: string): Promise<boolean> {
-        try {
-            const result = await query(
-                `INSERT INTO wallet_addresses (user_id, wallet_address, verified, updated_at)
+  /**
+   * Link a wallet address to a user (upsert)
+   */
+  async setWalletAddress(
+    userId: string,
+    walletAddress: string
+  ): Promise<boolean> {
+    try {
+      const result = await query(
+        `INSERT INTO wallet_addresses (user_id, wallet_address, verified, updated_at)
          VALUES ($1, $2, true, CURRENT_TIMESTAMP)
          ON CONFLICT (user_id) DO UPDATE SET
            wallet_address = EXCLUDED.wallet_address,
            verified = true,
            updated_at = CURRENT_TIMESTAMP`,
-                [userId, walletAddress]
-            );
+        [userId, walletAddress]
+      );
 
-            return (result.rowCount ?? 0) > 0;
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to set wallet address: ${errorMessage}`);
-        }
+      return (result.rowCount ?? 0) > 0;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to set wallet address: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Remove the wallet linked to a user
-     */
-    async clearWalletAddress(userId: string): Promise<boolean> {
-        try {
-            const result = await query(
-                "DELETE FROM wallet_addresses WHERE user_id = $1",
-                [userId]
-            );
+  /**
+   * Remove the wallet linked to a user
+   */
+  async clearWalletAddress(userId: string): Promise<boolean> {
+    try {
+      const result = await query(
+        "DELETE FROM wallet_addresses WHERE user_id = $1",
+        [userId]
+      );
 
-            return (result.rowCount ?? 0) > 0;
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to clear wallet address: ${errorMessage}`);
-        }
+      return (result.rowCount ?? 0) > 0;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to clear wallet address: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Map database row to User domain object
-     */
-    private mapRowToUser(row: UserRow): User {
-        return {
-            id: row.id,
-            email: row.email,
-            userLevel: row.user_level as UserLevel,
-            createdAt: new Date(row.created_at),
-            updatedAt: new Date(row.updated_at)
-        };
-    }
+  /**
+   * Map database row to User domain object
+   */
+  private mapRowToUser(row: UserRow): User {
+    return {
+      id: row.id,
+      email: row.email,
+      userLevel: row.user_level as UserLevel,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+    };
+  }
 }
 
 // Export singleton instance

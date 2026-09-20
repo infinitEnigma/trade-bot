@@ -8,9 +8,9 @@
  * @format
  */
 
-import { IBotInstanceRepository } from '@trade-bot/shared';
-import { query } from '../../../database/pool';
-import { tradingLogger as logger } from '../../../core/logging/context-aware-logger.service';
+import { BotInstanceRecord, IBotInstanceRepository } from "@trade-bot/shared";
+import { query } from "../../../database/pool";
+import { tradingLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 /**
  * Bot Instance Repository Adapter
@@ -19,175 +19,195 @@ import { tradingLogger as logger } from '../../../core/logging/context-aware-log
  * Provides bot instance data access with proper error handling and type safety.
  */
 export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
-
-    /**
-     * Get all bot instances for a user
-     */
-    async getBotInstances(userId: string): Promise<any[]> {
-        try {
-            const result = await query(`
+  /**
+   * Get all bot instances for a user
+   */
+  async getBotInstances(userId: string): Promise<BotInstanceRecord[]> {
+    try {
+      const result = await query<BotInstanceRecord>(
+        `
                 SELECT bi.*, s.name as strategy_name, s.type as strategy_type, s.config as strategy_config
                 FROM bot_instances bi
                 JOIN strategies s ON bi.strategy_id = s.id
                 WHERE bi.user_id = $1
                 ORDER BY bi.created_at DESC
-            `, [userId]);
+            `,
+        [userId]
+      );
 
-            return result.rows;
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to get bot instances', error as Error);
-            throw new Error(`Failed to get bot instances: ${errorMessage}`);
-        }
+      return result.rows;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to get bot instances", error as Error);
+      throw new Error(`Failed to get bot instances: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Get bot instance by ID
-     */
-    async getBotInstance(id: string): Promise<any | null> {
-        try {
-            const result = await query(`
+  /**
+   * Get bot instance by ID
+   */
+  async getBotInstance(id: string): Promise<BotInstanceRecord | null> {
+    try {
+      const result = await query<BotInstanceRecord>(
+        `
                 SELECT bi.*, s.name as strategy_name, s.type as strategy_type, s.config as strategy_config
                 FROM bot_instances bi
                 JOIN strategies s ON bi.strategy_id = s.id
                 WHERE bi.id = $1
-            `, [id]);
+            `,
+        [id]
+      );
 
-            if (result.rows.length === 0) {
-                return null;
-            }
+      if (result.rows.length === 0) {
+        return null;
+      }
 
-            return result.rows[0];
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to get bot instance', error as Error);
-            throw new Error(`Failed to get bot instance: ${errorMessage}`);
-        }
+      return result.rows[0];
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to get bot instance", error as Error);
+      throw new Error(`Failed to get bot instance: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Create a new bot instance
-     */
-    async createBotInstance(bot: Omit<any, 'id' | 'createdAt' | 'updatedAt'>): Promise<any> {
-        try {
-            const result = await query(`
+  /**
+   * Create a new bot instance
+   */
+  async createBotInstance(
+    bot: Omit<BotInstanceRecord, "created_at" | "updated_at">
+  ): Promise<BotInstanceRecord> {
+    try {
+      const result = await query<BotInstanceRecord>(
+        `
                 INSERT INTO bot_instances (id, strategy_id, user_id, status, running_time, total_trades, total_pnl)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING *
-            `, [
-                bot.id,
-                bot.strategy_id,
-                bot.user_id,
-                bot.status || 'RUNNING',
-                bot.running_time || 0,
-                bot.total_trades || 0,
-                bot.total_pnl || 0
-            ]);
+            `,
+        [
+          bot.id,
+          bot.strategy_id,
+          bot.user_id,
+          bot.status || "RUNNING",
+          bot.running_time || 0,
+          bot.total_trades || 0,
+          bot.total_pnl || 0,
+        ]
+      );
 
-            if (result.rows.length === 0) {
-                throw new Error('Bot instance creation failed - no rows returned');
-            }
+      if (result.rows.length === 0) {
+        throw new Error("Bot instance creation failed - no rows returned");
+      }
 
-            return result.rows[0];
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to create bot instance', error as Error);
-            throw new Error(`Failed to create bot instance: ${errorMessage}`);
-        }
+      return result.rows[0];
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to create bot instance", error as Error);
+      throw new Error(`Failed to create bot instance: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Update bot instance status
-     */
-    async updateBotStatus(id: string, status: string): Promise<void> {
-        try {
-            await query(
-                'UPDATE bot_instances SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-                [status, id]
-            );
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to update bot status', error as Error);
-            throw new Error(`Failed to update bot status: ${errorMessage}`);
-        }
+  /**
+   * Update bot instance status
+   */
+  async updateBotStatus(id: string, status: string): Promise<void> {
+    try {
+      await query(
+        "UPDATE bot_instances SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+        [status, id]
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to update bot status", error as Error);
+      throw new Error(`Failed to update bot status: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Update bot instance performance metrics
-     */
-    async updateBotPerformance(id: string, metrics: { runningTime?: number; totalTrades?: number; totalPnL?: number }): Promise<void> {
-        try {
-            // Build update query dynamically based on provided fields
-            const updateFields: string[] = [];
-            const updateValues: any[] = [];
-            let valueIndex = 1;
+  /**
+   * Update bot instance performance metrics
+   */
+  async updateBotPerformance(
+    id: string,
+    metrics: { runningTime?: number; totalTrades?: number; totalPnL?: number }
+  ): Promise<void> {
+    try {
+      // Build update query dynamically based on provided fields
+      const updateFields: string[] = [];
+      const updateValues: unknown[] = [];
+      let valueIndex = 1;
 
-            if (metrics.runningTime !== undefined) {
-                updateFields.push(`running_time = $${valueIndex}`);
-                updateValues.push(metrics.runningTime);
-                valueIndex++;
-            }
+      if (metrics.runningTime !== undefined) {
+        updateFields.push(`running_time = $${valueIndex}`);
+        updateValues.push(metrics.runningTime);
+        valueIndex++;
+      }
 
-            if (metrics.totalTrades !== undefined) {
-                updateFields.push(`total_trades = $${valueIndex}`);
-                updateValues.push(metrics.totalTrades);
-                valueIndex++;
-            }
+      if (metrics.totalTrades !== undefined) {
+        updateFields.push(`total_trades = $${valueIndex}`);
+        updateValues.push(metrics.totalTrades);
+        valueIndex++;
+      }
 
-            if (metrics.totalPnL !== undefined) {
-                updateFields.push(`total_pnl = $${valueIndex}`);
-                updateValues.push(metrics.totalPnL);
-                valueIndex++;
-            }
+      if (metrics.totalPnL !== undefined) {
+        updateFields.push(`total_pnl = $${valueIndex}`);
+        updateValues.push(metrics.totalPnL);
+        valueIndex++;
+      }
 
-            if (updateFields.length === 0) {
-                return; // No fields to update
-            }
+      if (updateFields.length === 0) {
+        return; // No fields to update
+      }
 
-            updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-            updateValues.push(id); // For the WHERE clause
+      updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+      updateValues.push(id); // For the WHERE clause
 
-            await query(
-                `UPDATE bot_instances SET ${updateFields.join(', ')} WHERE id = $${valueIndex}`,
-                updateValues
-            );
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to update bot performance', error as Error);
-            throw new Error(`Failed to update bot performance: ${errorMessage}`);
-        }
+      await query(
+        `UPDATE bot_instances SET ${updateFields.join(", ")} WHERE id = $${valueIndex}`,
+        updateValues
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to update bot performance", error as Error);
+      throw new Error(`Failed to update bot performance: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Delete bot instance
-     */
-    async deleteBotInstance(id: string): Promise<void> {
-        try {
-            await query('DELETE FROM bot_instances WHERE id = $1', [id]);
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to delete bot instance', error as Error);
-            throw new Error(`Failed to delete bot instance: ${errorMessage}`);
-        }
+  /**
+   * Delete bot instance
+   */
+  async deleteBotInstance(id: string): Promise<void> {
+    try {
+      await query("DELETE FROM bot_instances WHERE id = $1", [id]);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to delete bot instance", error as Error);
+      throw new Error(`Failed to delete bot instance: ${errorMessage}`);
     }
+  }
 
-    /**
-     * Get active bot instances
-     */
-    async getActiveBotInstances(): Promise<any[]> {
-        try {
-            const result = await query(`
+  /**
+   * Get active bot instances
+   */
+  async getActiveBotInstances(): Promise<BotInstanceRecord[]> {
+    try {
+      const result = await query<BotInstanceRecord>(`
                 SELECT * FROM bot_instances 
                 WHERE status IN ('RUNNING', 'STARTING')
             `);
 
-            return result.rows;
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error('Failed to get active bot instances', error as Error);
-            throw new Error(`Failed to get active bot instances: ${errorMessage}`);
-        }
+      return result.rows;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to get active bot instances", error as Error);
+      throw new Error(`Failed to get active bot instances: ${errorMessage}`);
     }
+  }
 }
 
 // Export singleton instance

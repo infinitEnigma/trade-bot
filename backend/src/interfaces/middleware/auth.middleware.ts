@@ -1,7 +1,11 @@
 /** @format */
 
 import { Request, Response, NextFunction } from "express";
-import { AuthResult, LegacyAuthResult, AuthService } from "../../core/auth/auth.service.pure";
+import {
+  AuthResult,
+  LegacyAuthResult,
+  AuthService,
+} from "../../core/auth/auth.service.pure";
 import { jwtTokenAdapter } from "../../infrastructure/adapters/token/jwt-token.adapter";
 import { serviceProvider } from "../../core/service-provider";
 
@@ -13,27 +17,24 @@ import { setUserContext } from "../../shared/utils/context";
 //import { roleManagementService } from "../../core/auth/role-management.service";
 import { authLogger } from "../../core/logging";
 import { progressiveAuthLimiter } from "../../infrastructure/security/rate-limiter.service";
+import { acquireRefreshMutex, releaseRefreshMutex } from "./auth-refresh-mutex";
 import {
-    acquireRefreshMutex,
-    releaseRefreshMutex,
-} from "./auth-refresh-mutex";
-import {
-    clearSessionCookies,
-    setRefreshedSessionCookies,
+  clearSessionCookies,
+  setRefreshedSessionCookies,
 } from "./auth-session-cookies";
 import {
-    hydrateSessionUser,
-    isLightweightEndpoint,
+  hydrateSessionUser,
+  isLightweightEndpoint,
 } from "./auth-session-hydrator";
 import {
-    AUTH_ERROR_CODES,
-    isDefinitiveRefreshFailure,
+  AUTH_ERROR_CODES,
+  isDefinitiveRefreshFailure,
 } from "./auth-error-codes";
 
 // Re-export the extracted helpers so existing deep imports keep working.
 export {
-    isLightweightEndpoint,
-    LIGHTWEIGHT_ENDPOINT_PREFIXES,
+  isLightweightEndpoint,
+  LIGHTWEIGHT_ENDPOINT_PREFIXES,
 } from "./auth-session-hydrator";
 export { RELEASE_LOCK_SCRIPT } from "./auth-refresh-mutex";
 export { AUTH_ERROR_CODES } from "./auth-error-codes";
@@ -48,7 +49,11 @@ export interface AuthenticatedRequest extends Request {
 }
 
 // Exponential backoff retry for token refresh with Redis mutex
-async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest, maxRetries = 3): Promise<AuthResult | LegacyAuthResult> {
+async function retryTokenRefresh(
+  refreshToken: string,
+  req: AuthenticatedRequest,
+  maxRetries = 3
+): Promise<AuthResult | LegacyAuthResult> {
   let lastError: unknown = null;
   let userId: string | undefined;
 
@@ -117,7 +122,6 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
           });
           await new Promise(resolve => setTimeout(resolve, delay));
         }
-
       } catch (error) {
         lastError = error;
         authLogger.warn(`Token refresh attempt ${attempt + 1} failed`, {
@@ -136,11 +140,15 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
     }
 
     // All retries failed
-    authLogger.error("All token refresh attempts failed", lastError instanceof Error ? lastError : undefined, {
-      attempts: maxRetries,
-      userId,
-      lockAcquired,
-    });
+    authLogger.error(
+      "All token refresh attempts failed",
+      lastError instanceof Error ? lastError : undefined,
+      {
+        attempts: maxRetries,
+        userId,
+        lockAcquired,
+      }
+    );
 
     return {
       success: false,
@@ -149,7 +157,10 @@ async function retryTokenRefresh(refreshToken: string, req: AuthenticatedRequest
   } finally {
     // Always release the mutex if we acquired it
     if (lockAcquired && mutexKey) {
-      await releaseRefreshMutex({ key: mutexKey, acquired: lockAcquired, token: mutexToken }, userId);
+      await releaseRefreshMutex(
+        { key: mutexKey, acquired: lockAcquired, token: mutexToken },
+        userId
+      );
     }
   }
 }
@@ -227,18 +238,26 @@ async function finalizeRefreshedSession(
     return;
   }
 
-  const hydration = await hydrateSessionUser(newPayload.userId, isLightweightEndpoint(req.path));
+  const hydration = await hydrateSessionUser(
+    newPayload.userId,
+    isLightweightEndpoint(req.path)
+  );
   if ("failure" in hydration) {
-    authLogger.error("Refreshed user not found for hydrator endpoint", undefined, {
-      userId: newPayload.userId,
-      endpoint: req.path,
-    });
+    authLogger.error(
+      "Refreshed user not found for hydrator endpoint",
+      undefined,
+      {
+        userId: newPayload.userId,
+        endpoint: req.path,
+      }
+    );
     res.status(401).json({
       success: false,
       code: AUTH_ERROR_CODES.USER_NOT_FOUND,
-      message: hydration.failure === "USER_NOT_FOUND"
-        ? "Unauthorized - refreshed user not found"
-        : "Unauthorized - refreshed user data not found",
+      message:
+        hydration.failure === "USER_NOT_FOUND"
+          ? "Unauthorized - refreshed user not found"
+          : "Unauthorized - refreshed user data not found",
     });
     return;
   }
@@ -269,8 +288,10 @@ export async function authMiddleware(
     authLogger.debug("Auth middleware request details", {
       path: req.path,
       method: req.method,
-      headers: Object.keys(req.headers).filter(k => ['authorization', 'cookie', 'user-agent'].includes(k)),
-      cookies: req.cookies ? Object.keys(req.cookies) : 'no cookies',
+      headers: Object.keys(req.headers).filter(k =>
+        ["authorization", "cookie", "user-agent"].includes(k)
+      ),
+      cookies: req.cookies ? Object.keys(req.cookies) : "no cookies",
     });
 
     // Get token from Authorization header or httpOnly cookie
@@ -292,17 +313,20 @@ export async function authMiddleware(
       // Check if refreshToken is available and attempt to refresh
       const refreshToken = req.cookies?.refreshToken;
       if (refreshToken) {
-        authLogger.debug("Access token missing, attempting refresh with refresh token", {
-          path: req.path,
-          method: req.method,
-        });
+        authLogger.debug(
+          "Access token missing, attempting refresh with refresh token",
+          {
+            path: req.path,
+            method: req.method,
+          }
+        );
 
         try {
           const refreshResult = await retryTokenRefresh(refreshToken, req);
           if (!refreshResult.success || !refreshResult.tokens) {
             authLogger.error("Token refresh failed after retries", undefined, {
               message: refreshResult.message,
-              userId: req.user?.userId || 'unknown',
+              userId: req.user?.userId || "unknown",
             });
             respondToFailedRefresh(res, refreshResult.message);
             return;
@@ -311,12 +335,16 @@ export async function authMiddleware(
           await finalizeRefreshedSession(req, res, refreshResult, next);
           return;
         } catch (refreshError) {
-          authLogger.error("Token refresh process failed", refreshError instanceof Error ? refreshError : undefined, {
-            error:
-              refreshError instanceof Error
-                ? refreshError.message
-                : String(refreshError),
-          });
+          authLogger.error(
+            "Token refresh process failed",
+            refreshError instanceof Error ? refreshError : undefined,
+            {
+              error:
+                refreshError instanceof Error
+                  ? refreshError.message
+                  : String(refreshError),
+            }
+          );
           res.status(401).json({
             success: false,
             code: -1006,
@@ -355,7 +383,7 @@ export async function authMiddleware(
     const freshHydration = await hydrateSessionUser(
       payload.userId,
       isLightweightEndpoint(req.path),
-      { userId: payload.userId, userLevel: payload.userLevel },
+      { userId: payload.userId, userLevel: payload.userLevel }
     );
     if ("failure" in freshHydration) {
       authLogger.warn("User not found for hydrator endpoint", {
@@ -365,9 +393,10 @@ export async function authMiddleware(
       res.status(401).json({
         success: false,
         code: AUTH_ERROR_CODES.USER_NOT_FOUND,
-        message: freshHydration.failure === "USER_NOT_FOUND"
-          ? "Unauthorized - user not found"
-          : "Unauthorized - refreshed user data not found",
+        message:
+          freshHydration.failure === "USER_NOT_FOUND"
+            ? "Unauthorized - user not found"
+            : "Unauthorized - refreshed user data not found",
       });
       return;
     }
@@ -387,13 +416,21 @@ export async function authMiddleware(
 
     next();
   } catch (error) {
-    authLogger.error("Auth middleware error", error instanceof Error ? error : undefined, {
-      error: error instanceof Error ? error.message : String(error),
-    });
+    authLogger.error(
+      "Auth middleware error",
+      error instanceof Error ? error : undefined,
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
 
     // Handle token expiration - attempt automatic refresh
     // Check if token is expired by trying to verify it again with the adapter
-    if (error instanceof Error && (error.message.includes('jwt expired') || error.name === 'TokenExpiredError')) {
+    if (
+      error instanceof Error &&
+      (error.message.includes("jwt expired") ||
+        error.name === "TokenExpiredError")
+    ) {
       authLogger.debug("Access token expired, attempting automatic refresh");
 
       try {
@@ -414,7 +451,7 @@ export async function authMiddleware(
         if (!refreshResult.success || !refreshResult.tokens) {
           authLogger.error("Token refresh failed after retries", undefined, {
             message: refreshResult.message,
-            userId: req.user?.userId || 'unknown',
+            userId: req.user?.userId || "unknown",
           });
           respondToFailedRefresh(res, refreshResult.message);
           return;
@@ -422,12 +459,16 @@ export async function authMiddleware(
 
         await finalizeRefreshedSession(req, res, refreshResult, next);
       } catch (refreshError) {
-        authLogger.error("Token refresh process failed", refreshError instanceof Error ? refreshError : undefined, {
-          error:
-            refreshError instanceof Error
-              ? refreshError.message
-              : String(refreshError),
-        });
+        authLogger.error(
+          "Token refresh process failed",
+          refreshError instanceof Error ? refreshError : undefined,
+          {
+            error:
+              refreshError instanceof Error
+                ? refreshError.message
+                : String(refreshError),
+          }
+        );
         res.status(401).json({
           success: false,
           code: -1006,

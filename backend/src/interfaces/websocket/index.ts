@@ -7,17 +7,17 @@ import { UserLevel, User, TokenPayload } from "@trade-bot/shared";
  * Defines the contract for WebSocket server management
  */
 export interface IWebSocketService {
-    /** Initialize the WebSocket service with a Socket.IO server instance */
-    initialize(io: Server): void;
+  /** Initialize the WebSocket service with a Socket.IO server instance */
+  initialize(io: Server): void;
 
-    /** Get comprehensive WebSocket metrics for monitoring */
-    getMetrics(): WebSocketMetrics;
+  /** Get comprehensive WebSocket metrics for monitoring */
+  getMetrics(): WebSocketMetrics;
 
-    /** Forcefully disconnect a specific client */
-    disconnectClient(socketId: string): void;
+  /** Forcefully disconnect a specific client */
+  disconnectClient(socketId: string): void;
 
-    /** Get detailed connection information */
-    getConnections(): WebSocketConnection[];
+  /** Get detailed connection information */
+  getConnections(): WebSocketConnection[];
 }
 
 /**
@@ -25,26 +25,26 @@ export interface IWebSocketService {
  * Contains authenticated client information and connection state
  */
 export interface WebSocketClient {
-    /** Unique user identifier */
-    userId: string;
+  /** Unique user identifier */
+  userId: string;
 
-    /** User's verification level */
-    userLevel: UserLevel;
+  /** User's verification level */
+  userLevel: UserLevel;
 
-    /** Socket.IO socket ID */
-    socketId: string;
+  /** Socket.IO socket ID */
+  socketId: string;
 
-    /** Active subscriptions (rooms/symbols) */
-    subscriptions: Set<string>;
+  /** Active subscriptions (rooms/symbols) */
+  subscriptions: Set<string>;
 
-    /** Connection establishment timestamp */
-    connectedAt: Date;
+  /** Connection establishment timestamp */
+  connectedAt: Date;
 
-    /** Last activity timestamp */
-    lastActivity: Date;
+  /** Last activity timestamp */
+  lastActivity: Date;
 
-    /** Client IP address */
-    ipAddress: string;
+  /** Client IP address */
+  ipAddress: string;
 }
 
 /**
@@ -52,26 +52,26 @@ export interface WebSocketClient {
  * Comprehensive health and performance metrics
  */
 export interface WebSocketMetrics {
-    /** Number of currently active connections */
-    activeConnections: number;
+  /** Number of currently active connections */
+  activeConnections: number;
 
-    /** Messages processed per second */
-    messagesPerSecond: number;
+  /** Messages processed per second */
+  messagesPerSecond: number;
 
-    /** Error rate (errors per minute) */
-    errorRate: number;
+  /** Error rate (errors per minute) */
+  errorRate: number;
 
-    /** Most popular subscriptions with counts */
-    topSubscriptions: Array<{ topic: string; count: number }>;
+  /** Most popular subscriptions with counts */
+  topSubscriptions: Array<{ topic: string; count: number }>;
 
-    /** Connection health score (0-100) */
-    healthScore: number;
+  /** Connection health score (0-100) */
+  healthScore: number;
 
-    /** Memory usage for WebSocket connections */
-    memoryUsage: number;
+  /** Memory usage for WebSocket connections */
+  memoryUsage: number;
 
-    /** Average response time for operations */
-    averageResponseTime: number;
+  /** Average response time for operations */
+  averageResponseTime: number;
 }
 
 /**
@@ -79,13 +79,13 @@ export interface WebSocketMetrics {
  * Detailed information about individual connections
  */
 export interface WebSocketConnection {
-    socketId: string;
-    userId: string;
-    userLevel: UserLevel;
-    connectedAt: Date;
-    lastActivity: Date;
-    subscriptionCount: number;
-    ipAddress: string;
+  socketId: string;
+  userId: string;
+  userLevel: UserLevel;
+  connectedAt: Date;
+  lastActivity: Date;
+  subscriptionCount: number;
+  ipAddress: string;
 }
 
 /**
@@ -93,14 +93,14 @@ export interface WebSocketConnection {
  * Defines all possible WebSocket event types
  */
 export enum WebSocketEvent {
-    CONNECT = "connect",
-    DISCONNECT = "disconnect",
-    SUBSCRIBE = "subscribe",
-    UNSUBSCRIBE = "unsubscribe",
-    SUBSCRIBE_MARKET = "subscribe_market",
-    UNSUBSCRIBE_MARKET = "unsubscribe_market",
-    ERROR = "error",
-    AUTH_ERROR = "auth_error",
+  CONNECT = "connect",
+  DISCONNECT = "disconnect",
+  SUBSCRIBE = "subscribe",
+  UNSUBSCRIBE = "unsubscribe",
+  SUBSCRIBE_MARKET = "subscribe_market",
+  UNSUBSCRIBE_MARKET = "unsubscribe_market",
+  ERROR = "error",
+  AUTH_ERROR = "auth_error",
 }
 
 /**
@@ -108,7 +108,7 @@ export enum WebSocketEvent {
  * Type-safe message structure for market unsubscribe event
  */
 export interface WebSocketMarketUnsubscribePayload {
-    symbol: string;
+  symbol: string;
 }
 
 /**
@@ -116,22 +116,22 @@ export interface WebSocketMarketUnsubscribePayload {
  * Type-safe message structures for different event types
  */
 export interface WebSocketAuthPayload {
-    token: string;
+  token: string;
 }
 
 export interface WebSocketSubscriptionPayload {
-    room: string;
+  room: string;
 }
 
 export interface WebSocketMarketSubscriptionPayload {
-    symbol: string;
+  symbol: string;
 }
 
 export interface WebSocketErrorPayload {
-    code: string;
-    message: string;
-    correlationId?: string;
-    details?: Record<string, unknown>;
+  code: string;
+  message: string;
+  correlationId?: string;
+  details?: Record<string, unknown>;
 }
 
 /**
@@ -139,26 +139,26 @@ export interface WebSocketErrorPayload {
  * Configuration options for WebSocket service
  */
 export interface WebSocketConfig {
-    /** Maximum connections per user */
-    maxConnectionsPerUser: number;
+  /** Maximum connections per user */
+  maxConnectionsPerUser: number;
 
-    /** Maximum total connections */
-    maxTotalConnections: number;
+  /** Maximum total connections */
+  maxTotalConnections: number;
 
-    /** Rate limiting window (milliseconds) */
-    rateLimitWindowMs: number;
+  /** Rate limiting window (milliseconds) */
+  rateLimitWindowMs: number;
 
-    /** Maximum requests per window */
-    rateLimitMaxRequests: number;
+  /** Maximum requests per window */
+  rateLimitMaxRequests: number;
 
-    /** Connection timeout (milliseconds) */
-    connectionTimeoutMs: number;
+  /** Connection timeout (milliseconds) */
+  connectionTimeoutMs: number;
 
-    /** Heartbeat interval (milliseconds) */
-    heartbeatIntervalMs: number;
+  /** Heartbeat interval (milliseconds) */
+  heartbeatIntervalMs: number;
 
-    /** Maximum subscription limit per user */
-    maxSubscriptionsPerUser: number;
+  /** Maximum subscription limit per user */
+  maxSubscriptionsPerUser: number;
 }
 
 /**
@@ -166,21 +166,21 @@ export interface WebSocketConfig {
  * Interfaces for service dependencies (dependency injection)
  */
 export interface IAuthService {
-    validateToken(token: string): Promise<TokenPayload | null>;
-    getUserById(userId: string): Promise<User | null>;
+  validateToken(token: string): Promise<TokenPayload | null>;
+  getUserById(userId: string): Promise<User | null>;
 }
 
 export interface ILogger {
-    info(message: string, meta?: unknown): void;
-    error(message: string, meta?: unknown): void;
-    warn(message: string, meta?: unknown): void;
-    debug(message: string, meta?: unknown): void;
-    child(meta: unknown): ILogger;
+  info(message: string, meta?: unknown): void;
+  error(message: string, meta?: unknown): void;
+  warn(message: string, meta?: unknown): void;
+  debug(message: string, meta?: unknown): void;
+  child(meta: unknown): ILogger;
 }
 
 export interface IRateLimiter {
-    canSubscribe(userId: string): Promise<boolean>;
-    recordSubscription(userId: string): Promise<void>;
+  canSubscribe(userId: string): Promise<boolean>;
+  recordSubscription(userId: string): Promise<void>;
 }
 
 // Type imports for external dependencies

@@ -17,6 +17,6 @@
  */
 
 // Export auth-related services
-export { RoleManagementService } from './role-management.service.pure';
+export { RoleManagementService } from "./role-management.service.pure";
 
 // Note: Type exports are not available yet - services need to be updated to export interfaces

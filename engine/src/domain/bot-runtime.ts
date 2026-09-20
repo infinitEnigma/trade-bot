@@ -7,38 +7,38 @@
  * @format
  */
 
-import { BotActualState, BotCommand } from '@trade-bot/shared';
-import { GridTradingStrategy } from '../strategies/grid';
-import { OrderlyClient } from '../exchanges/kodiak/client';
+import { BotActualState } from "@trade-bot/shared";
+import { GridTradingStrategy } from "../strategies/grid";
+import { OrderlyClient } from "../exchanges/kodiak/client";
 
 /**
  * Runtime state for a running bot instance.
  */
 export interface BotRuntime {
-    botId: string;
-    strategyId: string;
-    userId: string;
-    state: BotActualState;
-    strategy: GridTradingStrategy;
-    stopTick: () => void;
-    orderlyClient: OrderlyClient;
+  botId: string;
+  strategyId: string;
+  userId: string;
+  state: BotActualState;
+  strategy: GridTradingStrategy;
+  stopTick: () => void;
+  orderlyClient: OrderlyClient;
 }
 
 /**
  * Result of credential fetch operation.
  */
 export interface FetchCredentialsResult {
-    accountId: string;
-    accessKey: string;
-    secretKey: string;
+  accountId: string;
+  accessKey: string;
+  secretKey: string;
 }
 
 /**
  * Persistent engine identity - survives restarts.
  */
 export interface EngineIdentity {
-    engineId: string;
-    epoch: number;
+  engineId: string;
+  epoch: number;
 }
 
 /**

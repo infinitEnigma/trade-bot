@@ -13,21 +13,22 @@
  * -1008 → refreshed/validated user no longer exists in the database.
  */
 export const AUTH_ERROR_CODES = {
-    /** Legacy/definitively-invalid refresh token: re-login required. */
-    REFRESH_INVALID_DEFINITIVE: -1002,
-    /** Access token expired and no refresh token available. */
-    EXPIRED_NO_REFRESH: -1003,
-    /** Generic/failed refresh (incl. "already in progress" concurrency). */
-    REFRESH_FAILED: -1004,
-    /** Refresh succeeded but new access token failed validation. */
-    REFRESH_VALIDATION_FAILED: -1005,
-    /** Unexpected exception during refresh. */
-    REFRESH_ERROR: -1006,
-    /** Authenticated/refreshed user not found in DB. */
-    USER_NOT_FOUND: -1008,
+  /** Legacy/definitively-invalid refresh token: re-login required. */
+  REFRESH_INVALID_DEFINITIVE: -1002,
+  /** Access token expired and no refresh token available. */
+  EXPIRED_NO_REFRESH: -1003,
+  /** Generic/failed refresh (incl. "already in progress" concurrency). */
+  REFRESH_FAILED: -1004,
+  /** Refresh succeeded but new access token failed validation. */
+  REFRESH_VALIDATION_FAILED: -1005,
+  /** Unexpected exception during refresh. */
+  REFRESH_ERROR: -1006,
+  /** Authenticated/refreshed user not found in DB. */
+  USER_NOT_FOUND: -1008,
 } as const;
 
-export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CODES];
+export type AuthErrorCode =
+  (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CODES];
 
 /**
  * Messages whose presence in an auth-service refresh failure means the token
@@ -36,21 +37,23 @@ export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CO
  * cannot succeed — the client must discard auth state and re-authenticate.
  */
 const DEFINITIVE_REFRESH_FAILURE_PATTERNS = [
-    "invalid",
-    "expired",
-    "invalidated",
-    "revoked",
-    "legacy",
-    "must re-authenticate",
+  "invalid",
+  "expired",
+  "invalidated",
+  "revoked",
+  "legacy",
+  "must re-authenticate",
 ] as const;
 
 /** True when a refresh failure message describes a definitively-dead token. */
-export const isDefinitiveRefreshFailure = (message: string | undefined): boolean => {
-    if (!message) {
-        return false;
-    }
-    const lower = message.toLowerCase();
-    return DEFINITIVE_REFRESH_FAILURE_PATTERNS.some((pattern) =>
-        lower.includes(pattern),
-    );
+export const isDefinitiveRefreshFailure = (
+  message: string | undefined
+): boolean => {
+  if (!message) {
+    return false;
+  }
+  const lower = message.toLowerCase();
+  return DEFINITIVE_REFRESH_FAILURE_PATTERNS.some(pattern =>
+    lower.includes(pattern)
+  );
 };

@@ -9,13 +9,13 @@
 
 // Shared types
 export type {
-    BotInstance,
-    TradingBalance,
-    StrategyFormData,
-    BotStatus,
-    MarketDataPoint,
-    TradingState,
-    TradingActions,
+  BotInstance,
+  TradingBalance,
+  StrategyFormData,
+  BotStatus,
+  MarketDataPoint,
+  TradingState,
+  TradingActions,
 } from "./types/strategies.types";
 
 // Strategies subdomain

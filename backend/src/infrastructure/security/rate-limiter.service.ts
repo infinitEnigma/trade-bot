@@ -30,20 +30,16 @@
 import { Response, NextFunction } from "express";
 import { redisService } from "../../infrastructure";
 import { AuthenticatedRequest } from "../../interfaces/middleware";
-import { UserLevel } from "@trade-bot/shared";
 import { securityLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 // Import extracted modules
 import { RateLimitConfig } from "./rate-limiter/rate-limit.types";
 import { memoryRateLimiter } from "./rate-limiter/memory-rate-limiter";
 import { progressiveAuthLimiter } from "./rate-limiter/progressive-auth-limiter";
-import { redisHealthMonitor } from "./rate-limiter/redis-health-monitor";
 import { RATE_LIMIT_CONFIGS } from "./rate-limiter/rate-limit.config";
-import { error } from "node:console";
 
 // Re-export for backward compatibility
 export { progressiveAuthLimiter };
-
 
 /**
  * ===========================================
@@ -65,16 +61,20 @@ export { progressiveAuthLimiter };
  * Uses Redis primary with in-memory fallback
  */
 export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
-  return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  return async (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction
+  ) => {
     // GLOBAL ENABLE/DISABLE: Check if rate limiting is enabled (default: true)
-    const rateLimitingEnabled = process.env.RATE_LIMITING_ENABLED !== 'false';
+    const rateLimitingEnabled = process.env.RATE_LIMITING_ENABLED !== "false";
     if (!rateLimitingEnabled) {
       logger.debug("Rate limiting disabled globally", { endpoint });
       return next();
     }
 
     // Skip OPTIONS requests (CORS preflight) - they shouldn't be rate limited
-    if (req.method === 'OPTIONS') {
+    if (req.method === "OPTIONS") {
       return next();
     }
 
@@ -85,14 +85,20 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
 
     // Determine rate limit based on authentication status and user level
     let effectiveMaxRequests = config.max;
-    let limitType = 'ip';
+    let limitType = "ip";
 
-    if (userId && config.enableUserBasedLimits && config.userLimits && userLevel) {
+    if (
+      userId &&
+      config.enableUserBasedLimits &&
+      config.userLimits &&
+      userLevel
+    ) {
       // Use user-based limits for authenticated requests
-      const userLimit = config.userLimits[userLevel as keyof typeof config.userLimits];
+      const userLimit =
+        config.userLimits[userLevel as keyof typeof config.userLimits];
       if (userLimit !== undefined) {
         effectiveMaxRequests = userLimit;
-        limitType = 'user';
+        limitType = "user";
       }
     }
 
@@ -112,8 +118,9 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
       // Check progressive backoff for all endpoints that have it enabled
       if (config.progressiveBackoff) {
         // For auth endpoints, use the progressiveAuthLimiter which tracks failure count
-        if (endpoint === 'auth') {
-          const failureInfo = await progressiveAuthLimiter.getFailureInfo(identifier);
+        if (endpoint === "auth") {
+          const failureInfo =
+            await progressiveAuthLimiter.getFailureInfo(identifier);
           progressiveDelay = failureInfo.delayMs;
 
           if (progressiveDelay > 0) {
@@ -128,7 +135,7 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
               success: false,
               error: "Too many failed login attempts. Please try again later.",
               retryAfter: Math.ceil(progressiveDelay / 1000),
-              limitType: 'progressive',
+              limitType: "progressive",
               progressiveDelay: Math.ceil(progressiveDelay / 1000),
             });
           }
@@ -136,14 +143,20 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
           // For other endpoints, calculate progressive delay based on rate limit exceedance
           const exceedCountKey = `ratelimit:${endpoint}:${identifier}:exceedCount`;
           const exceedCountResult = await redisService.get(exceedCountKey);
-          const exceedCount = exceedCountResult.data ? parseInt(exceedCountResult.data) : 0;
+          const exceedCount = exceedCountResult.data
+            ? parseInt(exceedCountResult.data)
+            : 0;
 
           if (exceedCount > 0 && config.progressiveBaseDelay) {
             // Calculate progressive delay: baseDelay * (2 ^ (exceedCount - 1))
-            progressiveDelay = config.progressiveBaseDelay * Math.pow(2, exceedCount - 1);
+            progressiveDelay =
+              config.progressiveBaseDelay * Math.pow(2, exceedCount - 1);
 
             // Cap the delay at maxProgressiveDelay if specified
-            if (config.maxProgressiveDelay && progressiveDelay > config.maxProgressiveDelay) {
+            if (
+              config.maxProgressiveDelay &&
+              progressiveDelay > config.maxProgressiveDelay
+            ) {
               progressiveDelay = config.maxProgressiveDelay;
             }
           }
@@ -184,7 +197,8 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
           }
         } catch (redisError) {
           logger.error(
-            "Redis rate limiting failed, switching to in-memory fallback", redisError as Error,
+            "Redis rate limiting failed, switching to in-memory fallback",
+            redisError as Error,
             {
               endpoint,
               limitType,
@@ -206,7 +220,7 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
 
           if (!memoryResult.allowed) {
             // For auth endpoints, record the failure for progressive backoff
-            if (config.progressiveBackoff && endpoint === 'auth') {
+            if (config.progressiveBackoff && endpoint === "auth") {
               await progressiveAuthLimiter.recordFailure(identifier);
             }
 
@@ -231,7 +245,7 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
 
         if (!memoryResult.allowed) {
           // For auth endpoints, record the failure for progressive backoff
-          if (config.progressiveBackoff && endpoint === 'auth') {
+          if (config.progressiveBackoff && endpoint === "auth") {
             await progressiveAuthLimiter.recordFailure(identifier);
           }
 
@@ -260,23 +274,34 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
       // ✅ Check if limit exceeded
       if (current > effectiveMaxRequests) {
         // For auth endpoints, record the failure for progressive backoff
-        if (config.progressiveBackoff && endpoint === 'auth') {
-          const failureInfo = await progressiveAuthLimiter.recordFailure(identifier);
+        if (config.progressiveBackoff && endpoint === "auth") {
+          const failureInfo =
+            await progressiveAuthLimiter.recordFailure(identifier);
           progressiveDelay = failureInfo.delayMs;
         } else if (config.progressiveBackoff) {
           // For other endpoints, increment exceed count for progressive delay calculation
           const exceedCountKey = `ratelimit:${endpoint}:${identifier}:exceedCount`;
           const exceedCountResult = await redisService.get(exceedCountKey);
-          const exceedCount = exceedCountResult.data ? parseInt(exceedCountResult.data) : 0;
+          const exceedCount = exceedCountResult.data
+            ? parseInt(exceedCountResult.data)
+            : 0;
           const newExceedCount = exceedCount + 1;
 
-          await redisService.setex(exceedCountKey, config.windowMs / 1000, newExceedCount.toString());
+          await redisService.setex(
+            exceedCountKey,
+            config.windowMs / 1000,
+            newExceedCount.toString()
+          );
 
           // Recalculate progressive delay with new exceed count
           if (config.progressiveBaseDelay) {
-            progressiveDelay = config.progressiveBaseDelay * Math.pow(2, newExceedCount - 1);
+            progressiveDelay =
+              config.progressiveBaseDelay * Math.pow(2, newExceedCount - 1);
 
-            if (config.maxProgressiveDelay && progressiveDelay > config.maxProgressiveDelay) {
+            if (
+              config.maxProgressiveDelay &&
+              progressiveDelay > config.maxProgressiveDelay
+            ) {
               progressiveDelay = config.maxProgressiveDelay;
             }
           }
@@ -294,7 +319,7 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
           progressiveDelay,
           url: req.originalUrl,
           method: req.method,
-          userAgent: req.get('User-Agent'),
+          userAgent: req.get("User-Agent"),
         });
 
         // Apply progressive delay if configured
@@ -305,9 +330,14 @@ export function createRateLimiter(endpoint: string, config: RateLimitConfig) {
         return res.status(429).json({
           success: false,
           error: config.message || "Too many requests, please try again later",
-          retryAfter: Math.ceil((resetTime - Date.now()) / 1000) + Math.ceil(progressiveDelay / 1000),
+          retryAfter:
+            Math.ceil((resetTime - Date.now()) / 1000) +
+            Math.ceil(progressiveDelay / 1000),
           limitType, // Indicate whether it was user or IP limit
-          progressiveDelay: progressiveDelay > 0 ? Math.ceil(progressiveDelay / 1000) : undefined,
+          progressiveDelay:
+            progressiveDelay > 0
+              ? Math.ceil(progressiveDelay / 1000)
+              : undefined,
         });
       }
 
@@ -374,7 +404,13 @@ export const RateLimiters = {
   trading: createRateLimiter("trading", RATE_LIMIT_CONFIGS.trading),
   balance: createRateLimiter("balance", RATE_LIMIT_CONFIGS.balance),
   websocket: createRateLimiter("websocket", RATE_LIMIT_CONFIGS.websocket),
-  botInstances: createRateLimiter("bot-instances", RATE_LIMIT_CONFIGS.botInstances),
-  kodiakStatus: createRateLimiter("kodiak-status", RATE_LIMIT_CONFIGS.kodiakStatus),
+  botInstances: createRateLimiter(
+    "bot-instances",
+    RATE_LIMIT_CONFIGS.botInstances
+  ),
+  kodiakStatus: createRateLimiter(
+    "kodiak-status",
+    RATE_LIMIT_CONFIGS.kodiakStatus
+  ),
   kodiakApi: createRateLimiter("kodiak-api", RATE_LIMIT_CONFIGS.kodiakApi),
 };

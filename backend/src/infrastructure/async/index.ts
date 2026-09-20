@@ -16,4 +16,9 @@
  */
 
 // Export async operation manager
-export { getAsyncOperationManager, executeAsync, submitBackgroundJob, createContextLogger } from './async-operation-manager.service';
+export {
+  getAsyncOperationManager,
+  executeAsync,
+  submitBackgroundJob,
+  createContextLogger,
+} from "./async-operation-manager.service";

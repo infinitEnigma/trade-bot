@@ -19,29 +19,36 @@ import { IPasswordService } from "@trade-bot/shared";
  * Provides password hashing and verification with configurable rounds.
  */
 export class PasswordServiceAdapter implements IPasswordService {
-    private readonly DEFAULT_ROUNDS = 12;
+  private readonly DEFAULT_ROUNDS = 12;
 
-    /**
-     * Hash a password using bcrypt
-     */
-    async hash(password: string, rounds: number = this.DEFAULT_ROUNDS): Promise<string> {
-        try {
-            return await bcrypt.hash(password, rounds);
-        } catch (error) {
-            throw new Error(`Failed to hash password: ${error instanceof Error ? error.message : String(error)}`);
-        }
+  /**
+   * Hash a password using bcrypt
+   */
+  async hash(
+    password: string,
+    rounds: number = this.DEFAULT_ROUNDS
+  ): Promise<string> {
+    try {
+      return await bcrypt.hash(password, rounds);
+    } catch (error) {
+      throw new Error(
+        `Failed to hash password: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
+  }
 
-    /**
-     * Verify a password against its hash
-     */
-    async verify(password: string, hash: string): Promise<boolean> {
-        try {
-            return await bcrypt.compare(password, hash);
-        } catch (error) {
-            throw new Error(`Failed to verify password: ${error instanceof Error ? error.message : String(error)}`);
-        }
+  /**
+   * Verify a password against its hash
+   */
+  async verify(password: string, hash: string): Promise<boolean> {
+    try {
+      return await bcrypt.compare(password, hash);
+    } catch (error) {
+      throw new Error(
+        `Failed to verify password: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
+  }
 }
 
 // Export singleton instance

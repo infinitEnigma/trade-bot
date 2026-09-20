@@ -16,7 +16,10 @@ interface StrategyListProps {
   onBotStatusChange: () => void;
   isLoading: boolean;
   formatCurrency: (value: number) => string;
-  validateStrategyConfig: (type: StrategyType, config: StrategyConfig) => { isValid: boolean; errors: string[] };
+  validateStrategyConfig: (
+    type: StrategyType,
+    config: StrategyConfig
+  ) => { isValid: boolean; errors: string[] };
   formatStrategyType: (type: StrategyType) => string;
   getStrategyTypeColor: (type: StrategyType) => string;
 }
@@ -69,10 +72,7 @@ export const StrategyList: React.FC<StrategyListProps> = ({
         <p className="text-textMuted mb-6">
           Create your first automated trading strategy to get started.
         </p>
-        <button
-          onClick={onCreateStrategy}
-          className="btn-primary"
-        >
+        <button onClick={onCreateStrategy} className="btn-primary">
           Create Your First Strategy
         </button>
       </Card>

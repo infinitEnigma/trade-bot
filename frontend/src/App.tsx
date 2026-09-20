@@ -23,15 +23,25 @@ import { LoadingSpinner } from "./shared/components/ui";
 import { AppHeader } from "./shared/components/layout/AppHeader";
 
 // Lazy load pages
-const LandingPage = React.lazy(() => import("./features/landing/pages/LandingPage"));
+const LandingPage = React.lazy(
+  () => import("./features/landing/pages/LandingPage")
+);
 const Login = React.lazy(() => import("./features/auth/pages/Login"));
 const Register = React.lazy(() => import("./features/auth/pages/Register"));
-const Dashboard = React.lazy(() => import("./features/dashboard/pages/Dashboard"));
-const Strategies = React.lazy(() => import("./features/strategies/pages/Strategies"));
+const Dashboard = React.lazy(
+  () => import("./features/dashboard/pages/Dashboard")
+);
+const Strategies = React.lazy(
+  () => import("./features/strategies/pages/Strategies")
+);
 const Settings = React.lazy(() => import("./features/settings/pages/Settings"));
-const Analytics = React.lazy(() => import("./features/analytics/pages/Analytics"));
+const Analytics = React.lazy(
+  () => import("./features/analytics/pages/Analytics")
+);
 const Profile = React.lazy(() => import("./features/auth/pages/Profile"));
-const AdminDashboard = React.lazy(() => import("./features/admin/pages/AdminDashboard"));
+const AdminDashboard = React.lazy(
+  () => import("./features/admin/pages/AdminDashboard")
+);
 
 // Protected Route Component
 const ProtectedRoute = ({
@@ -72,9 +82,7 @@ const ProtectedRoute = ({
 
 // Minimal Providers for Auth Pages (Login/Register)
 const MinimalProviders = ({ children }: { children: React.ReactNode }) => (
-  <ThemeProvider defaultTheme="dark">
-    {children}
-  </ThemeProvider>
+  <ThemeProvider defaultTheme="dark">{children}</ThemeProvider>
 );
 
 // Full Providers for Authenticated App
@@ -119,8 +127,9 @@ const AnimatedRoutes = () => {
     duration: 0.4,
   };
 
-  const isAuthRoute = location.pathname === '/login' || location.pathname === '/register';
-  const isLandingRoute = location.pathname === '/';
+  const isAuthRoute =
+    location.pathname === "/login" || location.pathname === "/register";
+  const isLandingRoute = location.pathname === "/";
 
   return (
     <div className="min-h-screen bg-background text-text">
@@ -277,8 +286,6 @@ const AnimatedRoutes = () => {
 
 // Old AppRouter removed - replaced with conditional version below
 
-
-
 // Conditional WebSocket Connection Component - Only for VERIFIED users
 const ConditionalWebSocketInitializer = () => {
   const { user, isAuthenticated } = useAuth();
@@ -286,26 +293,27 @@ const ConditionalWebSocketInitializer = () => {
 
   React.useEffect(() => {
     const isLandingPage = location.pathname === "/";
-    const isAuthPage = location.pathname === "/login" || location.pathname === "/register";
+    const isAuthPage =
+      location.pathname === "/login" || location.pathname === "/register";
 
     // Skip WebSocket initialization on landing and auth pages
     if (isLandingPage || isAuthPage) {
-      console.log('📡 Skipping WebSocket initialization on', location.pathname);
+      console.log("📡 Skipping WebSocket initialization on", location.pathname);
       websocketSubscriptionManager.cleanup();
       return;
     }
 
     // Only initialize WebSocket for authenticated VERIFIED users
-    if (isAuthenticated && user?.userLevel === 'VERIFIED') {
-      console.log('📡 Initializing WebSocket for VERIFIED user:', user.email);
+    if (isAuthenticated && user?.userLevel === "VERIFIED") {
+      console.log("📡 Initializing WebSocket for VERIFIED user:", user.email);
 
       // Initialize WebSocket using our singleton client
       const connectWebSocket = async () => {
         try {
           await websocketClient.connect();
-          console.log('📡 WebSocket connection initialized for VERIFIED user');
+          console.log("📡 WebSocket connection initialized for VERIFIED user");
         } catch (error) {
-          console.error('📡 Failed to initialize WebSocket:', error);
+          console.error("📡 Failed to initialize WebSocket:", error);
         }
       };
 
@@ -313,11 +321,11 @@ const ConditionalWebSocketInitializer = () => {
 
       return () => {
         // Cleanup when user logs out or level changes
-        console.log('📡 Cleaning up WebSocket connection');
+        console.log("📡 Cleaning up WebSocket connection");
         websocketSubscriptionManager.cleanup();
         websocketClient.cleanup();
       };
-    } else if (!isAuthenticated || user?.userLevel !== 'VERIFIED') {
+    } else if (!isAuthenticated || user?.userLevel !== "VERIFIED") {
       // Clean up any existing connections for non-verified users
       websocketSubscriptionManager.cleanup();
       websocketClient.cleanup();
@@ -326,8 +334,6 @@ const ConditionalWebSocketInitializer = () => {
 
   return null;
 };
-
-
 
 // App Router Component with Conditional Providers
 const AppRouter = () => {

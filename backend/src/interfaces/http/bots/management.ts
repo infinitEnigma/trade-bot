@@ -67,18 +67,22 @@
  */
 
 import { Router, Response, NextFunction } from "express";
-import { v4 as uuidv4 } from "uuid";
-import { authMiddleware, AuthenticatedRequest } from "../../middleware/auth.middleware";
+import {
+  authMiddleware,
+  AuthenticatedRequest,
+} from "../../middleware/auth.middleware";
 import { query } from "../../../database/pool";
 import {
-    ValidationError,
-    NotFoundError,
-    DatabaseError,
-    ConflictError,
-    AuthenticationError,
-    createErrorResponse,
+  ValidationError,
+  NotFoundError,
+  DatabaseError,
+  AuthenticationError,
+  createErrorResponse,
 } from "@trade-bot/shared";
-import { getCorrelationId, getContextForLogging } from "../../../shared/utils/context";
+import {
+  getCorrelationId,
+  getContextForLogging,
+} from "../../../shared/utils/context";
 import { validators } from "../../middleware/validation.middleware";
 import { serviceProvider } from "../../../core/service-provider";
 import { botLifecycleService } from "../../../core/bots/bot-lifecycle.service";
@@ -92,31 +96,31 @@ const router = Router();
  * Helper function to get user ID with proper null checking
  */
 function getUserId(req: AuthenticatedRequest): string {
-    const userId = req.user?.userId;
-    if (!userId) {
-        logger.warn("Unauthorized access attempt - user not authenticated", {
-            ...getContextForLogging(),
-            userId: "unauthenticated",
-        });
-        throw new AuthenticationError("User not authenticated");
-    }
-    return userId;
+  const userId = req.user?.userId;
+  if (!userId) {
+    logger.warn("Unauthorized access attempt - user not authenticated", {
+      ...getContextForLogging(),
+      userId: "unauthenticated",
+    });
+    throw new AuthenticationError("User not authenticated");
+  }
+  return userId;
 }
 
 /**
  * Check if user has verified Kodiak credentials (without decrypting)
  */
 async function hasUserKodiakCredentials(userId: string): Promise<boolean> {
-    try {
-        const marketService = serviceProvider.getMarketService();
-        const hasCredentials = await marketService.hasUserKodiakCredentials(userId);
-        return hasCredentials;
-    } catch (error) {
-        logger.error("Failed to check user Kodiak credentials", error as Error, {
-            userId,
-        });
-        return false;
-    }
+  try {
+    const marketService = serviceProvider.getMarketService();
+    const hasCredentials = await marketService.hasUserKodiakCredentials(userId);
+    return hasCredentials;
+  } catch (error) {
+    logger.error("Failed to check user Kodiak credentials", error as Error, {
+      userId,
+    });
+    return false;
+  }
 }
 
 /**
@@ -176,41 +180,41 @@ async function hasUserKodiakCredentials(userId: string): Promise<boolean> {
  * @returns Promise<void> - JSON response with bot instances or error
  */
 router.get(
-    "/instances",
-    authMiddleware,
-    RateLimiters.botInstances, // ✅ Apply rate limiting
-    async (req: AuthenticatedRequest, res: Response) => {
-        const userId = req.user?.userId;
-        if (!userId) {
-            logger.warn("Unauthorized access attempt - user not authenticated", {
-                ...getContextForLogging(),
-                userId: "unauthenticated",
-            });
-            const authError = new AuthenticationError("User not authenticated");
-            return res.status(authError.statusCode).json(
-                createErrorResponse(authError, getCorrelationId())
-            );
-        }
-
-        try {
-            const botManagementService = serviceProvider.getBotManagementService();
-            const botInstances = await botManagementService.getBotInstances(userId);
-
-            res.json({
-                success: true,
-                data: botInstances,
-                timestamp: Date.now(),
-            });
-        } catch (err) {
-            logger.error("Get bot instances error", err as Error, {
-                userId,
-            });
-            const dbError = new DatabaseError("Failed to get bot instances");
-            res.status(dbError.statusCode).json(
-                createErrorResponse(dbError, getCorrelationId())
-            );
-        }
+  "/instances",
+  authMiddleware,
+  RateLimiters.botInstances, // ✅ Apply rate limiting
+  async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId;
+    if (!userId) {
+      logger.warn("Unauthorized access attempt - user not authenticated", {
+        ...getContextForLogging(),
+        userId: "unauthenticated",
+      });
+      const authError = new AuthenticationError("User not authenticated");
+      return res
+        .status(authError.statusCode)
+        .json(createErrorResponse(authError, getCorrelationId()));
     }
+
+    try {
+      const botManagementService = serviceProvider.getBotManagementService();
+      const botInstances = await botManagementService.getBotInstances(userId);
+
+      res.json({
+        success: true,
+        data: botInstances,
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      logger.error("Get bot instances error", err as Error, {
+        userId,
+      });
+      const dbError = new DatabaseError("Failed to get bot instances");
+      res
+        .status(dbError.statusCode)
+        .json(createErrorResponse(dbError, getCorrelationId()));
+    }
+  }
 );
 
 /**
@@ -328,363 +332,402 @@ router.get(
  * @returns Promise<void> - JSON response with bot details or error
  */
 router.post(
-    "/start",
-    authMiddleware,
-    async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-        // Only VERIFIED users can start bots
-        const userLevel = req.user?.userLevel;
-        if (userLevel !== "VERIFIED") {
-            return res.status(403).json({
-                success: false,
-                error: "Bot functions require VERIFIED user level. Please complete wallet verification."
-            });
-        }
-        next();
-    },
-    validators.startBot,
-    async (req: AuthenticatedRequest, res: Response) => {
-        try {
-            const userId = getUserId(req);
-            const { strategyId, notionalAmount } = req.body;
-
-            // Ensure trading engine process is running
-            await serviceProvider.getEngineManager().ensureEngineRunning();
-
-            // Check if user has verified credentials first
-            const hasCredentials = await hasUserKodiakCredentials(userId);
-            if (!hasCredentials) {
-                const authError = new ValidationError("No verified Kodiak credentials found");
-                return res.status(authError.statusCode).json(createErrorResponse(authError, getCorrelationId()));
-            }
-
-            // Check control-plane health: Redis Streams must be available
-            // to deliver lifecycle commands to the engine
-            const controlPlaneHealthy = await redisService.isHealthy();
-            if (!controlPlaneHealthy) {
-                logger.warn("Bot start rejected: control plane (Redis) not operational", { userId, strategyId });
-                return res.status(503).json({
-                    success: false,
-                    error: "Trading control plane is not operational. Please try again later.",
-                    retryAfter: 30,
-                    timestamp: Date.now(),
-                });
-            }
-
-            // Desired-state transition: creates the instance, persists
-            // desired_state=RUNNING / actual_state=STARTING, records the
-            // lifecycle audit trail, and sends BOT_START to the engine via
-            // Redis Streams. The engine fetches credentials out-of-band
-            // after COMMAND_ACCEPTED - no secrets ever travel through the
-            // control protocol or Socket.IO.
-            const lifecycle = await botLifecycleService.createAndStart(userId, strategyId, parseFloat(notionalAmount));
-
-            // Log credential access for audit trail (engine will fetch
-            // credentials through the authenticated engine endpoint).
-            await query(
-                "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
-                [
-                    userId,
-                    "CREDENTIAL_ACCESS",
-                    {
-                        action: "bot_start",
-                        botId: lifecycle.botId,
-                        strategyId,
-                        correlationId: lifecycle.correlationId,
-                        timestamp: new Date().toISOString(),
-                    },
-                ]
-            );
-
-            // 202 Accepted: the bot is STARTING, not yet RUNNING.
-            // Only a STATE_CHANGED event from the engine means RUNNING.
-            res.status(202).json({
-                success: true,
-                data: {
-                    botId: lifecycle.botId,
-                    strategyId,
-                    desiredState: lifecycle.desiredState,
-                    actualState: lifecycle.actualState,
-                    correlationId: lifecycle.correlationId,
-                },
-                timestamp: Date.now(),
-            });
-        } catch (err) {
-            logger.error("Start bot error", err as Error, {
-                ...getContextForLogging(),
-                userId: req.user?.userId,
-            });
-            const statusCode = (err as Error & { statusCode?: number }).statusCode ?? 500;
-            const message = statusCode === 404 ? "Strategy not found" : statusCode === 409 ? (err as Error).message : statusCode === 503 ? "Engine communication unavailable" : "Failed to start bot";
-            res.status(statusCode).json({
-                success: false,
-                error: message,
-                timestamp: Date.now(),
-            });
-        }
+  "/start",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    // Only VERIFIED users can start bots
+    const userLevel = req.user?.userLevel;
+    if (userLevel !== "VERIFIED") {
+      return res.status(403).json({
+        success: false,
+        error:
+          "Bot functions require VERIFIED user level. Please complete wallet verification.",
+      });
     }
+    next();
+  },
+  validators.startBot,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { strategyId, notionalAmount } = req.body;
+
+      // Ensure trading engine process is running
+      await serviceProvider.getEngineManager().ensureEngineRunning();
+
+      // Check if user has verified credentials first
+      const hasCredentials = await hasUserKodiakCredentials(userId);
+      if (!hasCredentials) {
+        const authError = new ValidationError(
+          "No verified Kodiak credentials found"
+        );
+        return res
+          .status(authError.statusCode)
+          .json(createErrorResponse(authError, getCorrelationId()));
+      }
+
+      // Check control-plane health: Redis Streams must be available
+      // to deliver lifecycle commands to the engine
+      const controlPlaneHealthy = await redisService.isHealthy();
+      if (!controlPlaneHealthy) {
+        logger.warn(
+          "Bot start rejected: control plane (Redis) not operational",
+          { userId, strategyId }
+        );
+        return res.status(503).json({
+          success: false,
+          error:
+            "Trading control plane is not operational. Please try again later.",
+          retryAfter: 30,
+          timestamp: Date.now(),
+        });
+      }
+
+      // Desired-state transition: creates the instance, persists
+      // desired_state=RUNNING / actual_state=STARTING, records the
+      // lifecycle audit trail, and sends BOT_START to the engine via
+      // Redis Streams. The engine fetches credentials out-of-band
+      // after COMMAND_ACCEPTED - no secrets ever travel through the
+      // control protocol or Socket.IO.
+      const lifecycle = await botLifecycleService.createAndStart(
+        userId,
+        strategyId,
+        parseFloat(notionalAmount)
+      );
+
+      // Log credential access for audit trail (engine will fetch
+      // credentials through the authenticated engine endpoint).
+      await query(
+        "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
+        [
+          userId,
+          "CREDENTIAL_ACCESS",
+          {
+            action: "bot_start",
+            botId: lifecycle.botId,
+            strategyId,
+            correlationId: lifecycle.correlationId,
+            timestamp: new Date().toISOString(),
+          },
+        ]
+      );
+
+      // 202 Accepted: the bot is STARTING, not yet RUNNING.
+      // Only a STATE_CHANGED event from the engine means RUNNING.
+      res.status(202).json({
+        success: true,
+        data: {
+          botId: lifecycle.botId,
+          strategyId,
+          desiredState: lifecycle.desiredState,
+          actualState: lifecycle.actualState,
+          correlationId: lifecycle.correlationId,
+        },
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      logger.error("Start bot error", err as Error, {
+        ...getContextForLogging(),
+        userId: req.user?.userId,
+      });
+      const statusCode =
+        (err as Error & { statusCode?: number }).statusCode ?? 500;
+      const message =
+        statusCode === 404
+          ? "Strategy not found"
+          : statusCode === 409
+            ? (err as Error).message
+            : statusCode === 503
+              ? "Engine communication unavailable"
+              : "Failed to start bot";
+      res.status(statusCode).json({
+        success: false,
+        error: message,
+        timestamp: Date.now(),
+      });
+    }
+  }
 );
 
 // POST /api/bot/stop
 router.post(
-    "/stop",
-    authMiddleware,
-    async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-        // Only VERIFIED users can stop bots
-        const userLevel = req.user?.userLevel;
-        if (userLevel !== "VERIFIED") {
-            return res.status(403).json({
-                success: false,
-                error: "Bot functions require VERIFIED user level. Please complete wallet verification."
-            });
-        }
-        next();
-    },
-    validators.stopBot,
-    async (req: AuthenticatedRequest, res: Response) => {
-        try {
-            const userId = getUserId(req);
-            const { botId } = req.body;
-
-            // Check control-plane health: Redis Streams must be available
-            // to deliver lifecycle commands to the engine
-            const controlPlaneHealthy = await redisService.isHealthy();
-            if (!controlPlaneHealthy) {
-                logger.warn("Bot stop rejected: control plane (Redis) not operational", { userId, botId });
-                return res.status(503).json({
-                    success: false,
-                    error: "Trading control plane is not operational. Please try again later.",
-                    retryAfter: 30,
-                    timestamp: Date.now(),
-                });
-            }
-
-            // Desired-state transition: persists desired_state=STOPPED,
-            // actual_state=STOPPING (or STOPPED), records the audit trail and
-            // sends BOT_STOP to the engine via Redis Streams. Idempotent.
-            const lifecycle = await botLifecycleService.stop(botId, userId);
-
-            // 202 Accepted: the bot is STOPPING until the engine confirms.
-            res.status(202).json({
-                success: true,
-                data: {
-                    botId: lifecycle.botId,
-                    desiredState: lifecycle.desiredState,
-                    actualState: lifecycle.actualState,
-                    correlationId: lifecycle.correlationId,
-                },
-                timestamp: Date.now(),
-            });
-        } catch (err) {
-            logger.error("Stop bot error", err as Error, {
-                userId: req.user?.userId,
-            });
-            const statusCode = (err as Error & { statusCode?: number }).statusCode ?? 500;
-            res.status(statusCode).json({
-                success: false,
-                error: statusCode === 404 ? "Bot not found" : statusCode === 503 ? "Engine communication unavailable" : "Failed to stop bot",
-                timestamp: Date.now(),
-            });
-        }
+  "/stop",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    // Only VERIFIED users can stop bots
+    const userLevel = req.user?.userLevel;
+    if (userLevel !== "VERIFIED") {
+      return res.status(403).json({
+        success: false,
+        error:
+          "Bot functions require VERIFIED user level. Please complete wallet verification.",
+      });
     }
+    next();
+  },
+  validators.stopBot,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { botId } = req.body;
+
+      // Check control-plane health: Redis Streams must be available
+      // to deliver lifecycle commands to the engine
+      const controlPlaneHealthy = await redisService.isHealthy();
+      if (!controlPlaneHealthy) {
+        logger.warn(
+          "Bot stop rejected: control plane (Redis) not operational",
+          { userId, botId }
+        );
+        return res.status(503).json({
+          success: false,
+          error:
+            "Trading control plane is not operational. Please try again later.",
+          retryAfter: 30,
+          timestamp: Date.now(),
+        });
+      }
+
+      // Desired-state transition: persists desired_state=STOPPED,
+      // actual_state=STOPPING (or STOPPED), records the audit trail and
+      // sends BOT_STOP to the engine via Redis Streams. Idempotent.
+      const lifecycle = await botLifecycleService.stop(botId, userId);
+
+      // 202 Accepted: the bot is STOPPING until the engine confirms.
+      res.status(202).json({
+        success: true,
+        data: {
+          botId: lifecycle.botId,
+          desiredState: lifecycle.desiredState,
+          actualState: lifecycle.actualState,
+          correlationId: lifecycle.correlationId,
+        },
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      logger.error("Stop bot error", err as Error, {
+        userId: req.user?.userId,
+      });
+      const statusCode =
+        (err as Error & { statusCode?: number }).statusCode ?? 500;
+      res.status(statusCode).json({
+        success: false,
+        error:
+          statusCode === 404
+            ? "Bot not found"
+            : statusCode === 503
+              ? "Engine communication unavailable"
+              : "Failed to stop bot",
+        timestamp: Date.now(),
+      });
+    }
+  }
 );
 
 // GET /api/bot/status/:botId
 router.get(
-    "/status/:botId",
-    authMiddleware,
-    async (req: AuthenticatedRequest, res: Response) => {
-        try {
-            const userId = getUserId(req);
-            const botId = req.params.botId as string;
+  "/status/:botId",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const botId = req.params.botId as string;
 
-            // Get bot status from service
-            const botManagementService = serviceProvider.getBotManagementService();
-            const botInstance = await botManagementService.getBotInstance(botId);
+      // Get bot status from service
+      const botManagementService = serviceProvider.getBotManagementService();
+      const botInstance = await botManagementService.getBotInstance(botId);
 
-            if (!botInstance || botInstance.userId !== userId) {
-                const notFoundError = new NotFoundError("Bot not found");
-                return res.status(notFoundError.statusCode).json(
-                    createErrorResponse(notFoundError, getCorrelationId())
-                );
-            }
+      if (!botInstance || botInstance.user_id !== userId) {
+        const notFoundError = new NotFoundError("Bot not found");
+        return res
+          .status(notFoundError.statusCode)
+          .json(createErrorResponse(notFoundError, getCorrelationId()));
+      }
 
-            const statusInfo = {
-                ...botInstance,
-                desiredState: botInstance.desired_state,
-                actualState: botInstance.actual_state,
-                statusValidation: {
-                    isStale: false, // Simplified
-                    lastHeartbeatAge: 0,
-                    engineHealth: {
-                        running: true,
-                        lastHealthCheck: Date.now(),
-                        status: 'healthy'
-                    }
-                }
-            };
+      const statusInfo = {
+        ...botInstance,
+        desiredState: botInstance.desired_state,
+        actualState: botInstance.actual_state,
+        statusValidation: {
+          isStale: false, // Simplified
+          lastHeartbeatAge: 0,
+          engineHealth: {
+            running: true,
+            lastHealthCheck: Date.now(),
+            status: "healthy",
+          },
+        },
+      };
 
-            res.json({
-                success: true,
-                data: statusInfo,
-                timestamp: Date.now(),
-            });
-        } catch (err) {
-            logger.error("Get bot status error", err as Error, {
-                userId: req.user?.userId,
-                botId: req.params.botId,
-            });
-            const dbError = new DatabaseError("Failed to get bot status");
-            res.status(dbError.statusCode).json(
-                createErrorResponse(dbError, getCorrelationId())
-            );
-        }
+      res.json({
+        success: true,
+        data: statusInfo,
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      logger.error("Get bot status error", err as Error, {
+        userId: req.user?.userId,
+        botId: req.params.botId,
+      });
+      const dbError = new DatabaseError("Failed to get bot status");
+      res
+        .status(dbError.statusCode)
+        .json(createErrorResponse(dbError, getCorrelationId()));
     }
+  }
 );
 
 // POST /api/bot/status/sync
 router.post(
-    "/status/sync",
-    authMiddleware,
-    async (req: AuthenticatedRequest, res: Response) => {
-        try {
-            const userId = getUserId(req);
-            const { botId } = req.body;
+  "/status/sync",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { botId } = req.body;
 
-            if (!botId) {
-                const validationError = new ValidationError("Bot ID required");
-                return res.status(validationError.statusCode).json(
-                    createErrorResponse(validationError, getCorrelationId())
-                );
-            }
+      if (!botId) {
+        const validationError = new ValidationError("Bot ID required");
+        return res
+          .status(validationError.statusCode)
+          .json(createErrorResponse(validationError, getCorrelationId()));
+      }
 
-            // Validate bot ownership (simplified)
-            const botResult = await query<{ id: string; status: string }>("SELECT id, status FROM bot_instances WHERE id = $1 AND user_id = $2", [botId, userId]);
-            if (botResult.rows.length === 0) {
-                const notFoundError = new NotFoundError("Bot not found");
-                return res.status(notFoundError.statusCode).json(
-                    createErrorResponse(notFoundError, getCorrelationId())
-                );
-            }
+      // Validate bot ownership (simplified)
+      const botResult = await query<{ id: string; status: string }>(
+        "SELECT id, status FROM bot_instances WHERE id = $1 AND user_id = $2",
+        [botId, userId]
+      );
+      if (botResult.rows.length === 0) {
+        const notFoundError = new NotFoundError("Bot not found");
+        return res
+          .status(notFoundError.statusCode)
+          .json(createErrorResponse(notFoundError, getCorrelationId()));
+      }
 
-            // Simplified status sync - just return current status
-            res.json({
-                success: true,
-                data: {
-                    botId,
-                    status: botResult.rows[0].status,
-                    reconciled: false,
-                    reason: "sync_completed",
-                    engineHealth: { running: true, lastHealthCheck: Date.now(), status: 'healthy' },
-                },
-                timestamp: Date.now(),
-            });
-        } catch (err) {
-            logger.error("Bot status sync error", err as Error, {
-                userId: req.user?.userId,
-                botId: req.body?.botId,
-            });
-            const dbError = new DatabaseError("Failed to sync bot status");
-            res.status(dbError.statusCode).json(
-                createErrorResponse(dbError, getCorrelationId())
-            );
-        }
+      // Simplified status sync - just return current status
+      res.json({
+        success: true,
+        data: {
+          botId,
+          status: botResult.rows[0].status,
+          reconciled: false,
+          reason: "sync_completed",
+          engineHealth: {
+            running: true,
+            lastHealthCheck: Date.now(),
+            status: "healthy",
+          },
+        },
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      logger.error("Bot status sync error", err as Error, {
+        userId: req.user?.userId,
+        botId: req.body?.botId,
+      });
+      const dbError = new DatabaseError("Failed to sync bot status");
+      res
+        .status(dbError.statusCode)
+        .json(createErrorResponse(dbError, getCorrelationId()));
     }
+  }
 );
 
 // GET /api/bot/performance/:botId
 router.get(
-    "/performance/:botId",
-    authMiddleware,
-    async (req: AuthenticatedRequest, res: Response) => {
-        try {
-            const userId = getUserId(req);
-            const botId = req.params.botId as string;
+  "/performance/:botId",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const _userId = getUserId(req);
+      const botId = req.params.botId as string;
 
-            // Get bot performance from service
-            const botManagementService = serviceProvider.getBotManagementService();
-            const performance = await botManagementService.getBotPerformance(botId);
+      // Get bot performance from service
+      const botManagementService = serviceProvider.getBotManagementService();
+      const performance = await botManagementService.getBotPerformance(botId);
 
-            res.json({
-                success: true,
-                data: performance,
-                timestamp: Date.now(),
-            });
-        } catch (err) {
-            logger.error("Get bot performance error", err as Error, {
-                userId: req.user?.userId,
-                botId: req.params.botId,
-            });
-            const dbError = new DatabaseError("Failed to get bot performance");
-            res.status(dbError.statusCode).json(
-                createErrorResponse(dbError, getCorrelationId())
-            );
-        }
+      res.json({
+        success: true,
+        data: performance,
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      logger.error("Get bot performance error", err as Error, {
+        userId: req.user?.userId,
+        botId: req.params.botId,
+      });
+      const dbError = new DatabaseError("Failed to get bot performance");
+      res
+        .status(dbError.statusCode)
+        .json(createErrorResponse(dbError, getCorrelationId()));
     }
+  }
 );
 
 // GET /api/bot/engine/status
 router.get(
-    "/engine/status",
-    authMiddleware,
-    async (req: AuthenticatedRequest, res: Response) => {
-        try {
-            const _userId = getUserId(req);
-            const status = await serviceProvider.getEngineManager().getEngineStatus();
+  "/engine/status",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const _userId = getUserId(req);
+      const status = await serviceProvider.getEngineManager().getEngineStatus();
 
-            res.json({
-                success: true,
-                data: status,
-                timestamp: Date.now(),
-            });
-        } catch (err) {
-            logger.error("Get engine status error", err as Error, {
-                userId: req.user?.userId,
-            });
-            const dbError = new DatabaseError("Failed to get engine status");
-            res.status(dbError.statusCode).json(
-                createErrorResponse(dbError, getCorrelationId())
-            );
-        }
+      res.json({
+        success: true,
+        data: status,
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      logger.error("Get engine status error", err as Error, {
+        userId: req.user?.userId,
+      });
+      const dbError = new DatabaseError("Failed to get engine status");
+      res
+        .status(dbError.statusCode)
+        .json(createErrorResponse(dbError, getCorrelationId()));
     }
+  }
 );
 
 // POST /api/bot/emergency-stop
 router.post(
-    "/emergency-stop",
-    authMiddleware,
-    async (req: AuthenticatedRequest, res: Response) => {
-        try {
-            const userId = getUserId(req);
-            const { botId } = req.body;
+  "/emergency-stop",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { botId } = req.body;
 
-            if (!botId) {
-                return res
-                    .status(400)
-                    .json({ success: false, error: "Bot ID required" });
-            }
+      if (!botId) {
+        return res
+          .status(400)
+          .json({ success: false, error: "Bot ID required" });
+      }
 
-            // Initiate emergency stop using service
-            const botManagementService = serviceProvider.getBotManagementService();
-            await botManagementService.emergencyStop(botId, userId);
+      // Initiate emergency stop using service
+      const botManagementService = serviceProvider.getBotManagementService();
+      await botManagementService.emergencyStop(botId, userId);
 
-            res.json({
-                success: true,
-                data: {
-                    botId,
-                    status: "FORCE_STOPPING",
-                    message: "Emergency stop initiated. All orders will be cancelled.",
-                },
-                timestamp: Date.now(),
-            });
-        } catch (err) {
-            logger.error("Emergency stop error", err as Error, {
-                userId: req.user?.userId,
-            });
-            res
-                .status(500)
-                .json({ success: false, error: "Failed to initiate emergency stop" });
-        }
+      res.json({
+        success: true,
+        data: {
+          botId,
+          status: "FORCE_STOPPING",
+          message: "Emergency stop initiated. All orders will be cancelled.",
+        },
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      logger.error("Emergency stop error", err as Error, {
+        userId: req.user?.userId,
+      });
+      res
+        .status(500)
+        .json({ success: false, error: "Failed to initiate emergency stop" });
     }
+  }
 );
 
 export { router as botManagementRoutes };

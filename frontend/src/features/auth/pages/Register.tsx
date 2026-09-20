@@ -5,7 +5,11 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth";
 import { PageLayout } from "../../../shared/components/layout";
 import { ValidatedInput } from "../../../shared/components/forms";
-import { validateEmail, validatePasswordRequirements, validatePasswordConfirmation } from "../../../shared/validation";
+import {
+  validateEmail,
+  validatePasswordRequirements,
+  validatePasswordConfirmation,
+} from "../../../shared/validation";
 
 const Register: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -17,12 +21,19 @@ const Register: React.FC = () => {
 
   const emailValidation = validateEmail(email);
   const passwordValidation = validatePasswordRequirements(password);
-  const confirmValidation = validatePasswordConfirmation(password, confirmPassword);
+  const confirmValidation = validatePasswordConfirmation(
+    password,
+    confirmPassword
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!emailValidation.isValid || !passwordValidation.isValid || !confirmValidation.isValid) {
+    if (
+      !emailValidation.isValid ||
+      !passwordValidation.isValid ||
+      !confirmValidation.isValid
+    ) {
       return; // Validation errors will be shown
     }
 
@@ -58,7 +69,7 @@ const Register: React.FC = () => {
               validation={{
                 isValid: emailValidation.isValid,
                 message: emailValidation.message,
-                touched: email.length > 0
+                touched: email.length > 0,
               }}
               placeholder="your@email.com"
               required
@@ -72,7 +83,7 @@ const Register: React.FC = () => {
               validation={{
                 isValid: passwordValidation.isValid,
                 message: passwordValidation.message,
-                touched: password.length > 0
+                touched: password.length > 0,
               }}
               placeholder="••••••••"
               required
@@ -86,7 +97,7 @@ const Register: React.FC = () => {
               validation={{
                 isValid: confirmValidation.isValid,
                 message: confirmValidation.message,
-                touched: confirmPassword.length > 0
+                touched: confirmPassword.length > 0,
               }}
               placeholder="••••••••"
               required
@@ -94,7 +105,12 @@ const Register: React.FC = () => {
 
             <button
               type="submit"
-              disabled={loading || !emailValidation.isValid || !passwordValidation.isValid || !confirmValidation.isValid}
+              disabled={
+                loading ||
+                !emailValidation.isValid ||
+                !passwordValidation.isValid ||
+                !confirmValidation.isValid
+              }
               className="btn-primary w-full"
             >
               {loading ? "Creating account..." : "Create Account"}

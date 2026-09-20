@@ -17,11 +17,18 @@ import {
   Settings,
 } from "lucide-react";
 
-
 // Lazy load heavy components for better performance
-const CandlestickChart = lazy(() => import("../../../shared/components/charts/CandlestickChart"));
-const StrategyForm = lazy(() => import("../components/StrategyForm").then(module => ({ default: module.StrategyForm })));
-const BotControls = lazy(() => import("../bots/components").then(module => ({ default: module.BotControls })));
+const CandlestickChart = lazy(
+  () => import("../../../shared/components/charts/CandlestickChart")
+);
+const StrategyForm = lazy(() =>
+  import("../components/StrategyForm").then(module => ({
+    default: module.StrategyForm,
+  }))
+);
+const BotControls = lazy(() =>
+  import("../bots/components").then(module => ({ default: module.BotControls }))
+);
 import { useBalance } from "../../../shared/hooks";
 import { useAuth } from "../../auth";
 import { UserProgressCard } from "../../../shared/components/user/UserProgressCard";
@@ -87,9 +94,9 @@ const Strategies: React.FC = React.memo(() => {
   const { data: engineStatus } = useQuery({
     queryKey: ["engine-status"],
     queryFn: () => tradingApi.getEngineStatus(),
-    staleTime: 120000,        // ⬆️ Increased to 2 minutes (from 30s)
-    gcTime: 300000,           // ⬆️ Increased to 5 minutes (from 1min)
-    refetchInterval: 300000,   // 🔄 Poll every 5 minutes (not continuously)
+    staleTime: 120000, // ⬆️ Increased to 2 minutes (from 30s)
+    gcTime: 300000, // ⬆️ Increased to 5 minutes (from 1min)
+    refetchInterval: 300000, // 🔄 Poll every 5 minutes (not continuously)
     refetchOnWindowFocus: false, // 🚫 Don't refetch on focus
     refetchIntervalInBackground: false, // 🚫 Don't poll in background
     enabled: user?.userLevel === "VERIFIED", // Only for verified users
@@ -133,7 +140,9 @@ const Strategies: React.FC = React.memo(() => {
   };
 
   const getBotForStrategy = (strategyId: string) => {
-    return bots.find((bot: { strategy_id: string }) => bot.strategy_id === strategyId);
+    return bots.find(
+      (bot: { strategy_id: string }) => bot.strategy_id === strategyId
+    );
   };
 
   // ✅ Fetch real balance data (WebSocket for verified users)
@@ -152,9 +161,9 @@ const Strategies: React.FC = React.memo(() => {
       <PageLayout className="flex items-center justify-center">
         <Container size="sm" className="text-center">
           <div className="glass-card p-8">
-        <div className="w-12 h-12 mx-auto mb-6 bg-red-500/10 rounded-full flex items-center justify-center">
-          <AlertTriangle className="w-6 h-6 text-red-500" />
-        </div>
+            <div className="w-12 h-12 mx-auto mb-6 bg-red-500/10 rounded-full flex items-center justify-center">
+              <AlertTriangle className="w-6 h-6 text-red-500" />
+            </div>
             <h1 className="text-2xl font-bold text-text mb-4">
               Trading Features Unavailable
             </h1>
@@ -218,11 +227,11 @@ const Strategies: React.FC = React.memo(() => {
     >
       <Container
         size={{
-          default: 'lg',
-          xl: 'xl',
-          '2xl': '2xl',
-          '3xl': '3xl',
-          '4xl': '4xl'
+          default: "lg",
+          xl: "xl",
+          "2xl": "2xl",
+          "3xl": "3xl",
+          "4xl": "4xl",
         }}
         className="py-2 space-y-4"
       >
@@ -233,10 +242,14 @@ const Strategies: React.FC = React.memo(() => {
 
         {/* Candlestick Chart - Advanced trading data for verified users */}
         <div className="mb-8">
-          <Suspense fallback={<div className="glass-card p-6 animate-pulse">
-            <div className="w-32 h-5 bg-surface rounded mb-4"></div>
-            <div className="bg-surface rounded-lg h-110"></div>
-          </div>}>
+          <Suspense
+            fallback={
+              <div className="glass-card p-6 animate-pulse">
+                <div className="w-32 h-5 bg-surface rounded mb-4"></div>
+                <div className="bg-surface rounded-lg h-110"></div>
+              </div>
+            }
+          >
             <CandlestickChart
               symbol={_selectedSymbol}
               interval="1h"
@@ -268,7 +281,9 @@ const Strategies: React.FC = React.memo(() => {
                 </div>
               ))}
             </div>
-          ) : realBalance || user?.userLevel === "VERIFIED" || user?.userLevel === "REGISTERED" ? (
+          ) : realBalance ||
+            user?.userLevel === "VERIFIED" ||
+            user?.userLevel === "REGISTERED" ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="glass-card p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -422,7 +437,7 @@ const Strategies: React.FC = React.memo(() => {
                     <div className="flex justify-between text-sm">
                       <span className="text-textMuted">Symbol:</span>
                       <span className="text-text font-medium">
-                        {config && 'symbol' in config
+                        {config && "symbol" in config
                           ? (config.symbol as string)
                               ?.replace("PERP_", "")
                               .replace("_USDC", "") || "N/A"
@@ -434,19 +449,27 @@ const Strategies: React.FC = React.memo(() => {
                         <div className="flex justify-between text-sm">
                           <span className="text-textMuted">Grid Size:</span>
                           <span className="text-text">
-                            {config && 'gridSize' in config ? (config.gridSize as number) || 0 : 0} levels
+                            {config && "gridSize" in config
+                              ? (config.gridSize as number) || 0
+                              : 0}{" "}
+                            levels
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-textMuted">Range:</span>
                           <span className="text-text">
-                            {config && 'gridRange' in config ? (config.gridRange as number) || 0 : 0}%
+                            {config && "gridRange" in config
+                              ? (config.gridRange as number) || 0
+                              : 0}
+                            %
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-textMuted">Order Qty:</span>
                           <span className="text-text">
-                            {config && 'orderQuantity' in config ? (config.orderQuantity as number) || 0 : 0}
+                            {config && "orderQuantity" in config
+                              ? (config.orderQuantity as number) || 0
+                              : 0}
                           </span>
                         </div>
                       </>
@@ -499,7 +522,11 @@ const Strategies: React.FC = React.memo(() => {
                   {/* Actions */}
                   <div className="flex items-center gap-2">
                     {bot ? (
-                      <Suspense fallback={<div className="w-24 h-8 bg-surface rounded animate-pulse"></div>}>
+                      <Suspense
+                        fallback={
+                          <div className="w-24 h-8 bg-surface rounded animate-pulse"></div>
+                        }
+                      >
                         <BotControls
                           strategyId={strategy.id}
                           bot={bot}
@@ -511,7 +538,11 @@ const Strategies: React.FC = React.memo(() => {
                         />
                       </Suspense>
                     ) : (
-                      <Suspense fallback={<div className="w-24 h-8 bg-surface rounded animate-pulse"></div>}>
+                      <Suspense
+                        fallback={
+                          <div className="w-24 h-8 bg-surface rounded animate-pulse"></div>
+                        }
+                      >
                         <BotControls
                           strategyId={strategy.id}
                           onStatusChange={() => {
@@ -547,19 +578,23 @@ const Strategies: React.FC = React.memo(() => {
 
         {/* Strategy Form Modals */}
         {showCreateForm && (
-          <Suspense fallback={<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="glass-card p-8 animate-pulse">
-              <div className="w-64 h-8 bg-surface rounded mb-4"></div>
-              <div className="space-y-3">
-                <div className="w-full h-10 bg-surface rounded"></div>
-                <div className="w-full h-10 bg-surface rounded"></div>
-                <div className="flex gap-3">
-                  <div className="w-20 h-10 bg-surface rounded"></div>
-                  <div className="w-24 h-10 bg-surface rounded"></div>
+          <Suspense
+            fallback={
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="glass-card p-8 animate-pulse">
+                  <div className="w-64 h-8 bg-surface rounded mb-4"></div>
+                  <div className="space-y-3">
+                    <div className="w-full h-10 bg-surface rounded"></div>
+                    <div className="w-full h-10 bg-surface rounded"></div>
+                    <div className="flex gap-3">
+                      <div className="w-20 h-10 bg-surface rounded"></div>
+                      <div className="w-24 h-10 bg-surface rounded"></div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>}>
+            }
+          >
             <StrategyForm
               onClose={() => setShowCreateForm(false)}
               onSuccess={() => {
@@ -572,19 +607,23 @@ const Strategies: React.FC = React.memo(() => {
         )}
 
         {editingStrategy && (
-          <Suspense fallback={<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="glass-card p-8 animate-pulse">
-              <div className="w-64 h-8 bg-surface rounded mb-4"></div>
-              <div className="space-y-3">
-                <div className="w-full h-10 bg-surface rounded"></div>
-                <div className="w-full h-10 bg-surface rounded"></div>
-                <div className="flex gap-3">
-                  <div className="w-20 h-10 bg-surface rounded"></div>
-                  <div className="w-24 h-10 bg-surface rounded"></div>
+          <Suspense
+            fallback={
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="glass-card p-8 animate-pulse">
+                  <div className="w-64 h-8 bg-surface rounded mb-4"></div>
+                  <div className="space-y-3">
+                    <div className="w-full h-10 bg-surface rounded"></div>
+                    <div className="w-full h-10 bg-surface rounded"></div>
+                    <div className="flex gap-3">
+                      <div className="w-20 h-10 bg-surface rounded"></div>
+                      <div className="w-24 h-10 bg-surface rounded"></div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>}>
+            }
+          >
             <StrategyForm
               strategy={editingStrategy}
               onClose={() => setEditingStrategy(null)}

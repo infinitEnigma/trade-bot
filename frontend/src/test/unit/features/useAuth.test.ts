@@ -11,581 +11,577 @@ vi.mock("../../../features/auth/services/authService");
 
 // Mock checkAdminQualification to return not qualified by default
 (authService.checkAdminQualification as Mock).mockResolvedValue({
-    success: true,
-    data: { isQualified: false }
+  success: true,
+  data: { isQualified: false },
 });
 
 describe("useAuth hook", () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-        // Reset the checkAdminQualification mock
-        (authService.checkAdminQualification as Mock).mockResolvedValue({
-            success: true,
-            data: { isQualified: false }
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Reset the checkAdminQualification mock
+    (authService.checkAdminQualification as Mock).mockResolvedValue({
+      success: true,
+      data: { isQualified: false },
+    });
+  });
+
+  describe("initial state", () => {
+    it("should initialize with default values", () => {
+      const { result } = renderHook(() => useAuth());
+
+      expect(result.current.user).toBeNull();
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.isLoading).toBe(false);
+    });
+  });
+
+  describe("login functionality", () => {
+    it("should handle login successfully", async () => {
+      const mockUser = {
+        id: "1",
+        email: "test@example.com",
+        userLevel: UserLevel.VERIFIED,
+        roles: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      (authService.login as Mock).mockResolvedValue({
+        success: true,
+        data: { user: mockUser },
+      });
+
+      (authService.getProfile as Mock).mockResolvedValue({
+        success: true,
+        data: {
+          user: mockUser,
+          kodiakStatus: { accountId: "test-account-123", verified: true },
+        },
+      });
+
+      const { result } = renderHook(() => useAuth());
+
+      await act(async () => {
+        await result.current.login({
+          email: "test@example.com",
+          password: "password123",
         });
+      });
+
+      expect(authService.login).toHaveBeenCalledWith(
+        "test@example.com",
+        "password123"
+      );
+      expect(authService.getProfile).toHaveBeenCalled();
+      expect(result.current.user).toEqual(mockUser);
+      expect(result.current.isAuthenticated).toBe(true);
+      expect(result.current.isLoading).toBe(false);
     });
 
-    describe("initial state", () => {
-        it("should initialize with default values", () => {
-            const { result } = renderHook(() => useAuth());
+    it("should handle login failure", async () => {
+      const errorMessage = "Invalid credentials";
+      (authService.login as Mock).mockRejectedValue(new Error(errorMessage));
 
-            expect(result.current.user).toBeNull();
-            expect(result.current.isAuthenticated).toBe(false);
-            expect(result.current.isLoading).toBe(false);
+      const { result } = renderHook(() => useAuth());
+
+      await act(async () => {
+        await expect(
+          result.current.login({
+            email: "test@example.com",
+            password: "wrongpassword",
+          })
+        ).rejects.toThrow(errorMessage);
+      });
+
+      expect(authService.login).toHaveBeenCalled();
+      expect(result.current.user).toBeNull();
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.isLoading).toBe(false);
+    });
+  });
+
+  describe("register functionality", () => {
+    it("should handle registration successfully", async () => {
+      const mockUser = {
+        id: "1",
+        email: "test@example.com",
+        userLevel: UserLevel.BASIC,
+        roles: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      (authService.register as Mock).mockResolvedValue({
+        success: true,
+        data: { user: mockUser },
+      });
+
+      const { result } = renderHook(() => useAuth());
+
+      await act(async () => {
+        await result.current.register({
+          email: "test@example.com",
+          password: "password123",
         });
+      });
+
+      expect(authService.register).toHaveBeenCalledWith(
+        "test@example.com",
+        "password123"
+      );
+      expect(result.current.user).toEqual(mockUser);
+      expect(result.current.isAuthenticated).toBe(true);
+      expect(result.current.isLoading).toBe(false);
+    });
+  });
+
+  describe("logout functionality", () => {
+    it("should handle logout", async () => {
+      const mockUser = {
+        id: "1",
+        email: "test@example.com",
+        userLevel: UserLevel.VERIFIED,
+        roles: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      (authService.login as Mock).mockResolvedValue({
+        success: true,
+        data: { user: mockUser },
+      });
+
+      (authService.getProfile as Mock).mockResolvedValue({
+        success: true,
+        data: {
+          user: mockUser,
+          kodiakStatus: { accountId: "test-account-123", verified: true },
+        },
+      });
+
+      const { result } = renderHook(() => useAuth());
+
+      await act(async () => {
+        await result.current.login({
+          email: "test@example.com",
+          password: "password123",
+        });
+      });
+
+      expect(result.current.isAuthenticated).toBe(true);
+
+      await act(async () => {
+        await result.current.logout();
+      });
+
+      expect(result.current.user).toBeNull();
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+  });
+
+  describe("checkAuth functionality", () => {
+    it("should check authentication status", async () => {
+      const mockUser = {
+        id: "1",
+        email: "test@example.com",
+        userLevel: "VERIFIED",
+        roles: [],
+      };
+
+      (authService.getProfile as Mock).mockResolvedValue({
+        success: true,
+        data: {
+          user: mockUser,
+          kodiakStatus: { accountId: "test-account-123", verified: true },
+        },
+      });
+
+      Object.defineProperty(window, "location", {
+        value: { pathname: "/dashboard" },
+        writable: true,
+      });
+
+      const { result } = renderHook(() => useAuth());
+
+      await act(async () => {
+        await result.current.checkAuth();
+      });
+
+      expect(authService.getProfile).toHaveBeenCalled();
+      expect(result.current.user).toEqual(mockUser);
+      expect(result.current.isAuthenticated).toBe(true);
+    });
+  });
+
+  describe("updateAuthUser utility", () => {
+    it("should update user data", async () => {
+      const mockUser = {
+        id: "1",
+        email: "test@example.com",
+        userLevel: UserLevel.BASIC,
+        roles: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      (authService.login as Mock).mockResolvedValue({
+        success: true,
+        data: { user: mockUser },
+      });
+
+      (authService.getProfile as Mock).mockResolvedValue({
+        success: true,
+        data: {
+          user: mockUser,
+          kodiakStatus: { accountId: "test-account-123", verified: true },
+        },
+      });
+
+      const { result } = renderHook(() => useAuth());
+
+      await act(async () => {
+        await result.current.login({
+          email: "test@example.com",
+          password: "password123",
+        });
+      });
+
+      act(() => {
+        updateAuthUser({ userLevel: UserLevel.VERIFIED });
+      });
+
+      expect(result.current.user?.userLevel).toBe("VERIFIED");
     });
 
-    describe("login functionality", () => {
-        it("should handle login successfully", async () => {
-            const mockUser = {
-                id: "1",
-                email: "test@example.com",
-                userLevel: UserLevel.VERIFIED,
-                roles: [],
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            };
+    it("should not update user if no user exists", async () => {
+      // Create a fresh store instance
+      const { result } = renderHook(() => useAuth());
 
-            (authService.login as Mock).mockResolvedValue({
-                success: true,
-                data: { user: mockUser },
-            });
+      // Logout first to ensure clean state (in case previous tests left user logged in)
+      await act(async () => {
+        await result.current.logout();
+      });
 
-            (authService.getProfile as Mock).mockResolvedValue({
-                success: true,
-                data: {
-                    user: mockUser,
-                    kodiakStatus: { accountId: "test-account-123", verified: true },
-                },
-            });
+      act(() => {
+        updateAuthUser({ userLevel: UserLevel.VERIFIED });
+      });
 
-            const { result } = renderHook(() => useAuth());
+      expect(result.current.user).toBeNull();
+    });
+  });
 
-            await act(async () => {
-                await result.current.login({
-                    email: "test@example.com",
-                    password: "password123",
-                });
-            });
+  describe("register functionality", () => {
+    it("should handle registration failure", async () => {
+      const errorMessage = "Email already exists";
+      (authService.register as Mock).mockRejectedValue(new Error(errorMessage));
 
-            expect(authService.login).toHaveBeenCalledWith(
-                "test@example.com",
-                "password123"
-            );
-            expect(authService.getProfile).toHaveBeenCalled();
-            expect(result.current.user).toEqual(mockUser);
-            expect(result.current.isAuthenticated).toBe(true);
-            expect(result.current.isLoading).toBe(false);
-        });
+      const { result } = renderHook(() => useAuth());
 
-        it("should handle login failure", async () => {
-            const errorMessage = "Invalid credentials";
-            (authService.login as Mock).mockRejectedValue(
-                new Error(errorMessage)
-            );
+      await act(async () => {
+        await expect(
+          result.current.register({
+            email: "test@example.com",
+            password: "password123",
+          })
+        ).rejects.toThrow(errorMessage);
+      });
 
-            const { result } = renderHook(() => useAuth());
-
-            await act(async () => {
-                await expect(
-                    result.current.login({
-                        email: "test@example.com",
-                        password: "wrongpassword",
-                    })
-                ).rejects.toThrow(errorMessage);
-            });
-
-            expect(authService.login).toHaveBeenCalled();
-            expect(result.current.user).toBeNull();
-            expect(result.current.isAuthenticated).toBe(false);
-            expect(result.current.isLoading).toBe(false);
-        });
+      expect(authService.register).toHaveBeenCalled();
+      expect(result.current.user).toBeNull();
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.isLoading).toBe(false);
     });
 
-    describe("register functionality", () => {
-        it("should handle registration successfully", async () => {
-            const mockUser = {
-                id: "1",
-                email: "test@example.com",
-                userLevel: UserLevel.BASIC,
-                roles: [],
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            };
+    it("should handle registration with successful response but no user data", async () => {
+      (authService.register as Mock).mockResolvedValue({
+        success: true,
+        data: null,
+      });
 
-            (authService.register as Mock).mockResolvedValue({
-                success: true,
-                data: { user: mockUser },
-            });
+      const { result } = renderHook(() => useAuth());
 
-            const { result } = renderHook(() => useAuth());
-
-            await act(async () => {
-                await result.current.register({
-                    email: "test@example.com",
-                    password: "password123",
-                });
-            });
-
-            expect(authService.register).toHaveBeenCalledWith(
-                "test@example.com",
-                "password123"
-            );
-            expect(result.current.user).toEqual(mockUser);
-            expect(result.current.isAuthenticated).toBe(true);
-            expect(result.current.isLoading).toBe(false);
+      await act(async () => {
+        await result.current.register({
+          email: "test@example.com",
+          password: "password123",
         });
+      });
+
+      expect(authService.register).toHaveBeenCalled();
+      expect(result.current.user).toBeNull();
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.isLoading).toBe(false);
+    });
+  });
+
+  describe("logout functionality", () => {
+    it("should handle logout when API call fails", async () => {
+      // Mock fetch to reject
+      global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
+
+      const mockUser = {
+        id: "1",
+        email: "test@example.com",
+        userLevel: UserLevel.VERIFIED,
+        roles: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      (authService.login as Mock).mockResolvedValue({
+        success: true,
+        data: { user: mockUser },
+      });
+
+      (authService.getProfile as Mock).mockResolvedValue({
+        success: true,
+        data: {
+          user: mockUser,
+          kodiakStatus: { accountId: "test-account-123", verified: true },
+        },
+      });
+
+      const { result } = renderHook(() => useAuth());
+
+      await act(async () => {
+        await result.current.login({
+          email: "test@example.com",
+          password: "password123",
+        });
+      });
+
+      expect(result.current.isAuthenticated).toBe(true);
+
+      await act(async () => {
+        await result.current.logout();
+      });
+
+      expect(fetch).toHaveBeenCalledWith("/api/auth/logout", expect.anything());
+      expect(result.current.user).toBeNull();
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+  });
+
+  describe("checkAuth functionality", () => {
+    it("should handle failed auth check", async () => {
+      (authService.getProfile as Mock).mockResolvedValue({
+        success: false,
+        error: "Unauthorized",
+      });
+
+      Object.defineProperty(window, "location", {
+        value: { pathname: "/dashboard" },
+        writable: true,
+      });
+
+      const { result } = renderHook(() => useAuth());
+
+      await act(async () => {
+        await result.current.checkAuth();
+      });
+
+      expect(authService.getProfile).toHaveBeenCalled();
+      expect(result.current.user).toBeNull();
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.isLoading).toBe(false);
     });
 
-    describe("logout functionality", () => {
-        it("should handle logout", async () => {
-            const mockUser = {
-                id: "1",
-                email: "test@example.com",
-                userLevel: UserLevel.VERIFIED,
-                roles: [],
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            };
+    it("should handle checkAuth error", async () => {
+      const errorMessage = "Network error";
+      (authService.getProfile as Mock).mockRejectedValue(
+        new Error(errorMessage)
+      );
 
-            (authService.login as Mock).mockResolvedValue({
-                success: true,
-                data: { user: mockUser },
-            });
+      Object.defineProperty(window, "location", {
+        value: { pathname: "/dashboard" },
+        writable: true,
+      });
 
-            (authService.getProfile as Mock).mockResolvedValue({
-                success: true,
-                data: {
-                    user: mockUser,
-                    kodiakStatus: { accountId: "test-account-123", verified: true },
-                },
-            });
+      const { result } = renderHook(() => useAuth());
 
-            const { result } = renderHook(() => useAuth());
+      await act(async () => {
+        await result.current.checkAuth();
+      });
 
-            await act(async () => {
-                await result.current.login({
-                    email: "test@example.com",
-                    password: "password123",
-                });
-            });
-
-            expect(result.current.isAuthenticated).toBe(true);
-
-            await act(async () => {
-                await result.current.logout();
-            });
-
-            expect(result.current.user).toBeNull();
-            expect(result.current.isAuthenticated).toBe(false);
-        });
+      expect(authService.getProfile).toHaveBeenCalled();
+      expect(result.current.user).toBeNull();
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.isLoading).toBe(false);
     });
 
-    describe("checkAuth functionality", () => {
-        it("should check authentication status", async () => {
-            const mockUser = {
-                id: "1",
-                email: "test@example.com",
-                userLevel: "VERIFIED",
-                roles: [],
-            };
+    it("should skip auth check on login page", async () => {
+      // Mock window.location
+      Object.defineProperty(window, "location", {
+        value: { pathname: "/login" },
+        writable: true,
+      });
 
-            (authService.getProfile as Mock).mockResolvedValue({
-                success: true,
-                data: {
-                    user: mockUser,
-                    kodiakStatus: { accountId: "test-account-123", verified: true },
-                },
-            });
+      const { result } = renderHook(() => useAuth());
 
-            Object.defineProperty(window, 'location', {
-                value: { pathname: '/dashboard' },
-                writable: true,
-            });
+      await act(async () => {
+        await result.current.checkAuth();
+      });
 
-            const { result } = renderHook(() => useAuth());
-
-            await act(async () => {
-                await result.current.checkAuth();
-            });
-
-            expect(authService.getProfile).toHaveBeenCalled();
-            expect(result.current.user).toEqual(mockUser);
-            expect(result.current.isAuthenticated).toBe(true);
-        });
+      expect(authService.getProfile).not.toHaveBeenCalled();
+      expect(result.current.isLoading).toBe(false);
     });
 
-    describe("updateAuthUser utility", () => {
-        it("should update user data", async () => {
-            const mockUser = {
-                id: "1",
-                email: "test@example.com",
-                userLevel: UserLevel.BASIC,
-                roles: [],
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            };
+    it("should skip auth check on register page", async () => {
+      // Mock window.location
+      Object.defineProperty(window, "location", {
+        value: { pathname: "/register" },
+        writable: true,
+      });
 
-            (authService.login as Mock).mockResolvedValue({
-                success: true,
-                data: { user: mockUser },
-            });
+      const { result } = renderHook(() => useAuth());
 
-            (authService.getProfile as Mock).mockResolvedValue({
-                success: true,
-                data: {
-                    user: mockUser,
-                    kodiakStatus: { accountId: "test-account-123", verified: true },
-                },
-            });
+      await act(async () => {
+        await result.current.checkAuth();
+      });
 
-            const { result } = renderHook(() => useAuth());
+      expect(authService.getProfile).not.toHaveBeenCalled();
+      expect(result.current.isLoading).toBe(false);
+    });
+  });
 
-            await act(async () => {
-                await result.current.login({
-                    email: "test@example.com",
-                    password: "password123",
-                });
-            });
+  describe("login functionality", () => {
+    it("should fall back to login response if profile fetch fails", async () => {
+      const mockUser = {
+        id: "1",
+        email: "test@example.com",
+        userLevel: UserLevel.BASIC,
+        roles: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
 
-            act(() => {
-                updateAuthUser({ userLevel: UserLevel.VERIFIED });
-            });
+      (authService.login as Mock).mockResolvedValue({
+        success: true,
+        data: { user: mockUser },
+      });
 
-            expect(result.current.user?.userLevel).toBe("VERIFIED");
+      (authService.getProfile as Mock).mockResolvedValue({
+        success: false,
+        error: "Failed to fetch profile",
+      });
+
+      const { result } = renderHook(() => useAuth());
+
+      await act(async () => {
+        await result.current.login({
+          email: "test@example.com",
+          password: "password123",
         });
+      });
 
-        it("should not update user if no user exists", async () => {
-            // Create a fresh store instance
-            const { result } = renderHook(() => useAuth());
-
-            // Logout first to ensure clean state (in case previous tests left user logged in)
-            await act(async () => {
-                await result.current.logout();
-            });
-
-            act(() => {
-                updateAuthUser({ userLevel: UserLevel.VERIFIED });
-            });
-
-            expect(result.current.user).toBeNull();
-        });
+      expect(authService.login).toHaveBeenCalled();
+      expect(authService.getProfile).toHaveBeenCalled();
+      expect(result.current.user).toEqual(mockUser);
+      expect(result.current.isAuthenticated).toBe(true);
+      expect(result.current.isLoading).toBe(false);
     });
 
-    describe("register functionality", () => {
-        it("should handle registration failure", async () => {
-            const errorMessage = "Email already exists";
-            (authService.register as Mock).mockRejectedValue(
-                new Error(errorMessage)
-            );
+    it("should handle login with invalid response", async () => {
+      (authService.login as Mock).mockResolvedValue({
+        success: false,
+        error: "Invalid response",
+      });
 
-            const { result } = renderHook(() => useAuth());
+      const { result } = renderHook(() => useAuth());
 
-            await act(async () => {
-                await expect(
-                    result.current.register({
-                        email: "test@example.com",
-                        password: "password123",
-                    })
-                ).rejects.toThrow(errorMessage);
-            });
+      await act(async () => {
+        await expect(
+          result.current.login({
+            email: "test@example.com",
+            password: "password123",
+          })
+        ).rejects.toThrow("Invalid response");
+      });
 
-            expect(authService.register).toHaveBeenCalled();
-            expect(result.current.user).toBeNull();
-            expect(result.current.isAuthenticated).toBe(false);
-            expect(result.current.isLoading).toBe(false);
-        });
-
-        it("should handle registration with successful response but no user data", async () => {
-            (authService.register as Mock).mockResolvedValue({
-                success: true,
-                data: null,
-            });
-
-            const { result } = renderHook(() => useAuth());
-
-            await act(async () => {
-                await result.current.register({
-                    email: "test@example.com",
-                    password: "password123",
-                });
-            });
-
-            expect(authService.register).toHaveBeenCalled();
-            expect(result.current.user).toBeNull();
-            expect(result.current.isAuthenticated).toBe(false);
-            expect(result.current.isLoading).toBe(false);
-        });
+      expect(authService.login).toHaveBeenCalled();
+      expect(result.current.user).toBeNull();
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.isLoading).toBe(false);
     });
+  });
 
-    describe("logout functionality", () => {
-        it("should handle logout when API call fails", async () => {
-            // Mock fetch to reject
-            global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
+  describe("refreshUser functionality", () => {
+    it("should refresh user data", async () => {
+      const mockUser = {
+        id: "1",
+        email: "test@example.com",
+        userLevel: UserLevel.VERIFIED,
+        roles: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
 
-            const mockUser = {
-                id: "1",
-                email: "test@example.com",
-                userLevel: UserLevel.VERIFIED,
-                roles: [],
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            };
+      // Mock window.location to not be an auth page
+      Object.defineProperty(window, "location", {
+        value: { pathname: "/dashboard" },
+        writable: true,
+      });
 
-            (authService.login as Mock).mockResolvedValue({
-                success: true,
-                data: { user: mockUser },
-            });
+      (authService.getProfile as Mock).mockResolvedValue({
+        success: true,
+        data: {
+          user: mockUser,
+          kodiakStatus: { accountId: "test-account-123", verified: true },
+        },
+      });
 
-            (authService.getProfile as Mock).mockResolvedValue({
-                success: true,
-                data: {
-                    user: mockUser,
-                    kodiakStatus: { accountId: "test-account-123", verified: true },
-                },
-            });
+      const { result } = renderHook(() => useAuth());
 
-            const { result } = renderHook(() => useAuth());
+      await act(async () => {
+        await result.current.refreshUser();
+      });
 
-            await act(async () => {
-                await result.current.login({
-                    email: "test@example.com",
-                    password: "password123",
-                });
-            });
-
-            expect(result.current.isAuthenticated).toBe(true);
-
-            await act(async () => {
-                await result.current.logout();
-            });
-
-            expect(fetch).toHaveBeenCalledWith("/api/auth/logout", expect.anything());
-            expect(result.current.user).toBeNull();
-            expect(result.current.isAuthenticated).toBe(false);
-        });
+      expect(authService.getProfile).toHaveBeenCalled();
+      expect(result.current.user).toEqual(mockUser);
+      expect(result.current.isAuthenticated).toBe(true);
     });
+  });
 
-    describe("checkAuth functionality", () => {
-        it("should handle failed auth check", async () => {
-            (authService.getProfile as Mock).mockResolvedValue({
-                success: false,
-                error: "Unauthorized",
-            });
+  describe("updateAuthUser utility", () => {
+    it("should not update user if no changes are made", async () => {
+      const mockUser = {
+        id: "1",
+        email: "test@example.com",
+        userLevel: UserLevel.BASIC,
+        roles: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
 
-            Object.defineProperty(window, 'location', {
-                value: { pathname: '/dashboard' },
-                writable: true,
-            });
+      (authService.login as Mock).mockResolvedValue({
+        success: true,
+        data: { user: mockUser },
+      });
 
-            const { result } = renderHook(() => useAuth());
+      (authService.getProfile as Mock).mockResolvedValue({
+        success: true,
+        data: {
+          user: mockUser,
+          kodiakStatus: { accountId: "test-account-123", verified: true },
+        },
+      });
 
-            await act(async () => {
-                await result.current.checkAuth();
-            });
+      const { result } = renderHook(() => useAuth());
 
-            expect(authService.getProfile).toHaveBeenCalled();
-            expect(result.current.user).toBeNull();
-            expect(result.current.isAuthenticated).toBe(false);
-            expect(result.current.isLoading).toBe(false);
+      await act(async () => {
+        await result.current.login({
+          email: "test@example.com",
+          password: "password123",
         });
+      });
 
-        it("should handle checkAuth error", async () => {
-            const errorMessage = "Network error";
-            (authService.getProfile as Mock).mockRejectedValue(
-                new Error(errorMessage)
-            );
+      const originalUser = { ...result.current.user };
 
-            Object.defineProperty(window, 'location', {
-                value: { pathname: '/dashboard' },
-                writable: true,
-            });
+      act(() => {
+        updateAuthUser({ ...originalUser });
+      });
 
-            const { result } = renderHook(() => useAuth());
-
-            await act(async () => {
-                await result.current.checkAuth();
-            });
-
-            expect(authService.getProfile).toHaveBeenCalled();
-            expect(result.current.user).toBeNull();
-            expect(result.current.isAuthenticated).toBe(false);
-            expect(result.current.isLoading).toBe(false);
-        });
-
-        it("should skip auth check on login page", async () => {
-            // Mock window.location
-            Object.defineProperty(window, 'location', {
-                value: { pathname: '/login' },
-                writable: true,
-            });
-
-            const { result } = renderHook(() => useAuth());
-
-            await act(async () => {
-                await result.current.checkAuth();
-            });
-
-            expect(authService.getProfile).not.toHaveBeenCalled();
-            expect(result.current.isLoading).toBe(false);
-        });
-
-        it("should skip auth check on register page", async () => {
-            // Mock window.location
-            Object.defineProperty(window, 'location', {
-                value: { pathname: '/register' },
-                writable: true,
-            });
-
-            const { result } = renderHook(() => useAuth());
-
-            await act(async () => {
-                await result.current.checkAuth();
-            });
-
-            expect(authService.getProfile).not.toHaveBeenCalled();
-            expect(result.current.isLoading).toBe(false);
-        });
+      expect(result.current.user).toEqual(originalUser);
     });
-
-    describe("login functionality", () => {
-        it("should fall back to login response if profile fetch fails", async () => {
-            const mockUser = {
-                id: "1",
-                email: "test@example.com",
-                userLevel: UserLevel.BASIC,
-                roles: [],
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            };
-
-            (authService.login as Mock).mockResolvedValue({
-                success: true,
-                data: { user: mockUser },
-            });
-
-            (authService.getProfile as Mock).mockResolvedValue({
-                success: false,
-                error: "Failed to fetch profile",
-            });
-
-            const { result } = renderHook(() => useAuth());
-
-            await act(async () => {
-                await result.current.login({
-                    email: "test@example.com",
-                    password: "password123",
-                });
-            });
-
-            expect(authService.login).toHaveBeenCalled();
-            expect(authService.getProfile).toHaveBeenCalled();
-            expect(result.current.user).toEqual(mockUser);
-            expect(result.current.isAuthenticated).toBe(true);
-            expect(result.current.isLoading).toBe(false);
-        });
-
-        it("should handle login with invalid response", async () => {
-            (authService.login as Mock).mockResolvedValue({
-                success: false,
-                error: "Invalid response",
-            });
-
-            const { result } = renderHook(() => useAuth());
-
-            await act(async () => {
-                await expect(
-                    result.current.login({
-                        email: "test@example.com",
-                        password: "password123",
-                    })
-                ).rejects.toThrow("Invalid response");
-            });
-
-            expect(authService.login).toHaveBeenCalled();
-            expect(result.current.user).toBeNull();
-            expect(result.current.isAuthenticated).toBe(false);
-            expect(result.current.isLoading).toBe(false);
-        });
-    });
-
-    describe("refreshUser functionality", () => {
-        it("should refresh user data", async () => {
-            const mockUser = {
-                id: "1",
-                email: "test@example.com",
-                userLevel: UserLevel.VERIFIED,
-                roles: [],
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            };
-
-            // Mock window.location to not be an auth page
-            Object.defineProperty(window, 'location', {
-                value: { pathname: '/dashboard' },
-                writable: true,
-            });
-
-            (authService.getProfile as Mock).mockResolvedValue({
-                success: true,
-                data: {
-                    user: mockUser,
-                    kodiakStatus: { accountId: "test-account-123", verified: true },
-                },
-            });
-
-            const { result } = renderHook(() => useAuth());
-
-            await act(async () => {
-                await result.current.refreshUser();
-            });
-
-            expect(authService.getProfile).toHaveBeenCalled();
-            expect(result.current.user).toEqual(mockUser);
-            expect(result.current.isAuthenticated).toBe(true);
-        });
-    });
-
-    describe("updateAuthUser utility", () => {
-        it("should not update user if no changes are made", async () => {
-            const mockUser = {
-                id: "1",
-                email: "test@example.com",
-                userLevel: UserLevel.BASIC,
-                roles: [],
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            };
-
-            (authService.login as Mock).mockResolvedValue({
-                success: true,
-                data: { user: mockUser },
-            });
-
-            (authService.getProfile as Mock).mockResolvedValue({
-                success: true,
-                data: {
-                    user: mockUser,
-                    kodiakStatus: { accountId: "test-account-123", verified: true },
-                },
-            });
-
-            const { result } = renderHook(() => useAuth());
-
-            await act(async () => {
-                await result.current.login({
-                    email: "test@example.com",
-                    password: "password123",
-                });
-            });
-
-            const originalUser = { ...result.current.user };
-
-            act(() => {
-                updateAuthUser({ ...originalUser });
-            });
-
-            expect(result.current.user).toEqual(originalUser);
-        });
-    });
+  });
 });

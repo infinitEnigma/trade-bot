@@ -131,17 +131,31 @@ class CredentialCacheService {
 
   /**
    * Cleanup method for test environments
-   * Clears all cached credentials and stops any intervals
+   * Stops the background cleanup interval and clears all cached credentials
    */
   cleanupForTests(): void {
-    try {
-      // Clear all cached credentials
-      this.cache.clear();
+    stopCleanupInterval();
+    this.clearAll();
+  }
 
-      logger.info("Credential cache service cleaned up for tests");
-    } catch (error) {
-      logger.error("Error during credential cache cleanup", error as Error, {});
+  /**
+   * Remove expired entries from the cache.
+   * Called by the module-level cleanup interval.
+   *
+   * @returns the number of expired entries removed
+   */
+  purgeExpired(): number {
+    const now = Date.now();
+    let cleaned = 0;
+
+    for (const [userId, cached] of this.cache.entries()) {
+      if (now - cached.cachedAt > cached.ttl) {
+        this.cache.delete(userId);
+        cleaned++;
+      }
     }
+
+    return cleaned;
   }
 }
 
@@ -154,16 +168,7 @@ function startCleanupInterval(): void {
   cleanupInterval = setInterval(
     () => {
       // Cleanup expired entries
-      const now = Date.now();
-      let cleaned = 0;
-
-      // Iterate through cache and remove expired entries
-      for (const [userId, cached] of (credentialCacheService as any).cache.entries()) {
-        if (now - cached.cachedAt > cached.ttl) {
-          (credentialCacheService as any).cache.delete(userId);
-          cleaned++;
-        }
-      }
+      const cleaned = credentialCacheService.purgeExpired();
 
       if (cleaned > 0) {
         logger.debug("Credential cache cleanup completed", { cleaned });
@@ -184,12 +189,6 @@ export const credentialCacheService = new CredentialCacheService();
 
 // Start cleanup interval by default (for production)
 // Only start in production environment, not in test environment
-if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
+if (process.env.NODE_ENV !== "test" && !process.env.JEST_WORKER_ID) {
   startCleanupInterval();
 }
-
-// Add cleanup method to the service instance
-(credentialCacheService as any).cleanupForTests = (): void => {
-  stopCleanupInterval();
-  credentialCacheService.clearAll();
-};

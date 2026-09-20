@@ -18,11 +18,14 @@ interface BalanceCardsProps {
 /**
  * BalanceCards component - displays the 4 main balance metrics
  */
-export const BalanceCards: React.FC<BalanceCardsProps> = ({ balance, loading }) => {
+export const BalanceCards: React.FC<BalanceCardsProps> = ({
+  balance,
+  loading,
+}) => {
   const { user } = useAuth();
-  
+
   if (!user && !UserLevel.VERIFIED) return null;
-  
+
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -93,14 +96,16 @@ export const BalanceCards: React.FC<BalanceCardsProps> = ({ balance, loading }) 
             transition={{
               duration: 0.4,
               delay: index * 0.1,
-              ease: "easeOut"
+              ease: "easeOut",
             }}
             className="gpu-accelerated will-change-transform"
           >
             <Suspense fallback={<DashboardCardSkeleton />}>
               <Card className="p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <div className={`w-10 h-10 rounded-lg bg-${card.color}/10 flex items-center justify-center`}>
+                  <div
+                    className={`w-10 h-10 rounded-lg bg-${card.color}/10 flex items-center justify-center`}
+                  >
                     <card.icon className={`w-5 h-5 text-${card.color}`} />
                   </div>
                   <span className="text-sm text-textMuted">{card.title}</span>

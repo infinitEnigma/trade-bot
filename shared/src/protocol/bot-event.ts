@@ -23,51 +23,51 @@ import { EngineLifecycleEventPayload } from "./engine-lifecycle";
 // ===========================================
 
 export type BotEventType =
-    | "COMMAND_ACCEPTED"
-    | "COMMAND_FAILED"
-    | "STATE_CHANGED"
-    // Engine lifecycle events (registration / heartbeat) - see engine-lifecycle.ts
-    | "ENGINE_REGISTER"
-    | "ENGINE_HEARTBEAT";
+  | "COMMAND_ACCEPTED"
+  | "COMMAND_FAILED"
+  | "STATE_CHANGED"
+  // Engine lifecycle events (registration / heartbeat) - see engine-lifecycle.ts
+  | "ENGINE_REGISTER"
+  | "ENGINE_HEARTBEAT";
 
 export interface CommandAcceptedEventPayload {
-    botId: string;
-    /** The command type that was accepted, e.g. "BOT_START". */
-    commandType: string;
-    engineId: string;
-    /** Restart epoch of the emitting engine process (authority validation). */
-    engineEpoch: number;
+  botId: string;
+  /** The command type that was accepted, e.g. "BOT_START". */
+  commandType: string;
+  engineId: string;
+  /** Restart epoch of the emitting engine process (authority validation). */
+  engineEpoch: number;
 }
 
 export interface CommandFailedEventPayload {
-    botId: string;
-    /** The command type that failed, e.g. "BOT_START". */
-    commandType: string;
-    engineId: string;
-    /** Restart epoch of the emitting engine process (authority validation). */
-    engineEpoch: number;
-    /** Stable machine-readable error code, e.g. "CREDENTIAL_FETCH_FAILED". */
-    errorCode: string;
-    /** Human-readable error description. */
-    message: string;
+  botId: string;
+  /** The command type that failed, e.g. "BOT_START". */
+  commandType: string;
+  engineId: string;
+  /** Restart epoch of the emitting engine process (authority validation). */
+  engineEpoch: number;
+  /** Stable machine-readable error code, e.g. "CREDENTIAL_FETCH_FAILED". */
+  errorCode: string;
+  /** Human-readable error description. */
+  message: string;
 }
 
 export interface StateChangedEventPayload {
-    botId: string;
-    engineId: string;
-    /** Restart epoch of the emitting engine process (authority validation). */
-    engineEpoch: number;
-    from: BotActualState;
-    to: BotActualState;
-    /** Optional reason, e.g. "started", "normal_stop", "init_failed", "emergency_stop". */
-    reason?: string;
+  botId: string;
+  engineId: string;
+  /** Restart epoch of the emitting engine process (authority validation). */
+  engineEpoch: number;
+  from: BotActualState;
+  to: BotActualState;
+  /** Optional reason, e.g. "started", "normal_stop", "init_failed", "emergency_stop". */
+  reason?: string;
 }
 
 export type BotEventPayload =
-    | CommandAcceptedEventPayload
-    | CommandFailedEventPayload
-    | StateChangedEventPayload
-    | EngineLifecycleEventPayload;
+  | CommandAcceptedEventPayload
+  | CommandFailedEventPayload
+  | StateChangedEventPayload
+  | EngineLifecycleEventPayload;
 
 export type BotEvent = ProtocolMessage<BotEventPayload>;
 
@@ -80,15 +80,19 @@ import { generateMessageId } from "./bot-command";
 /**
  * Build a protocol event envelope.
  */
-export function createBotEvent<P extends BotEventPayload>(type: BotEventType, payload: P, correlationId: string): ProtocolMessage<P> {
-    return {
-        version: 1,
-        messageId: generateMessageId(),
-        correlationId,
-        timestamp: new Date().toISOString(),
-        type,
-        payload,
-    };
+export function createBotEvent<P extends BotEventPayload>(
+  type: BotEventType,
+  payload: P,
+  correlationId: string
+): ProtocolMessage<P> {
+  return {
+    version: 1,
+    messageId: generateMessageId(),
+    correlationId,
+    timestamp: new Date().toISOString(),
+    type,
+    payload,
+  };
 }
 
 // ===========================================
@@ -98,20 +102,46 @@ export function createBotEvent<P extends BotEventPayload>(type: BotEventType, pa
 import { isProtocolMessage } from "./bot-command";
 
 export function isBotEvent(obj: unknown): obj is BotEvent {
-    return (
-        isProtocolMessage(obj) &&
-        (["COMMAND_ACCEPTED", "COMMAND_FAILED", "STATE_CHANGED", "ENGINE_REGISTER", "ENGINE_HEARTBEAT"] as string[]).includes(obj.type)
-    );
+  return (
+    isProtocolMessage(obj) &&
+    (
+      [
+        "COMMAND_ACCEPTED",
+        "COMMAND_FAILED",
+        "STATE_CHANGED",
+        "ENGINE_REGISTER",
+        "ENGINE_HEARTBEAT",
+      ] as string[]
+    ).includes(obj.type)
+  );
 }
 
-export function isCommandAcceptedEvent(obj: unknown): obj is ProtocolMessage<CommandAcceptedEventPayload> {
-    return isProtocolMessage(obj) && obj.type === "COMMAND_ACCEPTED" && typeof (obj.payload as CommandAcceptedEventPayload)?.botId === "string";
+export function isCommandAcceptedEvent(
+  obj: unknown
+): obj is ProtocolMessage<CommandAcceptedEventPayload> {
+  return (
+    isProtocolMessage(obj) &&
+    obj.type === "COMMAND_ACCEPTED" &&
+    typeof (obj.payload as CommandAcceptedEventPayload)?.botId === "string"
+  );
 }
 
-export function isCommandFailedEvent(obj: unknown): obj is ProtocolMessage<CommandFailedEventPayload> {
-    return isProtocolMessage(obj) && obj.type === "COMMAND_FAILED" && typeof (obj.payload as CommandFailedEventPayload)?.botId === "string";
+export function isCommandFailedEvent(
+  obj: unknown
+): obj is ProtocolMessage<CommandFailedEventPayload> {
+  return (
+    isProtocolMessage(obj) &&
+    obj.type === "COMMAND_FAILED" &&
+    typeof (obj.payload as CommandFailedEventPayload)?.botId === "string"
+  );
 }
 
-export function isStateChangedEvent(obj: unknown): obj is ProtocolMessage<StateChangedEventPayload> {
-    return isProtocolMessage(obj) && obj.type === "STATE_CHANGED" && typeof (obj.payload as StateChangedEventPayload)?.botId === "string";
+export function isStateChangedEvent(
+  obj: unknown
+): obj is ProtocolMessage<StateChangedEventPayload> {
+  return (
+    isProtocolMessage(obj) &&
+    obj.type === "STATE_CHANGED" &&
+    typeof (obj.payload as StateChangedEventPayload)?.botId === "string"
+  );
 }

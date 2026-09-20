@@ -6,97 +6,106 @@ import { httpClient } from "../../../infrastructure/api/client";
 
 // Mock the HTTP client
 vi.mock("../../../infrastructure/api/client", () => ({
-    httpClient: {
-        getClient: vi.fn(),
-    },
+  httpClient: {
+    getClient: vi.fn(),
+  },
 }));
 
 describe("walletApi", () => {
-    let mockPost: Mock;
+  let mockPost: Mock;
 
-    beforeEach(() => {
-        vi.clearAllMocks();
+  beforeEach(() => {
+    vi.clearAllMocks();
 
-        // Create mock methods
-        mockPost = vi.fn();
+    // Create mock methods
+    mockPost = vi.fn();
 
-        (httpClient.getClient as Mock).mockReturnValue({
-            post: mockPost,
-        });
+    (httpClient.getClient as Mock).mockReturnValue({
+      post: mockPost,
+    });
+  });
+
+  describe("verifyWallet", () => {
+    it("should call verify wallet endpoint with correct data", async () => {
+      const walletData = {
+        walletAddress: "0x1234567890123456789012345678901234567890",
+        signature: "0xabc123def456",
+        message: "Sign this message to verify ownership",
+      };
+      const mockResponse = {
+        success: true,
+        data: {
+          verified: true,
+          walletAddress: walletData.walletAddress,
+          message: "Wallet verified successfully",
+        },
+      };
+
+      mockPost.mockResolvedValue({ data: mockResponse });
+
+      const result = await walletApi.verifyWallet(walletData);
+
+      expect(httpClient.getClient).toHaveBeenCalled();
+      expect(mockPost).toHaveBeenCalledWith(
+        "/api/user/verify-wallet",
+        walletData
+      );
+      expect(result).toEqual(mockResponse);
     });
 
-    describe("verifyWallet", () => {
-        it("should call verify wallet endpoint with correct data", async () => {
-            const walletData = {
-                walletAddress: "0x1234567890123456789012345678901234567890",
-                signature: "0xabc123def456",
-                message: "Sign this message to verify ownership",
-            };
-            const mockResponse = {
-                success: true,
-                data: {
-                    verified: true,
-                    walletAddress: walletData.walletAddress,
-                    message: "Wallet verified successfully",
-                },
-            };
+    it("should handle verify wallet errors", async () => {
+      const walletData = {
+        walletAddress: "0x1234567890123456789012345678901234567890",
+        signature: "0xinvalid",
+        message: "Sign this message to verify ownership",
+      };
+      const errorMessage = "Invalid signature";
 
-            mockPost.mockResolvedValue({ data: mockResponse });
+      mockPost.mockRejectedValue(new Error(errorMessage));
 
-            const result = await walletApi.verifyWallet(walletData);
-
-            expect(httpClient.getClient).toHaveBeenCalled();
-            expect(mockPost).toHaveBeenCalledWith("/api/user/verify-wallet", walletData);
-            expect(result).toEqual(mockResponse);
-        });
-
-        it("should handle verify wallet errors", async () => {
-            const walletData = {
-                walletAddress: "0x1234567890123456789012345678901234567890",
-                signature: "0xinvalid",
-                message: "Sign this message to verify ownership",
-            };
-            const errorMessage = "Invalid signature";
-
-            mockPost.mockRejectedValue(new Error(errorMessage));
-
-            await expect(walletApi.verifyWallet(walletData)).rejects.toThrow(errorMessage);
-        });
-
-        it("should handle invalid wallet address format", async () => {
-            const walletData = {
-                walletAddress: "invalid-address",
-                signature: "0xabc123def456",
-                message: "Sign this message to verify ownership",
-            };
-            const errorMessage = "Invalid wallet address format";
-
-            mockPost.mockRejectedValue(new Error(errorMessage));
-
-            await expect(walletApi.verifyWallet(walletData)).rejects.toThrow(errorMessage);
-        });
+      await expect(walletApi.verifyWallet(walletData)).rejects.toThrow(
+        errorMessage
+      );
     });
 
-    describe("unlinkWallet", () => {
-        it("should call unlink wallet endpoint", async () => {
-            const mockResponse = {
-                success: true,
-                message: "Wallet unlinked from your account.",
-            };
+    it("should handle invalid wallet address format", async () => {
+      const walletData = {
+        walletAddress: "invalid-address",
+        signature: "0xabc123def456",
+        message: "Sign this message to verify ownership",
+      };
+      const errorMessage = "Invalid wallet address format";
 
-            mockPost.mockResolvedValue({ data: mockResponse });
+      mockPost.mockRejectedValue(new Error(errorMessage));
 
-            const result = await walletApi.unlinkWallet();
-
-            expect(httpClient.getClient).toHaveBeenCalled();
-            expect(mockPost).toHaveBeenCalledWith("/api/user/unlink-wallet");
-            expect(result).toEqual(mockResponse);
-        });
-
-        it("should handle unlink wallet errors", async () => {
-            mockPost.mockRejectedValue(new Error("No linked wallet found"));
-
-            await expect(walletApi.unlinkWallet()).rejects.toThrow("No linked wallet found");
-        });
+      await expect(walletApi.verifyWallet(walletData)).rejects.toThrow(
+        errorMessage
+      );
     });
+  });
+
+  describe("unlinkWallet", () => {
+    it("should call unlink wallet endpoint", async () => {
+      const mockResponse = {
+        success: true,
+        message: "Wallet unlinked from your account.",
+      };
+
+      mockPost.mockResolvedValue({ data: mockResponse });
+
+      const result = await walletApi.unlinkWallet();
+
+      expect(httpClient.getClient).toHaveBeenCalled();
+      expect(mockPost).toHaveBeenCalledWith("/api/user/unlink-wallet");
+      expect(result).toEqual(mockResponse);
+    });
+
+    it("should handle unlink wallet errors", async () => {
+      mockPost.mockRejectedValue(new Error("No linked wallet found"));
+
+      await expect(walletApi.unlinkWallet()).rejects.toThrow(
+        "No linked wallet found"
+      );
+    });
+  });
 });

@@ -7,7 +7,11 @@ import { CandleData } from "../components/charts/CandlestickChart";
 import { useAuth } from "../../features/auth";
 import React from "react";
 import { websocketClient } from "../../infrastructure/websocket/client";
-import type { TickData as WsTickData, MarkPriceData as WsMarkPriceData, KlineData as WsKlineData } from "@trade-bot/shared";
+import type {
+  TickData as WsTickData,
+  MarkPriceData as WsMarkPriceData,
+  KlineData as WsKlineData,
+} from "@trade-bot/shared";
 
 /**
  * Data freshness metadata from backend responses
@@ -19,7 +23,7 @@ interface DataFreshnessMetadata {
   nextExpectedUpdate: number;
   isStale: boolean;
   stalenessThreshold: number;
-  dataSource: 'websocket' | 'api' | 'cache' | 'static';
+  dataSource: "websocket" | "api" | "cache" | "static";
   cacheTTLRemaining?: number;
 }
 
@@ -178,12 +182,16 @@ export const useChartHistorical = ({
   symbol,
   interval,
 }: UseChartDataOptions) => {
-  const [freshnessData, setFreshnessData] = useState<DataFreshnessMetadata | null>(null);
+  const [freshnessData, setFreshnessData] =
+    useState<DataFreshnessMetadata | null>(null);
   const [smartInterval, setSmartInterval] = useState<number>(60000); // Start with 1 minute
 
   return useQuery({
     queryKey: ["chart-historical", symbol, interval],
-    queryFn: async (): Promise<{ candles: CandleData[]; freshness?: DataFreshnessMetadata }> => {
+    queryFn: async (): Promise<{
+      candles: CandleData[];
+      freshness?: DataFreshnessMetadata;
+    }> => {
       console.log(`📊 Fetching historical chart data: ${symbol} ${interval}`);
 
       // Fetch last 24 hours of historical data
@@ -197,16 +205,26 @@ export const useChartHistorical = ({
       const getResolution = (interval: string): string => {
         switch (interval) {
           // Human-readable labels
-          case "1m": return "1";
-          case "5m": return "5";
-          case "15m": return "15";
-          case "30m": return "30";
-          case "1h": return "60";
-          case "4h": return "240";
-          case "12h": return "720";
-          case "1d": return "1D";
-          case "1w": return "1W";
-          case "1M": return "1M";
+          case "1m":
+            return "1";
+          case "5m":
+            return "5";
+          case "15m":
+            return "15";
+          case "30m":
+            return "30";
+          case "1h":
+            return "60";
+          case "4h":
+            return "240";
+          case "12h":
+            return "720";
+          case "1d":
+            return "1D";
+          case "1w":
+            return "1W";
+          case "1M":
+            return "1M";
           // Native TradingView resolution strings — pass through as-is
           case "1":
           case "3":
@@ -227,12 +245,13 @@ export const useChartHistorical = ({
         }
       };
 
-      const response: FreshnessAwareResponse<TradingViewData> = await marketApi.getTvHistory({
-        symbol,
-        resolution: getResolution(interval),
-        from: fromTimestamp,
-        to: toTimestamp,
-      });
+      const response: FreshnessAwareResponse<TradingViewData> =
+        await marketApi.getTvHistory({
+          symbol,
+          resolution: getResolution(interval),
+          from: fromTimestamp,
+          to: toTimestamp,
+        });
 
       // Extract freshness metadata from response
       if (response.freshness) {
@@ -240,14 +259,19 @@ export const useChartHistorical = ({
         // Adjust polling interval based on backend recommendation
         const recommendedInterval = response.freshness.recommendedPollInterval;
         // Conservative intervals for rate limit compliance - 30 second minimum for real-time data
-        const minInterval = response.freshness.dataSource === 'websocket' ? 30000 : 60000;
+        const minInterval =
+          response.freshness.dataSource === "websocket" ? 30000 : 60000;
         setSmartInterval(Math.max(recommendedInterval, minInterval));
-        console.log(`📊 Adjusted polling interval to ${recommendedInterval}ms (min: ${minInterval}ms) based on backend freshness data for ${response.freshness.dataSource} data`);
+        console.log(
+          `📊 Adjusted polling interval to ${recommendedInterval}ms (min: ${minInterval}ms) based on backend freshness data for ${response.freshness.dataSource} data`
+        );
       }
 
       if (response.success && response.data) {
         const historicalCandles = transformTradingViewData(response.data);
-        console.log(`📊 Loaded ${historicalCandles.length} historical candles for ${symbol}`);
+        console.log(
+          `📊 Loaded ${historicalCandles.length} historical candles for ${symbol}`
+        );
         return { candles: historicalCandles, freshness: response.freshness };
       }
 
@@ -274,10 +298,7 @@ export const useChartHistorical = ({
 /**
  * Hook for live price updates (more frequent than historical data)
  */
-export const useLivePrices = ({
-  symbol,
-  interval,
-}: UseChartDataOptions) => {
+export const useLivePrices = ({ symbol, interval }: UseChartDataOptions) => {
   const [isPageVisible, setIsPageVisible] = useState(true);
 
   // Track page visibility
@@ -285,8 +306,9 @@ export const useLivePrices = ({
     const handleVisibilityChange = () => {
       setIsPageVisible(!document.hidden);
     };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, []);
 
   return useQuery({
@@ -330,67 +352,80 @@ export const useLivePrices = ({
 export const useCurrentPrice = (symbol: string) => {
   const { user } = useAuth();
   // Get actual user level from auth, default to BASIC if not authenticated
-  const userLevel = user?.userLevel || 'BASIC'; // 'BASIC' | 'REGISTERED' | 'VERIFIED'
+  const userLevel = user?.userLevel || "BASIC"; // 'BASIC' | 'REGISTERED' | 'VERIFIED'
 
   return useQuery({
     queryKey: ["current-price", symbol, userLevel],
     queryFn: async () => {
-      console.log(`💰 Fetching current price for ${symbol} (user level: ${userLevel})`);
+      console.log(
+        `💰 Fetching current price for ${symbol} (user level: ${userLevel})`
+      );
 
       try {
         // For BASIC users: Use public ticker (may be unavailable)
-        if (userLevel === 'BASIC') {
-          const response: FreshnessAwareResponse<TickerData> = await marketApi.getTicker(symbol);
+        if (userLevel === "BASIC") {
+          const response: FreshnessAwareResponse<TickerData> =
+            await marketApi.getTicker(symbol);
 
           if (response.success && response.data) {
             console.log(`💰 Got public ticker price: $${response.data.price}`);
             return {
               price: parseFloat(response.data.price),
-              change24h: parseFloat(response.data.change24h || '0'),
-              volume24h: parseFloat(response.data.volume24h || '0'),
+              change24h: parseFloat(response.data.change24h || "0"),
+              volume24h: parseFloat(response.data.volume24h || "0"),
               symbol,
               timestamp: Date.now(),
-              source: 'public',
+              source: "public",
               freshness: response.freshness,
             };
           } else {
             // Public data unavailable
             console.warn(`💰 Public ticker unavailable for ${symbol}`);
-            throw new Error(response.error || 'Market data temporarily unavailable');
+            throw new Error(
+              response.error || "Market data temporarily unavailable"
+            );
           }
         }
 
         // For REGISTERED/VERIFIED users: Use authenticated mark price
-        const response: FreshnessAwareResponse<MarkPriceData> = await marketApi.getMarkPrice(symbol);
+        const response: FreshnessAwareResponse<MarkPriceData> =
+          await marketApi.getMarkPrice(symbol);
 
         if (response.success && response.data) {
-          console.log(`💰 Got authenticated mark price: $${response.data.price}`);
+          console.log(
+            `💰 Got authenticated mark price: $${response.data.price}`
+          );
           return {
             price: parseFloat(response.data.price),
             symbol,
             timestamp: Date.now(),
-            source: 'authenticated',
+            source: "authenticated",
             freshness: response.freshness,
           };
         } else {
           // Authenticated data unavailable - fallback to public if possible
-          console.warn(`💰 Authenticated mark price unavailable for ${symbol}, trying public fallback`);
-          const publicResponse: FreshnessAwareResponse<TickerData> = await marketApi.getTicker(symbol);
+          console.warn(
+            `💰 Authenticated mark price unavailable for ${symbol}, trying public fallback`
+          );
+          const publicResponse: FreshnessAwareResponse<TickerData> =
+            await marketApi.getTicker(symbol);
 
           if (publicResponse.success && publicResponse.data) {
-            console.log(`💰 Fallback to public ticker: $${publicResponse.data.price}`);
+            console.log(
+              `💰 Fallback to public ticker: $${publicResponse.data.price}`
+            );
             return {
               price: parseFloat(publicResponse.data.price),
-              change24h: parseFloat(publicResponse.data.change24h || '0'),
-              volume24h: parseFloat(publicResponse.data.volume24h || '0'),
+              change24h: parseFloat(publicResponse.data.change24h || "0"),
+              volume24h: parseFloat(publicResponse.data.volume24h || "0"),
               symbol,
               timestamp: Date.now(),
-              source: 'public_fallback',
+              source: "public_fallback",
               freshness: publicResponse.freshness,
             };
           }
 
-          throw new Error('Market data temporarily unavailable');
+          throw new Error("Market data temporarily unavailable");
         }
       } catch (error) {
         console.error(`💰 Price fetch failed for ${symbol}:`, error);
@@ -398,20 +433,20 @@ export const useCurrentPrice = (symbol: string) => {
       }
     },
     enabled: !!symbol,
-    staleTime: userLevel === 'BASIC' ? 10000 : 1000, // Basic: 10 sec, Premium: 10 sec (match cache TTL)
+    staleTime: userLevel === "BASIC" ? 10000 : 1000, // Basic: 10 sec, Premium: 10 sec (match cache TTL)
     gcTime: 1 * 10 * 1000, // 10 seconds cache
     retry: (failureCount, error) => {
       // Don't retry on 403/503 (auth/data unavailable errors)
       if (error instanceof Error) {
-        if (error.message.includes('403') || error.message.includes('503')) {
+        if (error.message.includes("403") || error.message.includes("503")) {
           return false;
         }
       }
       return failureCount < 2;
     },
-    refetchInterval: (query) => {
+    refetchInterval: query => {
       // Dynamic polling based on user level and data availability
-      if (userLevel === 'BASIC') {
+      if (userLevel === "BASIC") {
         return 10000; // 10 seconds for basic users
       }
 
@@ -437,8 +472,11 @@ export const useWebSocketPriceUpdates = ({
 }: UseChartDataOptions) => {
   const [tickData, setTickData] = useState<WsTickData | null>(null);
   const [klineData, setKlineData] = useState<WsKlineData | null>(null);
-  const [markPriceData, setMarkPriceData] = useState<WsMarkPriceData | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<string>("disconnected");
+  const [markPriceData, setMarkPriceData] = useState<WsMarkPriceData | null>(
+    null
+  );
+  const [connectionStatus, setConnectionStatus] =
+    useState<string>("disconnected");
   const { user } = useAuth();
   const isAuthenticated = !!user; // Connect for any authenticated user (BASIC, REGISTERED, VERIFIED)
 
@@ -446,7 +484,6 @@ export const useWebSocketPriceUpdates = ({
     // Only connect if user is authenticated
     if (!isAuthenticated) {
       console.log("📡 WebSocket: User not authenticated, skipping connection");
-      setConnectionStatus("disconnected");
       return;
     }
 
@@ -486,7 +523,8 @@ export const useWebSocketPriceUpdates = ({
     websocketClient.onStatusChange(handleStatusChange);
 
     // Connect and subscribe (fire-and-forget — cleanup handles teardown regardless of outcome)
-    websocketClient.connect()
+    websocketClient
+      .connect()
       .then(() => {
         console.log("📡 WebSocket: Connected for VERIFIED user");
         setConnectionStatus(websocketClient.getStatus());
@@ -521,15 +559,13 @@ export const useWebSocketPriceUpdates = ({
  * Combined hook that merges historical and WebSocket real-time data
  * Maintains backward compatibility with existing CandlestickChart
  */
-export const useChartData = ({
-  symbol,
-  interval,
-}: UseChartDataOptions) => {
+export const useChartData = ({ symbol, interval }: UseChartDataOptions) => {
   // Get historical data (1x/minute)
   const historicalQuery = useChartHistorical({ symbol, interval });
 
   // Get WebSocket real-time updates
-  const { tickData, klineData, markPriceData, connectionStatus } = useWebSocketPriceUpdates({ symbol, interval });
+  const { tickData, klineData, markPriceData, connectionStatus } =
+    useWebSocketPriceUpdates({ symbol, interval });
 
   // Extract data from queries with useMemo
   const historicalData = React.useMemo(() => {
@@ -544,9 +580,10 @@ export const useChartData = ({
       // Convert kline data to candle format.
       // klineData.startTime is in milliseconds (from Orderly Network WebSocket),
       // but historical candles use seconds — divide by 1000 to align them.
-      const startTimeSec = klineData.startTime > 1e12
-        ? Math.floor(klineData.startTime / 1000)
-        : klineData.startTime;
+      const startTimeSec =
+        klineData.startTime > 1e12
+          ? Math.floor(klineData.startTime / 1000)
+          : klineData.startTime;
 
       const candle: CandleData = {
         time: startTimeSec,
