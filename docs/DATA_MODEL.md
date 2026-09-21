@@ -1,6 +1,8 @@
 # Data Model: Identity, Wallets & Exchange Accounts
 
 **Status:** design proposal — nothing here is implemented yet.
+**Execution plan:** [EXCHANGE_INTEGRATION_PLAN.md](EXCHANGE_INTEGRATION_PLAN.md)
+(defines the staged PRs C1-C3 that implement this document).
 
 This document describes the target data model for user identity, wallets, and
 exchange accounts, why the current schema cannot express it, and the phased path

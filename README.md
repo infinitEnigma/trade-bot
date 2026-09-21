@@ -271,6 +271,7 @@ npm run format:check    # Verify formatting without writing
 | [docs/OPERATIONS.md](docs/OPERATIONS.md)                                                                                 | How do we run and recover it? — environment, runbooks, observability, test gates            |
 | [docs/PROJECT_REVIEW_GAP_ANALYSIS.md](docs/PROJECT_REVIEW_GAP_ANALYSIS.md)                                               | How did we get here / what remains? — review verification, findings, remediation ledger     |
 | [docs/DATA_MODEL.md](docs/DATA_MODEL.md)                                                                                 | How are users, wallets and exchange accounts modelled? — target model + migration plan      |
+| [docs/EXCHANGE_INTEGRATION_PLAN.md](docs/EXCHANGE_INTEGRATION_PLAN.md)                                                   | What are we building next, in what order? — credential contract, Lighter adapter, DB stages |
 | [backend/README.md](backend/README.md) · [engine/README.md](engine/README.md) · [frontend/README.md](frontend/README.md) | Workspace-specific guides                                                                   |
 
 `docs/archived/` (historical review material, kept for reference) and
