@@ -270,6 +270,7 @@ npm run format:check    # Verify formatting without writing
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)                                                                             | How does it work? — topology, control plane, lifecycle model, engine layers, data ownership |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md)                                                                                 | How do we run and recover it? — environment, runbooks, observability, test gates            |
 | [docs/PROJECT_REVIEW_GAP_ANALYSIS.md](docs/PROJECT_REVIEW_GAP_ANALYSIS.md)                                               | How did we get here / what remains? — review verification, findings, remediation ledger     |
+| [docs/DATA_MODEL.md](docs/DATA_MODEL.md)                                                                                 | How are users, wallets and exchange accounts modelled? — target model + migration plan      |
 | [backend/README.md](backend/README.md) · [engine/README.md](engine/README.md) · [frontend/README.md](frontend/README.md) | Workspace-specific guides                                                                   |
 
 `docs/archived/` (historical review material, kept for reference) and

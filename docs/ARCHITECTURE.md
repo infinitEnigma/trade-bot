@@ -219,6 +219,12 @@ exchange) and no single transaction spans them. Correctness depends on explicit
 reconciliation rules; the rules that exist today, and the ones still missing, are
 enumerated in `PROJECT_REVIEW_GAP_ANALYSIS.md` §3.
 
+The **identity/accounts** side of this map (users, identities, wallets,
+exchange accounts, and the bot → account binding) is being redesigned — the
+current schema assumes one wallet and one exchange account per user, which the
+engine's credential fetch inherits. The target model and its phased migration
+plan live in [DATA_MODEL.md](DATA_MODEL.md).
+
 ---
 
 ## 7. Cross-package contracts (`shared`)
