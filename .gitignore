@@ -53,7 +53,11 @@ pg_hba.conf
 
 # AI guides
 AI_*
-docs/
+
+# Docs: historical archive + internal AI instruction sets stay untracked.
+# Durable documentation (docs/*.md) IS tracked so repo consumers can read it.
+docs/archived/
+docs/instructions/
 
 # Test coverage
 backend/coverage/

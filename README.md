@@ -1,6 +1,6 @@
 # Trade Bot
 
-**Automated Perpetual Futures Trading Platform**
+**Automated Trading Platform**
 
 [![License: Apache](https://img.shields.io/badge/License-Apache-yellow.svg)](LICENSE)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D24.15.0-brightgreen)](package.json)
@@ -10,18 +10,27 @@
 
 ## Overview
 
-Trade Bot is a **full-stack, chain-agnostic automated trading platform** for perpetual futures. It uses a distributed architecture with a React frontend, Node.js Express backend, and an independent trading engine coordinated via Redis Streams.
+Trade Bot is a **full-stack, chain-agnostic automated trading platform** for executing desired trading strategies. It uses a distributed architecture with a React frontend, Node.js Express backend, and an independent trading engine coordinated via Redis Streams.
 
 | Component            | Technology                            | Status            | Documentation                          |
 | -------------------- | ------------------------------------- | ----------------- | -------------------------------------- |
-| **Network**          | Multi-chain (Berachain, EVM, Solana)  | ✅ Extensible     | -                                      |
+| **Network**          | Multi-chain (EVM, Solana)             | ✅ Extensible     | -                                      |
 | **Exchange**         | Multi-exchange (Kodiak, + extensible) | ✅ Extensible     | -                                      |
 | **Frontend**         | React 19 + Vite + Tailwind CSS        | ✅ Functional     | [📖 Frontend Docs](frontend/README.md) |
 | **Backend**          | Express.js + PostgreSQL + Redis       | ✅ Functional     | [📖 Backend Docs](backend/README.md)   |
 | **Trading Engine**   | TypeScript (Node.js)                  | ⚠️ In Development | [📖 Engine Docs](engine/README.md)     |
 | **Shared Contracts** | TypeScript types                      | ✅ Functional     | -                                      |
 
-> **Maturity Assessment**: The architecture is a **chain- and exchange-agnostic distributed system** with proper backend-engine coordination. The Backend ↔ Engine protocol (Redis Streams, explicit state transitions, ACKs, correlation IDs, engine epochs, heartbeats) is the strongest architectural area. As of 2026-09, all 22 tracked architectural and security findings have been resolved (see the archive under [Known Issues](#known-issues--priorities)), `npm audit` reports **0 vulnerabilities**, and the codebase is fully formatted and lint-clean (0 errors, 0 warnings) with **2,567 passing tests**.
+> **Maturity Assessment (2026-09-20)**: The architecture is a chain- and
+> exchange-agnostic distributed platform with a working control plane. The
+> Backend ↔ Engine protocol (Redis Streams, separated desired/actual lifecycle
+> state, manual ACK, correlation IDs, engine epochs, heartbeats, poison-message
+> detection) is the most mature subsystem. The toolchain is clean: `npm audit`
+> reports **0 vulnerabilities**, lint is **0 errors / 0 warnings**, and the
+> suites report **2,567 passing tests**. Remaining work is trading-system
+> hardening — exchange↔local order reconciliation, durable trading state, and
+> atomic snapshot persistence — not architecture remediation. Track it in the
+> [Project Review & Gap Analysis](docs/PROJECT_REVIEW_GAP_ANALYSIS.md).
 
 ---
 
@@ -70,6 +79,9 @@ npm run db:migrate
 # Check migration status (ledger vs. files)
 npm run db:status
 
+# Seed baseline data (optional)
+npm run db:seed
+
 # Start all services
 npm run dev
 
@@ -83,7 +95,7 @@ npm run dev:engine     # Trading bot engine
 
 ```bash
 npm run build          # Build all packages
-npm start              # Start production server
+npm run prod           # Start the production backend (serves the built frontend)
 ```
 
 ---
@@ -184,13 +196,13 @@ trade-bot/
 ├── engine/                    # Exchange-agnostic trading engine
 │   └── src/
 │       ├── index.ts           # Entry point (bootstrap only)
-│       ├── application/       # Bot lifecycle + heartbeat coordination
-│       ├── protocol/          # Command consumer + event publisher
-│       ├── domain/            # Bot runtime types + exchange interface
+│       ├── application/       # BotManager, StrategyRunner (tick loop), lifecycle coordinator
+│       ├── protocol/          # Command consumer, event publisher, credential fetcher
+│       ├── domain/            # Bot runtime, engine identity, exchange interface, grid snapshot
 │       ├── exchanges/         # Exchange integrations (pluggable)
 │       │   └── kodiak/        # Kodiak/Orderly (first exchange)
 │       ├── strategies/        # Grid trading strategy
-│       ├── infrastructure/    # Redis Streams client
+│       ├── infrastructure/    # Redis Streams client + grid snapshot persistence
 │       ├── types/             # Strategy type definitions
 │       └── utils/             # Logging utility
 ├── shared/                    # Cross-package TypeScript contracts
@@ -202,7 +214,9 @@ trade-bot/
 │       │   └── engine-lifecycle.ts # Engine registration & heartbeat
 │       └── types/             # Domain models, infrastructure contracts
 ├── database/                  # PostgreSQL migrations
-├── docs/                      # Architecture & deployment docs
+├── docs/                      # Durable docs (architecture, operations, review tracker)
+│   ├── archived/              # Untracked historical material
+│   └── instructions/          # Untracked internal AI guides
 └── scripts/                   # Build & maintenance scripts
 ```
 
@@ -218,8 +232,13 @@ npm run dev:engine      # Bot engine only
 # Building
 npm run build           # Build all packages
 
+# Database
+npm run db:migrate      # Apply pending migrations (ledger-tracked)
+npm run db:status       # Compare migration ledger vs. files
+npm run db:seed         # Seed baseline data
+
 # Testing
-npm run test            # Run full test suite
+npm run test            # Run full test suite (use CI=true in a TTY)
 
 # Linting & Formatting
 npm run lint            # Lint all packages (0 errors, 0 warnings)
@@ -244,84 +263,19 @@ npm run format:check    # Verify formatting without writing
 
 ---
 
-## Known Issues & Priorities
+## Documentation
 
-Most findings from the architectural and security reviews (2026-09) have been
-resolved — 22 of 24 tracked issues are ✅ Fixed and collapsed into the
-[archive](#resolved-issues-archive) below. Remaining open items:
+| Document                                                                                                                 | Answers                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)                                                                             | How does it work? — topology, control plane, lifecycle model, engine layers, data ownership |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md)                                                                                 | How do we run and recover it? — environment, runbooks, observability, test gates            |
+| [docs/PROJECT_REVIEW_GAP_ANALYSIS.md](docs/PROJECT_REVIEW_GAP_ANALYSIS.md)                                               | How did we get here / what remains? — review verification, findings, remediation ledger     |
+| [backend/README.md](backend/README.md) · [engine/README.md](engine/README.md) · [frontend/README.md](frontend/README.md) | Workspace-specific guides                                                                   |
 
-| Priority | Issue                           | Description                                                                                                                                   |
-| -------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🟡 P2    | **Shared Package Scope**        | `@trade-bot/shared` is a god package (protocol types, domain models, API contracts, error classes, logging types). Should be split by domain. |
-| 🟡 P2    | **Docs not version-controlled** | `.gitignore` ignores all of `docs/`, so durable documentation is invisible to repo consumers. Needs a decision on what to track.              |
+`docs/archived/` (historical review material, kept for reference) and
+`docs/instructions/` (internal AI working guides) are intentionally untracked.
 
-<details>
-<summary><strong>Resolved Issues Archive (2026-09)</strong></summary>
-
-### ✅ Recently Fixed
-
-| Issue                             | Fix                                                                                                                                                                                                       | Files Changed                          |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| **Overlapping Strategy Ticks**    | Replaced `setInterval()` with sequential tick loop using self-replacing `setTimeout`. Added single-flight guard (`tickRunning` flag) to skip interval if previous tick still executing.                   | `engine/kodiak/src/index.ts`           |
-| **Trading Operation Idempotency** | Added deterministic `clientOrderId` generation using format `{botId}:{levelIndex}:{side}`. Same bot/level/side always produces the same ID, allowing exchange to detect duplicates on command redelivery. | `engine/kodiak/src/strategies/grid.ts` |
-
-### 🔴 Critical (P0)
-
-| Issue                              | Description                                                                                                                                                                                                                                                                                                                         |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Reconciliation Worker Disabled** | ✅ Fixed: Replaced by a lifecycle-aware reconciler (`LifecycleReconciliationService`) that repairs desired/actual drift through `BotLifecycleService` only, with bounded stop-reissues, stuck-transition degradation to UNKNOWN, audit events, and CAS-safe transitions. The superseded `BotReconciliationWorker` has been deleted. |
-
-### 🟠 High (P1)
-
-| Issue                         | Description                                                                                                                                                                             |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Redis Failure Semantics**   | ✅ Fixed: Bot start/stop endpoints now return 503 when Redis is unavailable. Health endpoint includes `controlPlane` status.                                                            |
-| **Engine Monolithic Design**  | ✅ Fixed: The engine's `BotManager` is embedded in `index.ts`, handling command consumption, heartbeats, bot lifecycle, credential retrieval, and strategy scheduling in a single file. |
-| **Command Timeout Semantics** | ✅ Fixed: Added timeout reason tracking with appropriate state transitions.                                                                                                             |
-
-### 🟡 Medium (P2)
-
-| Issue                        | Description                                                                                                                                                                                                                                   |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Legacy Bot Status Models** | ✅ Fixed: Consolidated around canonical `BotActualState` from `@trade-bot/shared/src/protocol`. Removed duplicate enums and inline status strings.                                                                                            |
-| **Shared Package Scope**     | `@trade-bot/shared` has become a god package containing protocol types, domain models, API contracts, error classes, and logging types. Should be split.                                                                                      |
-| **Dead Code Cleanup**        | ✅ Fixed: Removed the dormant Orderly `market-stream` subsystem, the superseded `BotReconciliationWorker`, the `service-selector` rollout shim, unused WebSocket/DI getters, unused frontend `QuickActions`, and one-off Redis debug scripts. |
-
-### 🔐 Security Review Findings (2026-09-15)
-
-Findings from a security-focused code review, prioritized per severity:
-
-#### 🔴 Critical (P0)
-
-| Issue                                                             | Description                                                                                                                                                                                                                                                                                                                                               | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Refresh tokens accepted as access tokens**                      | `JwtTokenAdapter.verifyToken()` fell back to verifying with `JWT_REFRESH_SECRET` after `JWT_SECRET` failed, and `validateToken()` (guarding every API route and WebSocket auth) used it. A stolen 30-day refresh token presented in the `Authorization` header produced a valid session, bypassing the 4h access-token TTL and refresh rotation entirely. | ✅ Fixed: Tokens now carry a `type` claim (`access`/`refresh`); verification is secret- and claim-strict per call site — the access path never accepts refresh tokens and vice versa. Note: previously issued tokens without the `type` claim are rejected; users must re-authenticate after deploy — handled gracefully: definitive refresh failures now return `401 { code: -1002 }` with session cookies cleared, and the frontend force-resets auth state and routes to `/login` instead of leaving the user stranded. (`jwt-token.adapter.ts`, `shared/types/infrastructure.ts`) |
-| **Logout did not invalidate tokens**                              | The logout route had a TODO relying on natural expiry, and `invalidateUserTokens()` blacklisted nothing. The `jwt:blacklist:{hash}` cache keys existed but were never written or checked. Combined with the issue above, a logged-out refresh token remained a fully functional credential for 30 days.                                                   | ✅ Fixed: Logout now blacklists the presented refresh + access token hashes (TTL = remaining token lifetime), `refreshToken()` rejects blacklisted refresh tokens, and `validateToken()` rejects blacklisted access tokens. Blacklist lookups fail open during cache outages. (`auth.service.pure.ts`, `interfaces/http/auth/index.ts`)                                                                                                                                                                                                                                               |
-| **Encryption key rotation was a no-op that corrupted versioning** | `rotateEncryptionKeys()` inserted the new key under the _old_ `CURRENT_KEY_VERSION`, computed the new version locally without persisting or applying it, and never re-encrypted existing credentials — risking PK conflicts and unrecoverable exchange credentials. `getVersionedKey()` also had no real version-3+ support.                              | ✅ Fixed: Rotation derives the next version from `MAX(version)` in `encryption_keys`, stores the new key wrapped under the master key (version-1 envelope), bumps the instance's current version, and re-encrypts all existing credentials (legacy non-versioned rows handled separately). Versions 1/2 keep their legacy master-key aliasing for backward compatibility. (`encryption.service.ts`)                                                                                                                                                                                   |
-
-#### 🟠 High (P1)
-
-| Issue                                                 | Description                                                                                                                                                    | Status                                                                                                                                                                                            |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Engine API key compared with `!==`**                | `botEngineAuth` middleware used a non-constant-time string comparison.                                                                                         | ✅ Fixed: Uses `crypto.timingSafeEqual` on length-checked buffers. (`interfaces/http/bots/engine.ts`)                                                                                             |
-| **`KeyManagementService` async init fire-and-forget** | Constructor kicked off async key derivation and rethrew inside `.catch()` — an unhandled promise rejection; callers could race against partial initialization. | ✅ Fixed: Derivation is tracked in an `initializationPromise`; `ensureInitialized()` awaits it and surfaces failures with retry support instead of swallowing them. (`key-management.service.ts`) |
-| **Broken test suite**                                 | `database-migrate.test.ts` failed to compile (imported a deleted `src/database/migrate` module).                                                               | ✅ Fixed: Stale test removed (the module was replaced by the ledger-tracked `scripts/run-migrations.js` runner).                                                                                  |
-| **Tests that cannot fail**                            | `workers.test.ts` wrapped assertions in `try { … } catch { }` / logged-and-ignored catches — tests passed even when assertions failed.                         | ✅ Fixed: Swallowing try/catch wrappers removed; assertions now propagate. Also removed a test `console.log` printing a token (`middleware.auth.test.ts`).                                        |
-
-#### 🟡 Medium (P2) — remaining from the review
-
-| Issue                                                                                              | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **God files / duplicated auth logic**                                                              | `redis.service.ts` (1,385 lines), `kodiak-integration.service.ts` (1,184), `market.ts` (954) should be decomposed. `auth.middleware.ts` duplicated the refresh handling (~100 lines) and used a `require()` to dodge a circular DI import.                                                                                                                                                                                                                                                                                                                                                                                                   | ✅ Fixed: `redis.service.ts` is now a 532-line thin facade over `redis/` components (inline `TransactionRecoveryManager`/retry-types duplicate removed; atomic/cache/transaction methods delegated to `redis/operations                                                                                                                                                                                                                                                                                                                                                                                                                          | atomic-operations | cache-manager | metrics | transactions`; dual-client collapse into `RedisConnectionManager`; self-import fixed; legacy `getWithVersion`/`del`/`isHealthy`/`getCacheStats`/`atomicIncrementWithExpiry`semantics preserved and pinned by tests).`kodiak-integration.service.ts`split into`infrastructure/external/kodiak/` (`types`, `fetch-options`, `public-fetch`shared fetch path,`credentials-provider`backed by the repository adapter instead of raw SQL,`private-data`, `market-data`) with the service kept as a compatibility facade. `market.ts` split into per-domain route modules (`market-ticker | futures | portfolio | ws-url | tv  | klines | kline-history.routes.ts`) with shared `market-helpers.ts`/`market-cache.ts`(single`roundTo5Minutes`+ cache-key builder);`market.ts`is now a router composer. Auth middleware deduplicated into`finalizeRefreshedSession`/`respondToFailedRefresh`helpers with the`require()`dodge replaced by a lazy`serviceProvider`lookup, and extracted into`auth-error-codes.ts`/`auth-refresh-mutex.ts`/`auth-session-cookies.ts`/`auth-session-hydrator.ts`. |
-| **Dead refresh token stranded users as BASIC (wallet signing broken in prod)**                     | After the strict-token deploy, browsers holding pre-hardening 30-day refresh cookies got `401` on `/api/user/verify-wallet` and `/profile` (settings silently reloaded showing BASIC), while the old `-1004` response gave clients no way to distinguish "transient" from "re-login required" — and the stale zustand `auth-storage` persisted the stale user across reloads.                                                                                                                                                                                                                                                                | ✅ Fixed: `respondToFailedRefresh()` now returns a definitive `401 { code: -1002 }` and clears all session cookies when the refresh token is definitively invalid/expired (`isDefinitiveRefreshFailure()`), leaving `-1004` for transient failures. Frontend `client.ts` gained `forceReauthentication()`: on `401+-1002` it clears the auth store **and** the persisted `auth-storage`, then redirects to `/login`; `useAuth.ts` listens for `auth:session-expired`/`auth:logout` events and resets state without relying on a page reload. (`auth.middleware.ts`, `auth-error-codes.ts`, `auth-session-cookies.ts`, `client.ts`, `useAuth.ts`) |
-| **User level promotion invisible: profile cache served stale BASIC (no 200 after verify-wallet)**  | `user-profile.service.verifyWalletOwnership()` delegated the BASIC→REGISTERED promotion to the auth service (which invalidates only its own auth cache) but never invalidated the `user:profile:{userId}` Redis entry (TTL 300s). The unchanged profile body produced an identical ETag, so the follow-up `GET /profile` returned `304 Not Modified` and the UI kept showing BASIC with the sign option, even though the DB was already REGISTERED. `unlink-wallet` (which calls `authService.unlinkWallet` directly in the route) had the same hole on downgrade.                                                                           | ✅ Fixed: `verifyWalletOwnership()` invalidates the profile cache on success; `invalidateUserProfileCache()` made public and called from the `unlink-wallet` route after a successful downgrade. (`user-profile.service.ts`, `interfaces/http/users/profile.ts`)                                                                                                                                                                                                                                                                                                                                                                                 |
-| **Kodiak connect: "connecting…" toast stuck, status showed connected despite failed verification** | Four stacked issues: (1) `generateKodiakSignature()` base58-decoded the raw secret including the `ed25519:` prefix and rejected hex (`0x…`) exports — signature always failed with `Non-base58 character`; (2) `connectKodiak()` stored credentials **before** verification and left them on failure, so `status` reported `connected: true, verified: false` — Settings showed "connected" while the user stayed REGISTERED; (3) failed connections were cached for 300s, blocking immediate retries with corrected keys; (4) `Settings.tsx` discarded the `SmartToast.loading` id (duration `Infinity`), so the toast was never dismissed. | ✅ Fixed: secret-key normalization (`ed25519:` prefix strip + hex/base58 detection) before decode; failed verification now rolls back stored credentials (all-or-nothing connect) and returns `verified: false` without level upgrade; only successful connections are cached; loading toast id captured and dismissed on settle. (`kodiak-integration.service.ts`, `kodiak-connection.service.ts`, `user-kodiak.service.ts`, `Settings.tsx`)                                                                                                                                                                                                    |
-| **WebSocket auth retried a dead token forever**                                                    | On definitive auth failures (dead cookie, expired access token, deleted user) the WS client kept reconnecting on a ~10s loop (14+ identical failures observed in prod logs), hammering the server with handshakes that could never succeed.                                                                                                                                                                                                                                                                                                                                                                                                  | ✅ Fixed: `setupAuthentication()` now classifies WS auth failures via `isDefinitiveWsAuthCode()` and passes `{ code, definitive: true }` through the Socket.IO handshake error `data`; the frontend `connect_error` handler stops the reconnect loop on `definitive`, dispatches a single `auth:session-expired` event (HTTP refresh / re-login flow takes over), and resets the flag on successful reconnect. Transient (internal) failures still retry normally. (`websocket/auth.ts`, `websocket.service.ts`, `frontend websocket/client.ts`)                                                                                                 |
-| **Docs not version-controlled**                                                                    | `.gitignore` ignores all of `docs/`, so instructions and durable documentation are invisible to repo consumers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | ⬜ Open (needs a decision on what to track)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| **Non-atomic Redis mutex release**                                                                 | Token-refresh mutex was released with plain `DEL` (no owner token), so an expired lock could be released by a non-owner.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | ✅ Fixed: Locks are acquired with a random owner token and released via a compare-and-delete Lua script (`eval(RELEASE_LOCK_SCRIPT, { keys, arguments })`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| **Hardcoded lightweight-endpoint paths**                                                           | The `/api/user/kodiak/*` path list was inlined 3× in `auth.middleware.ts`, breaking exchange-agnosticism.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | ✅ Fixed: Centralized in a `LIGHTWEIGHT_ENDPOINT_PREFIXES` constant with an `isLightweightEndpoint()` helper.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-
-</details>
+---
 
 ## Test Coverage
 
@@ -348,23 +302,11 @@ component and hook tests is the top coverage priority (see Roadmap).
 
 ## Roadmap
 
-### Current Focus
-
-- [x] Fix overlapping strategy tick execution (single-flight scheduler)
-- [x] Implement business-operation idempotency for trading orders
-- [x] Define explicit control-plane behavior when Redis is unavailable
-- [x] Refactor engine into modular, exchange-agnostic architecture
-- [x] Replace legacy reconciliation worker with lifecycle-aware reconciler (drift repair + attribution instrumentation)
-- [x] Remove superseded legacy `BotReconciliationWorker` and its tests
-- [x] Retire the dormant Orderly `market-stream` subsystem (market data served over HTTP)
-- [x] Consolidate on a single DI container (`service-selector` rollout shim removed)
-- [x] Wallet-first onboarding: wallet verification no longer requires exchange credentials
-
 ### Near-Term
 
-- [x] Consolidate old/new bot status models in shared package
-- [x] Complete command timeout → ERROR/UNKNOWN transition semantics
-- [x] Expand test coverage (baseline: 2,567 tests, 85.0%/74.4%/61.6% stmts across backend/engine/frontend — frontend components/hooks are the next priority)
+- [ ] Harden the engine trading path — exchange↔local order reconciliation, atomic
+      snapshot persistence, durable trade ledger (see
+      [Project Review & Gap Analysis](docs/PROJECT_REVIEW_GAP_ANALYSIS.md))
 
 ### Medium-Term
 
@@ -378,81 +320,3 @@ component and hook tests is the top coverage priority (see Roadmap).
 
 - [ ] Horizontal scaling support
 - [ ] Advanced risk management features
-
----
-
-## Architecture Ratings
-
-Per recent architectural review:
-
-| Area                      | Rating    |
-| ------------------------- | --------- |
-| Monorepo structure        | 8/10      |
-| Backend architecture      | 7.5/10    |
-| Frontend architecture     | 7.5/10    |
-| Backend ↔ Engine protocol | 8/10      |
-| Lifecycle model           | 8.5/10    |
-| Engine reliability        | 7/10      |
-| Trading execution         | 7/10      |
-| Failure recovery          | 6.5/10    |
-| Operational maturity      | 6/10      |
-| Documentation             | 4/10      |
-| **Overall**               | **~7/10** |
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Commit changes: `git commit -am 'Add feature'`
-4. Push branch: `git push origin feature/your-feature`
-5. Open a pull request
-
-### Mandatory Pre-Commit Gates
-
-**Every commit must pass all four gates from the repo root before `git commit`:**
-
-| Gate   | Command                | Requirement                                             |
-| ------ | ---------------------- | ------------------------------------------------------- |
-| Format | `npm run format:check` | Prettier-clean (0 unformatted files)                    |
-| Lint   | `npm run lint`         | ESLint **0 errors and 0 warnings** (`--max-warnings 0`) |
-| Build  | `npm run build`        | `tsc` + `vite` compile cleanly across all workspaces    |
-| Tests  | `npm test`             | All test suites pass                                    |
-
-If a gate fails, fix it before committing — **never commit red**. (Prettier can auto-fix formatting with `npm run format`; ESLint fixes with `npm run lint:fix`.) Run the test gate as `CI=true npm test` — Vitest starts in watch mode on a TTY.
-
-### Change Rules
-
-- **Update related documentation in the same commit**: if your change alters behavior, APIs, architecture, tooling, or scripts, update the README and any affected docs to match.
-- **New features ship with tests**: every new feature, endpoint, hook, or service must include tests (unit at minimum; integration tests where external systems — PostgreSQL, Redis — are involved).
-- **One logical change per commit**; use conventional prefixes: `feat:`, `fix:`, `chore:`, `docs:`, `style:`, `refactor:`, `test:`.
-- Dependencies: prefer minor/patch updates; majors require a peer-constraint check and a dedicated PR.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-### Code Standards
-
-- TypeScript strict mode enabled
-- ESLint enforced with **0 errors and 0 warnings** (`--max-warnings 0`; flat config in `eslint.base.mjs` + per-workspace configs)
-- Prettier formatting enforced (`.prettierrc`, 2-space, 80 cols)
-- Comprehensive error handling
-- Detailed logging for debugging
-
----
-
-## License
-
-Apache License 2.0 - See [LICENSE](LICENSE) for details
-
----
-
-## Resources
-
-- **[Kodiak/Orderly Documentation](https://docs.orderly.network/)**
-- **[Berachain Documentation](https://docs.berachain.com/)**
-- **[TypeScript Documentation](https://www.typescriptlang.org/)**
-
----
-
-**Status**: In Development | **Version**: 1.0.0 | **Updated**: September 14, 2026

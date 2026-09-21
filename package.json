@@ -1,7 +1,7 @@
 {
   "name": "trade-bot-monorepo",
   "version": "1.0.0",
-  "description": "Berachain Perpetual Futures Trading Platform",
+  "description": "Platform for autonomous trading-strategy execution",
   "private": true,
   "workspaces": [
     "frontend",
@@ -25,6 +25,7 @@
     "test:frontend": "cd frontend && npm run test",
     "test:engine": "cd engine && npm run test",
     "db:migrate": "cd backend && npm run db:migrate",
+    "db:status": "cd backend && npm run db:status",
     "db:seed": "cd backend && npm run db:seed",
     "lint": "npm run lint:backend && npm run lint:frontend && npm run lint:engine && npm run lint:shared",
     "lint:fix": "npm run lint:fix:backend && npm run lint:fix:frontend && npm run lint:fix:engine && npm run lint:fix:shared",
@@ -57,9 +58,9 @@
   "keywords": [
     "trading",
     "perpetuals",
-    "berachain",
-    "kodiak",
-    "bot"
+    "blockchain",
+    "agent",
+    "web3"
   ],
   "author": "infinitEnigma",
   "license": "Apache-2.0",

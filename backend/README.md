@@ -3,7 +3,7 @@
 **Express.js API Server - Chain & Exchange Agnostic Trading Platform**
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](tsconfig.json)
-[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D25.0.0-brightgreen)](package.json)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D24.15.0-brightgreen)](package.json)
 [![Express.js](https://img.shields.io/badge/Express.js-5.x-lightgrey)](package.json)
 
 ---
@@ -146,9 +146,9 @@ connections, market subscriptions) are exposed at `GET /api/system/metrics` unde
 
 ### Prerequisites
 
-- Node.js ≥ 25.0.9
+- Node.js ≥ 24.15.0 (LTS; `.nvmrc` pins `24.21.0`)
 - PostgreSQL 14+
-- Redis 5.0+
+- Redis 5.0+ (6.2+ preferred for `XAUTOCLAIM`; older servers fall back to `XPENDING`/`XCLAIM`)
 
 ### Configuration
 
@@ -221,7 +221,8 @@ npm run build && npm start
 
 ### Engine (internal)
 
-- `GET /api/bot/engine/credentials/:botId` - Engine fetches credentials out-of-band
+- `GET /api/bot/engine/credentials/:botId` - Engine fetches credentials out-of-band (bot-scoped API key)
+- `POST /api/bot/engine/report-trade` - Trade/fill reporting endpoint; present but **not called by the engine today** (see Known Issues)
 
 ### Other
 
@@ -233,19 +234,22 @@ npm run build && npm start
 
 ## Known Issues
 
-| Priority | Issue                   | Description                                                                                                                                                                                                                                                 |
-| -------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🔴 P0    | Reconciliation Disabled | ✅ Fixed: `LifecycleReconciliationService` now repairs desired/actual drift (bounded stop reissues, stuck->UNKNOWN via CAS, audit events). The superseded `BotReconciliationWorker` has been deleted (along with its tests and route-module startup hooks). |
-| 🟠 P1    | Redis Failure Semantics | ✅ Fixed: Bot start/stop endpoints return 503 when Redis unavailable. Health endpoint includes `controlPlane` status.                                                                                                                                       |
-| 🟡 P2    | Dead Code               | ✅ Fixed: Removed the dormant Orderly `market-stream` subsystem, the superseded `BotReconciliationWorker`, the `service-selector` rollout shim, unused WebSocket/DI getters, and one-off Redis debug scripts.                                               |
+Review history and open findings are tracked outside this README:
 
-### ✅ Recently Fixed
+- [docs/PROJECT_REVIEW_GAP_ANALYSIS.md](../docs/PROJECT_REVIEW_GAP_ANALYSIS.md) —
+  verified review findings and the remediation ledger
+- [docs/OPERATIONS.md](../docs/OPERATIONS.md) — runbooks (Redis unavailable,
+  engine offline, stuck transitions, reconciliation sweeps, post-incident checks)
+- [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) — control plane, lifecycle
+  model, engine layering, data ownership
 
-| Issue                     | Fix                                                                                                                                                                                                 |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Command Timeout Semantics | Added timeout reason tracking (STATE_MISMATCH, STOP_INCOMPLETE, ENGINE_NO_RESPONSE, COMMAND_NEVER_DELIVERED) with appropriate target states (UNKNOWN for unclear states, ERROR for engine failures) |
+Notable backend behaviours worth knowing before changing lifecycle code:
 
----
+- Command timeouts are tracked with reason codes (`STATE_MISMATCH`,
+  `STOP_INCOMPLETE`, `ENGINE_NO_RESPONSE`, `COMMAND_NEVER_DELIVERED`) and map to
+  target states (`UNKNOWN` for ambiguous state, `ERROR` for engine failures).
+- `POST /api/bot/engine/report-trade` exists and writes to `trades`, but **no
+  engine code calls it today**; see finding N7 before relying on it.
 
 ## Code Standards
 
@@ -257,4 +261,4 @@ npm run build && npm start
 
 ---
 
-**Backend Status**: Functional | **Architecture**: Chain & Exchange Agnostic | **Version**: 1.0.0 | **Updated**: September 14, 2026
+**Backend Status**: Functional | **Architecture**: Chain & Exchange Agnostic | **Version**: 1.0.0 | **Updated**: September 20, 2026

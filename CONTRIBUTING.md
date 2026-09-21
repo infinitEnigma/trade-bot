@@ -52,6 +52,7 @@ npm run lint:fix   # ESLint --fix across workspaces
    - Bug fixes should include a regression test that fails without the fix.
 3. **One logical change per commit.** Split unrelated reformatting from logic changes; use conventional commit prefixes: `feat:`, `fix:`, `chore:`, `docs:`, `style:`, `refactor:`, `test:`.
 4. **Dependencies**: prefer minor/patch updates (`npm update <pkg> --workspaces`). Major bumps require a peer-constraint check against all workspaces and a dedicated PR with its own gates.
+5. **Documentation layout**: the README answers _"what is the system today"_; `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, and `docs/PROJECT_REVIEW_GAP_ANALYSIS.md` own design, runbooks, and review history respectively. Do not add review/history language back into the READMEs. `docs/archived/` and `docs/instructions/` are untracked by design; durable docs live directly in `docs/`.
 
 ## Project Layout
 

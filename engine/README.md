@@ -3,15 +3,17 @@
 **Exchange-Agnostic Trading Bot Engine for Automated Strategy Execution**
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](package.json)
-[![Node.js](https://img.shields.io/badge/Node.js-25.x-green)](package.json)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D24.15.0-brightgreen)](package.json)
 
 ---
 
 ## Overview
 
-The trading engine is an independent, **exchange-agnostic** TypeScript service that executes automated trading strategies. It currently supports Kodiak/Orderly on Berachain and is designed to support multiple exchanges and chains. It consumes commands from and publishes events to Redis Streams, coordinated by the backend.
+The trading engine is an independent, **exchange-agnostic** TypeScript service that executes automated trading strategies. It currently supports the Kodiak and Orderly exchange connectors and is designed to support multiple exchanges and chains. It consumes commands from and publishes events to Redis Streams, coordinated by the backend.
 
-> **✅ Fixed**: The engine now uses a sequential tick loop with single-flight guard to prevent overlapping `tick()` executions.
+> **Tick scheduling**: each running bot is driven by a single-flight tick loop — an
+> overrunning tick is skipped rather than queued, so exchange calls never overlap
+> for the same bot.
 
 ### Key Features
 
@@ -29,11 +31,11 @@ The trading engine is an independent, **exchange-agnostic** TypeScript service t
 ```
 Trading Engine (exchange-agnostic core)
 ├── src/
-│   ├── index.ts              # Entry point + BotManager (embedded): command
-│   │                         #   loop, init/cancellation, heartbeat,
-│   │                         #   registration and graceful shutdown
+│   ├── index.ts              # Entry point (bootstrap): Redis connect, engine
+│   │                         #   identity, heartbeat, command loop, shutdown
 │   ├── application/         # Application layer
-│   │   ├── bot-manager.ts    # Bot lifecycle orchestration
+│   │   ├── bot-manager.ts    # BOT_START/BOT_STOP orchestration
+│   │   ├── strategy-runner.ts # Single-flight tick loop
 │   │   └── lifecycle-coordinator.ts # Heartbeat + registration + shutdown
 │   ├── protocol/             # Protocol layer
 │   │   ├── command-consumer.ts # Redis Streams command consumer loop
@@ -42,14 +44,16 @@ Trading Engine (exchange-agnostic core)
 │   ├── domain/               # Domain types
 │   │   ├── bot-runtime.ts    # Bot runtime interfaces
 │   │   ├── engine-identity.ts # Engine identity management
-│   │   └── exchange.ts       # Exchange client interface
+│   │   ├── exchange.ts       # Exchange client interface
+│   │   └── grid-snapshot.ts  # Persisted grid slot state (versioned schema)
 │   ├── exchanges/            # Exchange integrations (pluggable)
 │   │   └── kodiak/
 │   │       └── client.ts     # Kodiak/Orderly API client
 │   ├── strategies/           # Trading strategy implementations
 │   │   └── grid.ts           # Grid trading strategy
 │   ├── infrastructure/       # Infrastructure adapters
-│   │   └── redis/streams.ts  # Redis Streams client
+│   │   ├── redis/streams.ts  # Redis Streams client (claim / ack / dedup)
+│   │   └── state/grid-state.ts # Grid snapshot load/save on disk
 │   ├── types/                # TypeScript definitions
 │   │   └── strategy.ts       # Strategy interfaces
 │   └── utils/logger.ts       # Structured logging
@@ -168,8 +172,9 @@ interface GridStrategyConfig {
 
 1. Calculates grid levels around current price
 2. Places buy orders at levels below current price
-3. When buy order fills, places sell order at level above
-4. Tracks P&L from each completed buy-sell cycle
+3. When a buy order fills, it places the corresponding sell order for that level
+4. Tracks P&L per completed buy-sell cycle (calibration of the profit logic is
+   tracked as finding N6 in the gap analysis)
 
 ---
 
@@ -223,14 +228,15 @@ interface GridStrategyConfig {
 
 ## Architecture Highlights
 
-### ✅ Recently Completed
+- **Layered**: `application/`, `protocol/`, `domain/`, `exchanges/`, `infrastructure/`.
+- **Exchange-agnostic**: the core depends only on the `ExchangeClient` interface.
+- **Single-flight ticks**: an overrunning tick is skipped, never queued.
+- **Snapshot-restored grid**: slot state (including live order ids) survives restarts.
 
-| Improvement       | Description                                                                        |
-| ----------------- | ---------------------------------------------------------------------------------- |
-| Modularization    | Engine decomposed into `application/`, `protocol/`, `domain/`, `exchanges/` layers |
-| Exchange-Agnostic | Core engine decoupled from specific exchanges via `ExchangeClient` interface       |
-| Overlapping Ticks | Sequential tick loop with single-flight guard                                      |
-| Order Idempotency | Deterministic `clientOrderId` for exchange duplicate detection                     |
+Open items on the trading path — exchange call contract, order reconciliation,
+snapshot durability, accounting — are tracked in
+[`docs/PROJECT_REVIEW_GAP_ANALYSIS.md`](../docs/PROJECT_REVIEW_GAP_ANALYSIS.md);
+the full design is in [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
 
 ### Exchange Extensibility
 
@@ -252,4 +258,4 @@ To add a new exchange:
 
 ---
 
-**Engine Status**: In Development | **Architecture**: Exchange-Agnostic | **Version**: 1.0.0 | **Updated**: September 12, 2026
+**Engine Status**: In Development | **Architecture**: Exchange-Agnostic | **Version**: 1.0.0 | **Updated**: September 20, 2026
