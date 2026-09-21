@@ -51,6 +51,12 @@ pg_hba.conf
 # Engine runtime grid-snapshots (per-bot slot state, regenerated on start)
 **/.grid-snapshots/
 
+# Python (probe scripts + lighter signer sidecar)
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+scripts/lighter-probe/.out/
 # AI guides
 AI_*
 
