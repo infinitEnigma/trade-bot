@@ -69,7 +69,10 @@ describe("GridTradingStrategy order idempotency", () => {
     const idB = gen(b);
 
     expect(idA).toBe(idB);
-    expect(idA).toBe("bot-1:0:BUY");
+    // Contract-compliant format: <botKey>-<level>-<side>, no colons.
+    expect(idA).toBe("bot1-00-B");
+    expect(idA.length).toBeLessThanOrEqual(36);
+    expect(idA).toMatch(/^[A-Za-z0-9][A-Za-z0-9-]*$/);
   });
 
   it("derives a different clientOrderId for a different botId", async () => {
@@ -116,7 +119,7 @@ describe("GridTradingStrategy order idempotency", () => {
 
     expect(orderly.findOrderByClientOrderId).toHaveBeenCalledWith(
       CONFIG.symbol,
-      "bot-1:0:BUY"
+      "bot1-00-B"
     );
     expect(orderly.createOrder).not.toHaveBeenCalled();
   });

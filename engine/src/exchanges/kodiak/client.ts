@@ -22,10 +22,11 @@
  */
 
 import axios, { AxiosInstance } from "axios";
-import { OrderRequest, OrderResponse } from "../../types/strategy";
 import { createHash } from "crypto";
 import { signAsync } from "@noble/ed25519";
 import { logger } from "../../utils/logger";
+import { OrderRequest, OrderResponse } from "../../types/strategy";
+import { toOrderlyOrderPayload } from "./payload";
 
 interface OrderlyPosition {
   symbol: string;
@@ -226,10 +227,17 @@ export class OrderlyClient {
     // Validate position size before placing order
     await this.validatePositionSize(request);
 
-    const path = "/v1/order";
-    const headers = await this.signRequest("POST", path, request);
+    // The exchange contract is snake_case; the domain model is camelCase.
+    // Map first, then sign and send exactly the same serialized body.
+    const payload = toOrderlyOrderPayload(request);
 
-    const response = await this.client.post(path, request, { headers });
+    const path = "/v1/order";
+    const body = JSON.stringify(payload);
+    const headers = await this.signRequest("POST", path, payload);
+
+    const response = await this.client.post(path, body, {
+      headers: { ...headers, "Content-Type": "application/json" },
+    });
     return {
       orderId: response.data.data.order_id.toString(),
       status: response.data.data.status || "SUBMITTED",

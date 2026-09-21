@@ -184,20 +184,19 @@ loop; `stop()` clears the timer and prevents re-arming.
 
 The only strategy implemented today is the grid (`strategies/grid.ts`):
 
-| Concern            | Behaviour                                                                                                                                   |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Config             | `symbol`, `gridSize`, `gridRangePercent`, `orderQuantity` (resolved by `BotManager` from the strategy config)                               |
-| Level construction | `gridSize + 1` prices evenly spaced across `±gridRangePercent/2` around a baseline price                                                    |
-| Baseline           | Restored from the snapshot when present, otherwise the current mark price                                                                   |
-| Slot state         | Per level: `price`, `buyOrderId`, `sellOrderId`, `filled`                                                                                   |
-| Tick               | Fetch mark price → place buys below / sells above where no order exists → poll order status (5s per order) → persist the snapshot           |
-| Order identity     | Deterministic `clientOrderId` = `{botId}:{levelIndex}:{side}`, so a redelivered command or a restart regenerates the same key               |
-| Duplicate defence  | Get-before-create: list open orders for the symbol and adopt one matching the `clientOrderId`; on a create error, re-query before giving up |
+| Concern            | Behaviour                                                                                                                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Config             | `symbol`, `gridSize`, `gridRangePercent`, `orderQuantity` (resolved by `BotManager` from the strategy config)                                                                                          |
+| Level construction | `gridSize + 1` prices evenly spaced across `±gridRangePercent/2` around a baseline price                                                                                                               |
+| Baseline           | Restored from the snapshot when present, otherwise the current mark price                                                                                                                              |
+| Slot state         | Per level: `price`, `buyOrderId`, `sellOrderId`, `filled`                                                                                                                                              |
+| Tick               | Fetch mark price → place buys below / sells above where no order exists → poll order status (5s per order) → persist the snapshot                                                                      |
+| Order identity     | Deterministic `clientOrderId` = `<botKey>-<level(base36)>-<B\|S>` (`utils/client-order-id.ts`), within the exchange's 36-char contract, so a redelivered command or a restart regenerates the same key |
+| Duplicate defence  | Get-before-create: list open orders for the symbol and adopt one matching the `clientOrderId`; on a create error, re-query before giving up                                                            |
+| Wire payload       | `exchanges/kodiak/payload.ts` maps the camelCase request to the documented snake_case body before signing; the signed string is the exact body sent                                                    |
 
 **Currently uncovered transitions** (owned by the remediation plan; see
-`PROJECT_REVIEW_GAP_ANALYSIS.md` §3): the create-order payload is not mapped to
-the exchange's snake_case contract, the deterministic key exceeds the exchange's
-36-character `client_order_id` limit, a `NOT_FOUND` order query leaves the slot
+`PROJECT_REVIEW_GAP_ANALYSIS.md` §3): a `NOT_FOUND` order query leaves the slot
 occupied forever, there is no startup cross-check of exchange orders against
 restored slots, cancellation failures are swallowed while `STOPPED` is still
 reported, and sell legs are placed at the buy price with mark-price PnL and no

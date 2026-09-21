@@ -11,6 +11,7 @@ import {
   Trade,
 } from "../types/strategy";
 import { logger } from "../utils/logger";
+import { ClientOrderIdGenerator } from "../utils/client-order-id";
 import {
   GridSnapshot,
   GridSnapshotLevel,
@@ -33,6 +34,7 @@ export class GridTradingStrategy {
   private totalTrades: number = 0;
   private trades: Trade[] = [];
   private lastOrderCheck: Map<string, Date> = new Map();
+  private clientOrderIdGenerator: ClientOrderIdGenerator;
 
   constructor(
     botId: string,
@@ -42,6 +44,7 @@ export class GridTradingStrategy {
     this.botId = botId;
     this.config = config;
     this.orderly = orderly;
+    this.clientOrderIdGenerator = new ClientOrderIdGenerator(botId);
   }
 
   async initialize(currentPrice: number): Promise<void> {
@@ -182,15 +185,18 @@ export class GridTradingStrategy {
 
   /**
    * Generate a deterministic client order id for idempotency.
-   * Format: {botId}:{levelIndex}:{side}
-   * This ensures that if a command is redelivered after a crash, the same
-   * clientOrderId is generated and the exchange can detect the duplicate.
+   *
+   * Delegates to `ClientOrderIdGenerator`, which packs the bot id, the level
+   * index and the side into the exchange's `client_order_id` contract (max 36
+   * chars, hyphen allowed but not first — see `utils/client-order-id.ts`).
+   * The same bot/level/side always yields the same id, so a redelivered
+   * command or a restart regenerates the key the exchange can match/reject.
    */
   private generateClientOrderId(
     levelIndex: number,
     side: "BUY" | "SELL"
   ): string {
-    return `${this.botId}:${levelIndex}:${side}`;
+    return this.clientOrderIdGenerator.generate(levelIndex, side);
   }
 
   /**

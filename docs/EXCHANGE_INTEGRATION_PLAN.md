@@ -99,12 +99,12 @@ slots instead of re-placing orders.
 
 ### B3 — `LighterClient` (`engine/src/exchanges/lighter/`)
 
-| File                 | Responsibility                                                                                                                                                                                                          |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `client.ts`          | `ExchangeClient` implementation over REST + sidecar: `/info` connectivity, `orderBooks` + `orderBookDetails` market resolution, `accountActiveOrders`, `accountOrders?client_order_indexes=`, create/cancel via sidecar |
-| `status-map.ts`      | Normalise Lighter statuses → canonical (`open`→`OPEN`, `canceled`→`CANCELED`, `filled`→`FILLED`, unknown→`UNRESOLVED`) — the vocabulary verified in Phase 0                                                             |
-| `client-order-id.ts` | Deterministic key derivation: one pure function per representation (Orderly's ≤36-char string, Lighter's int64 index) from `(botId, levelIndex, side)`; both stable across restarts, unit-tested                        |
-| `market-map.ts`      | Symbol → `market_id` + price/size decimals, cached with a TTL; unknown symbol ⇒ clean `CommandError`                                                                                                                    |
+| File                 | Responsibility                                                                                                                                                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `client.ts`          | `ExchangeClient` implementation over REST + sidecar: `/info` connectivity, `orderBooks` + `orderBookDetails` market resolution, `accountActiveOrders`, `accountOrders?client_order_indexes=`, create/cancel via sidecar                                             |
+| `status-map.ts`      | Normalise Lighter statuses → canonical (`open`→`OPEN`, `canceled`→`CANCELED`, `filled`→`FILLED`, unknown→`UNRESOLVED`) — the vocabulary verified in Phase 0                                                                                                         |
+| `client-order-id.ts` | Deterministic key derivation: one pure function per representation (Orderly's ≤36-char string, Lighter's int64 index) from `(botId, levelIndex, side)`; both stable across restarts, unit-tested. **Landed for Orderly (ledger 1)** as `<botKey>-<level(base36)>-<B | S>`; the Lighter int64 derivation follows in workstream B |
+| `market-map.ts`      | Symbol → `market_id` + price/size decimals, cached with a TTL; unknown symbol ⇒ clean `CommandError`                                                                                                                                                                |
 
 Phase 0 facts the implementation must encode: cancel/query are **eventually
 consistent** (poll, don't one-shot); a duplicate `client_order_index` is
