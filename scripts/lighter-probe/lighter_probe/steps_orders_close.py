@@ -57,7 +57,9 @@ async def step_lost_response_recovery(
     state["lost_response_index"] = client_order_index
     return StepResult(
         "lost-response recovery",
-        "PASS" if order and resolution((order or {}).get("status")) == "OPEN" else "FAIL",
+        "PASS"
+        if order and resolution((order or {}).get("status")) == "OPEN"
+        else "FAIL",
         {
             "client_order_index": client_order_index,
             "recovered": order is not None,
@@ -69,10 +71,14 @@ async def step_lost_response_recovery(
     )
 
 
-async def step_cancel_order(
-    session: ProbeSession, state: dict[str, Any]
-) -> StepResult:
-    """Cancel the first probe order and confirm the final status via query."""
+async def step_cancel_order(session: ProbeSession, state: dict[str, Any]) -> StepResult:
+    """Cancel the first probe order and confirm the final status via query.
+
+    Cancel commits are eventually consistent: accountOrders can lag behind
+    accountActiveOrders (verified live: a canceled order reads as missing once
+    before settling on "canceled"). This step polls instead of one-shot
+    reading - the same discipline the engine's reconciler must follow.
+    """
     index = state.get("client_order_index")
     if index is None:
         raise OrderProbeError("no order placed yet")
@@ -85,8 +91,12 @@ async def step_cancel_order(
         api_key_index=api_key_index,
     )
     _tx, _tx_hash, err = await await_maybe(call)
-    await sleep_for_commit()
-    order = await query_order(session, int(index))
+    order: dict[str, Any] | None = None
+    for _ in range(6):
+        await sleep_for_commit()
+        order = await query_order(session, int(index))
+        if order and resolution(order.get("status")) != "UNRESOLVED":
+            break
     status = (order or {}).get("status")
     canceled = resolution(status) == "CANCELED"
     return StepResult(

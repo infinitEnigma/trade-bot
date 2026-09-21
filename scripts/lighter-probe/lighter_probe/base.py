@@ -21,7 +21,7 @@ def safe_json(resp: Any) -> dict[str, Any]:
     try:
         body = resp.json()
         return body if isinstance(body, dict) else {}
-    except Exception:
+    except Exception:  # noqa: BLE001 - probe must tolerate malformed bodies
         return {}
 
 

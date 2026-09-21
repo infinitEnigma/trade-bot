@@ -86,8 +86,14 @@ CREDS = {
 
 def test_clients_cached_per_credentials():
     service = SignerService()
-    req = {**CREDS, "market_index": 0, "client_order_index": 1, "base_amount": 10,
-           "price": 100, "is_ask": False}
+    req = {
+        **CREDS,
+        "market_index": 0,
+        "client_order_index": 1,
+        "base_amount": 10,
+        "price": 100,
+        "is_ask": False,
+    }
     asyncio.run(service.create_order(req))
     asyncio.run(service.create_order(req))
     # one client construction for two operations
@@ -96,19 +102,33 @@ def test_clients_cached_per_credentials():
 
 def test_create_order_returns_tx_hash():
     service = SignerService()
-    result = asyncio.run(service.create_order({
-        **CREDS, "market_index": 0, "client_order_index": 42, "base_amount": 10,
-        "price": 100, "is_ask": False,
-    }))
+    result = asyncio.run(
+        service.create_order(
+            {
+                **CREDS,
+                "market_index": 0,
+                "client_order_index": 42,
+                "base_amount": 10,
+                "price": 100,
+                "is_ask": False,
+            }
+        )
+    )
     assert result["ok"] is True
     assert result["tx_hash"] == "hash-42"
 
 
 def test_cancel_order_uses_client_order_index():
     service = SignerService()
-    result = asyncio.run(service.cancel_order({
-        **CREDS, "market_index": 0, "order_index": 42,
-    }))
+    result = asyncio.run(
+        service.cancel_order(
+            {
+                **CREDS,
+                "market_index": 0,
+                "order_index": 42,
+            }
+        )
+    )
     assert result["ok"] is True
     cancel = next(c for c in _calls if c.get("op") == "cancel")
     assert cancel["order_index"] == 42
@@ -124,8 +144,14 @@ def test_nonce_serialized_under_lock():
     service = SignerService()
 
     async def two_orders():
-        req = {**CREDS, "market_index": 0, "client_order_index": 1,
-               "base_amount": 10, "price": 100, "is_ask": False}
+        req = {
+            **CREDS,
+            "market_index": 0,
+            "client_order_index": 1,
+            "base_amount": 10,
+            "price": 100,
+            "is_ask": False,
+        }
         return await asyncio.gather(
             service.create_order(req), service.create_order(req)
         )

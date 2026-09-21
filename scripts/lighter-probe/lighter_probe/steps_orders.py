@@ -87,7 +87,9 @@ async def resolve_market(session: ProbeSession) -> dict[str, Any]:
     )
     entries = safe_json(resp).get("order_book_details") or []
     if not entries:
-        raise OrderProbeError(f"orderBookDetails returned nothing for market {market_id}")
+        raise OrderProbeError(
+            f"orderBookDetails returned nothing for market {market_id}"
+        )
     return entries[0]
 
 
@@ -175,7 +177,7 @@ async def step_place_limit_order(
         nonce=nonce,
         api_key_index=api_key_index,
     )
-    tx, tx_hash, err = await await_maybe(call)
+    _tx, tx_hash, err = await await_maybe(call)
     state["client_order_index"] = client_order_index
     return StepResult(
         "place limit order",
@@ -230,9 +232,7 @@ async def step_duplicate_submission(
     call = session.signer.create_order(
         market_index=market_index_of(market),
         client_order_index=int(index),
-        base_amount=scaled_size(
-            0.01, int(market.get("supported_size_decimals") or 4)
-        ),
+        base_amount=scaled_size(0.01, int(market.get("supported_size_decimals") or 4)),
         price=scaled_price(
             mark_price_of(market),
             session.cfg.order_offset_pct,
@@ -251,8 +251,11 @@ async def step_duplicate_submission(
     after = await query_all_orders(session, int(index))
     after_ids = sorted(str(o.get("order_id")) for o in after)
     new_ids = sorted(set(after_ids) - set(before_ids))
-    live_new = [o for o in after if str(o.get("order_id")) in new_ids
-                and resolution(o.get("status")) == "OPEN"]
+    live_new = [
+        o
+        for o in after
+        if str(o.get("order_id")) in new_ids and resolution(o.get("status")) == "OPEN"
+    ]
     if err:
         verdict = "REJECTED"
     elif live_new:

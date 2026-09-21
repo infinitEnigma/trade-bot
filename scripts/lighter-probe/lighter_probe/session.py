@@ -27,7 +27,7 @@ class ProbeSession:
         self.http: httpx.AsyncClient | None = None
         self._auth_token: str | None = None
 
-    async def __aenter__(self) -> ProbeSession:
+    async def __aenter__(self) -> ProbeSession:  # noqa: PYI034 - Self needs 3.11+; repo supports 3.10
         self.api_client = lighter.ApiClient(
             configuration=lighter.Configuration(host=self.cfg.base_url)
         )
@@ -83,7 +83,9 @@ class ProbeSession:
 
     # ------------------------------------------------------------------- rest
 
-    async def get(self, path: str, params: dict[str, Any] | None = None) -> httpx.Response:
+    async def get(
+        self, path: str, params: dict[str, Any] | None = None
+    ) -> httpx.Response:
         """Authorized GET against the Lighter REST API."""
         assert self.http is not None
         headers = {"Authorization": await self.auth_token()}

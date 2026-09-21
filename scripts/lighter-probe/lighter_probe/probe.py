@@ -71,9 +71,11 @@ def _selected(pattern: str, name: str, include: list[str], skip: list[str]) -> b
 
 async def run(include: list[str], skip: list[str], json_out: str | None) -> int:
     cfg: ProbeConfig = load()
-    print(f"Lighter probe :: env={cfg.env_name} url={cfg.base_url}"
-          f" account={cfg.account_index} api_key={cfg.api_key_index}"
-          f" market={cfg.market_symbol}")
+    print(
+        f"Lighter probe :: env={cfg.env_name} url={cfg.base_url}"
+        f" account={cfg.account_index} api_key={cfg.api_key_index}"
+        f" market={cfg.market_symbol}"
+    )
     state: dict = {}
     results: list[StepResult] = []
 
@@ -81,9 +83,14 @@ async def run(include: list[str], skip: list[str], json_out: str | None) -> int:
         for name, needs_state, fn in STEPS:
             if not _selected(pattern="*", name=name, include=include, skip=skip):
                 continue
-            if needs_state and any(r.status == "FAIL" for r in results
-                                   if r.name in ("connectivity", "account", "markets")):
-                results.append(StepResult(name, "SKIP", {"reason": "prerequisite failed"}))
+            if needs_state and any(
+                r.status == "FAIL"
+                for r in results
+                if r.name in ("connectivity", "account", "markets")
+            ):
+                results.append(
+                    StepResult(name, "SKIP", {"reason": "prerequisite failed"})
+                )
                 continue
             try:
                 if needs_state:
@@ -96,8 +103,10 @@ async def run(include: list[str], skip: list[str], json_out: str | None) -> int:
             print(result)
 
     failed = sum(1 for r in results if r.status == "FAIL")
-    print(f"\n{len(results)} steps: {failed} failed, "
-          f"{sum(1 for r in results if r.status == 'NOTE')} notes")
+    print(
+        f"\n{len(results)} steps: {failed} failed, "
+        f"{sum(1 for r in results if r.status == 'NOTE')} notes"
+    )
     if json_out:
         os.makedirs(os.path.dirname(json_out) or ".", exist_ok=True)
         payload = {
@@ -107,7 +116,9 @@ async def run(include: list[str], skip: list[str], json_out: str | None) -> int:
             "results": [vars(r) for r in results],
             "state": {k: str(v) for k, v in state.items()},
         }
-        with open(json_out, "w", encoding="utf-8") as fh:
+        # Blocking file IO is fine here: reports are written once per run, not
+        # on any async hot path.
+        with open(json_out, "w", encoding="utf-8") as fh:  # noqa: ASYNC230
             json.dump(payload, fh, indent=2, ensure_ascii=False)
         print(f"report written to {json_out}")
     return 1 if failed else 0
@@ -128,11 +139,13 @@ def main() -> int:
 
     load_dotenv()
     try:
-        return asyncio.run(run(
-            include=[p for p in args.only.split(",") if p],
-            skip=[p for p in args.skip.split(",") if p],
-            json_out=args.json_out,
-        ))
+        return asyncio.run(
+            run(
+                include=[p for p in args.only.split(",") if p],
+                skip=[p for p in args.skip.split(",") if p],
+                json_out=args.json_out,
+            )
+        )
     except ProbeConfigError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         return 2

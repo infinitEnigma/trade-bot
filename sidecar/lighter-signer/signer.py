@@ -97,12 +97,13 @@ class SignerService:
                 time_in_force=req.get("time_in_force", 0),
                 reduce_only=req.get("reduce_only", False),
                 trigger_price=req.get("trigger_price", 0),
-                order_expiry=expiry if expiry is not None and expiry >= 0
+                order_expiry=expiry
+                if expiry is not None and expiry >= 0
                 else getattr(client, "DEFAULT_28_DAY_ORDER_EXPIRY", -1),
                 nonce=nonce,
                 api_key_index=api_key_index,
             )
-            tx, tx_hash, err = await _await_maybe(call)
+            _tx, tx_hash, err = await _await_maybe(call)
         if err:
             return {"ok": False, "error": str(err)}
         return {
@@ -148,7 +149,7 @@ class SignerService:
         for client in self._clients.values():
             try:
                 await _await_maybe(client.close())
-            except Exception:  # noqa: BLE001 - shutdown best effort
+            except Exception:  # noqa: BLE001, S110 - shutdown best effort
                 pass
         self._clients.clear()
         self._locks.clear()

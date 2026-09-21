@@ -1,4 +1,5 @@
 # Lighter probe tooling (Phase 0 verification scripts)
+# Python 3.10+ (system python3.10 is fine; Self-typed forms avoided on purpose)
 lighter-sdk>=0.23.0
 httpx>=0.27.0
 python-dotenv>=1.0.0
