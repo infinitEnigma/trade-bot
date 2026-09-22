@@ -9,14 +9,13 @@
 
 import { BotActualState, EngineCredentials } from "@trade-bot/shared";
 import { GridTradingStrategy } from "../strategies/grid";
-import { OrderlyClient } from "../exchanges/kodiak/client";
+import { ExchangeClient } from "../domain/exchange";
 
 /**
  * Runtime state for a running bot instance.
  *
- * The client field stays typed as the Kodiak adapter until workstream B4
- * decouples the strategy from `OrderlyClient` and widens this to the shared
- * `ExchangeClient` interface.
+ * `exchangeClient` is the exchange-agnostic `ExchangeClient` contract
+ * (workstream B4) — the concrete adapter lives behind the client factory.
  */
 export interface BotRuntime {
   botId: string;
@@ -25,7 +24,7 @@ export interface BotRuntime {
   state: BotActualState;
   strategy: GridTradingStrategy;
   stopTick: () => void;
-  exchangeClient: OrderlyClient;
+  exchangeClient: ExchangeClient;
 }
 
 /**

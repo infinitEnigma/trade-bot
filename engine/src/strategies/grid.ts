@@ -2,12 +2,15 @@
 
 // TODO
 
-import { OrderlyClient } from "../exchanges/kodiak/client";
+import {
+  ExchangeClient,
+  ExchangeOrderRequest,
+  OrderLookup,
+} from "../domain/exchange";
 import {
   GridStrategyConfig,
   GridLevel,
   BotStatus,
-  OrderRequest,
   Trade,
 } from "../types/strategy";
 import { logger } from "../utils/logger";
@@ -22,9 +25,24 @@ import {
   saveGridSnapshot,
 } from "../infrastructure/state/grid-state";
 
+/**
+ * How often a single slot's order is re-checked against the exchange (ms).
+ * Bounds the reconciliation load on the venue while keeping fill detection
+ * responsive enough for one grid tick interval.
+ */
+const ORDER_CHECK_INTERVAL_MS = 5000;
+
+/**
+ * Grid strategy over the exchange-agnostic `ExchangeClient` contract.
+ *
+ * The strategy used to take the concrete `OrderlyClient`. Workstream B4
+ * decouples it: every exchange interaction goes through the interface
+ * (`getTicker` / `createOrder` / `cancelOrder` / `queryOrderByClientOrderId` /
+ * `listOpenOrders`), which is what makes a second venue possible at all.
+ */
 export class GridTradingStrategy {
   private config: GridStrategyConfig;
-  private orderly: OrderlyClient;
+  private exchange: ExchangeClient;
   private levels: GridLevel[] = [];
   private botId: string;
   private running: boolean = false;
@@ -39,11 +57,11 @@ export class GridTradingStrategy {
   constructor(
     botId: string,
     config: GridStrategyConfig,
-    orderly: OrderlyClient
+    exchange: ExchangeClient
   ) {
     this.botId = botId;
     this.config = config;
-    this.orderly = orderly;
+    this.exchange = exchange;
     this.clientOrderIdGenerator = new ClientOrderIdGenerator(botId);
   }
 
@@ -117,14 +135,17 @@ export class GridTradingStrategy {
     for (const level of this.levels) {
       if (level.buyOrderId) {
         try {
-          await this.orderly.cancelOrder(level.buyOrderId, this.config.symbol);
+          await this.exchange.cancelOrder(level.buyOrderId, this.config.symbol);
         } catch {
           /* Order may already be filled or cancelled */
         }
       }
       if (level.sellOrderId) {
         try {
-          await this.orderly.cancelOrder(level.sellOrderId, this.config.symbol);
+          await this.exchange.cancelOrder(
+            level.sellOrderId,
+            this.config.symbol
+          );
         } catch {
           /* Order may already be filled or cancelled */
         }
@@ -143,7 +164,7 @@ export class GridTradingStrategy {
 
     try {
       // Get current price
-      const ticker = await this.orderly.getTicker(this.config.symbol);
+      const ticker = await this.exchange.getTicker(this.config.symbol);
       this.currentPrice = Number(ticker.mark_price || ticker.price);
 
       // Check each grid level
@@ -270,39 +291,99 @@ export class GridTradingStrategy {
   }
 
   private async placeBuyOrder(level: GridLevel, index: number): Promise<void> {
-    // Use deterministic clientOrderId for idempotency - same bot/level/side
-    // always produces the same ID, so the exchange can reject a duplicate.
-    const clientOrderId = this.generateClientOrderId(index, "BUY");
+    return this.placeSlotOrder(level, index, "BUY");
+  }
+
+  private async placeSellOrder(level: GridLevel, index: number): Promise<void> {
+    return this.placeSlotOrder(level, index, "SELL");
+  }
+
+  /**
+   * Idempotent slot placement, shared by both sides.
+   *
+   * Every branch is driven by the contract's `OrderLookup`, so the failure
+   * semantics live in exactly one place instead of being re-implemented per
+   * side:
+   * - `FOUND_OPEN` — adopt the live order; a lost create response is never a
+   *   reason to place a second one.
+   * - `FOUND_FILLED` — the order already executed; record the fill.
+   * - `FOUND_CANCELED` / `NOT_FOUND` — definitively not live; place.
+   * - `UNREACHABLE` — the exchange could not be asked: leave the slot
+   *   untouched rather than risk a duplicate order.
+   */
+  private async placeSlotOrder(
+    level: GridLevel,
+    index: number,
+    side: "BUY" | "SELL"
+  ): Promise<void> {
+    // Deterministic clientOrderId: the same bot/level/side always derives the
+    // same key, so a redelivered command or a restart reconciles against the
+    // exchange instead of risking a duplicate submission.
+    const clientOrderId = this.generateClientOrderId(index, side);
+
+    // Get-before-create: adopt an already-live order (lost response) rather
+    // than submitting a second one for the same slot.
+    let lookup: OrderLookup;
     try {
-      // Get-before-create: adopt an already-live order (lost response) with the
-      // same clientOrderId instead of submitting a second buy order.
-      const existing = await this.orderly.findOrderByClientOrderId(
+      lookup = await this.exchange.queryOrderByClientOrderId(
         this.config.symbol,
         clientOrderId
       );
-      if (existing && existing.orderId) {
-        level.buyOrderId = existing.orderId;
-        logger.info("Adopted existing buy order (idempotent reconcile)", {
-          price: level.price,
-          orderId: existing.orderId,
-          botId: this.botId,
-          symbol: this.config.symbol,
-        });
-        return;
-      }
-
-      const order: OrderRequest = {
-        symbol: this.config.symbol,
-        orderType: "LIMIT",
-        side: "BUY",
-        orderPrice: level.price,
-        orderQuantity: this.config.orderQuantity,
+    } catch (error) {
+      logger.warn("Order slot frozen (lookup failed)", {
+        side,
+        price: level.price,
         clientOrderId,
-      };
+        error: error instanceof Error ? error.message : String(error),
+        botId: this.botId,
+        symbol: this.config.symbol,
+      });
+      return;
+    }
 
-      const result = await this.orderly.createOrder(order);
-      level.buyOrderId = result.orderId;
-      logger.info("Placed buy order", {
+    if (lookup.kind === "UNREACHABLE") {
+      logger.warn("Order slot frozen (exchange unreachable)", {
+        side,
+        price: level.price,
+        clientOrderId,
+        reason: lookup.reason,
+        botId: this.botId,
+        symbol: this.config.symbol,
+      });
+      return;
+    }
+    if (lookup.kind === "FOUND_OPEN") {
+      this.adoptSlotOrder(level, side, lookup.order.orderId);
+      return;
+    }
+    if (lookup.kind === "FOUND_FILLED") {
+      this.recordFill(level, side, lookup.order.orderId, lookup.order.quantity);
+      return;
+    }
+    if (lookup.kind === "FOUND_CANCELED") {
+      logger.info("Re-placing canceled order", {
+        side,
+        price: level.price,
+        orderId: lookup.order.orderId,
+        botId: this.botId,
+        symbol: this.config.symbol,
+      });
+    }
+
+    const request: ExchangeOrderRequest = {
+      symbol: this.config.symbol,
+      orderType: "LIMIT",
+      side,
+      orderPrice: level.price,
+      orderQuantity: this.config.orderQuantity,
+      clientOrderId,
+    };
+
+    try {
+      const result = await this.exchange.createOrder(request);
+      this.setSlotOrderId(level, side, result.orderId);
+      logger.info("Placed order", {
+        side,
         price: level.price,
         orderId: result.orderId,
         botId: this.botId,
@@ -311,25 +392,24 @@ export class GridTradingStrategy {
     } catch (error) {
       // The exchange may have accepted the order while the response was lost.
       // Reconcile before giving up so we never double-place the same slot.
-      try {
-        const recovered = await this.orderly.findOrderByClientOrderId(
-          this.config.symbol,
-          clientOrderId
-        );
-        if (recovered && recovered.orderId) {
-          level.buyOrderId = recovered.orderId;
-          logger.warn("Reconciled buy order after submission error", {
-            price: level.price,
-            orderId: recovered.orderId,
-            botId: this.botId,
-            symbol: this.config.symbol,
-          });
-          return;
-        }
-      } catch {
-        /* reconcile lookup itself failed - fall through to error logging */
+      const recovered = await this.exchange
+        .queryOrderByClientOrderId(this.config.symbol, clientOrderId)
+        .catch(() => null);
+      if (recovered && recovered.kind === "FOUND_OPEN") {
+        this.adoptSlotOrder(level, side, recovered.order.orderId, true);
+        return;
       }
-      logger.error("Failed to place buy order", {
+      if (recovered && recovered.kind === "FOUND_FILLED") {
+        this.recordFill(
+          level,
+          side,
+          recovered.order.orderId,
+          recovered.order.quantity
+        );
+        return;
+      }
+      logger.error("Failed to place order", {
+        side,
         price: level.price,
         error: error instanceof Error ? error.message : String(error),
         botId: this.botId,
@@ -338,170 +418,151 @@ export class GridTradingStrategy {
     }
   }
 
-  private async placeSellOrder(level: GridLevel, index: number): Promise<void> {
-    // Use deterministic clientOrderId for idempotency - same bot/level/side
-    // always produces the same ID, so the exchange can reject a duplicate.
-    const clientOrderId = this.generateClientOrderId(index, "SELL");
+  /**
+   * Client-order-id lookup that never throws.
+   *
+   * The contract already reports "could not ask" as `UNREACHABLE`; a thrown
+   * error (adapter bug, malformed row) is folded into the same bucket rather
+   * than escaping into the tick, because the only safe reaction to an unknown
+   * outcome is to leave the slot alone.
+   */
+  private async lookupSlot(
+    index: number,
+    side: "BUY" | "SELL"
+  ): Promise<OrderLookup> {
     try {
-      // Get-before-create: adopt an already-live order (lost response) with the
-      // same clientOrderId instead of submitting a second sell order.
-      const existing = await this.orderly.findOrderByClientOrderId(
+      return await this.exchange.queryOrderByClientOrderId(
         this.config.symbol,
-        clientOrderId
+        this.generateClientOrderId(index, side)
       );
-      if (existing && existing.orderId) {
-        level.sellOrderId = existing.orderId;
-        logger.info("Adopted existing sell order (idempotent reconcile)", {
-          price: level.price,
-          orderId: existing.orderId,
-          botId: this.botId,
-          symbol: this.config.symbol,
-        });
-        return;
-      }
-
-      const order: OrderRequest = {
-        symbol: this.config.symbol,
-        orderType: "LIMIT",
-        side: "SELL",
-        orderPrice: level.price,
-        orderQuantity: this.config.orderQuantity,
-        clientOrderId,
-      };
-
-      const result = await this.orderly.createOrder(order);
-      level.sellOrderId = result.orderId;
-      logger.info("Placed sell order", {
-        price: level.price,
-        orderId: result.orderId,
-        botId: this.botId,
-        symbol: this.config.symbol,
-      });
     } catch (error) {
-      // The exchange may have accepted the order while the response was lost.
-      // Reconcile before giving up so we never double-place the same slot.
-      try {
-        const recovered = await this.orderly.findOrderByClientOrderId(
-          this.config.symbol,
-          clientOrderId
-        );
-        if (recovered && recovered.orderId) {
-          level.sellOrderId = recovered.orderId;
-          logger.warn("Reconciled sell order after submission error", {
-            price: level.price,
-            orderId: recovered.orderId,
-            botId: this.botId,
-            symbol: this.config.symbol,
-          });
-          return;
-        }
-      } catch {
-        /* reconcile lookup itself failed - fall through to error logging */
-      }
-      logger.error("Failed to place sell order", {
-        price: level.price,
-        error: error instanceof Error ? error.message : String(error),
-        botId: this.botId,
-        symbol: this.config.symbol,
-      });
+      return {
+        kind: "UNREACHABLE",
+        reason: error instanceof Error ? error.message : String(error),
+      };
     }
+  }
+
+  private slotOrderId(
+    level: GridLevel,
+    side: "BUY" | "SELL"
+  ): string | undefined {
+    return side === "BUY" ? level.buyOrderId : level.sellOrderId;
+  }
+
+  private setSlotOrderId(
+    level: GridLevel,
+    side: "BUY" | "SELL",
+    orderId?: string
+  ): void {
+    if (side === "BUY") {
+      level.buyOrderId = orderId;
+    } else {
+      level.sellOrderId = orderId;
+    }
+  }
+
+  /**
+   * Adopt an order the exchange already holds for this slot. A lost create
+   * response must never turn into a second live order on the same level.
+   */
+  private adoptSlotOrder(
+    level: GridLevel,
+    side: "BUY" | "SELL",
+    orderId: string,
+    recovered = false
+  ): void {
+    this.setSlotOrderId(level, side, orderId);
+    const meta = {
+      price: level.price,
+      orderId,
+      botId: this.botId,
+      symbol: this.config.symbol,
+    };
+    if (recovered) {
+      logger.warn("Reconciled slot order after submission error", meta);
+    } else {
+      logger.info("Adopted existing slot order (idempotent reconcile)", meta);
+    }
+  }
+
+  /**
+   * Record a fill and flip the slot to the side that closes it: a filled BUY
+   * arms the level's sell, a filled SELL re-arms its buy.
+   *
+   * PnL stays the simplified mark-to-market estimate it has always been —
+   * executed-price accounting with fees is workstream row 5, not something to
+   * change silently while decoupling the venue.
+   */
+  private recordFill(
+    level: GridLevel,
+    side: "BUY" | "SELL",
+    orderId: string,
+    executedQuantity?: number
+  ): void {
+    const quantity = executedQuantity || this.config.orderQuantity;
+    let tradePnl: number;
+    if (side === "BUY") {
+      level.filled = true;
+      tradePnl = (this.currentPrice - level.price) * this.config.orderQuantity;
+    } else {
+      level.filled = false;
+      tradePnl = (level.price - this.currentPrice) * this.config.orderQuantity;
+    }
+
+    this.setSlotOrderId(level, side, undefined);
+    this.lastOrderCheck.delete(orderId);
+    this.totalTrades++;
+    this.totalPnl += tradePnl;
+
+    this.trades.push({
+      orderId,
+      symbol: this.config.symbol,
+      side,
+      quantity,
+      price: level.price,
+      executedAt: new Date(),
+      pnl: tradePnl,
+    });
+
+    logger.info(side === "BUY" ? "Buy order filled" : "Sell order filled", {
+      price: level.price,
+      pnl: tradePnl.toFixed(2),
+      botId: this.botId,
+      symbol: this.config.symbol,
+      orderId,
+    });
   }
 
   private async checkOrders(): Promise<void> {
     for (const level of this.levels) {
-      // Check buy orders
-      if (level.buyOrderId) {
-        const lastCheck = this.lastOrderCheck.get(level.buyOrderId);
-        if (!lastCheck || Date.now() - lastCheck.getTime() > 5000) {
-          try {
-            const order = await this.orderly.getOrder(level.buyOrderId);
-            if (order.status === "FILLED" || order.status === "FULLY_FILLED") {
-              level.filled = true;
-              level.buyOrderId = undefined;
-              this.totalTrades++;
+      for (const side of ["BUY", "SELL"] as const) {
+        const orderId = this.slotOrderId(level, side);
+        if (!orderId) continue;
 
-              // Calculate PnL (simplified)
-              const tradePnl =
-                (this.currentPrice - level.price) * this.config.orderQuantity;
-              this.totalPnl += tradePnl;
-
-              this.trades.push({
-                orderId: order.orderId,
-                symbol: this.config.symbol,
-                side: "BUY",
-                quantity: order.executedQuantity || this.config.orderQuantity,
-                price: level.price,
-                executedAt: new Date(),
-                pnl: tradePnl,
-              });
-
-              logger.info("Buy order filled", {
-                price: level.price,
-                pnl: tradePnl.toFixed(2),
-                botId: this.botId,
-                symbol: this.config.symbol,
-                orderId: order.orderId,
-              });
-            } else if (
-              order.status === "CANCELLED" ||
-              order.status === "REJECTED"
-            ) {
-              level.buyOrderId = undefined;
-            }
-            if (level.buyOrderId) {
-              this.lastOrderCheck.set(level.buyOrderId, new Date());
-            }
-          } catch {
-            // Order may not exist anymore
-          }
+        const lastCheck = this.lastOrderCheck.get(orderId);
+        if (
+          lastCheck &&
+          Date.now() - lastCheck.getTime() <= ORDER_CHECK_INTERVAL_MS
+        ) {
+          continue;
         }
-      }
-
-      // Check sell orders
-      if (level.sellOrderId) {
-        const lastCheck = this.lastOrderCheck.get(level.sellOrderId);
-        if (!lastCheck || Date.now() - lastCheck.getTime() > 5000) {
-          try {
-            const order = await this.orderly.getOrder(level.sellOrderId);
-            if (order.status === "FILLED" || order.status === "FULLY_FILLED") {
-              level.filled = false;
-              level.sellOrderId = undefined;
-              this.totalTrades++;
-
-              // Calculate PnL
-              const tradePnl =
-                (level.price - this.currentPrice) * this.config.orderQuantity;
-              this.totalPnl += tradePnl;
-
-              this.trades.push({
-                orderId: order.orderId,
-                symbol: this.config.symbol,
-                side: "SELL",
-                quantity: order.executedQuantity || this.config.orderQuantity,
-                price: level.price,
-                executedAt: new Date(),
-                pnl: tradePnl,
-              });
-
-              logger.info("Sell order filled", {
-                price: level.price,
-                pnl: tradePnl.toFixed(2),
-                botId: this.botId,
-                symbol: this.config.symbol,
-                orderId: order.orderId,
-              });
-            } else if (
-              order.status === "CANCELLED" ||
-              order.status === "REJECTED"
-            ) {
-              level.sellOrderId = undefined;
-            }
-            if (level.sellOrderId) {
-              this.lastOrderCheck.set(level.sellOrderId, new Date());
-            }
-          } catch {
-            // Order may not exist anymore
+        try {
+          const order = await this.exchange.getOrder(orderId);
+          if (order.status === "FILLED" || order.status === "FULLY_FILLED") {
+            this.recordFill(level, side, order.orderId, order.executedQuantity);
+          } else if (
+            order.status === "CANCELLED" ||
+            order.status === "REJECTED"
+          ) {
+            this.setSlotOrderId(level, side, undefined);
           }
+          const currentId = this.slotOrderId(level, side);
+          if (currentId) {
+            this.lastOrderCheck.set(currentId, new Date());
+          }
+        } catch {
+          // Order may not exist anymore
         }
       }
     }

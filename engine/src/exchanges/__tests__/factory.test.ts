@@ -16,6 +16,7 @@ import { isEngineCredentials } from "@trade-bot/shared";
 import type { EngineCredentials } from "@trade-bot/shared";
 import { createExchangeClient } from "../factory";
 import { OrderlyClient } from "../kodiak/client";
+import { LighterClient } from "../lighter/client";
 import { CommandError } from "../../application/command-error";
 
 const KODIAK: EngineCredentials = {
@@ -92,7 +93,28 @@ describe("createExchangeClient", () => {
     ).toBe("https://api.orderly.org");
   });
 
-  it("fails cleanly (non-retryable COMMAND_FAILED) for a lighter envelope until workstream B", () => {
+  it("returns a LighterClient for a lighter envelope when the sidecar is configured", () => {
+    process.env.LIGHTER_SIDECAR_URL = "http://127.0.0.1:8790";
+    try {
+      const client = createExchangeClient({
+        exchange: "lighter",
+        environment: "testnet",
+        accountRef: "42",
+        credentials: {
+          accountIndex: 42,
+          apiKeyIndex: 0,
+          privateKey: "0xdeadbeef",
+        },
+      });
+
+      expect(client).toBeInstanceOf(LighterClient);
+    } finally {
+      delete process.env.LIGHTER_SIDECAR_URL;
+    }
+  });
+
+  it("fails cleanly (non-retryable COMMAND_FAILED) for a lighter envelope with no sidecar URL", () => {
+    delete process.env.LIGHTER_SIDECAR_URL;
     const lighter: EngineCredentials = {
       exchange: "lighter",
       environment: "testnet",
@@ -116,6 +138,6 @@ describe("createExchangeClient", () => {
     expect(err.retryable).toBe(false);
     // The BotManager path publishes COMMAND_FAILED and moves the bot to
     // ERROR for non-retryable CommandErrors — never an unhandled throw.
-    expect(err.message).toMatch(/UNSUPPORTED_EXCHANGE/);
+    expect(err.message).toMatch(/LIGHTER_SIDECAR_URL/);
   });
 });
