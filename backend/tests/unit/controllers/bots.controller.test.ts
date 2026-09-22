@@ -544,6 +544,42 @@ describe("Bots Controller", () => {
       });
     });
 
+    describe("GET /api/bot/engine/credentials/:botId", () => {
+      it("should issue the exchange-agnostic kodiak envelope", async () => {
+        const query = require("../../../src/database/pool").query;
+        query
+          .mockResolvedValueOnce({
+            rows: [
+              {
+                user_id: "user-123",
+                desired_state: "RUNNING",
+                actual_state: "STARTING",
+              },
+            ],
+          }) // bot lookup
+          .mockResolvedValueOnce({ rows: [] }) // no prior issuance
+          .mockResolvedValueOnce({}); // issuance marker insert
+
+        const response = await request(app)
+          .get("/api/bot/engine/credentials/bot-1?correlationId=corr-1")
+          .set("x-bot-engine-key", "test-engine-key")
+          .expect(200);
+
+        expect(response.body.success).toBe(true);
+        // Workstream A envelope: the discriminator + per-venue payload.
+        expect(response.body.data).toEqual({
+          exchange: "kodiak",
+          environment: expect.stringMatching(/^(testnet|mainnet)$/),
+          accountRef: "test-value",
+          credentials: {
+            accountId: "test-value",
+            accessKey: "test-value",
+            secretKey: "test-value",
+          },
+        });
+      });
+    });
+
     describe("POST /api/bot/engine/engine-status", () => {
       it("should process engine status update", async () => {
         const response = await request(app)

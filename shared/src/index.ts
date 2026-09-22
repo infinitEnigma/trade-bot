@@ -295,6 +295,7 @@ export { BotActualState, BotDesiredState } from "./protocol/bot-state";
 // ============================================
 
 export * from "./types/engine-contract";
+export * from "./types/engine-credentials";
 
 // ============================================
 // Frontend-Backend Integration Contract

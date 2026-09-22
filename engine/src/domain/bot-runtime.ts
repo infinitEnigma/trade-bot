@@ -7,12 +7,16 @@
  * @format
  */
 
-import { BotActualState } from "@trade-bot/shared";
+import { BotActualState, EngineCredentials } from "@trade-bot/shared";
 import { GridTradingStrategy } from "../strategies/grid";
 import { OrderlyClient } from "../exchanges/kodiak/client";
 
 /**
  * Runtime state for a running bot instance.
+ *
+ * The client field stays typed as the Kodiak adapter until workstream B4
+ * decouples the strategy from `OrderlyClient` and widens this to the shared
+ * `ExchangeClient` interface.
  */
 export interface BotRuntime {
   botId: string;
@@ -21,17 +25,15 @@ export interface BotRuntime {
   state: BotActualState;
   strategy: GridTradingStrategy;
   stopTick: () => void;
-  orderlyClient: OrderlyClient;
+  exchangeClient: OrderlyClient;
 }
 
 /**
- * Result of credential fetch operation.
+ * Result of credential fetch operation — the backend's exchange-agnostic
+ * credential envelope (see shared EngineCredentials). The credential fetcher
+ * validates the wire shape before it reaches the exchange client factory.
  */
-export interface FetchCredentialsResult {
-  accountId: string;
-  accessKey: string;
-  secretKey: string;
-}
+export type FetchCredentialsResult = EngineCredentials;
 
 /**
  * Persistent engine identity - survives restarts.

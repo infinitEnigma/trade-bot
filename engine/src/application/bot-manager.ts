@@ -9,7 +9,8 @@
 
 import { BotActualState } from "@trade-bot/shared";
 import { GridTradingStrategy } from "../strategies/grid";
-import { createOrderlyClient } from "../exchanges/kodiak/client";
+import { createExchangeClient } from "../exchanges/factory";
+import { isEngineCredentials } from "@trade-bot/shared";
 import { RedisStreamOperations } from "../infrastructure/redis/streams";
 import { logger } from "../utils/logger";
 import { BotRuntime, EngineIdentity } from "../domain/bot-runtime";
@@ -254,13 +255,18 @@ export class BotManager {
       const credentials = await fetchCredentials(botId, correlationId);
       this.throwIfCancelled(botId);
 
-      // 2. Connect Orderly client
-      const orderlyClient = createOrderlyClient(
-        credentials.accountId,
-        credentials.accessKey,
-        credentials.secretKey,
-        process.env.NODE_ENV !== "production"
-      );
+      // 2. Connect exchange client. The credential fetcher already validated
+      // the envelope against the shared contract; the factory maps the
+      // `exchange` discriminator onto the concrete client. A lighter
+      // envelope fails here with a non-retryable UNSUPPORTED_EXCHANGE until
+      // workstream B lands its adapter.
+      if (!isEngineCredentials(credentials)) {
+        throw new CommandError(
+          false,
+          "Malformed credential envelope (expected EngineCredentials)"
+        );
+      }
+      const exchangeClient = createExchangeClient(credentials);
 
       // 3. Get market price
       const symbol = String(config.symbol || "");
@@ -268,7 +274,7 @@ export class BotManager {
         throw new CommandError(false, "Strategy config is missing symbol");
       }
       this.throwIfCancelled(botId);
-      const ticker = await orderlyClient.getTicker(symbol);
+      const ticker = await exchangeClient.getTicker(symbol);
       this.throwIfCancelled(botId);
       const currentPrice = Number(ticker.mark_price || ticker.price);
       if (!currentPrice) {
@@ -287,7 +293,7 @@ export class BotManager {
           gridRangePercent: Number(config.gridRange) || 5,
           orderQuantity: Number(config.orderQuantity) || 1,
         },
-        orderlyClient
+        exchangeClient
       );
       await gridStrategy.initialize(currentPrice);
       this.throwIfCancelled(botId);
@@ -319,7 +325,7 @@ export class BotManager {
         state: "RUNNING",
         strategy: gridStrategy,
         stopTick: stopRunner,
-        orderlyClient,
+        exchangeClient,
       });
 
       await this.publishStateChanged(

@@ -225,13 +225,24 @@ router.get(
         });
       }
 
-      // Decrypt credentials in-memory; never persisted or logged.
+      // Decrypt credentials in-memory; never persisted or logged. The
+      // exchange-agnostic envelope (shared EngineCredentials) is what the
+      // engine's credential fetcher validates and its client factory
+      // dispatches on — C3 swaps only this lookup, not the engine.
       const credentials = await withCredentials(
         bot.user_id,
         async (secure: SecureCredentials) => ({
-          accountId: secure.get("accountId"),
-          accessKey: secure.get("apiKey"),
-          secretKey: secure.get("secretKey"),
+          exchange: "kodiak" as const,
+          environment:
+            process.env.NODE_ENV === "production"
+              ? ("mainnet" as const)
+              : ("testnet" as const),
+          accountRef: secure.get("accountId"),
+          credentials: {
+            accountId: secure.get("accountId"),
+            accessKey: secure.get("apiKey"),
+            secretKey: secure.get("secretKey"),
+          },
         })
       );
 

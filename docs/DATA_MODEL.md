@@ -129,12 +129,28 @@ account reference**.
 
 ### Engine credential contract
 
-`FetchCredentialsResult { accountId, accessKey, secretKey }`
-(`engine/src/domain/bot-runtime.ts:30-34`) is fetched from
+The backend issues an exchange-agnostic envelope
+(`shared/src/types/engine-credentials.ts`), validated engine-side by
+`isEngineCredentials()` before it reaches the exchange client factory:
+
+```jsonc
+// GET /api/bot/engine/credentials/:botId
+// → { success, data: { exchange, environment, accountRef, credentials } }
+{
+  "exchange": "kodiak",
+  "environment": "testnet",
+  "accountRef": "0xabc…",
+  "credentials": { "accountId": "0x…", "accessKey": "…", "secretKey": "…" },
+}
+```
+
+`FetchCredentialsResult` (`engine/src/domain/bot-runtime.ts`) is this
+`EngineCredentials` union, fetched from
 `GET /api/bot/engine/credentials/:botId`
-(`backend/src/interfaces/http/bots/engine.ts:180-256`), which returns the single
+(`backend/src/interfaces/http/bots/engine.ts`), which returns the single
 decrypted credential set for the bot's owner, at most once per
-`(botId, correlationId)`.
+`(botId, correlationId)`. A `lighter` envelope reaches the factory and fails
+cleanly (`UNSUPPORTED_EXCHANGE`) until workstream B lands the adapter.
 
 ---
 
