@@ -37,7 +37,7 @@ export interface SignOrderRequest {
   isAsk: boolean;
   /** 0 LIMIT, 1 MARKET. */
   orderType?: number;
-  /** 0 GTT, 1 IOC. */
+  /** Lighter SDK: 0 IOC, 1 GTT, 2 post-only. Resting orders must use GTT. */
   timeInForce?: number;
   reduceOnly?: boolean;
   triggerPrice?: number;

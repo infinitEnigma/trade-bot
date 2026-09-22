@@ -107,7 +107,10 @@ describe("LighterClient", () => {
       orderQuantity: 0.01,
       clientOrderId: "42",
     });
-    expect(order.orderId).toBe("9");
+    // The handle handed back is the client order index — what this adapter's
+    // cancel/getOrder accept (the venue's own `order_id` "9" is not a usable
+    // id for either, live-verified in B5).
+    expect(order.orderId).toBe("42");
   });
 
   it("rejects unknown symbols without guessing a market", async () => {
@@ -180,5 +183,35 @@ describe("LighterClient", () => {
     // Contract vocabulary (canonicalLighterStatus), not the raw REST string.
     expect(result.status).toBe("CANCELLED");
     expect(polls).toBeGreaterThanOrEqual(2);
+  });
+
+  it("cancelOrder forwards the client index the venue accepts", async () => {
+    // The contract hands cancel the handle `createOrder` returned. For this
+    // venue the signer takes the client order index as `order_index` — the
+    // venue's own `order_id` (5.6e14) is not accepted (live-verified in B5),
+    // so sending it would leave `grid.stop()` with an orphan order.
+    let sent: number | undefined;
+    const client = clientWith(
+      {
+        ...BASE_HANDLERS,
+        "/api/v1/accountOrders": () => ({
+          orders: [
+            {
+              order_id: "562949945880386",
+              client_order_index: "7",
+              status: "canceled",
+            },
+          ],
+        }),
+      },
+      signerStub({
+        cancelOrder: async (_credentials, request) => {
+          sent = request.orderIndex;
+          return { txHash: "0xc", orderIndex: request.orderIndex };
+        },
+      })
+    );
+    await client.cancelOrder("7", "ETH");
+    expect(sent).toBe(7);
   });
 });

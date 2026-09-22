@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import time
 from typing import Any
 
 import lighter
@@ -80,13 +81,35 @@ class SignerService:
 
     # ------------------------------------------------------------------- ops
 
+    @staticmethod
+    def _resolve_expiry(value: Any) -> int:
+        """Resolve the caller's `order_expiry` to the value the SDK accepts.
+
+        The SDK's `-1`/"default" sentinel is rejected by the signer binary
+        ("OrderExpiry is invalid"), and GTT orders need a positive
+        MILLISECOND timestamp (verified on testnet: a 28-day expiry in
+        SECONDS is refused with venue code 21711 `invalid expiry`, while the
+        same instant in ms is accepted). So a negative/absent/unknown value
+        resolves to now + 28 days in ms.
+        """
+        try:
+            expiry = int(value) if value is not None else -1
+        except (TypeError, ValueError):
+            expiry = -1
+        if expiry < 0:
+            return int(time.time() * 1000) + 28 * 24 * 60 * 60 * 1000
+        return expiry
+
     async def create_order(self, req: dict[str, Any]) -> dict[str, Any]:
         client = self._client_for(req)
         async with self._lock_for(req):
-            api_key_index, nonce = client.nonce_manager.next_nonce(
-                int(req["api_key_index"])
-            )
-            expiry = req.get("order_expiry", -1)
+            # The SDK's `process_api_key_and_nonce` decorator owns the nonce:
+            # it serializes per api key, fetches the venue's nonce lazily, and
+            # self-heals (`acknowledge_failure` / `hard_refresh` on
+            # "invalid nonce"). Passing api_key_index/nonce explicitly would
+            # bypass all of that and leave the local counter stuck after any
+            # rejected transaction, failing every later tx with
+            # code 21104 `invalid nonce` until the process restarts.
             call = client.create_order(
                 market_index=req["market_index"],
                 client_order_index=req["client_order_index"],
@@ -94,14 +117,13 @@ class SignerService:
                 price=req["price"],
                 is_ask=req["is_ask"],
                 order_type=req.get("order_type", 0),
-                time_in_force=req.get("time_in_force", 0),
+                # 0 IOC / 1 GTT (resting) / 2 post-only — default GTT, matching
+                # the API model: a grid bot only ever rests orders, and a bare
+                # dict without TIF must not silently fill-or-cancel.
+                time_in_force=req.get("time_in_force", 1),
                 reduce_only=req.get("reduce_only", False),
                 trigger_price=req.get("trigger_price", 0),
-                order_expiry=expiry
-                if expiry is not None and expiry >= 0
-                else getattr(client, "DEFAULT_28_DAY_ORDER_EXPIRY", -1),
-                nonce=nonce,
-                api_key_index=api_key_index,
+                order_expiry=self._resolve_expiry(req.get("order_expiry", -1)),
             )
             _tx, tx_hash, err = await _await_maybe(call)
         if err:
@@ -115,14 +137,11 @@ class SignerService:
     async def cancel_order(self, req: dict[str, Any]) -> dict[str, Any]:
         client = self._client_for(req)
         async with self._lock_for(req):
-            api_key_index, nonce = client.nonce_manager.next_nonce(
-                int(req["api_key_index"])
-            )
+            # Nonce is SDK-managed (see `create_order`) so a refused cancel
+            # cannot desync the local counter.
             call = client.cancel_order(
                 market_index=req["market_index"],
                 order_index=req["order_index"],
-                nonce=nonce,
-                api_key_index=api_key_index,
             )
             _tx, tx_hash, err = await _await_maybe(call)
         if err:

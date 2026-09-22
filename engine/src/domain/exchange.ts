@@ -31,7 +31,14 @@ export interface ExchangeOrderRequest {
 }
 
 /**
- * Order response from exchange.
+ * Order response from an exchange.
+ *
+ * `orderId` is an **adapter-defined handle**, not necessarily the venue's own
+ * identifier: it must round-trip into this adapter's `cancelOrder` and
+ * `getOrder` (a live example: Lighter cancels/polls by client order index and
+ * rejects its venue-assigned `order_id` for both, so its adapter emits the
+ * client index as `orderId`). Callers must only ever pass back a value they
+ * received from `createOrder`, `listOpenOrders`, or `queryOrderByClientOrderId`.
  */
 export interface ExchangeOrderResponse {
   orderId: string;

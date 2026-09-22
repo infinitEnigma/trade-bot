@@ -257,9 +257,10 @@ export class BotManager {
 
       // 2. Connect exchange client. The credential fetcher already validated
       // the envelope against the shared contract; the factory maps the
-      // `exchange` discriminator onto the concrete client. A lighter
-      // envelope fails here with a non-retryable UNSUPPORTED_EXCHANGE until
-      // workstream B lands its adapter.
+      // `exchange` discriminator onto the concrete client (`kodiak` →
+      // Orderly-backed, `lighter` → REST + signer sidecar). An exchange
+      // outside the union fails here with a non-retryable
+      // UNSUPPORTED_EXCHANGE.
       if (!isEngineCredentials(credentials)) {
         throw new CommandError(
           false,

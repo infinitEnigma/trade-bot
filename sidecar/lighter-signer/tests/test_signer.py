@@ -17,6 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # ---- minimal `lighter` + `lighter.nonce_manager` stubs ----------------------
 
 _calls: list[dict] = []
+# Concurrency probe used by the lock test: the stub yields inside create_order
+# so an unserialized service would be observed overlapping (peak > 1).
+_concurrency = {"current": 0, "peak": 0}
 
 
 class _StubNonceManager:
@@ -38,6 +41,10 @@ class _StubSignerClient:
         return None
 
     async def create_order(self, **kwargs):
+        _concurrency["current"] += 1
+        _concurrency["peak"] = max(_concurrency["peak"], _concurrency["current"])
+        await asyncio.sleep(0.01)  # yield — an unlocked service would overlap
+        _concurrency["current"] -= 1
         _calls.append({"op": "create", **kwargs})
         return "tx-info", f"hash-{kwargs['client_order_index']}", None
 
@@ -140,8 +147,14 @@ def test_auth_token():
     assert result == {"ok": True, "token": "token-abc"}
 
 
-def test_nonce_serialized_under_lock():
+def test_serialized_under_lock_with_sdk_managed_nonce():
+    """Concurrent creates run one at a time (per-credentials lock) and pass no
+    explicit nonce: the SDK owns the counter and self-heals it, so a refused
+    transaction cannot desync local state (live testnet finding, B5)."""
     service = SignerService()
+    _concurrency["current"] = 0
+    _concurrency["peak"] = 0
+    before = len([c for c in _calls if c.get("op") == "create"])
 
     async def two_orders():
         req = {
@@ -158,6 +171,28 @@ def test_nonce_serialized_under_lock():
 
     results = asyncio.run(two_orders())
     assert all(r["ok"] for r in results)
-    creates = [c for c in _calls if c.get("op") == "create"]
-    nonces = [c["nonce"] for c in creates]
-    assert nonces[0] != nonces[1]
+    creates = [c for c in _calls if c.get("op") == "create"][before:]
+    assert len(creates) == 2
+    assert all("nonce" not in c and "api_key_index" not in c for c in creates)
+    assert _concurrency["peak"] == 1  # serialized by the lock
+
+
+def test_resting_default_time_in_force_is_gtt():
+    """A create without an explicit TIF must rest (GTT=1), never IOC: the
+    grid only places resting limits, and IOC would fill-or-cancel at once."""
+    service = SignerService()
+    result = asyncio.run(
+        service.create_order(
+            {
+                **CREDS,
+                "market_index": 0,
+                "client_order_index": 99,
+                "base_amount": 10,
+                "price": 100,
+                "is_ask": False,
+            }
+        )
+    )
+    assert result["ok"] is True
+    create = [c for c in _calls if c.get("op") == "create"][-1]
+    assert create["time_in_force"] == 1

@@ -42,14 +42,21 @@ class CreateOrderRequest(Credentials):
     price: int = Field(gt=0, description="scaled integer (see orderBookDetails)")
     is_ask: bool
     order_type: int = Field(default=0, description="0 LIMIT, 1 MARKET")
-    time_in_force: int = Field(default=0, description="0 GTT, 1 IOC")
+    # 0 = IOC, 1 = GTT (resting), 2 = post-only. The signer binary refuses a
+    # positive expiry for IOC orders and requires one for GTT, so the default
+    # must be GTT: it is the only mode a grid bot uses.
+    time_in_force: int = Field(default=1, description="0 IOC, 1 GTT (resting), 2 post-only")
     reduce_only: bool = False
     trigger_price: int = 0
-    order_expiry: int = Field(default=-1, description="-1 = SDK default (28d/GTT)")
+    order_expiry: int = Field(
+        default=-1, description="-1 = server default (now + 28d, ms)"
+    )
 
 
 class CancelOrderRequest(Credentials):
     market_index: int = Field(ge=0)
+    # Cancel takes the order's CLIENT order index, not the venue order id
+    # (verified live: the venue order id is refused with "invalid order index").
     order_index: int = Field(ge=0, description="the order's client order index")
 
 

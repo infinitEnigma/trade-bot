@@ -138,7 +138,9 @@ export class LighterSidecarSigner implements TransactionSigner {
       price: request.price,
       is_ask: request.isAsk,
       order_type: request.orderType ?? 0,
-      time_in_force: request.timeInForce ?? 0,
+      // Lighter SDK TIF: 0 = IOC, 1 = GTT, 2 = post-only. Resting orders
+      // must be GTT (verified on testnet: 0 fills-or-cancels at once).
+      time_in_force: request.timeInForce ?? 1,
       reduce_only: request.reduceOnly ?? false,
       trigger_price: request.triggerPrice ?? 0,
       order_expiry: request.orderExpiry ?? -1,

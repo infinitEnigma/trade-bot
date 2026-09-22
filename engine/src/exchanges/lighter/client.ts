@@ -17,6 +17,15 @@
  * - unknown symbols ⇒ `CommandError`, never a guessed market.
  * - sidecar down ⇒ `UNREACHABLE` (slots freeze); signer refusals ⇒
  *   `CommandError` (business outcome).
+ *
+ * Live testnet facts recorded while driving this client end-to-end (B5):
+ * - REST order rows carry **human-unit** strings (`price` "2745.14",
+ *   `initial_base_amount` "0.0100"); `base_price` is the scaled wire integer.
+ * - `accountOrders?client_order_indexes=` may return *several* rows for one
+ *   index and lags a fill by seconds; liveness is answered by
+ *   `accountActiveOrders`, and history rows are picked OPEN-first.
+ * - the identifier cancel/`getOrder` accept is the **client order index**;
+ *   the venue's `order_id` is exposed as `venueOrderId` for audit only.
  */
 
 import axios, { AxiosError, AxiosInstance } from "axios";
@@ -81,8 +90,14 @@ interface LighterOrderRow {
   side?: unknown;
   is_ask?: unknown;
   price?: unknown;
+  base_price?: unknown;
   base_amount?: unknown;
+  initial_base_amount?: unknown;
   remaining_base_amount?: unknown;
+  filled_base_amount?: unknown;
+  transaction_time?: unknown;
+  updated_at?: unknown;
+  timestamp?: unknown;
   [key: string]: unknown;
 }
 
@@ -92,8 +107,19 @@ function toNumberOrUndefined(value: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-function rowOrderId(row: LighterOrderRow): string {
-  return String(row.order_id ?? row.client_order_index ?? "");
+/**
+ * The contract handle for a Lighter order: the **client order index**.
+ *
+ * Live-verified (testnet, B5): cancel takes the client order index and
+ * `getOrder` queries `accountOrders?client_order_indexes=` — neither accepts
+ * the venue's own `order_id` (a 5.6e14 id). Emitting that id as `orderId`
+ * would leave `grid.stop()` cancelling an id the venue cannot match, i.e. an
+ * orphan order. The handle therefore is the identifier this adapter's own
+ * cancel/query accept; the venue id stays on the row as `venueOrderId`.
+ */
+function orderHandle(row: LighterOrderRow): string {
+  const client = rowClientIndex(row);
+  return client ?? String(row.order_id ?? "");
 }
 
 function rowClientIndex(row: LighterOrderRow): string | undefined {
@@ -107,6 +133,69 @@ function rowSide(row: LighterOrderRow): "BUY" | "SELL" | undefined {
   if (side === "SELL" || side === "ASK" || side === "SHORT") return "SELL";
   if (side === "BUY" || side === "BID" || side === "LONG") return "BUY";
   return undefined;
+}
+
+/**
+ * Scale a wire integer (`base_price`) down into human units. `undefined`
+ * passes through so a missing field stays missing instead of becoming 0.
+ */
+function scaleDown(
+  value: number | undefined,
+  decimals: number
+): number | undefined {
+  return value === undefined ? undefined : value / 10 ** decimals;
+}
+
+/**
+ * Parse a strict digit string into an int64-safe index. Anything else is
+ * refused (`null`) rather than hashed: `getOrder` must never act on an id
+ * that silently mapped onto an unrelated index.
+ */
+function numericIndexOrNull(value: string): number | null {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return Number.isSafeInteger(n) && n >= 0 ? n : null;
+}
+
+/** Preference order when one client index carries several history rows. */
+const RESOLUTION_RANK: Record<LighterResolution, number> = {
+  OPEN: 3,
+  FILLED: 2,
+  CANCELED: 1,
+  UNRESOLVED: 0,
+};
+
+function rowTimestamp(row: LighterOrderRow): number {
+  return (
+    toNumberOrUndefined(row.transaction_time) ??
+    toNumberOrUndefined(row.updated_at) ??
+    toNumberOrUndefined(row.timestamp) ??
+    0
+  );
+}
+
+/**
+ * Pick the row that best answers "what state is this client index in":
+ * OPEN beats FILLED beats CANCELED beats UNRESOLVED — the venue re-uses an
+ * index after a fill, so `accountOrders?client_order_indexes=` can return
+ * several rows and its order is not a relevance order (`rows[0]` may be the
+ * stale FILLED ancestor of a live order). Ties resolve to the newest row.
+ */
+function pickBestRow(rows: LighterOrderRow[]): LighterOrderRow | undefined {
+  let best: LighterOrderRow | undefined;
+  let bestRank = -1;
+  let bestTime = -1;
+  for (const row of rows) {
+    const rank = RESOLUTION_RANK[resolveLighterStatus(row.status)];
+    const time = rowTimestamp(row);
+    if (rank > bestRank || (rank === bestRank && time > bestTime)) {
+      best = row;
+      bestRank = rank;
+      bestTime = time;
+    }
+  }
+  return best;
 }
 
 export class LighterClient implements ExchangeClient {
@@ -203,26 +292,34 @@ export class LighterClient implements ExchangeClient {
         ? "OPEN"
         : resolveLighterStatus(row.status);
     const status = CONTRACT_STATUS[resolution];
-    // `price` / `base_amount` arrive as scaled integers in the market's
-    // decimals (the sidecar does no decimal math); the contract exposes
-    // human units, otherwise a caller comparing prices across venues gets a
-    // 100x-wrong number.
-    const price = toNumberOrUndefined(row.price);
-    const quantity = toNumberOrUndefined(row.base_amount);
+    // Live venue rows are human-unit strings (`price` "2745.14",
+    // `initial_base_amount` "0.0100"); `base_price` (137532) is the scaled
+    // integer the *wire* uses. Dividing the human fields by 10**decimals
+    // reported prices 100x too small, so read them as-is and scale only the
+    // `base_price` fallback. `quantity` is the order's size — a full fill of
+    // it is what the grid books; a partial fill still reads as OPEN.
+    const price =
+      toNumberOrUndefined(row.price) ??
+      scaleDown(toNumberOrUndefined(row.base_price), market.priceDecimals);
+    const quantity =
+      toNumberOrUndefined(row.initial_base_amount) ??
+      toNumberOrUndefined(row.remaining_base_amount) ??
+      toNumberOrUndefined(row.filled_base_amount) ??
+      toNumberOrUndefined(row.base_amount);
     return {
-      orderId: rowOrderId(row),
+      orderId: orderHandle(row),
       clientOrderId: rowClientIndex(row),
       symbol,
       status,
       side: rowSide(row),
-      price:
-        price === undefined ? undefined : price / 10 ** market.priceDecimals,
-      quantity:
-        quantity === undefined
-          ? undefined
-          : quantity / 10 ** market.sizeDecimals,
+      price,
+      quantity,
       marketIndex: market.marketIndex,
       resolution,
+      venueOrderId:
+        row.order_id === undefined || row.order_id === null
+          ? undefined
+          : String(row.order_id),
     };
   }
 
@@ -322,7 +419,10 @@ export class LighterClient implements ExchangeClient {
       );
     }
     return {
-      orderId: confirmed.orderId,
+      // Hand back the client order index — the identifier `cancelOrder` and
+      // `getOrder` accept for this venue (see `orderHandle`), so a slot that
+      // stores this value can always be cancelled/polled after a restart.
+      orderId: String(index),
       status: confirmed.status,
       executedPrice: confirmed.price,
       executedQuantity: confirmed.quantity,
@@ -432,11 +532,58 @@ export class LighterClient implements ExchangeClient {
     );
   }
 
+  /**
+   * Poll one order by its contract handle (the client order index — see
+   * `orderHandle`). No symbol is carried by the contract, and none is needed:
+   * the handle indexes both listings account-wide, and row prices are already
+   * human units. An unknown handle is a business outcome (`retryable=false`);
+   * an UNRESOLVED status is "look again" (`retryable=true`), never "absent".
+   */
   async getOrder(orderId: string): Promise<ExchangeOrderResponse> {
-    throw new CommandError(
-      false,
-      `lighter getOrder needs a symbol-qualified lookup (got ${orderId})`
+    const index = numericIndexOrNull(orderId);
+    if (index === null) {
+      throw new CommandError(
+        false,
+        `lighter getOrder expects the client order index handle (got ${orderId})`
+      );
+    }
+    const key = String(index);
+    const active = await this.fetchRows(
+      `/api/v1/accountActiveOrders`,
+      { account_index: this.credentials.accountIndex },
+      `getOrder ${key}`
     );
+    let match = pickBestRow(active.filter(row => rowClientIndex(row) === key));
+    if (!match) {
+      const history = await this.fetchRows(
+        `/api/v1/accountOrders`,
+        {
+          account_index: this.credentials.accountIndex,
+          client_order_indexes: key,
+        },
+        `getOrder ${key}`
+      );
+      match = pickBestRow(history.filter(row => rowClientIndex(row) === key));
+    }
+    if (!match) {
+      throw new CommandError(false, `lighter order not found: ${orderId}`);
+    }
+    const resolution =
+      match.status === undefined || match.status === null
+        ? "OPEN"
+        : resolveLighterStatus(match.status);
+    if (resolution === "UNRESOLVED") {
+      throw new CommandError(
+        true,
+        `lighter order status UNRESOLVED for ${orderId}: ${String(match.status)}`
+      );
+    }
+    return {
+      orderId: key,
+      status: CONTRACT_STATUS[resolution],
+      executedPrice: toNumberOrUndefined(match.price) ?? undefined,
+      executedQuantity: toNumberOrUndefined(match.filled_base_amount),
+    };
   }
 
   async getPositions(): Promise<ExchangePosition[]> {
@@ -507,10 +654,17 @@ export class LighterClient implements ExchangeClient {
       }
       return { kind: "UNREACHABLE", reason: messageOf(error) };
     }
+    // Liveness first: `accountActiveOrders` is the listing that knows what
+    // is live, and history can still show a stale terminal row for an index
+    // the venue has already re-used — so history must never overrule it.
+    const active = await this.queryActive(symbol, clientOrderId);
+    if (active.kind !== "NOT_FOUND") return active;
     let response;
     try {
       response = await this.authorizedGet("/api/v1/accountOrders", {
         account_index: this.credentials.accountIndex,
+        // Verified against testnet: the venue reads the PLURAL key
+        // (`client_order_indexes`); the singular form 400s.
         client_order_indexes: clientOrderId,
       });
     } catch (error) {
@@ -518,16 +672,42 @@ export class LighterClient implements ExchangeClient {
     }
     const orders = response.data?.orders;
     const rows: unknown[] = Array.isArray(orders) ? orders : [];
-    const match = rows
+    const matches = rows
       .map(row => (row ?? {}) as LighterOrderRow)
       .filter(row => rowInMarket(row, market.marketIndex))
-      .find(row => rowClientIndex(row) === clientOrderId);
-    if (!match) {
-      const active = await this.queryActive(symbol, clientOrderId);
-      if (active.kind !== "NOT_FOUND") return active;
-      return { kind: "NOT_FOUND" };
+      .filter(row => rowClientIndex(row) === clientOrderId);
+    // One index can carry several rows (the venue re-uses it after a fill,
+    // live-verified) and history lags a fill by seconds — pick OPEN-first
+    // instead of taking `rows[0]`.
+    const best = pickBestRow(matches);
+    if (best) return lookupOf(this.toOpenOrder(best, symbol, market));
+    // Nothing live and nothing in history. Phase 0 verified an empty result
+    // as a definitive NOT_FOUND for an unknown id; a just-submitted order may
+    // still be indexing, but the venue accepts a re-submitted live index
+    // idempotently (adopts, never duplicates), so a stale NOT_FOUND that
+    // triggers a re-place cannot create a second live order.
+    return { kind: "NOT_FOUND" };
+  }
+
+  /**
+   * GET rows from a listing endpoint with the shared unreachable mapping.
+   * Transport failures surface as `UNREACHABLE` via the caller, not as an
+   * empty list — "could not ask" must never read as "absent".
+   */
+  private async fetchRows(
+    path: string,
+    params: Record<string, unknown>,
+    what: string
+  ): Promise<LighterOrderRow[]> {
+    let response;
+    try {
+      response = await this.authorizedGet(path, params);
+    } catch (error) {
+      throw unreachable(what, error);
     }
-    return lookupOf(this.toOpenOrder(match, symbol, market));
+    const orders = response.data?.orders;
+    const rows: unknown[] = Array.isArray(orders) ? orders : [];
+    return rows.map(row => (row ?? {}) as LighterOrderRow);
   }
 
   private async queryActive(
@@ -596,6 +776,14 @@ function lookupOf(order: ExchangeOpenOrder): OrderLookup {
 }
 
 function clientIndexFromString(value: string): number {
+  const trimmed = value.trim();
+  // Smoke + grid paths pass through stringified int64 indices: keep them
+  // verbatim (no lossy re-hash) so query/cancel hit the same index the
+  // venue indexed the order under.
+  if (/^\d+$/.test(trimmed)) {
+    const n = Number(trimmed);
+    if (Number.isSafeInteger(n) && n >= 0) return n;
+  }
   const n = Number(value);
   if (Number.isInteger(n) && n >= 0) return n;
   let hash = 0;

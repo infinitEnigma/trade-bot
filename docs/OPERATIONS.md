@@ -56,6 +56,14 @@ and the engine both read it.
 | `PENDING_RECOVERY_MIN_IDLE_MS`     | `60000`                  | Command-side pending recovery threshold                |
 | `PENDING_STUCK_ALERT_THRESHOLD_MS` | `30000`                  | Stuck-command alert threshold                          |
 | `PENDING_POISON_MAX_DELIVERIES`    | `10`                     | Poison-command threshold                               |
+| `LIGHTER_ENV`                      | `testnet`                | Lighter venue environment (`testnet` or `mainnet`)     |
+| `LIGHTER_BASE_URL`                 | venue default            | Lighter REST base URL                                  |
+| `LIGHTER_ACCOUNT_INDEX`            | –                        | Venue account index (per user; encrypted at rest)      |
+| `LIGHTER_API_KEY_INDEX`            | –                        | Venue API key index (indices 0-1 are reserved)         |
+| `LIGHTER_PRIVATE_KEY`              | –                        | API-key private key (memory only, never logged)        |
+| `LIGHTER_MARKET_SYMBOL`            | `ETH`                    | Symbol used by the B5 smoke / phase-0 probe            |
+| `LIGHTER_SIDECAR_URL`              | `http://127.0.0.1:8790`  | Signer sidecar base URL (`exchange: "lighter"` bots)   |
+| `SIDECAR_AUTH_TOKEN`               | –                        | Bearer token required by the sidecar (recommended)     |
 
 ---
 
@@ -154,7 +162,29 @@ publishing `STOPPED`. Cancellation errors are currently swallowed, so a
 `STOPPED` report is not proof that no orders remain — verify at the exchange
 after an unclean stop (findings N3/N5 in the gap analysis).
 
-### 5.7 Post-incident checklist
+### 5.7 Lighter signer sidecar down
+
+`exchange: "lighter"` bots sign create/cancel transactions through the
+stateless `sidecar/lighter-signer` process (`LIGHTER_SIDECAR_URL`). When it
+cannot be reached the engine maps that to `UNREACHABLE`: the affected grid
+slots **freeze** — no new order is placed and no cancellation is assumed to
+have committed — so bringing the sidecar back can never reveal a
+double-placed order.
+
+1. Check health: `curl http://127.0.0.1:8790/health` → `{"status":"ok"}`.
+2. Restart it (see `sidecar/lighter-signer/README.md`). It holds no state and
+   no credentials: every request carries its own, and nonces are fetched from
+   the venue per transaction, so a restart needs no resynchronisation.
+3. Already-resting orders stay resting at the venue while slots are frozen.
+   After a long outage, verify open orders at the venue
+   (`accountActiveOrders`) before expecting the bots to resume normally.
+4. A _refused_ transaction (bad credentials, rejected tx) is not an outage:
+   it surfaces as a non-retryable error and the bot goes to `ERROR`. Fix the
+   credentials instead of restarting anything.
+5. The sidecar is only required when a bot selects `exchange: "lighter"`;
+   Kodiak/Orderly bots are unaffected by its absence.
+
+### 5.8 Post-incident checklist
 
 1. Confirm order/fill/position state **at the exchange**.
 2. Confirm backend state: `GET /api/bot/status/:botId`, then `bot_lifecycle_events`
