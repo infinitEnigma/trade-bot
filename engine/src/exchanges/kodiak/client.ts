@@ -21,11 +21,16 @@
  * - Easier to audit and maintain API integration
  */
 
-import axios, { AxiosInstance } from "axios";
+import axios, { AxiosError, AxiosInstance } from "axios";
 import { createHash } from "crypto";
 import { signAsync } from "@noble/ed25519";
 import { logger } from "../../utils/logger";
 import { OrderRequest, OrderResponse } from "../../types/strategy";
+import {
+  DEFAULT_EXCHANGE_HTTP_TIMEOUT_MS,
+  ExchangeOpenOrder,
+  OrderLookup,
+} from "../../domain/exchange";
 import { toOrderlyOrderPayload } from "./payload";
 
 interface OrderlyPosition {
@@ -63,6 +68,47 @@ interface OrderlyConfig {
   orderlyKey: string;
   orderlySecret: string;
   baseUrl: string;
+  /** Per-request HTTP timeout (ms). Defaults to the shared exchange bound. */
+  timeoutMs?: number;
+}
+
+/** Cancel is eventually consistent: poll until the exchange confirms. */
+const CANCEL_CONFIRM_ATTEMPTS = 6;
+const CANCEL_CONFIRM_DELAY_MS = 500;
+
+/** Map an Orderly `GET /v1/orders` row onto the shared open-order shape. */
+function toExchangeOpenOrder(
+  row: Record<string, unknown>,
+  fallbackSymbol: string
+): ExchangeOpenOrder {
+  const side = String(row.side ?? "").toUpperCase() === "SELL" ? "SELL" : "BUY";
+  return {
+    orderId: String(row.order_id),
+    clientOrderId:
+      row.client_order_id != null ? String(row.client_order_id) : undefined,
+    symbol: String(row.symbol ?? fallbackSymbol),
+    status: String(row.status ?? "OPEN"),
+    side: side as "BUY" | "SELL",
+    price: row.order_price != null ? Number(row.order_price) : undefined,
+    quantity:
+      row.order_quantity != null ? Number(row.order_quantity) : undefined,
+  };
+}
+
+/** Classify an axios/transport failure for the UNREACHABLE arm. */
+function toUnreachableReason(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const err = error as AxiosError;
+    if (err.code === "ECONNABORTED" || err.code === "ETIMEDOUT") {
+      return `orderly request timed out: ${err.message}`;
+    }
+    const status = err.response?.status;
+    if (status !== undefined && status >= 500) {
+      return `orderly responded ${status}`;
+    }
+    return `orderly request failed: ${err.message}`;
+  }
+  return error instanceof Error ? error.message : String(error);
 }
 
 export class OrderlyClient {
@@ -73,6 +119,9 @@ export class OrderlyClient {
     this.config = config;
     this.client = axios.create({
       baseURL: config.baseUrl,
+      // Bound every request: a hung socket must never stall the
+      // single-flight strategy tick forever (plan §B1).
+      timeout: config.timeoutMs ?? DEFAULT_EXCHANGE_HTTP_TIMEOUT_MS,
       headers: {
         "Content-Type": "application/json",
       },
@@ -244,6 +293,14 @@ export class OrderlyClient {
     };
   }
 
+  /**
+   * Cancel an order and resolve only when the exchange confirms the
+   * cancellation. Cancel/query are eventually consistent, so after the
+   * DELETE is accepted the order is polled with bounded retries until it
+   * reads back CANCELLED (or disappears — a 404 after an accepted cancel
+   * is also confirmation). Transport failures during confirmation reject
+   * so the caller treats the outcome as unknown, never as "absent".
+   */
   async cancelOrder(
     orderId: string,
     symbol: string
@@ -252,7 +309,32 @@ export class OrderlyClient {
     const headers = await this.signRequest("DELETE", path);
 
     const response = await this.client.delete(path, { headers });
-    return { status: response.data.data.status };
+    const accepted = String(response.data?.data?.status ?? "CANCELLED");
+
+    for (let attempt = 0; attempt < CANCEL_CONFIRM_ATTEMPTS; attempt++) {
+      try {
+        const order = await this.getOrder(orderId);
+        if (
+          order.status === "CANCELLED" ||
+          order.status === "CANCELLED_BY_USER"
+        ) {
+          return { status: order.status };
+        }
+      } catch (error) {
+        if (
+          axios.isAxiosError(error) &&
+          (error as AxiosError).response?.status === 404
+        ) {
+          return { status: "CANCELLED" };
+        }
+        throw error;
+      }
+      await new Promise(resolve =>
+        setTimeout(resolve, CANCEL_CONFIRM_DELAY_MS)
+      );
+    }
+
+    return { status: accepted };
   }
 
   async getOrder(orderId: string): Promise<OrderResponse> {
@@ -270,6 +352,54 @@ export class OrderlyClient {
   }
 
   /**
+   * List open orders for a symbol — the startup orphan cross-check source
+   * for the `ExchangeClient` contract. Transport failures reject; the
+   * `queryOrderByClientOrderId` wrapper maps them to `UNREACHABLE`.
+   */
+  async listOpenOrders(symbol: string): Promise<ExchangeOpenOrder[]> {
+    const path = `/v1/orders?symbol=${encodeURIComponent(symbol)}`;
+    const headers = await this.signRequest("GET", path);
+
+    const response = await this.client.get(path, { headers });
+    const rows: unknown[] = response.data?.data?.rows ?? [];
+    return rows.map(row =>
+      toExchangeOpenOrder((row ?? {}) as Record<string, unknown>, symbol)
+    );
+  }
+
+  /**
+   * Look up one order by client order id. Never returns `null`:
+   * - FOUND_OPEN when a listed row carries the id (Orderly's listing only
+   *   reports open orders, so the FILLED/CANCELED arms exist for venues
+   *   whose lookups resolve history — e.g. Lighter in workstream B3).
+   * - NOT_FOUND when the listing succeeds and carries no such id, or the
+   *   listing reports an empty book.
+   * - UNREACHABLE on timeouts, 5xx, or network errors — the order may
+   *   still be live, so the caller must freeze the slot, never recreate.
+   */
+  async queryOrderByClientOrderId(
+    symbol: string,
+    clientOrderId: string
+  ): Promise<OrderLookup> {
+    if (!clientOrderId) return { kind: "NOT_FOUND" };
+    try {
+      const orders = await this.listOpenOrders(symbol);
+      const match = orders.find(o => o.clientOrderId === clientOrderId);
+      if (!match) return { kind: "NOT_FOUND" };
+      const status = match.status.toUpperCase();
+      if (status === "FILLED" || status === "COMPLETED") {
+        return { kind: "FOUND_FILLED", order: match };
+      }
+      if (status === "CANCELLED" || status === "REJECTED") {
+        return { kind: "FOUND_CANCELED", order: match };
+      }
+      return { kind: "FOUND_OPEN", order: match };
+    } catch (error) {
+      return { kind: "UNREACHABLE", reason: toUnreachableReason(error) };
+    }
+  }
+
+  /**
    * Idempotency reconcile: find an existing OPEN order that carries the given
    * clientOrderId on the symbol.
    *
@@ -280,6 +410,9 @@ export class OrderlyClient {
    * already-live order instead of re-submitting.
    *
    * Returns `null` when no open order matches (callers then place a new order).
+   *
+   * Kept for the grid strategy until workstream B4 rewires it onto
+   * `queryOrderByClientOrderId` (which never returns `null`).
    */
   async findOrderByClientOrderId(
     symbol: string,
