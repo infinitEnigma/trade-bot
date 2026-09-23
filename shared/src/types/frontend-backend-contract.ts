@@ -75,6 +75,8 @@ export interface LoginResponse {
  * Registration request
  */
 export interface RegisterRequest {
+  /** Optional handle, 3-32 chars; server derives it from the email local part when omitted. */
+  username?: string;
   email: string;
   password: string;
 }

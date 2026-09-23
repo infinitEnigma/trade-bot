@@ -64,7 +64,29 @@ describe("AuthService", () => {
 
       const result = await authService.register(email, password);
 
-      expect(authApi.register).toHaveBeenCalledWith(email, password);
+      expect(authApi.register).toHaveBeenCalledWith(email, password, undefined);
+      expect(result).toEqual(mockResponse);
+    });
+
+    it("should forward an explicit username to the API", async () => {
+      const email = "test@example.com";
+      const password = "password123";
+      const mockResponse = {
+        success: true,
+        data: {
+          user: { id: "1", username: "testuser", email, userLevel: "BASIC" },
+        },
+      };
+
+      (authApi.register as Mock).mockResolvedValue(mockResponse);
+
+      const result = await authService.register(email, password, "testuser");
+
+      expect(authApi.register).toHaveBeenCalledWith(
+        email,
+        password,
+        "testuser"
+      );
       expect(result).toEqual(mockResponse);
     });
 

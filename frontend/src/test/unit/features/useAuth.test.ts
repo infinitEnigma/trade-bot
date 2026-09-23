@@ -127,7 +127,8 @@ describe("useAuth hook", () => {
 
       expect(authService.register).toHaveBeenCalledWith(
         "test@example.com",
-        "password123"
+        "password123",
+        undefined
       );
       expect(result.current.user).toEqual(mockUser);
       expect(result.current.isAuthenticated).toBe(true);

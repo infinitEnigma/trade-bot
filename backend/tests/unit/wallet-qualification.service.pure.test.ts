@@ -14,10 +14,12 @@ describe("WalletQualificationService", () => {
       userRepository: {
         findByEmail: jest.fn(),
         findByEmailWithPassword: jest.fn(),
+        findByUsername: jest.fn(),
         findById: jest.fn(),
         create: jest.fn(),
         updateUserLevel: jest.fn(),
         updateProfile: jest.fn(),
+        upsertEmailIdentity: jest.fn(),
         getAuthenticatedUserData: jest.fn(),
         getWalletAddress: jest.fn(),
         setWalletAddress: jest.fn(),

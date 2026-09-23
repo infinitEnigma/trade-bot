@@ -291,6 +291,43 @@ describe("Validation Middleware", () => {
         expect(next).toHaveBeenCalledTimes(1);
       });
 
+      it("should validate registration data with an explicit username", () => {
+        req.body = {
+          username: "testuser",
+          email: "test@example.com",
+          password: "Password123",
+        };
+
+        validators.register(req, res, next);
+        expect(next).toHaveBeenCalledTimes(1);
+        // C1: username is normalised to lowercase by the schema transform.
+        expect(req.body.username).toBe("testuser");
+      });
+
+      it("should reject registration with an invalid username", () => {
+        req.body = {
+          username: "bad user!",
+          email: "test@example.com",
+          password: "Password123",
+        };
+
+        validators.register(req, res, next);
+        expect(next).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(400);
+      });
+
+      it("should reject a too-short username", () => {
+        req.body = {
+          username: "ab",
+          email: "test@example.com",
+          password: "Password123",
+        };
+
+        validators.register(req, res, next);
+        expect(next).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(400);
+      });
+
       it("should validate login data", () => {
         req.body = {
           email: "test@example.com",

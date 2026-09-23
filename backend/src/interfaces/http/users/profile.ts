@@ -57,6 +57,7 @@ router.get(
         data: {
           user: {
             id: profile.id,
+            username: profile.username,
             email: profile.email,
             userLevel: profile.userLevel,
             roles: profile.roles,

@@ -51,6 +51,7 @@ export interface AuthResult {
   message?: string;
   user?: {
     id: string;
+    username: string;
     email: string;
     userLevel: UserLevel;
   };
@@ -68,6 +69,7 @@ export interface LegacyAuthResult {
   message?: string;
   user?: {
     id: string;
+    username: string;
     email: string;
     userLevel: UserLevel;
   };
@@ -93,23 +95,56 @@ export class AuthService {
 
   constructor(private deps: AuthServiceDependencies) {}
 
+  /** Handle charset — mirrors the Joi registration rule and the 011 index. */
+  private static readonly USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
+
+  /**
+   * Derive a free username from the email local part — same rule as the 011
+   * migration backfill: lowercase, strip to [a-z0-9._-], cap at 24 chars
+   * (leaves room for the suffix), 'user' fallback, numeric suffix on
+   * collision. Pure derivation + uniqueness probe; never renames an
+   * explicitly chosen handle (that path fails instead).
+   */
+  private async deriveUniqueUsername(email: string): Promise<string> {
+    const local = email.split("@")[0] ?? "";
+    const base =
+      local
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]/g, "")
+        .slice(0, 24) || "user";
+
+    let candidate = base;
+    let n = 1;
+    while (
+      n < 10_000 &&
+      (await this.deps.userRepository.findByUsername(candidate))
+    ) {
+      n += 1;
+      const suffix = String(n);
+      candidate = `${base.slice(0, 32 - suffix.length)}${suffix}`;
+    }
+    return candidate;
+  }
+
   /**
    * Register a new user
    *
    * Business Logic:
    * 1. Validate email uniqueness
-   * 2. Hash password using abstracted service
-   * 3. Create user with BASIC level
-   * 4. Generate JWT tokens
-   * 5. Log security event
-   * 6. Return user data and tokens (or legacy format)
+   * 2. Resolve the username handle (explicit choice, or derived from the
+   *    email local part with the backfill's numeric-suffix rule)
+   * 3. Validate username uniqueness
+   * 4. Hash password using abstracted service
+   * 5. Create user with BASIC level (+ its password identity row)
+   * 6. Generate JWT tokens, log security event, return user + tokens
    */
   async register(
     email: string,
-    password: string
+    password: string,
+    username?: string
   ): Promise<AuthResult | LegacyAuthResult> {
     try {
-      this.deps.logger.debug("User registration attempt", { email });
+      this.deps.logger.debug("User registration attempt", { email, username });
 
       // Check email uniqueness
       const existingUser = await this.deps.userRepository.findByEmail(email);
@@ -124,16 +159,58 @@ export class AuthService {
         return { success: false, message: "Email already registered" };
       }
 
+      // C1 identity: resolve the handle. Explicit picks are validated and
+      // must be free (never silently renamed); an omitted/blank handle is
+      // derived from the email local part with de-duplication.
+      const explicit = username?.trim().toLowerCase() ?? "";
+      let resolvedUsername: string;
+      if (explicit) {
+        if (!AuthService.USERNAME_PATTERN.test(explicit)) {
+          this.deps.logger.warn("Registration failed - invalid username", {
+            email,
+          });
+          await this.logAuditEvent("USER_REGISTRATION_FAILED", {
+            email,
+            reason: "invalid_username",
+          });
+          return {
+            success: false,
+            message:
+              "Username must be 3-32 characters: lowercase letters, numbers, dots, dashes or underscores",
+          };
+        }
+        const existingHandle =
+          await this.deps.userRepository.findByUsername(explicit);
+        if (existingHandle) {
+          this.deps.logger.warn(
+            "Registration failed - username already exists",
+            {
+              email,
+              username: explicit,
+            }
+          );
+          await this.logAuditEvent("USER_REGISTRATION_FAILED", {
+            email,
+            reason: "username_exists",
+          });
+          return { success: false, message: "Username already taken" };
+        }
+        resolvedUsername = explicit;
+      } else {
+        resolvedUsername = await this.deriveUniqueUsername(email);
+      }
+
       // Hash password using abstracted service
       const passwordHash = await this.deps.passwordService.hash(password);
 
       // Create user registration data
       const userData: UserRegistration = {
+        username: resolvedUsername,
         email,
         password: passwordHash,
       };
 
-      // Create user through repository
+      // Create user through repository (row + password identity, one statement)
       const newUser = await this.deps.userRepository.create(userData);
 
       // Generate tokens
@@ -142,11 +219,13 @@ export class AuthService {
       // Log successful registration
       await this.logAuditEvent("USER_REGISTERED", {
         userId: newUser.id,
+        username: newUser.username,
         email: newUser.email,
       });
 
       this.deps.logger.info("User registered successfully", {
         userId: newUser.id,
+        username: newUser.username,
         email: newUser.email,
       });
 
@@ -154,15 +233,25 @@ export class AuthService {
         success: true,
         user: {
           id: newUser.id,
+          username: newUser.username,
           email: newUser.email,
           userLevel: newUser.userLevel,
         },
         tokens,
       };
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Race-window uniqueness violations from the adapter keep the same
+      // friendly wording as the pre-checks above.
+      if (message === "Username already exists") {
+        return { success: false, message: "Username already taken" };
+      }
+      if (message === "Email already exists") {
+        return { success: false, message: "Email already registered" };
+      }
       this.deps.logger.error("Registration error", {
         email,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       });
       return { success: false, message: "Registration failed" };
     }
@@ -236,6 +325,7 @@ export class AuthService {
         success: true,
         user: {
           id: user.id,
+          username: user.username,
           email: user.email,
           userLevel: user.userLevel,
         },
@@ -301,6 +391,7 @@ export class AuthService {
         success: true,
         user: {
           id: user.id,
+          username: user.username,
           email: user.email,
           userLevel: user.userLevel,
         },

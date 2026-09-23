@@ -44,6 +44,7 @@ describe("UserProfileService", () => {
       findById: jest.fn(),
       findByEmail: jest.fn(),
       updateProfile: jest.fn(),
+      upsertEmailIdentity: jest.fn(),
     };
 
     mockCache = {
@@ -104,6 +105,7 @@ describe("UserProfileService", () => {
       const mockUserData = {
         user: {
           id: mockUserId,
+          username: "testuser",
           email: "test@example.com",
           userLevel: "standard",
         },
@@ -121,6 +123,7 @@ describe("UserProfileService", () => {
 
       expect(result).toEqual({
         id: mockUserData.user.id,
+        username: mockUserData.user.username,
         email: mockUserData.user.email,
         userLevel: mockUserData.user.userLevel,
         roles: mockUserData.roles,
@@ -137,6 +140,7 @@ describe("UserProfileService", () => {
       const mockUserData = {
         user: {
           id: mockUserId,
+          username: "testuser",
           email: "test@example.com",
           userLevel: "standard",
         },
@@ -154,6 +158,7 @@ describe("UserProfileService", () => {
 
       expect(result).toEqual({
         id: mockUserData.user.id,
+        username: mockUserData.user.username,
         email: mockUserData.user.email,
         userLevel: mockUserData.user.userLevel,
         roles: mockUserData.roles,
@@ -278,10 +283,43 @@ describe("UserProfileService", () => {
         mockUserId,
         { email: newEmail }
       );
+      // C1 identity edit: the email change mirrors into user_identities.
+      expect(mockUserRepository.upsertEmailIdentity).toHaveBeenCalledWith(
+        mockUserId,
+        newEmail
+      );
       expect(mockCache.delete).toHaveBeenCalledWith(
         `user:profile:${mockUserId}`
       );
       expect(mockAuditLogRepository.logEvent).toHaveBeenCalled();
+    });
+
+    it("should still succeed when the identity mirror fails (bookkeeping only)", async () => {
+      const newEmail = "newemail@example.com";
+
+      mockUserRepository.findById.mockResolvedValue({
+        email: "oldemail@example.com",
+      });
+      mockUserRepository.findByEmail.mockResolvedValue(null);
+      mockUserRepository.updateProfile.mockResolvedValue({
+        email: newEmail,
+        updatedAt: new Date("2024-01-01"),
+      });
+      mockUserRepository.upsertEmailIdentity.mockRejectedValue(
+        new Error("identity table unavailable")
+      );
+      mockCache.delete.mockResolvedValue(true);
+      mockAuditLogRepository.logEvent.mockResolvedValue(true);
+
+      const result: ProfileUpdateResult = await service.updateUserProfile(
+        mockUserId,
+        { email: newEmail }
+      );
+
+      // Login reads users.email — a failed identity mirror must not fail
+      // the profile update itself (logged and continued in the service).
+      expect(result.success).toBe(true);
+      expect(mockUserRepository.updateProfile).toHaveBeenCalled();
     });
 
     it("should return error when no email provided", async () => {

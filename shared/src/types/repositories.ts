@@ -41,6 +41,12 @@ export interface IUserRepository {
   ): Promise<(User & { passwordHash: string }) | null>;
 
   /**
+   * Find user by username handle (case-insensitive; the unique index is on
+   * LOWER(username)) — registration uniqueness checks, C1 identity redesign.
+   */
+  findByUsername(username: string): Promise<User | null>;
+
+  /**
    * Find user by ID
    */
   findById(id: string): Promise<User | null>;
@@ -62,6 +68,16 @@ export interface IUserRepository {
     id: string,
     updates: Partial<{ email: string; userLevel: UserLevel }>
   ): Promise<User | null>;
+
+  /**
+   * Mirror the user's current email into user_identities (provider='email').
+   *
+   * C1 bookkeeping: login keeps reading users.email; this keeps the identity
+   * model truthful so later phases can resolve logins via identities. Also
+   * supersedes any stale email-identity rows this user owned from earlier
+   * addresses (single statement: delete own rows, insert current).
+   */
+  upsertEmailIdentity(userId: string, email: string): Promise<void>;
 
   /**
    * Get authenticated user data with roles and credentials info

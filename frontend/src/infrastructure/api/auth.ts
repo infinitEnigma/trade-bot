@@ -14,6 +14,8 @@ import type {
  */
 export interface AuthUserProfile {
   id: string;
+  /** Handle added by the C1 identity redesign; may be derived from email. */
+  username: string;
   email: string;
   userLevel: string;
   roles?: string[];
@@ -61,11 +63,13 @@ export const authApi = {
   // Authentication endpoints
   async register(
     email: string,
-    password: string
+    password: string,
+    username?: string
   ): Promise<ApiResponse<RegisterResponse>> {
     const response = await httpClient.getClient().post("/api/auth/register", {
       email,
       password,
+      ...(username ? { username } : {}),
     });
     return response.data;
   },

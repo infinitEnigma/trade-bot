@@ -208,7 +208,7 @@ reported, and sell legs are placed at the buy price with mark-price PnL and no
 
 | Store       | Authoritative for                                                                         |
 | ----------- | ----------------------------------------------------------------------------------------- |
-| PostgreSQL  | Lifecycle state + audit, command tracking, engine registry, credentials, wallet addresses |
+| PostgreSQL  | Lifecycle state + audit, command tracking, engine registry, credentials, wallet addresses, user identities |
 | Engine disk | Per-bot grid slot snapshot (operational cache)                                            |
 | Redis       | Control-plane streams, dedup markers, engine liveness                                     |
 | Exchange    | Live orders, fills, positions, balances — the ultimate source of truth                    |
@@ -253,6 +253,7 @@ debt, deliberately deferred (P2).
 | `008_bot_command_tracking.sql`      | `bot_commands` (pending / delivered / timeout tracking)                                                                                 |
 | `009_engine_registry.sql`           | `engine_registry` (identity, epoch, heartbeat liveness)                                                                                 |
 | `010_wallet_addresses.sql`          | `wallet_addresses` (wallet linking independent of exchange keys)                                                                        |
+| `011_identity_core.sql`               | `users.username` (+ unique index on LOWER(username)), `display_name`, `avatar_url`; `user_identities` (one backfilled password identity per user) |
 
 ---
 

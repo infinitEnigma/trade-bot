@@ -14,6 +14,8 @@ export interface LoginCredentials {
 }
 
 export interface RegisterData {
+  /** Optional handle (3-32 chars); server derives one from email when omitted. */
+  username?: string;
   email: string;
   password: string;
 }

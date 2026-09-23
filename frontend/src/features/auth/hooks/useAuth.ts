@@ -88,15 +88,21 @@ const useAuthStore = create<AuthStore>()(
       },
 
       register: async ({
+        username,
         email,
         password,
       }: {
+        username?: string;
         email: string;
         password: string;
       }) => {
         try {
           set({ isLoading: true });
-          const response = await authService.register(email, password);
+          const response = await authService.register(
+            email,
+            password,
+            username
+          );
 
           if (response.success) {
             // Set user directly from register response

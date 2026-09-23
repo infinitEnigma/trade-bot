@@ -112,14 +112,16 @@ const Profile: React.FC = () => {
           <div className="flex items-center gap-6">
             <div className="relative">
               <div className="w-20 h-20 rounded-full bg-linear-to-br from-primary to-accent flex items-center justify-center text-2xl font-bold text-white">
-                {user.email?.[0]?.toUpperCase() || "U"}
+                {user.username?.[0]?.toUpperCase() ||
+                  user.email?.[0]?.toUpperCase() ||
+                  "U"}
               </div>
               <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full border-2 border-bg-surface bg-green-500"></div>
             </div>
 
             <div className="flex-1">
               <h2 className="text-2xl font-bold text-text mb-1">
-                {user.email?.split("@")[0] || "User"}
+                {user.username || user.email?.split("@")[0] || "User"}
               </h2>
               <p className="text-textMuted mb-2">{user.email}</p>
 

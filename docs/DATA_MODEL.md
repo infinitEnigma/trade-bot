@@ -1,6 +1,7 @@
 # Data Model: Identity, Wallets & Exchange Accounts
 
-**Status:** design proposal — nothing here is implemented yet.
+**Status:** C1 (identity core — migration `011_identity_core.sql`) implemented;
+C2/C3 pending. Everything below that C1 did not land remains the target model.
 **Execution plan:** [EXCHANGE_INTEGRATION_PLAN.md](EXCHANGE_INTEGRATION_PLAN.md)
 (defines the staged PRs C1-C3 that implement this document).
 
@@ -190,6 +191,11 @@ users ──┬──< user_identities     (password / email / google / github /
 
 ```sql
 -- Identity: who can log in.
+-- C1 note (011_identity_core.sql): username / display_name / avatar_url landed,
+-- user_identities was created and backfilled with one 'password' identity per
+-- user. The two DROP NOT NULL statements below are deliberately NOT applied
+-- yet — login remains email + password, so both columns stay required until
+-- wallet/social login (D4) lands.
 ALTER TABLE users
   ADD COLUMN username     VARCHAR(32),        -- login handle (lowercase, unique)
   ADD COLUMN display_name VARCHAR(64),
@@ -347,6 +353,12 @@ _Benefit:_ no compatibility layer, roughly half the work.
 | 5     | Bot → account binding: bot creation UI + API, engine credentials v2 + client selection                                | The same strategy started on two accounts runs two bots against different accounts                                   |
 | 6     | Data-table generalisation: `exchange_positions`/`exchange_balances` replace `kodiak_*`; retire vendor-named tables    | Positions and balances are per account; two accounts holding the same symbol both display correctly                  |
 
+> **C1 landed** (`011_identity_core.sql`): phase-1 schema + backfill plus the
+> optional username handle. Login stays email-based, so phase 2's
+> "log in by username" acceptance is superseded by the revised D2/D3 decisions
+> below — `user_identities` is the substrate that makes username/social login
+> a switch-on later, not part of C1.
+
 Phases 1-4 are prerequisites for the Lighter engine work (extended
 `ExchangeClient` + `LighterClient`); Phase 5 is what lets the engine trade a
 specifically chosen account.
@@ -371,10 +383,23 @@ that assume a surrounding transaction.
 
 ---
 
-## 9. Decisions needed
+## 9. Decisions
 
-1. **Migration strategy** — Option A (expand/contract) or Option B (clean cut)?
-2. **Username rules** — length/charset, reserved words, case-insensitive uniqueness, and whether it is changeable.
-3. **Email login during transition** — keep email + password working until social identities land, or switch to username-only immediately?
-4. **Wallet as login** — should a verified wallet also be usable as a login method, or stay link/verification only?
-5. **Default account** — with several accounts, is one marked default for quick bot creation, or must every bot explicitly choose?
+1. **Migration strategy** — **resolved: Option B (clean cut)**, staged C1-C3
+   ([plan §3](EXCHANGE_INTEGRATION_PLAN.md)). Test users only, so each slice is
+   a clean cut with no dual-write.
+2. **Username rules** — **resolved (C1):** 3-32 characters, lowercase
+   `[a-z0-9._-]`, case-insensitive uniqueness via a unique index on
+   `LOWER(username)`; optional at registration (derived from the email local
+   part, numeric-suffix de-duplication, when omitted); immutable for now.
+3. **Email login during transition** — **resolved (C1):** email + password
+   login is retained unchanged; `username` is an additive handle, not a login
+   credential yet. Email verification (and login-by-username / social
+   identities) is a later phase, built on `users.email_verified` and
+   `user_identities.verified_at`.
+4. **Wallet as login** — **deferred (D4).** Wallets stay link/verification
+   only; `user_identities` plus the deferred `DROP NOT NULL`s above are the
+   groundwork. C1 remains email-login-only.
+5. **Default account** — **resolved:** no default flag. Bot creation
+   auto-selects the account when the user has exactly one, and requires an
+   explicit pick otherwise (C3).

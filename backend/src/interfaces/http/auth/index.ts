@@ -28,7 +28,8 @@ router.post(
     try {
       const result = await authService.register(
         req.body.email,
-        req.body.password
+        req.body.password,
+        req.body.username
       );
 
       if (!result.success) {
@@ -465,12 +466,13 @@ router.get(
       // Get complete user data including timestamps
       const result = await query<{
         id: string;
+        username: string;
         email: string;
         user_level: string;
         created_at: Date;
         updated_at: Date;
       }>(
-        "SELECT id, email, user_level, created_at, updated_at FROM users WHERE id = $1",
+        "SELECT id, username, email, user_level, created_at, updated_at FROM users WHERE id = $1",
         [req.user.userId]
       );
 
@@ -493,6 +495,7 @@ router.get(
 
       const user = {
         id: userRow.id,
+        username: userRow.username,
         email: userRow.email,
         userLevel: userRow.user_level,
         roles,
@@ -503,6 +506,7 @@ router.get(
       authLogger.info("Returning user data from /me endpoint", {
         userId: user.id,
         userLevel: user.userLevel,
+        username: user.username,
         email: user.email,
         rolesCount: roles.length,
       });

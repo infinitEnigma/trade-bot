@@ -61,6 +61,7 @@ jest.mock("../../../src/database/pool", () => ({
       rows: [
         {
           id: "test",
+          username: "testuser",
           email: "test@example.com",
           user_level: "VERIFIED",
           created_at: new Date(),
@@ -215,7 +216,43 @@ describe("Auth Controller - Final Working Tests", () => {
 
       expect(mockAuthService.register).toHaveBeenCalledWith(
         "test@example.com",
-        "Password123!"
+        "Password123!",
+        undefined
+      );
+    });
+
+    it("should pass an explicit username through to the service", async () => {
+      const testUser = {
+        id: "test",
+        username: "testuser",
+        email: "test@example.com",
+        userLevel: "BASIC",
+      };
+      const tokens = {
+        accessToken: "access-token",
+        refreshToken: "refresh-token",
+      };
+
+      mockAuthService.register.mockResolvedValue({
+        success: true,
+        user: testUser,
+        tokens,
+      });
+
+      const response = await request(app)
+        .post("/api/auth/register")
+        .send({
+          username: "testuser",
+          email: "test@example.com",
+          password: "Password123!",
+        })
+        .expect(201);
+
+      expect(response.body.data.user.username).toBe("testuser");
+      expect(mockAuthService.register).toHaveBeenCalledWith(
+        "test@example.com",
+        "Password123!",
+        "testuser"
       );
     });
 
@@ -453,6 +490,7 @@ describe("Auth Controller - Final Working Tests", () => {
       expect(response.body.data).toEqual(
         expect.objectContaining({
           id: "test",
+          username: "testuser",
           email: "test@example.com",
           userLevel: "VERIFIED",
           roles: ["USER"],

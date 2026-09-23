@@ -150,6 +150,23 @@ export const commonSchemas = {
       "any.required": "Password is required",
     }),
 
+  // Username handle (C1 identity redesign): optional at registration —
+  // derived server-side from the email local part when omitted. Login stays
+  // email-based. Transformed to lowercase; pattern also tolerates mixed case
+  // so the result is deterministic regardless of Joi's transform order.
+  username: Joi.string()
+    .trim()
+    .lowercase()
+    .min(3)
+    .max(32)
+    .pattern(/^[a-z0-9._-]+$/i)
+    .messages({
+      "string.min": "Username must be at least 3 characters long",
+      "string.max": "Username cannot exceed 32 characters",
+      "string.pattern.base":
+        "Username may only contain letters, numbers, dots, dashes and underscores",
+    }),
+
   // UUID validation
   uuid: Joi.string().uuid({ version: "uuidv4" }).required().messages({
     "string.uuid": "Invalid UUID format",
@@ -215,6 +232,7 @@ export const validators = {
   // Auth validators
   register: validateRequest(
     Joi.object({
+      username: commonSchemas.username, // optional handle — derived server-side when omitted
       email: commonSchemas.email,
       password: commonSchemas.password,
     }),

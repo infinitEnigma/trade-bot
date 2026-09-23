@@ -18,6 +18,8 @@ export enum UserRole {
 export interface User {
   id: string;
   email: string;
+  /** Handle added by the C1 identity redesign; derived from email when the user picks none. */
+  username: string;
   userLevel: UserLevel;
   roles?: UserRole[];
   createdAt: Date;
@@ -25,6 +27,8 @@ export interface User {
 }
 
 export interface UserRegistration {
+  /** Resolved (never blank) before persistence — AuthService derives it from email when omitted at the API. */
+  username: string;
   email: string;
   password: string;
 }

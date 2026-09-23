@@ -21,6 +21,7 @@ import { query } from "../../../database/pool";
  */
 interface UserRow {
   id: string;
+  username: string;
   email: string;
   user_level: string;
   created_at: string;
@@ -40,7 +41,7 @@ export class UserRepositoryAdapter implements IUserRepository {
   async findByEmail(email: string): Promise<User | null> {
     try {
       const result = await query(
-        "SELECT id, email, user_level, created_at, updated_at FROM users WHERE email = $1",
+        "SELECT id, username, email, user_level, created_at, updated_at FROM users WHERE email = $1",
         [email]
       );
 
@@ -65,7 +66,7 @@ export class UserRepositoryAdapter implements IUserRepository {
   ): Promise<(User & { passwordHash: string }) | null> {
     try {
       const result = await query(
-        "SELECT id, email, password_hash, user_level, created_at, updated_at FROM users WHERE email = $1",
+        "SELECT id, username, email, password_hash, user_level, created_at, updated_at FROM users WHERE email = $1",
         [email]
       );
 
@@ -88,12 +89,36 @@ export class UserRepositoryAdapter implements IUserRepository {
   }
 
   /**
+   * Find user by username handle — registration uniqueness checks (C1).
+   * Case-insensitive to match the uq_users_username index on LOWER(username).
+   */
+  async findByUsername(username: string): Promise<User | null> {
+    try {
+      const result = await query(
+        "SELECT id, username, email, user_level, created_at, updated_at FROM users WHERE LOWER(username) = LOWER($1)",
+        [username]
+      );
+
+      if (result.rows.length === 0) {
+        return null;
+      }
+
+      const row = result.rows[0] as UserRow;
+      return this.mapRowToUser(row);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to find user by username: ${errorMessage}`);
+    }
+  }
+
+  /**
    * Find user by ID
    */
   async findById(id: string): Promise<User | null> {
     try {
       const result = await query(
-        "SELECT id, email, user_level, created_at, updated_at FROM users WHERE id = $1",
+        "SELECT id, username, email, user_level, created_at, updated_at FROM users WHERE id = $1",
         [id]
       );
 
@@ -115,26 +140,41 @@ export class UserRepositoryAdapter implements IUserRepository {
    */
   async create(userData: UserRegistration): Promise<User> {
     try {
-      const result = await query(
-        "INSERT INTO users (email, password_hash, user_level, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id, email, user_level, created_at, updated_at",
-        [userData.email, userData.password, UserLevel.BASIC]
+      // One atomic statement: the user row plus its password identity row
+      // (C1 identity redesign — mirrors the 011 backfill shape).
+      const userResult = await query(
+        `WITH new_user AS (
+           INSERT INTO users (username, email, password_hash, user_level, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, NOW(), NOW())
+           RETURNING id, username, email, user_level, created_at, updated_at
+         ),
+         password_identity AS (
+           INSERT INTO user_identities (user_id, provider, identifier, secret_hash, is_primary, verified_at)
+           SELECT id, 'password', lower($2), $3, TRUE, now() FROM new_user
+         )
+         SELECT * FROM new_user`,
+        [userData.username, userData.email, userData.password, UserLevel.BASIC]
       );
 
-      if (result.rows.length === 0) {
+      if (userResult.rows.length === 0) {
         throw new Error("User creation failed - no rows returned");
       }
 
-      const row = result.rows[0] as UserRow;
+      const row = userResult.rows[0] as UserRow;
       return this.mapRowToUser(row);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      // Handle unique constraint violation
+      // Handle unique constraint violations — the username index and the
+      // email constraint get distinct friendly messages (C1).
       if (
         errorMessage.includes("duplicate key") ||
         errorMessage.includes("unique constraint")
       ) {
+        if (errorMessage.includes("username")) {
+          throw new Error("Username already exists");
+        }
         throw new Error("Email already exists");
       }
 
@@ -189,7 +229,7 @@ export class UserRepositoryAdapter implements IUserRepository {
       updateValues.push(id); // For the WHERE clause
 
       const result = await query(
-        `UPDATE users SET ${updateFields.join(", ")} WHERE id = $${valueIndex} RETURNING id, email, user_level, created_at, updated_at`,
+        `UPDATE users SET ${updateFields.join(", ")} WHERE id = $${valueIndex} RETURNING id, username, email, user_level, created_at, updated_at`,
         updateValues
       );
 
@@ -216,6 +256,36 @@ export class UserRepositoryAdapter implements IUserRepository {
   }
 
   /**
+   * Mirror the current email into user_identities (provider='email').
+   *
+   * C1 bookkeeping: login still reads users.email, so a failure here must
+   * not fail the profile update itself — log-and-continue semantics live in
+   * the caller. The statement drops this user's previous email rows and
+   * inserts the current one; ON CONFLICT re-homes a stale row (possible only
+   * if another user's history still references this address) to the owner of
+   * the address users.email says is current.
+   */
+  async upsertEmailIdentity(userId: string, email: string): Promise<void> {
+    try {
+      await query(
+        `WITH del AS (
+           DELETE FROM user_identities
+           WHERE user_id = $1 AND provider = 'email'
+         )
+         INSERT INTO user_identities (user_id, provider, identifier, is_primary)
+         VALUES ($1, 'email', lower($2), FALSE)
+         ON CONFLICT (provider, identifier)
+         DO UPDATE SET user_id = EXCLUDED.user_id`,
+        [userId, email]
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to upsert email identity: ${errorMessage}`);
+    }
+  }
+
+  /**
    * Get authenticated user data with roles and credentials info
    */
   async getAuthenticatedUserData(id: string): Promise<{
@@ -230,6 +300,7 @@ export class UserRepositoryAdapter implements IUserRepository {
         `
                 SELECT
                     u.id,
+                    u.username,
                     u.email,
                     u.user_level,
                     u.created_at,
@@ -248,7 +319,7 @@ export class UserRepositoryAdapter implements IUserRepository {
                 LEFT JOIN user_roles ur ON u.id = ur.user_id
                 LEFT JOIN kodiak_credentials kc ON u.id = kc.user_id
                 WHERE u.id = $1
-                GROUP BY u.id, u.email, u.user_level, u.created_at, u.updated_at, kc.id, kc.account_id, kc.verified
+                GROUP BY u.id, u.username, u.email, u.user_level, u.created_at, u.updated_at, kc.id, kc.account_id, kc.verified
             `,
         [id]
       );
@@ -259,6 +330,7 @@ export class UserRepositoryAdapter implements IUserRepository {
 
       const row = result.rows[0] as {
         id: string;
+        username: string;
         email: string;
         user_level: string;
         created_at: string;
@@ -270,6 +342,7 @@ export class UserRepositoryAdapter implements IUserRepository {
       };
       const user = this.mapRowToUser({
         id: row.id,
+        username: row.username,
         email: row.email,
         user_level: row.user_level,
         created_at: row.created_at,
@@ -376,6 +449,7 @@ export class UserRepositoryAdapter implements IUserRepository {
   private mapRowToUser(row: UserRow): User {
     return {
       id: row.id,
+      username: row.username,
       email: row.email,
       userLevel: row.user_level as UserLevel,
       createdAt: new Date(row.created_at),

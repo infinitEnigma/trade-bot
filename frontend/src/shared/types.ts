@@ -17,6 +17,8 @@ export enum UserLevel {
 export interface User {
   id: string;
   email: string;
+  /** Handle added by the C1 identity redesign; may be derived from email. */
+  username: string;
   userLevel: UserLevel;
   roles?: UserRole[];
   createdAt: Date;

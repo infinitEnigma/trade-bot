@@ -61,6 +61,40 @@ export const validateEmailChange = (
 };
 
 // ============================================
+// Username Validation (C1 identity redesign)
+// ============================================
+
+/**
+ * Optional-handle validation for the Register form. Mirrors the backend Joi
+ * rule: 3-32 chars of [a-z0-9._-] after trimming/lowercasing. Empty input is
+ * valid — the server derives a handle from the email local part instead.
+ */
+export const validateUsername = (username: string): ValidationResult => {
+  const trimmed = username.trim();
+
+  if (!trimmed) {
+    return { isValid: true, message: "" }; // optional — derived server-side
+  }
+
+  if (trimmed.length < 3 || trimmed.length > 32) {
+    return {
+      isValid: false,
+      message: "Username must be 3-32 characters long",
+    };
+  }
+
+  if (!/^[a-z0-9._-]+$/i.test(trimmed)) {
+    return {
+      isValid: false,
+      message:
+        "Username may only contain letters, numbers, dots, dashes and underscores",
+    };
+  }
+
+  return { isValid: true, message: "" };
+};
+
+// ============================================
 // Password Validation
 // ============================================
 

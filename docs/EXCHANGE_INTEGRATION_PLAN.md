@@ -1,6 +1,6 @@
 # Exchange Integration & Data Model — Execution Plan
 
-**Status:** approved sequence, not yet executed.
+**Status:** A and B executed; C in progress — **C1 (identity) landed**. C2/C3 pending.
 **Companion docs:** [DATA_MODEL.md](DATA_MODEL.md) (target schema + why),
 [PROJECT_REVIEW_GAP_ANALYSIS.md](PROJECT_REVIEW_GAP_ANALYSIS.md) (ledger),
 [ARCHITECTURE.md](ARCHITECTURE.md) (current design),
@@ -15,7 +15,7 @@ A. credential-contract slice   (0.5 d)  ── stops the wrong shape being baked
         │
 B. Lighter engine adapter      (2-3 d)  ── verified against testnet (Phase 0 done)
         │
-C1. identity (username login)  (1 d)    ── DB Option B, PR 1 of 3
+C1. identity (username handle) (1 d)    ── DB Option B, PR 1 of 3  ✅ landed
 C2. wallets + exchange accounts(1.5 d)  ── PR 2 of 3  (adapter-based credentials)
 C3. bot→account + data tables  (1 d)    ── PR 3 of 3  (engine gets a real account)
 ```
@@ -141,23 +141,38 @@ creates a second live order.
 Design and rationale: [DATA_MODEL.md](DATA_MODEL.md) §4-§6. Test users only, so
 each PR is a clean cut for its own slice: no dual-write, re-seed test accounts.
 
-### C1 — identity: username login + `user_identities` (≈1 day)
+### C1 — identity: username handle + `user_identities` (≈1 day) — ✅ **landed**
 
-- `011_identity_core.sql`: add `users.username` (+ unique lower-case index),
-  `display_name`, `avatar_url`; create `user_identities`; backfill one `password`
-  identity per existing user (identifier = lowercased email) and a username
-  derived from the email local part (de-duplicated with a numeric suffix);
-  then drop `NOT NULL` on `users.email` / `password_hash`.
-- Code: `auth.service.pure.ts` (`register(username, password, email?)`,
-  `login(username, password)` via `findByUsernameWithPassword`),
-  `user-repository.adapter.ts`, validators, `/api/auth/register|login`,
-  profile update (email becomes an _identity_ edit), `TokenPayload`
-  (`username` instead of `email`), plus the auth/user Jest suites.
-- Frontend: Register/Login forms (username + optional email), profile page.
+**Revised during execution** (recorded in [DATA_MODEL.md](DATA_MODEL.md) §9 D2/D3):
+email + password login stays exactly as it was; `username` is an *additive*
+handle, not a login credential yet, and email verification is a later phase.
+This removed the `TokenPayload` swap, the login-form rewrite, and the
+`email: string | null` ripple from the slice.
+
+- `011_identity_core.sql`: add `users.username` (+ unique index on
+  `LOWER(username)`), `display_name`, `avatar_url`; create `user_identities`
+  (DATA_MODEL §4.2 columns, `UNIQUE (provider, identifier)`); backfill one
+  `password` identity per existing user (identifier = lowercased email) and a
+  username derived from the email local part (de-duplicated with a numeric
+  suffix). **`users.email` / `password_hash` keep `NOT NULL`** — dropping them
+  is only needed for wallet-only users and moves to the D4 (wallet login)
+  phase.
+- Code: `auth.service.pure.ts` (`register(email, password, username?)` — the
+  handle is validated, rejected when taken, or derived from the email local
+  part with the backfill's numeric-suffix rule), `user-repository.adapter.ts`
+  (`findByUsername`, user + password-identity insert in one CTE statement,
+  `upsertEmailIdentity`), validators (`commonSchemas.username`), `/api/auth/register`
+  passes the optional handle through, profile email edit mirrors an `email`
+  identity row, `getAuthenticatedUserData` / `/auth/me` / profile responses
+  carry `username`, plus the auth/user Jest suites. **Login, `TokenPayload`,
+  and the auth middleware are untouched.**
+- Frontend: Register gains an optional Username field; **Login is unchanged**;
+  profile page and header show the handle.
 - **Legacy tables stay** (`kodiak_credentials`, `wallet_addresses`) so level logic
   is untouched in this PR.
-- **Acceptance:** register/login/logout/profile round-trip with a username; a
-  legacy test user can still log in after the username backfill; gates green.
+- **Acceptance:** register with and without a username; login/logout/profile
+  round-trip by email; a legacy test user keeps logging in after the username
+  backfill; gates green.
 
 ### C2 — wallets + exchange accounts (≈1.5 days)
 

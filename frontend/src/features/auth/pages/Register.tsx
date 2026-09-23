@@ -7,11 +7,13 @@ import { PageLayout } from "../../../shared/components/layout";
 import { ValidatedInput } from "../../../shared/components/forms";
 import {
   validateEmail,
+  validateUsername,
   validatePasswordRequirements,
   validatePasswordConfirmation,
 } from "../../../shared/validation";
 
 const Register: React.FC = () => {
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -19,6 +21,7 @@ const Register: React.FC = () => {
   const { register } = useAuth();
   const navigate = useNavigate();
 
+  const usernameValidation = validateUsername(username);
   const emailValidation = validateEmail(email);
   const passwordValidation = validatePasswordRequirements(password);
   const confirmValidation = validatePasswordConfirmation(
@@ -30,6 +33,7 @@ const Register: React.FC = () => {
     e.preventDefault();
 
     if (
+      !usernameValidation.isValid ||
       !emailValidation.isValid ||
       !passwordValidation.isValid ||
       !confirmValidation.isValid
@@ -40,7 +44,11 @@ const Register: React.FC = () => {
     setLoading(true);
 
     try {
-      await register({ email, password });
+      await register({
+        username: username.trim() || undefined,
+        email,
+        password,
+      });
       navigate("/dashboard");
     } catch {
       // Error is already handled in the context
@@ -61,6 +69,20 @@ const Register: React.FC = () => {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            <ValidatedInput
+              label="Username (optional)"
+              type="text"
+              value={username}
+              onChange={setUsername}
+              validation={{
+                isValid: usernameValidation.isValid,
+                message: usernameValidation.message,
+                touched: username.length > 0,
+              }}
+              placeholder="your_handle — left blank, we derive one from your email"
+              required
+            />
+
             <ValidatedInput
               label="Email"
               type="email"
@@ -107,6 +129,7 @@ const Register: React.FC = () => {
               type="submit"
               disabled={
                 loading ||
+                !usernameValidation.isValid ||
                 !emailValidation.isValid ||
                 !passwordValidation.isValid ||
                 !confirmValidation.isValid
