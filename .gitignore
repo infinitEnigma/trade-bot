@@ -41,6 +41,9 @@ tsconfig.tsbuildinfo
 
 # Database / Cache (local dev)
 *.sql
+# ...but schema migrations ARE source of truth for the ledger-tracked runner —
+# re-include them so a fresh clone can bootstrap (stray local dumps stay ignored).
+!database/migrations/*.sql
 *.dump
 postgres-data/
 redis-data/
