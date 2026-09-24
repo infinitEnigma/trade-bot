@@ -9,7 +9,7 @@
  *   prefixes and every request double-missed the cache),
  * - cached-or-fetch wrappers for the Redis get/setex dance,
  * - response envelope builders + a single catch-all error responder,
- * - credential-gated guard replacing the raw `kodiak_credentials` SQL that
+ * - credential-gated guard replacing the raw credential SQL that
  *   was inlined in `/ws-url` and `/kline-history`,
  * - TradingView history → kline transforms shared by `/klines` and
  *   `/kline-history`.

@@ -305,7 +305,9 @@ describe("User Profile Controller", () => {
         "user-123",
         "0x1234567890123456789012345678901234567890",
         "0xabcdef1234567890",
-        "Sign this message to verify your wallet"
+        "Sign this message to verify your wallet",
+        // C2: Joi schema defaults chain to "evm" when the body omits it.
+        "evm"
       );
       expect(res.json).toHaveBeenCalledWith(mockVerificationResult);
     });

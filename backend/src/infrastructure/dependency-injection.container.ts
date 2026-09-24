@@ -19,16 +19,14 @@ import { signatureVerificationServiceAdapter } from "./adapters/security/signatu
 // Redis Services
 import { redisService } from "./cache/redis.service";
 
-// Kodiak Connection Service
-import { kodiakConnectionService } from "./external/kodiak-connection.service";
-
 // Repository Adapters
 import { userRepositoryAdapter } from "./adapters/repositories/user-repository.adapter";
+import { walletRepositoryAdapter } from "./adapters/repositories/wallet-repository.adapter";
+import { exchangeAccountRepositoryAdapter } from "./adapters/repositories/exchange-account-repository.adapter";
 import { balanceRepositoryAdapter } from "./adapters/repositories/balance-repository.adapter";
 import { positionRepositoryAdapter } from "./adapters/repositories/position-repository.adapter";
 import { tradeRepositoryAdapter } from "./adapters/repositories/trade-repository.adapter";
 import { strategyRepositoryAdapter } from "./adapters/repositories/strategy-repository.adapter";
-import { kodiakCredentialsRepositoryAdapter } from "./adapters/repositories/kodiak-credentials-repository.adapter";
 import { auditLogRepositoryAdapter } from "./adapters/repositories/audit-log-repository.adapter";
 import { roleRepositoryAdapter } from "./adapters/repositories/role-repository.adapter";
 import { botInstanceRepositoryAdapter } from "./adapters/repositories/bot-instance-repository.adapter";
@@ -43,6 +41,7 @@ import {
 // Pure Services
 import { BalanceService } from "../core/wallet/balance.service.pure";
 import { AuthService } from "../core/auth/auth.service.pure";
+import { createVerifyConnectivity } from "../core/user/verify-connectivity";
 import { PositionService } from "../core/strategies/position.service.pure";
 import { RoleManagementService } from "../core/auth/role-management.service.pure";
 import { RoleQualificationService } from "../core/auth/role-qualification.service";
@@ -54,10 +53,11 @@ import { PositionValidatorService } from "../core/strategies/position-validator.
 import { PositionSyncService } from "../core/strategies/position-sync.service.pure";
 import { EngineManager } from "../core/strategies/engine-manager.service.pure";
 import { UserProfileService } from "../core/user/user-profile.service";
-import {
-  CachedKodiakConnectionResult,
-  UserKodiakService,
-} from "../core/user/user-kodiak.service";
+import { UserLevelService } from "../core/auth/user-level.service";
+import { ExchangeAccountService } from "../core/user/exchange-account.service";
+import { kodiakIntegrationService } from "./external/kodiak-integration.service";
+import { lighterVerifierFromEnv } from "./external/exchange-accounts/lighter-verifier";
+import { encryptionService } from "./security/encryption.service";
 
 /**
  * Dependency Injection Container
@@ -124,6 +124,20 @@ export class DependencyInjectionContainer {
   }
 
   /**
+   * Wallet Repository - chain-aware multi-wallet data access (C2)
+   */
+  get walletRepository() {
+    return walletRepositoryAdapter;
+  }
+
+  /**
+   * Exchange Account Repository - venue/environment account access (C2)
+   */
+  get exchangeAccountRepository() {
+    return exchangeAccountRepositoryAdapter;
+  }
+
+  /**
    * Balance Repository - Balance data persistence
    */
   get balanceRepository() {
@@ -149,13 +163,6 @@ export class DependencyInjectionContainer {
    */
   get strategyRepository() {
     return strategyRepositoryAdapter;
-  }
-
-  /**
-   * Kodiak Credentials Repository - Exchange credential management
-   */
-  get kodiakCredentialsRepository() {
-    return kodiakCredentialsRepositoryAdapter;
   }
 
   /**
@@ -214,6 +221,14 @@ export class DependencyInjectionContainer {
       logger: this.loggerService,
       auditLogger: this.auditLogRepository,
       signatureVerificationService: this.signatureVerificationService,
+      walletRepository: this.walletRepository,
+      userLevel: new UserLevelService({
+        walletRepository: this.walletRepository,
+        exchangeAccountRepository: this.exchangeAccountRepository,
+        userRepository: this.userRepository,
+        auditLogRepository: this.auditLogRepository,
+        logger: this.loggerService,
+      }),
     });
   }
 
@@ -291,7 +306,7 @@ export class DependencyInjectionContainer {
    */
   get marketService(): MarketService {
     return new MarketService({
-      kodiakCredentialsRepository: this.kodiakCredentialsRepository,
+      exchangeAccountRepository: this.exchangeAccountRepository,
       logger: this.loggerService,
     });
   }
@@ -345,35 +360,38 @@ export class DependencyInjectionContainer {
   }
 
   /**
-   * Kodiak Connection Service - Infrastructure service for Kodiak exchange connections
+   * Exchange Account Service - per-account connect/verify/revoke (C2).
    */
-  get kodiakConnectionService() {
-    return kodiakConnectionService;
-  }
-
-  /**
-   * User Kodiak Service - Pure business logic for user Kodiak integration
-   */
-  get userKodiakService(): UserKodiakService {
-    return new UserKodiakService({
-      kodiakConnectionService: this.kodiakConnectionService,
-      cache: {
-        getCachedResult: async (userId: string, accountId: string) => {
-          const cacheKey = `kodiak:connection:${userId}:${accountId}`;
-          const result =
-            await this.cacheService.get<CachedKodiakConnectionResult>(cacheKey);
-          return (result.success ? result.data : null) ?? null;
-        },
-        setCachedResult: async (
-          userId: string,
-          accountId: string,
-          success: boolean,
-          error?: string
-        ) => {
-          const cacheKey = `kodiak:connection:${userId}:${accountId}`;
-          await this.cacheService.set(cacheKey, { success, error }, 300); // Cache for 5 minutes
-        },
+  get exchangeAccountService(): ExchangeAccountService {
+    const userLevel = new UserLevelService({
+      walletRepository: this.walletRepository,
+      exchangeAccountRepository: this.exchangeAccountRepository,
+      userRepository: this.userRepository,
+      auditLogRepository: this.auditLogRepository,
+      logger: this.loggerService,
+    });
+    return new ExchangeAccountService({
+      exchangeAccountRepository: this.exchangeAccountRepository,
+      encryption: {
+        encryptWithVersion: (plaintext: string) =>
+          encryptionService.encryptWithVersion(plaintext),
+        decryptWithVersion: (ciphertext: string) =>
+          encryptionService.decryptWithVersion(ciphertext),
+        decryptApiKey: (ciphertext: string) =>
+          encryptionService.decryptApiKey(ciphertext),
+        decryptSecretKey: (ciphertext: string) =>
+          encryptionService.decryptSecretKey(ciphertext),
+        currentVersion: () =>
+          (encryptionService as unknown as { currentKeyVersion?: number })
+            .currentKeyVersion ?? 2,
       },
+      verifyConnectivity: createVerifyConnectivity({
+        kodiakIntegrationService,
+        lighterVerifier: lighterVerifierFromEnv(),
+      }),
+      userLevel,
+      auditLogRepository: this.auditLogRepository,
+      logger: this.loggerService,
     });
   }
 
@@ -503,9 +521,9 @@ export class DependencyInjectionContainer {
   } {
     return {
       infrastructureAdapters: 6, // cache, logger, token, password, encryption, externalApi
-      repositoryAdapters: 8, // user, balance, position, trade, strategy, kodiakCredentials, auditLog, botInstance
-      businessServices: 4, // balance, auth, position, botManagement
-      totalServices: 18,
+      repositoryAdapters: 9, // user, wallet, exchangeAccount, balance, position, trade, strategy, auditLog, botInstance
+      businessServices: 5, // balance, auth, position, botManagement, exchangeAccount
+      totalServices: 20,
     };
   }
 }
@@ -534,12 +552,13 @@ export const getExternalApiService = () => diContainer.externalApiService;
 
 // Repository Services
 export const getUserRepository = () => diContainer.userRepository;
+export const getWalletRepository = () => diContainer.walletRepository;
+export const getExchangeAccountRepository = () =>
+  diContainer.exchangeAccountRepository;
 export const getBalanceRepository = () => diContainer.balanceRepository;
 export const getPositionRepository = () => diContainer.positionRepository;
 export const getTradeRepository = () => diContainer.tradeRepository;
 export const getStrategyRepository = () => diContainer.strategyRepository;
-export const getKodiakCredentialsRepository = () =>
-  diContainer.kodiakCredentialsRepository;
 export const getAuditLogRepository = () => diContainer.auditLogRepository;
 export const getBotInstanceRepository = () => diContainer.botInstanceRepository;
 
@@ -556,7 +575,8 @@ export const getPositionValidatorService = () =>
 export const getPositionSyncService = () => diContainer.positionSyncService;
 export const getEngineManager = () => diContainer.engineManager;
 export const getUserProfileService = () => diContainer.userProfileService;
-export const getUserKodiakService = () => diContainer.userKodiakService;
+export const getExchangeAccountService = () =>
+  diContainer.exchangeAccountService;
 export const getRoleManagementService = () => diContainer.roleManagementService;
 
 // WebSocket Services

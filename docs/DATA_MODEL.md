@@ -1,7 +1,7 @@
 # Data Model: Identity, Wallets & Exchange Accounts
 
-**Status:** C1 (identity core — migration `011_identity_core.sql`) implemented;
-C2/C3 pending. Everything below that C1 did not land remains the target model.
+**Status:** C1 (identity core — migration `011_identity_core.sql`) and C2 (wallets & exchange accounts — migration `012_wallets_exchange_accounts.sql`) implemented;
+C3 pending. Everything below that C1/C2 did not land remains the target model.
 **Execution plan:** [EXCHANGE_INTEGRATION_PLAN.md](EXCHANGE_INTEGRATION_PLAN.md)
 (defines the staged PRs C1-C3 that implement this document).
 

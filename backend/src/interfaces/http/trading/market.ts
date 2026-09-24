@@ -2,7 +2,7 @@
  * Market HTTP layer - composer only (Phase A2 decomposition).
  *
  * Formerly a 954-line god-file containing ~13 inline handlers with
- * copy-pasted Redis boilerplate, raw kodiak_credentials SQL, and a duplicated
+ * copy-pasted Redis boilerplate, raw credential SQL, and a duplicated
  * roundTo5Minutes. Each endpoint group now lives in its own module; this file
  * only mounts them so app.use("/api/market", marketRoutes) keeps working.
  *

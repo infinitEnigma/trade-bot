@@ -161,53 +161,109 @@ export class SecureCredentials {
 }
 
 /**
- * Decrypt user Kodiak credentials (internal helper)
+ * Decrypt user exchange-account credentials (internal helper).
+ *
+ * C2: reads the first ACTIVE venue row from `exchange_accounts`.
+ * Handles current single-envelope rows (versioned decrypt → JSON) and
+ * backfilled `kodiak-legacy` wrappers (JSON with per-field ciphertext
+ * blobs — see migration 012 header). The engine credential-issue path
+ * (C3 swaps only the account lookup) uses this.
  */
 async function decryptUserCredentials(
   userId: string,
   queryFunction: typeof query = query
 ): Promise<{ [key: string]: string }> {
   try {
-    const result = await queryFunction<{
-      account_id: string;
-      api_key_encrypted: string;
-      secret_key_encrypted: string;
-      encryption_version: number;
-    }>(
-      "SELECT account_id, api_key_encrypted, secret_key_encrypted, encryption_version FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
-      [userId]
+    const { exchangeAccountRepositoryAdapter } =
+      await import("../adapters/repositories/exchange-account-repository.adapter");
+    const accounts = await exchangeAccountRepositoryAdapter.listAccounts(
+      userId,
+      queryFunction
     );
-
-    if (result.rows.length === 0) {
-      throw new Error("No verified Kodiak credentials found");
+    const active = accounts.find(
+      a => a.exchange === "kodiak" && a.status === "ACTIVE"
+    );
+    if (!active) {
+      throw new Error("No verified exchange account found");
+    }
+    const stored = await exchangeAccountRepositoryAdapter.getAccountWithSecret(
+      userId,
+      active.id,
+      queryFunction
+    );
+    if (!stored) {
+      throw new Error("No verified exchange account found");
     }
 
-    const row = result.rows[0];
     const encryptionService = new EncryptionService(queryFunction);
 
-    // Decrypt using version-aware decryption
-    const _encryptionVersion = row.encryption_version || 1;
-    const accountId = await encryptionService.decryptWithVersion(
-      row.account_id
-    );
-    const apiKey = await encryptionService.decryptWithVersion(
-      row.api_key_encrypted
-    );
-    const secretKey = await encryptionService.decryptWithVersion(
-      row.secret_key_encrypted
-    );
+    // Current single-envelope rows: versioned decrypt → plaintext JSON.
+    try {
+      const plaintext = await encryptionService.decryptWithVersion(
+        stored.credentialsEncrypted
+      );
+      const parsed = JSON.parse(plaintext) as {
+        kind?: string;
+        accountId?: string;
+        apiKey?: string;
+        secretKey?: string;
+      };
+      if (
+        (parsed.kind === "kodiak" || parsed.kind === undefined) &&
+        typeof parsed.apiKey === "string" &&
+        typeof parsed.secretKey === "string"
+      ) {
+        return {
+          accountId: parsed.accountId ?? active.accountRef,
+          apiKey: parsed.apiKey,
+          secretKey: parsed.secretKey,
+        };
+      }
+    } catch {
+      // Fall through to the legacy wrapper path.
+    }
 
-    return {
-      accountId,
-      apiKey,
-      secretKey,
+    // Backfilled wrapper: JSON with per-field ciphertext blobs.
+    const wrapper = JSON.parse(stored.credentialsEncrypted) as {
+      kind: string;
+      accountId: string;
+      apiKeyCipher: string;
+      secretKeyCipher: string;
     };
+    if (wrapper.kind !== "kodiak-legacy") {
+      throw new Error("Unrecognized credential envelope");
+    }
+    const apiKey = await decryptEnvelopeField(
+      encryptionService,
+      wrapper.apiKeyCipher
+    );
+    const secretKey = await decryptEnvelopeField(
+      encryptionService,
+      wrapper.secretKeyCipher
+    );
+    return { accountId: wrapper.accountId, apiKey, secretKey };
   } catch (error) {
     logger.error("Failed to decrypt user credentials", error as Error, {
       userId,
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;
+  }
+}
+
+async function decryptEnvelopeField(
+  encryptionService: EncryptionService,
+  blob: string
+): Promise<string> {
+  try {
+    return encryptionService.decryptApiKey(blob);
+  } catch {
+    // try the secret-key path, then versioned
+  }
+  try {
+    return encryptionService.decryptSecretKey(blob);
+  } catch {
+    return encryptionService.decryptWithVersion(blob);
   }
 }
 
@@ -494,7 +550,11 @@ export class EncryptionService {
    * 2. Generate new key material and store it wrapped under the master key
    *    (version-1 envelope) in the encryption_keys table
    * 3. Make the new version current for this instance so new data uses it
-   * 4. Re-encrypt all existing credentials under the new version
+   * 4. Re-encrypt all existing exchange-account envelopes under the new version
+   *
+   * C2: rotation targets the single versioned JSON envelope column and
+   * skips backfilled legacy wrappers (plaintext JSON whose fields are
+   * untouched per-field blobs) — verify/connect graduates those instead.
    *
    * @returns the new key version
    */
@@ -529,51 +589,46 @@ export class EncryptionService {
         previousVersion,
       });
 
-      // Re-encrypt existing credentials under the new version
-      const credentials = await this.queryFn<{
+      // Re-encrypt existing exchange-account envelopes under the new version
+      const accounts = await this.queryFn<{
         id: string;
-        api_key_encrypted: string;
-        secret_key_encrypted: string;
+        credentials_encrypted: string;
         encryption_version: number | null;
       }>(
-        "SELECT id, api_key_encrypted, secret_key_encrypted, encryption_version FROM kodiak_credentials WHERE encryption_version IS NULL OR encryption_version < $1",
+        "SELECT id, credentials_encrypted, encryption_version FROM exchange_accounts WHERE encryption_version IS NULL OR encryption_version < $1",
         [newVersion]
       );
 
-      const rows = credentials?.rows ?? [];
-      logger.info("Re-encrypting credentials under new key version", {
+      const rows = accounts?.rows ?? [];
+      logger.info("Re-encrypting exchange accounts under new key version", {
         count: rows.length,
         newVersion,
       });
 
-      for (const cred of rows) {
+      for (const account of rows) {
         try {
-          // Rows without an encryption_version hold legacy (non-versioned) ciphertext
-          const apiKey =
-            cred.encryption_version == null
-              ? this.decryptApiKey(cred.api_key_encrypted)
-              : await this.decryptWithVersion(cred.api_key_encrypted);
-          const secretKey =
-            cred.encryption_version == null
-              ? this.decryptSecretKey(cred.secret_key_encrypted)
-              : await this.decryptWithVersion(cred.secret_key_encrypted);
-
-          const newApiKeyEncrypted = await this.encryptWithVersion(
-            apiKey,
-            newVersion
-          );
-          const newSecretKeyEncrypted = await this.encryptWithVersion(
-            secretKey,
+          const envelope = account.credentials_encrypted;
+          // Skip backfilled legacy wrappers (plaintext JSON with inner
+          // per-field blobs) — verify/connect graduates them separately.
+          if (this.isLegacyCredentialWrapper(envelope)) {
+            logger.debug("Skipping legacy wrapper during rotation", {
+              credentialId: account.id,
+            });
+            continue;
+          }
+          const plaintext = await this.decryptWithVersion(envelope);
+          const reEncrypted = await this.encryptWithVersion(
+            plaintext,
             newVersion
           );
 
           await this.queryFn(
-            "UPDATE kodiak_credentials SET api_key_encrypted = $1, secret_key_encrypted = $2, encryption_version = $3 WHERE id = $4",
-            [newApiKeyEncrypted, newSecretKeyEncrypted, newVersion, cred.id]
+            "UPDATE exchange_accounts SET credentials_encrypted = $1, encryption_version = $2 WHERE id = $3",
+            [reEncrypted, newVersion, account.id]
           );
 
           logger.debug("Re-encrypted credential during rotation", {
-            credentialId: cred.id,
+            credentialId: account.id,
           });
         } catch (error) {
           // One credential failing must not abort the whole rotation;
@@ -582,7 +637,7 @@ export class EncryptionService {
             "Failed to re-encrypt credential during rotation",
             error as Error,
             {
-              credentialId: cred.id,
+              credentialId: account.id,
               error: (error as Error).message,
             }
           );
@@ -602,61 +657,56 @@ export class EncryptionService {
   }
 
   /**
-   * Migrate existing encrypted data to versioned encryption
+   * Migrate existing exchange-account envelopes to versioned encryption.
+   *
+   * C2: targets `exchange_accounts`. Legacy wrappers are skipped here and
+   * graduated lazily by verify/connect.
    */
   async migrateToVersionedEncryption(): Promise<void> {
     try {
       logger.info("Starting migration to versioned encryption");
 
-      // Get all credentials that need migration
-      const credentials = await this.queryFn<{
+      // Get all exchange-account envelopes that need migration
+      const accounts = await this.queryFn<{
         id: string;
-        api_key_encrypted: string;
-        secret_key_encrypted: string;
+        credentials_encrypted: string;
         encryption_version: number | null;
       }>(
-        "SELECT id, api_key_encrypted, secret_key_encrypted, encryption_version FROM kodiak_credentials WHERE encryption_version IS NULL OR encryption_version < $1",
+        "SELECT id, credentials_encrypted, encryption_version FROM exchange_accounts WHERE encryption_version IS NULL OR encryption_version < $1",
         [CURRENT_KEY_VERSION]
       );
 
       logger.info("Found credentials needing migration", {
-        count: credentials.rows.length,
+        count: accounts.rows.length,
       });
 
-      for (const cred of credentials.rows) {
+      for (const account of accounts.rows) {
         try {
-          // Rows without an encryption_version hold legacy (non-versioned) ciphertext
-          const apiKey =
-            cred.encryption_version == null
-              ? this.decryptApiKey(cred.api_key_encrypted)
-              : await this.decryptWithVersion(cred.api_key_encrypted);
-          const secretKey =
-            cred.encryption_version == null
-              ? this.decryptSecretKey(cred.secret_key_encrypted)
-              : await this.decryptWithVersion(cred.secret_key_encrypted);
+          if (this.isLegacyCredentialWrapper(account.credentials_encrypted)) {
+            logger.debug("Skipping legacy wrapper during migration", {
+              credentialId: account.id,
+            });
+            continue;
+          }
+          const plaintext = await this.decryptWithVersion(
+            account.credentials_encrypted
+          );
 
           // Re-encrypt with new versioned method
-          const newApiKeyEncrypted = await this.encryptWithVersion(apiKey);
-          const newSecretKeyEncrypted =
-            await this.encryptWithVersion(secretKey);
+          const reEncrypted = await this.encryptWithVersion(plaintext);
 
           // Update database
           await this.queryFn(
-            "UPDATE kodiak_credentials SET api_key_encrypted = $1, secret_key_encrypted = $2, encryption_version = $3 WHERE id = $4",
-            [
-              newApiKeyEncrypted,
-              newSecretKeyEncrypted,
-              CURRENT_KEY_VERSION,
-              cred.id,
-            ]
+            "UPDATE exchange_accounts SET credentials_encrypted = $1, encryption_version = $2 WHERE id = $3",
+            [reEncrypted, CURRENT_KEY_VERSION, account.id]
           );
 
           logger.debug("Migrated credential encryption", {
-            credentialId: cred.id,
+            credentialId: account.id,
           });
         } catch (error) {
           logger.error("Failed to migrate credential", error as Error, {
-            credentialId: cred.id,
+            credentialId: account.id,
             error: (error as Error).message,
           });
         }
@@ -668,6 +718,19 @@ export class EncryptionService {
         error: (error as Error).message,
       });
       throw error;
+    }
+  }
+
+  /**
+   * Backfilled legacy wrappers are plaintext JSON with untouched per-field
+   * blobs — never re-encrypt them as an opaque envelope.
+   */
+  private isLegacyCredentialWrapper(envelope: string): boolean {
+    try {
+      const parsed = JSON.parse(envelope) as { kind?: unknown };
+      return parsed.kind === "kodiak-legacy";
+    } catch {
+      return false;
     }
   }
 }

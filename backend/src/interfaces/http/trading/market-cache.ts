@@ -5,7 +5,8 @@
 
 import { Response } from "express";
 import { redisService } from "../../../infrastructure/cache/redis.service";
-import { kodiakCredentialsRepositoryAdapter } from "../../../infrastructure/adapters/repositories/kodiak-credentials-repository.adapter";
+import { exchangeAccountRepositoryAdapter } from "../../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
+import { getUserCredentials } from "../../../infrastructure/external/kodiak/credentials-provider";
 import type { KodiakTradingViewHistory } from "../../../infrastructure/external/kodiak-integration.service";
 import { marketLogger } from "./market-helpers";
 
@@ -41,10 +42,11 @@ export const writeCache = async (
 };
 
 /**
- * Guard for credential-gated endpoints. Replaces the raw
- * `SELECT ... FROM kodiak_credentials` SQL previously inlined in `/ws-url`
- * and `/kline-history` with the shared repository adapter (single place where
- * the verified-credentials rule lives).
+ * Guard for credential-gated endpoints (C2: any ACTIVE exchange account).
+ *
+ * Uses the shared exchange-account repository (single place where the
+ * ACTIVE-account rule lives). The venue account id is informational only —
+ * callers must not treat it as a credential.
  *
  * Returns `{ accountId }` on success, or sends the 401/403 response and
  * returns `null` when the request must stop.
@@ -57,17 +59,26 @@ export const requireVerifiedCredentials = async (
     res.status(401).json({ success: false, error: "Authentication required" });
     return null;
   }
-  const credentials =
-    await kodiakCredentialsRepositoryAdapter.getCredentials(userId);
-  if (!credentials) {
+  const accounts = await exchangeAccountRepositoryAdapter.listAccounts(userId);
+  const active = accounts.find(a => a.status === "ACTIVE");
+  if (!active) {
     res.status(403).json({
       success: false,
-      error:
-        "Kodiak credentials required. Please connect your trading account.",
+      error: "Exchange account required. Please connect your trading account.",
     });
     return null;
   }
-  return { accountId: credentials.accountId ?? null };
+  // Resolve decryptable credentials so a row with unreadable secrets cannot
+  // pass the gate (C3 swaps only this lookup for bot→account binding).
+  const credentials = await getUserCredentials(userId);
+  if (!credentials) {
+    res.status(403).json({
+      success: false,
+      error: "Exchange account required. Please connect your trading account.",
+    });
+    return null;
+  }
+  return { accountId: active.accountRef ?? null };
 };
 
 export interface KlineCandle {

@@ -14,7 +14,7 @@ import { RoleManagementService } from "../../src/core/auth/role-management.servi
 import { RoleQualificationService } from "../../src/core/auth/role-qualification.service";
 import { WalletQualificationService } from "../../src/core/wallet/wallet-qualification.service.pure";
 import { UserProfileService } from "../../src/core/user/user-profile.service";
-import { UserKodiakService } from "../../src/core/user/user-kodiak.service";
+import { ExchangeAccountService } from "../../src/core/user/exchange-account.service";
 import { BotManagementService } from "../../src/core/bots/bot-management.service";
 import { StrategyService } from "../../src/core/strategies/strategy.service";
 import { MarketService } from "../../src/core/market/market.service";
@@ -38,8 +38,8 @@ import {
   getWalletQualificationServiceSafe,
   getUserProfileService,
   getUserProfileServiceSafe,
-  getUserKodiakService,
-  getUserKodiakServiceSafe,
+  getExchangeAccountService,
+  getExchangeAccountServiceSafe,
   getBotManagementService,
   getBotManagementServiceSafe,
   getStrategyService,
@@ -134,7 +134,7 @@ describe("Service Provider Singleton", () => {
         getRoleQualificationService: jest.fn().mockReturnValue({}),
         getWalletQualificationService: jest.fn().mockReturnValue({}),
         getUserProfileService: jest.fn().mockReturnValue({}),
-        getUserKodiakService: jest.fn().mockReturnValue({}),
+        getExchangeAccountService: jest.fn().mockReturnValue({}),
         getBotManagementService: jest.fn().mockReturnValue({}),
         getStrategyService: jest.fn().mockReturnValue({}),
         getMarketService: jest.fn().mockReturnValue({}),
@@ -156,7 +156,7 @@ describe("Service Provider Singleton", () => {
       expect(serviceProvider.getRoleQualificationService()).toBeDefined();
       expect(serviceProvider.getWalletQualificationService()).toBeDefined();
       expect(serviceProvider.getUserProfileService()).toBeDefined();
-      expect(serviceProvider.getUserKodiakService()).toBeDefined();
+      expect(serviceProvider.getExchangeAccountService()).toBeDefined();
       expect(serviceProvider.getBotManagementService()).toBeDefined();
       expect(serviceProvider.getStrategyService()).toBeDefined();
       expect(serviceProvider.getMarketService()).toBeDefined();
@@ -173,7 +173,7 @@ describe("Service Provider Singleton", () => {
       expect(serviceProvider.getRoleQualificationServiceSafe()).toBeDefined();
       expect(serviceProvider.getWalletQualificationServiceSafe()).toBeDefined();
       expect(serviceProvider.getUserProfileServiceSafe()).toBeDefined();
-      expect(serviceProvider.getUserKodiakServiceSafe()).toBeDefined();
+      expect(serviceProvider.getExchangeAccountServiceSafe()).toBeDefined();
       expect(serviceProvider.getBotManagementServiceSafe()).toBeDefined();
       expect(serviceProvider.getStrategyServiceSafe()).toBeDefined();
       expect(serviceProvider.getMarketServiceSafe()).toBeDefined();
@@ -200,7 +200,7 @@ describe("Service Provider Singleton", () => {
         positionSyncService: {},
         roleManagementService: undefined,
         userProfileService: {},
-        userKodiakService: {},
+        exchangeAccountService: {},
         botManagementService: undefined,
         strategyService: {},
         marketService: {},
@@ -222,7 +222,7 @@ describe("Service Provider Singleton", () => {
         "positionService",
         "positionSyncService",
         "userProfileService",
-        "userKodiakService",
+        "exchangeAccountService",
         "strategyService",
         "marketService",
         "engineManager",
@@ -282,7 +282,7 @@ describe("Service Provider Singleton", () => {
         getRoleQualificationService: jest.fn().mockReturnValue(mockService),
         getWalletQualificationService: jest.fn().mockReturnValue(mockService),
         getUserProfileService: jest.fn().mockReturnValue(mockService),
-        getUserKodiakService: jest.fn().mockReturnValue(mockService),
+        getExchangeAccountService: jest.fn().mockReturnValue(mockService),
         getBotManagementService: jest.fn().mockReturnValue(mockService),
         getStrategyService: jest.fn().mockReturnValue(mockService),
         getMarketService: jest.fn().mockReturnValue(mockService),
@@ -302,7 +302,7 @@ describe("Service Provider Singleton", () => {
       expect(getRoleQualificationService()).toEqual(mockService);
       expect(getWalletQualificationService()).toEqual(mockService);
       expect(getUserProfileService()).toEqual(mockService);
-      expect(getUserKodiakService()).toEqual(mockService);
+      expect(getExchangeAccountService()).toEqual(mockService);
       expect(getBotManagementService()).toEqual(mockService);
       expect(getStrategyService()).toEqual(mockService);
       expect(getMarketService()).toEqual(mockService);
@@ -319,7 +319,7 @@ describe("Service Provider Singleton", () => {
       expect(getRoleQualificationServiceSafe()).toEqual(mockService);
       expect(getWalletQualificationServiceSafe()).toEqual(mockService);
       expect(getUserProfileServiceSafe()).toEqual(mockService);
-      expect(getUserKodiakServiceSafe()).toEqual(mockService);
+      expect(getExchangeAccountServiceSafe()).toEqual(mockService);
       expect(getBotManagementServiceSafe()).toEqual(mockService);
       expect(getStrategyServiceSafe()).toEqual(mockService);
       expect(getMarketServiceSafe()).toEqual(mockService);
@@ -484,24 +484,24 @@ describe("Service Provider Singleton", () => {
       expect(serviceProvider.getUserProfileServiceSafe()).toBeUndefined();
     });
 
-    test("should throw error when User Kodiak Service is unavailable", () => {
+    test("should throw error when Exchange Account Service is unavailable", () => {
       const mockFactory = {
-        getUserKodiakService: jest.fn().mockReturnValue(undefined),
+        getExchangeAccountService: jest.fn().mockReturnValue(undefined),
       };
 
       (serviceProvider as any).factory = mockFactory;
-      expect(() => serviceProvider.getUserKodiakService()).toThrow(
-        "User Kodiak Service is unavailable"
+      expect(() => serviceProvider.getExchangeAccountService()).toThrow(
+        "Exchange Account Service is unavailable"
       );
     });
 
-    test("should return undefined when User Kodiak Service is unavailable with safe method", () => {
+    test("should return undefined when Exchange Account Service is unavailable with safe method", () => {
       const mockFactory = {
-        getUserKodiakService: jest.fn().mockReturnValue(undefined),
+        getExchangeAccountService: jest.fn().mockReturnValue(undefined),
       };
 
       (serviceProvider as any).factory = mockFactory;
-      expect(serviceProvider.getUserKodiakServiceSafe()).toBeUndefined();
+      expect(serviceProvider.getExchangeAccountServiceSafe()).toBeUndefined();
     });
 
     test("should throw error when Bot Management Service is unavailable", () => {

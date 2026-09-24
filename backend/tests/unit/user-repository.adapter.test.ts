@@ -625,7 +625,7 @@ describe("UserRepositoryAdapter", () => {
   });
 
   describe("getWalletAddress", () => {
-    it("should get linked wallet address from wallet_addresses", async () => {
+    it("should get the primary wallet address from wallets", async () => {
       const mockUserId = "test-user-id";
       const mockWalletAddress = "0x1234567890123456789012345678901234567890";
 
@@ -636,29 +636,29 @@ describe("UserRepositoryAdapter", () => {
       const walletAddress = await userRepository.getWalletAddress(mockUserId);
 
       expect(query).toHaveBeenCalledWith(
-        "SELECT wallet_address FROM wallet_addresses WHERE user_id = $1",
+        expect.stringContaining("FROM wallets"),
+        [mockUserId]
+      );
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("ORDER BY is_primary DESC"),
         [mockUserId]
       );
       expect(walletAddress).toBe(mockWalletAddress);
     });
 
-    it("should fall back to kodiak_credentials for legacy rows", async () => {
+    it("should issue a single query (no legacy credentials fallback)", async () => {
       const mockUserId = "test-user-id";
-      const mockWalletAddress = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd";
 
-      (query as jest.Mock)
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({
-          rows: [{ wallet_address: mockWalletAddress }],
-        });
+      (query as jest.Mock).mockResolvedValue({
+        rows: [{ address: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd" }],
+      });
 
       const walletAddress = await userRepository.getWalletAddress(mockUserId);
 
-      expect(query).toHaveBeenCalledWith(
-        "SELECT wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
-        [mockUserId]
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(walletAddress).toBe(
+        "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
       );
-      expect(walletAddress).toBe(mockWalletAddress);
     });
 
     it("should return null when no wallet address found", async () => {
@@ -698,7 +698,7 @@ describe("UserRepositoryAdapter", () => {
       );
 
       expect(query).toHaveBeenCalledWith(
-        expect.stringContaining("INSERT INTO wallet_addresses"),
+        expect.stringContaining("INSERT INTO wallets"),
         [mockUserId, mockWalletAddress]
       );
       expect(result).toBe(true);
@@ -720,7 +720,7 @@ describe("UserRepositoryAdapter", () => {
       const result = await userRepository.clearWalletAddress("test-user-id");
 
       expect(query).toHaveBeenCalledWith(
-        "DELETE FROM wallet_addresses WHERE user_id = $1",
+        "DELETE FROM wallets WHERE user_id = $1",
         ["test-user-id"]
       );
       expect(result).toBe(true);

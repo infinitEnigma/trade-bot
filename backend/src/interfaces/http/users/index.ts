@@ -7,14 +7,18 @@
 
 import { Router } from "express";
 import { userProfileRoutes } from "./profile";
-import { userKodiakRoutes } from "./kodiak";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 const router = Router();
 
-// Mount modular user routes
+// Mount modular user routes.
+//
+// NOTE: route-config.ts mounts the wallets/accounts routers at top level
+// (/api/wallets, /api/accounts). Mounting them here as well would double
+// them under /api/user/* — so this composite router carries only profile.
+// Keeping the names exported lets route-config mount them top-level and any
+// test import the routers directly.
 router.use("/", userProfileRoutes);
-router.use("/", userKodiakRoutes);
 
 logger.info("User routes initialized with modular architecture");
 
@@ -22,4 +26,5 @@ export { router as userRoutes };
 
 // Re-export individual route modules for domain access
 export { userProfileRoutes } from "./profile";
-export { userKodiakRoutes } from "./kodiak";
+export { walletsRoutes } from "./wallets";
+export { exchangeAccountRoutes } from "./accounts";

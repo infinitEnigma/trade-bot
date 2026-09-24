@@ -87,7 +87,11 @@ export class MiddlewareConfig {
     // Note: Bot engine routes are excluded because they use API key auth
     app.use("/api/user", csrfMiddleware);
     app.use("/api/user-profile", csrfMiddleware);
-    app.use("/api/user-kodiak", csrfMiddleware);
+    // C2: the wallet + exchange-account routers replaced the old
+    // /api/user/kodiak/* routes (which lived under the CSRF-covered
+    // /api/user mount). Keep them covered the same way.
+    app.use("/api/wallets", csrfMiddleware);
+    app.use("/api/accounts", csrfMiddleware);
     app.use("/api/market", csrfMiddleware);
     app.use("/api/strategies", csrfMiddleware);
     app.use("/api/bot", csrfMiddleware);
@@ -161,15 +165,14 @@ export class MiddlewareConfig {
       await import("../interfaces/middleware/auth.middleware");
     // 🎯 KODIAK-SPECIFIC PROTECTION: Request queuing + rate limiting for trading routes ONLY
     // EXCLUDE chart/market data routes - they need fast updates for real-time charts
+    // C2: the old /api/user/kodiak/* routes were deleted; these are their
+    // live replacements (connect moved to /api/accounts, user data to
+    // /api/market). Charts stay excluded (need real-time updates).
     const kodiakRoutes = [
-      "/api/user/kodiak/connect", // ✅ Connection endpoint - needs protection
-      //"/api/user/verification",
-      //"/api/user/kodiak/positions",    // ✅ Trading data - needs protection
-      //"/api/user/kodiak/trades",       // ✅ Trading data - needs protection
-      "/api/user/kodiak/balance", // ✅ Trading data - needs protection
-      "/api/user/kodiak/account-info", // ✅ Trading data - needs protection
+      "/api/accounts/connect", // ✅ Connection endpoint - needs protection
+      "/api/market/balance", // ✅ Trading data - needs protection
+      "/api/market/trades", // ✅ Trading data - needs protection
       "/api/balance/current", // ✅ Trading data - needs protection
-      // ❌ EXCLUDED: /api/market/* routes (charts need real-time updates)
     ];
 
     // Apply queuing and rate limiting to each Kodiak route
@@ -194,7 +197,7 @@ export class MiddlewareConfig {
         // Use connection-specific rate limiter for connect endpoint
         // Use data-specific rate limiter for other endpoints
         const rateLimiter =
-          route === "/api/user/kodiak/connect"
+          route === "/api/accounts/connect"
             ? await this.createKodiakConnectionRateLimiter()
             : await this.createKodiakRateLimiter();
         rateLimiter(req, res, next);

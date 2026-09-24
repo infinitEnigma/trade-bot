@@ -302,6 +302,12 @@ export * from "./types/engine-contract";
 export * from "./types/engine-credentials";
 
 // ============================================
+// Wallets & Exchange Accounts (C2 data-model contract)
+// ============================================
+
+export * from "./types/accounts";
+
+// ============================================
 // Frontend-Backend Integration Contract
 // ============================================
 

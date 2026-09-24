@@ -8,6 +8,7 @@ probe scripts (scripts/lighter-probe), not here.
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 import types
 from pathlib import Path
@@ -20,6 +21,9 @@ _calls: list[dict] = []
 # Concurrency probe used by the lock test: the stub yields inside create_order
 # so an unserialized service would be observed overlapping (peak > 1).
 _concurrency = {"current": 0, "peak": 0}
+# `check_client()` error injected by the credential-verification tests; the real
+# SDK returns the venue's key-mismatch reason here (or None when keys match).
+_check_client_error: dict[str, str | None] = {"error": None}
 
 
 class _StubNonceManager:
@@ -38,7 +42,7 @@ class _StubSignerClient:
         _calls.append({"kwargs": kwargs})
 
     def check_client(self):
-        return None
+        return _check_client_error["error"]
 
     async def create_order(self, **kwargs):
         _concurrency["current"] += 1
@@ -57,6 +61,7 @@ class _StubSignerClient:
         return "token-abc", None
 
     async def close(self):
+        _calls.append({"op": "close"})
         return None
 
 
@@ -145,6 +150,113 @@ def test_auth_token():
     service = SignerService()
     result = asyncio.run(service.auth_token({**CREDS, "deadline_seconds": 300}))
     assert result == {"ok": True, "token": "token-abc"}
+
+
+def _fake_child(body: str) -> staticmethod:
+    """A stand-in for `verify_cli.py` that prints `body` and exits."""
+    command = [sys.executable, "-c", f"print({body!r})"]
+    return staticmethod(lambda: command)
+
+
+def test_verify_credentials_reports_venue_success(monkeypatch):
+    """`check_client()` returning no error means Lighter accepted the key."""
+    monkeypatch.setattr(SignerService, "_verify_command", _fake_child('{"ok": true}'))
+    result = asyncio.run(SignerService().verify_credentials(CREDS))
+    assert result == {"ok": True}
+
+
+def test_verify_credentials_surfaces_venue_reason_without_leaking_key(monkeypatch):
+    """The venue's own reason travels back verbatim — it names public keys only
+    (live testnet finding)."""
+    venue_reason = (
+        "private key does not match the one on Lighter. "
+        "ownPubKey: 5e9135addbfbf923 response: 6a2046d4f61d7a6f on api key 2"
+    )
+    monkeypatch.setattr(
+        SignerService,
+        "_verify_command",
+        _fake_child(json.dumps({"ok": False, "error": venue_reason})),
+    )
+    result = asyncio.run(SignerService().verify_credentials(CREDS))
+    assert result == {"ok": False, "error": venue_reason}
+    assert CREDS["private_key"] not in str(result)
+
+
+def test_verify_credentials_passes_credentials_on_stdin_not_argv(
+    tmp_path, monkeypatch
+):
+    """The child reads credentials from stdin: they must never reach the
+    process command line (visible in `ps`)."""
+    captured = tmp_path / "stdin.json"
+    command = [
+        sys.executable,
+        "-c",
+        "import sys, pathlib; "
+        f"pathlib.Path({str(captured)!r}).write_bytes(sys.stdin.buffer.read()); "
+        "print('{\"ok\": true}')",
+    ]
+    monkeypatch.setattr(
+        SignerService, "_verify_command", staticmethod(lambda: command)
+    )
+
+    result = asyncio.run(SignerService().verify_credentials(CREDS))
+
+    assert result == {"ok": True}
+    sent = json.loads(captured.read_text())
+    assert sent["private_key"] == CREDS["private_key"]
+    assert sent["account_index"] == CREDS["account_index"]
+    assert all(CREDS["private_key"] not in part for part in command)
+
+
+def test_verify_credentials_reports_an_unusable_child(monkeypatch):
+    """A crashed/timed-out check is a failure, never an accidental pass."""
+    command = [
+        sys.executable,
+        "-c",
+        "import sys; sys.stderr.write('boom\\n'); sys.exit(3)",
+    ]
+    monkeypatch.setattr(
+        SignerService, "_verify_command", staticmethod(lambda: command)
+    )
+    result = asyncio.run(SignerService().verify_credentials(CREDS))
+    assert result["ok"] is False
+    assert "credential check failed" in result["error"]
+
+
+def test_verify_cli_reports_ok_with_stubbed_sdk():
+    """`verify_cli` itself maps a clean `check_client()` to `{"ok": True}`."""
+    import verify_cli  # noqa: PLC0415 - imported here so the SDK stub is active
+
+    _check_client_error["error"] = None
+    result = asyncio.run(
+        verify_cli.check(
+            {
+                "account_index": CREDS["account_index"],
+                "api_key_index": CREDS["api_key_index"],
+                "private_key": CREDS["private_key"],
+                "env": CREDS["env"],
+            }
+        )
+    )
+    assert result == {"ok": True}
+
+
+def test_changed_key_replaces_the_client_for_the_same_slot():
+    """The SDK registers ONE key per (account, api_key_index), so a changed key
+    must replace the cached client — a stale client would keep signing with the
+    key registered last (live testnet finding)."""
+    service = SignerService()
+    asyncio.run(service.auth_token({**CREDS, "deadline_seconds": 300}))
+    slot = list(service._clients)  # noqa: SLF001 - cache is the unit under test
+    closes_before = len([c for c in _calls if c.get("op") == "close"])
+
+    rotated = {**CREDS, "private_key": "0x" + "b" * 32, "deadline_seconds": 300}
+    asyncio.run(service.auth_token(rotated))
+
+    assert len(service._clients) == 1  # one client per slot, not per key
+    assert list(service._clients) == slot
+    closes = len([c for c in _calls if c.get("op") == "close"])
+    assert closes == closes_before + 1  # the replaced client was closed
 
 
 def test_serialized_under_lock_with_sdk_managed_nonce():

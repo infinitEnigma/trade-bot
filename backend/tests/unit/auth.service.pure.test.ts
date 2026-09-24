@@ -151,7 +151,9 @@ describe("AuthService", () => {
         userLevel: UserLevel.BASIC,
       });
       (deps.tokenService.generateAccessToken as jest.Mock).mockReturnValue("a");
-      (deps.tokenService.generateRefreshToken as jest.Mock).mockReturnValue("r");
+      (deps.tokenService.generateRefreshToken as jest.Mock).mockReturnValue(
+        "r"
+      );
 
       const result = await authService.register(
         "sam@example.com",
@@ -231,7 +233,9 @@ describe("AuthService", () => {
         userLevel: UserLevel.BASIC,
       });
       (deps.tokenService.generateAccessToken as jest.Mock).mockReturnValue("a");
-      (deps.tokenService.generateRefreshToken as jest.Mock).mockReturnValue("r");
+      (deps.tokenService.generateRefreshToken as jest.Mock).mockReturnValue(
+        "r"
+      );
 
       const result = await authService.register(
         "test2@example.com",
@@ -1308,6 +1312,15 @@ describe("AuthService", () => {
       (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(
         "0x9876..."
       );
+      // C2: the service loads the current user (for level bookkeeping)
+      // BEFORE the legacy address-mismatch check.
+      (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+        id: testUserId,
+        email: "test@example.com",
+        userLevel: UserLevel.BASIC,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
 
       const result = await authService.verifyWalletOwnership(
         testUserId,

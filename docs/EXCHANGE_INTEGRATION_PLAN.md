@@ -1,6 +1,6 @@
 # Exchange Integration & Data Model — Execution Plan
 
-**Status:** A and B executed; C in progress — **C1 (identity) landed**. C2/C3 pending.
+**Status:** A and B executed; C in progress — **C1 (identity) and C2 (wallets + exchange accounts) landed**. C3 pending.
 **Companion docs:** [DATA_MODEL.md](DATA_MODEL.md) (target schema + why),
 [PROJECT_REVIEW_GAP_ANALYSIS.md](PROJECT_REVIEW_GAP_ANALYSIS.md) (ledger),
 [ARCHITECTURE.md](ARCHITECTURE.md) (current design),
@@ -16,7 +16,7 @@ A. credential-contract slice   (0.5 d)  ── stops the wrong shape being baked
 B. Lighter engine adapter      (2-3 d)  ── verified against testnet (Phase 0 done)
         │
 C1. identity (username handle) (1 d)    ── DB Option B, PR 1 of 3  ✅ landed
-C2. wallets + exchange accounts(1.5 d)  ── PR 2 of 3  (adapter-based credentials)
+C2. wallets + exchange accounts(1.5 d)  ── PR 2 of 3  (adapter-based credentials) ✅ landed
 C3. bot→account + data tables  (1 d)    ── PR 3 of 3  (engine gets a real account)
 ```
 

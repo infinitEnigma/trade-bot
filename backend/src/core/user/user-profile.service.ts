@@ -143,13 +143,14 @@ export class UserProfileService {
   }
 
   /**
-   * Verify wallet ownership for user verification
+   * Verify wallet ownership for user verification (C2: chain-aware).
    */
   async verifyWalletOwnership(
     userId: string,
     walletAddress: string,
     signature: string,
-    message: string
+    message: string,
+    chain: import("@trade-bot/shared").ChainKind = "evm"
   ): Promise<{ success: boolean; message: string }> {
     try {
       // Start operation timing
@@ -167,7 +168,8 @@ export class UserProfileService {
         userId,
         walletAddress,
         signature,
-        message
+        message,
+        chain
       );
 
       timer.success();

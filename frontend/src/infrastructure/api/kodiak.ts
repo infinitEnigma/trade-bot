@@ -8,6 +8,8 @@ export interface KodiakCredentials {
   accountId: string;
   apiKey: string;
   secretKey: string;
+  /** C2: venue environment; defaults to mainnet for legacy callers. */
+  environment?: "testnet" | "mainnet";
 }
 
 export interface KodiakStatus {
@@ -64,7 +66,11 @@ interface ApiError extends Error {
 
 /**
  * Kodiak API Service
- * Handles Kodiak trading platform integration
+ * Handles Kodiak trading platform integration.
+ *
+ * C2: connect/status/disconnect go through /api/accounts (generic
+ * exchange-account router), user data through /api/market/*. Response
+ * shapes are mapped onto the legacy DTOs so existing consumers keep working.
  */
 class KodiakApi {
   /**
@@ -74,10 +80,36 @@ class KodiakApi {
   async connectKodiak(
     credentials: KodiakCredentials
   ): Promise<KodiakConnectResponse> {
+    const {
+      environment = "mainnet",
+      accountId,
+      apiKey,
+      secretKey,
+    } = credentials;
     const response = await httpClient
       .getClient()
-      .post("/api/user/kodiak/connect", credentials);
-    return response.data;
+      .post("/api/accounts/connect", {
+        exchange: "kodiak",
+        environment,
+        accountId,
+        apiKey,
+        secretKey,
+      });
+    // Map the C2 account DTO onto the legacy response shape the Settings
+    // flow (verified flag) and hooks already consume.
+    const account = response.data?.data;
+    return {
+      success: response.data?.success ?? false,
+      message: response.data?.message,
+      error: response.data?.error,
+      data: account
+        ? {
+            accountId: account.accountRef,
+            connected: true,
+            verified: account.status === "ACTIVE",
+          }
+        : undefined,
+    };
   }
 
   /**
@@ -85,9 +117,19 @@ class KodiakApi {
    * Backend handles credential removal and user level downgrade
    */
   async disconnectKodiak(): Promise<KodiakDisconnectResponse> {
+    // Legacy no-arg disconnect: revoke the first live Kodiak account.
+    const list = await httpClient.getClient().get("/api/accounts");
+    const accounts: { id: string; exchange: string; status: string }[] =
+      list.data?.data?.accounts ?? [];
+    const target =
+      accounts.find(a => a.exchange === "kodiak" && a.status === "ACTIVE") ??
+      accounts.find(a => a.exchange === "kodiak" && a.status !== "REVOKED");
+    if (!target) {
+      return { success: true, message: "No Kodiak account connected" };
+    }
     const response = await httpClient
       .getClient()
-      .delete("/api/user/kodiak/disconnect");
+      .delete(`/api/accounts/${target.id}`);
     return response.data;
   }
 
@@ -100,10 +142,31 @@ class KodiakApi {
     data?: KodiakStatus;
     error?: string;
   }> {
-    const response = await httpClient
-      .getClient()
-      .get("/api/user/kodiak/status");
-    return response.data;
+    // C2: status is derived from the accounts list (no dedicated endpoint).
+    const response = await httpClient.getClient().get("/api/accounts");
+    const accounts: {
+      id: string;
+      exchange: string;
+      status: string;
+      accountRef: string;
+      verifiedAt?: string | null;
+      createdAt: string;
+    }[] = response.data?.data?.accounts ?? [];
+    const live = accounts.filter(
+      a => a.exchange === "kodiak" && a.status !== "REVOKED"
+    );
+    const active = live.find(a => a.status === "ACTIVE") ?? live[0];
+    return {
+      success: true,
+      data: active
+        ? {
+            connected: true,
+            accountId: active.accountRef,
+            connectedAt: active.verifiedAt ?? active.createdAt,
+            verified: active.status === "ACTIVE",
+          }
+        : { connected: false },
+    };
   }
 
   /**
@@ -120,7 +183,7 @@ class KodiakApi {
         try {
           const response = await httpClient
             .getClient()
-            .get("/api/user/kodiak/balance");
+            .get("/api/market/balance");
           return response.data;
         } catch (error: unknown) {
           // Return empty data instead of throwing for missing credentials
@@ -150,7 +213,7 @@ class KodiakApi {
         try {
           const response = await httpClient
             .getClient()
-            .get("/api/user/kodiak/positions");
+            .get("/api/market/positions");
           return response.data;
         } catch (error: unknown) {
           // Return empty data instead of throwing for missing credentials
@@ -179,7 +242,7 @@ class KodiakApi {
         try {
           const response = await httpClient
             .getClient()
-            .get(`/api/user/kodiak/trades?limit=${limit}`);
+            .get(`/api/market/trades?limit=${limit}`);
           return response.data;
         } catch (error: unknown) {
           // Return empty data instead of throwing for missing credentials

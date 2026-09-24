@@ -29,12 +29,14 @@ const profileUpdateSchema = Joi.object({
   newPassword: Joi.string().min(8).optional(),
 });
 
-// Wallet verification validation schema
+// Wallet verification validation schema (C2: chain-aware multi-wallet)
 const walletVerificationSchema = Joi.object({
-  walletAddress: Joi.string().required(),
+  chain: Joi.string().valid("evm", "solana", "bitcoin").default("evm"),
+  address: Joi.string().optional(),
+  walletAddress: Joi.string().optional(),
   signature: Joi.string().required(),
   message: Joi.string().required(),
-});
+}).or("address", "walletAddress");
 
 // GET /api/user/profile
 router.get(
@@ -145,6 +147,8 @@ router.post(
 );
 
 // POST /api/user/verify-wallet
+// C2 compat alias for POST /api/wallets/verify: accepts the legacy
+// {walletAddress} shape plus the new {chain, address} shape.
 router.post(
   "/verify-wallet",
   authMiddleware,
@@ -168,9 +172,10 @@ router.post(
       const userProfileService = serviceProvider.getUserProfileService();
       const result = await userProfileService.verifyWalletOwnership(
         userId,
-        value.walletAddress,
-        value.signature,
-        value.message
+        (value.address ?? value.walletAddress) as string,
+        value.signature as string,
+        value.message as string,
+        (value.chain ?? "evm") as "evm" | "solana" | "bitcoin"
       );
 
       if (!result.success) {
@@ -202,7 +207,8 @@ router.post(
 );
 
 // POST /api/user/unlink-wallet
-// Removes the linked wallet. REGISTERED users drop back to BASIC;
+// C2 compat alias for POST /api/wallets/:id/unlink: removes the primary
+// wallet. Removes the linked wallet. REGISTERED users drop back to BASIC;
 // VERIFIED users drop to REGISTERED (or BASIC if Kodiak is also gone).
 // A plain wagmi "Disconnect" in the browser does NOT call this — it only
 // ends the local session. This endpoint is the explicit, audited downgrade.

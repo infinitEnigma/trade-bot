@@ -5,5 +5,6 @@ export { marketApi } from "./market";
 export { tradingApi } from "./trading";
 export { balanceApi } from "./balance";
 export { kodiakApi } from "./kodiak";
+export { accountsApi } from "./accounts";
 export { walletApi } from "./wallet";
 export { systemApi } from "./system";

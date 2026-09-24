@@ -9,7 +9,7 @@ import { Request, Response } from "express";
 import { serviceProvider } from "../../../src/core/service-provider";
 import { AuthService } from "../../../src/core/auth/auth.service.pure";
 import { UserProfileService } from "../../../src/core/user/user-profile.service";
-import { UserKodiakService } from "../../../src/core/user/user-kodiak.service";
+import { ExchangeAccountService } from "../../../src/core/user/exchange-account.service";
 import { WalletQualificationService } from "../../../src/core/wallet/wallet-qualification.service.pure";
 
 // Mock dependencies
@@ -36,7 +36,7 @@ describe("Controller Service Provider Usage", () => {
   let mockServiceProvider: jest.Mocked<typeof serviceProvider>;
   let mockAuthService: jest.Mocked<AuthService>;
   let mockUserProfileService: jest.Mocked<UserProfileService>;
-  let mockUserKodiakService: jest.Mocked<UserKodiakService>;
+  let mockExchangeAccountService: jest.Mocked<ExchangeAccountService>;
   let mockWalletQualificationService: jest.Mocked<WalletQualificationService>;
 
   beforeEach(() => {
@@ -70,7 +70,7 @@ describe("Controller Service Provider Usage", () => {
       },
     } as any;
 
-    mockUserKodiakService = {
+    mockExchangeAccountService = {
       linkKodiakAccount: jest.fn(),
       unlinkKodiakAccount: jest.fn(),
       getKodiakConnectionStatus: jest.fn(),
@@ -103,7 +103,7 @@ describe("Controller Service Provider Usage", () => {
         .fn()
         .mockReturnValue(mockWalletQualificationService),
       getUserProfileService: jest.fn().mockReturnValue(mockUserProfileService),
-      getUserKodiakService: jest.fn().mockReturnValue(mockUserKodiakService),
+      getExchangeAccountService: jest.fn().mockReturnValue(mockExchangeAccountService),
     } as any;
 
     // Mock the serviceProvider import
@@ -129,10 +129,10 @@ describe("Controller Service Provider Usage", () => {
 
     test("should use service provider for User Kodiak Service access", () => {
       // Verify that the service provider provides User Kodiak Service
-      const service = mockServiceProvider.getUserKodiakService();
+      const service = mockServiceProvider.getExchangeAccountService();
 
-      expect(mockServiceProvider.getUserKodiakService).toHaveBeenCalled();
-      expect(service).toBe(mockUserKodiakService);
+      expect(mockServiceProvider.getExchangeAccountService).toHaveBeenCalled();
+      expect(service).toBe(mockExchangeAccountService);
     });
 
     test("should use service provider for Wallet Qualification Service access", () => {
@@ -183,8 +183,8 @@ describe("Controller Service Provider Usage", () => {
       expect(mockServiceProvider.getUserProfileService).toHaveBeenCalled();
 
       // User Kodiak Service
-      mockServiceProvider.getUserKodiakService();
-      expect(mockServiceProvider.getUserKodiakService).toHaveBeenCalled();
+      mockServiceProvider.getExchangeAccountService();
+      expect(mockServiceProvider.getExchangeAccountService).toHaveBeenCalled();
 
       // Wallet Qualification Service
       mockServiceProvider.getWalletQualificationService();
@@ -200,7 +200,7 @@ describe("Controller Service Provider Usage", () => {
       // Verify that the service provider is the only way to access services
       expect(mockServiceProvider.getAuthService).toBeDefined();
       expect(mockServiceProvider.getUserProfileService).toBeDefined();
-      expect(mockServiceProvider.getUserKodiakService).toBeDefined();
+      expect(mockServiceProvider.getExchangeAccountService).toBeDefined();
       expect(mockServiceProvider.getWalletQualificationService).toBeDefined();
     });
   });
@@ -213,7 +213,7 @@ describe("Controller Service Provider Usage", () => {
       for (let i = 0; i < 1000; i++) {
         mockServiceProvider.getAuthService();
         mockServiceProvider.getUserProfileService();
-        mockServiceProvider.getUserKodiakService();
+        mockServiceProvider.getExchangeAccountService();
         mockServiceProvider.getWalletQualificationService();
       }
 

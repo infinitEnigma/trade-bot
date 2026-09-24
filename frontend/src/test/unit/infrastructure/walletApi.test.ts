@@ -12,23 +12,50 @@ vi.mock("../../../infrastructure/api/client", () => ({
 }));
 
 describe("walletApi", () => {
+  let mockGet: Mock;
   let mockPost: Mock;
+  let mockPatch: Mock;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
     // Create mock methods
+    mockGet = vi.fn();
     mockPost = vi.fn();
+    mockPatch = vi.fn();
 
     (httpClient.getClient as Mock).mockReturnValue({
+      get: mockGet,
       post: mockPost,
+      patch: mockPatch,
+    });
+  });
+
+  describe("listWallets", () => {
+    it("should GET the wallet list endpoint", async () => {
+      const wallets = [
+        {
+          id: "wallet-1",
+          chain: "evm",
+          address: "0x1234567890123456789012345678901234567890",
+          isPrimary: true,
+        },
+      ];
+      const mockResponse = { success: true, data: { wallets } };
+      mockGet.mockResolvedValue({ data: mockResponse });
+
+      const result = await walletApi.listWallets();
+
+      expect(mockGet).toHaveBeenCalledWith("/api/wallets");
+      expect(result).toEqual(mockResponse);
     });
   });
 
   describe("verifyWallet", () => {
     it("should call verify wallet endpoint with correct data", async () => {
       const walletData = {
-        walletAddress: "0x1234567890123456789012345678901234567890",
+        chain: "evm" as const,
+        address: "0x1234567890123456789012345678901234567890",
         signature: "0xabc123def456",
         message: "Sign this message to verify ownership",
       };
@@ -36,7 +63,7 @@ describe("walletApi", () => {
         success: true,
         data: {
           verified: true,
-          walletAddress: walletData.walletAddress,
+          address: walletData.address,
           message: "Wallet verified successfully",
         },
       };
@@ -46,16 +73,13 @@ describe("walletApi", () => {
       const result = await walletApi.verifyWallet(walletData);
 
       expect(httpClient.getClient).toHaveBeenCalled();
-      expect(mockPost).toHaveBeenCalledWith(
-        "/api/user/verify-wallet",
-        walletData
-      );
+      expect(mockPost).toHaveBeenCalledWith("/api/wallets/verify", walletData);
       expect(result).toEqual(mockResponse);
     });
 
     it("should handle verify wallet errors", async () => {
       const walletData = {
-        walletAddress: "0x1234567890123456789012345678901234567890",
+        address: "0x1234567890123456789012345678901234567890",
         signature: "0xinvalid",
         message: "Sign this message to verify ownership",
       };
@@ -70,7 +94,7 @@ describe("walletApi", () => {
 
     it("should handle invalid wallet address format", async () => {
       const walletData = {
-        walletAddress: "invalid-address",
+        address: "invalid-address",
         signature: "0xabc123def456",
         message: "Sign this message to verify ownership",
       };
@@ -85,7 +109,7 @@ describe("walletApi", () => {
   });
 
   describe("unlinkWallet", () => {
-    it("should call unlink wallet endpoint", async () => {
+    it("should call the per-wallet unlink endpoint with the wallet id", async () => {
       const mockResponse = {
         success: true,
         message: "Wallet unlinked from your account.",
@@ -93,19 +117,31 @@ describe("walletApi", () => {
 
       mockPost.mockResolvedValue({ data: mockResponse });
 
-      const result = await walletApi.unlinkWallet();
+      const result = await walletApi.unlinkWallet("wallet-1");
 
       expect(httpClient.getClient).toHaveBeenCalled();
-      expect(mockPost).toHaveBeenCalledWith("/api/user/unlink-wallet");
+      expect(mockPost).toHaveBeenCalledWith("/api/wallets/wallet-1/unlink");
       expect(result).toEqual(mockResponse);
     });
 
     it("should handle unlink wallet errors", async () => {
       mockPost.mockRejectedValue(new Error("No linked wallet found"));
 
-      await expect(walletApi.unlinkWallet()).rejects.toThrow(
+      await expect(walletApi.unlinkWallet("wallet-1")).rejects.toThrow(
         "No linked wallet found"
       );
+    });
+  });
+
+  describe("setPrimaryWallet", () => {
+    it("should PATCH the primary-wallet endpoint with the wallet id", async () => {
+      const mockResponse = { success: true };
+      mockPatch.mockResolvedValue({ data: mockResponse });
+
+      const result = await walletApi.setPrimaryWallet("wallet-2");
+
+      expect(mockPatch).toHaveBeenCalledWith("/api/wallets/wallet-2/primary");
+      expect(result).toEqual(mockResponse);
     });
   });
 });

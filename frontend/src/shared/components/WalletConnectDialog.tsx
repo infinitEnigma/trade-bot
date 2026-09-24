@@ -81,11 +81,23 @@ export const WalletConnectDialog: React.FC<WalletConnectDialogProps> = ({
   };
 
   // Explicit, audited downgrade: unlinks the wallet on the backend.
-  // REGISTERED -> BASIC; VERIFIED -> REGISTERED (or BASIC if Kodiak gone).
+  // C2 multi-wallet: the endpoint takes a wallet id, so resolve the
+  // connected wallet's row first (falling back to the primary wallet).
+  // Level is recomputed server-side from the remaining wallets/accounts.
   const handleUnlinkWallet = async () => {
     setIsUnlinking(true);
     try {
-      await walletApi.unlinkWallet();
+      const listed = await walletApi.listWallets();
+      const wallets = listed.data?.wallets ?? [];
+      const target =
+        (address
+          ? wallets.find(w => w.address.toLowerCase() === address.toLowerCase())
+          : undefined) ?? wallets.find(w => w.isPrimary);
+      if (!target) {
+        toast.error("No linked wallet found.");
+        return;
+      }
+      await walletApi.unlinkWallet(target.id);
       disconnect();
       toast.success("Wallet unlinked from your account.");
       await refreshUser();
@@ -111,9 +123,10 @@ export const WalletConnectDialog: React.FC<WalletConnectDialogProps> = ({
       setIsSigning(false);
       setIsVerifying(true);
 
-      // Verify with backend
+      // Verify with backend (C2: /api/wallets/verify requires `address`;
+      // chain defaults to "evm" server-side)
       await walletApi.verifyWallet({
-        walletAddress: address,
+        address,
         signature,
         message,
       });

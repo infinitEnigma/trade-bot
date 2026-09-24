@@ -119,9 +119,14 @@ describe("Dependency Injection Container", () => {
       expect(typeof diContainer.strategyRepository).toBe("object");
     });
 
-    it("should provide kodiak credentials repository", () => {
-      expect(diContainer.kodiakCredentialsRepository).toBeDefined();
-      expect(typeof diContainer.kodiakCredentialsRepository).toBe("object");
+    it("should provide wallet repository", () => {
+      expect(diContainer.walletRepository).toBeDefined();
+      expect(typeof diContainer.walletRepository).toBe("object");
+    });
+
+    it("should provide exchange account repository", () => {
+      expect(diContainer.exchangeAccountRepository).toBeDefined();
+      expect(typeof diContainer.exchangeAccountRepository).toBe("object");
     });
 
     it("should provide audit log repository", () => {
@@ -206,9 +211,9 @@ describe("Dependency Injection Container", () => {
       expect(typeof diContainer.userProfileService).toBe("object");
     });
 
-    it("should provide user kodiak service", () => {
-      expect(diContainer.userKodiakService).toBeDefined();
-      expect(typeof diContainer.userKodiakService).toBe("object");
+    it("should provide exchange account service", () => {
+      expect(diContainer.exchangeAccountService).toBeDefined();
+      expect(typeof diContainer.exchangeAccountService).toBe("object");
     });
 
     it("should provide engine manager", () => {
@@ -302,7 +307,8 @@ describe("Dependency Injection Container", () => {
         getPositionRepository,
         getTradeRepository,
         getStrategyRepository,
-        getKodiakCredentialsRepository,
+        getWalletRepository,
+        getExchangeAccountRepository,
         getAuditLogRepository,
         getBotInstanceRepository,
       } =
@@ -328,10 +334,14 @@ describe("Dependency Injection Container", () => {
       expect(typeof getStrategyRepository).toBe("function");
       expect(getStrategyRepository()).toEqual(diContainer.strategyRepository);
 
-      expect(getKodiakCredentialsRepository).toBeDefined();
-      expect(typeof getKodiakCredentialsRepository).toBe("function");
-      expect(getKodiakCredentialsRepository()).toEqual(
-        diContainer.kodiakCredentialsRepository
+      expect(getWalletRepository).toBeDefined();
+      expect(typeof getWalletRepository).toBe("function");
+      expect(getWalletRepository()).toEqual(diContainer.walletRepository);
+
+      expect(getExchangeAccountRepository).toBeDefined();
+      expect(typeof getExchangeAccountRepository).toBe("function");
+      expect(getExchangeAccountRepository()).toEqual(
+        diContainer.exchangeAccountRepository
       );
 
       expect(getAuditLogRepository).toBeDefined();
@@ -358,7 +368,7 @@ describe("Dependency Injection Container", () => {
         getPositionSyncService,
         getEngineManager,
         getUserProfileService,
-        getUserKodiakService,
+        getExchangeAccountService,
         getRoleManagementService,
       } =
         await import("../../src/infrastructure/dependency-injection.container");
@@ -411,10 +421,15 @@ describe("Dependency Injection Container", () => {
       expect(typeof getUserProfileService).toBe("function");
       expect(getUserProfileService()).toEqual(diContainer.userProfileService);
 
-      expect(getUserKodiakService).toBeDefined();
-      expect(typeof getUserKodiakService).toBe("function");
-      expect(getUserKodiakService()).toBeDefined();
-      expect(typeof getUserKodiakService()).toBe("object");
+      expect(getExchangeAccountService).toBeDefined();
+      expect(typeof getExchangeAccountService).toBe("function");
+      // The container builds a fresh service per access (like auth/balance),
+      // so assert the exported surface instead of deep equality.
+      expect(typeof getExchangeAccountService().connectAccount).toBe(
+        "function"
+      );
+      expect(typeof getExchangeAccountService().verifyAccount).toBe("function");
+      expect(typeof getExchangeAccountService().revokeAccount).toBe("function");
 
       expect(getRoleManagementService).toBeDefined();
       expect(typeof getRoleManagementService).toBe("function");

@@ -21,10 +21,10 @@ export interface HydratedSessionUser {
 // Keep this list integration-scoped (not exchange-scoped) so new exchanges do
 // not require changes to the auth middleware.
 export const LIGHTWEIGHT_ENDPOINT_PREFIXES = [
-  "/api/user/kodiak/status",
-  "/api/user/kodiak/trades",
-  "/api/user/kodiak/positions",
-  "/api/user/kodiak/balance",
+  // C2: live replacements for the deleted /api/user/kodiak/* paths.
+  "/api/market/trades",
+  "/api/market/positions",
+  "/api/market/balance",
 ];
 
 /** Lightweight endpoints: existence check only, no roles loaded. */

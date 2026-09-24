@@ -287,6 +287,11 @@ export class UserRepositoryAdapter implements IUserRepository {
 
   /**
    * Get authenticated user data with roles and credentials info
+   *
+   * C2: the venue join moved from the legacy credentials table to
+   * `exchange_accounts` (ACTIVE kodiak row). Legacy shapes
+   * (hasCredentials/kodiakAccountId/kodiakVerified) are unchanged so JWT,
+   * middleware, profile and role-qualification callers are untouched.
    */
   async getAuthenticatedUserData(id: string): Promise<{
     user: User;
@@ -312,14 +317,15 @@ export class UserRepositoryAdapter implements IUserRepository {
                         ) FILTER (WHERE ur.role IS NOT NULL),
                         '[]'::json
                     ) as roles,
-                    CASE WHEN kc.id IS NOT NULL THEN true ELSE false END as has_credentials,
-                    kc.account_id as kodiak_account_id,
-                    kc.verified as kodiak_verified
+                    CASE WHEN ea.id IS NOT NULL THEN true ELSE false END as has_credentials,
+                    ea.account_ref as kodiak_account_id,
+                    CASE WHEN ea.status = 'ACTIVE' THEN true ELSE false END as kodiak_verified
                 FROM users u
                 LEFT JOIN user_roles ur ON u.id = ur.user_id
-                LEFT JOIN kodiak_credentials kc ON u.id = kc.user_id
+                LEFT JOIN exchange_accounts ea ON u.id = ea.user_id
+                    AND ea.exchange = 'kodiak' AND ea.status = 'ACTIVE'
                 WHERE u.id = $1
-                GROUP BY u.id, u.username, u.email, u.user_level, u.created_at, u.updated_at, kc.id, kc.account_id, kc.verified
+                GROUP BY u.id, u.username, u.email, u.user_level, u.created_at, u.updated_at, ea.id, ea.account_ref, ea.status
             `,
         [id]
       );
@@ -364,34 +370,24 @@ export class UserRepositoryAdapter implements IUserRepository {
   }
 
   /**
-   * Get user's linked wallet address
+   * Get user's linked wallet address — primary-wallet convenience (C2).
    *
-   * Reads from wallet_addresses (linked via signed-message verification).
-   * Falls back to kodiak_credentials for legacy rows created before the
-   * wallet-first flow (addresses fetched from the Kodiak API).
+   * Reads the new `wallets` table (primary row first). The legacy
+   * credentials-table fallback is gone with that table.
    */
   async getWalletAddress(userId: string): Promise<string | null> {
     try {
-      const result = await query<{ wallet_address: string }>(
-        "SELECT wallet_address FROM wallet_addresses WHERE user_id = $1",
+      const result = await query<{ wallet_address: string; address: string }>(
+        `SELECT address AS wallet_address FROM wallets
+         WHERE user_id = $1 ORDER BY is_primary DESC, created_at ASC LIMIT 1`,
         [userId]
       );
 
-      if (result.rows.length > 0 && result.rows[0].wallet_address) {
-        return result.rows[0].wallet_address;
-      }
-
-      // Legacy fallback: wallets stored alongside Kodiak credentials
-      const legacy = await query<{ wallet_address: string }>(
-        "SELECT wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
-        [userId]
-      );
-
-      if (legacy.rows.length === 0) {
+      if (result.rows.length === 0) {
         return null;
       }
 
-      return legacy.rows[0].wallet_address;
+      return result.rows[0].wallet_address ?? result.rows[0].address;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -400,7 +396,11 @@ export class UserRepositoryAdapter implements IUserRepository {
   }
 
   /**
-   * Link a wallet address to a user (upsert)
+   * Link a wallet address to a user (upsert) — evm primary convenience.
+   *
+   * Canonical path is `WalletRepositoryAdapter.upsertVerified`; this keeps
+   * the deprecated single-address contract working (first wallet wins
+   * primary, re-link is idempotent).
    */
   async setWalletAddress(
     userId: string,
@@ -408,11 +408,12 @@ export class UserRepositoryAdapter implements IUserRepository {
   ): Promise<boolean> {
     try {
       const result = await query(
-        `INSERT INTO wallet_addresses (user_id, wallet_address, verified, updated_at)
-         VALUES ($1, $2, true, CURRENT_TIMESTAMP)
-         ON CONFLICT (user_id) DO UPDATE SET
-           wallet_address = EXCLUDED.wallet_address,
-           verified = true,
+        `INSERT INTO wallets (user_id, chain, address, is_primary, verified_at, updated_at)
+         VALUES ($1, 'evm', $2,
+           NOT EXISTS (SELECT 1 FROM wallets WHERE user_id = $1),
+           now(), CURRENT_TIMESTAMP)
+         ON CONFLICT (user_id, chain, address) DO UPDATE SET
+           verified_at = COALESCE(wallets.verified_at, now()),
            updated_at = CURRENT_TIMESTAMP`,
         [userId, walletAddress]
       );
@@ -426,14 +427,13 @@ export class UserRepositoryAdapter implements IUserRepository {
   }
 
   /**
-   * Remove the wallet linked to a user
+   * Remove the wallet linked to a user (C2: all rows for the user).
    */
   async clearWalletAddress(userId: string): Promise<boolean> {
     try {
-      const result = await query(
-        "DELETE FROM wallet_addresses WHERE user_id = $1",
-        [userId]
-      );
+      const result = await query("DELETE FROM wallets WHERE user_id = $1", [
+        userId,
+      ]);
 
       return (result.rowCount ?? 0) > 0;
     } catch (error) {

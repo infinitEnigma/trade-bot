@@ -104,23 +104,32 @@ export const useKodiakStatus = () => {
  */
 export const useConnectKodiak = () => {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
 
   return useMutation({
     mutationFn: (credentials: {
       accountId: string;
       apiKey: string;
       secretKey: string;
+      environment?: "testnet" | "mainnet";
     }) => kodiakApi.connectKodiak(credentials),
     onSuccess: response => {
       // Invalidate React Query caches with correct query keys (including user ID)
       queryClient.invalidateQueries({ queryKey: ["user", user?.id] });
       queryClient.invalidateQueries({ queryKey: ["kodiak-status", user?.id] });
+      // C2: the accounts list drives the Settings UI.
+      queryClient.invalidateQueries({
+        queryKey: ["exchange-accounts", user?.id],
+      });
 
       // Directly update the Zustand store with new user level (immediate UI update)
       if (response.data?.userLevel) {
         updateAuthUser({ userLevel: response.data.userLevel as UserLevel });
       }
+      // C2: the connect response no longer carries userLevel (it is
+      // recomputed server-side) — refetch the profile so the store and
+      // header see the VERIFIED upgrade.
+      refreshUser();
     },
   });
 };
@@ -138,6 +147,10 @@ export const useDisconnectKodiak = () => {
       // Invalidate React Query caches with correct query keys (including user ID)
       queryClient.invalidateQueries({ queryKey: ["user", user?.id] });
       queryClient.invalidateQueries({ queryKey: ["kodiak-status", user?.id] });
+      // C2: the accounts list drives the Settings UI.
+      queryClient.invalidateQueries({
+        queryKey: ["exchange-accounts", user?.id],
+      });
 
       // Also refresh the Zustand auth store to update user level
       refreshUser();

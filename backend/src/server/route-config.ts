@@ -207,17 +207,23 @@ export class RouteConfig {
 
   /**
    * Register user management routes
+   *
+   * C2 mounts the new canonical routers alongside the legacy /api/user
+   * tree: GET/POST /api/wallets/* and GET/POST/DELETE /api/accounts/*.
    */
   private static async registerUserRoutes(app: Express): Promise<void> {
     const userTimer = this.routeLogger.startOperation(
       "user-routes-registration"
     );
     try {
-      const { userRoutes } = await import("../interfaces/http/users");
+      const { userRoutes, walletsRoutes, exchangeAccountRoutes } =
+        await import("../interfaces/http/users");
       app.use("/api/user", userRoutes);
+      app.use("/api/wallets", walletsRoutes);
+      app.use("/api/accounts", exchangeAccountRoutes);
       userTimer.success();
       this.routeLogger.debug("User management routes registered", {
-        route: "/api/user",
+        routes: ["/api/user", "/api/wallets", "/api/accounts"],
         component: "user-management",
       });
     } catch (error) {
@@ -226,7 +232,7 @@ export class RouteConfig {
         "Failed to register user management routes",
         error as Error,
         {
-          route: "/api/user",
+          routes: ["/api/user", "/api/wallets", "/api/accounts"],
           component: "user-management",
         }
       );

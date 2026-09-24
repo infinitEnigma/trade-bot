@@ -42,26 +42,40 @@ describe("kodiakApi", () => {
         apiKey: "test-api-key",
         secretKey: "test-secret-key",
       };
-      const mockResponse = {
+      // C2 backend shape: { success, message, data: account DTO }
+      const mockBackendResponse = {
         success: true,
+        message: "Kodiak connected",
+        data: {
+          id: "acct-1",
+          accountRef: mockCredentials.accountId,
+          status: "ACTIVE",
+        },
+      };
+      const expectedMapped = {
+        success: true,
+        message: "Kodiak connected",
+        error: undefined,
         data: {
           accountId: mockCredentials.accountId,
           connected: true,
           verified: true,
-          userLevel: "VERIFIED",
         },
       };
 
-      mockPost.mockResolvedValue({ data: mockResponse });
+      mockPost.mockResolvedValue({ data: mockBackendResponse });
 
       const result = await kodiakApi.connectKodiak(mockCredentials);
 
       expect(httpClient.getClient).toHaveBeenCalled();
-      expect(mockPost).toHaveBeenCalledWith(
-        "/api/user/kodiak/connect",
-        mockCredentials
-      );
-      expect(result).toEqual(mockResponse);
+      expect(mockPost).toHaveBeenCalledWith("/api/accounts/connect", {
+        exchange: "kodiak",
+        environment: "mainnet",
+        accountId: mockCredentials.accountId,
+        apiKey: mockCredentials.apiKey,
+        secretKey: mockCredentials.secretKey,
+      });
+      expect(result).toEqual(expectedMapped);
     });
 
     it("should handle connect errors", async () => {
@@ -81,7 +95,15 @@ describe("kodiakApi", () => {
   });
 
   describe("disconnectKodiak", () => {
-    it("should call disconnect endpoint", async () => {
+    it("should list accounts then revoke the active Kodiak account", async () => {
+      mockGet.mockResolvedValue({
+        data: {
+          success: true,
+          data: {
+            accounts: [{ id: "acct-1", exchange: "kodiak", status: "ACTIVE" }],
+          },
+        },
+      });
       const mockResponse = {
         success: true,
         message: "Kodiak disconnected successfully",
@@ -92,43 +114,85 @@ describe("kodiakApi", () => {
       const result = await kodiakApi.disconnectKodiak();
 
       expect(httpClient.getClient).toHaveBeenCalled();
-      expect(mockDelete).toHaveBeenCalledWith("/api/user/kodiak/disconnect");
+      expect(mockGet).toHaveBeenCalledWith("/api/accounts");
+      expect(mockDelete).toHaveBeenCalledWith("/api/accounts/acct-1");
       expect(result).toEqual(mockResponse);
+    });
+
+    it("should report when no Kodiak account exists", async () => {
+      mockGet.mockResolvedValue({
+        data: { success: true, data: { accounts: [] } },
+      });
+
+      const result = await kodiakApi.disconnectKodiak();
+
+      expect(mockDelete).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        success: true,
+        message: "No Kodiak account connected",
+      });
     });
 
     it("should handle disconnect errors", async () => {
       const errorMessage = "Failed to disconnect";
-      mockDelete.mockRejectedValue(new Error(errorMessage));
+      mockGet.mockRejectedValue(new Error(errorMessage));
 
       await expect(kodiakApi.disconnectKodiak()).rejects.toThrow(errorMessage);
     });
   });
 
   describe("getKodiakStatus", () => {
-    it("should call status endpoint", async () => {
-      const mockResponse = {
+    it("should derive status from the accounts list", async () => {
+      // C2: GET /api/accounts -> mapped onto the legacy KodiakStatus shape.
+      mockGet.mockResolvedValue({
+        data: {
+          success: true,
+          data: {
+            accounts: [
+              {
+                id: "acct-1",
+                exchange: "kodiak",
+                status: "ACTIVE",
+                accountRef: "123456",
+                verifiedAt: "2024-01-01T00:00:00Z",
+                createdAt: "2024-01-01T00:00:00Z",
+              },
+            ],
+          },
+        },
+      });
+
+      const result = await kodiakApi.getKodiakStatus();
+
+      expect(httpClient.getClient).toHaveBeenCalled();
+      expect(mockGet).toHaveBeenCalledWith("/api/accounts");
+      expect(result).toEqual({
         success: true,
         data: {
           connected: true,
           accountId: "123456",
           connectedAt: "2024-01-01T00:00:00Z",
           verified: true,
-          userLevel: "VERIFIED",
         },
-      };
+      });
+    });
 
-      mockGet.mockResolvedValue({ data: mockResponse });
+    it("should report disconnected when no live Kodiak account exists", async () => {
+      mockGet.mockResolvedValue({
+        data: { success: true, data: { accounts: [] } },
+      });
 
       const result = await kodiakApi.getKodiakStatus();
 
-      expect(httpClient.getClient).toHaveBeenCalled();
-      expect(mockGet).toHaveBeenCalledWith("/api/user/kodiak/status");
-      expect(result).toEqual(mockResponse);
+      expect(result).toEqual({
+        success: true,
+        data: { connected: false },
+      });
     });
   });
 
   describe("getKodiakBalance", () => {
-    it("should call balance endpoint", async () => {
+    it("should call balance endpoint with deduplication", async () => {
       const mockResponse = {
         success: true,
         data: {
@@ -143,13 +207,19 @@ describe("kodiakApi", () => {
         },
       };
 
-      mockGet.mockResolvedValue({ data: mockResponse });
+      const spy = vi
+        .spyOn(globalRequestManager, "deduplicateRequest")
+        .mockResolvedValue(mockResponse);
 
       const result = await kodiakApi.getKodiakBalance();
 
-      expect(httpClient.getClient).toHaveBeenCalled();
-      expect(mockGet).toHaveBeenCalledWith("/api/user/kodiak/balance");
+      expect(spy).toHaveBeenCalledWith(
+        "kodiak:balance",
+        expect.any(Function),
+        "tradingApi"
+      );
       expect(result).toEqual(mockResponse);
+      spy.mockRestore();
     });
   });
 

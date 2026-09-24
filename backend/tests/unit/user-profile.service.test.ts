@@ -206,7 +206,9 @@ describe("UserProfileService", () => {
         mockUserId,
         mockWalletAddress,
         mockSignature,
-        mockMessage
+        mockMessage,
+        // C2: chain-aware — defaults to "evm" when the caller omits it.
+        "evm"
       );
     });
 
