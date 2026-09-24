@@ -18,8 +18,8 @@ The backend is an Express.js API server that serves the frontend, manages user a
 - **Bot Lifecycle Management** - desired/actual state machine with PostgreSQL persistence
 - **Engine Protocol** - Redis Streams control plane for engine coordination
 - **WebSocket Server** - real-time bot state updates to the frontend (market data is served over HTTP)
-- **Credential Management** - encrypted storage of Kodiak API keys
-- **User Access Progression** - BASIC → REGISTERED (wallet signature) → VERIFIED (exchange credentials)
+- **Credential Management** - encrypted storage + live verification of venue exchange accounts (Kodiak, Lighter)
+- **User Access Progression** - BASIC → REGISTERED (wallet signature) → VERIFIED (exchange account)
 
 ---
 
@@ -67,16 +67,16 @@ core/
 User level is owned by the auth domain and enforced on every privileged route.
 
 ```
-BASIC ──connect wallet + sign message──▶ REGISTERED ──verify Kodiak keys──▶ VERIFIED
+BASIC ──connect wallet + sign message──▶ REGISTERED ──verify exchange account──▶ VERIFIED
 ```
 
 | Level          | Requirement                                         | Notes                                            |
 | -------------- | --------------------------------------------------- | ------------------------------------------------ |
 | **BASIC**      | Email + password                                    | Public-source data only                          |
 | **REGISTERED** | Linked wallet, ownership proven by a signed message | Exchange credential setup (Settings) is unlocked |
-| **VERIFIED**   | Verified Kodiak API credentials                     | Strategies, bot configuration, private data      |
+| **VERIFIED**   | Verified venue exchange account (Kodiak or Lighter) | Strategies, bot configuration, private data      |
 
-Wallet linking is stored in its own `wallet_addresses` table (migration `010_wallet_addresses.sql`), independent of `kodiak_credentials`, so a wallet can be linked without supplying exchange keys. `POST /api/user/unlink-wallet` is an explicit, audited action that downgrades the account (`VERIFIED → REGISTERED`, `REGISTERED → BASIC`).
+Wallet linking lives in the chain-aware `wallets` table (migration `012_wallets_exchange_accounts.sql`), independent of `exchange_accounts`, so a wallet can be linked without supplying exchange keys. `POST /api/wallets/:id/unlink` is the explicit, audited downgrade (`VERIFIED → REGISTERED`, `REGISTERED → BASIC`); `POST /api/user/unlink-wallet` is kept as a compat alias.
 
 ### Infrastructure
 
@@ -216,8 +216,16 @@ npm run build && npm start
 
 - `GET /api/user/profile` - Authenticated user profile (includes `userLevel`)
 - `POST /api/user/profile/update` - Update profile fields
-- `POST /api/user/verify-wallet` - Verify a signed message and link the wallet (`BASIC → REGISTERED`)
-- `POST /api/user/unlink-wallet` - Unlink the wallet (audited); downgrades the level (`VERIFIED → REGISTERED`, `REGISTERED → BASIC`)
+- `POST /api/user/verify-wallet` - Legacy compat alias for `POST /api/wallets/verify`: verify a signed message and link the wallet (`BASIC → REGISTERED`)
+- `POST /api/user/unlink-wallet` - Legacy compat alias for `POST /api/wallets/:id/unlink`: unlink the wallet (audited); downgrades the level (`VERIFIED → REGISTERED`, `REGISTERED → BASIC`)
+- `GET /api/wallets` - List linked chain wallets (primary first)
+- `POST /api/wallets/verify` - Verify a signed message and link the wallet (`BASIC → REGISTERED`)
+- `POST /api/wallets/:id/unlink` - Unlink one wallet (audited); downgrades the level
+- `PATCH /api/wallets/:id/primary` - Make a linked wallet primary
+- `GET /api/accounts` - List venue exchange accounts (metadata only, never secrets)
+- `POST /api/accounts/connect` - Connect + live-verify one account (`REGISTERED → VERIFIED`)
+- `POST /api/accounts/:id/verify` - Re-verify one account (graduates legacy envelopes)
+- `DELETE /api/accounts/:id` - Revoke one account (audited, level recompute)
 
 ### Engine (internal)
 

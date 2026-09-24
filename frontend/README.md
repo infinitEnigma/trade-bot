@@ -30,11 +30,11 @@ The frontend is a modern React 19 single-page application (SPA) built with Vite,
 
 The UI adapts to the authenticated user's access level, which is enforced server-side:
 
-| Level          | How it is reached                                                                | What the UI exposes                                                                                                                    |
-| -------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| **BASIC**      | Email + password sign-up / sign-in                                               | Public market data, charts, dashboard pages. The Dashboard wallet widget is shown to every level so BASIC users can start the upgrade. |
-| **REGISTERED** | Connect a wallet in the Dashboard widget and sign the welcome message            | Kodiak credential form in Settings becomes active                                                                                      |
-| **VERIFIED**   | Provide exchange (Kodiak) API credentials in Settings; the backend verifies them | Trading strategies, bot configuration, private/exchange-specific data                                                                  |
+| Level          | How it is reached                                                                         | What the UI exposes                                                                                                                    |
+| -------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **BASIC**      | Email + password sign-up / sign-in                                                        | Public market data, charts, dashboard pages. The Dashboard wallet widget is shown to every level so BASIC users can start the upgrade. |
+| **REGISTERED** | Connect a wallet in the Dashboard widget and sign the welcome message                     | Exchange account form in Settings becomes active                                                                                       |
+| **VERIFIED**   | Connect an exchange account (Kodiak or Lighter) in Settings; the backend live-verifies it | Trading strategies, bot configuration, private/exchange-specific data                                                                  |
 
 ```
 BASIC ─connect wallet + sign message──▶ REGISTERED ──verify exchange keys in Settings──▶ VERIFIED
@@ -45,7 +45,7 @@ The Dashboard wallet widget (`shared/components/WalletConnectDialog.tsx`) is ren
 Two distinct wallet actions are intentionally separated:
 
 - **Disconnect** - ends the browser wallet session only (wagmi `useDisconnect`). It does **not** change the account level.
-- **Unlink wallet** - an explicit, audited call to `POST /api/user/unlink-wallet` that removes the linked wallet and downgrades the account level (`VERIFIED → REGISTERED`, `REGISTERED → BASIC`).
+- **Unlink wallet** - an explicit, audited call to `POST /api/wallets/:id/unlink` (`POST /api/user/unlink-wallet` is kept as a compat alias) that removes the linked wallet and downgrades the account level (`VERIFIED → REGISTERED`, `REGISTERED → BASIC`).
 
 ---
 
