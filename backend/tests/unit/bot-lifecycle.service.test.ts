@@ -32,9 +32,27 @@ jest.mock("../../src/core/logging", () => ({
   },
 }));
 
+// C3a: `createAndStart` validates the bound ACTIVE account through the adapter
+// before it inserts the bot instance.
+jest.mock(
+  "../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter",
+  () => ({
+    exchangeAccountRepositoryAdapter: {
+      getAccountWithSecret: jest.fn(),
+    },
+    getBotBoundAccountSecrets: jest.fn(),
+  })
+);
+
 import { query } from "../../src/database/pool";
+import { BotLifecycleRepository } from "../../src/core/bots/lifecycle/bot-lifecycle.repository";
+import { exchangeAccountRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter";
 
 const mockQuery = query as jest.Mock;
+
+const mockAccountAdapter = exchangeAccountRepositoryAdapter as unknown as {
+  getAccountWithSecret: jest.Mock;
+};
 
 /** Successful non-SELECT result (UPDATE/INSERT/DELETE) for the query mock. */
 const okResult = () => Promise.resolve({ rows: [], rowCount: 1 });
@@ -823,5 +841,105 @@ describe("BotLifecycleService", () => {
         )
       ).toBe(false);
     });
+  });
+});
+
+// ===========================================
+// BOT → ACCOUNT BINDING (C3a, migration 013)
+// ===========================================
+
+describe("bot → account binding", () => {
+  let service: BotLifecycleService;
+
+  /** C3a: the row shape `getAccountWithSecret` returns for a healthy account. */
+  const activeAccount = {
+    id: "acc-1",
+    userId: "user-1",
+    exchange: "kodiak",
+    environment: "testnet",
+    accountRef: "kodiak-account-id",
+    status: "ACTIVE",
+    verifiedAt: null,
+    lastVerifiedAt: null,
+    meta: {},
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    credentialsEncrypted: "sealed",
+    encryptionVersion: 3,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new BotLifecycleService({
+      sendCommand: jest.fn().mockResolvedValue({
+        success: true,
+        messageId: "m1",
+        correlationId: "c1",
+      }),
+    } as unknown as EngineProtocolService);
+    service.setAuthorityChecker(async () => true);
+  });
+
+  const mockStrategyExists = () =>
+    mockQuery.mockImplementation((sql: string) =>
+      String(sql).startsWith("SELECT id FROM strategies")
+        ? Promise.resolve({ rows: [{ id: "strat-1" }] })
+        : okResult()
+    );
+
+  it("404s before the account lookup when the strategy is not the caller's", async () => {
+    mockQuery.mockImplementation((sql: string) =>
+      String(sql).startsWith("SELECT id FROM strategies")
+        ? Promise.resolve({ rows: [] })
+        : okResult()
+    );
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 1000, "acc-1")
+    ).rejects.toThrow("Strategy not found");
+    expect(mockAccountAdapter.getAccountWithSecret).not.toHaveBeenCalled();
+  });
+
+  it("404s when the bound account is missing or not owned", async () => {
+    mockStrategyExists();
+    mockAccountAdapter.getAccountWithSecret.mockResolvedValue(null);
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 1000, "acc-1")
+    ).rejects.toThrow("Exchange account not found");
+    // Ownership is enforced by the scoped lookup (userId + accountId).
+    expect(mockAccountAdapter.getAccountWithSecret).toHaveBeenCalledWith(
+      "user-1",
+      "acc-1"
+    );
+  });
+
+  it("400s when the bound account is not ACTIVE", async () => {
+    mockStrategyExists();
+    mockAccountAdapter.getAccountWithSecret.mockResolvedValue({
+      ...activeAccount,
+      status: "PENDING",
+    });
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 1000, "acc-1")
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("writes the binding to bot_instances.exchange_account_id", async () => {
+    const repository = new BotLifecycleRepository();
+    mockQuery.mockResolvedValue({ rows: [{ id: "bot-1" }] });
+
+    const botId = await repository.insertBotInstance(
+      "strat-1",
+      "user-1",
+      "acc-1"
+    );
+
+    expect(botId).toBe("bot-1");
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.stringContaining("exchange_account_id"),
+      ["strat-1", "user-1", "acc-1"]
+    );
   });
 });

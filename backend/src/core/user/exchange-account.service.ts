@@ -61,6 +61,14 @@ export interface ExchangeAccountServiceDeps {
     request: ConnectExchangeAccountRequest
   ) => Promise<{ verified: boolean; error?: string }>;
   userLevel: { recompute(userId: string): Promise<unknown> };
+  /**
+   * C3a: bots bound to the account. `countBoundBots` returns how many
+   * `bot_instances` rows reference it — revoke is blocked while > 0 because
+   * the FK is ON DELETE RESTRICT (migration 013).
+   */
+  boundBots?: {
+    countBoundBots(userId: string, accountId: string): Promise<number>;
+  };
   auditLogRepository?: {
     logEvent(event: {
       userId: string | null;
@@ -281,7 +289,20 @@ export class ExchangeAccountService {
   async revokeAccount(
     userId: string,
     accountId: string
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; boundBots?: number }> {
+    // C3a: the FK is ON DELETE RESTRICT — an account with bots bound cannot
+    // be hard-deleted. Block with a clear message instead of leaking the
+    // FK violation. Stop/re-home the bots first.
+    if (this.deps.boundBots) {
+      const bound = await this.deps.boundBots.countBoundBots(userId, accountId);
+      if (bound > 0) {
+        return {
+          success: false,
+          message: `Account has ${bound} bot${bound === 1 ? "" : "s"} bound to it. Stop or delete the bots first.`,
+          boundBots: bound,
+        };
+      }
+    }
     const deleted = await this.deps.exchangeAccountRepository.deleteAccount(
       userId,
       accountId

@@ -89,6 +89,34 @@ function requestCoords(request: ConnectExchangeAccountRequest): {
   };
 }
 
+/**
+ * C3a: bot→account credential issue for the engine.
+ *
+ * C3 swaps only this lookup, not the engine: given a bot, resolve its bound
+ * ACTIVE `exchange_accounts` row (ownership enforced via bot.user_id) and
+ * decrypt the single-envelope ciphertext into a connect-shaped request.
+ * Returns null when the bot is unbound, the account is missing/inactive, or
+ * secrets do not decrypt. Callers build the per-venue EngineCredentials
+ * envelope from the returned request.
+ */
+export interface BotBoundAccountSecrets {
+  account: ExchangeAccount;
+  request: ConnectExchangeAccountRequest;
+}
+
+export interface BotBoundAccountDeps {
+  findBot: (botId: string) => Promise<{
+    user_id: string;
+    exchange_account_id: string | null;
+  } | null>;
+  getAccountWithSecret: (
+    userId: string,
+    accountId: string
+  ) => Promise<ExchangeAccountWithSecret | null>;
+  decryptEnvelope: (ciphertext: string) => Promise<string>;
+  decryptFieldBlob: (blob: string) => Promise<string>;
+}
+
 export class ExchangeAccountRepositoryAdapter implements IExchangeAccountRepository {
   /**
    * Optional `queryFn` lets callers such as `withCredentials` route through
@@ -205,3 +233,117 @@ export class ExchangeAccountRepositoryAdapter implements IExchangeAccountReposit
 
 export const exchangeAccountRepositoryAdapter =
   new ExchangeAccountRepositoryAdapter();
+
+/** Plaintext JSON payload stored by `encryptWithVersion` (Q1 envelope). */
+interface CurrentEnvelope {
+  v: number;
+  kind: string;
+  accountId?: string;
+  accountIndex?: number;
+  apiKey?: string;
+  apiKeyIndex?: number;
+  secretKey?: string;
+  privateKey?: string;
+}
+
+interface LegacyWrapper {
+  v: number;
+  kind: "kodiak-legacy";
+  accountId: string;
+  apiKeyCipher: string;
+  secretKeyCipher: string;
+}
+
+function envelopeToRequest(
+  parsed: Record<string, unknown>,
+  stored: ExchangeAccount
+): ConnectExchangeAccountRequest | null {
+  if (parsed.kind === "kodiak" || parsed.kind === undefined) {
+    if (
+      typeof parsed.accountId === "string" &&
+      typeof parsed.apiKey === "string" &&
+      typeof parsed.secretKey === "string"
+    ) {
+      return {
+        exchange: "kodiak",
+        environment: stored.environment,
+        accountId: parsed.accountId,
+        apiKey: parsed.apiKey,
+        secretKey: parsed.secretKey,
+      };
+    }
+    return null;
+  }
+  if (parsed.kind === "lighter") {
+    if (
+      typeof parsed.accountIndex === "number" &&
+      typeof parsed.apiKeyIndex === "number" &&
+      typeof parsed.privateKey === "string"
+    ) {
+      return {
+        exchange: "lighter",
+        environment: stored.environment,
+        accountIndex: parsed.accountIndex,
+        apiKeyIndex: parsed.apiKeyIndex,
+        privateKey: parsed.privateKey,
+      };
+    }
+  }
+  return null;
+}
+
+export async function getBotBoundAccountSecrets(
+  botId: string,
+  deps: BotBoundAccountDeps
+): Promise<BotBoundAccountSecrets | null> {
+  const bot = await deps.findBot(botId);
+  if (!bot || !bot.exchange_account_id) return null;
+  const stored = await deps.getAccountWithSecret(
+    bot.user_id,
+    bot.exchange_account_id
+  );
+  if (!stored || stored.status !== "ACTIVE") return null;
+
+  // Current single-envelope rows: one versioned decrypt → plaintext JSON.
+  try {
+    const plaintext = await deps.decryptEnvelope(stored.credentialsEncrypted);
+    const parsed = JSON.parse(plaintext) as CurrentEnvelope;
+    const request = envelopeToRequest(
+      parsed as unknown as Record<string, unknown>,
+      stored
+    );
+    if (request) return { account: stored, request };
+  } catch {
+    // Not a versioned single envelope — try the legacy wrapper path.
+  }
+
+  // Backfilled `kodiak-legacy` wrappers (migration 012): the column holds the
+  // wrapper JSON itself; each field is the untouched legacy ciphertext blob.
+  try {
+    const wrapper = JSON.parse(stored.credentialsEncrypted) as LegacyWrapper;
+    if (wrapper.kind !== "kodiak-legacy") return null;
+    if (
+      typeof wrapper.accountId !== "string" ||
+      typeof wrapper.apiKeyCipher !== "string" ||
+      typeof wrapper.secretKeyCipher !== "string"
+    ) {
+      return null;
+    }
+    const [apiKey, secretKey] = await Promise.all([
+      deps.decryptFieldBlob(wrapper.apiKeyCipher),
+      deps.decryptFieldBlob(wrapper.secretKeyCipher),
+    ]);
+    return {
+      account: stored,
+      request: {
+        exchange: "kodiak",
+        environment: stored.environment,
+        accountId: wrapper.accountId,
+        apiKey,
+        secretKey,
+      },
+    };
+  } catch {
+    return null;
+  }
+}

@@ -171,7 +171,19 @@ router.delete(
         .getExchangeAccountService()
         .revokeAccount(userId, accountId);
       if (!result.success) {
-        return res.status(404).json({ success: false, error: result.message });
+        // C3a: 409 when bots bind to the account (FK RESTRICT) so the
+        // frontend can tell "stop the bots first" apart from "not found".
+        const status =
+          typeof result.boundBots === "number" && result.boundBots > 0
+            ? 409
+            : 404;
+        return res.status(status).json({
+          success: false,
+          error: result.message,
+          ...(typeof result.boundBots === "number"
+            ? { boundBots: result.boundBots }
+            : {}),
+        });
       }
       res.json({ success: true, message: result.message });
     } catch (error) {

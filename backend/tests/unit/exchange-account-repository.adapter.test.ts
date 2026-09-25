@@ -8,8 +8,10 @@
  */
 
 import {
+  BotBoundAccountDeps,
   ExchangeAccountRepositoryAdapter,
   exchangeAccountRepositoryAdapter,
+  getBotBoundAccountSecrets,
 } from "../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter";
 import { query } from "../../src/database/pool";
 
@@ -57,7 +59,10 @@ describe("ExchangeAccountRepositoryAdapter", () => {
   describe("listAccounts", () => {
     it("should list every account of the user without secrets", async () => {
       mockQuery.mockResolvedValue({
-        rows: [accountRow(), accountRow({ id: "account-2", status: "PENDING" })],
+        rows: [
+          accountRow(),
+          accountRow({ id: "account-2", status: "PENDING" }),
+        ],
       });
 
       const accounts = await adapter.listAccounts("test-user-id");
@@ -76,9 +81,7 @@ describe("ExchangeAccountRepositoryAdapter", () => {
       });
       expect(accounts[0].verifiedAt).toBeInstanceOf(Date);
       // The list query must never select the envelope column.
-      expect(mockQuery.mock.calls[0][0]).not.toContain(
-        "credentials_encrypted"
-      );
+      expect(mockQuery.mock.calls[0][0]).not.toContain("credentials_encrypted");
     });
 
     it("should parse a stringified meta payload", async () => {
@@ -299,6 +302,184 @@ describe("ExchangeAccountRepositoryAdapter", () => {
       mockQuery.mockResolvedValue({ rows: [] });
 
       await expect(adapter.countActive("test-user-id")).resolves.toBe(0);
+    });
+  });
+
+  describe("getBotBoundAccountSecrets (C3a)", () => {
+    const storedAccount = (overrides: Record<string, unknown> = {}) => ({
+      id: "account-1",
+      userId: "test-user-id",
+      exchange: "kodiak",
+      environment: "mainnet",
+      accountRef: "kodiak-account-id",
+      status: "ACTIVE",
+      verifiedAt: null,
+      lastVerifiedAt: null,
+      meta: {},
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+      credentialsEncrypted: "sealed-ciphertext",
+      encryptionVersion: 3,
+      ...overrides,
+    });
+
+    const sealedKodiak = JSON.stringify({
+      v: 3,
+      kind: "kodiak",
+      accountId: "kodiak-account-id",
+      apiKey: "api-key",
+      secretKey: "secret-key",
+    });
+
+    const makeDeps = (
+      overrides: Partial<BotBoundAccountDeps> = {}
+    ): BotBoundAccountDeps => ({
+      findBot: jest.fn().mockResolvedValue({
+        user_id: "test-user-id",
+        exchange_account_id: "account-1",
+      }),
+      getAccountWithSecret: jest.fn().mockResolvedValue(storedAccount()),
+      decryptEnvelope: jest.fn().mockResolvedValue(sealedKodiak),
+      decryptFieldBlob: jest.fn(),
+      ...overrides,
+    });
+
+    it("should resolve the bot's bound ACTIVE account and decrypt its sealed envelope", async () => {
+      const deps = makeDeps();
+
+      const bound = await getBotBoundAccountSecrets("bot-1", deps);
+
+      expect(deps.findBot).toHaveBeenCalledWith("bot-1");
+      // Ownership is enforced on the account lookup (bot.user_id).
+      expect(deps.getAccountWithSecret).toHaveBeenCalledWith(
+        "test-user-id",
+        "account-1"
+      );
+      expect(bound?.request).toEqual({
+        exchange: "kodiak",
+        environment: "mainnet",
+        accountId: "kodiak-account-id",
+        apiKey: "api-key",
+        secretKey: "secret-key",
+      });
+      expect(bound?.account.status).toBe("ACTIVE");
+    });
+
+    it("should treat an unbound legacy bot as unbound without a lookup", async () => {
+      const deps = makeDeps({
+        findBot: jest.fn().mockResolvedValue({
+          user_id: "test-user-id",
+          exchange_account_id: null,
+        }),
+      });
+
+      await expect(
+        getBotBoundAccountSecrets("bot-1", deps)
+      ).resolves.toBeNull();
+      expect(deps.getAccountWithSecret).not.toHaveBeenCalled();
+    });
+
+    it("should return null when the bot does not exist", async () => {
+      const deps = makeDeps({ findBot: jest.fn().mockResolvedValue(null) });
+
+      await expect(
+        getBotBoundAccountSecrets("bot-1", deps)
+      ).resolves.toBeNull();
+      expect(deps.decryptEnvelope).not.toHaveBeenCalled();
+    });
+
+    it("should refuse an account that is not ACTIVE", async () => {
+      const deps = makeDeps({
+        getAccountWithSecret: jest
+          .fn()
+          .mockResolvedValue(storedAccount({ status: "PENDING" })),
+      });
+
+      await expect(
+        getBotBoundAccountSecrets("bot-1", deps)
+      ).resolves.toBeNull();
+      expect(deps.decryptEnvelope).not.toHaveBeenCalled();
+    });
+
+    it("should map a lighter envelope to its connect-shaped request", async () => {
+      const deps = makeDeps({
+        getAccountWithSecret: jest.fn().mockResolvedValue(
+          storedAccount({
+            exchange: "lighter",
+            accountRef: "7",
+          })
+        ),
+        decryptEnvelope: jest.fn().mockResolvedValue(
+          JSON.stringify({
+            v: 3,
+            kind: "lighter",
+            accountIndex: 7,
+            apiKeyIndex: 3,
+            privateKey: "0xdeadbeef",
+          })
+        ),
+      });
+
+      const bound = await getBotBoundAccountSecrets("bot-1", deps);
+
+      expect(bound?.request).toEqual({
+        exchange: "lighter",
+        environment: "mainnet",
+        accountIndex: 7,
+        apiKeyIndex: 3,
+        privateKey: "0xdeadbeef",
+      });
+    });
+
+    it("should read a backfilled kodiak-legacy wrapper through the field blobs", async () => {
+      const wrapper = JSON.stringify({
+        v: 2,
+        kind: "kodiak-legacy",
+        accountId: "kodiak-account-id",
+        apiKeyCipher: "api-key-cipher",
+        secretKeyCipher: "secret-key-cipher",
+      });
+      const decryptFieldBlob = jest
+        .fn()
+        .mockImplementation((blob: string) =>
+          Promise.resolve(blob === "api-key-cipher" ? "api-key" : "secret-key")
+        );
+      const deps = makeDeps({
+        getAccountWithSecret: jest
+          .fn()
+          .mockResolvedValue(storedAccount({ credentialsEncrypted: wrapper })),
+        decryptEnvelope: jest
+          .fn()
+          .mockRejectedValue(new Error("not versioned")),
+        decryptFieldBlob,
+      });
+
+      const bound = await getBotBoundAccountSecrets("bot-1", deps);
+
+      expect(decryptFieldBlob).toHaveBeenCalledWith("api-key-cipher");
+      expect(decryptFieldBlob).toHaveBeenCalledWith("secret-key-cipher");
+      expect(bound?.request).toEqual({
+        exchange: "kodiak",
+        environment: "mainnet",
+        accountId: "kodiak-account-id",
+        apiKey: "api-key",
+        secretKey: "secret-key",
+      });
+    });
+
+    it("should return null when nothing can be decrypted", async () => {
+      const deps = makeDeps({
+        getAccountWithSecret: jest
+          .fn()
+          .mockResolvedValue(
+            storedAccount({ credentialsEncrypted: "not-json" })
+          ),
+        decryptEnvelope: jest.fn().mockRejectedValue(new Error("bad key")),
+      });
+
+      await expect(
+        getBotBoundAccountSecrets("bot-1", deps)
+      ).resolves.toBeNull();
     });
   });
 });

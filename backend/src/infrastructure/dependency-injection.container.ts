@@ -30,6 +30,7 @@ import { strategyRepositoryAdapter } from "./adapters/repositories/strategy-repo
 import { auditLogRepositoryAdapter } from "./adapters/repositories/audit-log-repository.adapter";
 import { roleRepositoryAdapter } from "./adapters/repositories/role-repository.adapter";
 import { botInstanceRepositoryAdapter } from "./adapters/repositories/bot-instance-repository.adapter";
+import { query as poolQuery } from "../database/pool";
 
 // Pure Services
 import { BotManagementService } from "../core/bots/bot-management.service";
@@ -392,6 +393,16 @@ export class DependencyInjectionContainer {
       userLevel,
       auditLogRepository: this.auditLogRepository,
       logger: this.loggerService,
+      // C3a: revoke is blocked while bots bind to the account (FK RESTRICT).
+      boundBots: {
+        countBoundBots: async (userId: string, accountId: string) => {
+          const result = await poolQuery<{ count: string }>(
+            `SELECT COUNT(*) AS count FROM bot_instances WHERE user_id = $1 AND exchange_account_id = $2`,
+            [userId, accountId]
+          );
+          return parseInt(result.rows[0]?.count ?? "0", 10);
+        },
+      },
     });
   }
 

@@ -22,6 +22,8 @@ export interface BotRow {
   desired_state: BotDesiredState;
   actual_state: BotActualState;
   engine_id: string | null;
+  /** Bound venue account (C3a, migration 013). NULL for legacy unbound rows. */
+  exchange_account_id: string | null;
 }
 
 /** Map actual_state to the legacy single `status` column. */

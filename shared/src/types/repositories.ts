@@ -358,6 +358,12 @@ export interface BotInstanceRecord {
   strategy_type?: string;
   /** Joined from `strategies.config` (list/detail queries only). */
   strategy_config?: Record<string, unknown>;
+  /**
+   * Bound venue account (C3a bot→account binding, migration 013).
+   * Nullable on reads: legacy rows backfilled when an ACTIVE account exists,
+   * NULL when the owner had none; code always writes it on create.
+   */
+  exchange_account_id?: string | null;
 }
 
 export interface IBotInstanceRepository {

@@ -257,6 +257,7 @@ describe("Service Factory Interface", () => {
           "verifyConnectivity",
           "userLevel",
           "auditLogRepository",
+          "boundBots",
         ]);
         return mockExchangeAccountService as any;
       });
@@ -270,9 +271,11 @@ describe("Service Factory Interface", () => {
           service: "ExchangeAccountService",
           dependencies: [
             "exchangeAccountRepository",
-            "encryptionService",
-            "kodiakIntegrationService",
-            "userLevelService",
+            "encryption",
+            "verifyConnectivity",
+            "userLevel",
+            "auditLogRepository",
+            "boundBots",
           ],
         })
       );

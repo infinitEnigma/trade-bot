@@ -193,18 +193,46 @@ This removed the `TokenPayload` swap, the login-form rewrite, and the
   different chains; revoking one account does **not** drop the user's level while
   another verified account remains; all actions audited per account.
 
-### C3 — bot → account binding + data-table generalisation (≈1 day)
+### C3 — bot → account binding + data-table generalisation
 
-- `013_bot_account_binding.sql`: add `bot_instances.exchange_account_id`
-  (backfill, then `NOT NULL`); create `exchange_positions` /
-  `exchange_balances`; retire `kodiak_accounts` / `kodiak_positions` /
-  `kodiak_balances` / `kodiak_statistics` read paths, then drop them.
-- Code: bot creation API/UI selects an account; **the credentials endpoint swaps
-  its data source to `exchange_accounts`** — this is the only engine-adjacent
-  change, and it must not require engine edits (see Workstream A).
+C3 is deliberately split into two PRs: the two halves have different risk
+profiles (an engine-adjacent credential swap vs. a wide reader migration) and
+different revert costs, so each must be independently releasable and revertible.
+
+#### C3a — bot → account binding (✅ landed)
+
+- `013_bot_account_binding.sql`: nullable `bot_instances.exchange_account_id`
+  (`ON DELETE RESTRICT`) backfilled to each owner's earliest ACTIVE account
+  (kodiak preferred); creates `exchange_positions` / `exchange_balances` **empty**
+  and drops nothing. `NOT NULL` and the legacy drops are deferred to C3b on
+  purpose — the backfill leaves `NULL` for bots whose owner has no ACTIVE
+  account yet.
+- Code: `POST /api/bot/start` requires an owned **ACTIVE** `exchangeAccountId`
+  (Joi + route + `createAndStart` defence in depth) and writes it on create;
+  **`/credentials/:botId` swaps its data source to the bot's bound
+  `exchange_accounts` row** and builds the per-venue envelope (kodiak +
+  lighter) — the only engine-adjacent change, and it needs no engine edits (see
+  Workstream A); `DELETE /api/accounts/:id` answers 409 while bots are bound
+  (FK RESTRICT); the frontend picks the account (and notional size) before
+  starting.
 - **Acceptance:** the same strategy started on two different accounts runs two
-  bots; positions/balances display per account; `grep` confirms no reader of the
-  dropped tables remains; ledger row 8 closes.
+  bots, and each engine credential fetch receives its own account's envelope;
+  an unbound legacy bot gets 409 instead of trading the wrong account; revoking
+  an account with bound bots is refused with a clear 409.
+
+#### C3b — positions/balances generalisation (pending)
+
+- Move the position/balance readers (`position-repository.adapter`,
+  `private-data.getPositions` / `getBalance`, `schema-validation-middleware`,
+  `market-portfolio.routes` account scoping) onto
+  `exchange_positions` / `exchange_balances`, repopulate them from the venue
+  sync, then `014_*.sql` makes the binding `NOT NULL` and drops
+  `kodiak_accounts` / `kodiak_positions` / `kodiak_balances` /
+  `kodiak_statistics`.
+- **Gate:** `grep -rn 'kodiak_positions\|kodiak_balances' backend/src` returns no
+  hits (today: `position-repository.adapter`, `schema-validation-middleware`).
+- **Acceptance:** positions and balances display per account; two accounts
+  holding the same symbol both display correctly; ledger row 8 closes.
 
 ---
 

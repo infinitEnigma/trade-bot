@@ -89,6 +89,7 @@ import { botLifecycleService } from "../../../core/bots/bot-lifecycle.service";
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
+import { exchangeAccountRepositoryAdapter } from "../../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
 
 const router = Router();
 
@@ -105,22 +106,6 @@ function getUserId(req: AuthenticatedRequest): string {
     throw new AuthenticationError("User not authenticated");
   }
   return userId;
-}
-
-/**
- * Check if user has verified Kodiak credentials (without decrypting)
- */
-async function hasUserKodiakCredentials(userId: string): Promise<boolean> {
-  try {
-    const marketService = serviceProvider.getMarketService();
-    const hasCredentials = await marketService.hasUserKodiakCredentials(userId);
-    return hasCredentials;
-  } catch (error) {
-    logger.error("Failed to check user Kodiak credentials", error as Error, {
-      userId,
-    });
-    return false;
-  }
 }
 
 /**
@@ -227,12 +212,13 @@ router.get(
  *
  * ENDPOINT: POST /api/bot/start
  * AUTH: JWT required + QUALIFIED_ALPHA role minimum
- * VALIDATION: strategyId (UUID), notionalAmount (positive number)
+ * VALIDATION: strategyId (UUID), exchangeAccountId (UUID, owned + ACTIVE), notionalAmount (positive number)
  *
  * REQUEST BODY:
  * ```json
  * {
  *   "strategyId": "uuid-of-user-strategy",
+ *   "exchangeAccountId": "uuid-of-active-exchange-account",
  *   "notionalAmount": 1000.50
  * }
  * ```
@@ -350,20 +336,43 @@ router.post(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = getUserId(req);
-      const { strategyId, notionalAmount } = req.body;
+      const { strategyId, notionalAmount, exchangeAccountId } = req.body;
 
       // Ensure trading engine process is running
       await serviceProvider.getEngineManager().ensureEngineRunning();
 
-      // Check if user has verified credentials first
-      const hasCredentials = await hasUserKodiakCredentials(userId);
-      if (!hasCredentials) {
-        const authError = new ValidationError(
-          "No verified Kodiak credentials found"
+      // C3a: the bot must bind to an ACTIVE account the caller owns.
+      // Validated structurally by validators.startBot (UUID); ownership +
+      // ACTIVE status are checked here and again in createAndStart so a bot
+      // can never be created unbound or against another user's account.
+      if (!exchangeAccountId) {
+        const missingError = new ValidationError(
+          "Exchange account is required. Select an account to trade with."
         );
         return res
-          .status(authError.statusCode)
-          .json(createErrorResponse(authError, getCorrelationId()));
+          .status(missingError.statusCode)
+          .json(createErrorResponse(missingError, getCorrelationId()));
+      }
+      const boundAccount =
+        await exchangeAccountRepositoryAdapter.getAccountWithSecret(
+          userId,
+          exchangeAccountId as string
+        );
+      if (!boundAccount) {
+        const notFoundError = new NotFoundError(
+          "Exchange account not found. Connect an account in Settings first."
+        );
+        return res
+          .status(notFoundError.statusCode)
+          .json(createErrorResponse(notFoundError, getCorrelationId()));
+      }
+      if (boundAccount.status !== "ACTIVE") {
+        const inactiveError = new ValidationError(
+          `Exchange account is ${boundAccount.status}. Verify it before starting a bot.`
+        );
+        return res
+          .status(inactiveError.statusCode)
+          .json(createErrorResponse(inactiveError, getCorrelationId()));
       }
 
       // Check control-plane health: Redis Streams must be available
@@ -392,7 +401,8 @@ router.post(
       const lifecycle = await botLifecycleService.createAndStart(
         userId,
         strategyId,
-        parseFloat(notionalAmount)
+        parseFloat(notionalAmount),
+        exchangeAccountId as string
       );
 
       // Log credential access for audit trail (engine will fetch
@@ -406,6 +416,7 @@ router.post(
             action: "bot_start",
             botId: lifecycle.botId,
             strategyId,
+            exchangeAccountId,
             correlationId: lifecycle.correlationId,
             timestamp: new Date().toISOString(),
           },

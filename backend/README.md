@@ -103,7 +103,8 @@ actual_state:  what the engine reports (STOPPED | STARTING | RUNNING | STOPPING 
 ### Command Flow
 
 ```
-POST /api/bot/start → 202 Accepted { botId, desiredState: RUNNING, actualState: STARTING }
+POST /api/bot/start { strategyId, exchangeAccountId, notionalAmount }
+  → 202 Accepted { botId, desiredState: RUNNING, actualState: STARTING }
 
 Backend                          Engine
    │                               │
@@ -116,6 +117,10 @@ Backend                          Engine
    │◀─── STATE_CHANGED(RUNNING) ───┤
    │                               │
 ```
+
+The bot is bound to the requested `exchange_accounts` row (C3a); the engine
+fetches that account's credentials out-of-band
+(`GET /api/bot/engine/credentials/:botId`) — never through Redis Streams.
 
 ### Lifecycle Reconciliation
 
@@ -208,7 +213,7 @@ npm run build && npm start
 
 ### Bot Management
 
-- `POST /api/bot/start` - Start a bot (returns 202 Accepted)
+- `POST /api/bot/start` - Start a bot on an explicit account (returns 202 Accepted). Body: `{ strategyId, exchangeAccountId, notionalAmount }` — the account must be owned and `ACTIVE` (400/404 otherwise); the bot binds to it
 - `POST /api/bot/stop` - Stop a bot (returns 202 Accepted)
 - `GET /api/bot/status/:botId` - Get bot status
 
@@ -225,7 +230,7 @@ npm run build && npm start
 - `GET /api/accounts` - List venue exchange accounts (metadata only, never secrets)
 - `POST /api/accounts/connect` - Connect + live-verify one account (`REGISTERED → VERIFIED`)
 - `POST /api/accounts/:id/verify` - Re-verify one account (graduates legacy envelopes)
-- `DELETE /api/accounts/:id` - Revoke one account (audited, level recompute)
+- `DELETE /api/accounts/:id` - Revoke one account (audited, level recompute); **409 while bots are bound to it** — stop or delete those bots first
 
 ### Engine (internal)
 

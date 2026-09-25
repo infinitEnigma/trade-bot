@@ -352,11 +352,35 @@ describe("Validation Middleware", () => {
       it("should validate start bot data", () => {
         req.body = {
           strategyId: "550e8400-e29b-41d4-a716-446655440000",
+          exchangeAccountId: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
           notionalAmount: 100,
         };
 
         validators.startBot(req, res, next);
         expect(next).toHaveBeenCalledTimes(1);
+      });
+
+      it("should reject a start with no exchange account (C3a)", () => {
+        req.body = {
+          strategyId: "550e8400-e29b-41d4-a716-446655440000",
+          notionalAmount: 100,
+        };
+
+        validators.startBot(req, res, next);
+        expect(next).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(400);
+      });
+
+      it("should reject a malformed exchange account id", () => {
+        req.body = {
+          strategyId: "550e8400-e29b-41d4-a716-446655440000",
+          exchangeAccountId: "not-a-uuid",
+          notionalAmount: 100,
+        };
+
+        validators.startBot(req, res, next);
+        expect(next).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(400);
       });
 
       it("should validate stop bot data", () => {

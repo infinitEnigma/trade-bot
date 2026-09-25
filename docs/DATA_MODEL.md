@@ -1,7 +1,7 @@
 # Data Model: Identity, Wallets & Exchange Accounts
 
-**Status:** C1 (identity core — migration `011_identity_core.sql`) and C2 (wallets & exchange accounts — migration `012_wallets_exchange_accounts.sql`) implemented;
-C3 pending. Everything below that C1/C2 did not land remains the target model.
+**Status:** C1 (identity core — migration `011_identity_core.sql`), C2 (wallets & exchange accounts — migration `012_wallets_exchange_accounts.sql`) and C3a (bot → account binding — migration `013_bot_account_binding.sql`) implemented;
+C3b (positions/balances generalisation, then the `kodiak_*` drops) pending. Everything below that did not land remains the target model.
 **Execution plan:** [EXCHANGE_INTEGRATION_PLAN.md](EXCHANGE_INTEGRATION_PLAN.md)
 (defines the staged PRs C1-C3 that implement this document).
 
@@ -122,11 +122,20 @@ Behaviour coupled to it:
 | `kodiak_statistics` | `UNIQUE(user_id)`                                                 |
 | `trades`            | `user_id` + optional `strategy_id`/`bot_id`; no account reference |
 
+C3a created their per-account replacements — `exchange_positions` and
+`exchange_balances`, keyed `UNIQUE(exchange_account_id, …)` — **empty**. C3b
+moves the readers onto them, repopulates from the venue sync, and only then
+drops the tables above (no row migration: legacy rows are keyed by
+`(user_id, symbol)` and are ambiguous once a user holds two accounts).
+
 ### `bot_instances` / `strategies` — migrations `001`, `003`, `007`
 
 `bot_instances(strategy_id, user_id, desired_state, actual_state, engine_id, …)`
-and `strategies(user_id, type, config JSONB, active)` have **no exchange or
-account reference**.
+and `strategies(user_id, type, config JSONB, active)` originally had **no
+exchange or account reference**. C3a adds `bot_instances.exchange_account_id`
+(nullable during expand, backfilled from the owner's earliest ACTIVE account,
+`ON DELETE RESTRICT`; `NOT NULL` in C3b), so a bot knows which account it
+trades.
 
 ### Engine credential contract
 
@@ -148,10 +157,11 @@ The backend issues an exchange-agnostic envelope
 `FetchCredentialsResult` (`engine/src/domain/bot-runtime.ts`) is this
 `EngineCredentials` union, fetched from
 `GET /api/bot/engine/credentials/:botId`
-(`backend/src/interfaces/http/bots/engine.ts`), which returns the single
-decrypted credential set for the bot's owner, at most once per
-`(botId, correlationId)`. A `lighter` envelope reaches the factory and fails
-cleanly (`UNSUPPORTED_EXCHANGE`) until workstream B lands the adapter.
+(`backend/src/interfaces/http/bots/engine.ts`), which returns the decrypted
+credential set of the bot's **bound** `exchange_accounts` row (C3a), at most
+once per `(botId, correlationId)`. A bot with no ACTIVE binding is refused
+(409) rather than served a different account's keys, and the factory dispatches
+on `exchange` (kodiak / lighter).
 
 ---
 
@@ -163,7 +173,7 @@ cleanly (`UNSUPPORTED_EXCHANGE`) until workstream B lands the adapter.
 | P2  | Vendor-named tables + Orderly validation    | Lighter credentials (`accountIndex`, `apiKeyIndex`, `privateKey`, `env`) fit nowhere; each new venue would need a new table and endpoints |
 | P3  | `wallet_addresses UNIQUE(user_id)`          | One wallet per user; no chain column, so the same address on two chains cannot be represented, and there is no primary-wallet concept     |
 | P4  | Identity == email                           | No username/nick, no path for social logins; email is required, and JWT claims carry it                                                   |
-| P5  | No bot → account link                       | The engine cannot know which account a bot trades; `/credentials/:botId` has no account parameter                                         |
+| P5  | No bot → account link                       | The engine cannot know which account a bot trades; `/credentials/:botId` has no account parameter — **fixed by C3a**: bots carry `exchange_account_id` and the endpoint resolves it |
 | P6  | `user_level` derived from a vendor join     | With several accounts, one revoked account would flip the whole user, and per-account status is invisible                                 |
 | P7  | Positions/balances keyed by `user_id`       | `UNIQUE(user_id, symbol)` collides when two accounts hold the same symbol                                                                 |
 | P8  | Disconnect deletes credentials + downgrades | Disconnecting one account must be per-account, audited, and must not change global level unless no verified account remains               |
@@ -358,6 +368,12 @@ _Benefit:_ no compatibility layer, roughly half the work.
 > "log in by username" acceptance is superseded by the revised D2/D3 decisions
 > below — `user_identities` is the substrate that makes username/social login
 > a switch-on later, not part of C1.
+
+> **C3a landed** (`013_bot_account_binding.sql`, plan §3 C3a): phase 5 — a bot
+> binds to one ACTIVE `exchange_accounts` row and `/credentials/:botId` issues
+> that row's envelope. Phase 6 (C3b) is what moves the position/balance readers,
+> makes the binding `NOT NULL` and drops the `kodiak_*` tables; until then the
+> two new tables stay empty on purpose.
 
 Phases 1-4 are prerequisites for the Lighter engine work (extended
 `ExchangeClient` + `LighterClient`); Phase 5 is what lets the engine trade a

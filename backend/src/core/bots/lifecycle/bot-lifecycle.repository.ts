@@ -23,7 +23,7 @@ import {
 export class BotLifecycleRepository {
   async findBot(botId: string): Promise<BotRow | null> {
     const result = await query<BotRow>(
-      "SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id FROM bot_instances WHERE id = $1",
+      "SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id, exchange_account_id FROM bot_instances WHERE id = $1",
       [botId]
     );
     return result.rows[0] ?? null;
@@ -222,7 +222,7 @@ export class BotLifecycleRepository {
   /** All RUNNING bots assigned to an engine (heartbeat-loss supervision). */
   async findRunningBotsForEngine(engineId: string): Promise<BotRow[]> {
     const result = await query<BotRow>(
-      `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id
+      `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id, exchange_account_id
              FROM bot_instances
              WHERE engine_id = $1 AND actual_state = 'RUNNING'`,
       [engineId]
@@ -237,7 +237,7 @@ export class BotLifecycleRepository {
     }
     const placeholders = botIds.map((_, i) => `$${i + 1}`).join(", ");
     const result = await query<BotRow>(
-      `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id
+      `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id, exchange_account_id
              FROM bot_instances
              WHERE id IN (${placeholders})`,
       botIds
@@ -280,13 +280,17 @@ export class BotLifecycleRepository {
   }
 
   /** Insert a bot instance in the deterministic initial STOPPED state; returns its id. */
-  async insertBotInstance(strategyId: string, userId: string): Promise<string> {
+  async insertBotInstance(
+    strategyId: string,
+    userId: string,
+    exchangeAccountId: string
+  ): Promise<string> {
     const insertResult = await query<{ id: string }>(
       `INSERT INTO bot_instances
-                (strategy_id, user_id, status, running_time, total_trades, total_pnl, desired_state, actual_state)
-             VALUES ($1, $2, 'STOPPED', 0, 0, 0, 'STOPPED', 'STOPPED')
+                (strategy_id, user_id, exchange_account_id, status, running_time, total_trades, total_pnl, desired_state, actual_state)
+             VALUES ($1, $2, $3, 'STOPPED', 0, 0, 0, 'STOPPED', 'STOPPED')
              RETURNING id`,
-      [strategyId, userId]
+      [strategyId, userId, exchangeAccountId]
     );
     return insertResult.rows[0].id;
   }
@@ -298,7 +302,7 @@ export class BotLifecycleRepository {
   /** Bots the user wants stopped but the engine still reports as active. */
   async findDesiredStoppedButActiveBots(): Promise<BotRow[]> {
     const result = await query<BotRow>(
-      `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id
+      `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id, exchange_account_id
              FROM bot_instances
              WHERE desired_state = 'STOPPED'
                AND actual_state IN ('STARTING', 'RUNNING', 'STOPPING')`
@@ -313,7 +317,7 @@ export class BotLifecycleRepository {
    */
   async findStuckTransitionalBots(graceSeconds: number): Promise<BotRow[]> {
     const result = await query<BotRow>(
-      `SELECT b.id, b.user_id, b.strategy_id, b.status, b.desired_state, b.actual_state, b.engine_id
+      `SELECT b.id, b.user_id, b.strategy_id, b.status, b.desired_state, b.actual_state, b.engine_id, b.exchange_account_id
              FROM bot_instances b
              WHERE b.actual_state IN ('STARTING', 'STOPPING')
                AND b.state_changed_at < NOW() - make_interval(secs => $1)
@@ -329,7 +333,7 @@ export class BotLifecycleRepository {
   /** Bots the user wants running but whose actual state is unconfirmed (ERROR/UNKNOWN). */
   async findDesiredRunningUnconfirmedBots(): Promise<BotRow[]> {
     const result = await query<BotRow>(
-      `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id
+      `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id, exchange_account_id
              FROM bot_instances
              WHERE desired_state = 'RUNNING'
                AND actual_state IN ('ERROR', 'UNKNOWN')`

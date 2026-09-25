@@ -264,6 +264,14 @@ export const validators = {
       strategyId: commonSchemas.uuid.messages({
         "any.required": "Strategy ID is required",
       }),
+      // C3a: bot→account binding — the venue account the bot trades on.
+      // Required: with many accounts per user the engine cannot guess.
+      // Auto-select UX lives in the frontend (single ACTIVE account);
+      // the backend never guesses here.
+      exchangeAccountId: commonSchemas.uuid.messages({
+        "any.required": "Exchange account is required",
+        "string.uuid": "Invalid exchange account format",
+      }),
       notionalAmount: Joi.number().positive().precision(8).required().messages({
         "number.base": "Notional amount must be a number",
         "number.positive": "Notional amount must be positive",

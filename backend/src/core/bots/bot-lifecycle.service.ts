@@ -35,6 +35,7 @@ import {
   EngineLifecycleEventHandler,
 } from "./lifecycle/bot-event-processor";
 import { BotLifecycleRepository } from "./lifecycle/bot-lifecycle.repository";
+import { exchangeAccountRepositoryAdapter } from "../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
 import {
   BotLifecycleResult,
   BotRow,
@@ -179,11 +180,17 @@ export class BotLifecycleService {
   /**
    * Create a new bot instance for a strategy and start it.
    * The instance is created in actual STOPPED, then transitioned to STARTING.
+   *
+   * C3a: the caller supplies the ACTIVE venue account the bot trades on.
+   * Ownership + ACTIVE status are validated here (defence in depth — the
+   * route also checks) so a bot can never be created unbound or against
+   * another user's / unverified account.
    */
   async createAndStart(
     userId: string,
     strategyId: string,
-    notionalAmount: number
+    notionalAmount: number,
+    exchangeAccountId: string
   ): Promise<BotLifecycleResult> {
     // Strategy must exist and belong to the user.
     const strategyExists = await this.repository.strategyExistsForUser(
@@ -196,6 +203,26 @@ export class BotLifecycleService {
       throw error;
     }
 
+    // Account must exist, belong to the user, and be ACTIVE (verified).
+    const account = await exchangeAccountRepositoryAdapter.getAccountWithSecret(
+      userId,
+      exchangeAccountId
+    );
+    if (!account) {
+      const error = new Error(
+        "Exchange account not found. Connect an account in Settings first."
+      );
+      (error as Error & { statusCode?: number }).statusCode = 404;
+      throw error;
+    }
+    if (account.status !== "ACTIVE") {
+      const error = new Error(
+        `Exchange account is ${account.status}. Verify it before starting a bot.`
+      );
+      (error as Error & { statusCode?: number }).statusCode = 400;
+      throw error;
+    }
+
     // One active bot per strategy.
     const activeBot =
       await this.repository.findActiveBotForStrategy(strategyId);
@@ -205,8 +232,13 @@ export class BotLifecycleService {
       throw error;
     }
 
-    // Create the instance in the deterministic initial state.
-    const botId = await this.repository.insertBotInstance(strategyId, userId);
+    // Create the instance in the deterministic initial state, bound to the
+    // venue account (C3a, migration 013).
+    const botId = await this.repository.insertBotInstance(
+      strategyId,
+      userId,
+      exchangeAccountId
+    );
 
     await this.repository.recordLifecycleEvent(botId, {
       eventType: "BOT_CREATED",
@@ -214,7 +246,7 @@ export class BotLifecycleService {
       toState: "STOPPED",
       correlationId: null,
       messageId: null,
-      metadata: { userId, strategyId, notionalAmount },
+      metadata: { userId, strategyId, notionalAmount, exchangeAccountId },
     });
 
     // Delegate to start() so the transition/command logic has a single home.

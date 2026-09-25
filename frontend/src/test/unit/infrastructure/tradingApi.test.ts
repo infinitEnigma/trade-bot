@@ -188,8 +188,9 @@ describe("tradingApi", () => {
     });
 
     describe("startBot", () => {
-      it("should call start bot endpoint", async () => {
+      it("should call start bot endpoint with the chosen account and size", async () => {
         const strategyId = "1";
+        const exchangeAccountId = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
         const mockResponse = {
           success: true,
           data: { botId: "1", status: "running" },
@@ -197,10 +198,19 @@ describe("tradingApi", () => {
 
         mockPost.mockResolvedValue({ data: mockResponse });
 
-        const result = await tradingApi.startBot(strategyId);
+        const result = await tradingApi.startBot(
+          strategyId,
+          exchangeAccountId,
+          1000
+        );
 
         expect(httpClient.getClient).toHaveBeenCalled();
-        expect(mockPost).toHaveBeenCalledWith("/api/bot/start", { strategyId });
+        // C3a: the start request is account-scoped — the backend never guesses.
+        expect(mockPost).toHaveBeenCalledWith("/api/bot/start", {
+          strategyId,
+          exchangeAccountId,
+          notionalAmount: 1000,
+        });
         expect(result).toEqual(mockResponse);
       });
     });

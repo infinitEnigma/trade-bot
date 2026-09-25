@@ -29,6 +29,7 @@ import { lighterVerifierFromEnv } from "../infrastructure/external/exchange-acco
 import { UserLevelService } from "./auth/user-level.service";
 import { walletRepositoryAdapter } from "../infrastructure/adapters/repositories/wallet-repository.adapter";
 import { exchangeAccountRepositoryAdapter } from "../infrastructure/adapters/repositories/exchange-account-repository.adapter";
+import { query as poolQuery } from "../database/pool";
 import { encryptionService } from "../infrastructure/security/encryption.service";
 import { kodiakIntegrationService } from "../infrastructure/external/kodiak-integration.service";
 import { BotManagementService } from "./bots/bot-management.service";
@@ -382,14 +383,26 @@ export class ServiceFactory implements IServiceFactory {
         }),
         userLevel: this.createUserLevelService(),
         auditLogRepository: diContainer.auditLogRepository,
+        // C3a: revoke is blocked while bots bind to the account (FK RESTRICT).
+        boundBots: {
+          countBoundBots: async (userId: string, accountId: string) => {
+            const result = await poolQuery<{ count: string }>(
+              `SELECT COUNT(*) AS count FROM bot_instances WHERE user_id = $1 AND exchange_account_id = $2`,
+              [userId, accountId]
+            );
+            return parseInt(result.rows[0]?.count ?? "0", 10);
+          },
+        },
       });
       this.logger.debug("Exchange Account Service created with dependencies", {
         service: "ExchangeAccountService",
         dependencies: [
           "exchangeAccountRepository",
-          "encryptionService",
-          "kodiakIntegrationService",
-          "userLevelService",
+          "encryption",
+          "verifyConnectivity",
+          "userLevel",
+          "auditLogRepository",
+          "boundBots",
         ],
       });
       return service;

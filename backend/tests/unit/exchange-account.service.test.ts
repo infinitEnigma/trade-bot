@@ -92,10 +92,9 @@ describe("ExchangeAccountService", () => {
       const deps = createDeps();
       const service = new ExchangeAccountService(deps);
 
-      const result = await service.connectAccount(
-        "test-user-id",
-        { exchange: "not-a-venue" } as unknown as ConnectExchangeAccountRequest
-      );
+      const result = await service.connectAccount("test-user-id", {
+        exchange: "not-a-venue",
+      } as unknown as ConnectExchangeAccountRequest);
 
       expect(result.success).toBe(false);
       expect(result.error).toBe("Unsupported exchange");
@@ -125,7 +124,10 @@ describe("ExchangeAccountService", () => {
       const deps = createDeps();
       const service = new ExchangeAccountService(deps);
 
-      const result = await service.connectAccount("test-user-id", kodiakRequest);
+      const result = await service.connectAccount(
+        "test-user-id",
+        kodiakRequest
+      );
 
       // Envelope carries the version + venue discriminator plus the payload.
       const envelope = JSON.parse(
@@ -138,9 +140,7 @@ describe("ExchangeAccountService", () => {
         apiKey: "ed25519:public-key",
       });
 
-      expect(
-        deps.exchangeAccountRepository.createPending
-      ).toHaveBeenCalledWith(
+      expect(deps.exchangeAccountRepository.createPending).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: "test-user-id",
           credentialsEncrypted: "ciphertext",
@@ -169,7 +169,10 @@ describe("ExchangeAccountService", () => {
       });
       const service = new ExchangeAccountService(deps);
 
-      const result = await service.connectAccount("test-user-id", kodiakRequest);
+      const result = await service.connectAccount(
+        "test-user-id",
+        kodiakRequest
+      );
 
       expect(result.success).toBe(false);
       expect(result.error).toBe("Bad credentials");
@@ -192,7 +195,10 @@ describe("ExchangeAccountService", () => {
       );
       const service = new ExchangeAccountService(deps);
 
-      const result = await service.connectAccount("test-user-id", kodiakRequest);
+      const result = await service.connectAccount(
+        "test-user-id",
+        kodiakRequest
+      );
 
       expect(result.success).toBe(false);
       expect(result.error).toBe("Account already connected");
@@ -205,7 +211,10 @@ describe("ExchangeAccountService", () => {
       );
       const service = new ExchangeAccountService(deps);
 
-      const result = await service.connectAccount("test-user-id", kodiakRequest);
+      const result = await service.connectAccount(
+        "test-user-id",
+        kodiakRequest
+      );
 
       expect(result.success).toBe(false);
       expect(result.error).toBe("Encryption failed");
@@ -427,6 +436,44 @@ describe("ExchangeAccountService", () => {
       expect(result.success).toBe(false);
       expect(result.message).toBe("Account not found");
       expect(deps.userLevel.recompute).not.toHaveBeenCalled();
+    });
+
+    it("should block the revoke while bots are bound (FK RESTRICT, C3a)", async () => {
+      const deps = createDeps({
+        boundBots: { countBoundBots: jest.fn().mockResolvedValue(2) },
+      });
+      const service = new ExchangeAccountService(deps);
+
+      const result = await service.revokeAccount("test-user-id", "account-1");
+
+      expect(result.success).toBe(false);
+      expect(result.boundBots).toBe(2);
+      expect(result.message).toContain("2 bots bound");
+      // Nothing is deleted and the level is untouched: the account still holds
+      // ACTIVE bots.
+      expect(
+        deps.exchangeAccountRepository.deleteAccount
+      ).not.toHaveBeenCalled();
+      expect(deps.userLevel.recompute).not.toHaveBeenCalled();
+    });
+
+    it("should revoke normally when no bot is bound", async () => {
+      const deps = createDeps({
+        boundBots: { countBoundBots: jest.fn().mockResolvedValue(0) },
+      });
+      const service = new ExchangeAccountService(deps);
+
+      const result = await service.revokeAccount("test-user-id", "account-1");
+
+      expect(result.success).toBe(true);
+      expect(deps.boundBots?.countBoundBots).toHaveBeenCalledWith(
+        "test-user-id",
+        "account-1"
+      );
+      expect(deps.exchangeAccountRepository.deleteAccount).toHaveBeenCalledWith(
+        "test-user-id",
+        "account-1"
+      );
     });
   });
 });

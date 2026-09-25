@@ -76,10 +76,21 @@ export const tradingApi = {
     );
   },
 
-  async startBot(strategyId: string) {
-    const response = await httpClient
-      .getClient()
-      .post("/api/bot/start", { strategyId });
+  /**
+   * Start (or restart) a bot on an explicit venue account (C3a).
+   * The account and size are required: with many accounts per user the
+   * backend refuses to guess which one trades.
+   */
+  async startBot(
+    strategyId: string,
+    exchangeAccountId: string,
+    notionalAmount: number
+  ) {
+    const response = await httpClient.getClient().post("/api/bot/start", {
+      strategyId,
+      exchangeAccountId,
+      notionalAmount,
+    });
     return response.data;
   },
 
