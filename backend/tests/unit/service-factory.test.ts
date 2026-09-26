@@ -60,6 +60,9 @@ describe("Service Factory Interface", () => {
       userRepository: {} as any,
       cacheService: {} as any,
       passwordService: {} as any,
+      // L4: the factory passes loggerService into ExchangeAccountService.
+      loggerService: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+      auditLogRepository: {} as any,
     };
 
     // Mock the diContainer import
@@ -248,6 +251,8 @@ describe("Service Factory Interface", () => {
       const mockExchangeAccountService = { connectAccount: jest.fn() };
 
       // Mock the ExchangeAccountService constructor
+      // L4: the factory must wire the logger (the DI container already does)
+      // or connect/verify/revoke stay invisible in the logs.
       (
         ExchangeAccountService as jest.MockedClass<typeof ExchangeAccountService>
       ).mockImplementation(deps => {
@@ -257,8 +262,12 @@ describe("Service Factory Interface", () => {
           "verifyConnectivity",
           "userLevel",
           "auditLogRepository",
+          "logger",
           "boundBots",
         ]);
+        expect((deps as { logger?: unknown }).logger).toBe(
+          mockDiContainer.loggerService
+        );
         return mockExchangeAccountService as any;
       });
 
@@ -275,6 +284,7 @@ describe("Service Factory Interface", () => {
             "verifyConnectivity",
             "userLevel",
             "auditLogRepository",
+            "logger",
             "boundBots",
           ],
         })

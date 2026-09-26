@@ -167,7 +167,7 @@ const DEFAULT_NOTIONAL_AMOUNT = 1000;
  * AccountSizePicker (C3a)
  *
  * The venue account a bot trades on plus the notional size. Both are required
- * by `POST /api/bot/start`: with many accounts per user the backend refuses to
+ * by `POST /api/bot/management/start`: with many accounts per user the backend refuses to
  * guess which one the engine should trade.
  */
 const AccountSizePicker: React.FC<{

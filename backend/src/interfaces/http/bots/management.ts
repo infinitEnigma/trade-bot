@@ -21,14 +21,14 @@
  * - End-to-end encryption using session keys
  * - Comprehensive audit logging for all bot operations
  *
- * API ENDPOINTS:
- * - GET /instances - List user's bot instances
- * - POST /start - Start bot with secure credential transmission
- * - POST /stop - Graceful bot shutdown
- * - GET /status/:botId - Real-time bot status with reconciliation
- * - POST /status/sync - Manual status synchronization
- * - GET /performance/:botId - Performance metrics and analytics
- * - POST /emergency-stop - Critical safety operations
+ * API ENDPOINTS (served under /api/bot/management — see bots/index.ts):
+ * - GET /api/bot/management/instances - List user's bot instances
+ * - POST /api/bot/management/start - Start bot with secure credential transmission
+ * - POST /api/bot/management/stop - Graceful bot shutdown
+ * - GET /api/bot/management/status/:botId - Real-time bot status with reconciliation
+ * - POST /api/bot/management/status/sync - Manual status synchronization
+ * - GET /api/bot/management/performance/:botId - Performance metrics and analytics
+ * - POST /api/bot/management/emergency-stop - Critical safety operations
  *
  * WEBSOCKET INTEGRATION:
  * - Real-time bot status updates via Socket.IO
@@ -116,7 +116,7 @@ function getUserId(req: AuthenticatedRequest): string {
  * Retrieves all bot instances belonging to the authenticated user.
  * Returns comprehensive bot information including strategy details and status.
  *
- * ENDPOINT: GET /api/bot/instances
+ * ENDPOINT: GET /api/bot/management/instances
  * AUTH: JWT required
  * ROLE: Any authenticated user
  *
@@ -210,7 +210,7 @@ router.get(
  * Creates and starts a new bot instance with comprehensive security validations,
  * position risk assessment, and secure credential transmission to the bot engine.
  *
- * ENDPOINT: POST /api/bot/start
+ * ENDPOINT: POST /api/bot/management/start
  * AUTH: JWT required + QUALIFIED_ALPHA role minimum
  * VALIDATION: strategyId (UUID), exchangeAccountId (UUID, owned + ACTIVE), notionalAmount (positive number)
  *
@@ -460,7 +460,7 @@ router.post(
   }
 );
 
-// POST /api/bot/stop
+// POST /api/bot/management/stop
 router.post(
   "/stop",
   authMiddleware,
@@ -535,7 +535,7 @@ router.post(
   }
 );
 
-// GET /api/bot/status/:botId
+// GET /api/bot/management/status/:botId
 router.get(
   "/status/:botId",
   authMiddleware,
@@ -588,7 +588,7 @@ router.get(
   }
 );
 
-// POST /api/bot/status/sync
+// POST /api/bot/management/status/sync
 router.post(
   "/status/sync",
   authMiddleware,
@@ -645,7 +645,7 @@ router.post(
   }
 );
 
-// GET /api/bot/performance/:botId
+// GET /api/bot/management/performance/:botId
 router.get(
   "/performance/:botId",
   authMiddleware,
@@ -676,33 +676,7 @@ router.get(
   }
 );
 
-// GET /api/bot/engine/status
-router.get(
-  "/engine/status",
-  authMiddleware,
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const _userId = getUserId(req);
-      const status = await serviceProvider.getEngineManager().getEngineStatus();
-
-      res.json({
-        success: true,
-        data: status,
-        timestamp: Date.now(),
-      });
-    } catch (err) {
-      logger.error("Get engine status error", err as Error, {
-        userId: req.user?.userId,
-      });
-      const dbError = new DatabaseError("Failed to get engine status");
-      res
-        .status(dbError.statusCode)
-        .json(createErrorResponse(dbError, getCorrelationId()));
-    }
-  }
-);
-
-// POST /api/bot/emergency-stop
+// POST /api/bot/management/emergency-stop
 router.post(
   "/emergency-stop",
   authMiddleware,

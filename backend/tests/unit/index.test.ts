@@ -268,14 +268,14 @@ describe("Application Entry Point (index.ts)", () => {
       // Clear the module cache first
       jest.resetModules();
 
-      // Mock RouteConfig to reject
-      jest.mock("../../src/server/route-config", () => ({
-        RouteConfig: {
-          register: jest
-            .fn()
-            .mockRejectedValue(new Error("Route registration failed")),
-        },
-      }));
+      // Route registration is synchronous (L3): a failure throws inline while
+      // index.ts evaluates, so the dynamic import itself must reject. Mutate
+      // the file-level automock instance — a jest.mock factory here would
+      // persist across resetModules and poison every later test.
+      const { RouteConfig } = require("../../src/server/route-config");
+      RouteConfig.register.mockImplementation(() => {
+        throw new Error("Route registration failed");
+      });
 
       // Mock the HTTP server
       const httpModule = require("http");
@@ -292,15 +292,15 @@ describe("Application Entry Point (index.ts)", () => {
 
       httpModule.createServer = jest.fn().mockReturnValue(serverMock);
 
-      const module = await import("../../src/index");
-      // We need to give the async IIFE time to execute
-      await new Promise(resolve => setTimeout(resolve, 0));
-
-      // Since we can't directly access routeRegistrationPromise, we'll check if process.exitCode is set
-      expect(process.exitCode).toBe(1);
-
-      httpModule.createServer = originalCreateServer;
-      process.exitCode = 0; // Reset
+      try {
+        await expect(import("../../src/index")).rejects.toThrow(
+          "Route registration failed"
+        );
+      } finally {
+        RouteConfig.register.mockReset();
+        httpModule.createServer = originalCreateServer;
+        process.exitCode = 0; // Reset
+      }
     });
 
     it("should handle server shutdown correctly", async () => {

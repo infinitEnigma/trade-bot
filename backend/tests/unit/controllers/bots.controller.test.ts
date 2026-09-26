@@ -560,25 +560,13 @@ describe("Bots Controller", () => {
       });
     });
 
-    describe("GET /api/bot/management/engine/status", () => {
-      it("should return engine status", async () => {
-        const mockEngineStatus = {
-          running: true,
-          status: "healthy",
-        };
+    it("should 404 the retired duplicate management engine-status (L1)", async () => {
+      // Single canonical engine-status lives at /api/bot/engine/status.
+      const response = await request(app)
+        .get("/api/bot/management/engine/status")
+        .expect(404);
 
-        const engineManager =
-          require("../../../src/core/service-provider").serviceProvider.getEngineManager();
-        engineManager.getEngineStatus.mockResolvedValue(mockEngineStatus);
-
-        const response = await request(app)
-          .get("/api/bot/management/engine/status")
-          .expect(200);
-
-        expect(response.body.success).toBe(true);
-        expect(response.body.data).toEqual(mockEngineStatus);
-        expect(engineManager.getEngineStatus).toHaveBeenCalled();
-      });
+      expect(response.body.success).toBeFalsy();
     });
   });
 

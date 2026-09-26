@@ -206,7 +206,7 @@ describe("tradingApi", () => {
 
         expect(httpClient.getClient).toHaveBeenCalled();
         // C3a: the start request is account-scoped — the backend never guesses.
-        expect(mockPost).toHaveBeenCalledWith("/api/bot/start", {
+        expect(mockPost).toHaveBeenCalledWith("/api/bot/management/start", {
           strategyId,
           exchangeAccountId,
           notionalAmount: 1000,
@@ -228,7 +228,7 @@ describe("tradingApi", () => {
         const result = await tradingApi.stopBot(botId);
 
         expect(httpClient.getClient).toHaveBeenCalled();
-        expect(mockPost).toHaveBeenCalledWith("/api/bot/stop", { botId });
+        expect(mockPost).toHaveBeenCalledWith("/api/bot/management/stop", { botId });
         expect(result).toEqual(mockResponse);
       });
     });
@@ -246,7 +246,7 @@ describe("tradingApi", () => {
         const result = await tradingApi.emergencyStop(botId);
 
         expect(httpClient.getClient).toHaveBeenCalled();
-        expect(mockPost).toHaveBeenCalledWith("/api/bot/emergency-stop", {
+        expect(mockPost).toHaveBeenCalledWith("/api/bot/management/emergency-stop", {
           botId,
         });
         expect(result).toEqual(mockResponse);

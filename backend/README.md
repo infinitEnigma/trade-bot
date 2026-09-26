@@ -103,7 +103,7 @@ actual_state:  what the engine reports (STOPPED | STARTING | RUNNING | STOPPING 
 ### Command Flow
 
 ```
-POST /api/bot/start { strategyId, exchangeAccountId, notionalAmount }
+POST /api/bot/management/start { strategyId, exchangeAccountId, notionalAmount }
   → 202 Accepted { botId, desiredState: RUNNING, actualState: STARTING }
 
 Backend                          Engine
@@ -211,11 +211,12 @@ npm run build && npm start
 - `POST /api/auth/refresh` - Refresh access token
 - `POST /api/auth/logout` - Logout
 
-### Bot Management
+### Bot Management (served under `/api/bot/management` — see `src/interfaces/http/bots/index.ts`)
 
-- `POST /api/bot/start` - Start a bot on an explicit account (returns 202 Accepted). Body: `{ strategyId, exchangeAccountId, notionalAmount }` — the account must be owned and `ACTIVE` (400/404 otherwise); the bot binds to it
-- `POST /api/bot/stop` - Stop a bot (returns 202 Accepted)
-- `GET /api/bot/status/:botId` - Get bot status
+- `GET /api/bot/management/instances` - List the caller's bot instances
+- `POST /api/bot/management/start` - Start a bot on an explicit account (returns 202 Accepted). Body: `{ strategyId, exchangeAccountId, notionalAmount }` — the account must be owned and `ACTIVE` (400/404 otherwise); the bot binds to it
+- `POST /api/bot/management/stop` - Stop a bot (returns 202 Accepted)
+- `GET /api/bot/management/status/:botId` - Get bot status
 
 ### User Profile & Access Tiers
 

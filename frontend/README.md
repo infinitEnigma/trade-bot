@@ -199,7 +199,7 @@ The frontend interacts with the bot lifecycle system:
 ```
 Frontend                    Backend                     Engine
    │                           │                          │
-   ├── POST /api/bot/start ───▶│                          │
+   ├── POST /api/bot/management/start ───▶│                          │
    │◀── 202 Accepted ──────────│                          │
    │   { desiredState: RUNNING │                          │
    │     actualState: STARTING }│                          │
@@ -208,7 +208,7 @@ Frontend                    Backend                     Engine
    │◄══ WebSocket: bot.stateChanged (STARTING) ═══════════│
    │◄══ WebSocket: bot.stateChanged (RUNNING) ════════════│
    │                           │                          │
-   ├── POST /api/bot/stop ────▶│                          │
+   ├── POST /api/bot/management/stop ────▶│                          │
    │◀── 202 Accepted ──────────│                          │
    │   { desiredState: STOPPED │                          │
    │     actualState: STOPPING }│                          │

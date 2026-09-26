@@ -4,6 +4,19 @@ import { Express } from "express";
 import { ContextAwareLogger } from "../core/logging/context-aware-logger.service";
 import { AuthenticatedRequest } from "../interfaces/middleware";
 import { UserLevel } from "@trade-bot/shared";
+// L3: static imports keep middleware registration synchronous and ordered.
+// Dynamic `await import()` inside configure* let context/http logging land
+// after already-mounted routers (auth had no HTTP logs on 2026-09-26).
+import {
+  csrfMiddleware,
+  csrfTokenMiddleware,
+} from "../interfaces/middleware/csrf.middleware";
+import {
+  RateLimiters,
+  createRateLimiter,
+} from "../infrastructure/security/rate-limiter.service";
+import { kodiakRequestQueue } from "../infrastructure/external/kodiak-queue";
+import { authMiddleware } from "../interfaces/middleware/auth.middleware";
 
 // Create context-aware logger instance for middleware operations
 const middlewareLogger = new ContextAwareLogger("middleware-config");
@@ -61,10 +74,7 @@ export class MiddlewareConfig {
   /**
    * Configure CSRF token generation for all API routes
    */
-  private static async configureCsrfProtection(app: Express): Promise<void> {
-    const { csrfTokenMiddleware } =
-      await import("../interfaces/middleware/csrf.middleware");
-
+  private static configureCsrfProtection(app: Express): void {
     // CSRF token generation for all API routes
     app.use("/api", csrfTokenMiddleware);
 
@@ -79,10 +89,7 @@ export class MiddlewareConfig {
   /**
    * Configure CSRF validation for state-changing operations
    */
-  private static async configureCsrfValidation(app: Express): Promise<void> {
-    const { csrfMiddleware } =
-      await import("../interfaces/middleware/csrf.middleware");
-
+  private static configureCsrfValidation(app: Express): void {
     // CSRF validation for ALL state-changing operations (browser routes)
     // Note: Bot engine routes are excluded because they use API key auth
     app.use("/api/user", csrfMiddleware);
@@ -111,9 +118,7 @@ export class MiddlewareConfig {
   /**
    * Configure per-endpoint rate limiting with user-based scaling
    */
-  private static async configureRateLimiting(app: Express): Promise<void> {
-    const { RateLimiters } = await import("../infrastructure/index");
-
+  private static configureRateLimiting(app: Express): void {
     // 🔐 CRITICAL: Authentication endpoints MUST be excluded from general rate limiting
     // They use specialized auth-aware rate limiting instead
 
@@ -158,11 +163,7 @@ export class MiddlewareConfig {
   /**
    * Configure specialized Kodiak API protection
    */
-  private static async configureKodiakProtection(app: Express): Promise<void> {
-    const { kodiakRequestQueue } =
-      await import("../infrastructure/external/kodiak-queue");
-    const { authMiddleware } =
-      await import("../interfaces/middleware/auth.middleware");
+  private static configureKodiakProtection(app: Express): void {
     // 🎯 KODIAK-SPECIFIC PROTECTION: Request queuing + rate limiting for trading routes ONLY
     // EXCLUDE chart/market data routes - they need fast updates for real-time charts
     // C2: the old /api/user/kodiak/* routes were deleted; these are their
@@ -193,15 +194,14 @@ export class MiddlewareConfig {
       });
 
       // Additional rate limiting per Kodiak account
-      app.use(route, async (req, res, next) => {
-        // Use connection-specific rate limiter for connect endpoint
-        // Use data-specific rate limiter for other endpoints
-        const rateLimiter =
-          route === "/api/accounts/connect"
-            ? await this.createKodiakConnectionRateLimiter()
-            : await this.createKodiakRateLimiter();
-        rateLimiter(req, res, next);
-      });
+      // Pre-built once at startup: creating a limiter per request leaks
+      // memory (each createRateLimiter registers a new instance).
+      app.use(
+        route,
+        route === "/api/accounts/connect"
+          ? MiddlewareConfig.kodiakConnectionLimiter
+          : MiddlewareConfig.kodiakDataLimiter
+      );
     });
 
     middlewareLogger.debug(
@@ -214,13 +214,12 @@ export class MiddlewareConfig {
   }
 
   /**
-   * Create specialized rate limiter for Kodiak routes
+   * Pre-built Kodiak limiters (built once at startup; creating one per
+   * request leaks limiter instances).
    */
-  private static async createKodiakRateLimiter() {
-    const { createRateLimiter } =
-      await import("../infrastructure/security/rate-limiter.service");
-
-    return createRateLimiter("kodiak-data", {
+  private static readonly kodiakDataLimiter = createRateLimiter(
+    "kodiak-data",
+    {
       max: 60, // 60 requests per minute per user (1 req/sec)
       windowMs: 60000, // 1 minute window
       message: "Kodiak data rate limit exceeded",
@@ -232,16 +231,30 @@ export class MiddlewareConfig {
         [UserLevel.REGISTERED]: 45, // Registered users: 45 req/min (0.75 req/sec)
         [UserLevel.VERIFIED]: 60, // Verified users: 60 req/min (1 req/sec)
       },
-    });
-  }
+    }
+  );
+
+  private static readonly kodiakConnectionLimiter = createRateLimiter(
+    "kodiak-connection",
+    {
+      max: 30, // 60 requests per minute for connection operations
+      windowMs: 60000, // 1 minute window
+      message: "Kodiak connection rate limit exceeded",
+      progressiveBackoff: true,
+      failOpen: false, // Allow if rate limiting fails - connection should work
+      enableUserBasedLimits: true,
+      userLimits: {
+        [UserLevel.BASIC]: 2, // Basic users: 2 req/min
+        [UserLevel.REGISTERED]: 15, // Registered users: 20 req/min
+        [UserLevel.VERIFIED]: 30, // Verified users: 60 req/min
+      },
+    }
+  );
 
   /**
    * Create status-specific rate limiter with higher limits
    */
-  private static async createKodiakStatusRateLimiter() {
-    const { createRateLimiter } =
-      await import("../infrastructure/security/rate-limiter.service");
-
+  private static createKodiakStatusRateLimiter() {
     return createRateLimiter("kodiak-status", {
       max: 300, // 300 requests per minute for status checks
       windowMs: 60000, // 1 minute window
@@ -260,10 +273,7 @@ export class MiddlewareConfig {
   /**
    * Create connection-specific rate limiter with moderate limits
    */
-  private static async createKodiakConnectionRateLimiter() {
-    const { createRateLimiter } =
-      await import("../infrastructure/security/rate-limiter.service");
-
+  private static createKodiakConnectionRateLimiter() {
     return createRateLimiter("kodiak-connection", {
       max: 30, // 60 requests per minute for connection operations
       windowMs: 60000, // 1 minute window
@@ -325,11 +335,12 @@ export class MiddlewareConfig {
 
   /**
    * Configure all middleware for the Express application
+   *
+   * Synchronous: every app.use runs inline in a fixed order so the
+   * middleware stack is deterministic (L3). Nothing here may await a
+   * dynamic import.
    */
-  static async configure(
-    app: Express,
-    options: MiddlewareConfigOptions = {}
-  ): Promise<void> {
+  static configure(app: Express, options: MiddlewareConfigOptions = {}): void {
     const config = { ...this.DEFAULT_OPTIONS, ...options };
 
     // Reset configured middleware tracking
@@ -373,6 +384,36 @@ export class MiddlewareConfig {
       activityTrackingEnabled: config.enableActivityTracking,
       operation: "middleware_setup",
     });
+  }
+
+  /**
+   * Boot-order assertion (L3): fail fast if the middleware stack does not
+   * have request context + HTTP logging before the first router. Called from
+   * the boot path after ExpressConfig + MiddlewareConfig + RouteConfig run.
+   * Layers are matched by handler identity — Express names anonymous arrow
+   * middleware "bound dispatch", so layer.name is useless here.
+   */
+  static assertBootOrder(app: Express): void {
+    // Express 5 keeps the stack on app.router (not app._router).
+    const stack = (app as unknown as { router?: { stack?: unknown[] } })
+      .router?.stack;
+    if (!Array.isArray(stack) || stack.length === 0) return;
+    const handleName = (layer: unknown) =>
+      (layer as { handle?: { name?: string } })?.handle?.name ?? "";
+    const names = stack.map(handleName);
+    const contextIdx = names.indexOf("contextMiddleware");
+    const httpIdx = names.indexOf("httpLogger");
+    if (contextIdx < 0 || httpIdx <= contextIdx) {
+      throw new Error(
+        "Boot order violation: contextMiddleware + httpLogger must be mounted before any router"
+      );
+    }
+    const firstRouterIdx = names.indexOf("router");
+    if (firstRouterIdx >= 0 && httpIdx > firstRouterIdx) {
+      throw new Error(
+        "Boot order violation: httpLogger mounted after the first router — auth traffic would be unlogged"
+      );
+    }
   }
 
   /**

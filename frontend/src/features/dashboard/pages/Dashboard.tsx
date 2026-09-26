@@ -167,14 +167,14 @@ const Dashboard: React.FC = () => {
   // ✅ Fetch real balance data - moved to top
   const { balance: realBalance, loading: realBalanceLoading } = useBalance();
 
-  // Fetch Kodiak data - optimized with proper deduplication
-  const hasKodiakAccess =
+  // Fetch portfolio data - optimized with proper deduplication
+  const hasPortfolioAccess =
     user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
 
-  // C3b: which exchange account the portfolio panel displays (positions,
-  // trades, and the app-global balance widget). Empty until the account
-  // list loads; the first ACTIVE kodiak account becomes the default, which
-  // mirrors the backend's own default when no id is passed.
+  // L2: venue-agnostic portfolio selection. Every ACTIVE account is listed
+  // with an explicit switcher (previously the first ACTIVE kodiak account
+  // was pinned, hiding Lighter accounts). Default is the most recently
+  // created ACTIVE account — deterministic, not "kodiak first".
   const [portfolioAccountId, setPortfolioAccountId] = useState("");
   const accountsQuery = useQuery({
     queryKey: ["exchange-accounts", user?.id],
@@ -184,11 +184,21 @@ const Dashboard: React.FC = () => {
   });
   const portfolioAccounts: ExchangeAccountDto[] = (
     accountsQuery.data?.data?.accounts ?? []
-  ).filter(
-    account => account.exchange === "kodiak" && account.status === "ACTIVE"
-  );
+  )
+    .filter(account => account.status === "ACTIVE")
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
   const activePortfolioAccountId =
     portfolioAccountId || portfolioAccounts[0]?.id || "";
+  const activePortfolioAccount = portfolioAccounts.find(
+    account => account.id === activePortfolioAccountId
+  );
+  // Positions/trades/balance read through the Kodiak venue endpoints, which
+  // answer 400 for non-kodiak ids — only query them for a kodiak selection.
+  const isKodiakPortfolioSelected =
+    !activePortfolioAccountId || activePortfolioAccount?.exchange === "kodiak";
 
   // The balance widget is app-global: pin it to the displayed account.
   useEffect(() => {
@@ -205,7 +215,8 @@ const Dashboard: React.FC = () => {
     ],
     queryFn: () =>
       kodiakApi.getKodiakPositions(activePortfolioAccountId || undefined),
-    enabled: hasKodiakAccess && !!user?.id,
+    enabled:
+      hasPortfolioAccess && !!user?.id && isKodiakPortfolioSelected,
     staleTime: 30000, // 30 seconds
     gcTime: 300000, // 5 minutes
     retry: (failureCount, error: Error) => {
@@ -227,7 +238,8 @@ const Dashboard: React.FC = () => {
     ],
     queryFn: () =>
       kodiakApi.getKodiakTrades(50, activePortfolioAccountId || undefined),
-    enabled: hasKodiakAccess && !!user?.id,
+    enabled:
+      hasPortfolioAccess && !!user?.id && isKodiakPortfolioSelected,
     staleTime: 30000,
     gcTime: 300000,
     retry: (failureCount, error: Error) => {
@@ -400,7 +412,7 @@ const Dashboard: React.FC = () => {
           <Card className="text-center mb-8">
             <Wallet className="w-12 h-12 text-textMuted mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-text mb-2">
-              Connect Your Kodiak Account
+              Connect Your Exchange Account
             </h3>
             <p className="text-textMuted mb-4">
               Connect your trading account to view your portfolio data and
@@ -515,7 +527,11 @@ const Dashboard: React.FC = () => {
           <Card>
             <SectionHeader
               title="Open Positions"
-              subtitle={`${positions.length} active positions • ${profitablePositions} profitable`}
+              subtitle={
+                isKodiakPortfolioSelected
+                  ? `${positions.length} active positions • ${profitablePositions} profitable`
+                  : "Kodiak venue only — this account trades on another venue"
+              }
               actions={
                 <>
                   {portfolioAccounts.length > 0 && (
@@ -529,7 +545,8 @@ const Dashboard: React.FC = () => {
                     >
                       {portfolioAccounts.map(account => (
                         <option key={account.id} value={account.id}>
-                          {account.exchange} · {account.accountRef}
+                          {account.exchange} · {account.environment} ·{" "}
+                          {account.accountRef}
                         </option>
                       ))}
                     </select>

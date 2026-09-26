@@ -23,62 +23,62 @@ jest.mock("@noble/ed25519", () => ({
 
 describe("RouteConfig", () => {
   describe("register", () => {
-    it("should register all routes with default options", async () => {
+    it("should register all routes with default options", () => {
       const app = express();
-      await RouteConfig.register(app);
+      RouteConfig.register(app);
 
       expect(app).toBeDefined();
     });
 
-    it("should register routes without API routes when disabled", async () => {
+    it("should register routes without API routes when disabled", () => {
       const app = express();
       const options: RouteConfigOptions = {
         enableApiRoutes: false,
       };
 
-      await RouteConfig.register(app, options);
+      RouteConfig.register(app, options);
 
       expect(app).toBeDefined();
     });
 
-    it("should register routes without health routes when disabled", async () => {
+    it("should register routes without health routes when disabled", () => {
       const app = express();
       const options: RouteConfigOptions = {
         enableHealthRoutes: false,
       };
 
-      await RouteConfig.register(app, options);
+      RouteConfig.register(app, options);
 
       expect(app).toBeDefined();
     });
 
-    it("should register routes without API and health routes when both disabled", async () => {
+    it("should register routes without API and health routes when both disabled", () => {
       const app = express();
       const options: RouteConfigOptions = {
         enableApiRoutes: false,
         enableHealthRoutes: false,
       };
 
-      await RouteConfig.register(app, options);
+      RouteConfig.register(app, options);
 
       const registeredRoutes = RouteConfig.getRegisteredRoutes(app);
       expect(registeredRoutes.length).toBe(0);
     });
 
-    it("should attach Socket.IO server when provided", async () => {
+    it("should attach Socket.IO server when provided", () => {
       const app = express();
       const mockIo = {} as Server;
 
-      await RouteConfig.register(app, { io: mockIo });
+      RouteConfig.register(app, { io: mockIo });
 
       const io = app.get("io");
       expect(io).toEqual(mockIo);
     });
 
-    it("should not attach Socket.IO server when not provided", async () => {
+    it("should not attach Socket.IO server when not provided", () => {
       const app = express();
 
-      await RouteConfig.register(app);
+      RouteConfig.register(app);
 
       const io = app.get("io");
       expect(io).toBeUndefined();
@@ -86,9 +86,9 @@ describe("RouteConfig", () => {
   });
 
   describe("getRegisteredRoutes", () => {
-    it("should return all registered route paths", async () => {
+    it("should return all registered route paths", () => {
       const app = express();
-      await RouteConfig.register(app, {
+      RouteConfig.register(app, {
         enableApiRoutes: false,
         enableHealthRoutes: false,
       });
@@ -100,9 +100,9 @@ describe("RouteConfig", () => {
   });
 
   describe("validateRouteRegistration", () => {
-    it("should validate route registration is complete", async () => {
+    it("should validate route registration is complete", () => {
       const app = express();
-      await RouteConfig.register(app, {
+      RouteConfig.register(app, {
         enableApiRoutes: false,
         enableHealthRoutes: false,
       });

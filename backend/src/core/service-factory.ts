@@ -383,6 +383,9 @@ export class ServiceFactory implements IServiceFactory {
         }),
         userLevel: this.createUserLevelService(),
         auditLogRepository: diContainer.auditLogRepository,
+        // L4: the DI container passes loggerService — the factory must too,
+        // otherwise connect/verify/revoke log via `?.` into the void.
+        logger: diContainer.loggerService,
         // C3a: revoke is blocked while bots bind to the account (FK RESTRICT).
         boundBots: {
           countBoundBots: async (userId: string, accountId: string) => {
@@ -402,6 +405,7 @@ export class ServiceFactory implements IServiceFactory {
           "verifyConnectivity",
           "userLevel",
           "auditLogRepository",
+          "logger",
           "boundBots",
         ],
       });

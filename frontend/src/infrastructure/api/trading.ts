@@ -51,14 +51,15 @@ export const tradingApi = {
     return response.data;
   },
 
-  // Bot endpoints
+  // Bot endpoints (L1: management router is mounted at /management, so the
+  // served paths are /api/bot/management/* — the bare /api/bot/* paths 404)
   async getBotInstances() {
     return globalRequestManager.deduplicateRequest(
       "bots:instances",
       () =>
         httpClient
           .getClient()
-          .get("/api/bot/instances")
+          .get("/api/bot/management/instances")
           .then(r => r.data),
       "tradingApi"
     );
@@ -86,25 +87,27 @@ export const tradingApi = {
     exchangeAccountId: string,
     notionalAmount: number
   ) {
-    const response = await httpClient.getClient().post("/api/bot/start", {
-      strategyId,
-      exchangeAccountId,
-      notionalAmount,
-    });
+    const response = await httpClient
+      .getClient()
+      .post("/api/bot/management/start", {
+        strategyId,
+        exchangeAccountId,
+        notionalAmount,
+      });
     return response.data;
   },
 
   async stopBot(botId: string) {
     const response = await httpClient
       .getClient()
-      .post("/api/bot/stop", { botId });
+      .post("/api/bot/management/stop", { botId });
     return response.data;
   },
 
   async emergencyStop(botId: string) {
     const response = await httpClient
       .getClient()
-      .post("/api/bot/emergency-stop", {
+      .post("/api/bot/management/emergency-stop", {
         botId,
       });
     return response.data;
