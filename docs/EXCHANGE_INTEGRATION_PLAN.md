@@ -207,8 +207,9 @@ different revert costs, so each must be independently releasable and revertible.
   and drops nothing. `NOT NULL` and the legacy drops were deferred to C3b on
   purpose — the backfill leaves `NULL` for bots whose owner has no ACTIVE
   account yet — and landed in `014_drop_legacy_kodiak.sql`.
-- Code: `POST /api/bot/start` requires an owned **ACTIVE** `exchangeAccountId`
-  (Joi + route + `createAndStart` defence in depth) and writes it on create;
+- Code: `POST /api/bot/management/start` requires an owned **ACTIVE**
+  `exchangeAccountId` (Joi + route + `createAndStart` defence in depth) and
+  writes it on create;
   **`/credentials/:botId` swaps its data source to the bot's bound
   `exchange_accounts` row** and builds the per-venue envelope (kodiak +
   lighter) — the only engine-adjacent change, and it needs no engine edits (see
@@ -219,6 +220,15 @@ different revert costs, so each must be independently releasable and revertible.
   bots, and each engine credential fetch receives its own account's envelope;
   an unbound legacy bot gets 409 instead of trading the wrong account; revoking
   an account with bound bots is refused with a clear 409.
+- **Status (2026-09-26):** the backend side is in place and unit-tested, but the
+  acceptance run still cannot be performed from the UI: the frontend calls
+  `/api/bot/{instances,start,stop,emergency-stop}` while the management routes are
+  mounted under `/management` (`bots/index.ts:21`), so all four 404 (observed four
+  times in `http-2026-09-26.log`, `11:14:25-32`). Decision: repoint the frontend
+  and correct the docs instead of aliasing the routes (see
+  [PROJECT_REVIEW_GAP_ANALYSIS.md](PROJECT_REVIEW_GAP_ANALYSIS.md) L1). The
+  Dashboard also pins the portfolio to a **kodiak** account (L2), so a bot bound
+  to a Lighter account would not even be visible until that lands.
 
 #### C3b — positions/balances generalisation (✅ landed)
 

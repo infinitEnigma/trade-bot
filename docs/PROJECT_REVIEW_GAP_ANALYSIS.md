@@ -245,6 +245,197 @@ _(Addressed in this documentation pass — see §4.)_
 
 ---
 
+### Findings from the 2026-09-26 runtime flow audit (L1–L10)
+
+The two manual runs of 2026-09-26 (07:56 and 11:09) were audited against
+`logs/{app,http,error}-2026-09-26*.log`, the source, and read-only DB queries.
+The audit re-confirmed the C2/C3 storage surface and produced the items below.
+Everything here is reproduced from evidence — file:line references, log
+timestamps, and `exchange_accounts` / `audit_logs` rows — not inferred.
+
+**Regression baseline (do not lose these):** `error-*.log` stayed empty for the
+whole run; timestamps carry real milliseconds (`…HH:mm:ss.SSS`); 63/63 requests
+had their own `correlationId`; account-scoped reads (`?exchangeAccountId=`)
+returned 200; the password-worker heartbeat / shutdown noise is gone; and the
+deliberate concurrent-refresh short-circuit no longer writes to `error-*.log`.
+
+#### L1 — 🔴 P0: the frontend's bot-management calls 404 — the routes live under `/management`
+
+`GET /api/bot/instances` returned **404 four times** (`11:14:25.406`,
+`11:14:26.455`, `11:14:28.500`, `11:14:32.547`), immediately after
+`POST /api/strategies` created `test-grid-1` (`201`, `11:14:24.969`). The
+frontend (`frontend/src/infrastructure/api/trading.ts:61,89,100,107`) calls
+`/api/bot/{instances,start,stop,emergency-stop}`, but
+`backend/src/interfaces/http/bots/index.ts:21` mounts the management router at
+`/management`, so the served paths are `/api/bot/management/{…}` — which is what
+the backend's own tests use (`tests/unit/controllers/bots.controller.test.ts:260`
+etc.). `backend/README.md:216-218`, `docs/OPERATIONS.md:104,190`, the
+`bots/management.ts` docblocks and `frontend/README.md` repeat the shorter
+(non-existent) paths.
+
+Impact: the dashboard cannot list bots, so **the C3a "start a bot on an explicit
+account" acceptance test cannot be exercised from the UI at all**.
+
+Decision (2026-09-26, owner): **repoint the frontend** to
+`/api/bot/management/*` and correct the docs, rather than aliasing the routes at
+`/api/bot`. An alias would graft `management.ts`'s duplicate `GET /engine/status`
+(`bots/management.ts:680`) onto `/api/bot/engine/status`, shadowing the real
+engine route in `bots/engine.ts` (mounted at `/engine`) — a collision hazard for
+one saved string change. That duplicate endpoint should be retired in the same
+pass, leaving exactly one URL per operation.
+
+#### L2 — 🔴 P0: the Dashboard pins the portfolio to a Kodiak account, hiding the Lighter one
+
+`POST /api/accounts/connect` did create and live-verify a Lighter account:
+`exchange_accounts` holds `72c483bc-… | user e9ed3301 | lighter | testnet |
+ACTIVE | account_ref 404 | created 11:12:53.744`, and `audit_logs` holds
+`EXCHANGE_ACCOUNT_CONNECTED {exchange: lighter, accountId: 72c483bc…}` at
+`11:12:57.232`. The same user also owns `49401abd-… | kodiak | mainnet | ACTIVE`
+(created 2026-02-09). Yet **every** post-connect read is scoped to the kodiak
+account (`/api/market/{positions,trades,balance}?exchangeAccountId=49401abd…`,
+with Kodiak-served payloads in the app log), because
+`frontend/src/features/dashboard/pages/Dashboard.tsx:185-191` filters
+`account.exchange === "kodiak" && status === "ACTIVE"` before choosing the
+portfolio account.
+
+Impact: a newly connected venue account is invisible in the UI (the exact
+inconsistency reported after the run); with a Lighter-only user the id resolves
+to `""`, producing unscoped market reads whose account is decided by the
+backend.
+
+Decision (2026-09-26, owner): **venue-agnostic account selection with a
+switcher** — list all ACTIVE accounts, default deterministically (not
+"kodiak first"), and keep the app-global balance widget in sync.
+
+#### L3 — 🔴 P0: the HTTP logger mounts *after* `/api/auth`, and the server listens before the stack is ready
+
+Boot timeline (`app-2026-09-26.log`): `/api` activity tracker `11:09:43.300` →
+`/api/auth` mounted ~`.42x` (`auth-routes-registration` completed `.427`) →
+**`contextMiddleware` + `httpLogger` at `.429`** → user/market/bot/wallet/
+security/health routers. Yet **"🚀 Server running on port 3000" is `.306`** — 265 ms
+before route registration finished. `ExpressConfig.createApp()`
+(`backend/src/server/express-config.ts:266-279`) fires the async `configure()`
+without awaiting it, and `configureLogging` (`:244-258`) contains two
+`await import()` calls, so its two `app.use()` calls land at non-deterministic
+positions relative to `MiddlewareConfig.configure()` and `RouteConfig.register()`
+in `index.ts`.
+
+Evidence: `POST /api/auth/register` (`11:11:13.325`) appears in the activity
+tracker with the **boot-time ambient** correlation id and
+`operationDuration: 90354`, while the auth service logs a *different, fresh* pair
+(`req_122ea5e86b221362` / `rid_31752aeb`) — i.e. `contextMiddleware` ran but
+`httpLogger` never did. No `/api/auth/*` request appears among the 63 logged
+requests: `login`, `refresh`, `csrf-token` and `check-admin-qualification` are
+all absent from `http-*.log`.
+
+Impact: auth traffic cannot be correlated by the OPERATIONS §5 runbooks; auth
+error bodies (`createErrorResponse(…, getCorrelationId())`) can echo a stale
+ambient id; a fast client can hit a 404/partial stack during the ~270 ms window;
+and the split can land on other route groups on another boot.
+
+#### L4 — 🔴 P0: `ExchangeAccountService` is built without its logger, so connect/verify/revoke are unauditable
+
+`service-factory.ts:363-407` constructs the service with six dependencies and
+**no `logger`** — exactly the list the runtime prints
+(`Exchange Account Service created with dependencies
+['exchangeAccountRepository','encryption','verifyConnectivity','userLevel','auditLogRepository','boundBots']`),
+whereas the DI container does pass `logger: this.loggerService`
+(`dependency-injection.container.ts:389+`). `core/user/exchange-account.service.ts`
+logs through `this.deps.logger?.info(…)`, so the optional chain silently drops
+`"Exchange account connected"` — **grep count 0** in the run, although the
+account row and the audit row prove success — and equally drops the failure paths
+(`"Account envelope encryption failed"`, `"Failed to audit account connect"`).
+
+Impact: the whole C2 account surface, *including failures*, is invisible in logs.
+The DB audit still works (`EXCHANGE_ACCOUNT_CONNECTED`), so this is a log blind
+spot rather than data loss. The two wirings (factory vs DI) drifting silently is
+itself the defect to remove.
+
+#### L5 — 🟠 P1: Lighter verification is silent while Kodiak narrates itself
+
+A Kodiak connect is traceable (`Request queued for Kodiak API {endpoint:
+accountInfo}` from `kodiak-queue`), but the successful Lighter connect produced
+**zero** log lines — `lighter` does not appear anywhere in either log file. The
+verify did run and pass: `createVerifyConnectivity`
+(`core/user/verify-connectivity.ts:48`) delegates Lighter to
+`LighterAccountVerifier.verify()`, which fails closed when `LIGHTER_SIDECAR_URL`
+is unset, and the account reached `ACTIVE` with `verified_at` set. The verifier
+accepts a `LighterVerifierLogger`, but nothing is logged on the success path and
+no line names the venue.
+
+Impact: "did the Lighter connect reach the sidecar, how long did it take, why did
+it fail" is unanswerable from logs; the venue survives only in the DB audit row.
+
+#### L6 — 🟠 P1: a duplicate registration logs the user's email at `warn`
+
+`11:11:13.331 "User registration attempt"` and `11:11:13.338 "Registration failed
+- email already exists"` (component `logger-adapter`) carry
+`email: john.doe@example.com`, `username: john_doe`; `audit_logs` has the matching
+`USER_REGISTRATION_FAILED` row. The browser flow was login → dashboard and the
+user was authenticated as `e9ed3301` 18 s later, so this was a stray/abandoned
+register submission (no frontend code auto-registers — `frontend/src/infrastructure/api/auth.ts:69`
+is only called from the Register page). Benign, but an expected duplicate is
+logged at `warn` with PII, and because `/api/auth/*` is not HTTP-logged (L3) the
+submission is invisible outside that one line.
+
+Decision: log at `info` with a masked email, keep the audit event, and return a
+distinct error code so the UI can offer "log in instead".
+
+#### L7 — 🟠 P1: one response was logged under a sibling request's correlationId
+
+`req_bbe7e0a41c8dbfa0` (`GET /api/market/balance`, `11:11:32.820`) has **two**
+response lines; the second carries the *trades* URL and its `8137ms` duration
+(`11:11:41.314`). `req_84dd05e15d188409`
+(`GET /api/market/trades?limit=50&exchangeAccountId=49401abd…`, `11:11:33.177`)
+has a request line and **no** response line. Both requests were concurrent and
+serialized through the shared Kodiak queue. Cause: `runWithContext` →
+`setRequestContext` uses `AsyncLocalStorage.enterWith()`, so a shared async chain
+can carry the wrong request's store by the time `res.end` resolves the context.
+
+Impact: 1 of 63 response lines mis-correlates — and the runbook's "grep the
+correlationId" then finds no response at all for the affected request. Fix:
+capture `correlationId`/`requestId` in the middleware closure and pass them
+explicitly on the response line; longer term stop relying on `enterWith`.
+
+#### L8 — 🟡 P2: the boot-time ambient context leaks into every background logger
+
+`index.ts:70-73` calls `setRequestContext({correlationId: generateCorrelationId(), …})`
+at module load. **551** app-log lines share `req_e841cdadb3b38e34` /
+`rid_0198decd` for the whole run with `operationDuration` up to **352 897 ms**,
+including all 347 `Consumer group read returned no messages (idle timeout)` lines,
+DB-pool events, WebSocket handshake lines and the shutdown lines. One line still
+reports `correlationId:"unknown"` (the first redis init).
+
+Impact: background logs carry a fake request id and meaningless durations, and no
+subsystem is greppable by correlation. Fix: drop the boot-wide
+`setRequestContext`; give each background subsystem a stable scope
+(`background:redis-consumer`, `background:db-pool`, …).
+
+#### L9 — 🟡 P2: long-lived objects keep the context of the request that created them
+
+The password pool's shutdown lines carry `req_c96f47a09aef7d` with
+`operationDuration: 235321` — the *login* request that first hashed a password.
+Its interval/terminate callbacks stay in that ALS scope for the process lifetime.
+Same class as L8; construct such pools eagerly at boot (or inside a background
+context) instead of lazily inside a request.
+
+#### L10 — 🟡 P2: the shutdown tail is unobservable and Phase 1 takes ~9.7 s
+
+`SIGINT` `11:15:26.150-152` → `Phase 1: Stopping new connections` → **9.7 s** →
+`HTTP server closed 11:15:35.868`, which is the last line in the file (same second
+as its mtime). Missing: `Engine protocol listener stopped`, Phases 2–4,
+`Graceful shutdown completed successfully`, and even the 30 s-timeout warning
+(`index.ts:552-573, 576-636`). Redis idle polling stops exactly at `35.868`, so
+the process was still alive then — but nothing distinguishes "completed, tail
+truncated" from "hung, then killed".
+
+Fix: log each stop with a duration, bound Phase 1
+(`closeIdleConnections()`/`closeAllConnections()` plus a timeout), and flush the
+logger before `process.exit(0)` — or drop the explicit exit and let the event loop
+drain.
+
+---
+
 ## 4. Remediation ledger
 
 Sequencing rationale: Phase 1 must precede Phase 2 (building reconciliation on top
@@ -266,6 +457,33 @@ Phases 6–7 lock it in.
 | 9     | 🔴 P0    | **Credential-contract slice (workstream A)** — `EngineCredentials` discriminated union in `shared`, backend `/credentials/:botId` returns `{ exchange, environment, accountRef, credentials }`, engine client factory selects by exchange. Stops the Orderly-shaped contract being baked further before Lighter lands: [plan §1](EXCHANGE_INTEGRATION_PLAN.md)                                                                                                                                                                   | ✅                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 10    | 🔴 P0    | **Lighter engine adapter (workstream B)** — extend `ExchangeClient` (open-order listing, by-client-order-id lookup that separates NOT_FOUND from UNREACHABLE, confirming cancel, HTTP timeouts), `TransactionSigner` + sidecar client, `LighterClient` encoding the Phase-0-verified status/market/cancel semantics, strategy decoupled from `OrderlyClient`: [plan §2](EXCHANGE_INTEGRATION_PLAN.md)                                                                                                                            | ✅ **B1-B5 complete** (B1 `ExchangeClient` extension + Kodiak timeouts, B2 `TransactionSigner` + sidecar client, B3 `LighterClient` with Phase-0 status/market/int64-id semantics, B4 strategy + BotRuntime on the `ExchangeClient` interface, factory routes lighter; B5 fake-exchange Jest matrix + env-gated testnet smoke **green 2026-09-22** — market resolve → resting order → query by client index → `getOrder` → polling-confirmed cancel, all through the engine's own client. B5 live findings also fixed and pinned by tests: human-unit row mapping (price/qty), OPEN-first row selection over multiple rows per index, active-listing-first liveness, client-index order handle for cancel/`getOrder`. Sidecar runbook: OPERATIONS §5.7) |
 | –     | 🟢 P3    | **Do not** add further abstraction beyond `OrderManager` / `OrderReconciliationService`; **do not** split the `shared` package yet; **no** frontend work                                                                                                                                                                                                                                                                                                                                                                         | –                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+
+### Runtime-audit backlog — 2026-09-26 flow test (owner-scoped P0 batch)
+
+Findings L1–L10 in §3 are tracked here; the phase table above covers the
+engine/trading-path phases. P0 = what must land before the C2/C3 acceptance runs
+can be repeated meaningfully.
+
+| #   | Priority | Item                                                                                                                                                                                                                       | Status   |
+| --- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| L1  | 🔴 P0    | Repoint the frontend's bot calls to `/api/bot/management/*` (`trading.ts` + `tradingApi.test.ts`), correct `backend/README.md` / `OPERATIONS.md` / `management.ts` docblocks / `frontend/README.md`, retire the duplicate `GET /api/bot/management/engine/status` | ⬜ Open  |
+| L2  | 🔴 P0    | Venue-agnostic portfolio account selection + switcher (Dashboard, `BotControls`); no `exchange === "kodiak"` default; the app-global balance widget follows the selection                                                     | ⬜ Open  |
+| L3  | 🔴 P0    | Await Express configuration before `listen()`; mount `contextMiddleware` + `httpLogger` before any router (so `/api/auth` is covered); remove the listen-before-routes window                                               | ⬜ Open  |
+| L4  | 🔴 P0    | Wire `logger` into the `ServiceFactory`'s `ExchangeAccountService` (or delegate to the DI instance) + a test asserting the dependency exists                                                                                | ⬜ Open  |
+| L5  | 🟠 P1    | Venue-aware connect/verify logging (`exchange`, `environment`, verifier step timings, outcome — never secrets), including the Lighter verifier                                                                              | ⬜ Open  |
+| L6  | 🟠 P1    | Duplicate-registration log: `info` + masked email, plus a distinct error code for "email already registered"                                                                                                                | ⬜ Open  |
+| L7  | 🟠 P1    | Pass the request's `correlationId`/`requestId` explicitly when logging the HTTP response (stop resolving ALS at `res.end` time)                                                                                              | ⬜ Open  |
+| L8  | 🟡 P2    | Remove the boot-wide `setRequestContext`; give each background subsystem its own stable scope                                                                                                                                | ⬜ Open  |
+| L9  | 🟡 P2    | Construct long-lived pools eagerly so they stop inheriting a request context                                                                                                                                                 | ⬜ Open  |
+| L10 | 🟡 P2    | Shutdown: per-stop durations, bounded Phase 1 (`closeIdleConnections`/`closeAllConnections`), flush logs before `process.exit(0)`                                                                                            | ⬜ Open  |
+
+Batch verification: re-run the manual flow (login → dashboard → settings → connect
+Lighter → strategies → create grid strategy → start a bot on the Lighter account →
+dashboard → SIGINT) and require — `GET /api/bot/instances` **200**; `POST
+/api/bot/management/start` **202** with the account bound; the 409 negatives
+(foreign account, unbound legacy bot, revoke-with-bound-bots); "Exchange account
+connected" plus venue-aware Lighter lines present; zero mis-correlated response
+lines; a fully-logged shutdown.
 
 ---
 
@@ -378,6 +596,8 @@ Findings from a security-focused code review, prioritized per severity:
 | -------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 🟠 P1    | **Shared Package Scope** | `@trade-bot/shared` is a god package (protocol types, domain models, API contracts, error classes, logging types). Split it by domain once the trading-path hardening above has landed. |
 | 🔴 P0    | **Phase 0–3 items**      | The engine trading-path work in §4 — verified against the exchange before anything else is built on top of it.                                                                          |
+| 🔴 P0    | **2026-09-26 batch (L1–L4)** | Bot-route repoint, venue-agnostic portfolio selection, the Express boot-order race, and the unwired `ExchangeAccountService` logger — see §3 findings and the §4 backlog table.      |
+| 🟠 P1    | **2026-09-26 batch (L5–L10)** | Lighter connect visibility, registration-duplicate log hygiene, response correlation under concurrency, ambient/background context leaks, shutdown observability.                    |
 
 ### How to keep this document honest
 

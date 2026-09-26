@@ -101,12 +101,32 @@ development only.
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Service health            | `GET /api/system/health` (includes `controlPlane` for the Redis control bus)                                                             |
 | External traffic counters | `GET /api/system/metrics` → `external_traffic` (exchange requests, cache hits/misses, 429s, WebSocket connections, market subscriptions) |
-| Bot state                 | `GET /api/bot/status/:botId` (actual vs. desired state, staleness validation)                                                            |
+| Bot state                 | `GET /api/bot/management/status/:botId` (actual vs. desired state, staleness validation)                                                 |
 | Engine liveness           | `engine_registry` (last heartbeat, status); engines go `OFFLINE` after `ENGINE_HEARTBEAT_TIMEOUT_MS`                                     |
 | Lifecycle audit           | `bot_lifecycle_events` (transitions, credential issuance, reconciliation markers)                                                        |
 | Command tracking          | `bot_commands` (`PENDING` → confirmed, or `TIMED_OUT` with an error code)                                                                |
 | Stream backlog            | Warning logs from the pending-insight scan (stuck count, oldest stuck idle, poison ids)                                                  |
 | Structured logs           | Winston JSON logs with `correlationId` on every protocol message                                                                         |
+
+**Known gaps (2026-09-26 flow audit).** Full evidence in
+[PROJECT_REVIEW_GAP_ANALYSIS.md](PROJECT_REVIEW_GAP_ANALYSIS.md) §3 (findings
+L1–L10). Until those land, the logs below are trustworthy only within these
+limits:
+
+- `/api/auth/*` requests are **not** written to `http-*.log` and carry no
+  per-request context — they inherit the process's boot-time id. Correlate auth
+  traffic by timestamp and via `audit_logs` (L3).
+- Background work (Redis consumer, DB pool, WebSocket handshakes, shutdown)
+  shares that same boot-time `correlationId`, so its `operationDuration` counts
+  from process start — ignore the field for those lines (L8/L9).
+- A response line can carry a **concurrent** request's `correlationId` (1 in 63
+  on 2026-09-26) when the reply is written from the shared Kodiak queue — match a
+  pair by `method` + `url` before trusting the id (L7).
+- `ExchangeAccountService` (connect / verify / revoke) currently logs nothing:
+  its logger dependency is unwired in the service factory, so account operations
+  — successful and failed — appear **only** in `audit_logs` (L4/L5).
+- The graceful-shutdown tail (Phases 2–4 plus "completed") is not observable
+  today (L10).
 
 ---
 
@@ -187,12 +207,31 @@ double-placed order.
 ### 5.8 Post-incident checklist
 
 1. Confirm order/fill/position state **at the exchange**.
-2. Confirm backend state: `GET /api/bot/status/:botId`, then `bot_lifecycle_events`
+2. Confirm backend state: `GET /api/bot/management/status/:botId`, then `bot_lifecycle_events`
    and `bot_commands` for the affected `correlationId`.
 3. Confirm the engine registry shows exactly one authoritative engine and epoch.
 4. Inspect the stream pending list for stuck/poison entries before re-enabling
    trading.
 5. Only then restart the bot.
+
+### 5.9 Dashboard shows no bots, or a connected account does not appear (C3 UI pitfalls)
+
+Two known mismatches between the UI and the API (audit findings L1/L2). Until
+they land, drive the API directly instead of trusting the panel:
+
+- **`GET /api/bot/instances` answers 404** because the frontend still calls the
+  pre-`/management` paths. The served paths are
+  `GET /api/bot/management/instances`,
+  `POST /api/bot/management/start` `{ strategyId, exchangeAccountId, notionalAmount }`
+  (202; the account must be owned + `ACTIVE`, else 400/404),
+  `POST /api/bot/management/stop` `{ botId }`, and
+  `POST /api/bot/management/emergency-stop`. A UI showing "no bots" is therefore
+  **not** evidence that none exist — check the table:
+  `SELECT id, desired_state, actual_state, exchange_account_id FROM bot_instances WHERE user_id = …`.
+- **A newly connected venue account is invisible in the Dashboard portfolio**: it
+  defaults to the first ACTIVE **kodiak** account (so a Lighter account only shows
+  up in Settings). Confirm ownership and state directly:
+  `SELECT id, exchange, environment, status, verified_at FROM exchange_accounts WHERE user_id = …`.
 
 ---
 
