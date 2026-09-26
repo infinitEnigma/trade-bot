@@ -4,6 +4,7 @@ import { Request, Response, NextFunction } from "express";
 import { httpLogger as contextHttpLogger } from "../../core/logging";
 import {
   generateCorrelationId,
+  getCorrelationId,
   runWithContext,
 } from "../../shared/utils/context";
 
@@ -16,8 +17,11 @@ export function httpLogger(
   res: Response,
   next: NextFunction
 ): void {
-  // Generate correlation ID for this request
-  const correlationId = generateCorrelationId();
+  // Reuse the correlation id already minted by `contextMiddleware` (mounted
+  // before this middleware) instead of minting a second one: the id in the
+  // `x-correlation-id` response header must match the id in the log lines, or
+  // the documented "correlate the request with the logs" runbook cannot work.
+  const correlationId = getCorrelationId() ?? generateCorrelationId();
   const startTime = Date.now();
 
   // Set up request context
@@ -51,10 +55,13 @@ export function httpLogger(
       ): Response {
         const duration = Date.now() - startTime;
 
-        // Log the response using context-aware HTTP logger
+        // Log the response using context-aware HTTP logger.
+        // `req.originalUrl` (not `req.url`) because Express rewrites `req.url`
+        // to the router-relative path while a mounted router handles it, so the
+        // response line used to read `/?limit=50` for `/api/market/trades?limit=50`.
         contextHttpLogger.http("HTTP response", {
           method: req.method,
-          url: req.url,
+          url: req.originalUrl,
           statusCode: res.statusCode,
           duration: `${duration}ms`,
           contentLength: res.get("Content-Length"),
@@ -83,7 +90,7 @@ export function errorLogger(
 ): void {
   contextHttpLogger.error("Application error", err, {
     method: req.method,
-    url: req.url,
+    url: req.originalUrl,
     userAgent: req.get("User-Agent"),
     ip: req.ip,
     body: req.body,

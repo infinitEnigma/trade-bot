@@ -5,6 +5,10 @@ import {
   errorLogger,
 } from "../../src/interfaces/middleware/logger.middleware";
 import { httpLogger as contextHttpLogger } from "../../src/core/logging";
+import {
+  getCorrelationId,
+  runWithContext,
+} from "../../src/shared/utils/context";
 
 // Mock the dependencies
 jest.mock("../../src/core/logging", () => ({
@@ -15,7 +19,10 @@ jest.mock("../../src/core/logging", () => ({
 }));
 
 jest.mock("../../src/shared/utils/context", () => ({
-  generateCorrelationId: jest.fn().mockReturnValue("test-correlation-id"),
+  generateCorrelationId: jest.fn().mockReturnValue("generated-correlation-id"),
+  // Simulates `contextMiddleware`, which is mounted before this middleware and
+  // already put a correlation id into the request context.
+  getCorrelationId: jest.fn().mockReturnValue("header-correlation-id"),
   runWithContext: jest.fn((context, callback) => callback()),
   getContextForLogging: jest.fn(),
 }));
@@ -34,6 +41,7 @@ describe("Logger Middleware", () => {
       req = {
         method: "GET",
         url: "/test",
+        originalUrl: "/test",
         ip: "127.0.0.1",
         query: {},
         body: {},
@@ -135,6 +143,41 @@ describe("Logger Middleware", () => {
         expect.anything()
       );
     });
+
+    it("should reuse the correlation id already present in the request context", () => {
+      httpLogger(req, res, next);
+
+      expect(runWithContext).toHaveBeenCalledWith(
+        expect.objectContaining({ correlationId: "header-correlation-id" }),
+        expect.any(Function)
+      );
+    });
+
+    it("should mint a correlation id when the context has none", () => {
+      (getCorrelationId as jest.Mock).mockReturnValueOnce(undefined);
+
+      httpLogger(req, res, next);
+
+      expect(runWithContext).toHaveBeenCalledWith(
+        expect.objectContaining({ correlationId: "generated-correlation-id" }),
+        expect.any(Function)
+      );
+    });
+
+    it("should log the full original url on the response, not the router-relative url", () => {
+      req.originalUrl = "/api/market/trades?limit=50";
+      // Express rewrites `req.url` to the router-relative path while a mounted
+      // router handles the request — that is what produced `/?limit=50`.
+      req.url = "/?limit=50";
+
+      httpLogger(req, res, next);
+      res.end();
+
+      expect(contextHttpLogger.http).toHaveBeenCalledWith(
+        "HTTP response",
+        expect.objectContaining({ url: "/api/market/trades?limit=50" })
+      );
+    });
   });
 
   describe("errorLogger", () => {
@@ -154,6 +197,7 @@ describe("Logger Middleware", () => {
       req = {
         method: "GET",
         url: "/test",
+        originalUrl: "/test",
         ip: "127.0.0.1",
         query: { param1: "value1" },
         body: { data: "test" },

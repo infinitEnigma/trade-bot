@@ -121,6 +121,12 @@ export class ContextAwareLogger {
     if (shouldInvalidate) {
       this.contextCache.generation++;
       this.contextCache.contextRef = currentContext;
+      // Drop the memoised context as well: bumping `generation` alone was a
+      // no-op because `getContextInfo()` compares `this.contextCache.generation`
+      // against the value `checkContextChange()` just returned (i.e. itself), so
+      // a stale `cachedInfo` survived every invalidation and each logger
+      // singleton kept the *first* context it ever logged with.
+      this.contextCache.cachedInfo = undefined;
     }
     return this.contextCache.generation;
   }

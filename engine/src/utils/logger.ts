@@ -7,7 +7,11 @@ const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || "info",
   format: winston.format.combine(
     winston.format.timestamp({
-      format: "YYYY-MM-DD HH:mm:ss:ms",
+      // NOTE: fecha (logform) has no `ms` token — it expands to minutes (`m`) +
+      // seconds (`s`), so `...ss:ms` produced `09:30:23:3023` instead of
+      // `09:30:23.023`. `SSS` is the millisecond token (same fix as the backend
+      // logger in `backend/src/core/logging/logger.service.ts`).
+      format: "YYYY-MM-DD HH:mm:ss.SSS",
     }),
     winston.format.errors({ stack: true }),
     winston.format.printf(({ timestamp, level, message, ...meta }) => {
