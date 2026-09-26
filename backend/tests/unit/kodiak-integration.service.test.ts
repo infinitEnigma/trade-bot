@@ -228,6 +228,143 @@ describe("KodiakIntegrationService", () => {
     });
   });
 
+  describe("resolveKodiakAccount (C3b account scope)", () => {
+    const account = {
+      id: "acct-uuid-1",
+      userId: "test-user-id",
+      exchange: "kodiak",
+      environment: "testnet",
+      accountRef: "venue-ref-1",
+      status: "ACTIVE",
+    };
+
+    beforeEach(() => {
+      (encryptionService.decryptWithVersion as jest.Mock).mockResolvedValue(
+        JSON.stringify({
+          v: 1,
+          kind: "kodiak",
+          accountId: "venue-ref-1",
+          apiKey: "api-key",
+          secretKey: "secret-key",
+        })
+      );
+    });
+
+    it("pins the requested account without consulting the default list", async () => {
+      (
+        exchangeAccountRepositoryAdapter.getAccountWithSecret as jest.Mock
+      ).mockResolvedValue({
+        ...account,
+        credentialsEncrypted: "cipher",
+        encryptionVersion: 2,
+      });
+
+      const result = await service.resolveKodiakAccount(
+        "test-user-id",
+        "acct-uuid-1"
+      );
+
+      expect(result).toEqual({
+        id: "acct-uuid-1",
+        accountRef: "venue-ref-1",
+        credentials: {
+          accountId: "venue-ref-1",
+          apiKey: "api-key",
+          secretKey: "secret-key",
+        },
+      });
+      expect(
+        exchangeAccountRepositoryAdapter.listAccounts
+      ).not.toHaveBeenCalled();
+      expect(
+        exchangeAccountRepositoryAdapter.getAccountWithSecret
+      ).toHaveBeenCalledWith("test-user-id", "acct-uuid-1");
+    });
+
+    it("refuses an account the user does not own", async () => {
+      (
+        exchangeAccountRepositoryAdapter.getAccountWithSecret as jest.Mock
+      ).mockResolvedValue(null);
+
+      await expect(
+        service.resolveKodiakAccount("test-user-id", "acct-uuid-1")
+      ).resolves.toBeNull();
+    });
+
+    it("refuses a non-ACTIVE account", async () => {
+      (
+        exchangeAccountRepositoryAdapter.getAccountWithSecret as jest.Mock
+      ).mockResolvedValue({ ...account, status: "REVOKED" });
+
+      await expect(
+        service.resolveKodiakAccount("test-user-id", "acct-uuid-1")
+      ).resolves.toBeNull();
+      expect(encryptionService.decryptWithVersion).not.toHaveBeenCalled();
+    });
+
+    it("refuses a non-kodiak account", async () => {
+      (
+        exchangeAccountRepositoryAdapter.getAccountWithSecret as jest.Mock
+      ).mockResolvedValue({ ...account, exchange: "lighter" });
+
+      await expect(
+        service.resolveKodiakAccount("test-user-id", "acct-uuid-1")
+      ).resolves.toBeNull();
+      expect(encryptionService.decryptWithVersion).not.toHaveBeenCalled();
+    });
+
+    it("returns null when the envelope cannot be decrypted", async () => {
+      (
+        exchangeAccountRepositoryAdapter.getAccountWithSecret as jest.Mock
+      ).mockResolvedValue({
+        ...account,
+        credentialsEncrypted: "unreadable-cipher",
+        encryptionVersion: 2,
+      });
+      (encryptionService.decryptWithVersion as jest.Mock).mockRejectedValue(
+        new Error("bad envelope")
+      );
+
+      await expect(
+        service.resolveKodiakAccount("test-user-id", "acct-uuid-1")
+      ).resolves.toBeNull();
+    });
+
+    it("scopes the positions cache key and resolution to the account", async () => {
+      (kodiakCache.get as jest.Mock).mockReturnValue(null);
+      (service as any).resolveKodiakAccount = jest
+        .fn()
+        .mockResolvedValue({
+          id: "acct-uuid-1",
+          accountRef: "venue-ref-1",
+          credentials: {
+            accountId: "venue-ref-1",
+            apiKey: "api-key",
+            secretKey: "secret-key",
+          },
+        });
+      (service as any).makeKodiakRequest = jest.fn().mockResolvedValue([]);
+
+      const result = await service.getPositions(
+        "test-user-id",
+        "acct-uuid-1"
+      );
+
+      expect(result.success).toBe(true);
+      expect((service as any).resolveKodiakAccount).toHaveBeenCalledWith(
+        "test-user-id",
+        "acct-uuid-1"
+      );
+      expect(kodiakCache.get).toHaveBeenCalledWith(
+        "positions:test-user-id:acct-uuid-1"
+      );
+      expect(kodiakCache.set).toHaveBeenCalledWith(
+        "positions:test-user-id:acct-uuid-1",
+        result
+      );
+    });
+  });
+
   describe("getPositions", () => {
     it("should return cached positions when available", async () => {
       const mockCachedResult = {
@@ -245,10 +382,14 @@ describe("KodiakIntegrationService", () => {
 
     it("should fetch and cache positions when not cached", async () => {
       (kodiakCache.get as jest.Mock).mockReturnValue(null);
-      (service as any).getUserCredentials = jest.fn().mockResolvedValue({
-        accountId: "test-account",
-        apiKey: "test-api-key",
-        secretKey: "test-secret-key",
+      (service as any).resolveKodiakAccount = jest.fn().mockResolvedValue({
+        id: "account-1",
+        accountRef: "test-account",
+        credentials: {
+          accountId: "test-account",
+          apiKey: "test-api-key",
+          secretKey: "test-secret-key",
+        },
       });
       (service as any).makeKodiakRequest = jest
         .fn()
@@ -268,7 +409,7 @@ describe("KodiakIntegrationService", () => {
 
     it("should return error when no credentials found", async () => {
       (kodiakCache.get as jest.Mock).mockReturnValue(null);
-      (service as any).getUserCredentials = jest.fn().mockResolvedValue(null);
+      (service as any).resolveKodiakAccount = jest.fn().mockResolvedValue(null);
 
       const result = await service.getPositions("test-user-id");
 
@@ -280,10 +421,14 @@ describe("KodiakIntegrationService", () => {
 
     it("should handle API errors gracefully", async () => {
       (kodiakCache.get as jest.Mock).mockReturnValue(null);
-      (service as any).getUserCredentials = jest.fn().mockResolvedValue({
-        accountId: "test-account",
-        apiKey: "test-api-key",
-        secretKey: "test-secret-key",
+      (service as any).resolveKodiakAccount = jest.fn().mockResolvedValue({
+        id: "account-1",
+        accountRef: "test-account",
+        credentials: {
+          accountId: "test-account",
+          apiKey: "test-api-key",
+          secretKey: "test-secret-key",
+        },
       });
       (service as any).makeKodiakRequest = jest
         .fn()
@@ -320,10 +465,14 @@ describe("KodiakIntegrationService", () => {
 
     it("should fetch and cache trades with default limit", async () => {
       (kodiakCache.get as jest.Mock).mockReturnValue(null);
-      (service as any).getUserCredentials = jest.fn().mockResolvedValue({
-        accountId: "test-account",
-        apiKey: "test-api-key",
-        secretKey: "test-secret-key",
+      (service as any).resolveKodiakAccount = jest.fn().mockResolvedValue({
+        id: "account-1",
+        accountRef: "test-account",
+        credentials: {
+          accountId: "test-account",
+          apiKey: "test-api-key",
+          secretKey: "test-secret-key",
+        },
       });
       (service as any).makeKodiakRequest = jest
         .fn()
@@ -365,10 +514,14 @@ describe("KodiakIntegrationService", () => {
 
     it("should fetch and cache balance when not cached", async () => {
       (redisService.get as jest.Mock).mockResolvedValue({ success: false });
-      (service as any).getUserCredentials = jest.fn().mockResolvedValue({
-        accountId: "test-account",
-        apiKey: "test-api-key",
-        secretKey: "test-secret-key",
+      (service as any).resolveKodiakAccount = jest.fn().mockResolvedValue({
+        id: "account-1",
+        accountRef: "test-account",
+        credentials: {
+          accountId: "test-account",
+          apiKey: "test-api-key",
+          secretKey: "test-secret-key",
+        },
       });
 
       // Mock the makeKodiakRequest method to return the expected data structure
@@ -413,10 +566,14 @@ describe("KodiakIntegrationService", () => {
 
     it("should fetch and cache account info when not cached", async () => {
       (redisService.get as jest.Mock).mockResolvedValue({ success: false });
-      (service as any).getUserCredentials = jest.fn().mockResolvedValue({
-        accountId: "test-account",
-        apiKey: "test-api-key",
-        secretKey: "test-secret-key",
+      (service as any).resolveKodiakAccount = jest.fn().mockResolvedValue({
+        id: "account-1",
+        accountRef: "test-account",
+        credentials: {
+          accountId: "test-account",
+          apiKey: "test-api-key",
+          secretKey: "test-secret-key",
+        },
       });
       (service as any).makeKodiakRequest = jest.fn().mockResolvedValue({
         totalBalance: "1000",
@@ -641,10 +798,14 @@ describe("KodiakIntegrationService", () => {
   describe("getPublicAccountInfo", () => {
     it("should fetch public account info with authenticated request", async () => {
       (redisService.get as jest.Mock).mockResolvedValue({ success: false });
-      (service as any).getUserCredentials = jest.fn().mockResolvedValue({
-        accountId: "test-account",
-        apiKey: "test-api-key",
-        secretKey: "test-secret-key",
+      (service as any).resolveKodiakAccount = jest.fn().mockResolvedValue({
+        id: "account-1",
+        accountRef: "test-account",
+        credentials: {
+          accountId: "test-account",
+          apiKey: "test-api-key",
+          secretKey: "test-secret-key",
+        },
       });
       (service as any).makeKodiakRequest = jest.fn().mockResolvedValue({
         data: {
@@ -670,10 +831,14 @@ describe("KodiakIntegrationService", () => {
 
     it("should fallback to public request when authenticated request fails", async () => {
       (redisService.get as jest.Mock).mockResolvedValue({ success: false });
-      (service as any).getUserCredentials = jest.fn().mockResolvedValue({
-        accountId: "test-account",
-        apiKey: "test-api-key",
-        secretKey: "test-secret-key",
+      (service as any).resolveKodiakAccount = jest.fn().mockResolvedValue({
+        id: "account-1",
+        accountRef: "test-account",
+        credentials: {
+          accountId: "test-account",
+          apiKey: "test-api-key",
+          secretKey: "test-secret-key",
+        },
       });
       (service as any).makeKodiakRequest = jest
         .fn()

@@ -1,10 +1,14 @@
 /** @format */
 
-import React, { useState, Suspense } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../auth";
 import { kodiakApi } from "../../../infrastructure/api";
+import {
+  accountsApi,
+  ExchangeAccountDto,
+} from "../../../infrastructure/api/accounts";
 import {
   TrendingUp,
   TrendingDown,
@@ -32,6 +36,7 @@ import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
 import { UserProgressCard } from "../../../shared/components/user/UserProgressCard";
 import { LoadingSpinner } from "../../../shared/components/ui";
 import { useBalance } from "../../../shared/hooks";
+import { globalBalanceManager } from "../../../shared/services/balance-manager";
 import {
   Container,
   ElectricalNetworkBackground,
@@ -166,9 +171,40 @@ const Dashboard: React.FC = () => {
   const hasKodiakAccess =
     user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
 
+  // C3b: which exchange account the portfolio panel displays (positions,
+  // trades, and the app-global balance widget). Empty until the account
+  // list loads; the first ACTIVE kodiak account becomes the default, which
+  // mirrors the backend's own default when no id is passed.
+  const [portfolioAccountId, setPortfolioAccountId] = useState("");
+  const accountsQuery = useQuery({
+    queryKey: ["exchange-accounts", user?.id],
+    queryFn: () => accountsApi.listAccounts(),
+    enabled: !!user,
+    staleTime: 30 * 1000,
+  });
+  const portfolioAccounts: ExchangeAccountDto[] = (
+    accountsQuery.data?.data?.accounts ?? []
+  ).filter(
+    account => account.exchange === "kodiak" && account.status === "ACTIVE"
+  );
+  const activePortfolioAccountId =
+    portfolioAccountId || portfolioAccounts[0]?.id || "";
+
+  // The balance widget is app-global: pin it to the displayed account.
+  useEffect(() => {
+    globalBalanceManager.setActiveExchangeAccountId(
+      activePortfolioAccountId || null
+    );
+  }, [activePortfolioAccountId]);
+
   const { data: positionsData, isLoading: positionsLoading } = useQuery({
-    queryKey: ["kodiak-positions", user?.id],
-    queryFn: () => kodiakApi.getKodiakPositions(),
+    queryKey: [
+      "kodiak-positions",
+      user?.id,
+      activePortfolioAccountId || "default",
+    ],
+    queryFn: () =>
+      kodiakApi.getKodiakPositions(activePortfolioAccountId || undefined),
     enabled: hasKodiakAccess && !!user?.id,
     staleTime: 30000, // 30 seconds
     gcTime: 300000, // 5 minutes
@@ -184,8 +220,13 @@ const Dashboard: React.FC = () => {
     isLoading: tradesLoading,
     error: tradesError,
   } = useQuery({
-    queryKey: ["kodiak-trades", user?.id],
-    queryFn: () => kodiakApi.getKodiakTrades(),
+    queryKey: [
+      "kodiak-trades",
+      user?.id,
+      activePortfolioAccountId || "default",
+    ],
+    queryFn: () =>
+      kodiakApi.getKodiakTrades(50, activePortfolioAccountId || undefined),
     enabled: hasKodiakAccess && !!user?.id,
     staleTime: 30000,
     gcTime: 300000,
@@ -477,6 +518,22 @@ const Dashboard: React.FC = () => {
               subtitle={`${positions.length} active positions • ${profitablePositions} profitable`}
               actions={
                 <>
+                  {portfolioAccounts.length > 0 && (
+                    <select
+                      value={activePortfolioAccountId}
+                      onChange={event =>
+                        setPortfolioAccountId(event.target.value)
+                      }
+                      aria-label="Exchange account"
+                      className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-text focus:border-primary/50 focus:outline-none"
+                    >
+                      {portfolioAccounts.map(account => (
+                        <option key={account.id} value={account.id}>
+                          {account.exchange} · {account.accountRef}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <button className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-sm">
                     Filter
                   </button>

@@ -32,6 +32,7 @@ jest.mock(
   () => ({
     exchangeAccountRepositoryAdapter: {
       listAccounts: jest.fn(),
+      getAccountWithSecret: jest.fn(),
     },
   })
 );
@@ -464,7 +465,10 @@ describe("Market Controller", () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data).toEqual(mockPositions);
-      expect(mockKodiakService.getPositions).toHaveBeenCalledWith("user-123");
+      expect(mockKodiakService.getPositions).toHaveBeenCalledWith(
+        "user-123",
+        undefined
+      );
     });
 
     it("should handle positions API failure", async () => {
@@ -478,6 +482,131 @@ describe("Market Controller", () => {
         .expect(400);
 
       expect(response.body.success).toBe(false);
+    });
+  });
+
+  describe("C3b account scoping (?exchangeAccountId=)", () => {
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    const activeKodiakAccount = {
+      id: accountId,
+      userId: "user-123",
+      exchange: "kodiak",
+      status: "ACTIVE",
+      accountRef: "acc-1",
+    };
+
+    beforeEach(() => {
+      mockAccountRepo.getAccountWithSecret.mockResolvedValue(
+        activeKodiakAccount
+      );
+      mockKodiakService.getPositions.mockResolvedValue({
+        success: true,
+        data: [],
+      });
+      mockKodiakService.getBalance.mockResolvedValue({
+        success: true,
+        data: {},
+      });
+      mockKodiakService.getTrades.mockResolvedValue({
+        success: true,
+        data: [],
+      });
+    });
+
+    it("scopes positions to the requested account", async () => {
+      const response = await request(app)
+        .get(`/api/market/positions?exchangeAccountId=${accountId}`)
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(mockKodiakService.getPositions).toHaveBeenCalledWith(
+        "user-123",
+        accountId
+      );
+      expect(mockAccountRepo.getAccountWithSecret).toHaveBeenCalledWith(
+        "user-123",
+        accountId
+      );
+    });
+
+    it("scopes balance and trades to the requested account", async () => {
+      await request(app)
+        .get(`/api/market/balance?exchangeAccountId=${accountId}`)
+        .expect(200);
+      expect(mockKodiakService.getBalance).toHaveBeenCalledWith(
+        "user-123",
+        accountId
+      );
+
+      await request(app)
+        .get(`/api/market/trades?exchangeAccountId=${accountId}`)
+        .expect(200);
+      expect(mockKodiakService.getTrades).toHaveBeenCalledWith(
+        "user-123",
+        50,
+        accountId
+      );
+    });
+
+    it("answers 400 for a malformed exchangeAccountId", async () => {
+      const response = await request(app)
+        .get("/api/market/positions?exchangeAccountId=not-a-uuid")
+        .expect(400);
+
+      expect(response.body).toEqual({
+        success: false,
+        error: "Invalid exchangeAccountId format",
+      });
+      expect(mockAccountRepo.getAccountWithSecret).not.toHaveBeenCalled();
+      expect(mockKodiakService.getPositions).not.toHaveBeenCalled();
+    });
+
+    it("answers 404 for an unknown or foreign account", async () => {
+      mockAccountRepo.getAccountWithSecret.mockResolvedValue(null);
+
+      const response = await request(app)
+        .get(`/api/market/positions?exchangeAccountId=${accountId}`)
+        .expect(404);
+
+      expect(response.body).toEqual({
+        success: false,
+        error: "Exchange account not found",
+      });
+      expect(mockKodiakService.getPositions).not.toHaveBeenCalled();
+    });
+
+    it("answers 409 for a non-ACTIVE account", async () => {
+      mockAccountRepo.getAccountWithSecret.mockResolvedValue({
+        ...activeKodiakAccount,
+        status: "PENDING",
+      });
+
+      const response = await request(app)
+        .get(`/api/market/balance?exchangeAccountId=${accountId}`)
+        .expect(409);
+
+      expect(response.body).toEqual({
+        success: false,
+        error: "Exchange account is not active",
+      });
+      expect(mockKodiakService.getBalance).not.toHaveBeenCalled();
+    });
+
+    it("answers 400 for a non-kodiak account", async () => {
+      mockAccountRepo.getAccountWithSecret.mockResolvedValue({
+        ...activeKodiakAccount,
+        exchange: "lighter",
+      });
+
+      const response = await request(app)
+        .get(`/api/market/positions?exchangeAccountId=${accountId}`)
+        .expect(400);
+
+      expect(response.body).toEqual({
+        success: false,
+        error: "Portfolio data is only available for Kodiak accounts",
+      });
+      expect(mockKodiakService.getPositions).not.toHaveBeenCalled();
     });
   });
 
@@ -496,7 +625,10 @@ describe("Market Controller", () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data).toEqual(mockBalance);
-      expect(mockKodiakService.getBalance).toHaveBeenCalledWith("user-123");
+      expect(mockKodiakService.getBalance).toHaveBeenCalledWith(
+        "user-123",
+        undefined
+      );
     });
 
     it("should handle balance API failure", async () => {
@@ -528,7 +660,11 @@ describe("Market Controller", () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data).toEqual(mockTrades);
-      expect(mockKodiakService.getTrades).toHaveBeenCalledWith("user-123", 50);
+      expect(mockKodiakService.getTrades).toHaveBeenCalledWith(
+        "user-123",
+        50,
+        undefined
+      );
     });
 
     it("should pass a custom limit through", async () => {
@@ -539,7 +675,11 @@ describe("Market Controller", () => {
 
       await request(app).get("/api/market/trades?limit=10").expect(200);
 
-      expect(mockKodiakService.getTrades).toHaveBeenCalledWith("user-123", 10);
+      expect(mockKodiakService.getTrades).toHaveBeenCalledWith(
+        "user-123",
+        10,
+        undefined
+      );
     });
 
     it("should handle trades API failure", async () => {

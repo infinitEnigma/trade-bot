@@ -1,7 +1,6 @@
 # Data Model: Identity, Wallets & Exchange Accounts
 
-**Status:** C1 (identity core — migration `011_identity_core.sql`), C2 (wallets & exchange accounts — migration `012_wallets_exchange_accounts.sql`) and C3a (bot → account binding — migration `013_bot_account_binding.sql`) implemented;
-C3b (positions/balances generalisation, then the `kodiak_*` drops) pending. Everything below that did not land remains the target model.
+**Status:** C1 (identity core — migration `011_identity_core.sql`), C2 (wallets & exchange accounts — migration `012_wallets_exchange_accounts.sql`), C3a (bot → account binding — migration `013_bot_account_binding.sql`) and C3b (per-account data tables — migration `014_drop_legacy_kodiak.sql`) implemented — all staged PRs of the execution plan have landed. Everything below that did not land remains the target model.
 **Execution plan:** [EXCHANGE_INTEGRATION_PLAN.md](EXCHANGE_INTEGRATION_PLAN.md)
 (defines the staged PRs C1-C3 that implement this document).
 
@@ -112,21 +111,28 @@ Behaviour coupled to it:
 - Verification state feeds `user_level` through a join in
   `getAuthenticatedUserData` (`user-repository.adapter.ts:246-250`).
 
-### Vendor-named data tables
+### Vendor-named data tables — dropped by `014_drop_legacy_kodiak.sql`
 
-| Table               | Key assumption                                                    |
-| ------------------- | ----------------------------------------------------------------- |
-| `kodiak_accounts`   | `UNIQUE(user_id)`                                                 |
-| `kodiak_positions`  | `UNIQUE(user_id, symbol)` — positions per _user_, not per account |
-| `kodiak_balances`   | keyed by `user_id`                                                |
-| `kodiak_statistics` | `UNIQUE(user_id)`                                                 |
-| `trades`            | `user_id` + optional `strategy_id`/`bot_id`; no account reference |
+| Dropped table       | Why it could not stay                                                |
+| ------------------- | -------------------------------------------------------------------- |
+| `kodiak_accounts`   | `UNIQUE(user_id)` — one account per user                             |
+| `kodiak_positions`  | `UNIQUE(user_id, symbol)` — positions per _user_, not per account    |
+| `kodiak_balances`   | keyed by `user_id`                                                   |
+| `kodiak_statistics` | `UNIQUE(user_id)`                                                    |
+| `trades`            | (kept) `user_id` + optional `strategy_id`/`bot_id`; no account reference yet |
 
 C3a created their per-account replacements — `exchange_positions` and
-`exchange_balances`, keyed `UNIQUE(exchange_account_id, …)` — **empty**. C3b
-moves the readers onto them, repopulates from the venue sync, and only then
-drops the tables above (no row migration: legacy rows are keyed by
-`(user_id, symbol)` and are ambiguous once a user holds two accounts).
+`exchange_balances`, keyed `UNIQUE(exchange_account_id, …)`. C3b moved the
+readers onto them (`position-repository.adapter`, `balance-repository.adapter`,
+`schema-validation-middleware` validators — all join `exchange_accounts` for
+ownership) and added the venue sync (`exchange-snapshot.adapter`): each
+successful authenticated venue read replaces that account's rows, so the new
+tables repopulate per account from live traffic. `014_drop_legacy_kodiak.sql`
+then made `bot_instances.exchange_account_id` `NOT NULL` (after re-running
+the backfill, with a guard that refuses while any bot is unbound) and dropped
+the four `kodiak_*` tables. No row migration was attempted — legacy rows were
+keyed by `(user_id, symbol)`, ambiguous once a user holds two accounts, and in
+practice all four were empty: the legacy writer was a no-op.
 
 ### `bot_instances` / `strategies` — migrations `001`, `003`, `007`
 
@@ -371,9 +377,14 @@ _Benefit:_ no compatibility layer, roughly half the work.
 
 > **C3a landed** (`013_bot_account_binding.sql`, plan §3 C3a): phase 5 — a bot
 > binds to one ACTIVE `exchange_accounts` row and `/credentials/:botId` issues
-> that row's envelope. Phase 6 (C3b) is what moves the position/balance readers,
-> makes the binding `NOT NULL` and drops the `kodiak_*` tables; until then the
-> two new tables stay empty on purpose.
+> that row's envelope.
+>
+> **C3b landed** (`014_drop_legacy_kodiak.sql`, plan §3 C3b): phase 6 — the
+> position/balance readers and validators moved onto
+> `exchange_positions`/`exchange_balances`, the venue sync repopulates them per
+> account, `exchange_account_id` became `NOT NULL`, and the four `kodiak_*`
+> tables were dropped. Acceptance: positions and balances display per account;
+> two accounts holding the same symbol both display correctly.
 
 Phases 1-4 are prerequisites for the Lighter engine work (extended
 `ExchangeClient` + `LighterClient`); Phase 5 is what lets the engine trade a

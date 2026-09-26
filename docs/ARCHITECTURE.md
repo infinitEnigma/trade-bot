@@ -255,7 +255,8 @@ debt, deliberately deferred (P2).
 | `010_wallet_addresses.sql`          | `wallet_addresses` (wallet linking independent of exchange keys)                                                                        |
 | `011_identity_core.sql`             | `users.username` (+ unique index on LOWER(username)), `display_name`, `avatar_url`; `user_identities` (one backfilled password identity per user) |
 | `012_wallets_exchange_accounts.sql` | `wallets` (many chain-aware wallets per user) and `exchange_accounts` (many venue/environment accounts, sealed credential envelope); backfills `wallet_addresses` / `kodiak_credentials` |
-| `013_bot_account_binding.sql`       | `bot_instances.exchange_account_id` (nullable + backfill to the owner's earliest ACTIVE account, `ON DELETE RESTRICT`); creates the empty per-account `exchange_positions` / `exchange_balances` tables. `NOT NULL` and the `kodiak_*` drops are deferred to C3b |
+| `013_bot_account_binding.sql`       | `bot_instances.exchange_account_id` (nullable + backfill to the owner's earliest ACTIVE account, `ON DELETE RESTRICT`); creates the empty per-account `exchange_positions` / `exchange_balances` tables |
+| `014_drop_legacy_kodiak.sql`         | Re-runs the backfill, makes `bot_instances.exchange_account_id` `NOT NULL` (guard refuses while any bot is unbound), drops `kodiak_accounts` / `kodiak_positions` / `kodiak_balances` / `kodiak_statistics` (all empty — the C3b venue sync repopulates `exchange_*` instead) |
 
 ---
 

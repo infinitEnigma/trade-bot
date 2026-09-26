@@ -319,6 +319,30 @@ describe("kodiakApi", () => {
       spy.mockRestore();
     });
 
+    it("scopes the request and dedup key to one exchange account (C3b)", async () => {
+      const accountId = "11111111-1111-4111-8111-111111111111";
+      const mockResponse = { success: true, data: { rows: [] } };
+      const spy = vi
+        .spyOn(globalRequestManager, "deduplicateRequest")
+        .mockResolvedValue(mockResponse);
+
+      const result = await kodiakApi.getKodiakPositions(accountId);
+
+      expect(spy).toHaveBeenCalledWith(
+        `kodiak:positions:${accountId}`,
+        expect.any(Function),
+        "tradingApi"
+      );
+      const [, requestFn] = spy.mock.calls[0];
+      mockGet.mockResolvedValue({ data: mockResponse });
+      await requestFn();
+      expect(mockGet).toHaveBeenCalledWith("/api/market/positions", {
+        params: { exchangeAccountId: accountId },
+      });
+      expect(result).toEqual(mockResponse);
+      spy.mockRestore();
+    });
+
     it("should handle 403 errors when getting Kodiak positions", async () => {
       const mockError = {
         response: { status: 403 },

@@ -29,7 +29,11 @@ import {
   createAbortController,
   createFetchOptions,
 } from "./kodiak/fetch-options";
-import { getUserCredentials } from "./kodiak/credentials-provider";
+import {
+  getUserCredentials,
+  resolveKodiakAccount,
+} from "./kodiak/credentials-provider";
+import type { ResolvedKodiakAccount } from "./kodiak/credentials-provider";
 import { privateDataMethods } from "./kodiak/private-data";
 import { marketDataMethods } from "./kodiak/market-data";
 import type { KodiakCredentials } from "./kodiak/types";
@@ -111,6 +115,18 @@ export class KodiakIntegrationService {
    */
   async getUserCredentials(userId: string): Promise<KodiakCredentials | null> {
     return getUserCredentials(userId);
+  }
+
+  /**
+   * C3b: account-scoped resolution — same contract as above but pins one
+   * owned, ACTIVE kodiak account and returns its `exchange_accounts.id` UUID
+   * so snapshot writes can key by it. Omitted id = legacy first-ACTIVE default.
+   */
+  async resolveKodiakAccount(
+    userId: string,
+    exchangeAccountId?: string
+  ): Promise<ResolvedKodiakAccount | null> {
+    return resolveKodiakAccount(userId, exchangeAccountId);
   }
 
   /**

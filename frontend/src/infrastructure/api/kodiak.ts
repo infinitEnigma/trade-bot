@@ -176,14 +176,16 @@ class KodiakApi {
         const response = await httpClient.getClient().get('/api/user/kodiak/balance');
         return response.data;
     }*/
-  async getKodiakBalance() {
+  async getKodiakBalance(exchangeAccountId?: string) {
     return globalRequestManager.deduplicateRequest(
-      "kodiak:balance",
+      `kodiak:balance${exchangeAccountId ? `:${exchangeAccountId}` : ""}`,
       async () => {
         try {
           const response = await httpClient
             .getClient()
-            .get("/api/market/balance");
+            .get("/api/market/balance", {
+              params: exchangeAccountId ? { exchangeAccountId } : undefined,
+            });
           return response.data;
         } catch (error: unknown) {
           // Return empty data instead of throwing for missing credentials
@@ -206,14 +208,18 @@ class KodiakApi {
   }
 
   // Kodiak exchange integration endpoints with global deduplication
-  async getKodiakPositions() {
+  // (C3b: optional exchangeAccountId scopes the read to one account; the
+  // dedup key carries it so two accounts never share an in-flight request)
+  async getKodiakPositions(exchangeAccountId?: string) {
     return globalRequestManager.deduplicateRequest(
-      "kodiak:positions",
+      `kodiak:positions${exchangeAccountId ? `:${exchangeAccountId}` : ""}`,
       async () => {
         try {
           const response = await httpClient
             .getClient()
-            .get("/api/market/positions");
+            .get("/api/market/positions", {
+              params: exchangeAccountId ? { exchangeAccountId } : undefined,
+            });
           return response.data;
         } catch (error: unknown) {
           // Return empty data instead of throwing for missing credentials
@@ -235,14 +241,20 @@ class KodiakApi {
     );
   }
 
-  async getKodiakTrades(limit = 50) {
+  async getKodiakTrades(limit = 50, exchangeAccountId?: string) {
     return globalRequestManager.deduplicateRequest(
-      `kodiak:trades:${limit}`,
+      `kodiak:trades:${limit}${exchangeAccountId ? `:${exchangeAccountId}` : ""}`,
       async () => {
         try {
           const response = await httpClient
             .getClient()
-            .get(`/api/market/trades?limit=${limit}`);
+            .get(
+              `/api/market/trades?limit=${limit}${
+                exchangeAccountId
+                  ? `&exchangeAccountId=${exchangeAccountId}`
+                  : ""
+              }`
+            );
           return response.data;
         } catch (error: unknown) {
           // Return empty data instead of throwing for missing credentials

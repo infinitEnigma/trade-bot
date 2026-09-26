@@ -31,6 +31,8 @@ class GlobalBalanceManager {
   private refreshTimer: NodeJS.Timeout | null = null;
   private lastBalanceData: Balance | null = null;
   private isRefreshing = false;
+  /** C3b: pin every balance read to one exchange account (null = legacy default). */
+  private activeExchangeAccountId: string | null = null;
 
   private constructor() {}
 
@@ -99,6 +101,27 @@ class GlobalBalanceManager {
   }
 
   /**
+   * C3b: pin every balance read to one exchange account.
+   *
+   * `null` restores the legacy default (the backend's first ACTIVE kodiak
+   * account). Changing the pin drops the last value — it belongs to the
+   * previous account — and refreshes immediately so subscribers re-render
+   * with the newly selected account's balance.
+   */
+  setActiveExchangeAccountId(exchangeAccountId: string | null): void {
+    if (this.activeExchangeAccountId === exchangeAccountId) return;
+    this.activeExchangeAccountId = exchangeAccountId;
+    this.lastBalanceData = null;
+    if (this.subscribers.size > 0) {
+      void this.refreshBalance();
+    }
+  }
+
+  getActiveExchangeAccountId(): string | null {
+    return this.activeExchangeAccountId;
+  }
+
+  /**
    * Refresh balance data and notify all subscribers
    */
   private async refreshBalance(): Promise<void> {
@@ -110,7 +133,9 @@ class GlobalBalanceManager {
     );
 
     try {
-      const response = await kodiakApi.getKodiakBalance();
+      const response = await kodiakApi.getKodiakBalance(
+        this.activeExchangeAccountId ?? undefined
+      );
 
       if (response.success && response.data) {
         // Convert KodiakAccountInfo to legacy format

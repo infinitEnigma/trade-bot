@@ -56,15 +56,109 @@ async function decryptFieldBlobAsync(blob: string): Promise<string> {
 }
 
 /**
- * Get decrypted Kodiak credentials for a user.
- *
- * C3 replaces the "first ACTIVE account" lookup with an explicit
- * bot→account binding — the signature stays so C3 is a data-source swap.
+ * Resolved view of the account a read/write should run against (C3b).
+ * `id` is the `exchange_accounts.id` UUID (snapshot/FK target); `accountRef`
+ * is the venue-side account reference carried in the envelope.
  */
-export async function getUserCredentials(
-  userId: string
+export interface ResolvedKodiakAccount {
+  id: string;
+  accountRef: string;
+  credentials: KodiakCredentials;
+}
+
+/**
+ * Decrypt the stored envelope of an already-loaded account row.
+ * Current single-envelope rows first, then the backfilled kodiak-legacy
+ * wrapper path (see migration 012 header).
+ */
+async function decryptStoredCredentials(
+  userId: string,
+  stored: { credentialsEncrypted: string },
+  fallbackAccountRef: string
 ): Promise<KodiakCredentials | null> {
+  // Current single-envelope rows: one versioned decrypt → plaintext JSON.
   try {
+    const plaintext = await encryptionService.decryptWithVersion(
+      stored.credentialsEncrypted
+    );
+    const parsed = JSON.parse(plaintext) as CurrentEnvelope;
+    if (
+      (parsed.kind === "kodiak" || parsed.kind === undefined) &&
+      typeof parsed.apiKey === "string" &&
+      typeof parsed.secretKey === "string"
+    ) {
+      return {
+        accountId: parsed.accountId ?? fallbackAccountRef,
+        apiKey: parsed.apiKey,
+        secretKey: parsed.secretKey,
+      };
+    }
+  } catch {
+    // Not a versioned single envelope — try the legacy wrapper path.
+  }
+
+  // Backfilled wrapper: the column holds the wrapper JSON itself; each
+  // field is the untouched legacy ciphertext blob (see migration 012
+  // header). Decrypt per-field with the existing logic.
+  try {
+    const wrapper = JSON.parse(stored.credentialsEncrypted) as LegacyWrapper;
+    if (wrapper.kind !== "kodiak-legacy") return null;
+    const [apiKey, secretKey] = await Promise.all([
+      decryptFieldBlobAsync(wrapper.apiKeyCipher),
+      decryptFieldBlobAsync(wrapper.secretKeyCipher),
+    ]);
+    return { accountId: wrapper.accountId, apiKey, secretKey };
+  } catch (error) {
+    logger.error(
+      "Failed to decrypt exchange account envelope",
+      error as Error,
+      { userId }
+    );
+    return null;
+  }
+}
+
+/**
+ * Resolve the Kodiak account a request should run against — C3b.
+ *
+ * - `exchangeAccountId` given: that exact row, but only when the caller owns
+ *   it (`getAccountWithSecret` is user-scoped), it is a kodiak row and it is
+ *   ACTIVE; otherwise `null` (callers answer 400/404/409 before getting here,
+ *   this is defence in depth).
+ * - omitted: the user's first ACTIVE kodiak account (legacy default, so
+ *   unscoped reads behave exactly as before C3).
+ *
+ * Returns the account UUID alongside the decrypted envelope so snapshot
+ * writes (`exchange_positions` / `exchange_balances`) key by
+ * `exchange_accounts.id`, not by the venue's own account id.
+ */
+export async function resolveKodiakAccount(
+  userId: string,
+  exchangeAccountId?: string
+): Promise<ResolvedKodiakAccount | null> {
+  try {
+    if (exchangeAccountId) {
+      const stored =
+        await exchangeAccountRepositoryAdapter.getAccountWithSecret(
+          userId,
+          exchangeAccountId
+        );
+      if (
+        !stored ||
+        stored.exchange !== "kodiak" ||
+        stored.status !== "ACTIVE"
+      ) {
+        return null;
+      }
+      const credentials = await decryptStoredCredentials(
+        userId,
+        stored,
+        stored.accountRef
+      );
+      if (!credentials) return null;
+      return { id: stored.id, accountRef: stored.accountRef, credentials };
+    }
+
     const accounts =
       await exchangeAccountRepositoryAdapter.listAccounts(userId);
     const active = accounts.find(
@@ -78,51 +172,33 @@ export async function getUserCredentials(
     );
     if (!stored) return null;
 
-    // Current single-envelope rows: one versioned decrypt → plaintext JSON.
-    try {
-      const plaintext = await encryptionService.decryptWithVersion(
-        stored.credentialsEncrypted
-      );
-      const parsed = JSON.parse(plaintext) as CurrentEnvelope;
-      if (
-        (parsed.kind === "kodiak" || parsed.kind === undefined) &&
-        typeof parsed.apiKey === "string" &&
-        typeof parsed.secretKey === "string"
-      ) {
-        return {
-          accountId: parsed.accountId ?? active.accountRef,
-          apiKey: parsed.apiKey,
-          secretKey: parsed.secretKey,
-        };
-      }
-    } catch {
-      // Not a versioned single envelope — try the legacy wrapper path.
-    }
-
-    // Backfilled wrapper: the column holds the wrapper JSON itself; each
-    // field is the untouched legacy ciphertext blob (see migration 012
-    // header). Decrypt per-field with the existing logic.
-    try {
-      const wrapper = JSON.parse(stored.credentialsEncrypted) as LegacyWrapper;
-      if (wrapper.kind !== "kodiak-legacy") return null;
-      const [apiKey, secretKey] = await Promise.all([
-        decryptFieldBlobAsync(wrapper.apiKeyCipher),
-        decryptFieldBlobAsync(wrapper.secretKeyCipher),
-      ]);
-      return { accountId: wrapper.accountId, apiKey, secretKey };
-    } catch (error) {
-      logger.error(
-        "Failed to decrypt exchange account envelope",
-        error as Error,
-        { userId }
-      );
-      return null;
-    }
+    const credentials = await decryptStoredCredentials(
+      userId,
+      stored,
+      active.accountRef
+    );
+    if (!credentials) return null;
+    return { id: active.id, accountRef: active.accountRef, credentials };
   } catch (error) {
     logger.error("Failed to get exchange account credentials", error as Error, {
       userId,
+      exchangeAccountId,
       error: error instanceof Error ? error.message : String(error),
     });
     return null;
   }
+}
+
+/**
+ * Get decrypted Kodiak credentials for a user — first ACTIVE kodiak account.
+ *
+ * C3 keeps the legacy (userId) contract for callers that do not care which
+ * account answers (`market-cache.ts` gate); account-aware callers use
+ * `resolveKodiakAccount` instead.
+ */
+export async function getUserCredentials(
+  userId: string
+): Promise<KodiakCredentials | null> {
+  const resolved = await resolveKodiakAccount(userId);
+  return resolved?.credentials ?? null;
 }

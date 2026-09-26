@@ -1,6 +1,6 @@
 # Exchange Integration & Data Model — Execution Plan
 
-**Status:** A and B executed; C in progress — **C1 (identity) and C2 (wallets + exchange accounts) landed**. C3 pending.
+**Status:** A, B and C executed — **C1 (identity), C2 (wallets + exchange accounts) and C3 (bot→account binding + per-account data tables) landed**.
 **Companion docs:** [DATA_MODEL.md](DATA_MODEL.md) (target schema + why),
 [PROJECT_REVIEW_GAP_ANALYSIS.md](PROJECT_REVIEW_GAP_ANALYSIS.md) (ledger),
 [ARCHITECTURE.md](ARCHITECTURE.md) (current design),
@@ -204,9 +204,9 @@ different revert costs, so each must be independently releasable and revertible.
 - `013_bot_account_binding.sql`: nullable `bot_instances.exchange_account_id`
   (`ON DELETE RESTRICT`) backfilled to each owner's earliest ACTIVE account
   (kodiak preferred); creates `exchange_positions` / `exchange_balances` **empty**
-  and drops nothing. `NOT NULL` and the legacy drops are deferred to C3b on
+  and drops nothing. `NOT NULL` and the legacy drops were deferred to C3b on
   purpose — the backfill leaves `NULL` for bots whose owner has no ACTIVE
-  account yet.
+  account yet — and landed in `014_drop_legacy_kodiak.sql`.
 - Code: `POST /api/bot/start` requires an owned **ACTIVE** `exchangeAccountId`
   (Joi + route + `createAndStart` defence in depth) and writes it on create;
   **`/credentials/:botId` swaps its data source to the bot's bound
@@ -220,19 +220,35 @@ different revert costs, so each must be independently releasable and revertible.
   an unbound legacy bot gets 409 instead of trading the wrong account; revoking
   an account with bound bots is refused with a clear 409.
 
-#### C3b — positions/balances generalisation (pending)
+#### C3b — positions/balances generalisation (✅ landed)
 
-- Move the position/balance readers (`position-repository.adapter`,
-  `private-data.getPositions` / `getBalance`, `schema-validation-middleware`,
-  `market-portfolio.routes` account scoping) onto
-  `exchange_positions` / `exchange_balances`, repopulate them from the venue
-  sync, then `014_*.sql` makes the binding `NOT NULL` and drops
-  `kodiak_accounts` / `kodiak_positions` / `kodiak_balances` /
-  `kodiak_statistics`.
-- **Gate:** `grep -rn 'kodiak_positions\|kodiak_balances' backend/src` returns no
-  hits (today: `position-repository.adapter`, `schema-validation-middleware`).
-- **Acceptance:** positions and balances display per account; two accounts
-  holding the same symbol both display correctly; ledger row 8 closes.
+- **Readers moved** onto `exchange_positions` / `exchange_balances`:
+  `position-repository.adapter` and `balance-repository.adapter` now join
+  `exchange_accounts` for ownership (the `balances` table they used to read
+  never existed), and `schema-validation-middleware`'s balance/position
+  validators point at the new tables.
+- **Venue sync** (`exchange-snapshot.adapter`): every successful
+  authenticated venue read in `kodiak/private-data` replaces that account's
+  rows — `exchange_positions` / `exchange_balances` fill up per account from
+  live traffic (the legacy writer was a no-op, so all four `kodiak_*` tables
+  were empty; nothing needed migrating).
+- **Account-scoped display:** `GET /api/market/{positions,balance,trades}`
+  accept `?exchangeAccountId=` (owned + kodiak + ACTIVE, else 400/404/409);
+  cache keys carry the id, so two accounts of one user never serve each
+  other's rows. The frontend picker on the Dashboard pins positions, trades
+  and the app-global balance widget to the selected account.
+- **`014_drop_legacy_kodiak.sql`:** re-runs the backfill, makes
+  `bot_instances.exchange_account_id` `NOT NULL` (a guard refuses while any
+  bot is unbound), and drops `kodiak_accounts` / `kodiak_positions` /
+  `kodiak_balances` / `kodiak_statistics`. `backend/scripts/drop-tables.ts`
+  (the missing `db:drop` target) now exists.
+- **Gate:** `grep -rn 'kodiak_positions\|kodiak_balances' backend/src`
+  returns **no hits** (was: `position-repository.adapter`,
+  `schema-validation-middleware`).
+- **Acceptance:** positions and balances display per account (Dashboard
+  picker → `?exchangeAccountId=`); two accounts holding the same symbol both
+  display correctly (`UNIQUE(exchange_account_id, symbol)`); ledger row 8
+  closes.
 
 ---
 

@@ -1,6 +1,7 @@
-/** GET /api/market/positions + /balance + /trades — authenticated exchange user data (C2: replaces the deleted /api/user/kodiak/* routes). */
+/** GET /api/market/positions + /balance + /trades — authenticated exchange user data (C2: replaces the deleted /api/user/kodiak/* routes; C3b: optional `?exchangeAccountId=` scoping so two accounts of one user display independently). */
 import { Router, Response } from "express";
 import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
+import { exchangeAccountRepositoryAdapter } from "../../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
 import {
   authMiddleware,
   AuthenticatedRequest,
@@ -8,6 +9,59 @@ import {
 import { errMessage, fail, ok } from "./market-helpers";
 
 export const portfolioRoutes = Router();
+
+/** Loose v4 shape — rows are written by gen_random_uuid(). */
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type AccountScope =
+  | { ok: true; exchangeAccountId?: string }
+  | { ok: false; status: number; error: string };
+
+/**
+ * C3b: validate the optional `exchangeAccountId` query param.
+ *
+ * - absent → legacy default (the service resolves the user's first ACTIVE
+ *   kodiak account, exactly as before C3b);
+ * - malformed → 400; unknown or not owned by the caller → 404 (a foreign id
+ *   is indistinguishable from a missing one, so existence is not leaked);
+ * - non-kodiak row → 400 (this route family only speaks Kodiak);
+ * - not ACTIVE → 409 (same state-conflict answer as bot start / revoke).
+ *
+ * Repo failures propagate to the caller's try/catch and hit `fail()` like
+ * every other error on these endpoints.
+ */
+async function resolveAccountScope(
+  userId: string,
+  raw: unknown
+): Promise<AccountScope> {
+  if (raw === undefined || raw === null || raw === "") return { ok: true };
+  if (typeof raw !== "string" || !UUID_PATTERN.test(raw)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Invalid exchangeAccountId format",
+    };
+  }
+  const account = await exchangeAccountRepositoryAdapter.getAccountWithSecret(
+    userId,
+    raw
+  );
+  if (!account) {
+    return { ok: false, status: 404, error: "Exchange account not found" };
+  }
+  if (account.exchange !== "kodiak") {
+    return {
+      ok: false,
+      status: 400,
+      error: "Portfolio data is only available for Kodiak accounts",
+    };
+  }
+  if (account.status !== "ACTIVE") {
+    return { ok: false, status: 409, error: "Exchange account is not active" };
+  }
+  return { ok: true, exchangeAccountId: account.id };
+}
 
 portfolioRoutes.get(
   "/positions",
@@ -21,8 +75,19 @@ portfolioRoutes.get(
           error: "Authentication required",
         });
       }
-      const positionsResponse =
-        await kodiakIntegrationService.getPositions(userId);
+      const scope = await resolveAccountScope(
+        userId,
+        req.query.exchangeAccountId
+      );
+      if (!scope.ok) {
+        return res
+          .status(scope.status)
+          .json({ success: false, error: scope.error });
+      }
+      const positionsResponse = await kodiakIntegrationService.getPositions(
+        userId,
+        scope.exchangeAccountId
+      );
       if (!positionsResponse.success) {
         return res.status(400).json({
           success: false,
@@ -33,6 +98,7 @@ portfolioRoutes.get(
     } catch (err: unknown) {
       fail(res, "positions_endpoint", "Failed to fetch positions", {
         userId: req.user?.userId,
+        exchangeAccountId: req.query.exchangeAccountId,
         error: errMessage(err),
       });
     }
@@ -51,7 +117,19 @@ portfolioRoutes.get(
           error: "Authentication required",
         });
       }
-      const balanceResponse = await kodiakIntegrationService.getBalance(userId);
+      const scope = await resolveAccountScope(
+        userId,
+        req.query.exchangeAccountId
+      );
+      if (!scope.ok) {
+        return res
+          .status(scope.status)
+          .json({ success: false, error: scope.error });
+      }
+      const balanceResponse = await kodiakIntegrationService.getBalance(
+        userId,
+        scope.exchangeAccountId
+      );
       if (!balanceResponse.success) {
         return res.status(400).json({
           success: false,
@@ -62,6 +140,7 @@ portfolioRoutes.get(
     } catch (err: unknown) {
       fail(res, "balance_endpoint", "Failed to fetch balance", {
         userId: req.user?.userId,
+        exchangeAccountId: req.query.exchangeAccountId,
         error: errMessage(err),
       });
     }
@@ -80,12 +159,22 @@ portfolioRoutes.get(
           error: "Authentication required",
         });
       }
+      const scope = await resolveAccountScope(
+        userId,
+        req.query.exchangeAccountId
+      );
+      if (!scope.ok) {
+        return res
+          .status(scope.status)
+          .json({ success: false, error: scope.error });
+      }
       const limit = req.query.limit
         ? parseInt(req.query.limit as string, 10)
         : 50;
       const tradesResponse = await kodiakIntegrationService.getTrades(
         userId,
-        Number.isFinite(limit) && limit > 0 ? limit : 50
+        Number.isFinite(limit) && limit > 0 ? limit : 50,
+        scope.exchangeAccountId
       );
       if (!tradesResponse.success) {
         return res.status(400).json({
@@ -97,6 +186,7 @@ portfolioRoutes.get(
     } catch (err: unknown) {
       fail(res, "trades_endpoint", "Failed to fetch trades", {
         userId: req.user?.userId,
+        exchangeAccountId: req.query.exchangeAccountId,
         error: errMessage(err),
       });
     }
