@@ -36,6 +36,7 @@ import {
 } from "./lifecycle/bot-event-processor";
 import { BotLifecycleRepository } from "./lifecycle/bot-lifecycle.repository";
 import { exchangeAccountRepositoryAdapter } from "../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
+import { syncStrategyActive } from "./lifecycle/strategy-active-sync";
 import {
   BotLifecycleResult,
   BotRow,
@@ -164,6 +165,9 @@ export class BotLifecycleService {
       messageId: sendResult.messageId ?? null,
       metadata: {},
     });
+
+    // Strategy badge (Phase 2): the strategy is starting with this bot.
+    await syncStrategyActive(bot.strategy_id, true);
 
     return {
       botId,
@@ -334,6 +338,9 @@ export class BotLifecycleService {
       messageId: sendResult.messageId ?? null,
       metadata: {},
     });
+
+    // Strategy badge (Phase 2): the strategy is being stopped with this bot.
+    await syncStrategyActive(bot.strategy_id, false);
 
     return {
       botId,

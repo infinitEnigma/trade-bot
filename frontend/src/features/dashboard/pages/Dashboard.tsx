@@ -192,13 +192,9 @@ const Dashboard: React.FC = () => {
     );
   const activePortfolioAccountId =
     portfolioAccountId || portfolioAccounts[0]?.id || "";
-  const activePortfolioAccount = portfolioAccounts.find(
-    account => account.id === activePortfolioAccountId
-  );
-  // Positions/trades/balance read through the Kodiak venue endpoints, which
-  // answer 400 for non-kodiak ids — only query them for a kodiak selection.
-  const isKodiakPortfolioSelected =
-    !activePortfolioAccountId || activePortfolioAccount?.exchange === "kodiak";
+  // Positions/trades/balance are venue-dispatched server-side (kodiak rows
+  // → kodiak-integration, lighter rows → the Lighter portfolio reader), so
+  // every ACTIVE selection is queried — no venue gate here anymore.
 
   // The balance widget is app-global: pin it to the displayed account.
   useEffect(() => {
@@ -215,8 +211,7 @@ const Dashboard: React.FC = () => {
     ],
     queryFn: () =>
       kodiakApi.getKodiakPositions(activePortfolioAccountId || undefined),
-    enabled:
-      hasPortfolioAccess && !!user?.id && isKodiakPortfolioSelected,
+    enabled: hasPortfolioAccess && !!user?.id,
     staleTime: 30000, // 30 seconds
     gcTime: 300000, // 5 minutes
     retry: (failureCount, error: Error) => {
@@ -238,8 +233,7 @@ const Dashboard: React.FC = () => {
     ],
     queryFn: () =>
       kodiakApi.getKodiakTrades(50, activePortfolioAccountId || undefined),
-    enabled:
-      hasPortfolioAccess && !!user?.id && isKodiakPortfolioSelected,
+    enabled: hasPortfolioAccess && !!user?.id,
     staleTime: 30000,
     gcTime: 300000,
     retry: (failureCount, error: Error) => {
@@ -527,11 +521,7 @@ const Dashboard: React.FC = () => {
           <Card>
             <SectionHeader
               title="Open Positions"
-              subtitle={
-                isKodiakPortfolioSelected
-                  ? `${positions.length} active positions • ${profitablePositions} profitable`
-                  : "Kodiak venue only — this account trades on another venue"
-              }
+              subtitle={`${positions.length} active positions • ${profitablePositions} profitable`}
               actions={
                 <>
                   {portfolioAccounts.length > 0 && (

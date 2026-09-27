@@ -27,6 +27,14 @@ jest.mock("../../../src/infrastructure/cache/redis.service", () => ({
   },
 }));
 
+// L11: a non-kodiak account is venue-dispatched to the Lighter portfolio
+// reader (it used to be refused with a kodiak-only 400).
+jest.mock("../../../src/infrastructure/external/lighter/portfolio", () => ({
+  getLighterPositions: jest.fn(),
+  getLighterBalance: jest.fn(),
+  getLighterTrades: jest.fn(),
+}));
+
 jest.mock(
   "../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter",
   () => ({
@@ -100,6 +108,7 @@ const mockAccountRepo =
   require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter").exchangeAccountRepositoryAdapter;
 const mockGetUserCredentials =
   require("../../../src/infrastructure/external/kodiak/credentials-provider").getUserCredentials;
+const mockLighterPortfolio = require("../../../src/infrastructure/external/lighter/portfolio");
 
 /**
  * C2 credential gate: an ACTIVE account row plus a decryptable envelope.
@@ -592,10 +601,39 @@ describe("Market Controller", () => {
       expect(mockKodiakService.getBalance).not.toHaveBeenCalled();
     });
 
-    it("answers 400 for a non-kodiak account", async () => {
+    it("dispatches a non-kodiak (lighter) account to the Lighter reader", async () => {
       mockAccountRepo.getAccountWithSecret.mockResolvedValue({
         ...activeKodiakAccount,
         exchange: "lighter",
+      });
+      mockLighterPortfolio.getLighterPositions.mockResolvedValue({
+        success: true,
+        data: { rows: [{ symbol: "ETH", size: 1 }] },
+      });
+
+      const response = await request(app)
+        .get(`/api/market/positions?exchangeAccountId=${accountId}`)
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toEqual({
+        rows: [{ symbol: "ETH", size: 1 }],
+      });
+      expect(mockLighterPortfolio.getLighterPositions).toHaveBeenCalledWith(
+        "user-123",
+        accountId
+      );
+      expect(mockKodiakService.getPositions).not.toHaveBeenCalled();
+    });
+
+    it("surfaces a Lighter reader failure as 400 with its error", async () => {
+      mockAccountRepo.getAccountWithSecret.mockResolvedValue({
+        ...activeKodiakAccount,
+        exchange: "lighter",
+      });
+      mockLighterPortfolio.getLighterPositions.mockResolvedValue({
+        success: false,
+        error: "Sidecar unreachable",
       });
 
       const response = await request(app)
@@ -604,7 +642,7 @@ describe("Market Controller", () => {
 
       expect(response.body).toEqual({
         success: false,
-        error: "Portfolio data is only available for Kodiak accounts",
+        error: "Sidecar unreachable",
       });
       expect(mockKodiakService.getPositions).not.toHaveBeenCalled();
     });

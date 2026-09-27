@@ -10,10 +10,11 @@
     "shared"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:engine\"",
+    "dev": "concurrently \"npm run dev:sidecar\" \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:engine\"",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
     "dev:engine": "cd engine && npm run dev",
+    "dev:sidecar": "bash scripts/dev-sidecar.sh",
     "prod": "NODE_ENV=production node -r dotenv/config backend/dist/index.js",
     "build": "npm run build:shared && npm run build:frontend && npm run build:engine && npm run build:backend",
     "build:shared": "cd shared && npm run build",

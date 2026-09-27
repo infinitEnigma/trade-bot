@@ -192,7 +192,8 @@ have committed — so bringing the sidecar back can never reveal a
 double-placed order.
 
 1. Check health: `curl http://127.0.0.1:8790/health` → `{"status":"ok"}`.
-2. Restart it (see `sidecar/lighter-signer/README.md`). It holds no state and
+2. Restart it: dev stack `npm run dev:sidecar` (included in `npm run dev`),
+   or manual per `sidecar/lighter-signer/README.md`. It holds no state and
    no credentials: every request carries its own, and nonces are fetched from
    the venue per transaction, so a restart needs no resynchronisation.
 3. Already-resting orders stay resting at the venue while slots are frozen.
@@ -201,8 +202,12 @@ double-placed order.
 4. A _refused_ transaction (bad credentials, rejected tx) is not an outage:
    it surfaces as a non-retryable error and the bot goes to `ERROR`. Fix the
    credentials instead of restarting anything.
-5. The sidecar is only required when a bot selects `exchange: "lighter"`;
-   Kodiak/Orderly bots are unaffected by its absence.
+5. The sidecar is only required for `exchange: "lighter"` traffic: engine
+   order signing, Settings connect/verify, and the dashboard portfolio reads
+   of a Lighter account (its `auth-token` gates `GET /api/v1/account` /
+   `/api/v1/trades`). One shared loopback instance serves all of them — it
+   holds no per-account state, so there is never a reason to run more than
+   one. Kodiak traffic is unaffected by its absence.
 
 ### 5.8 Post-incident checklist
 

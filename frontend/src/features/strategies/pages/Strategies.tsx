@@ -31,7 +31,6 @@ const BotControls = lazy(() =>
 );
 import { useBalance } from "../../../shared/hooks";
 import { useAuth } from "../../auth";
-import { UserProgressCard } from "../../../shared/components/user/UserProgressCard";
 import { PageLayout, Container } from "../../../shared/components/layout";
 
 const Strategies: React.FC = React.memo(() => {
@@ -40,6 +39,10 @@ const Strategies: React.FC = React.memo(() => {
   const [kodiakError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
+  // Phase 2: after create, offer "start it now" — a strategy is created
+  // inactive; starting a bot on it (C3a account pick + size) is the start.
+  const [startPromptStrategy, setStartPromptStrategy] =
+    useState<Strategy | null>(null);
   const [_selectedSymbol] = useState("PERP_BTC_USDC");
   const queryClient = useQueryClient();
 
@@ -235,11 +238,6 @@ const Strategies: React.FC = React.memo(() => {
         }}
         className="py-2 space-y-4"
       >
-        {/* ✅ User Progress Card - Shows qualification status */}
-        <div className="mb-8">
-          <UserProgressCard />
-        </div>
-
         {/* Candlestick Chart - Advanced trading data for verified users */}
         <div className="mb-8">
           <Suspense
@@ -597,13 +595,60 @@ const Strategies: React.FC = React.memo(() => {
           >
             <StrategyForm
               onClose={() => setShowCreateForm(false)}
-              onSuccess={() => {
+              onSuccess={created => {
                 setShowCreateForm(false);
                 queryClient.invalidateQueries({ queryKey: ["strategies"] });
                 toast.success("Strategy created successfully!");
+                // Phase 2: created inactive → offer the start flow at once.
+                if (created) setStartPromptStrategy(created);
               }}
             />
           </Suspense>
+        )}
+
+        {/* Post-create start prompt: a strategy is created inactive; the
+            real "start" is a bot bound to it (C3a: account pick + size).
+            BotControls without a bot renders exactly that start flow. */}
+        {startPromptStrategy && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="glass-card p-6 w-full max-w-md mx-4 space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold text-text">
+                  Start "{startPromptStrategy.name}" now?
+                </h3>
+                <p className="text-sm text-textMuted">
+                  Pick the exchange account and trading size to launch this
+                  strategy. You can also start it later from its card.
+                </p>
+              </div>
+              <Suspense
+                fallback={
+                  <div className="text-center py-4 text-textMuted text-sm">
+                    Loading…
+                  </div>
+                }
+              >
+                <BotControls
+                  strategyId={startPromptStrategy.id}
+                  onStatusChange={() => {
+                    queryClient.invalidateQueries({
+                      queryKey: ["bot-instances"],
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["strategies"] });
+                    setStartPromptStrategy(null);
+                  }}
+                />
+              </Suspense>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setStartPromptStrategy(null)}
+                  className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-sm"
+                >
+                  Not now
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {editingStrategy && (

@@ -217,22 +217,19 @@ export class MiddlewareConfig {
    * Pre-built Kodiak limiters (built once at startup; creating one per
    * request leaks limiter instances).
    */
-  private static readonly kodiakDataLimiter = createRateLimiter(
-    "kodiak-data",
-    {
-      max: 60, // 60 requests per minute per user (1 req/sec)
-      windowMs: 60000, // 1 minute window
-      message: "Kodiak data rate limit exceeded",
-      progressiveBackoff: false, // No progressive backoff for market data
-      failOpen: true, // Allow if rate limiting fails - prioritize UX
-      enableUserBasedLimits: true,
-      userLimits: {
-        [UserLevel.BASIC]: 30, // Basic users: 30 req/min (0.5 req/sec)
-        [UserLevel.REGISTERED]: 45, // Registered users: 45 req/min (0.75 req/sec)
-        [UserLevel.VERIFIED]: 60, // Verified users: 60 req/min (1 req/sec)
-      },
-    }
-  );
+  private static readonly kodiakDataLimiter = createRateLimiter("kodiak-data", {
+    max: 60, // 60 requests per minute per user (1 req/sec)
+    windowMs: 60000, // 1 minute window
+    message: "Kodiak data rate limit exceeded",
+    progressiveBackoff: false, // No progressive backoff for market data
+    failOpen: true, // Allow if rate limiting fails - prioritize UX
+    enableUserBasedLimits: true,
+    userLimits: {
+      [UserLevel.BASIC]: 30, // Basic users: 30 req/min (0.5 req/sec)
+      [UserLevel.REGISTERED]: 45, // Registered users: 45 req/min (0.75 req/sec)
+      [UserLevel.VERIFIED]: 60, // Verified users: 60 req/min (1 req/sec)
+    },
+  });
 
   private static readonly kodiakConnectionLimiter = createRateLimiter(
     "kodiak-connection",
@@ -395,8 +392,8 @@ export class MiddlewareConfig {
    */
   static assertBootOrder(app: Express): void {
     // Express 5 keeps the stack on app.router (not app._router).
-    const stack = (app as unknown as { router?: { stack?: unknown[] } })
-      .router?.stack;
+    const stack = (app as unknown as { router?: { stack?: unknown[] } }).router
+      ?.stack;
     if (!Array.isArray(stack) || stack.length === 0) return;
     const handleName = (layer: unknown) =>
       (layer as { handle?: { name?: string } })?.handle?.name ?? "";

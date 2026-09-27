@@ -228,7 +228,9 @@ describe("tradingApi", () => {
         const result = await tradingApi.stopBot(botId);
 
         expect(httpClient.getClient).toHaveBeenCalled();
-        expect(mockPost).toHaveBeenCalledWith("/api/bot/management/stop", { botId });
+        expect(mockPost).toHaveBeenCalledWith("/api/bot/management/stop", {
+          botId,
+        });
         expect(result).toEqual(mockResponse);
       });
     });
@@ -246,9 +248,12 @@ describe("tradingApi", () => {
         const result = await tradingApi.emergencyStop(botId);
 
         expect(httpClient.getClient).toHaveBeenCalled();
-        expect(mockPost).toHaveBeenCalledWith("/api/bot/management/emergency-stop", {
-          botId,
-        });
+        expect(mockPost).toHaveBeenCalledWith(
+          "/api/bot/management/emergency-stop",
+          {
+            botId,
+          }
+        );
         expect(result).toEqual(mockResponse);
       });
     });

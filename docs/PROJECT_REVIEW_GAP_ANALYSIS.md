@@ -434,6 +434,102 @@ Fix: log each stop with a duration, bound Phase 1
 logger before `process.exit(0)` — or drop the explicit exit and let the event loop
 drain.
 
+#### L11 — 🔴 P0: the portfolio endpoints were Kodiak-only, so a connected Lighter account showed no data
+
+Observed in the 2026-09-26 flow test (the L2 follow-up): the user connected a
+Lighter account (`72c483bc…`), the Dashboard selected it, and balance / positions /
+trades were **empty** even though the account held funds and had traded. The
+Kodiak account (`49401abd…`) rendered normally.
+
+Three layers contributed, each hiding the next:
+
+1. `market-portfolio.routes.ts` hardwired `kodiakIntegrationService` and answered
+   **400** for every non-`kodiak` id (`"only available for Kodiak accounts"`);
+   the app log carries **zero** Lighter venue traffic, so the request never left
+   the backend.
+2. The frontend converted that 400 into `{ success: true, data: null }`, so the
+   failure surfaced as an empty widget rather than an error.
+3. The positions/trades queries were gated on `isKodiakPortfolioSelected`, so for
+   a Lighter selection they were never issued at all (empty *by design*).
+
+L2 made account *selection* venue-agnostic but left portfolio *reads* Kodiak-only —
+the two shipped inconsistently.
+
+Fix: venue-dispatch the three handlers (`scope.exchange === "lighter"` → the new
+Lighter portfolio reader, else `kodiakIntegrationService`), add the Lighter reader
+(sidecar `auth-token` → authenticated `GET /api/v1/account` / `/api/v1/trades`,
+normalized to the shapes the Dashboard already consumes, with best-effort C3b
+snapshot writes), and drop the frontend venue gate + the 400→success masking.
+
+#### L12 — 🟠 P1: `strategies.active` was write-once FALSE, so every strategy read "Inactive" forever
+
+The 2026-09-26 flow test showed two user-created strategies — one from an earlier
+test, one fresh — both rendered **Inactive**, and creating a strategy never started
+anything.
+
+`toggleStrategy` existed on both `StrategyService` and the repository adapter but
+**had no caller**: no HTTP route, no UI control, and the bot lifecycle never touched
+it. Rows were created with the DB default `active = FALSE`, so the badge was
+structurally stuck regardless of what the bot did. Separately, the create flow had
+no transition into "running": "start" is starting a *bot* bound to the strategy
+(C3a), and nothing offered that right after creation.
+
+Fix: a `syncStrategyActive(strategyId, active)` helper called from the places that
+actually start/stop execution (start dispatched, engine reports `RUNNING` → `true`;
+stop dispatched, emergency stop, engine reports `STOPPED`/`ERROR`, command failure
+or timeout-terminal → `false`), every flip best-effort so a badge failure never
+fails the lifecycle op; plus a post-create "Start now?" prompt on the Strategies
+page that reuses the existing bot start flow; plus removing the duplicate
+`UserProgressCard` (it belongs on the Dashboard).
+
+#### L13 — 🟡 P2: the Lighter signer sidecar was manual-only and absent from the dev stack
+
+`npm run dev` started backend + frontend + engine but not the signer sidecar, and
+OPERATIONS §5.7 only described manually restarting it. Yet the sidecar is required
+for three separate flows — engine order signing, Settings connect/verify, and the
+Dashboard portfolio reads of a Lighter account (L11) — including flows that run
+when no strategy is running at all.
+
+Because the sidecar is stateless (no credentials at rest; every request carries its
+own `account_index` / `api_key_index` / `private_key`) it needs exactly **one**
+instance, not one per strategy.
+
+Fix: `scripts/dev-sidecar.sh` (venv bootstrap + `.env` load so `SIDECAR_AUTH_TOKEN`
+matches) exposed as `npm run dev:sidecar` and folded into the root `npm run dev`;
+OPERATIONS §5.7 documents the shared-singleton model and what depends on it.
+
+#### L14 — 🟡 P2: the frontend reconnects in a loop after `WS_AUTH_FAILED`
+
+The flow-test logs show repeated `WS_AUTH_FAILED` followed by Socket.IO protocol
+warnings, i.e. the client keeps retrying with a token the server rejects instead of
+stopping and re-authenticating. Low impact for a manual test (data still arrives
+over REST), but it spams the logs and obscures real errors.
+
+Fix (deferred): on `WS_AUTH_FAILED`, stop the reconnect timer and refresh the
+session/token once before retrying.
+
+
+#### L15 — 🟡 P2: the balance widget has no error channel, so a failed read is indistinguishable from a zero balance
+
+`market-portfolio.routes.ts` answers **400** with a reason when a venue read fails
+(e.g. the signer sidecar is down, or no verified credentials exist), but the client
+discards it twice over: `kodiakApi.getKodiakBalance` maps **400 and 403** to
+`{ success: true, data: null, message: "Kodiak account not connected" }`, and
+`globalBalanceManager.refreshBalance` only takes the `success && data` branch —
+everything else is a bare `console.warn` and the last known value is kept.
+
+Net effect: with the sidecar down, a Lighter account's balance silently renders as
+nothing (or stale) with no error anywhere in the UI, while the positions/trades
+cards — which go through react-query, not the balance manager — do surface their
+error. The 400 branch also no longer means what it was written for (L11 removed the
+"wrong venue" 400), so the mask now hides only genuine failures.
+
+Deliberately left in place for this pass: the L11 fix already makes the read
+succeed, and removing the mask alone would change nothing user-visible (the manager
+swallows the error either way). The real fix is an error channel through
+`globalBalanceManager` → `useBalance` → the Balance widget, plus a venue-neutral
+message — a focused follow-up rather than a half-fix.
+
 ---
 
 ## 4. Remediation ledger
@@ -476,6 +572,11 @@ can be repeated meaningfully.
 | L8  | 🟡 P2    | Remove the boot-wide `setRequestContext`; give each background subsystem its own stable scope                                                                                                                                | ⬜ Open  |
 | L9  | 🟡 P2    | Construct long-lived pools eagerly so they stop inheriting a request context                                                                                                                                                 | ⬜ Open  |
 | L10 | 🟡 P2    | Shutdown: per-stop durations, bounded Phase 1 (`closeIdleConnections`/`closeAllConnections`), flush logs before `process.exit(0)`                                                                                            | ⬜ Open  |
+| L11 | 🔴 P0    | Portfolio reads were Kodiak-only: venue-dispatch `/api/market/{positions,balance,trades}` + the Lighter portfolio reader (sidecar `auth-token`), drop the Dashboard venue gate on positions/trades (the balance-widget error channel is L15)                                   | ✅ Done  |
+| L12 | 🟠 P1    | `strategies.active` write-once FALSE: `syncStrategyActive` on start/stop/emergency/terminal-error/timeout, post-create "Start now?" prompt, drop the duplicate `UserProgressCard` from Strategies                                                     | ✅ Done  |
+| L13 | 🟡 P2    | Lighter signer sidecar: `scripts/dev-sidecar.sh` + `npm run dev:sidecar` folded into `npm run dev`; document the shared-singleton model and its three consumers                                    | ✅ Done  |
+| L14 | 🟡 P2    | WS client retries in a loop after `WS_AUTH_FAILED` (stop the timer, refresh the token once, then retry)                                                                                            | ⬜ Open  |
+| L15 | 🟡 P2    | Give the balance widget an error channel (`globalBalanceManager` → `useBalance` → UI) and drop the 400/403→"not connected" mask + venue-neutral message                                                                                            | ⬜ Open  |
 
 Batch verification: re-run the manual flow (login → dashboard → settings → connect
 Lighter → strategies → create grid strategy → start a bot on the Lighter account →
@@ -484,6 +585,14 @@ dashboard → SIGINT) and require — `GET /api/bot/instances` **200**; `POST
 (foreign account, unbound legacy bot, revoke-with-bound-bots); "Exchange account
 connected" plus venue-aware Lighter lines present; zero mis-correlated response
 lines; a fully-logged shutdown.
+
+Batch verification (2026-09-27, L11–L13): with a connected Lighter account selected
+on the Dashboard, require **non-empty** balance / positions / trades (i.e.
+`GET /api/market/{balance,positions,trades}?exchangeAccountId=<lighter>` **200** and
+`sidecar /v1/auth-token` **200**), and that a Kodiak selection still renders as
+before; a freshly created strategy shows the **"Start now?"** prompt, and after a
+start its badge reads **Active** and returns to **Inactive** after stop; no
+`UserProgressCard` on the Strategies page; `npm run dev` brings up the sidecar.
 
 ---
 
@@ -596,8 +705,10 @@ Findings from a security-focused code review, prioritized per severity:
 | -------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 🟠 P1    | **Shared Package Scope** | `@trade-bot/shared` is a god package (protocol types, domain models, API contracts, error classes, logging types). Split it by domain once the trading-path hardening above has landed. |
 | 🔴 P0    | **Phase 0–3 items**      | The engine trading-path work in §4 — verified against the exchange before anything else is built on top of it.                                                                          |
-| 🔴 P0    | **2026-09-26 batch (L1–L4)** | Bot-route repoint, venue-agnostic portfolio selection, the Express boot-order race, and the unwired `ExchangeAccountService` logger — see §3 findings and the §4 backlog table.      |
+| ✅ Done  | **2026-09-26 batch (L1–L4)** | Bot-route repoint, venue-agnostic portfolio selection, the Express boot-order race, and the unwired `ExchangeAccountService` logger — resolved; see §3 findings and the §4 backlog table. |
+| ✅ Done  | **2026-09-26/27 batch (L11–L13)** | Venue-dispatched portfolio reads + the Lighter reader, the `strategies.active` lifecycle sync + post-create start prompt, and the dev-stack signer sidecar — resolved; see §3 findings and §4. |
 | 🟠 P1    | **2026-09-26 batch (L5–L10)** | Lighter connect visibility, registration-duplicate log hygiene, response correlation under concurrency, ambient/background context leaks, shutdown observability.                    |
+| 🟡 P2    | **2026-09-27 batch (L14–L15)** | WS client reconnect loop after `WS_AUTH_FAILED`; and the balance widget's missing error channel (the 400/403→"not connected" mask now hides only genuine failures).                    |
 
 ### How to keep this document honest
 
