@@ -19,6 +19,7 @@ import {
 } from "@trade-bot/shared";
 import { BotLifecycleService } from "../../src/core/bots/bot-lifecycle.service";
 import { EngineProtocolService } from "../../src/core/bots/engine-protocol.service";
+import { strategyRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/strategy-repository.adapter";
 
 jest.mock("../../src/database/pool", () => ({
   query: jest.fn(),
@@ -208,6 +209,23 @@ describe("BotLifecycleService", () => {
       );
     });
 
+    it("flips the strategy badge on when the start command is dispatched (L12)", async () => {
+      mockQuery.mockImplementation((sql: string) => {
+        if (String(sql).startsWith("SELECT id, user_id")) {
+          return Promise.resolve({ rows: [botRow] });
+        }
+        return okResult();
+      });
+      const toggle = jest
+        .spyOn(strategyRepositoryAdapter, "toggleStrategy")
+        .mockResolvedValue(undefined);
+
+      await service.start("bot-1", "user-1");
+
+      expect(toggle).toHaveBeenCalledWith("strat-1", true);
+      toggle.mockRestore();
+    });
+
     it("is idempotent for an already STARTING/RUNNING bot", async () => {
       mockQuery.mockResolvedValue({
         rows: [
@@ -294,6 +312,27 @@ describe("BotLifecycleService", () => {
         { botId: "bot-1" },
         expect.any(String)
       );
+    });
+
+    it("flips the strategy badge off when the stop command is dispatched (L12)", async () => {
+      mockQuery.mockImplementation((sql: string) => {
+        if (String(sql).startsWith("SELECT id, user_id")) {
+          return Promise.resolve({
+            rows: [
+              { ...botRow, desired_state: "RUNNING", actual_state: "RUNNING" },
+            ],
+          });
+        }
+        return okResult();
+      });
+      const toggle = jest
+        .spyOn(strategyRepositoryAdapter, "toggleStrategy")
+        .mockResolvedValue(undefined);
+
+      await service.stop("bot-1", "user-1");
+
+      expect(toggle).toHaveBeenCalledWith("strat-1", false);
+      toggle.mockRestore();
     });
 
     it("is idempotent for an already STOPPED bot", async () => {
@@ -924,6 +963,34 @@ describe("bot → account binding", () => {
     await expect(
       service.createAndStart("user-1", "strat-1", 1000, "acc-1")
     ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("409s when the strategy already has an active bot (current one-bot-per-strategy axis)", async () => {
+    // Current axis (migration 013 era): a bot IS a running strategy, so a
+    // strategy cannot be traded on two accounts concurrently — the caller must
+    // stop the first bot before starting the second. Superseded by the
+    // account-session model (plan §D), where the session is the unit and the
+    // invariant becomes one active session per exchange account.
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-1" }] });
+      }
+      if (text.includes("FROM bot_instances WHERE strategy_id")) {
+        return Promise.resolve({ rows: [{ id: "bot-existing" }] });
+      }
+      return okResult();
+    });
+    mockAccountAdapter.getAccountWithSecret.mockResolvedValue(activeAccount);
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 1000, "acc-2")
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO bot_instances"),
+      expect.anything()
+    );
   });
 
   it("writes the binding to bot_instances.exchange_account_id", async () => {

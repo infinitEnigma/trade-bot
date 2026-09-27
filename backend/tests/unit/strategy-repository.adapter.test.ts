@@ -253,6 +253,45 @@ describe("StrategyRepositoryAdapter", () => {
       );
     });
 
+    it("resolves an omitted active flag to false instead of storing NULL", async () => {
+      // The CREATE route validates with a Joi schema that has no `active` key, so
+      // the value reaching this adapter has no `active` at all. Writing that
+      // verbatim inserts NULL and bypasses the column's DEFAULT FALSE — which is
+      // what the two `active = NULL` pre-existing strategy rows came from.
+      const strategyData = {
+        userId: "test-user-id",
+        name: "Fresh Strategy",
+        type: StrategyType.GRID,
+        config: { symbol: "BTC-USD", gridSize: 5 },
+      } as unknown as Parameters<
+        StrategyRepositoryAdapter["createStrategy"]
+      >[0];
+      (query as jest.Mock).mockResolvedValue({
+        rows: [
+          {
+            id: "new-strategy-id",
+            created_at: "2024-01-01T00:00:00Z",
+            updated_at: "2024-01-01T00:00:00Z",
+          },
+        ],
+      });
+      const adapter = new StrategyRepositoryAdapter();
+
+      const strategy = await adapter.createStrategy(strategyData);
+
+      expect(query).toHaveBeenCalledWith(
+        "INSERT INTO strategies (user_id, name, type, config, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING id, created_at, updated_at",
+        [
+          "test-user-id",
+          "Fresh Strategy",
+          StrategyType.GRID,
+          JSON.stringify({ symbol: "BTC-USD", gridSize: 5 }),
+          false,
+        ]
+      );
+      expect(strategy.active).toBe(false);
+    });
+
     it("should throw error when creation fails", async () => {
       const strategyData = {
         userId: "test-user-id",
