@@ -39,5 +39,20 @@ if [ ! -x "$SIDECAR_DIR/.venv/bin/uvicorn" ]; then
 fi
 
 cd "$SIDECAR_DIR"
+# Singleton: a sidecar from an earlier `dev`/`prod:all` run (or a manual start)
+# may still hold the port. Reusing it is correct — it is stateless and holds
+# no credentials — so probe first and only exec uvicorn when nothing answers.
+if curl -sf -m 3 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+  echo "[prod-sidecar] already healthy on 127.0.0.1:$PORT — reusing the existing instance"
+  # Keep the concurrently slot alive until killed: exit only when the existing
+  # sidecar goes away (re-run prod:all for a fresh one).
+  trap "exit 0" TERM INT
+  while curl -sf -m 3 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; do
+    sleep 10
+  done
+  echo "[prod-sidecar] existing sidecar on 127.0.0.1:$PORT went away — exiting"
+  exit 0
+fi
+
 echo "[prod-sidecar] uvicorn on 127.0.0.1:$PORT (SIDECAR_AUTH_TOKEN ${SIDECAR_AUTH_TOKEN:+set}${SIDECAR_AUTH_TOKEN:-unset})"
 exec ./.venv/bin/uvicorn app:app --host 127.0.0.1 --port "$PORT"
