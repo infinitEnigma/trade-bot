@@ -359,14 +359,16 @@ const Strategies: React.FC = React.memo(() => {
         </div>
 
         {/* Engine offline banner: informational only — bot instances are still
-            fetched and start/stop still works (the backend ensures the engine
-            on start). */}
+            fetched. Start fails fast with a 503 until the engine runs
+            (npm run prod:all / prod:engine); the backend never spawns it. */}
         {engineStatus && engineStatus?.data?.running === false && (
           <div className="glass-card p-4 flex items-center gap-3 border-warning/20 bg-warning/5">
             <AlertTriangle className="w-5 h-5 text-warning shrink-0" />
             <p className="text-sm text-textMuted">
-              Trading engine is currently stopped. Existing bots are still
-              listed below; starting a bot will bring the engine up.
+              Trading engine is not running. Existing bots are still listed
+              below, but starting a bot requires the engine first — run{" "}
+              <code className="text-xs">npm run prod:all</code> (or{" "}
+              <code className="text-xs">npm run prod:engine</code>).
             </p>
           </div>
         )}

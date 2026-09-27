@@ -449,7 +449,7 @@ router.post(
           : statusCode === 409
             ? (err as Error).message
             : statusCode === 503
-              ? "Engine communication unavailable"
+              ? (err as Error).message || "Engine communication unavailable"
               : "Failed to start bot";
       res.status(statusCode).json({
         success: false,

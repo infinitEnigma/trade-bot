@@ -218,25 +218,44 @@ describe("EngineManager", () => {
   });
 
   describe("Backward compatibility methods", () => {
-    it("should ensure engine running", async () => {
-      // Arrange
+    it("should resolve when the engine is alive (registry heartbeat)", async () => {
+      // Arrange: liveness comes from engine_registry heartbeats, never spawn.
+      const aliveSpy = jest
+        .spyOn(engineManager as any, "isEngineAlive")
+        .mockResolvedValue(true);
       const mockSpawn = jest
         .spyOn((engineManager as any).processSpawner, "spawn")
         .mockResolvedValue({});
-      const mockWaitForReady = jest
-        .spyOn((engineManager as any).processSpawner, "waitForReady")
-        .mockResolvedValue(undefined);
-      const mockStartSupervision = jest
-        .spyOn((engineManager as any).processSupervisor, "startSupervision")
-        .mockImplementation();
 
       // Act
-      await engineManager.ensureEngineRunning();
+      await expect(
+        engineManager.ensureEngineRunning()
+      ).resolves.toBeUndefined();
 
       // Assert
-      expect(mockSpawn).toHaveBeenCalled();
-      expect(mockWaitForReady).toHaveBeenCalled();
-      expect(mockStartSupervision).toHaveBeenCalled();
+      expect(aliveSpy).toHaveBeenCalled();
+      expect(mockSpawn).not.toHaveBeenCalled();
+    });
+
+    it("should fail fast with an actionable 503 when the engine is offline", async () => {
+      // Arrange: never spawn a legacy engine/kodiak process — fail instead.
+      jest
+        .spyOn(engineManager as any, "isEngineAlive")
+        .mockResolvedValue(false);
+      const mockSpawn = jest
+        .spyOn((engineManager as any).processSpawner, "spawn")
+        .mockResolvedValue({});
+
+      // Act & Assert
+      const error = await engineManager
+        .ensureEngineRunning()
+        .then(() => undefined)
+        .catch((e: Error & { statusCode?: number }) => e);
+
+      expect(error).toBeDefined();
+      expect(error?.statusCode).toBe(503);
+      expect(error?.message).toContain("npm run prod:engine");
+      expect(mockSpawn).not.toHaveBeenCalled();
     });
 
     it("should get engine status when running", async () => {

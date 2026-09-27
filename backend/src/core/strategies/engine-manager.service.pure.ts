@@ -35,6 +35,12 @@ import {
 } from "./engine";
 import { RedisStreamOperations } from "../../infrastructure/cache/redis";
 
+/**
+ * Mirrors ENGINE_HEARTBEAT_TIMEOUT_MS in core/bots/engine-registry.service
+ * (kept local to avoid importing the registry's service graph here).
+ */
+const ENGINE_HEARTBEAT_TIMEOUT_S = 30;
+
 interface EngineStatus {
   running: boolean;
   health?: {
@@ -116,20 +122,69 @@ export class EngineManager {
   // ===========================================
 
   /**
-   * Ensure engine is running (backward compatibility)
+   * Ensure the engine is available (backward compatibility).
+   *
+   * The engine is supervised externally (npm run prod:all / prod:engine, dev
+   * siblings — OPERATIONS §7) and is NEVER spawned by the backend: the legacy
+   * spawn path targeted the removed engine/kodiak tree and the engine exposes
+   * no HTTP health endpoint for waitForReady(), so it only ever produced
+   * "Process spawn failed". Liveness comes from engine_registry heartbeats
+   * (refreshed every 10s while the engine runs; sweep marks OFFLINE at 30s).
+   * When the engine is down, fail fast with an actionable message.
    */
   async ensureEngineRunning(): Promise<void> {
-    const result = await this.circuitBreaker.executeWithCircuitBreaker(
-      async () => {
-        await this.processSpawner.spawn();
-        await this.processSpawner.waitForReady();
-        this.processSupervisor.startSupervision();
-      }
-    );
-
-    if (!result.success) {
-      throw new Error(result.error || "Failed to start engine");
+    if (await this.isEngineAlive()) {
+      return;
     }
+
+    this.deps.logger.warn("Start rejected: trading engine is offline");
+    const error = new Error(
+      "Trading engine is not running. Start it with 'npm run prod:engine' (or 'npm run prod:all') and retry."
+    ) as Error & { statusCode?: number };
+    error.statusCode = 503;
+    throw error;
+  }
+
+  /**
+   * True when an externally supervised engine (registry heartbeat) or a
+   * legacy backend-owned child process is alive. A registry query failure
+   * counts as "not alive" so the start fails fast with the actionable
+   * message above instead of a misleading one.
+   */
+  private async isEngineAlive(): Promise<boolean> {
+    // 1. Externally supervised engine? Trust the registry heartbeat.
+    try {
+      const { query } = await import("../../database/pool");
+      const live = await query<{ engine_id: string }>(
+        `SELECT engine_id FROM engine_registry
+          WHERE status = 'ONLINE'
+            AND last_seen_at > NOW() - make_interval(secs => $1)
+          LIMIT 1`,
+        [ENGINE_HEARTBEAT_TIMEOUT_S]
+      );
+      if ((live.rowCount ?? 0) > 0) {
+        this.deps.logger.debug("Engine alive (registry heartbeat)", {
+          engineId: live.rows[0].engine_id,
+        });
+        return true;
+      }
+    } catch (error) {
+      this.deps.logger.warn("Engine registry liveness check failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // 2. Legacy backend-owned child process (dev only).
+    try {
+      if (this.processSpawner.isAlive()) {
+        this.deps.logger.debug("Engine alive (backend child process)");
+        return true;
+      }
+    } catch {
+      // Fall through → offline.
+    }
+
+    return false;
   }
 
   /**
