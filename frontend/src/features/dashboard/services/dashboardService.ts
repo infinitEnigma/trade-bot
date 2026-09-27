@@ -50,7 +50,11 @@ export class DashboardService {
   }
 
   /**
-   * Calculate portfolio performance from trades
+   * Calculate portfolio performance from trades.
+   *
+   * Prefers the venue-reported `realized_pnl` (Kodiak round-trips, Lighter
+   * fills carry "0"); falls back to (close − open) × qty when the venue
+   * does not report realized PnL.
    */
   calculatePortfolioPerformance(
     trades: Trade[],
@@ -69,10 +73,12 @@ export class DashboardService {
     let currentBalance = initialBalance;
 
     sortedTrades.forEach(trade => {
-      const pnl =
-        parseFloat(trade.avg_close_price || "0") -
-        parseFloat(trade.avg_open_price || "0");
-      // For simplicity, assume each trade has 1 unit
+      const realized = parseFloat(trade.realized_pnl ?? "");
+      const pnl = Number.isFinite(realized)
+        ? realized
+        : (parseFloat(trade.avg_close_price || "0") -
+            parseFloat(trade.avg_open_price || "0")) *
+          parseFloat(trade.closed_position_qty || "0");
       currentBalance += pnl;
 
       const timestamp = new Date(

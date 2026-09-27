@@ -74,7 +74,7 @@ and the engine both read it.
 npm install
 
 # Development — all services, or one at a time
-npm run dev             # backend + frontend + engine (concurrently)
+npm run dev             # sidecar + backend + frontend + engine (concurrently)
 npm run dev:backend     # http://localhost:3000
 npm run dev:frontend    # http://localhost:5173
 npm run dev:engine
@@ -86,9 +86,11 @@ npm run db:seed         # seed baseline data (optional)
 
 # Production
 npm run build           # builds shared → frontend → engine → backend
+npm run prod:all        # sidecar + backend (serves built frontend) + engine (concurrently, single host)
 npm run prod            # starts the built backend (serves the built frontend)
 npm run prod:engine     # starts the built engine (Redis Streams consumer)
-npm run dev:sidecar     # the Lighter signer sidecar — required for Lighter traffic
+npm run prod:sidecar    # the Lighter signer sidecar — required for Lighter traffic
+                        # (bootstrap the venv once first: npm run dev:sidecar)
 ```
 
 `db:validate` (backend workspace) checks that runtime query validation still
@@ -292,10 +294,12 @@ mode.
 
 ## 7. Deployment
 
-- Build with `npm run build`, start with `npm run prod` (the backend serves the
-  built frontend from `frontend/dist`).
-- The engine is a separate process — deploy and supervise it independently so a
-  backend deploy cannot interrupt strategy execution.
+- Build with `npm run build`. On a single host, start everything with
+  `npm run prod:all` (sidecar + backend serving the built frontend from
+  `frontend/dist` + engine, as concurrently siblings).
+- For independent deploys, `npm run prod` / `npm run prod:engine` /
+  `npm run prod:sidecar` still work standalone — supervise the engine
+  separately so a backend deploy cannot interrupt strategy execution.
 - Give the engine a stable `ENGINE_STATE_FILE`: identity and epoch persistence is
   what lets the backend reject events from superseded processes.
 - Give the engine a persistent `GRID_SNAPSHOT_DIR`; today the snapshots are the

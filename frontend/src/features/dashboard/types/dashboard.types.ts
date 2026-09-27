@@ -22,6 +22,7 @@ export interface Trade {
   side: string;
   avg_close_price?: string;
   avg_open_price?: string;
+  realized_pnl?: string;
   closed_position_qty: string;
   close_timestamp?: number;
   open_timestamp?: number;

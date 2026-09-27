@@ -255,6 +255,8 @@ export const useAuth = () => {
   return useAuthStore();
 };
 
+export { useAuthStore };
+
 // Module-level listener: the HTTP client (infrastructure/api/client.ts) fires
 // these events when the session is definitively dead (-1002) or a redirect to
 // /login is imminent. Registered once at module scope — no component effects.

@@ -17,7 +17,7 @@
 
 import React, { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { UserRole } from "../../../../shared/types";
+import { UserLevel } from "../../../../shared/types";
 import {
   Play,
   Square,
@@ -97,7 +97,10 @@ const ActionButton: React.FC<{
 };
 
 /**
- * Qualification Gate Component
+ * Access Gate Component (rendered below VERIFIED).
+ *
+ * Any VERIFIED user can control bots; QUALIFIED_ALPHA is reserved for future
+ * advanced features and never gates start/stop.
  */
 const QualificationGate: React.FC<{
   title: string;
@@ -115,9 +118,12 @@ const QualificationGate: React.FC<{
 );
 
 /**
- * Qualification Check Button
+ * Alpha qualification check (future advanced features only).
+ *
+ * Kept for the future QUALIFIED_ALPHA surface; it is intentionally NOT part
+ * of the bot start/stop flow, which any VERIFIED user can use.
  */
-const QualificationCheckButton: React.FC = () => {
+export const QualificationCheckButton: React.FC = () => {
   const [isChecking, setIsChecking] = useState(false);
 
   const handleCheckQualification = async () => {
@@ -261,7 +267,9 @@ export const BotControls: React.FC<BotControlsProps> = ({
 }) => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const hasQualification = user?.roles?.includes(UserRole.QUALIFIED_ALPHA);
+  // Any VERIFIED user can control bots. QUALIFIED_ALPHA is reserved for future
+  // advanced features and never gates start/stop.
+  const isVerified = user?.userLevel === UserLevel.VERIFIED;
 
   // Use the bot lifecycle hook for authoritative server state
   const { actualState, isTransitional, isConnectionLost } = useBotState(
@@ -367,13 +375,25 @@ export const BotControls: React.FC<BotControlsProps> = ({
   const isLoading =
     isTransitional || startMutation.isPending || stopMutation.isPending;
 
-  // Check if user has alpha qualification
-  if (!hasQualification) {
+  // Below VERIFIED the user cannot trade yet: point them at the upgrade path
+  // (wallet → REGISTERED, exchange account → VERIFIED) instead of an alpha
+  // qualification gate.
+  if (!isVerified) {
     return (
       <QualificationGate
-        title="Alpha Testing Access Required"
-        description="Connect your wallet and meet qualification criteria to access advanced trading features."
-        action={<QualificationCheckButton />}
+        title="Verification Required"
+        description="Connect your wallet and verify an exchange account to start and stop trading bots."
+        action={
+          <ActionButton
+            icon={<Wallet className="w-4 h-4" />}
+            label="Go to Settings"
+            variant="info"
+            onClick={() => {
+              window.location.href = "/settings";
+            }}
+            fullWidth
+          />
+        }
       />
     );
   }
