@@ -28,6 +28,7 @@ const BotControls = lazy(() =>
 );
 import { useBalance } from "../../../shared/hooks";
 import { useAuth } from "../../auth";
+import { useBotsList } from "../../bots/hooks";
 import { PageLayout, Container } from "../../../shared/components/layout";
 
 const Strategies: React.FC = React.memo(() => {
@@ -108,19 +109,15 @@ const Strategies: React.FC = React.memo(() => {
     },
   });
 
-  // Bot instances are the source of truth for start/stop UI: fetch them for
-  // every VERIFIED user. Engine status only drives the "engine stopped"
-  // banner below — it must never hide existing bots.
-  const { data: botsData } = useQuery({
-    queryKey: ["bot-instances"],
-    queryFn: () => tradingApi.getBotInstances(),
-    enabled: user?.userLevel === "VERIFIED",
-    staleTime: 10000, // 10 seconds - bot status can change quickly
-    gcTime: 30000, // 30 seconds cache
-  });
+  // Strategies page owns the card list (lookup + refresh); per-card live state
+  // comes from useBotLifecycle's shared ["bot-instances"] cache (single
+  // owner — see useBotLifecycle.ts). useBotsList subscribes to that cache so
+  // this page never writes the key itself: a second writer with a different
+  // shape/observer options is what blanked the page (shared-observer data
+  // flip → .map on undefined).
+  const { bots } = useBotsList();
 
   const strategies = strategiesData?.success ? strategiesData.data : [];
-  const bots = botsData?.success ? botsData.data : [];
 
   // Delete strategy mutation
   const deleteMutation = useMutation({
