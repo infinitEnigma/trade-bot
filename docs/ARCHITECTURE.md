@@ -202,13 +202,19 @@ restored slots, cancellation failures are swallowed while `STOPPED` is still
 reported, and sell legs are placed at the buy price with mark-price PnL and no
 `reduce_only`.
 
+Model note: order identity, slot state and the snapshot are **bot-scoped** today
+(`<botId>.json`, one `GridTradingStrategy` per `BotRuntime`). Under the planned
+account-session model (plan §D) they become **run-scoped** — one runner and one
+`<botId>/<runId>.json` per strategy inside a session — which is also the granularity
+the durable ledger and the reconciliation work need.
+
 ---
 
 ## 6. Data ownership
 
 | Store       | Authoritative for                                                                         |
 | ----------- | ----------------------------------------------------------------------------------------- |
-| PostgreSQL  | Lifecycle state + audit, command tracking, engine registry, credentials, wallet addresses |
+| PostgreSQL  | Lifecycle state + audit, command tracking, engine registry, credentials, wallet addresses, user identities |
 | Engine disk | Per-bot grid slot snapshot (operational cache)                                            |
 | Redis       | Control-plane streams, dedup markers, engine liveness                                     |
 | Exchange    | Live orders, fills, positions, balances — the ultimate source of truth                    |
@@ -218,11 +224,16 @@ exchange) and no single transaction spans them. Correctness depends on explicit
 reconciliation rules; the rules that exist today, and the ones still missing, are
 enumerated in `PROJECT_REVIEW_GAP_ANALYSIS.md` §3.
 
-The **identity/accounts** side of this map (users, identities, wallets,
-exchange accounts, and the bot → account binding) is being redesigned — the
-current schema assumes one wallet and one exchange account per user, which the
-engine's credential fetch inherits. The target model and its phased migration
-plan live in [DATA_MODEL.md](DATA_MODEL.md).
+The **identity/accounts** side of this map (users, identities, wallets, exchange
+accounts, and the bot → account binding) landed in C1–C3: a user holds many wallets
+and many venue accounts, a bot binds to **one** ACTIVE account whose credential
+envelope the engine fetches out-of-band, and positions/balances are stored per
+account (`exchange_positions` / `exchange_balances`). What remains open is the
+**unit of execution**: today a bot *is* a running strategy, so an account running two
+strategies runs two bots and performs two credential fetches. The planned
+account-session model (bot = one account, N strategies, one fetch) is designed in
+[DATA_MODEL.md](DATA_MODEL.md) §4.4 and plan §D; the agent layer that reads a session
+is plan §E.
 
 ---
 
@@ -253,6 +264,15 @@ debt, deliberately deferred (P2).
 | `008_bot_command_tracking.sql`      | `bot_commands` (pending / delivered / timeout tracking)                                                                                 |
 | `009_engine_registry.sql`           | `engine_registry` (identity, epoch, heartbeat liveness)                                                                                 |
 | `010_wallet_addresses.sql`          | `wallet_addresses` (wallet linking independent of exchange keys)                                                                        |
+| `011_identity_core.sql`             | `users.username` (+ unique index on LOWER(username)), `display_name`, `avatar_url`; `user_identities` (one backfilled password identity per user) |
+| `012_wallets_exchange_accounts.sql` | `wallets` (many chain-aware wallets per user) and `exchange_accounts` (many venue/environment accounts, sealed credential envelope); backfills `wallet_addresses` / `kodiak_credentials` |
+| `013_bot_account_binding.sql`       | `bot_instances.exchange_account_id` (nullable + backfill to the owner's earliest ACTIVE account, `ON DELETE RESTRICT`); creates the empty per-account `exchange_positions` / `exchange_balances` tables |
+| `014_drop_legacy_kodiak.sql`         | Re-runs the backfill, makes `bot_instances.exchange_account_id` `NOT NULL` (guard refuses while any bot is unbound), drops `kodiak_accounts` / `kodiak_positions` / `kodiak_balances` / `kodiak_statistics` (all empty — the C3b venue sync repopulates `exchange_*` instead) |
+
+Planned (designed, not implemented): `015_bot_account_sessions.sql` — bot = one
+exchange account with `strategy_runs` per strategy (plan §D); and
+`016_agent_participation.sql` — agents, grants, proposals and the action audit trail
+(plan §E).
 
 ---
 
@@ -266,6 +286,12 @@ debt, deliberately deferred (P2).
 **New strategy:** add an implementation under `engine/src/strategies/`, expose it
 through the strategy config resolved in `BotManager`, and drive it with a
 `StrategyRunner` so the single-flight guarantee is preserved.
+
+**New agent:** agents add no code path to the engine. Register a principal (the
+`agents` table), grant it a capability on one account (`agent_grants`), and let it
+either read the account-scoped market views or file an `agent_proposals` row;
+coordinator capabilities are ordinary lifecycle commands behind a grant, and the
+engine remains the only executor. Design: plan §E.
 
 **New chain or network:** chain specifics belong to the exchange client; the core
 stays chain-agnostic.

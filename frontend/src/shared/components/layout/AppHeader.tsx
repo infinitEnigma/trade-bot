@@ -55,7 +55,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                 <div className="relative">
                   <div className="w-10 h-10 rounded-full bg-linear-to-br from-primary to-accent flex items-center justify-center">
                     <span className="text-sm font-bold text-white">
-                      {user?.email?.[0]?.toUpperCase() || "U"}
+                      {user?.username?.[0]?.toUpperCase() ||
+                        user?.email?.[0]?.toUpperCase() ||
+                        "U"}
                     </span>
                   </div>
                   <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-bg-surface bg-green-500"></div>
@@ -63,7 +65,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                 <div className="hidden md:block">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-text-primary">
-                      {user?.email?.split("@")[0] || "User"}
+                      {user?.username || user?.email?.split("@")[0] || "User"}
                     </span>
                     <span
                       className={`px-2 py-1 text-xs rounded-full font-medium ${
@@ -86,10 +88,12 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               <div className="absolute right-0 top-full mt-2 w-64 glass-card opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 transform translate-y-2 group-hover:translate-y-0">
                 <div className="p-4 border-b border-white/5">
                   <p className="text-sm font-medium text-text-primary">
-                    {user?.email}
+                    {user?.username || user?.email}
                   </p>
                   <p className="text-xs text-text-tertiary mt-1">
-                    Trading Account
+                    {user?.username && user?.email
+                      ? user?.email
+                      : "Trading Account"}
                   </p>
                 </div>
                 <div className="p-2">

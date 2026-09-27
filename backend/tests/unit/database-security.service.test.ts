@@ -99,18 +99,17 @@ describe("DatabaseSecurityService", () => {
         .mockResolvedValueOnce({
           rows: [
             {
-              table_name: "kodiak_credentials",
-              column_name: "api_key_encrypted",
+              table_name: "exchange_accounts",
+              column_name: "credentials_encrypted",
             },
           ],
         }) // encrypted columns
         .mockResolvedValueOnce({
           rows: [
-            { column_name: "api_key" },
-            { column_name: "secret_key" },
-            { column_name: "api_key_encrypted" },
+            { column_name: "credentials_encrypted" },
+            { column_name: "account_ref" },
           ],
-        }) // kodiak fields
+        }) // exchange-account fields
         .mockResolvedValueOnce({ rows: [{ exists: false }] }) // user_sessions table
         .mockResolvedValueOnce({ rows: [{ exists: true }] }) // audit_logs table
         .mockResolvedValueOnce({
@@ -170,7 +169,7 @@ describe("DatabaseSecurityService", () => {
 
       expect(migrationPlans.length).toBeGreaterThan(0);
       expect(
-        migrationPlans.some(plan => plan.table === "kodiak_credentials")
+        migrationPlans.some(plan => plan.table === "exchange_accounts")
       ).toBe(true);
       expect(migrationPlans.some(plan => plan.table === "user_sessions")).toBe(
         true
@@ -183,7 +182,7 @@ describe("DatabaseSecurityService", () => {
       const migrationPlans =
         await databaseSecurityService.generateEncryptionMigrationPlan();
 
-      expect(migrationPlans.length).toBe(1); // Only kodiak_credentials should be included
+      expect(migrationPlans.length).toBe(1); // Only exchange_accounts is always planned
       expect(migrationPlans.some(plan => plan.table === "user_sessions")).toBe(
         false
       );
@@ -191,10 +190,10 @@ describe("DatabaseSecurityService", () => {
   });
 
   describe("migrateTableEncryption", () => {
-    it("should migrate table encryption", async () => {
+    it("should encrypt exchange-account credentials in place", async () => {
       const testRows = [
-        { id: 1, api_key: "test-api-key-1", secret_key: "test-secret-key-1" },
-        { id: 2, api_key: "test-api-key-2", secret_key: "test-secret-key-2" },
+        { id: 1, credentials: "plain-envelope-1" },
+        { id: 2, credentials: "plain-envelope-2" },
       ];
 
       (query as jest.Mock)
@@ -203,21 +202,19 @@ describe("DatabaseSecurityService", () => {
         .mockResolvedValueOnce(undefined);
 
       (encryptionService.encryptWithVersion as jest.Mock)
-        .mockResolvedValue("encrypted-api-key-1")
-        .mockResolvedValue("encrypted-secret-key-1")
-        .mockResolvedValue("encrypted-api-key-2")
-        .mockResolvedValue("encrypted-secret-key-2");
+        .mockResolvedValue("encrypted-envelope-1")
+        .mockResolvedValue("encrypted-envelope-2");
 
       const result = await databaseSecurityService.migrateTableEncryption(
-        "kodiak_credentials",
-        ["api_key", "secret_key"]
+        "exchange_accounts",
+        ["credentials"]
       );
 
       expect(result.success).toBe(true);
       expect(result.migratedRows).toBe(2);
       expect(result.errors.length).toBe(0);
       expect(query).toHaveBeenCalledWith(
-        "UPDATE kodiak_credentials SET api_key_encrypted = $1, secret_key_encrypted = $2 WHERE id = $3",
+        "UPDATE exchange_accounts SET credentials_encrypted = $1 WHERE id = $2",
         expect.anything()
       );
     });
@@ -225,19 +222,16 @@ describe("DatabaseSecurityService", () => {
     it("should handle migration errors", async () => {
       (query as jest.Mock)
         .mockResolvedValueOnce({
-          rows: [
-            { id: 1, api_key: "test-api-key", secret_key: "test-secret-key" },
-          ],
+          rows: [{ id: 1, credentials: "plain-envelope" }],
         })
         .mockRejectedValueOnce(new Error("Update failed"));
 
       (encryptionService.encryptWithVersion as jest.Mock)
-        .mockResolvedValue("encrypted-api-key")
-        .mockResolvedValue("encrypted-secret-key");
+        .mockResolvedValue("encrypted-envelope");
 
       const result = await databaseSecurityService.migrateTableEncryption(
-        "kodiak_credentials",
-        ["api_key", "secret_key"]
+        "exchange_accounts",
+        ["credentials"]
       );
 
       expect(result.success).toBe(false);
@@ -286,16 +280,16 @@ describe("DatabaseSecurityService", () => {
   describe("getSecurityMetrics", () => {
     it("should get security metrics", async () => {
       (query as jest.Mock)
-        .mockResolvedValueOnce({ rows: [{ exists: true }] }) // kodiak_credentials exists
-        .mockResolvedValueOnce({ rows: [{ total: "100", encrypted: "150" }] }) // 100 records, 150 encrypted fields (each has 1.5 encrypted fields)
+        .mockResolvedValueOnce({ rows: [{ exists: true }] }) // exchange_accounts exists
+        .mockResolvedValueOnce({ rows: [{ total: "100", encrypted: "90" }] }) // 100 records, 90 encrypted
         .mockResolvedValueOnce({ rows: [{ exists: true }] }) // user_sessions exists
-        .mockResolvedValueOnce({ rows: [{ total: "50", encrypted: "75" }] }); // 50 records, 75 encrypted fields
+        .mockResolvedValueOnce({ rows: [{ total: "50", encrypted: "25" }] }); // 50 records, 25 encrypted
 
       const metrics = await databaseSecurityService.getSecurityMetrics();
 
       expect(metrics).toEqual(
         expect.objectContaining({
-          encryptedRecords: 225,
+          encryptedRecords: 115,
           totalRecords: 150,
           encryptionCoverage: expect.any(Number),
           lastSecurityCheck: expect.any(String),
@@ -325,19 +319,14 @@ describe("DatabaseSecurityService", () => {
         .mockResolvedValueOnce({
           rows: [
             {
-              table_name: "kodiak_credentials",
-              column_name: "api_key_encrypted",
+              table_name: "exchange_accounts",
+              column_name: "credentials_encrypted",
             },
           ],
         }) // encrypted columns
         .mockResolvedValueOnce({
-          rows: [
-            {
-              column_name: "api_key_encrypted",
-              secret_key_encrypted: "encrypted",
-            },
-          ],
-        }) // kodiak fields
+          rows: [{ column_name: "credentials_encrypted" }],
+        }) // exchange-account fields
         .mockResolvedValueOnce({ rows: [{ exists: false }] }) // user_sessions table
         .mockResolvedValueOnce({ rows: [{ exists: true }] }) // audit_logs table
         .mockResolvedValueOnce({
@@ -354,8 +343,8 @@ describe("DatabaseSecurityService", () => {
         }) // audit stats
         .mockResolvedValueOnce({ rows: [{ rls_policies: "5" }] }) // RLS policies
         .mockResolvedValueOnce({ rows: [{ setting: "on" }] }) // SSL setting
-        .mockResolvedValueOnce({ rows: [{ exists: true }] }) // kodiak_credentials exists
-        .mockResolvedValueOnce({ rows: [{ total: "100", encrypted: "200" }] }) // metrics
+        .mockResolvedValueOnce({ rows: [{ exists: true }] }) // exchange_accounts exists
+        .mockResolvedValueOnce({ rows: [{ total: "100", encrypted: "95" }] }) // metrics
         .mockResolvedValueOnce({ rows: [{ exists: false }] }); // user_sessions exists
 
       const report =

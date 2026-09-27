@@ -23,7 +23,9 @@ export type {
 // Components
 export {
   AccountOverview as AccountOverviewCard,
-  KodiakCredentials as KodiakCredentialsCard,
+  ConnectExchangeAccount as ConnectExchangeAccountCard,
+  ExchangeAccounts as ExchangeAccountsCard,
+  ConnectedWallets as ConnectedWalletsCard,
 } from "./components";
 
 // Hooks

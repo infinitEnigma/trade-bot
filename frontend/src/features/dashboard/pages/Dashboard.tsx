@@ -1,10 +1,23 @@
 /** @format */
 
-import React, { useState, Suspense } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { motion } from "framer-motion";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../auth";
 import { kodiakApi } from "../../../infrastructure/api";
+import {
+  accountsApi,
+  ExchangeAccountDto,
+} from "../../../infrastructure/api/accounts";
 import {
   TrendingUp,
   TrendingDown,
@@ -32,6 +45,7 @@ import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
 import { UserProgressCard } from "../../../shared/components/user/UserProgressCard";
 import { LoadingSpinner } from "../../../shared/components/ui";
 import { useBalance } from "../../../shared/hooks";
+import { globalBalanceManager } from "../../../shared/services/balance-manager";
 import {
   Container,
   ElectricalNetworkBackground,
@@ -102,17 +116,121 @@ const StatsCard = ({ title, value, icon: Icon, format }: StatsCardProps) => (
   </div>
 );
 
-const PortfolioChart = ({ data }: PortfolioChartProps) => (
-  <div className="h-80 flex items-center justify-center">
-    <div className="text-center">
-      <Activity className="w-12 h-12 text-textMuted mx-auto mb-4" />
-      <p className="text-textMuted">Portfolio Chart</p>
-      <p className="text-xs text-textMuted mt-2">
-        {data?.length || 0} data points
-      </p>
+/**
+ * Portfolio equity curve built from realized trade PnL.
+ *
+ * The dashboard feeds this the output of `calculatePortfolioPerformance()`
+ * (Start + one point per closed trade). Drawn with recharts like PriceChart;
+ * empty and single-point series get explicit states instead of a fake line.
+ */
+const PortfolioChart = ({ data }: PortfolioChartProps) => {
+  const points = data ?? [];
+  const chartData = points.map((point, index) => ({
+    ...point,
+    index,
+    label: `${point.time} (#${index})`,
+  }));
+  const firstValue = points[0]?.value ?? 0;
+  const lastValue = points.length > 0 ? points[points.length - 1].value : 0;
+  const pnl = lastValue - firstValue;
+  const pnlPositive = pnl >= 0;
+
+  if (points.length === 0) {
+    return (
+      <div className="h-80 flex items-center justify-center">
+        <div className="text-center">
+          <Activity className="w-12 h-12 text-textMuted mx-auto mb-4" />
+          <p className="text-textMuted">No portfolio data</p>
+          <p className="text-xs text-textMuted mt-2">
+            Closed trades will build the equity curve here.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-80">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm text-textMuted">
+          {points.length} data points •{" "}
+          <span className={pnlPositive ? "text-success" : "text-danger"}>
+            {pnlPositive ? "+" : ""}$
+            {pnl.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          </span>{" "}
+          realized
+        </p>
+      </div>
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart
+            data={chartData}
+            margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
+            <XAxis
+              dataKey="index"
+              tickFormatter={index =>
+                chartData[Number(index)]?.time ?? String(index)
+              }
+              stroke="var(--text-secondary)"
+              fontSize={12}
+              tick={{ fill: "var(--text-secondary)" }}
+              tickLine={false}
+              minTickGap={32}
+            />
+            <YAxis
+              stroke="var(--text-secondary)"
+              fontSize={12}
+              tick={{ fill: "var(--text-secondary)" }}
+              tickFormatter={(value: number) =>
+                `$${Number(value).toLocaleString(undefined, {
+                  maximumFractionDigits: 0,
+                })}`
+              }
+              width={80}
+              domain={["dataMin", "dataMax"]}
+            />
+            <Tooltip
+              content={({ active, payload }) => {
+                if (active && payload && payload.length > 0) {
+                  const point = payload[0].payload as PerformanceData & {
+                    index: number;
+                  };
+                  return (
+                    <div className="glass-card p-3 border border-white/10">
+                      <p className="text-sm font-medium">
+                        Trade #{point.index} • {point.time}
+                      </p>
+                      <p className="text-sm text-primary">
+                        Equity: $
+                        {point.value.toLocaleString(undefined, {
+                          maximumFractionDigits: 2,
+                        })}
+                      </p>
+                    </div>
+                  );
+                }
+                return null;
+              }}
+            />
+            <Area
+              type="monotone"
+              dataKey="value"
+              name="Equity"
+              stroke="var(--primary)"
+              fill="var(--primary)"
+              fillOpacity={0.15}
+              strokeWidth={2.5}
+              dot={false}
+              isAnimationActive={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // Calculate real portfolio performance from trades data
 const calculatePortfolioPerformance = (
@@ -162,14 +280,51 @@ const Dashboard: React.FC = () => {
   // ✅ Fetch real balance data - moved to top
   const { balance: realBalance, loading: realBalanceLoading } = useBalance();
 
-  // Fetch Kodiak data - optimized with proper deduplication
-  const hasKodiakAccess =
+  // Fetch portfolio data - optimized with proper deduplication
+  const hasPortfolioAccess =
     user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
 
+  // L2: venue-agnostic portfolio selection. Every ACTIVE account is listed
+  // with an explicit switcher (previously the first ACTIVE kodiak account
+  // was pinned, hiding Lighter accounts). Default is the most recently
+  // created ACTIVE account — deterministic, not "kodiak first".
+  const [portfolioAccountId, setPortfolioAccountId] = useState("");
+  const accountsQuery = useQuery({
+    queryKey: ["exchange-accounts", user?.id],
+    queryFn: () => accountsApi.listAccounts(),
+    enabled: !!user,
+    staleTime: 30 * 1000,
+  });
+  const portfolioAccounts: ExchangeAccountDto[] = (
+    accountsQuery.data?.data?.accounts ?? []
+  )
+    .filter(account => account.status === "ACTIVE")
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  const activePortfolioAccountId =
+    portfolioAccountId || portfolioAccounts[0]?.id || "";
+  // Positions/trades/balance are venue-dispatched server-side (kodiak rows
+  // → kodiak-integration, lighter rows → the Lighter portfolio reader), so
+  // every ACTIVE selection is queried — no venue gate here anymore.
+
+  // The balance widget is app-global: pin it to the displayed account.
+  useEffect(() => {
+    globalBalanceManager.setActiveExchangeAccountId(
+      activePortfolioAccountId || null
+    );
+  }, [activePortfolioAccountId]);
+
   const { data: positionsData, isLoading: positionsLoading } = useQuery({
-    queryKey: ["kodiak-positions", user?.id],
-    queryFn: () => kodiakApi.getKodiakPositions(),
-    enabled: hasKodiakAccess && !!user?.id,
+    queryKey: [
+      "kodiak-positions",
+      user?.id,
+      activePortfolioAccountId || "default",
+    ],
+    queryFn: () =>
+      kodiakApi.getKodiakPositions(activePortfolioAccountId || undefined),
+    enabled: hasPortfolioAccess && !!user?.id,
     staleTime: 30000, // 30 seconds
     gcTime: 300000, // 5 minutes
     retry: (failureCount, error: Error) => {
@@ -184,9 +339,14 @@ const Dashboard: React.FC = () => {
     isLoading: tradesLoading,
     error: tradesError,
   } = useQuery({
-    queryKey: ["kodiak-trades", user?.id],
-    queryFn: () => kodiakApi.getKodiakTrades(),
-    enabled: hasKodiakAccess && !!user?.id,
+    queryKey: [
+      "kodiak-trades",
+      user?.id,
+      activePortfolioAccountId || "default",
+    ],
+    queryFn: () =>
+      kodiakApi.getKodiakTrades(50, activePortfolioAccountId || undefined),
+    enabled: hasPortfolioAccess && !!user?.id,
     staleTime: 30000,
     gcTime: 300000,
     retry: (failureCount, error: Error) => {
@@ -359,7 +519,7 @@ const Dashboard: React.FC = () => {
           <Card className="text-center mb-8">
             <Wallet className="w-12 h-12 text-textMuted mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-text mb-2">
-              Connect Your Kodiak Account
+              Connect Your Exchange Account
             </h3>
             <p className="text-textMuted mb-4">
               Connect your trading account to view your portfolio data and
@@ -477,6 +637,23 @@ const Dashboard: React.FC = () => {
               subtitle={`${positions.length} active positions • ${profitablePositions} profitable`}
               actions={
                 <>
+                  {portfolioAccounts.length > 0 && (
+                    <select
+                      value={activePortfolioAccountId}
+                      onChange={event =>
+                        setPortfolioAccountId(event.target.value)
+                      }
+                      aria-label="Exchange account"
+                      className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-text focus:border-primary/50 focus:outline-none"
+                    >
+                      {portfolioAccounts.map(account => (
+                        <option key={account.id} value={account.id}>
+                          {account.exchange} · {account.environment} ·{" "}
+                          {account.accountRef}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <button className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-sm">
                     Filter
                   </button>

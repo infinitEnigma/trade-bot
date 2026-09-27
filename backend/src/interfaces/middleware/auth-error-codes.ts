@@ -31,6 +31,14 @@ export type AuthErrorCode =
   (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CODES];
 
 /**
+ * Message used by the fail-fast path when another request already holds
+ * `mutex:refresh:<userId>`. It is part of the client contract (`401` /
+ * `REFRESH_FAILED` / -1004) and is classified by the middleware logger, so it
+ * lives here to keep the response body and the log classifier in sync.
+ */
+export const REFRESH_IN_PROGRESS_MESSAGE = "Token refresh already in progress";
+
+/**
  * Messages whose presence in an auth-service refresh failure means the token
  * is definitively dead (expired / invalid / revoked / legacy pre-`type`-claim
  * token from before the security hardening). Retrying or refreshing again

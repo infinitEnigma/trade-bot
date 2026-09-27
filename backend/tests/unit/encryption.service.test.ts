@@ -276,25 +276,37 @@ describe("EncryptionService", () => {
       });
 
       it("should migrate existing credentials to versioned encryption", async () => {
+        // C2: rows live in `exchange_accounts` with a single versioned
+        // envelope — one SELECT plus one UPDATE per stale row.
+        const envelope = (apiKey: string, secretKey: string) =>
+          JSON.stringify({
+            v: 1,
+            kind: "kodiak",
+            accountId: `account-${apiKey}`,
+            apiKey,
+            secretKey,
+          });
         const mockCredentials = [
           {
             id: "1",
-            api_key_encrypted: encryptionService.encryptApiKey("api-key-1"),
-            secret_key_encrypted:
-              encryptionService.encryptSecretKey("secret-key-1"),
+            credentials_encrypted: await encryptionService.encryptWithVersion(
+              envelope("api-key-1", "secret-key-1")
+            ),
+            encryption_version: 1,
           },
           {
             id: "2",
-            api_key_encrypted: encryptionService.encryptApiKey("api-key-2"),
-            secret_key_encrypted:
-              encryptionService.encryptSecretKey("secret-key-2"),
+            credentials_encrypted: await encryptionService.encryptWithVersion(
+              envelope("api-key-2", "secret-key-2")
+            ),
+            encryption_version: 1,
           },
         ];
 
         mockQuery
-          .mockResolvedValueOnce({ rows: mockCredentials }) // Get credentials to migrate
-          .mockResolvedValueOnce({}) // Update credential 1
-          .mockResolvedValueOnce({}); // Update credential 2
+          .mockResolvedValueOnce({ rows: mockCredentials }) // Get accounts to migrate
+          .mockResolvedValueOnce({}) // Update account 1
+          .mockResolvedValueOnce({}); // Update account 2
 
         await encryptionService.migrateToVersionedEncryption();
 
@@ -305,8 +317,8 @@ describe("EncryptionService", () => {
         const mockCredentials = [
           {
             id: "1",
-            api_key_encrypted: "invalid-encrypted-data",
-            secret_key_encrypted: "invalid-encrypted-data",
+            credentials_encrypted: "invalid-encrypted-data",
+            encryption_version: null,
           },
         ];
 
@@ -332,14 +344,32 @@ describe("EncryptionService", () => {
       const apiKey = "test-api-key";
       const secretKey = "test-secret-key";
 
+      // C2: the exchange-account row carries the versioned envelope.
+      // The same row answers both listAccounts and getAccountWithSecret.
+      const envelope = await encryptionService.encryptWithVersion(
+        JSON.stringify({
+          v: 1,
+          kind: "kodiak",
+          accountId,
+          apiKey,
+          secretKey,
+        })
+      );
       mockQuery.mockResolvedValue({
         rows: [
           {
-            account_id: await encryptionService.encryptWithVersion(accountId),
-            api_key_encrypted:
-              await encryptionService.encryptWithVersion(apiKey),
-            secret_key_encrypted:
-              await encryptionService.encryptWithVersion(secretKey),
+            id: accountId,
+            user_id: userId,
+            exchange: "kodiak",
+            environment: "testnet",
+            account_ref: accountId,
+            status: "ACTIVE",
+            verified_at: "2024-01-01T00:00:00.000Z",
+            last_verified_at: "2024-01-01T00:00:00.000Z",
+            meta: {},
+            created_at: "2024-01-01T00:00:00.000Z",
+            updated_at: "2024-01-01T00:00:00.000Z",
+            credentials_encrypted: envelope,
             encryption_version: 2,
           },
         ],
@@ -362,13 +392,21 @@ describe("EncryptionService", () => {
 
     it("should throw error when no credentials found", async () => {
       const userId = "550e8400-e29b-41d4-a716-446655440001"; // Valid UUID
-      (query as jest.Mock).mockResolvedValue({ rows: [] });
+      // Inject explicitly: test-setup.ts loads encryption.service before this
+      // file's jest.mock(pool) registers, so the module-level default still
+      // resolves to the real pool query in this suite.
+      const mockQuery = jest.fn().mockResolvedValue({ rows: [] });
 
       await expect(
-        withCredentials(userId, async () => {
-          return "success";
-        })
-      ).rejects.toThrow("No verified Kodiak credentials found");
+        withCredentials(
+          userId,
+          async () => {
+            return "success";
+          },
+          mockQuery
+        )
+      ).rejects.toThrow("No verified exchange account found");
+      expect(mockQuery).toHaveBeenCalled();
     });
   });
 });

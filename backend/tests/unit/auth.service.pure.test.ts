@@ -14,11 +14,13 @@ describe("AuthService", () => {
       userRepository: {
         findByEmail: jest.fn(),
         findByEmailWithPassword: jest.fn(),
+        findByUsername: jest.fn(),
         create: jest.fn(),
         findById: jest.fn(),
         getAuthenticatedUserData: jest.fn(),
         updateUserLevel: jest.fn(),
         updateProfile: jest.fn(),
+        upsertEmailIdentity: jest.fn(),
         getWalletAddress: jest.fn(),
         setWalletAddress: jest.fn(),
         clearWalletAddress: jest.fn(),
@@ -90,11 +92,13 @@ describe("AuthService", () => {
 
       // Mock dependencies
       (deps.userRepository.findByEmail as jest.Mock).mockResolvedValue(null);
+      (deps.userRepository.findByUsername as jest.Mock).mockResolvedValue(null);
       (deps.passwordService.hash as jest.Mock).mockResolvedValue(
         testPasswordHash
       );
       (deps.userRepository.create as jest.Mock).mockResolvedValue({
         id: testUserId,
+        username: "test",
         email: testEmail,
         userLevel: testUserLevel,
       });
@@ -117,11 +121,130 @@ describe("AuthService", () => {
       expect(deps.userRepository.findByEmail).toHaveBeenCalledWith(testEmail);
       expect(deps.passwordService.hash).toHaveBeenCalledWith(testPassword);
       expect(deps.userRepository.create).toHaveBeenCalled();
+      // Username omitted → derived from the email local part ("test").
+      expect(deps.userRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: testEmail,
+          username: "test",
+        })
+      );
+      expect(result.user?.username).toEqual("test");
       expect(deps.tokenService.generateAccessToken).toHaveBeenCalled();
       expect(deps.tokenService.generateRefreshToken).toHaveBeenCalled();
       expect(deps.logger.info).toHaveBeenCalled();
       expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
         expect.objectContaining({ action: "USER_REGISTERED" })
+      );
+    });
+
+    it("should register with an explicit username when provided", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      (deps.userRepository.findByEmail as jest.Mock).mockResolvedValue(null);
+      (deps.userRepository.findByUsername as jest.Mock).mockResolvedValue(null);
+      (deps.passwordService.hash as jest.Mock).mockResolvedValue("hashed");
+      (deps.userRepository.create as jest.Mock).mockResolvedValue({
+        id: "user-abc",
+        username: "chosen_handle",
+        email: "sam@example.com",
+        userLevel: UserLevel.BASIC,
+      });
+      (deps.tokenService.generateAccessToken as jest.Mock).mockReturnValue("a");
+      (deps.tokenService.generateRefreshToken as jest.Mock).mockReturnValue(
+        "r"
+      );
+
+      const result = await authService.register(
+        "sam@example.com",
+        "Password123!",
+        "Chosen_Handle" // normalised to lowercase
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.user?.username).toEqual("chosen_handle");
+      expect(deps.userRepository.findByUsername).toHaveBeenCalledWith(
+        "chosen_handle"
+      );
+      expect(deps.userRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ username: "chosen_handle" })
+      );
+    });
+
+    it("should fail when the explicit username is already taken", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      (deps.userRepository.findByEmail as jest.Mock).mockResolvedValue(null);
+      (deps.userRepository.findByUsername as jest.Mock).mockResolvedValue({
+        id: "existing",
+        username: "taken",
+      });
+
+      const result = await authService.register(
+        "fresh@example.com",
+        "Password123!",
+        "taken"
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.message).toEqual("Username already taken");
+      expect(deps.userRepository.create).not.toHaveBeenCalled();
+      expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "USER_REGISTRATION_FAILED",
+          details: expect.objectContaining({ reason: "username_exists" }),
+        })
+      );
+    });
+
+    it("should reject an explicit username that violates the charset rule", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      (deps.userRepository.findByEmail as jest.Mock).mockResolvedValue(null);
+
+      const result = await authService.register(
+        "fresh@example.com",
+        "Password123!",
+        "bad user!" // space + bang → fails [a-z0-9._-]
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("Username must be 3-32 characters");
+      expect(deps.userRepository.create).not.toHaveBeenCalled();
+    });
+
+    it("should de-duplicate a derived username with a numeric suffix", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      (deps.userRepository.findByEmail as jest.Mock).mockResolvedValue(null);
+      // test2@example.com derives base "test2" (email local part); when that
+      // handle is taken, the suffix rule yields "test22".
+      (deps.userRepository.findByUsername as jest.Mock)
+        .mockResolvedValueOnce({ id: "u1", username: "test2" }) // base taken
+        .mockResolvedValueOnce(null); // test22 free
+      (deps.passwordService.hash as jest.Mock).mockResolvedValue("hashed");
+      (deps.userRepository.create as jest.Mock).mockResolvedValue({
+        id: "user-xyz",
+        username: "test22",
+        email: "test2@example.com",
+        userLevel: UserLevel.BASIC,
+      });
+      (deps.tokenService.generateAccessToken as jest.Mock).mockReturnValue("a");
+      (deps.tokenService.generateRefreshToken as jest.Mock).mockReturnValue(
+        "r"
+      );
+
+      const result = await authService.register(
+        "test2@example.com",
+        "Password123!"
+      );
+
+      expect(result.success).toBe(true);
+      expect(deps.userRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ username: "test22" })
       );
     });
 
@@ -1189,6 +1312,15 @@ describe("AuthService", () => {
       (deps.userRepository.getWalletAddress as jest.Mock).mockResolvedValue(
         "0x9876..."
       );
+      // C2: the service loads the current user (for level bookkeeping)
+      // BEFORE the legacy address-mismatch check.
+      (deps.userRepository.findById as jest.Mock).mockResolvedValue({
+        id: testUserId,
+        email: "test@example.com",
+        userLevel: UserLevel.BASIC,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
 
       const result = await authService.verifyWalletOwnership(
         testUserId,

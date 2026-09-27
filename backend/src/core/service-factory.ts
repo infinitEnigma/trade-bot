@@ -23,7 +23,15 @@ import { RoleManagementService } from "./auth/role-management.service.pure";
 import { RoleQualificationService } from "./auth/role-qualification.service";
 import { WalletQualificationService } from "./wallet/wallet-qualification.service.pure";
 import { UserProfileService } from "./user/user-profile.service";
-import { UserKodiakService } from "./user/user-kodiak.service";
+import { ExchangeAccountService } from "./user/exchange-account.service";
+import { createVerifyConnectivity } from "./user/verify-connectivity";
+import { lighterVerifierFromEnv } from "../infrastructure/external/exchange-accounts/lighter-verifier";
+import { UserLevelService } from "./auth/user-level.service";
+import { walletRepositoryAdapter } from "../infrastructure/adapters/repositories/wallet-repository.adapter";
+import { exchangeAccountRepositoryAdapter } from "../infrastructure/adapters/repositories/exchange-account-repository.adapter";
+import { query as poolQuery } from "../database/pool";
+import { encryptionService } from "../infrastructure/security/encryption.service";
+import { kodiakIntegrationService } from "../infrastructure/external/kodiak-integration.service";
 import { BotManagementService } from "./bots/bot-management.service";
 import { StrategyService } from "./strategies/strategy.service";
 import { MarketService } from "./market/market.service";
@@ -31,8 +39,6 @@ import { HealthService } from "./system/health.service.pure";
 import { PositionValidatorService } from "./strategies/position-validator.service.pure";
 import { PositionSyncService } from "./strategies/position-sync.service.pure";
 import { EngineManager } from "./strategies/engine-manager.service.pure";
-import { kodiakConnectionService } from "../infrastructure/external/kodiak-connection.service";
-import { connectionCache } from "../infrastructure/cache/connection-cache.service";
 import { contextLogger } from "./logging";
 
 /**
@@ -81,9 +87,9 @@ export interface IServiceFactory {
   getUserProfileService(): UserProfileService | undefined;
 
   /**
-   * Get User Kodiak Service instance
+   * Get Exchange Account Service instance (C2 per-account connect/verify)
    */
-  getUserKodiakService(): UserKodiakService | undefined;
+  getExchangeAccountService(): ExchangeAccountService | undefined;
 
   /**
    * Get Bot Management Service instance
@@ -131,7 +137,7 @@ export interface IServiceFactory {
     positionSyncService: PositionSyncService | undefined;
     roleManagementService: RoleManagementService | undefined;
     userProfileService: UserProfileService | undefined;
-    userKodiakService: UserKodiakService | undefined;
+    exchangeAccountService: ExchangeAccountService | undefined;
     botManagementService: BotManagementService | undefined;
     strategyService: StrategyService | undefined;
     marketService: MarketService | undefined;
@@ -340,25 +346,76 @@ export class ServiceFactory implements IServiceFactory {
   }
 
   /**
-   * Get User Kodiak Service instance with proper dependencies
+   * Build the shared UserLevelService (single owner of level transitions).
    */
-  getUserKodiakService(): UserKodiakService | undefined {
+  private createUserLevelService(): UserLevelService {
+    return new UserLevelService({
+      walletRepository: walletRepositoryAdapter,
+      exchangeAccountRepository: exchangeAccountRepositoryAdapter,
+      userRepository: diContainer.userRepository,
+      auditLogRepository: diContainer.auditLogRepository,
+    });
+  }
+
+  /**
+   * Get Exchange Account Service instance with proper dependencies (C2).
+   */
+  getExchangeAccountService(): ExchangeAccountService | undefined {
     try {
-      const userKodiakService = new UserKodiakService({
-        kodiakConnectionService,
-        cache: connectionCache,
+      const service = new ExchangeAccountService({
+        exchangeAccountRepository: exchangeAccountRepositoryAdapter,
+        encryption: {
+          encryptWithVersion: (plaintext: string) =>
+            encryptionService.encryptWithVersion(plaintext),
+          decryptWithVersion: (ciphertext: string) =>
+            encryptionService.decryptWithVersion(ciphertext),
+          decryptApiKey: (ciphertext: string) =>
+            encryptionService.decryptApiKey(ciphertext),
+          decryptSecretKey: (ciphertext: string) =>
+            encryptionService.decryptSecretKey(ciphertext),
+          currentVersion: () =>
+            (encryptionService as unknown as { currentKeyVersion?: number })
+              .currentKeyVersion ?? 2,
+        },
+        verifyConnectivity: createVerifyConnectivity({
+          kodiakIntegrationService,
+          lighterVerifier: lighterVerifierFromEnv(),
+        }),
+        userLevel: this.createUserLevelService(),
+        auditLogRepository: diContainer.auditLogRepository,
+        // L4: the DI container passes loggerService — the factory must too,
+        // otherwise connect/verify/revoke log via `?.` into the void.
+        logger: diContainer.loggerService,
+        // C3a: revoke is blocked while bots bind to the account (FK RESTRICT).
+        boundBots: {
+          countBoundBots: async (userId: string, accountId: string) => {
+            const result = await poolQuery<{ count: string }>(
+              `SELECT COUNT(*) AS count FROM bot_instances WHERE user_id = $1 AND exchange_account_id = $2`,
+              [userId, accountId]
+            );
+            return parseInt(result.rows[0]?.count ?? "0", 10);
+          },
+        },
       });
-      this.logger.debug("User Kodiak Service created with dependencies", {
-        service: "UserKodiakService",
-        dependencies: ["kodiakConnectionService", "connectionCache"],
+      this.logger.debug("Exchange Account Service created with dependencies", {
+        service: "ExchangeAccountService",
+        dependencies: [
+          "exchangeAccountRepository",
+          "encryption",
+          "verifyConnectivity",
+          "userLevel",
+          "auditLogRepository",
+          "logger",
+          "boundBots",
+        ],
       });
-      return userKodiakService;
+      return service;
     } catch (error) {
       this.logger.error(
-        "Failed to create User Kodiak Service",
+        "Failed to create Exchange Account Service",
         error instanceof Error ? error : undefined,
         {
-          service: "UserKodiakService",
+          service: "ExchangeAccountService",
         }
       );
       return undefined;
@@ -537,7 +594,7 @@ export class ServiceFactory implements IServiceFactory {
     positionSyncService: PositionSyncService | undefined;
     roleManagementService: RoleManagementService | undefined;
     userProfileService: UserProfileService | undefined;
-    userKodiakService: UserKodiakService | undefined;
+    exchangeAccountService: ExchangeAccountService | undefined;
     botManagementService: BotManagementService | undefined;
     strategyService: StrategyService | undefined;
     marketService: MarketService | undefined;
@@ -553,7 +610,7 @@ export class ServiceFactory implements IServiceFactory {
         positionSyncService: this.getPositionSyncService(),
         roleManagementService: this.getRoleManagementService(),
         userProfileService: this.getUserProfileService(),
-        userKodiakService: this.getUserKodiakService(),
+        exchangeAccountService: this.getExchangeAccountService(),
         botManagementService: this.getBotManagementService(),
         strategyService: this.getStrategyService(),
         marketService: this.getMarketService(),
@@ -574,7 +631,7 @@ export class ServiceFactory implements IServiceFactory {
         positionSyncService: undefined,
         roleManagementService: undefined,
         userProfileService: undefined,
-        userKodiakService: undefined,
+        exchangeAccountService: undefined,
         botManagementService: undefined,
         strategyService: undefined,
         marketService: undefined,

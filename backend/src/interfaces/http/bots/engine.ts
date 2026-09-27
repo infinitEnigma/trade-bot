@@ -16,9 +16,10 @@ import {
   ErrorCategory,
 } from "../../../core/notifications/error-notification.service";
 import {
-  withCredentials,
-  SecureCredentials,
-} from "../../../infrastructure/security/encryption.service";
+  exchangeAccountRepositoryAdapter,
+  getBotBoundAccountSecrets,
+} from "../../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
+import { encryptionService } from "../../../infrastructure/security/encryption.service";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 /**
@@ -169,12 +170,15 @@ router.post(
 // GET /api/bot/engine/credentials/:botId?correlationId=... (called by engine)
 //
 // Out-of-band credential delivery for the lifecycle protocol: after the
-// engine accepts a BOT_START command it fetches the user's Kodiak
-// credentials here - no secrets ever travel through Redis Streams.
+// engine accepts a BOT_START command it fetches the bot's BOUND venue
+// account credentials here (C3a) - no secrets ever travel through Redis
+// Streams.
 //
 // Guards:
 // - bot engine API key (botEngineAuth middleware)
 // - bot must exist with desired_state = RUNNING
+// - bot must be bound to an ACTIVE exchange account
+//   (legacy unbound rows get 409: recreate the bot with an account)
 // - credentials are issued at most once per (botId, correlationId),
 //   enforced via a bot_lifecycle_events marker row.
 router.get(
@@ -225,26 +229,76 @@ router.get(
         });
       }
 
-      // Decrypt credentials in-memory; never persisted or logged. The
-      // exchange-agnostic envelope (shared EngineCredentials) is what the
-      // engine's credential fetcher validates and its client factory
-      // dispatches on — C3 swaps only this lookup, not the engine.
-      const credentials = await withCredentials(
-        bot.user_id,
-        async (secure: SecureCredentials) => ({
-          exchange: "kodiak" as const,
-          environment:
-            process.env.NODE_ENV === "production"
-              ? ("mainnet" as const)
-              : ("testnet" as const),
-          accountRef: secure.get("accountId"),
-          credentials: {
-            accountId: secure.get("accountId"),
-            accessKey: secure.get("apiKey"),
-            secretKey: secure.get("secretKey"),
-          },
-        })
-      );
+      // C3a: resolve the bot's BOUND account, not the user's first kodiak
+      // row. Secrets are decrypted in-memory, never persisted or logged.
+      // The exchange-agnostic envelope (shared EngineCredentials) is what
+      // the engine's credential fetcher validates and its client factory
+      // dispatches on — the engine needs no edits for this swap.
+      const bound = await getBotBoundAccountSecrets(botId as string, {
+        findBot: async id => {
+          const row = await query<{
+            user_id: string;
+            exchange_account_id: string | null;
+          }>(
+            "SELECT user_id, exchange_account_id FROM bot_instances WHERE id = $1",
+            [id]
+          );
+          return row.rows[0] ?? null;
+        },
+        getAccountWithSecret: (userId, accountId) =>
+          exchangeAccountRepositoryAdapter.getAccountWithSecret(
+            userId,
+            accountId
+          ),
+        decryptEnvelope: ciphertext =>
+          encryptionService.decryptWithVersion(ciphertext),
+        decryptFieldBlob: async blob => {
+          try {
+            return encryptionService.decryptApiKey(blob);
+          } catch {
+            // Not an api-key blob — try the other legacy helper.
+          }
+          try {
+            return encryptionService.decryptSecretKey(blob);
+          } catch {
+            // Not a secret-key blob either — try the versioned path.
+          }
+          return encryptionService.decryptWithVersion(blob);
+        },
+      });
+
+      // Legacy (pre-C3a) bots have no binding: fail loudly so the operator
+      // recreates the bot with an account instead of trading the wrong one.
+      if (!bound) {
+        return res.status(409).json({
+          success: false,
+          error:
+            "Bot has no verified exchange account bound. Recreate the bot with an account.",
+        });
+      }
+
+      const envelope =
+        bound.request.exchange === "kodiak"
+          ? {
+              exchange: "kodiak" as const,
+              environment: bound.account.environment,
+              accountRef: bound.account.accountRef,
+              credentials: {
+                accountId: bound.request.accountId,
+                accessKey: bound.request.apiKey,
+                secretKey: bound.request.secretKey,
+              },
+            }
+          : {
+              exchange: "lighter" as const,
+              environment: bound.account.environment,
+              accountRef: bound.account.accountRef,
+              credentials: {
+                accountIndex: bound.request.accountIndex,
+                apiKeyIndex: bound.request.apiKeyIndex,
+                privateKey: bound.request.privateKey,
+              },
+            };
 
       await query(
         `INSERT INTO bot_lifecycle_events (bot_id, event_type, correlation_id, metadata)
@@ -252,9 +306,14 @@ router.get(
         [botId, correlationId]
       );
 
-      logger.info("Engine credentials issued", { botId, correlationId });
+      logger.info("Engine credentials issued", {
+        botId,
+        correlationId,
+        exchange: envelope.exchange,
+        environment: envelope.environment,
+      });
 
-      res.json({ success: true, data: credentials });
+      res.json({ success: true, data: envelope });
     } catch (error) {
       const err = error as Error;
       logger.error("Engine credential fetch error", err, {

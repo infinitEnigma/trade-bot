@@ -5,21 +5,18 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { tradingApi } from "../../../infrastructure/api";
-import { Strategy, StrategyType } from "../../../shared/types";
-import { getStrategyConfig } from "../types/strategies.types";
-import {
-  Plus,
-  BarChart3,
-  Trash2,
-  Edit,
-  Zap,
-  AlertTriangle,
-  Settings,
-} from "lucide-react";
+import { strategyService } from "../services/strategyService";
+import { Strategy } from "../../../shared/types";
+import { Plus, BarChart3, AlertTriangle, Settings } from "lucide-react";
 
 // Lazy load heavy components for better performance
 const CandlestickChart = lazy(
   () => import("../../../shared/components/charts/CandlestickChart")
+);
+const StrategyCard = lazy(() =>
+  import("../components/StrategyCard").then(module => ({
+    default: module.StrategyCard,
+  }))
 );
 const StrategyForm = lazy(() =>
   import("../components/StrategyForm").then(module => ({
@@ -31,7 +28,7 @@ const BotControls = lazy(() =>
 );
 import { useBalance } from "../../../shared/hooks";
 import { useAuth } from "../../auth";
-import { UserProgressCard } from "../../../shared/components/user/UserProgressCard";
+import { useBotsList } from "../../bots/hooks";
 import { PageLayout, Container } from "../../../shared/components/layout";
 
 const Strategies: React.FC = React.memo(() => {
@@ -40,6 +37,10 @@ const Strategies: React.FC = React.memo(() => {
   const [kodiakError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
+  // Phase 2: after create, offer "start it now" — a strategy is created
+  // inactive; starting a bot on it (C3a account pick + size) is the start.
+  const [startPromptStrategy, setStartPromptStrategy] =
+    useState<Strategy | null>(null);
   const [_selectedSymbol] = useState("PERP_BTC_USDC");
   const queryClient = useQueryClient();
 
@@ -108,17 +109,15 @@ const Strategies: React.FC = React.memo(() => {
     },
   });
 
-  // Fetch bot instances only if engine is running
-  const { data: botsData } = useQuery({
-    queryKey: ["bot-instances"],
-    queryFn: () => tradingApi.getBotInstances(),
-    enabled: engineStatus?.data?.running === true, // Only fetch if engine is active
-    staleTime: 10000, // 10 seconds - bot status can change quickly
-    gcTime: 30000, // 30 seconds cache
-  });
+  // Strategies page owns the card list (lookup + refresh); per-card live state
+  // comes from useBotLifecycle's shared ["bot-instances"] cache (single
+  // owner — see useBotLifecycle.ts). useBotsList subscribes to that cache so
+  // this page never writes the key itself: a second writer with a different
+  // shape/observer options is what blanked the page (shared-observer data
+  // flip → .map on undefined).
+  const { bots } = useBotsList();
 
   const strategies = strategiesData?.success ? strategiesData.data : [];
-  const bots = botsData?.success ? botsData.data : [];
 
   // Delete strategy mutation
   const deleteMutation = useMutation({
@@ -154,6 +153,11 @@ const Strategies: React.FC = React.memo(() => {
       currency: "USD",
     }).format(value);
   };
+
+  const formatStrategyType = (type: Strategy["type"]) =>
+    strategyService.formatStrategyType(type);
+  const getStrategyTypeColor = (type: Strategy["type"]) =>
+    strategyService.getStrategyTypeColor(type);
 
   // Show Kodiak connectivity error if check failed
   if (kodiakError) {
@@ -235,11 +239,6 @@ const Strategies: React.FC = React.memo(() => {
         }}
         className="py-2 space-y-4"
       >
-        {/* ✅ User Progress Card - Shows qualification status */}
-        <div className="mb-8">
-          <UserProgressCard />
-        </div>
-
         {/* Candlestick Chart - Advanced trading data for verified users */}
         <div className="mb-8">
           <Suspense
@@ -359,6 +358,19 @@ const Strategies: React.FC = React.memo(() => {
           )}
         </div>
 
+        {/* Engine offline banner: informational only — bot instances are still
+            fetched and start/stop still works (the backend ensures the engine
+            on start). */}
+        {engineStatus && engineStatus?.data?.running === false && (
+          <div className="glass-card p-4 flex items-center gap-3 border-warning/20 bg-warning/5">
+            <AlertTriangle className="w-5 h-5 text-warning shrink-0" />
+            <p className="text-sm text-textMuted">
+              Trading engine is currently stopped. Existing bots are still
+              listed below; starting a bot will bring the engine up.
+            </p>
+          </div>
+        )}
+
         {/* Strategies Grid */}
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -398,179 +410,34 @@ const Strategies: React.FC = React.memo(() => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {strategies.map((strategy: Strategy) => {
               const bot = getBotForStrategy(strategy.id);
-              const strategyConfig = getStrategyConfig(strategy);
-              const config = strategyConfig?.config || {};
 
               return (
-                <div key={strategy.id} className="glass-card p-6">
-                  {/* Strategy Header */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                        <Zap className="w-5 h-5 text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-text">
-                          {strategy.name}
-                        </h3>
-                        <p className="text-sm text-textMuted capitalize">
-                          {strategy.type.replace("_", " ").toLowerCase()}
-                        </p>
+                <Suspense
+                  key={strategy.id}
+                  fallback={
+                    <div className="glass-card p-6">
+                      <div className="animate-pulse">
+                        <div className="w-24 h-6 bg-white/10 rounded mb-4"></div>
+                        <div className="w-full h-4 bg-white/10 rounded"></div>
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-2 py-1 text-xs rounded-full ${
-                          strategy.active
-                            ? "bg-success/20 text-success"
-                            : "bg-gray-500/20 text-gray-400"
-                        }`}
-                      >
-                        {strategy.active ? "Active" : "Inactive"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Strategy Config */}
-                  <div className="space-y-2 mb-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-textMuted">Symbol:</span>
-                      <span className="text-text font-medium">
-                        {config && "symbol" in config
-                          ? (config.symbol as string)
-                              ?.replace("PERP_", "")
-                              .replace("_USDC", "") || "N/A"
-                          : "N/A"}
-                      </span>
-                    </div>
-                    {strategy.type === StrategyType.GRID && (
-                      <>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-textMuted">Grid Size:</span>
-                          <span className="text-text">
-                            {config && "gridSize" in config
-                              ? (config.gridSize as number) || 0
-                              : 0}{" "}
-                            levels
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-textMuted">Range:</span>
-                          <span className="text-text">
-                            {config && "gridRange" in config
-                              ? (config.gridRange as number) || 0
-                              : 0}
-                            %
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-textMuted">Order Qty:</span>
-                          <span className="text-text">
-                            {config && "orderQuantity" in config
-                              ? (config.orderQuantity as number) || 0
-                              : 0}
-                          </span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Bot Status */}
-                  {bot && (
-                    <div className="bg-surface rounded p-3 mb-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-text">
-                          Bot Status
-                        </span>
-                        <span
-                          className={`px-2 py-1 text-xs rounded ${
-                            bot.status === "RUNNING"
-                              ? "bg-success/20 text-success"
-                              : bot.status === "STOPPED"
-                                ? "bg-warning/20 text-warning"
-                                : "bg-danger/20 text-danger"
-                          }`}
-                        >
-                          {bot.status}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="flex justify-between">
-                          <span className="text-textMuted">Trades:</span>
-                          <span className="text-text">
-                            {bot.total_trades || 0}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-textMuted">PnL:</span>
-                          <span
-                            className={`font-medium ${
-                              (bot.total_pnl || 0) >= 0
-                                ? "text-success"
-                                : "text-danger"
-                            }`}
-                          >
-                            {formatCurrency(bot.total_pnl || 0)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-2">
-                    {bot ? (
-                      <Suspense
-                        fallback={
-                          <div className="w-24 h-8 bg-surface rounded animate-pulse"></div>
-                        }
-                      >
-                        <BotControls
-                          strategyId={strategy.id}
-                          bot={bot}
-                          onStatusChange={() => {
-                            queryClient.invalidateQueries({
-                              queryKey: ["bot-instances"],
-                            });
-                          }}
-                        />
-                      </Suspense>
-                    ) : (
-                      <Suspense
-                        fallback={
-                          <div className="w-24 h-8 bg-surface rounded animate-pulse"></div>
-                        }
-                      >
-                        <BotControls
-                          strategyId={strategy.id}
-                          onStatusChange={() => {
-                            queryClient.invalidateQueries({
-                              queryKey: ["bot-instances"],
-                            });
-                          }}
-                        />
-                      </Suspense>
-                    )}
-
-                    <button
-                      onClick={() => setEditingStrategy(strategy)}
-                      className="p-2 rounded-lg hover:bg-surface transition-colors"
-                      title="Edit Strategy"
-                    >
-                      <Edit className="w-4 h-4 text-textMuted hover:text-text" />
-                    </button>
-
-                    <button
-                      onClick={() => handleDeleteStrategy(strategy.id)}
-                      className="p-2 rounded-lg hover:bg-surface transition-colors"
-                      title="Delete Strategy"
-                    >
-                      <Trash2 className="w-4 h-4 text-danger hover:text-danger" />
-                    </button>
-                  </div>
-                </div>
+                  }
+                >
+                  <StrategyCard
+                    strategy={strategy}
+                    bot={bot}
+                    onEdit={setEditingStrategy}
+                    onDelete={handleDeleteStrategy}
+                    onBotStatusChange={() => {
+                      queryClient.invalidateQueries({
+                        queryKey: ["bot-instances"],
+                      });
+                    }}
+                    formatCurrency={formatCurrency}
+                    formatStrategyType={formatStrategyType}
+                    getStrategyTypeColor={getStrategyTypeColor}
+                  />
+                </Suspense>
               );
             })}
           </div>
@@ -597,13 +464,60 @@ const Strategies: React.FC = React.memo(() => {
           >
             <StrategyForm
               onClose={() => setShowCreateForm(false)}
-              onSuccess={() => {
+              onSuccess={created => {
                 setShowCreateForm(false);
                 queryClient.invalidateQueries({ queryKey: ["strategies"] });
                 toast.success("Strategy created successfully!");
+                // Phase 2: created inactive → offer the start flow at once.
+                if (created) setStartPromptStrategy(created);
               }}
             />
           </Suspense>
+        )}
+
+        {/* Post-create start prompt: a strategy is created inactive; the
+            real "start" is a bot bound to it (C3a: account pick + size).
+            BotControls without a bot renders exactly that start flow. */}
+        {startPromptStrategy && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="glass-card p-6 w-full max-w-md mx-4 space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold text-text">
+                  Start "{startPromptStrategy.name}" now?
+                </h3>
+                <p className="text-sm text-textMuted">
+                  Pick the exchange account and trading size to launch this
+                  strategy. You can also start it later from its card.
+                </p>
+              </div>
+              <Suspense
+                fallback={
+                  <div className="text-center py-4 text-textMuted text-sm">
+                    Loading…
+                  </div>
+                }
+              >
+                <BotControls
+                  strategyId={startPromptStrategy.id}
+                  onStatusChange={() => {
+                    queryClient.invalidateQueries({
+                      queryKey: ["bot-instances"],
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["strategies"] });
+                    setStartPromptStrategy(null);
+                  }}
+                />
+              </Suspense>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setStartPromptStrategy(null)}
+                  className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-sm"
+                >
+                  Not now
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {editingStrategy && (

@@ -55,11 +55,10 @@ describe("BalanceRepositoryAdapter", () => {
       const mockQuery = jest.fn().mockResolvedValue({
         rows: [
           {
-            total: "100.00",
-            available: "50.00",
-            locked: "50.00",
-            currency: "USD",
-            last_updated: "2026-02-04T11:00:00Z",
+            asset: "USD",
+            holding: "100.00",
+            frozen: "50.00",
+            updated_at: "2026-02-04T11:00:00Z",
           },
         ],
       });
@@ -74,6 +73,50 @@ describe("BalanceRepositoryAdapter", () => {
       expect(balance.locked).toBe(50);
       expect(balance.currency).toBe("USD");
       expect(balance.lastUpdated).toEqual(new Date("2026-02-04T11:00:00Z"));
+    });
+
+    it("reads per-account rows from exchange_balances (C3b)", async () => {
+      const mockQuery = jest.fn().mockResolvedValue({ rows: [] });
+      const adapter = new BalanceRepositoryAdapter(mockQuery);
+
+      await adapter.getBalance("test-user-id");
+
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain("FROM exchange_balances");
+      expect(sql).toContain("JOIN exchange_accounts");
+      expect(params).toEqual(["test-user-id"]);
+    });
+
+    it("aggregates the same asset across accounts and prefers the quote asset", async () => {
+      const mockQuery = jest.fn().mockResolvedValue({
+        rows: [
+          // Same asset in two accounts — must sum, not collide.
+          { asset: "USDC", holding: "300.00", frozen: "0", updated_at: "" },
+          { asset: "USDC", holding: "200.00", frozen: "50.00", updated_at: "" },
+          // Larger numeric holding, but not the quote asset.
+          { asset: "SOL", holding: "900.00", frozen: "0", updated_at: "" },
+        ],
+      });
+      const adapter = new BalanceRepositoryAdapter(mockQuery);
+
+      const balance = await adapter.getBalance("test-user-id");
+
+      expect(balance.total).toBe(500);
+      expect(balance.locked).toBe(50);
+      expect(balance.available).toBe(450);
+      expect(balance.currency).toBe("USDC");
+    });
+
+    it("falls back to the largest holding when no quote asset exists", async () => {
+      const mockQuery = jest.fn().mockResolvedValue({
+        rows: [{ asset: "SOL", holding: "3.5", frozen: "0", updated_at: "" }],
+      });
+      const adapter = new BalanceRepositoryAdapter(mockQuery);
+
+      const balance = await adapter.getBalance("test-user-id");
+
+      expect(balance.currency).toBe("SOL");
+      expect(balance.total).toBe(3.5);
     });
 
     it("should throw error when query fails", async () => {

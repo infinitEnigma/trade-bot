@@ -2,6 +2,7 @@
 
 export {
   validateEmail,
+  validateUsername,
   validatePasswordStrength,
   validatePasswordRequirements,
   validatePasswordConfirmation,

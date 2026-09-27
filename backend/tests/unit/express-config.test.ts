@@ -16,15 +16,15 @@ describe("ExpressConfig", () => {
   });
 
   describe("configure", () => {
-    it("should configure an Express application with default options", async () => {
+    it("should configure an Express application with default options", () => {
       const app = express();
-      await ExpressConfig.configure(app);
+      ExpressConfig.configure(app);
 
       // Verify the app has basic functionality
       expect(app).toBeDefined();
     });
 
-    it("should configure an Express application with custom options", async () => {
+    it("should configure an Express application with custom options", () => {
       const app = express();
       const options: ExpressConfigOptions = {
         enableCors: false,
@@ -32,33 +32,54 @@ describe("ExpressConfig", () => {
         trustProxy: false,
       };
 
-      await ExpressConfig.configure(app, options);
+      ExpressConfig.configure(app, options);
 
       expect(app).toBeDefined();
+    });
+
+    it("should mount context + HTTP logging before any router (L3)", () => {
+      const app = express();
+      ExpressConfig.configure(app);
+
+      // Express 5 keeps the stack on app.router (not app._router).
+      const stack = (app as unknown as { router?: { stack?: unknown[] } })
+        .router?.stack;
+      const handleName = (layer: unknown) =>
+        (layer as { handle?: { name?: string } })?.handle?.name ?? "";
+      const names = (stack ?? []).map(handleName);
+      const contextIdx = names.indexOf("contextMiddleware");
+      const httpIdx = names.indexOf("httpLogger");
+      const firstRouter = names.indexOf("router");
+      expect(stack).toBeDefined();
+      expect(contextIdx).toBeGreaterThanOrEqual(0);
+      expect(httpIdx).toBeGreaterThan(contextIdx);
+      if (firstRouter >= 0) {
+        expect(httpIdx).toBeLessThan(firstRouter);
+      }
     });
   });
 
   describe("proxy configuration", () => {
-    it("should trust proxies when configured", async () => {
+    it("should trust proxies when configured", () => {
       const app = express();
       const options: ExpressConfigOptions = {
         trustProxy: true,
       };
 
-      await ExpressConfig.configure(app, options);
+      ExpressConfig.configure(app, options);
 
       // Check if trust proxy is configured
       const trustProxy = app.get("trust proxy");
       expect(trustProxy).toEqual(1);
     });
 
-    it("should not trust proxies when disabled", async () => {
+    it("should not trust proxies when disabled", () => {
       const app = express();
       const options: ExpressConfigOptions = {
         trustProxy: false,
       };
 
-      await ExpressConfig.configure(app, options);
+      ExpressConfig.configure(app, options);
 
       // Check if trust proxy is not configured
       const trustProxy = app.get("trust proxy");
@@ -67,42 +88,42 @@ describe("ExpressConfig", () => {
   });
 
   describe("security configuration", () => {
-    it("should enable security middleware by default", async () => {
+    it("should enable security middleware by default", () => {
       const app = express();
-      await ExpressConfig.configure(app);
+      ExpressConfig.configure(app);
 
       // Verify the app has security middleware configured
       expect(app).toBeDefined();
     });
 
-    it("should disable security middleware when requested", async () => {
+    it("should disable security middleware when requested", () => {
       const app = express();
-      await ExpressConfig.configure(app, { enableSecurity: false });
+      ExpressConfig.configure(app, { enableSecurity: false });
 
       expect(app).toBeDefined();
     });
   });
 
   describe("CORS configuration", () => {
-    it("should enable CORS by default", async () => {
+    it("should enable CORS by default", () => {
       const app = express();
-      await ExpressConfig.configure(app);
+      ExpressConfig.configure(app);
 
       expect(app).toBeDefined();
     });
 
-    it("should disable CORS when requested", async () => {
+    it("should disable CORS when requested", () => {
       const app = express();
-      await ExpressConfig.configure(app, { enableCors: false });
+      ExpressConfig.configure(app, { enableCors: false });
 
       expect(app).toBeDefined();
     });
   });
 
   describe("parsing configuration", () => {
-    it("should configure request parsing middleware", async () => {
+    it("should configure request parsing middleware", () => {
       const app = express();
-      await ExpressConfig.configure(app);
+      ExpressConfig.configure(app);
 
       expect(app).toBeDefined();
     });

@@ -87,6 +87,18 @@ export function useBotState(botId: string) {
 }
 
 /**
+ * Page-level subscription to the shared bot-instances cache.
+ *
+ * Read-only view over the same single-owner query as useBotLifecycle (no
+ * second writer): the Strategies grid needs the full list for its
+ * strategy→bot lookup, while per-card BotControls use useBotState.
+ */
+export function useBotsList() {
+  const { bots, isLoading, error, refetch } = useBotLifecycle();
+  return { bots, isLoading, error, refetch };
+}
+
+/**
  * Hook to manage bot lifecycle state.
  *
  * @param botId - Optional bot ID to track a specific bot. If not provided, tracks all bots.
@@ -99,8 +111,9 @@ export function useBotLifecycle(botId?: string) {
 
   const fetchBotInstances = async (): Promise<BotInstance[]> => {
     const response = await tradingApi.getBotInstances();
-    if (response.success && response.data) {
-      return response.data.map(
+    const rows = Array.isArray(response?.data) ? response.data : [];
+    if (response?.success && rows.length > 0) {
+      return rows.map(
         (bot: {
           strategy_id: string;
           status: string;
@@ -132,6 +145,13 @@ export function useBotLifecycle(botId?: string) {
   };
 
   const botsQuery: UseQueryResult<BotInstance[], Error> = useQuery({
+    // Single owner of the bot-instances cache: BotControls mounts one
+    // useBotState per strategy card, and every instance of this hook shares
+    // this key. It must stay enabled unconditionally — an `enabled` gate keyed
+    // on user level lets one card's mount flip the shared observer into a
+    // pending state with `data: undefined`, and every other card reading
+    // `botsQuery.data.map` (via useBotState → bot) throws, unmounting the
+    // whole page behind the AnimatePresence blank background.
     queryKey: [BOT_INSTANCES_QUERY_KEY],
     queryFn: fetchBotInstances,
     staleTime: 30_000,

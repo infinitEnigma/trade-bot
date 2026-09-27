@@ -46,7 +46,7 @@ export const acquireRefreshMutex = async (
       });
       mutex.acquired = lockResult === "OK";
       if (!mutex.acquired) {
-        authLogger.debug("Token refresh mutex already held, queuing request", {
+        authLogger.debug("Token refresh mutex already held - failing fast", {
           userId,
           mutexKey: mutex.key,
         });

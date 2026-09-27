@@ -23,6 +23,7 @@ import {
 import { contextLogger as logger } from "../../logging";
 import { BotLifecycleRepository } from "./bot-lifecycle.repository";
 import { BotLifecycleNotifier } from "./bot-lifecycle-notifier";
+import { syncStrategyActive } from "./strategy-active-sync";
 import {
   BOT_COMMAND_TIMEOUT_MS,
   getTimeoutReason,
@@ -250,6 +251,9 @@ export class BotEventProcessor {
       }
     }
 
+    // Strategy badge (Phase 2): a failed command lands the bot in ERROR.
+    await syncStrategyActive(bot.strategy_id, false);
+
     await this.repository.resolveCommand(
       event.correlationId,
       "FAILED",
@@ -374,6 +378,14 @@ export class BotEventProcessor {
         }
       );
       return;
+    }
+
+    // Strategy badge (Phase 2): keep strategies.active mirroring the bot —
+    // RUNNING proves the strategy is executing, STOPPED/ERROR ends it.
+    if (payload.to === "RUNNING") {
+      await syncStrategyActive(bot.strategy_id, true);
+    } else if (payload.to === "STOPPED" || payload.to === "ERROR") {
+      await syncStrategyActive(bot.strategy_id, false);
     }
 
     await this.repository.recordLifecycleEvent(bot.id, {
@@ -603,6 +615,11 @@ export class BotEventProcessor {
             bot.actual_state
           );
           if (persisted) {
+            // Strategy badge (Phase 2): a timed-out command that lands the
+            // bot terminal ends the strategy; UNKNOWN keeps the badge.
+            if (targetState === "STOPPED" || targetState === "ERROR") {
+              await syncStrategyActive(bot.strategy_id, false);
+            }
             this.notifier.emitStateChanged(
               bot.id,
               bot.user_id,

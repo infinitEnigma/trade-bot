@@ -12,6 +12,7 @@ jest.mock(
       getOrderbook: jest.fn(),
       getPositions: jest.fn(),
       getBalance: jest.fn(),
+      getTrades: jest.fn(),
       getTradingViewConfig: jest.fn(),
       getTradingViewSymbols: jest.fn(),
       getTradingViewHistory: jest.fn(),
@@ -26,12 +27,28 @@ jest.mock("../../../src/infrastructure/cache/redis.service", () => ({
   },
 }));
 
+// L11: a non-kodiak account is venue-dispatched to the Lighter portfolio
+// reader (it used to be refused with a kodiak-only 400).
+jest.mock("../../../src/infrastructure/external/lighter/portfolio", () => ({
+  getLighterPositions: jest.fn(),
+  getLighterBalance: jest.fn(),
+  getLighterTrades: jest.fn(),
+}));
+
 jest.mock(
-  "../../../src/infrastructure/adapters/repositories/kodiak-credentials-repository.adapter",
+  "../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter",
   () => ({
-    kodiakCredentialsRepositoryAdapter: {
-      getCredentials: jest.fn(),
+    exchangeAccountRepositoryAdapter: {
+      listAccounts: jest.fn(),
+      getAccountWithSecret: jest.fn(),
     },
+  })
+);
+
+jest.mock(
+  "../../../src/infrastructure/external/kodiak/credentials-provider",
+  () => ({
+    getUserCredentials: jest.fn(),
   })
 );
 
@@ -87,8 +104,32 @@ const mockKodiakService =
   require("../../../src/infrastructure/external/kodiak-integration.service").kodiakIntegrationService;
 const mockRedisService =
   require("../../../src/infrastructure/cache/redis.service").redisService;
-const mockCredsRepo =
-  require("../../../src/infrastructure/adapters/repositories/kodiak-credentials-repository.adapter").kodiakCredentialsRepositoryAdapter;
+const mockAccountRepo =
+  require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter").exchangeAccountRepositoryAdapter;
+const mockGetUserCredentials =
+  require("../../../src/infrastructure/external/kodiak/credentials-provider").getUserCredentials;
+const mockLighterPortfolio = require("../../../src/infrastructure/external/lighter/portfolio");
+
+/**
+ * C2 credential gate: an ACTIVE account row plus a decryptable envelope.
+ * Fixture mirrors `requireVerifiedCredentials` (market-cache.ts).
+ */
+function grantVerifiedCredentials(accountRef = "test-account-id"): void {
+  mockAccountRepo.listAccounts.mockResolvedValue([
+    { id: "account-1", status: "ACTIVE", accountRef, exchange: "kodiak" },
+  ]);
+  mockGetUserCredentials.mockResolvedValue({
+    accountId: accountRef,
+    apiKey: "ed25519:test",
+    secretKey: "x".repeat(32),
+  });
+}
+
+/** No usable account: either no ACTIVE row or an unreadable envelope. */
+function denyVerifiedCredentials(): void {
+  mockAccountRepo.listAccounts.mockResolvedValue([]);
+  mockGetUserCredentials.mockResolvedValue(null);
+}
 
 // Create a test app
 function createTestApp(): Express {
@@ -433,7 +474,10 @@ describe("Market Controller", () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data).toEqual(mockPositions);
-      expect(mockKodiakService.getPositions).toHaveBeenCalledWith("user-123");
+      expect(mockKodiakService.getPositions).toHaveBeenCalledWith(
+        "user-123",
+        undefined
+      );
     });
 
     it("should handle positions API failure", async () => {
@@ -447,6 +491,160 @@ describe("Market Controller", () => {
         .expect(400);
 
       expect(response.body.success).toBe(false);
+    });
+  });
+
+  describe("C3b account scoping (?exchangeAccountId=)", () => {
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    const activeKodiakAccount = {
+      id: accountId,
+      userId: "user-123",
+      exchange: "kodiak",
+      status: "ACTIVE",
+      accountRef: "acc-1",
+    };
+
+    beforeEach(() => {
+      mockAccountRepo.getAccountWithSecret.mockResolvedValue(
+        activeKodiakAccount
+      );
+      mockKodiakService.getPositions.mockResolvedValue({
+        success: true,
+        data: [],
+      });
+      mockKodiakService.getBalance.mockResolvedValue({
+        success: true,
+        data: {},
+      });
+      mockKodiakService.getTrades.mockResolvedValue({
+        success: true,
+        data: [],
+      });
+    });
+
+    it("scopes positions to the requested account", async () => {
+      const response = await request(app)
+        .get(`/api/market/positions?exchangeAccountId=${accountId}`)
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(mockKodiakService.getPositions).toHaveBeenCalledWith(
+        "user-123",
+        accountId
+      );
+      expect(mockAccountRepo.getAccountWithSecret).toHaveBeenCalledWith(
+        "user-123",
+        accountId
+      );
+    });
+
+    it("scopes balance and trades to the requested account", async () => {
+      await request(app)
+        .get(`/api/market/balance?exchangeAccountId=${accountId}`)
+        .expect(200);
+      expect(mockKodiakService.getBalance).toHaveBeenCalledWith(
+        "user-123",
+        accountId
+      );
+
+      await request(app)
+        .get(`/api/market/trades?exchangeAccountId=${accountId}`)
+        .expect(200);
+      expect(mockKodiakService.getTrades).toHaveBeenCalledWith(
+        "user-123",
+        50,
+        accountId
+      );
+    });
+
+    it("answers 400 for a malformed exchangeAccountId", async () => {
+      const response = await request(app)
+        .get("/api/market/positions?exchangeAccountId=not-a-uuid")
+        .expect(400);
+
+      expect(response.body).toEqual({
+        success: false,
+        error: "Invalid exchangeAccountId format",
+      });
+      expect(mockAccountRepo.getAccountWithSecret).not.toHaveBeenCalled();
+      expect(mockKodiakService.getPositions).not.toHaveBeenCalled();
+    });
+
+    it("answers 404 for an unknown or foreign account", async () => {
+      mockAccountRepo.getAccountWithSecret.mockResolvedValue(null);
+
+      const response = await request(app)
+        .get(`/api/market/positions?exchangeAccountId=${accountId}`)
+        .expect(404);
+
+      expect(response.body).toEqual({
+        success: false,
+        error: "Exchange account not found",
+      });
+      expect(mockKodiakService.getPositions).not.toHaveBeenCalled();
+    });
+
+    it("answers 409 for a non-ACTIVE account", async () => {
+      mockAccountRepo.getAccountWithSecret.mockResolvedValue({
+        ...activeKodiakAccount,
+        status: "PENDING",
+      });
+
+      const response = await request(app)
+        .get(`/api/market/balance?exchangeAccountId=${accountId}`)
+        .expect(409);
+
+      expect(response.body).toEqual({
+        success: false,
+        error: "Exchange account is not active",
+      });
+      expect(mockKodiakService.getBalance).not.toHaveBeenCalled();
+    });
+
+    it("dispatches a non-kodiak (lighter) account to the Lighter reader", async () => {
+      mockAccountRepo.getAccountWithSecret.mockResolvedValue({
+        ...activeKodiakAccount,
+        exchange: "lighter",
+      });
+      mockLighterPortfolio.getLighterPositions.mockResolvedValue({
+        success: true,
+        data: { rows: [{ symbol: "ETH", size: 1 }] },
+      });
+
+      const response = await request(app)
+        .get(`/api/market/positions?exchangeAccountId=${accountId}`)
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toEqual({
+        rows: [{ symbol: "ETH", size: 1 }],
+      });
+      expect(mockLighterPortfolio.getLighterPositions).toHaveBeenCalledWith(
+        "user-123",
+        accountId
+      );
+      expect(mockKodiakService.getPositions).not.toHaveBeenCalled();
+    });
+
+    it("surfaces a Lighter reader failure as 400 with its error", async () => {
+      mockAccountRepo.getAccountWithSecret.mockResolvedValue({
+        ...activeKodiakAccount,
+        exchange: "lighter",
+      });
+      mockLighterPortfolio.getLighterPositions.mockResolvedValue({
+        success: false,
+        error: "Sidecar unreachable",
+      });
+
+      const response = await request(app)
+        .get(`/api/market/positions?exchangeAccountId=${accountId}`)
+        .expect(400);
+
+      expect(response.body).toEqual({
+        success: false,
+        error: "Sidecar unreachable",
+      });
+      expect(mockKodiakService.getPositions).not.toHaveBeenCalled();
     });
   });
 
@@ -465,7 +663,10 @@ describe("Market Controller", () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data).toEqual(mockBalance);
-      expect(mockKodiakService.getBalance).toHaveBeenCalledWith("user-123");
+      expect(mockKodiakService.getBalance).toHaveBeenCalledWith(
+        "user-123",
+        undefined
+      );
     });
 
     it("should handle balance API failure", async () => {
@@ -482,11 +683,58 @@ describe("Market Controller", () => {
     });
   });
 
+  describe("GET /api/market/trades (protected)", () => {
+    it("should return user trades", async () => {
+      const mockTrades = [
+        { id: "t1", symbol: "PERP_BTC_USDC", side: "BUY", price: 50000 },
+      ];
+
+      mockKodiakService.getTrades.mockResolvedValue({
+        success: true,
+        data: mockTrades,
+      });
+
+      const response = await request(app).get("/api/market/trades").expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toEqual(mockTrades);
+      expect(mockKodiakService.getTrades).toHaveBeenCalledWith(
+        "user-123",
+        50,
+        undefined
+      );
+    });
+
+    it("should pass a custom limit through", async () => {
+      mockKodiakService.getTrades.mockResolvedValue({
+        success: true,
+        data: [],
+      });
+
+      await request(app).get("/api/market/trades?limit=10").expect(200);
+
+      expect(mockKodiakService.getTrades).toHaveBeenCalledWith(
+        "user-123",
+        10,
+        undefined
+      );
+    });
+
+    it("should handle trades API failure", async () => {
+      mockKodiakService.getTrades.mockResolvedValue({
+        success: false,
+        error: "API error",
+      });
+
+      const response = await request(app).get("/api/market/trades").expect(400);
+
+      expect(response.body.success).toBe(false);
+    });
+  });
+
   describe("GET /api/market/ws-url (protected)", () => {
     it("should return WebSocket URL for authenticated user", async () => {
-      mockCredsRepo.getCredentials.mockResolvedValue({
-        accountId: "test-account-id",
-      });
+      grantVerifiedCredentials();
 
       const response = await request(app).get("/api/market/ws-url").expect(200);
 
@@ -494,13 +742,25 @@ describe("Market Controller", () => {
       expect(response.body.data.publicWsUrl).toContain("test-account-id");
     });
 
-    it("should reject request without Kodiak credentials", async () => {
-      mockCredsRepo.getCredentials.mockResolvedValue(null);
+    it("should reject request without an active exchange account", async () => {
+      denyVerifiedCredentials();
 
       const response = await request(app).get("/api/market/ws-url").expect(403);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain("Kodiak credentials required");
+      expect(response.body.error).toContain("Exchange account required");
+    });
+
+    it("should reject request when the stored envelope is unreadable", async () => {
+      mockAccountRepo.listAccounts.mockResolvedValue([
+        { id: "account-1", status: "ACTIVE", accountRef: "test-account-id" },
+      ]);
+      mockGetUserCredentials.mockResolvedValue(null);
+
+      const response = await request(app).get("/api/market/ws-url").expect(403);
+
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toContain("Exchange account required");
     });
   });
 
@@ -575,9 +835,7 @@ describe("Market Controller", () => {
 
   describe("GET /api/market/kline-history (protected)", () => {
     it("should return historical kline data", async () => {
-      mockCredsRepo.getCredentials.mockResolvedValue({
-        accountId: "test-account-id",
-      });
+      grantVerifiedCredentials();
 
       const mockHistory = {
         t: [1640995200],
@@ -608,8 +866,8 @@ describe("Market Controller", () => {
       expect(response.body.data[0].startTime).toBe(1640995200000);
     });
 
-    it("should reject request without Kodiak credentials", async () => {
-      mockCredsRepo.getCredentials.mockResolvedValue(null);
+    it("should reject request without an active exchange account", async () => {
+      denyVerifiedCredentials();
 
       const response = await request(app)
         .get("/api/market/kline-history")
@@ -617,13 +875,11 @@ describe("Market Controller", () => {
         .expect(403);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain("Kodiak credentials required");
+      expect(response.body.error).toContain("Exchange account required");
     });
 
     it("should handle no data available", async () => {
-      mockCredsRepo.getCredentials.mockResolvedValue({
-        accountId: "test-account-id",
-      });
+      grantVerifiedCredentials();
 
       mockKodiakService.getTradingViewHistory.mockResolvedValue({
         success: true,

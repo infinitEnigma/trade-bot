@@ -67,7 +67,7 @@ export class DatabaseSecurityService {
       auditAllQueries: config.auditAllQueries ?? false,
       connectionEncryption: config.connectionEncryption ?? true,
       sensitiveTables: config.sensitiveTables ?? [
-        "kodiak_credentials",
+        "exchange_accounts",
         "user_sessions",
         "audit_logs",
         "payment_data",
@@ -137,7 +137,7 @@ export class DatabaseSecurityService {
       const encryptedColumnsResult = await query(`
         SELECT table_name, column_name
         FROM information_schema.columns
-        WHERE table_name IN ('kodiak_credentials', 'user_sessions')
+        WHERE table_name IN ('exchange_accounts', 'user_sessions')
         AND column_name LIKE '%encrypted%'
       `);
 
@@ -211,23 +211,24 @@ export class DatabaseSecurityService {
       const encryptedFields: string[] = [];
       const unencryptedFields: string[] = [];
 
-      // Check Kodiak credentials table
-      const kodiakFields = await query(`
+      // Check the venue-account credentials envelope (C2: single encrypted
+      // JSON column replaces the legacy per-field api_key/secret_key pair).
+      const accountFields = await query(`
         SELECT column_name
         FROM information_schema.columns
-        WHERE table_name = 'kodiak_credentials'
+        WHERE table_name = 'exchange_accounts'
         AND data_type IN ('text', 'varchar')
       `);
 
-      for (const field of kodiakFields.rows as Array<{ column_name: string }>) {
+      for (const field of accountFields.rows as Array<{
+        column_name: string;
+      }>) {
         if (field.column_name.includes("encrypted")) {
-          encryptedFields.push(`kodiak_credentials.${field.column_name}`);
+          encryptedFields.push(`exchange_accounts.${field.column_name}`);
         } else if (
-          ["api_key", "secret_key", "wallet_address"].includes(
-            field.column_name
-          )
+          ["account_id", "wallet_address"].includes(field.column_name)
         ) {
-          unencryptedFields.push(`kodiak_credentials.${field.column_name}`);
+          unencryptedFields.push(`exchange_accounts.${field.column_name}`);
         }
       }
 
@@ -491,10 +492,11 @@ export class DatabaseSecurityService {
 
     const migrationPlans: EncryptionMigrationPlan[] = [];
 
-    // Kodiak credentials migration
+    // Exchange-account credentials envelope (C2 replaces the legacy
+    // per-field api_key/secret_key columns with one encrypted JSON column)
     migrationPlans.push({
-      table: "kodiak_credentials",
-      columns: ["api_key", "secret_key"],
+      table: "exchange_accounts",
+      columns: ["credentials_encrypted"],
       migrationStrategy: "online", // Can be done while system is running
       estimatedDowntime: "0 minutes",
       rollbackPlan: "Restore from backup and re-encrypt with old method",
@@ -677,12 +679,21 @@ export class DatabaseSecurityService {
     securityScore: number;
   }> {
     try {
-      // Count encrypted vs total records in sensitive tables
-      const sensitiveTables = ["kodiak_credentials", "user_sessions"];
+      // Count encrypted vs total records in sensitive tables. Each table
+      // declares the column that carries its protected payload so no column
+      // name is interpolated blindly.
+      const sensitiveTables: Array<{ table: string; encryptedColumn: string }> =
+        [
+          {
+            table: "exchange_accounts",
+            encryptedColumn: "credentials_encrypted",
+          },
+          { table: "user_sessions", encryptedColumn: "session_token" },
+        ];
       let totalEncrypted = 0;
       let totalRecords = 0;
 
-      for (const table of sensitiveTables) {
+      for (const { table, encryptedColumn } of sensitiveTables) {
         const tableExists = await query(
           `
           SELECT EXISTS (
@@ -700,8 +711,7 @@ export class DatabaseSecurityService {
           }>(`
             SELECT
               COUNT(*) as total,
-              COUNT(CASE WHEN api_key_encrypted IS NOT NULL THEN 1 END) +
-              COUNT(CASE WHEN secret_key_encrypted IS NOT NULL THEN 1 END) as encrypted
+              COUNT(CASE WHEN ${encryptedColumn} IS NOT NULL THEN 1 END) as encrypted
             FROM ${table}
           `);
 

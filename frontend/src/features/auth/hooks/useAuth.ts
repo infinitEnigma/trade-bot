@@ -88,15 +88,21 @@ const useAuthStore = create<AuthStore>()(
       },
 
       register: async ({
+        username,
         email,
         password,
       }: {
+        username?: string;
         email: string;
         password: string;
       }) => {
         try {
           set({ isLoading: true });
-          const response = await authService.register(email, password);
+          const response = await authService.register(
+            email,
+            password,
+            username
+          );
 
           if (response.success) {
             // Set user directly from register response
@@ -248,6 +254,8 @@ const useAuthStore = create<AuthStore>()(
 export const useAuth = () => {
   return useAuthStore();
 };
+
+export { useAuthStore };
 
 // Module-level listener: the HTTP client (infrastructure/api/client.ts) fires
 // these events when the session is definitively dead (-1002) or a redirect to

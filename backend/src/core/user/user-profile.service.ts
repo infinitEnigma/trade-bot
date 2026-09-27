@@ -31,6 +31,7 @@ export interface ProfileUpdateResult {
 
 export interface UserProfile {
   id: string;
+  username: string;
   email: string;
   userLevel: string;
   roles: string[];
@@ -96,6 +97,7 @@ export class UserProfileService {
 
     const profile: UserProfile = {
       id: userData.user.id,
+      username: userData.user.username,
       email: userData.user.email,
       userLevel: userData.user.userLevel,
       roles: userData.roles,
@@ -141,13 +143,14 @@ export class UserProfileService {
   }
 
   /**
-   * Verify wallet ownership for user verification
+   * Verify wallet ownership for user verification (C2: chain-aware).
    */
   async verifyWalletOwnership(
     userId: string,
     walletAddress: string,
     signature: string,
-    message: string
+    message: string,
+    chain: import("@trade-bot/shared").ChainKind = "evm"
   ): Promise<{ success: boolean; message: string }> {
     try {
       // Start operation timing
@@ -165,7 +168,8 @@ export class UserProfileService {
         userId,
         walletAddress,
         signature,
-        message
+        message,
+        chain
       );
 
       timer.success();
@@ -239,6 +243,21 @@ export class UserProfileService {
 
       // Perform the email update
       const updateResult = await this.executeProfileUpdate(userId, { email });
+
+      // C1 identity edit: mirror the new email into user_identities.
+      // Login still reads users.email, so a mirror failure must not fail
+      // the profile update — log and continue (self-heals on next edit).
+      try {
+        await this.deps.userRepository.upsertEmailIdentity(userId, email);
+      } catch (identityError) {
+        userLogger.warn("Email identity mirror failed", {
+          userId,
+          error:
+            identityError instanceof Error
+              ? identityError.message
+              : String(identityError),
+        });
+      }
 
       // Clear cache after successful update
       await this.invalidateUserProfileCache(userId);

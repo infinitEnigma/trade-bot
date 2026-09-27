@@ -97,6 +97,42 @@ describe("ContextAwareLogger Performance Optimization", () => {
       expect(newCache.cachedInfo?.userId).toBe("user2");
     });
 
+    it("should refresh the cached context of the same logger when the request context changes", () => {
+      // Regression (logs 2026-09-26): invalidating the cache only bumped
+      // `generation`, which `getContextInfo()` then compared against itself, so
+      // `cachedInfo` survived every change and each logger singleton kept the
+      // *first* context it had ever logged with — all HTTP lines of a run shared
+      // one correlationId and authenticated requests logged userId "unknown".
+      setRequestContext({
+        correlationId: "request-one",
+        userId: "user-1",
+        userLevel: "BASIC",
+        requestId: "rid-one",
+        startTime: Date.now(),
+      });
+
+      logger.info("first request");
+      expect((logger as any).contextCache.cachedInfo?.correlationId).toBe(
+        "request-one"
+      );
+
+      setRequestContext({
+        correlationId: "request-two",
+        userId: "user-2",
+        userLevel: "VERIFIED",
+        requestId: "rid-two",
+        startTime: Date.now(),
+      });
+
+      logger.info("second request");
+
+      const cache = (logger as any).contextCache;
+      expect(cache.cachedInfo?.correlationId).toBe("request-two");
+      expect(cache.cachedInfo?.userId).toBe("user-2");
+      expect(cache.cachedInfo?.userLevel).toBe("VERIFIED");
+      expect(cache.cachedInfo?.requestId).toBe("rid-two");
+    });
+
     it("should handle additional metadata correctly with caching", () => {
       setRequestContext({
         correlationId: "test-correlation-id",

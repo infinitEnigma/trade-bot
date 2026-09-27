@@ -349,7 +349,7 @@ export class RoleQualificationService implements IRoleQualificationService {
     }
 
     // Check if user has Kodiak credentials (simplified check)
-    // In a real implementation, this would check the kodiak_credentials table
+    // In a real implementation, this would query the venue-account table
     const hasKodiakCredentials = await this.checkUserHasKodiakCredentials(
       user.id
     );
@@ -414,7 +414,7 @@ export class RoleQualificationService implements IRoleQualificationService {
 
   /**
    * Check if user has Kodiak credentials
-   * This would normally query the kodiak_credentials table
+   * This would normally query the venue-account table
    */
   private async checkUserHasKodiakCredentials(
     userId: string

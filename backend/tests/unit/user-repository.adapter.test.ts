@@ -22,6 +22,7 @@ describe("UserRepositoryAdapter", () => {
       const mockEmail = "test@example.com";
       const mockUserRow = {
         id: "test-user-id",
+        username: "testuser",
         email: mockEmail,
         user_level: UserLevel.BASIC,
         created_at: "2024-01-01",
@@ -35,7 +36,7 @@ describe("UserRepositoryAdapter", () => {
       const user = await userRepository.findByEmail(mockEmail);
 
       expect(query).toHaveBeenCalledWith(
-        "SELECT id, email, user_level, created_at, updated_at FROM users WHERE email = $1",
+        "SELECT id, username, email, user_level, created_at, updated_at FROM users WHERE email = $1",
         [mockEmail]
       );
       expect(user).not.toBeNull();
@@ -73,6 +74,7 @@ describe("UserRepositoryAdapter", () => {
       const mockEmail = "test@example.com";
       const mockUserRow = {
         id: "test-user-id",
+        username: "testuser",
         email: mockEmail,
         password_hash: "hashedpassword123",
         user_level: UserLevel.BASIC,
@@ -87,7 +89,7 @@ describe("UserRepositoryAdapter", () => {
       const user = await userRepository.findByEmailWithPassword(mockEmail);
 
       expect(query).toHaveBeenCalledWith(
-        "SELECT id, email, password_hash, user_level, created_at, updated_at FROM users WHERE email = $1",
+        "SELECT id, username, email, password_hash, user_level, created_at, updated_at FROM users WHERE email = $1",
         [mockEmail]
       );
       expect(user).not.toBeNull();
@@ -122,11 +124,51 @@ describe("UserRepositoryAdapter", () => {
     });
   });
 
+  describe("findByUsername", () => {
+    it("should find user by username case-insensitively", async () => {
+      const mockUserRow = {
+        id: "test-user-id",
+        username: "testuser",
+        email: "test@example.com",
+        user_level: UserLevel.BASIC,
+        created_at: "2024-01-01",
+        updated_at: "2024-01-01",
+      };
+
+      (query as jest.Mock).mockResolvedValue({ rows: [mockUserRow] });
+
+      const user = await userRepository.findByUsername("TestUser");
+
+      expect(query).toHaveBeenCalledWith(
+        "SELECT id, username, email, user_level, created_at, updated_at FROM users WHERE LOWER(username) = LOWER($1)",
+        ["TestUser"]
+      );
+      expect(user?.username).toBe("testuser");
+    });
+
+    it("should return null when username not found", async () => {
+      (query as jest.Mock).mockResolvedValue({ rows: [] });
+
+      const user = await userRepository.findByUsername("ghost");
+
+      expect(user).toBeNull();
+    });
+
+    it("should throw error when findByUsername fails", async () => {
+      (query as jest.Mock).mockRejectedValue(new Error("Query failed"));
+
+      await expect(userRepository.findByUsername("x")).rejects.toThrow(
+        "Failed to find user by username: Query failed"
+      );
+    });
+  });
+
   describe("findById", () => {
     it("should find user by ID", async () => {
       const mockUserId = "test-user-id";
       const mockUserRow = {
         id: mockUserId,
+        username: "testuser",
         email: "test@example.com",
         user_level: UserLevel.BASIC,
         created_at: "2024-01-01",
@@ -140,7 +182,7 @@ describe("UserRepositoryAdapter", () => {
       const user = await userRepository.findById(mockUserId);
 
       expect(query).toHaveBeenCalledWith(
-        "SELECT id, email, user_level, created_at, updated_at FROM users WHERE id = $1",
+        "SELECT id, username, email, user_level, created_at, updated_at FROM users WHERE id = $1",
         [mockUserId]
       );
       expect(user).not.toBeNull();
@@ -173,13 +215,15 @@ describe("UserRepositoryAdapter", () => {
   });
 
   describe("create", () => {
-    it("should create a new user", async () => {
+    it("should create a new user with its password identity row", async () => {
       const mockUserData = {
+        username: "newuser",
         email: "newuser@example.com",
         password: "password123",
       };
       const mockCreatedUser = {
         id: "new-user-id",
+        username: mockUserData.username,
         email: mockUserData.email,
         user_level: UserLevel.BASIC,
         created_at: "2024-01-01",
@@ -192,22 +236,49 @@ describe("UserRepositoryAdapter", () => {
 
       const user = await userRepository.create(mockUserData);
 
+      // C1: single CTE statement writes the user row AND the password
+      // identity (provider='password', identifier=lower(email)).
       expect(query).toHaveBeenCalledWith(
-        expect.stringContaining("INSERT INTO users"),
+        expect.stringContaining("WITH new_user AS"),
         expect.arrayContaining([
+          mockUserData.username,
           mockUserData.email,
           mockUserData.password,
           UserLevel.BASIC,
         ])
       );
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("INSERT INTO user_identities"),
+        expect.any(Array)
+      );
       expect(user).not.toBeNull();
       expect(user.id).toBe(mockCreatedUser.id);
+      expect(user.username).toBe(mockCreatedUser.username);
       expect(user.email).toBe(mockCreatedUser.email);
       expect(user.userLevel).toBe(mockCreatedUser.user_level);
     });
 
+    it("should throw a username-specific error on username uniqueness violation", async () => {
+      const mockUserData = {
+        username: "taken",
+        email: "existing@example.com",
+        password: "password123",
+      };
+
+      (query as jest.Mock).mockRejectedValue(
+        new Error(
+          'duplicate key value violates unique constraint "uq_users_username"'
+        )
+      );
+
+      await expect(userRepository.create(mockUserData)).rejects.toThrow(
+        "Username already exists"
+      );
+    });
+
     it("should throw error when email already exists", async () => {
       const mockUserData = {
+        username: "someone",
         email: "existing@example.com",
         password: "password123",
       };
@@ -224,6 +295,7 @@ describe("UserRepositoryAdapter", () => {
 
     it("should throw error when user creation fails", async () => {
       const mockUserData = {
+        username: "newuser",
         email: "newuser@example.com",
         password: "password123",
       };
@@ -238,6 +310,7 @@ describe("UserRepositoryAdapter", () => {
 
     it("should throw error when user creation returns no rows", async () => {
       const mockUserData = {
+        username: "newuser",
         email: "newuser@example.com",
         password: "password123",
       };
@@ -420,11 +493,38 @@ describe("UserRepositoryAdapter", () => {
     });
   });
 
+  describe("upsertEmailIdentity", () => {
+    it("should mirror the current email into user_identities", async () => {
+      (query as jest.Mock).mockResolvedValue({ rowCount: 1 });
+
+      await userRepository.upsertEmailIdentity("user-1", "New@Example.com");
+
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("INSERT INTO user_identities"),
+        ["user-1", "New@Example.com"]
+      );
+      // Statement both clears this user's email rows and inserts the new one.
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("DELETE FROM user_identities"),
+        expect.any(Array)
+      );
+    });
+
+    it("should throw a wrapped error when the mirror fails", async () => {
+      (query as jest.Mock).mockRejectedValue(new Error("DB down"));
+
+      await expect(
+        userRepository.upsertEmailIdentity("user-1", "a@b.c")
+      ).rejects.toThrow("Failed to upsert email identity: DB down");
+    });
+  });
+
   describe("getAuthenticatedUserData", () => {
     it("should get authenticated user data with roles and credentials info", async () => {
       const mockUserId = "test-user-id";
       const mockUserRow = {
         id: mockUserId,
+        username: "testuser",
         email: "test@example.com",
         user_level: UserLevel.BASIC,
         created_at: "2024-01-01",
@@ -444,6 +544,7 @@ describe("UserRepositoryAdapter", () => {
       ]);
       expect(result).not.toBeNull();
       expect(result?.user.id).toBe(mockUserRow.id);
+      expect(result?.user.username).toBe(mockUserRow.username);
       expect(result?.user.email).toBe(mockUserRow.email);
       expect(result?.roles).toEqual(mockUserRow.roles);
       expect(result?.hasCredentials).toBe(mockUserRow.has_credentials);
@@ -482,6 +583,7 @@ describe("UserRepositoryAdapter", () => {
 
       const mockUserRow = {
         id: "test-user-id",
+        username: "testuser",
         email: "test@example.com",
         user_level: UserLevel.BASIC,
         created_at: "2024-01-01T00:00:00.000Z",
@@ -492,6 +594,7 @@ describe("UserRepositoryAdapter", () => {
 
       expect(user).toEqual({
         id: mockUserRow.id,
+        username: mockUserRow.username,
         email: mockUserRow.email,
         userLevel: UserLevel.BASIC,
         createdAt: new Date(mockUserRow.created_at),
@@ -522,7 +625,7 @@ describe("UserRepositoryAdapter", () => {
   });
 
   describe("getWalletAddress", () => {
-    it("should get linked wallet address from wallet_addresses", async () => {
+    it("should get the primary wallet address from wallets", async () => {
       const mockUserId = "test-user-id";
       const mockWalletAddress = "0x1234567890123456789012345678901234567890";
 
@@ -533,29 +636,29 @@ describe("UserRepositoryAdapter", () => {
       const walletAddress = await userRepository.getWalletAddress(mockUserId);
 
       expect(query).toHaveBeenCalledWith(
-        "SELECT wallet_address FROM wallet_addresses WHERE user_id = $1",
+        expect.stringContaining("FROM wallets"),
+        [mockUserId]
+      );
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("ORDER BY is_primary DESC"),
         [mockUserId]
       );
       expect(walletAddress).toBe(mockWalletAddress);
     });
 
-    it("should fall back to kodiak_credentials for legacy rows", async () => {
+    it("should issue a single query (no legacy credentials fallback)", async () => {
       const mockUserId = "test-user-id";
-      const mockWalletAddress = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd";
 
-      (query as jest.Mock)
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({
-          rows: [{ wallet_address: mockWalletAddress }],
-        });
+      (query as jest.Mock).mockResolvedValue({
+        rows: [{ address: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd" }],
+      });
 
       const walletAddress = await userRepository.getWalletAddress(mockUserId);
 
-      expect(query).toHaveBeenCalledWith(
-        "SELECT wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
-        [mockUserId]
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(walletAddress).toBe(
+        "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
       );
-      expect(walletAddress).toBe(mockWalletAddress);
     });
 
     it("should return null when no wallet address found", async () => {
@@ -595,7 +698,7 @@ describe("UserRepositoryAdapter", () => {
       );
 
       expect(query).toHaveBeenCalledWith(
-        expect.stringContaining("INSERT INTO wallet_addresses"),
+        expect.stringContaining("INSERT INTO wallets"),
         [mockUserId, mockWalletAddress]
       );
       expect(result).toBe(true);
@@ -617,7 +720,7 @@ describe("UserRepositoryAdapter", () => {
       const result = await userRepository.clearWalletAddress("test-user-id");
 
       expect(query).toHaveBeenCalledWith(
-        "DELETE FROM wallet_addresses WHERE user_id = $1",
+        "DELETE FROM wallets WHERE user_id = $1",
         ["test-user-id"]
       );
       expect(result).toBe(true);

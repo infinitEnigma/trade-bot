@@ -108,7 +108,13 @@ interface EngineHeartbeatEventPayload {
 
 `types/repositories.ts` defines the persistence contracts implemented by the backend's repository adapters.
 
-### Wallet Linking (`IUserRepository`)
+### Wallet Linking (`IUserRepository` — legacy single-wallet shims)
+
+> C2 note: `getWalletAddress` / `setWalletAddress` / `clearWalletAddress` are
+> `@deprecated` primary-wallet conveniences. The source of truth is the
+> multi-wallet `IWalletRepository` (chain-aware `wallets` table) and
+> `IExchangeAccountRepository` (`exchange_accounts` table) — see
+> `shared/src/types/accounts.ts` and `types/repositories.ts`.
 
 A user's linked wallet is stored independently of exchange credentials, so a wallet can be linked (and ownership proven) before any exchange keys exist:
 
@@ -125,7 +131,7 @@ interface IUserRepository {
 }
 ```
 
-This backs the `BASIC → REGISTERED` upgrade: the wallet is persisted on its own, separate from `kodiak_credentials`. Reads fall back to a legacy Kodiak-stored address where present, so existing users are unaffected.
+This backs the `BASIC → REGISTERED` upgrade: the wallet is persisted on its own, separate from `exchange_accounts` (chain-aware `wallets` table, migration `012_wallets_exchange_accounts.sql`).
 
 ---
 

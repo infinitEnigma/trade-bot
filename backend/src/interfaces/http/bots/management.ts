@@ -21,14 +21,14 @@
  * - End-to-end encryption using session keys
  * - Comprehensive audit logging for all bot operations
  *
- * API ENDPOINTS:
- * - GET /instances - List user's bot instances
- * - POST /start - Start bot with secure credential transmission
- * - POST /stop - Graceful bot shutdown
- * - GET /status/:botId - Real-time bot status with reconciliation
- * - POST /status/sync - Manual status synchronization
- * - GET /performance/:botId - Performance metrics and analytics
- * - POST /emergency-stop - Critical safety operations
+ * API ENDPOINTS (served under /api/bot/management — see bots/index.ts):
+ * - GET /api/bot/management/instances - List user's bot instances
+ * - POST /api/bot/management/start - Start bot with secure credential transmission
+ * - POST /api/bot/management/stop - Graceful bot shutdown
+ * - GET /api/bot/management/status/:botId - Real-time bot status with reconciliation
+ * - POST /api/bot/management/status/sync - Manual status synchronization
+ * - GET /api/bot/management/performance/:botId - Performance metrics and analytics
+ * - POST /api/bot/management/emergency-stop - Critical safety operations
  *
  * WEBSOCKET INTEGRATION:
  * - Real-time bot status updates via Socket.IO
@@ -89,6 +89,7 @@ import { botLifecycleService } from "../../../core/bots/bot-lifecycle.service";
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
+import { exchangeAccountRepositoryAdapter } from "../../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
 
 const router = Router();
 
@@ -108,22 +109,6 @@ function getUserId(req: AuthenticatedRequest): string {
 }
 
 /**
- * Check if user has verified Kodiak credentials (without decrypting)
- */
-async function hasUserKodiakCredentials(userId: string): Promise<boolean> {
-  try {
-    const marketService = serviceProvider.getMarketService();
-    const hasCredentials = await marketService.hasUserKodiakCredentials(userId);
-    return hasCredentials;
-  } catch (error) {
-    logger.error("Failed to check user Kodiak credentials", error as Error, {
-      userId,
-    });
-    return false;
-  }
-}
-
-/**
  * ===========================================
  * 📋 GET BOT INSTANCES
  * ===========================================
@@ -131,7 +116,7 @@ async function hasUserKodiakCredentials(userId: string): Promise<boolean> {
  * Retrieves all bot instances belonging to the authenticated user.
  * Returns comprehensive bot information including strategy details and status.
  *
- * ENDPOINT: GET /api/bot/instances
+ * ENDPOINT: GET /api/bot/management/instances
  * AUTH: JWT required
  * ROLE: Any authenticated user
  *
@@ -225,14 +210,15 @@ router.get(
  * Creates and starts a new bot instance with comprehensive security validations,
  * position risk assessment, and secure credential transmission to the bot engine.
  *
- * ENDPOINT: POST /api/bot/start
+ * ENDPOINT: POST /api/bot/management/start
  * AUTH: JWT required + QUALIFIED_ALPHA role minimum
- * VALIDATION: strategyId (UUID), notionalAmount (positive number)
+ * VALIDATION: strategyId (UUID), exchangeAccountId (UUID, owned + ACTIVE), notionalAmount (positive number)
  *
  * REQUEST BODY:
  * ```json
  * {
  *   "strategyId": "uuid-of-user-strategy",
+ *   "exchangeAccountId": "uuid-of-active-exchange-account",
  *   "notionalAmount": 1000.50
  * }
  * ```
@@ -350,20 +336,43 @@ router.post(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = getUserId(req);
-      const { strategyId, notionalAmount } = req.body;
+      const { strategyId, notionalAmount, exchangeAccountId } = req.body;
 
       // Ensure trading engine process is running
       await serviceProvider.getEngineManager().ensureEngineRunning();
 
-      // Check if user has verified credentials first
-      const hasCredentials = await hasUserKodiakCredentials(userId);
-      if (!hasCredentials) {
-        const authError = new ValidationError(
-          "No verified Kodiak credentials found"
+      // C3a: the bot must bind to an ACTIVE account the caller owns.
+      // Validated structurally by validators.startBot (UUID); ownership +
+      // ACTIVE status are checked here and again in createAndStart so a bot
+      // can never be created unbound or against another user's account.
+      if (!exchangeAccountId) {
+        const missingError = new ValidationError(
+          "Exchange account is required. Select an account to trade with."
         );
         return res
-          .status(authError.statusCode)
-          .json(createErrorResponse(authError, getCorrelationId()));
+          .status(missingError.statusCode)
+          .json(createErrorResponse(missingError, getCorrelationId()));
+      }
+      const boundAccount =
+        await exchangeAccountRepositoryAdapter.getAccountWithSecret(
+          userId,
+          exchangeAccountId as string
+        );
+      if (!boundAccount) {
+        const notFoundError = new NotFoundError(
+          "Exchange account not found. Connect an account in Settings first."
+        );
+        return res
+          .status(notFoundError.statusCode)
+          .json(createErrorResponse(notFoundError, getCorrelationId()));
+      }
+      if (boundAccount.status !== "ACTIVE") {
+        const inactiveError = new ValidationError(
+          `Exchange account is ${boundAccount.status}. Verify it before starting a bot.`
+        );
+        return res
+          .status(inactiveError.statusCode)
+          .json(createErrorResponse(inactiveError, getCorrelationId()));
       }
 
       // Check control-plane health: Redis Streams must be available
@@ -392,7 +401,8 @@ router.post(
       const lifecycle = await botLifecycleService.createAndStart(
         userId,
         strategyId,
-        parseFloat(notionalAmount)
+        parseFloat(notionalAmount),
+        exchangeAccountId as string
       );
 
       // Log credential access for audit trail (engine will fetch
@@ -406,6 +416,7 @@ router.post(
             action: "bot_start",
             botId: lifecycle.botId,
             strategyId,
+            exchangeAccountId,
             correlationId: lifecycle.correlationId,
             timestamp: new Date().toISOString(),
           },
@@ -449,7 +460,7 @@ router.post(
   }
 );
 
-// POST /api/bot/stop
+// POST /api/bot/management/stop
 router.post(
   "/stop",
   authMiddleware,
@@ -524,7 +535,7 @@ router.post(
   }
 );
 
-// GET /api/bot/status/:botId
+// GET /api/bot/management/status/:botId
 router.get(
   "/status/:botId",
   authMiddleware,
@@ -577,7 +588,7 @@ router.get(
   }
 );
 
-// POST /api/bot/status/sync
+// POST /api/bot/management/status/sync
 router.post(
   "/status/sync",
   authMiddleware,
@@ -634,7 +645,7 @@ router.post(
   }
 );
 
-// GET /api/bot/performance/:botId
+// GET /api/bot/management/performance/:botId
 router.get(
   "/performance/:botId",
   authMiddleware,
@@ -665,33 +676,7 @@ router.get(
   }
 );
 
-// GET /api/bot/engine/status
-router.get(
-  "/engine/status",
-  authMiddleware,
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const _userId = getUserId(req);
-      const status = await serviceProvider.getEngineManager().getEngineStatus();
-
-      res.json({
-        success: true,
-        data: status,
-        timestamp: Date.now(),
-      });
-    } catch (err) {
-      logger.error("Get engine status error", err as Error, {
-        userId: req.user?.userId,
-      });
-      const dbError = new DatabaseError("Failed to get engine status");
-      res
-        .status(dbError.statusCode)
-        .json(createErrorResponse(dbError, getCorrelationId()));
-    }
-  }
-);
-
-// POST /api/bot/emergency-stop
+// POST /api/bot/management/emergency-stop
 router.post(
   "/emergency-stop",
   authMiddleware,

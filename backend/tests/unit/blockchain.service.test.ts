@@ -450,7 +450,19 @@ describe("BlockchainService", () => {
     it("should return null if wallet address is invalid format", async () => {
       const poolModule = await import("../../src/database/pool");
       (poolModule.query as jest.Mock).mockResolvedValue({
-        rows: [{ wallet_address: "invalid-wallet-address" }],
+        rows: [
+          {
+            id: "wallet-1",
+            user_id: "550e8400-e29b-41d4-a716-446655440000",
+            chain: "evm",
+            address: "invalid-wallet-address",
+            label: null,
+            is_primary: true,
+            verified_at: "2024-01-01T00:00:00.000Z",
+            created_at: "2024-01-01T00:00:00.000Z",
+            updated_at: "2024-01-01T00:00:00.000Z",
+          },
+        ],
       });
 
       const result = await blockchainService.getUserWalletAddress(
@@ -470,7 +482,19 @@ describe("BlockchainService", () => {
       const validAddress = "0x1234567890123456789012345678901234567890";
       const poolModule = await import("../../src/database/pool");
       (poolModule.query as jest.Mock).mockResolvedValue({
-        rows: [{ wallet_address: validAddress }],
+        rows: [
+          {
+            id: "wallet-1",
+            user_id: "550e8400-e29b-41d4-a716-446655440000",
+            chain: "evm",
+            address: validAddress,
+            label: null,
+            is_primary: true,
+            verified_at: "2024-01-01T00:00:00.000Z",
+            created_at: "2024-01-01T00:00:00.000Z",
+            updated_at: "2024-01-01T00:00:00.000Z",
+          },
+        ],
       });
 
       const result = await blockchainService.getUserWalletAddress(

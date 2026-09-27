@@ -13,14 +13,19 @@ import { securityLogger as logger } from "../core/logging/context-aware-logger.s
 import * as path from "path";
 
 /**
- * Worker message interface
+ * Worker message interface.
+ *
+ * Task results carry `id`; the worker thread also posts lifecycle notices
+ * (`heartbeat`, `initialized`, `uncaughtException`, `unhandledRejection`) that
+ * carry only `type` — see `password-worker-thread.js`.
  */
 interface WorkerMessage {
-  id: string;
-  success: boolean;
+  id?: string;
+  success?: boolean;
   result?: string | boolean;
   error?: string;
   stack?: string;
+  type?: string;
 }
 
 /**
@@ -177,7 +182,13 @@ class PasswordWorkerPool extends EventEmitter {
     });
 
     worker.on("exit", code => {
-      logger.warn("Password worker exited", { code });
+      // `worker.terminate()` during graceful shutdown resolves with a non-zero
+      // code — that is the expected path, so don't warn about it.
+      if (this.isShuttingDown) {
+        logger.debug("Password worker exited during shutdown", { code });
+      } else {
+        logger.warn("Password worker exited", { code });
+      }
       this.handleWorkerExit(worker, code);
     });
 
@@ -215,10 +226,18 @@ class PasswordWorkerPool extends EventEmitter {
    */
   private handleWorkerMessage(worker: Worker, message: WorkerMessage): void {
     const { id, success, result, error } = message;
+
+    // Lifecycle notices (heartbeat / initialized / uncaughtException) carry no
+    // task id and are handled by their own listeners — they are not results for
+    // an unknown task, so they must not be logged as one.
+    if (!id) {
+      return;
+    }
+
     const task = this.activeTasks.get(id);
 
     if (!task) {
-      // NEW: Check if we're shutting down before logging unknown task
+      // Check if we're shutting down before logging unknown task
       if (!this.isShuttingDown) {
         logger.warn("Received message for unknown task", { id });
       }

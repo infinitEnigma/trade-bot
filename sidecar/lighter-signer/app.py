@@ -108,3 +108,21 @@ async def auth_token(
         return await service.auth_token(req.model_dump())
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"signer error: {exc}") from exc
+
+
+@app.post("/v1/verify-credentials")
+async def verify_credentials(
+    req: Credentials, authorization: str | None = Header(default=None)
+) -> dict[str, Any]:
+    """Live ownership proof: does this key match the venue's registered key?
+
+    `{"ok": true}` means Lighter accepted the key for this
+    `(account_index, api_key_index)`; `{"ok": false, "error": "..."}` carries the
+    SDK's reason (wrong key / unregistered index). Used by the backend's
+    exchange-account connect + re-verify (C2).
+    """
+    _authorize(authorization)
+    try:
+        return await service.verify_credentials(req.model_dump())
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"signer error: {exc}") from exc

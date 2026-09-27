@@ -10,7 +10,7 @@ import { createBlockchainService } from "../../../infrastructure/external/blockc
 // Create blockchain service instance on demand
 const getBlockchainService = () => createBlockchainService();
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
-import { RateLimiters } from "../../../infrastructure";
+import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
 import {
   UserLevel,
   ValidationError,

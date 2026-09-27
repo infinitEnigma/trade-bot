@@ -318,25 +318,24 @@ export class BlockchainService {
   }
 
   /**
-   * Get wallet address from database for a user
+   * Get primary wallet address from database for a user (C2 multi-wallet).
+   *
+   * Reads the `wallets` table (primary row first). Returns null when the
+   * user has no linked wallet.
    */
   async getUserWalletAddress(userId: string): Promise<string | null> {
     try {
-      const { query } = await import("../../database/pool");
+      const { walletRepositoryAdapter } =
+        await import("../adapters/repositories/wallet-repository.adapter");
 
-      const result = await query<{
-        wallet_address: string;
-      }>(
-        "SELECT wallet_address FROM kodiak_credentials WHERE user_id = $1 AND verified = true",
-        [userId]
-      );
+      const primary = await walletRepositoryAdapter.getPrimaryWallet(userId);
 
-      if (result.rows.length === 0 || !result.rows[0].wallet_address) {
+      if (!primary) {
         logger.debug("No wallet address found for user", { userId });
         return null;
       }
 
-      const walletAddress = result.rows[0].wallet_address;
+      const walletAddress = primary.address;
 
       // Validate the wallet address
       if (!this.isValidWalletAddress(walletAddress)) {

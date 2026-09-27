@@ -51,6 +51,19 @@ describe("PositionRepositoryAdapter", () => {
       expect(query).toHaveBeenCalled();
     });
 
+    it("reads per-account rows from exchange_positions (C3b)", async () => {
+      (query as jest.Mock).mockResolvedValue({ rows: [] });
+      const adapter = new PositionRepositoryAdapter();
+
+      await adapter.getPositions("test-user-id");
+
+      const [sql, params] = (query as jest.Mock).mock.calls[0];
+      expect(sql).toContain("FROM exchange_positions");
+      expect(sql).toContain("JOIN exchange_accounts");
+      expect(sql).not.toContain("kodiak_positions");
+      expect(params).toEqual(["test-user-id"]);
+    });
+
     it("should return positions for user with valid data", async () => {
       const mockPositionRows = [
         {

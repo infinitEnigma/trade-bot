@@ -26,7 +26,10 @@ const LOG_COLORS = {
 // ✅ Custom format that includes correlation ID
 const customFormat = winston.format.combine(
   winston.format.timestamp({
-    format: "YYYY-MM-DD HH:mm:ss:ms",
+    // NOTE: fecha (logform) has no `ms` token — it expands to minutes (`m`) +
+    // seconds (`s`), so `...ss:ms` produced `07:56:15:5615` instead of
+    // `07:56:15.615`. `SSS` is the millisecond token.
+    format: "YYYY-MM-DD HH:mm:ss.SSS",
   }),
   winston.format.printf((info: winston.Logform.TransformableInfo) => {
     const context = getContextForLogging();

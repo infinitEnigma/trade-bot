@@ -23,21 +23,30 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
   constructor(private readonly queryFn = query) {}
 
   /**
-   * Get user's current balance
+   * Get user's current balance (C3b: aggregated from `exchange_balances`,
+   * which stores one row per asset per account).
+   *
+   * The single-Balance shape cannot express per-asset holdings of several
+   * accounts, so the rows collapse to one number: the primary quote asset
+   * (USD/USDC/USDT with the largest total holding across the user's
+   * accounts; if none of those exist, the asset with the largest numeric
+   * holding). No rows at all → Balance.zero("USD"), as before.
    */
   async getBalance(userId: string): Promise<Balance> {
     try {
       const result = await this.queryFn(
-        "SELECT * FROM balances WHERE user_id = $1",
+        `SELECT eb.asset, eb.holding, eb.frozen, eb.updated_at
+         FROM exchange_balances eb
+         JOIN exchange_accounts ea ON ea.id = eb.exchange_account_id
+         WHERE ea.user_id = $1`,
         [userId]
       );
       const typedResult = result as {
         rows: Array<{
-          total: string;
-          available: string;
-          locked: string;
-          currency: string;
-          last_updated: string;
+          asset: string;
+          holding: string;
+          frozen: string;
+          updated_at: string;
         }>;
       };
 
@@ -45,13 +54,49 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
         return Balance.zero("USD");
       }
 
-      const row = typedResult.rows[0];
+      // One user can hold the same asset in several accounts — aggregate
+      // per asset before picking the primary one.
+      const perAsset = new Map<
+        string,
+        { holding: number; frozen: number; lastMs: number }
+      >();
+      for (const row of typedResult.rows) {
+        const holding = parseFloat(row.holding || "0") || 0;
+        const frozen = parseFloat(row.frozen || "0") || 0;
+        const updatedMs = row.updated_at
+          ? new Date(row.updated_at).getTime()
+          : NaN;
+        const agg = perAsset.get(row.asset) ?? {
+          holding: 0,
+          frozen: 0,
+          lastMs: 0,
+        };
+        agg.holding += holding;
+        agg.frozen += frozen;
+        if (Number.isFinite(updatedMs)) {
+          agg.lastMs = Math.max(agg.lastMs, updatedMs);
+        }
+        perAsset.set(row.asset, agg);
+      }
+
+      const quoteAssets = ["USD", "USDC", "USDT"];
+      const candidates = [...perAsset.entries()].filter(([asset]) =>
+        quoteAssets.includes(asset)
+      );
+      const pool = candidates.length > 0 ? candidates : [...perAsset.entries()];
+      // Largest holding first; asset name breaks ties deterministically.
+      pool.sort(
+        (a, b) => b[1].holding - a[1].holding || a[0].localeCompare(b[0])
+      );
+      const [primaryAsset, primary] = pool[0];
+
+      const lastMs = Math.max(...[...perAsset.values()].map(v => v.lastMs));
       return new Balance(
-        parseFloat(row.total),
-        parseFloat(row.available),
-        parseFloat(row.locked),
-        row.currency,
-        new Date(row.last_updated)
+        primary.holding,
+        primary.holding - primary.frozen,
+        primary.frozen,
+        primaryAsset,
+        Number.isFinite(lastMs) && lastMs > 0 ? new Date(lastMs) : new Date()
       );
     } catch (error) {
       const errorMessage =
@@ -62,19 +107,28 @@ export class BalanceRepositoryAdapter implements IBalanceRepository {
   }
 
   /**
-   * Update user's balance
+   * Update user's balance (C3b: upserts the single-Balance view back into
+   * `exchange_balances` for the user's default account — earliest ACTIVE,
+   * kodiak first, the same convention `getUserCredentials` uses. The
+   * userId-only interface cannot address one account of many; the
+   * account-keyed writer is `exchange-snapshot.adapter.replaceBalances`.)
    */
   async updateBalance(userId: string, balance: Balance): Promise<void> {
     try {
       await this.queryFn(
-        "UPDATE balances SET total = $1, available = $2, locked = $3, currency = $4, last_updated = NOW() WHERE user_id = $5",
-        [
-          balance.total,
-          balance.available,
-          balance.locked,
-          balance.currency,
-          userId,
-        ]
+        `INSERT INTO exchange_balances
+           (exchange_account_id, asset, holding, frozen)
+         SELECT ea.id, $2, $3, $4
+         FROM exchange_accounts ea
+         WHERE ea.user_id = $1 AND ea.status = 'ACTIVE'
+         ORDER BY CASE ea.exchange WHEN 'kodiak' THEN 0 ELSE 1 END,
+                  ea.created_at ASC, ea.id ASC
+         LIMIT 1
+         ON CONFLICT (exchange_account_id, asset) DO UPDATE SET
+           holding = EXCLUDED.holding,
+           frozen = EXCLUDED.frozen,
+           updated_at = now()`,
+        [userId, balance.currency, balance.total, balance.locked]
       );
       logger.info(
         `Balance update for user ${userId}: ${balance.total} ${balance.currency}`

@@ -7,10 +7,10 @@
  * @format
  */
 
-import { IKodiakCredentialsRepository, ILogger } from "@trade-bot/shared";
+import type { ILogger, IExchangeAccountRepository } from "@trade-bot/shared";
 
 export interface MarketServiceDependencies {
-  kodiakCredentialsRepository: IKodiakCredentialsRepository;
+  exchangeAccountRepository: IExchangeAccountRepository;
   logger: ILogger;
 }
 
@@ -46,13 +46,16 @@ export class MarketService {
   constructor(private deps: MarketServiceDependencies) {}
 
   /**
-   * Check if user has verified Kodiak credentials
+   * Check if user has a verified exchange account (any ACTIVE account).
+   *
+   * C2: retired the legacy credentials lookup; any ACTIVE venue account
+   * (kodiak or lighter) satisfies the credential gate.
    */
   async hasUserKodiakCredentials(userId: string): Promise<boolean> {
     try {
-      const credentials =
-        await this.deps.kodiakCredentialsRepository.getCredentials(userId);
-      return !!credentials && credentials.verified;
+      const accounts =
+        await this.deps.exchangeAccountRepository.listAccounts(userId);
+      return accounts.some(a => a.status === "ACTIVE");
     } catch (error) {
       this.deps.logger.error("Failed to check user Kodiak credentials", {
         error: error instanceof Error ? error.message : String(error),

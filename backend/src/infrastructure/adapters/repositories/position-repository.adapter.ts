@@ -20,23 +20,26 @@ import { databaseLogger as logger } from "../../../core/logging/context-aware-lo
  */
 export class PositionRepositoryAdapter implements IPositionRepository {
   /**
-   * Get all positions for a user
+   * Get all positions for a user (C3b: rows live in `exchange_positions`,
+   * keyed per account — ownership resolves through the account join, so two
+   * accounts of the same user holding the same symbol both come back).
    */
   async getPositions(userId: string): Promise<Position[]> {
     try {
       const result = await query<PositionRow>(
         `SELECT
-                    symbol,
-                    position_qty as quantity,
-                    average_open_price as entryPrice,
-                    mark_price as markPrice,
-                    leverage,
-                    imr,
-                    mmr,
-                    est_liq_price as liquidationPrice
-                FROM kodiak_positions
-                WHERE user_id = $1
-                ORDER BY updated_at DESC`,
+                    ep.symbol,
+                    ep.position_qty as quantity,
+                    ep.average_open_price as entryPrice,
+                    ep.mark_price as markPrice,
+                    ep.leverage,
+                    ep.imr,
+                    ep.mmr,
+                    ep.est_liq_price as liquidationPrice
+                FROM exchange_positions ep
+                JOIN exchange_accounts ea ON ea.id = ep.exchange_account_id
+                WHERE ea.user_id = $1
+                ORDER BY ep.updated_at DESC`,
         [userId]
       );
 
@@ -51,22 +54,30 @@ export class PositionRepositoryAdapter implements IPositionRepository {
   }
 
   /**
-   * Get position by symbol for a user
+   * Get position by symbol for a user.
+   *
+   * C3b: with several accounts the same symbol may exist more than once —
+   * the most recently updated row answers (the userId-only interface cannot
+   * address one account of many; account-keyed readers go through
+   * `exchange-snapshot.adapter` / the portfolio routes).
    */
   async getPosition(userId: string, symbol: string): Promise<Position | null> {
     try {
       const result = await query<PositionRow>(
         `SELECT
-                    symbol,
-                    position_qty as quantity,
-                    average_open_price as entryPrice,
-                    mark_price as markPrice,
-                    leverage,
-                    imr,
-                    mmr,
-                    est_liq_price as liquidationPrice
-                FROM kodiak_positions
-                WHERE user_id = $1 AND symbol = $2`,
+                    ep.symbol,
+                    ep.position_qty as quantity,
+                    ep.average_open_price as entryPrice,
+                    ep.mark_price as markPrice,
+                    ep.leverage,
+                    ep.imr,
+                    ep.mmr,
+                    ep.est_liq_price as liquidationPrice
+                FROM exchange_positions ep
+                JOIN exchange_accounts ea ON ea.id = ep.exchange_account_id
+                WHERE ea.user_id = $1 AND ep.symbol = $2
+                ORDER BY ep.updated_at DESC
+                LIMIT 1`,
         [userId, symbol]
       );
 
@@ -83,12 +94,16 @@ export class PositionRepositoryAdapter implements IPositionRepository {
   }
 
   /**
-   * Update position data
+   * Update position data.
+   *
+   * Deliberately a logged no-op (unchanged from before C3b): this interface
+   * is keyed by userId only, and guessing which of a user's accounts a write
+   * belongs to would be wrong with 2+ accounts. The account-keyed writer is
+   * `exchange-snapshot.adapter.replacePositions`, fed by the venue reads in
+   * `external/kodiak/private-data.ts` (the C3b venue sync).
    */
   async updatePosition(userId: string, position: Position): Promise<void> {
     try {
-      // This would typically update the position in the database
-      // For now, positions are synced from external APIs
       logger.info(
         `Position update for user ${userId}, symbol ${position.symbol}`
       );
@@ -100,12 +115,11 @@ export class PositionRepositoryAdapter implements IPositionRepository {
   }
 
   /**
-   * Close position for a user
+   * Close position for a user — logged no-op, same reasoning as
+   * `updatePosition` (the venue snapshot is the source of truth).
    */
   async closePosition(userId: string, symbol: string): Promise<void> {
     try {
-      // This would typically mark the position as closed or remove it
-      // For now, positions are managed by external APIs
       logger.info(`Position close for user ${userId}, symbol ${symbol}`);
     } catch (error) {
       const errorMessage =

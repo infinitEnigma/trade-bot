@@ -10,12 +10,14 @@ describe("MarketService", () => {
   // Create mock dependencies for the MarketService
   const createMockDependencies = (): MarketServiceDependencies => {
     return {
-      kodiakCredentialsRepository: {
-        getCredentials: jest.fn(),
-        saveCredentials: jest.fn(),
-        updateVerificationStatus: jest.fn(),
-        updateWalletAddress: jest.fn(),
-        deleteCredentials: jest.fn(),
+      exchangeAccountRepository: {
+        listAccounts: jest.fn(),
+        getAccountWithSecret: jest.fn(),
+        createPending: jest.fn(),
+        setStatus: jest.fn(),
+        rewriteEnvelope: jest.fn(),
+        deleteAccount: jest.fn(),
+        countActive: jest.fn(),
       },
       logger: {
         debug: jest.fn(),
@@ -42,90 +44,87 @@ describe("MarketService", () => {
   });
 
   describe("hasUserKodiakCredentials", () => {
-    it("should return true if user has verified Kodiak credentials", async () => {
+    it("should return true if user has an ACTIVE exchange account", async () => {
       const deps = createMockDependencies();
       const marketService = new MarketService(deps);
 
       const testUserId = "user-123";
-      const mockCredentials = {
-        id: "creds-123",
-        userId: testUserId,
-        apiKey: "test-api-key",
-        apiSecret: "test-api-secret",
-        verified: true,
-        walletAddress: "0x1234567890",
-      };
+      const mockAccounts = [
+        {
+          id: "account-123",
+          userId: testUserId,
+          exchange: "kodiak",
+          environment: "mainnet",
+          accountRef: "account-ref",
+          status: "ACTIVE",
+        },
+      ];
       (
-        deps.kodiakCredentialsRepository.getCredentials as jest.Mock
-      ).mockResolvedValue(mockCredentials);
+        deps.exchangeAccountRepository.listAccounts as jest.Mock
+      ).mockResolvedValue(mockAccounts);
 
       const result = await marketService.hasUserKodiakCredentials(testUserId);
 
       expect(result).toBe(true);
-      expect(
-        deps.kodiakCredentialsRepository.getCredentials
-      ).toHaveBeenCalledWith(testUserId);
+      expect(deps.exchangeAccountRepository.listAccounts).toHaveBeenCalledWith(
+        testUserId
+      );
     });
 
-    it("should return false if user has credentials but they are not verified", async () => {
-      const deps = createMockDependencies();
-      const marketService = new MarketService(deps);
-
-      const testUserId = "user-123";
-      const mockCredentials = {
-        id: "creds-123",
-        userId: testUserId,
-        apiKey: "test-api-key",
-        apiSecret: "test-api-secret",
-        verified: false,
-        walletAddress: "0x1234567890",
-      };
-      (
-        deps.kodiakCredentialsRepository.getCredentials as jest.Mock
-      ).mockResolvedValue(mockCredentials);
-
-      const result = await marketService.hasUserKodiakCredentials(testUserId);
-
-      expect(result).toBe(false);
-      expect(
-        deps.kodiakCredentialsRepository.getCredentials
-      ).toHaveBeenCalledWith(testUserId);
-    });
-
-    it("should return false if user has no Kodiak credentials", async () => {
+    it("should return false if accounts exist but none is ACTIVE", async () => {
       const deps = createMockDependencies();
       const marketService = new MarketService(deps);
 
       const testUserId = "user-123";
       (
-        deps.kodiakCredentialsRepository.getCredentials as jest.Mock
-      ).mockResolvedValue(null);
+        deps.exchangeAccountRepository.listAccounts as jest.Mock
+      ).mockResolvedValue([
+        { id: "account-123", userId: testUserId, status: "PENDING" },
+        { id: "account-124", userId: testUserId, status: "INVALID" },
+      ]);
 
       const result = await marketService.hasUserKodiakCredentials(testUserId);
 
       expect(result).toBe(false);
-      expect(
-        deps.kodiakCredentialsRepository.getCredentials
-      ).toHaveBeenCalledWith(testUserId);
+      expect(deps.exchangeAccountRepository.listAccounts).toHaveBeenCalledWith(
+        testUserId
+      );
     });
 
-    it("should return false and log error when getting credentials fails", async () => {
+    it("should return false if the user has no exchange accounts", async () => {
+      const deps = createMockDependencies();
+      const marketService = new MarketService(deps);
+
+      const testUserId = "user-123";
+      (
+        deps.exchangeAccountRepository.listAccounts as jest.Mock
+      ).mockResolvedValue([]);
+
+      const result = await marketService.hasUserKodiakCredentials(testUserId);
+
+      expect(result).toBe(false);
+      expect(deps.exchangeAccountRepository.listAccounts).toHaveBeenCalledWith(
+        testUserId
+      );
+    });
+
+    it("should return false and log error when the account lookup fails", async () => {
       const deps = createMockDependencies();
       const marketService = new MarketService(deps);
 
       const testUserId = "user-123";
       const testError = new Error("Database connection failed");
       (
-        deps.kodiakCredentialsRepository.getCredentials as jest.Mock
+        deps.exchangeAccountRepository.listAccounts as jest.Mock
       ).mockRejectedValue(testError);
 
       const result = await marketService.hasUserKodiakCredentials(testUserId);
 
       expect(result).toBe(false);
       expect(deps.logger.error).toHaveBeenCalled();
-      expect(
-        deps.kodiakCredentialsRepository.getCredentials
-      ).toHaveBeenCalledWith(testUserId);
+      expect(deps.exchangeAccountRepository.listAccounts).toHaveBeenCalledWith(
+        testUserId
+      );
     });
   });
 

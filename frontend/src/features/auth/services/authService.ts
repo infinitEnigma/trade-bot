@@ -32,11 +32,12 @@ export class AuthService {
   }
 
   /**
-   * Register new user
+   * Register new user — username is optional; the server derives one from
+   * the email local part when omitted (C1 identity redesign).
    */
-  async register(email: string, password: string) {
+  async register(email: string, password: string, username?: string) {
     try {
-      const response = await authApi.register(email, password);
+      const response = await authApi.register(email, password, username);
       return response;
     } catch (error) {
       console.error("Auth service register error:", error);

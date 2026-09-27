@@ -18,7 +18,7 @@ jest.mock("../../src/core/logging");
 
 // Mock the user services
 jest.mock("../../src/core/user/user-profile.service");
-jest.mock("../../src/core/user/user-kodiak.service");
+jest.mock("../../src/core/user/exchange-account.service");
 
 // Mock @noble/ed25519 module to avoid Jest parse errors
 jest.mock("@noble/ed25519", () => ({
@@ -39,7 +39,7 @@ jest.mock("@noble/ed25519", () => ({
 
 // Import the mocked services
 import { UserProfileService } from "../../src/core/user/user-profile.service";
-import { UserKodiakService } from "../../src/core/user/user-kodiak.service";
+import { ExchangeAccountService } from "../../src/core/user/exchange-account.service";
 
 describe("Service Factory Interface", () => {
   let factory: IServiceFactory;
@@ -60,6 +60,9 @@ describe("Service Factory Interface", () => {
       userRepository: {} as any,
       cacheService: {} as any,
       passwordService: {} as any,
+      // L4: the factory passes loggerService into ExchangeAccountService.
+      loggerService: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+      auditLogRepository: {} as any,
     };
 
     // Mock the diContainer import
@@ -81,7 +84,7 @@ describe("Service Factory Interface", () => {
       expect(factory.getRoleQualificationService).toBeDefined();
       expect(factory.getWalletQualificationService).toBeDefined();
       expect(factory.getUserProfileService).toBeDefined();
-      expect(factory.getUserKodiakService).toBeDefined();
+      expect(factory.getExchangeAccountService).toBeDefined();
       expect(factory.getBotManagementService).toBeDefined();
       expect(factory.getStrategyService).toBeDefined();
       expect(factory.getMarketService).toBeDefined();
@@ -244,28 +247,46 @@ describe("Service Factory Interface", () => {
       );
     });
 
-    test("should instantiate User Kodiak Service with proper dependencies", () => {
-      const mockUserKodiakService = { linkKodiakAccount: jest.fn() };
+    test("should instantiate Exchange Account Service with proper dependencies", () => {
+      const mockExchangeAccountService = { connectAccount: jest.fn() };
 
-      // Mock the UserKodiakService constructor
+      // Mock the ExchangeAccountService constructor
+      // L4: the factory must wire the logger (the DI container already does)
+      // or connect/verify/revoke stay invisible in the logs.
       (
-        UserKodiakService as jest.MockedClass<typeof UserKodiakService>
+        ExchangeAccountService as jest.MockedClass<typeof ExchangeAccountService>
       ).mockImplementation(deps => {
-        expect(deps).toEqual({
-          kodiakConnectionService: expect.any(Object),
-          cache: expect.any(Object),
-        });
-        return mockUserKodiakService as any;
+        expect(Object.keys(deps)).toEqual([
+          "exchangeAccountRepository",
+          "encryption",
+          "verifyConnectivity",
+          "userLevel",
+          "auditLogRepository",
+          "logger",
+          "boundBots",
+        ]);
+        expect((deps as { logger?: unknown }).logger).toBe(
+          mockDiContainer.loggerService
+        );
+        return mockExchangeAccountService as any;
       });
 
-      const service = factory.getUserKodiakService();
+      const service = factory.getExchangeAccountService();
 
-      expect(service).toBe(mockUserKodiakService);
+      expect(service).toBe(mockExchangeAccountService);
       expect(mockLogger.debug).toHaveBeenCalledWith(
-        "User Kodiak Service created with dependencies",
+        "Exchange Account Service created with dependencies",
         expect.objectContaining({
-          service: "UserKodiakService",
-          dependencies: ["kodiakConnectionService", "connectionCache"],
+          service: "ExchangeAccountService",
+          dependencies: [
+            "exchangeAccountRepository",
+            "encryption",
+            "verifyConnectivity",
+            "userLevel",
+            "auditLogRepository",
+            "logger",
+            "boundBots",
+          ],
         })
       );
     });
@@ -497,25 +518,25 @@ describe("Service Factory Interface", () => {
       );
     });
 
-    test("should handle User Kodiak Service instantiation errors", () => {
-      const error = new Error("User Kodiak Service creation failed");
+    test("should handle Exchange Account Service instantiation errors", () => {
+      const error = new Error("Exchange Account Service creation failed");
 
-      // Mock the UserKodiakService constructor to throw an error
+      // Mock the ExchangeAccountService constructor to throw an error
       (
-        UserKodiakService as jest.MockedClass<typeof UserKodiakService>
+        ExchangeAccountService as jest.MockedClass<typeof ExchangeAccountService>
       ).mockImplementation(() => {
         throw error;
       });
 
       // Service factory should return undefined instead of throwing
-      const service = factory.getUserKodiakService();
+      const service = factory.getExchangeAccountService();
 
       expect(service).toBeUndefined();
       expect(mockLogger.error).toHaveBeenCalledWith(
-        "Failed to create User Kodiak Service",
+        "Failed to create Exchange Account Service",
         error,
         expect.objectContaining({
-          service: "UserKodiakService",
+          service: "ExchangeAccountService",
         })
       );
     });
@@ -737,7 +758,7 @@ describe("Service Factory Interface", () => {
         positionSyncService: undefined,
         roleManagementService: undefined,
         userProfileService: undefined,
-        userKodiakService: undefined,
+        exchangeAccountService: undefined,
         botManagementService: undefined,
         strategyService: undefined,
         marketService: undefined,
@@ -765,7 +786,7 @@ describe("Service Factory Interface", () => {
       };
       const mockRoleManagementService = { assignRole: jest.fn() };
       const mockUserProfileService = { getUserProfile: jest.fn() };
-      const mockUserKodiakService = { linkKodiakAccount: jest.fn() };
+      const mockExchangeAccountService = { linkKodiakAccount: jest.fn() };
       const mockBotManagementService = { manageBots: jest.fn() };
       const mockStrategyService = { manageStrategies: jest.fn() };
       const mockMarketService = { getMarketPrices: jest.fn() };
@@ -793,8 +814,8 @@ describe("Service Factory Interface", () => {
         UserProfileService as jest.MockedClass<typeof UserProfileService>
       ).mockImplementation(() => mockUserProfileService as any);
       (
-        UserKodiakService as jest.MockedClass<typeof UserKodiakService>
-      ).mockImplementation(() => mockUserKodiakService as any);
+        ExchangeAccountService as jest.MockedClass<typeof ExchangeAccountService>
+      ).mockImplementation(() => mockExchangeAccountService as any);
 
       const health = await factory.healthCheck();
 
@@ -807,7 +828,7 @@ describe("Service Factory Interface", () => {
         positionSyncService: true,
         roleManagementService: true,
         userProfileService: true,
-        userKodiakService: true,
+        exchangeAccountService: true,
         botManagementService: true,
         strategyService: true,
         marketService: true,
@@ -843,7 +864,7 @@ describe("Service Factory Interface", () => {
           healthy: true,
           type: "Object",
         },
-        userKodiakService: {
+        exchangeAccountService: {
           healthy: true,
           type: "Object",
         },
@@ -902,7 +923,7 @@ describe("Service Factory Interface", () => {
         positionSyncService: false,
         roleManagementService: true,
         userProfileService: false,
-        userKodiakService: true,
+        exchangeAccountService: true,
         botManagementService: false,
         strategyService: false,
         marketService: false,

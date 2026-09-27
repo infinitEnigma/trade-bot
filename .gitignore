@@ -41,6 +41,9 @@ tsconfig.tsbuildinfo
 
 # Database / Cache (local dev)
 *.sql
+# ...but schema migrations ARE source of truth for the ledger-tracked runner —
+# re-include them so a fresh clone can bootstrap (stray local dumps stay ignored).
+!database/migrations/*.sql
 *.dump
 postgres-data/
 redis-data/
@@ -73,3 +76,6 @@ engine/coverage/
 # Debug files
 backend/debug/.engine-state.json
 engine/.engine-state.json
+# Engine runtime artifacts when it is started from the repo root (see `npm run prod:engine`)
+.engine-state.json
+.grid-snapshots/

@@ -23,6 +23,8 @@ import {
   ILogger,
   IAuditLogRepository,
   ISignatureVerificationService,
+  IWalletRepository,
+  ChainKind,
   User,
   UserLevel,
   UserRegistration,
@@ -41,6 +43,18 @@ export interface AuthServiceDependencies {
   logger: ILogger;
   auditLogger?: IAuditLogRepository;
   signatureVerificationService: ISignatureVerificationService;
+  /**
+   * Multi-wallet repository (C2). Optional so unit tests built before C2
+   * keep compiling — when absent the service falls back to the deprecated
+   * single-address methods on IUserRepository.
+   */
+  walletRepository?: IWalletRepository;
+  /**
+   * Level recompute hook (C2 UserLevelService). When present, wallet
+   * link/unlink recomputes BASIC→REGISTERED→VERIFIED from
+   * wallets/accounts instead of hard-coding transitions.
+   */
+  userLevel?: { recompute(userId: string): Promise<UserLevel> };
 }
 
 /**
@@ -51,6 +65,7 @@ export interface AuthResult {
   message?: string;
   user?: {
     id: string;
+    username: string;
     email: string;
     userLevel: UserLevel;
   };
@@ -68,6 +83,7 @@ export interface LegacyAuthResult {
   message?: string;
   user?: {
     id: string;
+    username: string;
     email: string;
     userLevel: UserLevel;
   };
@@ -93,23 +109,56 @@ export class AuthService {
 
   constructor(private deps: AuthServiceDependencies) {}
 
+  /** Handle charset — mirrors the Joi registration rule and the 011 index. */
+  private static readonly USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
+
+  /**
+   * Derive a free username from the email local part — same rule as the 011
+   * migration backfill: lowercase, strip to [a-z0-9._-], cap at 24 chars
+   * (leaves room for the suffix), 'user' fallback, numeric suffix on
+   * collision. Pure derivation + uniqueness probe; never renames an
+   * explicitly chosen handle (that path fails instead).
+   */
+  private async deriveUniqueUsername(email: string): Promise<string> {
+    const local = email.split("@")[0] ?? "";
+    const base =
+      local
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]/g, "")
+        .slice(0, 24) || "user";
+
+    let candidate = base;
+    let n = 1;
+    while (
+      n < 10_000 &&
+      (await this.deps.userRepository.findByUsername(candidate))
+    ) {
+      n += 1;
+      const suffix = String(n);
+      candidate = `${base.slice(0, 32 - suffix.length)}${suffix}`;
+    }
+    return candidate;
+  }
+
   /**
    * Register a new user
    *
    * Business Logic:
    * 1. Validate email uniqueness
-   * 2. Hash password using abstracted service
-   * 3. Create user with BASIC level
-   * 4. Generate JWT tokens
-   * 5. Log security event
-   * 6. Return user data and tokens (or legacy format)
+   * 2. Resolve the username handle (explicit choice, or derived from the
+   *    email local part with the backfill's numeric-suffix rule)
+   * 3. Validate username uniqueness
+   * 4. Hash password using abstracted service
+   * 5. Create user with BASIC level (+ its password identity row)
+   * 6. Generate JWT tokens, log security event, return user + tokens
    */
   async register(
     email: string,
-    password: string
+    password: string,
+    username?: string
   ): Promise<AuthResult | LegacyAuthResult> {
     try {
-      this.deps.logger.debug("User registration attempt", { email });
+      this.deps.logger.debug("User registration attempt", { email, username });
 
       // Check email uniqueness
       const existingUser = await this.deps.userRepository.findByEmail(email);
@@ -124,16 +173,58 @@ export class AuthService {
         return { success: false, message: "Email already registered" };
       }
 
+      // C1 identity: resolve the handle. Explicit picks are validated and
+      // must be free (never silently renamed); an omitted/blank handle is
+      // derived from the email local part with de-duplication.
+      const explicit = username?.trim().toLowerCase() ?? "";
+      let resolvedUsername: string;
+      if (explicit) {
+        if (!AuthService.USERNAME_PATTERN.test(explicit)) {
+          this.deps.logger.warn("Registration failed - invalid username", {
+            email,
+          });
+          await this.logAuditEvent("USER_REGISTRATION_FAILED", {
+            email,
+            reason: "invalid_username",
+          });
+          return {
+            success: false,
+            message:
+              "Username must be 3-32 characters: lowercase letters, numbers, dots, dashes or underscores",
+          };
+        }
+        const existingHandle =
+          await this.deps.userRepository.findByUsername(explicit);
+        if (existingHandle) {
+          this.deps.logger.warn(
+            "Registration failed - username already exists",
+            {
+              email,
+              username: explicit,
+            }
+          );
+          await this.logAuditEvent("USER_REGISTRATION_FAILED", {
+            email,
+            reason: "username_exists",
+          });
+          return { success: false, message: "Username already taken" };
+        }
+        resolvedUsername = explicit;
+      } else {
+        resolvedUsername = await this.deriveUniqueUsername(email);
+      }
+
       // Hash password using abstracted service
       const passwordHash = await this.deps.passwordService.hash(password);
 
       // Create user registration data
       const userData: UserRegistration = {
+        username: resolvedUsername,
         email,
         password: passwordHash,
       };
 
-      // Create user through repository
+      // Create user through repository (row + password identity, one statement)
       const newUser = await this.deps.userRepository.create(userData);
 
       // Generate tokens
@@ -142,11 +233,13 @@ export class AuthService {
       // Log successful registration
       await this.logAuditEvent("USER_REGISTERED", {
         userId: newUser.id,
+        username: newUser.username,
         email: newUser.email,
       });
 
       this.deps.logger.info("User registered successfully", {
         userId: newUser.id,
+        username: newUser.username,
         email: newUser.email,
       });
 
@@ -154,15 +247,25 @@ export class AuthService {
         success: true,
         user: {
           id: newUser.id,
+          username: newUser.username,
           email: newUser.email,
           userLevel: newUser.userLevel,
         },
         tokens,
       };
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Race-window uniqueness violations from the adapter keep the same
+      // friendly wording as the pre-checks above.
+      if (message === "Username already exists") {
+        return { success: false, message: "Username already taken" };
+      }
+      if (message === "Email already exists") {
+        return { success: false, message: "Email already registered" };
+      }
       this.deps.logger.error("Registration error", {
         email,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       });
       return { success: false, message: "Registration failed" };
     }
@@ -236,6 +339,7 @@ export class AuthService {
         success: true,
         user: {
           id: user.id,
+          username: user.username,
           email: user.email,
           userLevel: user.userLevel,
         },
@@ -301,6 +405,7 @@ export class AuthService {
         success: true,
         user: {
           id: user.id,
+          username: user.username,
           email: user.email,
           userLevel: user.userLevel,
         },
@@ -509,17 +614,24 @@ export class AuthService {
   /**
    * Verify wallet ownership for user registration (BASIC -> REGISTERED)
    *
-   * Business Logic:
-   * - Verify that a user owns a specific wallet address via signed message
-   * - BASIC users: persist wallet address and upgrade to REGISTERED
-   * - REGISTERED+ users: re-verify ownership against stored address (no level change)
-   * - No Kodiak credentials required (wallet connect precedes Kodiak setup)
+   * Business Logic (C2 multi-wallet):
+   * - chain defaults to 'evm' (the only chain the old flow verified);
+   *   callers that collect an explicit chain pass it through.
+   * - A user may link many wallets: a fresh (chain, address) is upserted
+   *   and verified; re-verifying a known wallet succeeds idempotently.
+   * - The old "address must match the linked wallet" rejection is gone —
+   *   that rule assumed one wallet per user. The global UNIQUE(wallet_address)
+   *   is gone too: the same address on different chains (or users) coexists.
+   * - Level transitions go through UserLevelService.recompute when wired
+   *   (counts verified wallets + ACTIVE accounts); legacy hard-coded
+   *   BASIC→REGISTERED remains as the fallback when it is not.
    */
   async verifyWalletOwnership(
     userId: string,
     walletAddress: string,
     signature: string,
-    message: string
+    message: string,
+    chain: ChainKind = "evm"
   ): Promise<{ success: boolean; message: string }> {
     try {
       this.deps.logger.info("Wallet ownership verification requested", {
@@ -549,28 +661,10 @@ export class AuthService {
         };
       }
 
-      const normalizedProvided = walletAddress.toLowerCase().trim();
-
-      // Get the stored wallet address (if any)
-      const storedWalletAddress =
-        await this.deps.userRepository.getWalletAddress(userId);
-      const normalizedStored = storedWalletAddress?.toLowerCase().trim();
-
-      // If a wallet is already linked, the signature must match the linked address
-      if (normalizedStored && normalizedProvided !== normalizedStored) {
-        this.deps.logger.warn(
-          "Wallet verification failed - address does not match linked wallet",
-          {
-            userId,
-            providedAddress: walletAddress,
-          }
-        );
-        return {
-          success: false,
-          message:
-            "Wallet address does not match the wallet linked to your account",
-        };
-      }
+      const normalizedProvided =
+        chain === "evm"
+          ? walletAddress.toLowerCase().trim()
+          : walletAddress.trim();
 
       // Get current user to decide on level transition
       const currentUser = await this.deps.userRepository.findById(userId);
@@ -581,15 +675,19 @@ export class AuthService {
         };
       }
 
-      // First-time wallet link: persist the address
-      if (!normalizedStored) {
-        const persisted = await this.deps.userRepository.setWalletAddress(
-          userId,
-          normalizedProvided
-        );
-        if (!persisted) {
+      const previousLevel = currentUser.userLevel;
+
+      // Multi-wallet upsert (C2): first verified wallet becomes primary.
+      if (this.deps.walletRepository) {
+        try {
+          await this.deps.walletRepository.upsertVerified(userId, {
+            chain,
+            address: normalizedProvided,
+          });
+        } catch (error) {
           this.deps.logger.error("Failed to persist wallet address", {
             userId,
+            error: error instanceof Error ? error.message : String(error),
           });
           return {
             success: false,
@@ -597,6 +695,72 @@ export class AuthService {
               "Wallet signature valid but failed to link wallet to account",
           };
         }
+      } else {
+        // Legacy single-address fallback (pre-C2 wiring / old unit tests).
+        const storedWalletAddress =
+          await this.deps.userRepository.getWalletAddress(userId);
+        const normalizedStored =
+          chain === "evm"
+            ? storedWalletAddress?.toLowerCase().trim()
+            : storedWalletAddress?.trim();
+
+        if (normalizedStored && normalizedProvided !== normalizedStored) {
+          this.deps.logger.warn(
+            "Wallet verification failed - address does not match linked wallet",
+            {
+              userId,
+              providedAddress: walletAddress,
+            }
+          );
+          return {
+            success: false,
+            message:
+              "Wallet address does not match the wallet linked to your account",
+          };
+        }
+
+        if (!normalizedStored) {
+          const persisted = await this.deps.userRepository.setWalletAddress(
+            userId,
+            normalizedProvided
+          );
+          if (!persisted) {
+            this.deps.logger.error("Failed to persist wallet address", {
+              userId,
+            });
+            return {
+              success: false,
+              message:
+                "Wallet signature valid but failed to link wallet to account",
+            };
+          }
+        }
+      }
+
+      // Level transition: recompute from wallets/accounts when wired.
+      if (this.deps.userLevel) {
+        const next = await this.deps.userLevel.recompute(userId);
+        await this.logAuditEvent(
+          next === UserLevel.BASIC ? "WALLET_REVERIFIED" : "WALLET_VERIFIED",
+          {
+            userId,
+            walletAddress: normalizedProvided,
+            chain,
+            previousLevel,
+            newLevel: next,
+          }
+        );
+        if (
+          previousLevel === UserLevel.BASIC &&
+          next === UserLevel.REGISTERED
+        ) {
+          return {
+            success: true,
+            message:
+              "Wallet ownership verified. Your account has been upgraded to REGISTERED level.",
+          };
+        }
+        return { success: true, message: "Wallet ownership verified." };
       }
 
       // BASIC users graduate to REGISTERED on wallet verification
@@ -663,16 +827,19 @@ export class AuthService {
   }
 
   /**
-   * Unlink wallet from user account (REGISTERED -> BASIC)
+   * Unlink wallet from user account (C2 multi-wallet)
    *
    * Business Logic:
-   * - Removes the stored wallet address (proof of ownership is gone)
-   * - Downgrades REGISTERED users back to BASIC with audit trail
-   * - VERIFIED users keep their level only if they still hold Kodiak
-   *   credentials; otherwise they drop to BASIC as well
+   * - walletId present (C2 route): removes that one wallet; remaining
+   *   wallets/accounts decide the level via UserLevelService.recompute, so
+   *   unlinking 1-of-2 wallets keeps REGISTERED.
+   * - walletId absent (legacy route/tests): removes the primary wallet
+   *   (or the single legacy address) and falls back to the old
+   *   REGISTERED→BASIC / VERIFIED→REGISTERED-or-BASIC transitions.
    */
   async unlinkWallet(
-    userId: string
+    userId: string,
+    walletId?: string
   ): Promise<{ success: boolean; message: string }> {
     try {
       this.deps.logger.info("Wallet unlink requested", { userId });
@@ -685,11 +852,31 @@ export class AuthService {
         };
       }
 
-      const removed = await this.deps.userRepository.clearWalletAddress(userId);
+      const removed = walletId
+        ? await this.removeOneWallet(userId, walletId)
+        : await this.removePrimaryWallet(userId);
       if (!removed) {
         return {
           success: false,
           message: "No linked wallet found",
+        };
+      }
+
+      if (this.deps.userLevel) {
+        const next = await this.deps.userLevel.recompute(userId);
+        await this.logAuditEvent("WALLET_UNLINKED", {
+          userId,
+          walletId: walletId ?? "primary",
+          previousLevel: currentUser.userLevel,
+          newLevel: next,
+        });
+        this.deps.logger.info("Wallet unlinked successfully", {
+          userId,
+          newLevel: next,
+        });
+        return {
+          success: true,
+          message: "Wallet unlinked from your account.",
         };
       }
 
@@ -727,6 +914,70 @@ export class AuthService {
         message: "Failed to unlink wallet",
       };
     }
+  }
+
+  /**
+   * Remove one wallet by id (C2). Prefers the multi-wallet repository;
+   * falls back to clearing the single legacy address when unwired.
+   */
+  private async removeOneWallet(
+    userId: string,
+    walletId: string
+  ): Promise<boolean> {
+    if (this.deps.walletRepository) {
+      return this.deps.walletRepository.remove(userId, walletId);
+    }
+    return this.deps.userRepository.clearWalletAddress(userId);
+  }
+
+  /**
+   * Remove the primary wallet (legacy no-id unlink). With the multi-wallet
+   * repository wired this deletes the primary row; otherwise it clears the
+   * single legacy address.
+   */
+  private async removePrimaryWallet(userId: string): Promise<boolean> {
+    if (this.deps.walletRepository) {
+      const primary = await this.deps.walletRepository.getPrimaryWallet(userId);
+      if (!primary) return false;
+      return this.deps.walletRepository.remove(userId, primary.id);
+    }
+    return this.deps.userRepository.clearWalletAddress(userId);
+  }
+
+  /**
+   * Wallets for a user, primary first (C2 multi-wallet read for routes).
+   * Falls back to the deprecated single-address shape when unwired.
+   */
+  async getWallets(
+    userId: string
+  ): Promise<import("@trade-bot/shared").Wallet[]> {
+    if (this.deps.walletRepository) {
+      return this.deps.walletRepository.listWallets(userId);
+    }
+    const address = await this.deps.userRepository.getWalletAddress(userId);
+    if (!address) return [];
+    const now = new Date();
+    return [
+      {
+        id: "primary",
+        userId,
+        chain: "evm",
+        address,
+        label: null,
+        isPrimary: true,
+        verifiedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+  }
+
+  /**
+   * Mark one wallet primary (C2). No-op false when unwired (single wallet).
+   */
+  async setPrimaryWallet(userId: string, walletId: string): Promise<boolean> {
+    if (!this.deps.walletRepository) return false;
+    return this.deps.walletRepository.setPrimary(userId, walletId);
   }
 
   /**

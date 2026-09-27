@@ -355,29 +355,18 @@ MiddlewareConfig.configure(app, {
 // Routes are organized by functional domain for clarity
 // ===========================================
 
-// Register routes asynchronously
-(async () => {
-  try {
-    await RouteConfig.register(app, {
-      enableApiRoutes: true,
-      enableHealthRoutes: true,
-      io, // Pass Socket.IO server for routes that need it
-    });
-  } catch (error) {
-    logger.error(
-      "Failed to register routes",
-      error instanceof Error ? error : new Error(String(error))
-    );
-    process.exitCode = 1; // Don't reject to avoid unhandled rejection
-  }
-})();
+// Register routes synchronously at module load (RouteConfig.register is
+// sync — L3). ExpressConfig.createApp already ran context + HTTP logging
+// first, so every router below is covered. Error middleware comes AFTER
+// the routes so route errors reach it through the normal Express chain.
+RouteConfig.register(app, {
+  enableApiRoutes: true,
+  enableHealthRoutes: true,
+  io, // Pass Socket.IO server for routes that need it
+});
 
-// ===========================================
-// 🚨 7.5 UNIFIED ERROR HANDLING MIDDLEWARE
-// ===========================================
-// Enterprise-grade error handling with structured responses
-// Provides consistent error formatting across all endpoints
-// ===========================================
+// L3: fail fast if the boot order ever regresses (logging after routers).
+MiddlewareConfig.assertBootOrder(app);
 
 import { handleErrors } from "./interfaces/middleware/error-handler.middleware";
 

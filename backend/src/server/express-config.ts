@@ -5,6 +5,8 @@ import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { ContextAwareLogger } from "../core/logging";
+import { contextMiddleware } from "../interfaces/middleware/context.middleware";
+import { httpLogger } from "../interfaces/middleware/logger.middleware";
 
 /**
  * ===========================================
@@ -59,12 +61,12 @@ export class ExpressConfig {
   private static expressLogger = new ContextAwareLogger("express-config");
 
   /**
-   * Configure Express application with all middleware and settings
+   * Configure Express application with all middleware and settings.
+   *
+   * Synchronous (L3): everything here runs inline so the middleware order
+   * is deterministic — context + HTTP logging first, before any router.
    */
-  static async configure(
-    app: Express,
-    options: ExpressConfigOptions = {}
-  ): Promise<void> {
+  static configure(app: Express, options: ExpressConfigOptions = {}): void {
     const config = { ...this.DEFAULT_OPTIONS, ...options };
 
     const configTimer = this.expressLogger.startOperation(
@@ -81,7 +83,7 @@ export class ExpressConfig {
       this.configureCors(app, config);
       this.configureSecurity(app, config);
       this.configureParsing(app);
-      await this.configureLogging(app);
+      this.configureLogging(app);
 
       configTimer.success();
       this.expressLogger.info("Express application configured successfully", {
@@ -239,17 +241,17 @@ export class ExpressConfig {
   }
 
   /**
-   * Configure logging and monitoring middleware
+   * Configure logging and monitoring middleware.
+   *
+   * Synchronous (L3): previously this awaited two dynamic imports, which let
+   * these two app.use() calls lose the race against MiddlewareConfig and
+   * RouteConfig — auth routes were mounted before them and had no HTTP logs.
    */
-  private static async configureLogging(app: Express): Promise<void> {
+  private static configureLogging(app: Express): void {
     // Request context middleware (must be first)
-    const { contextMiddleware } =
-      await import("../interfaces/middleware/context.middleware");
     app.use(contextMiddleware);
 
     // HTTP request logging middleware
-    const { httpLogger } =
-      await import("../interfaces/middleware/logger.middleware");
     app.use(httpLogger);
 
     this.expressLogger.debug("Logging and monitoring middleware configured", {
@@ -258,24 +260,16 @@ export class ExpressConfig {
   }
 
   /**
-   * Create and configure a new Express application
+   * Create and configure a new Express application.
+   *
+   * Synchronous (L3): configuration runs inline, so the returned app is
+   * fully built — callers can mount routers and listen() with no race.
+   * Auth routes previously mounted before context/HTTP logging because
+   * configure() was fired without awaiting.
    */
   static createApp(options: ExpressConfigOptions = {}): Express {
     const app = express();
-
-    // Configure the app asynchronously but return the app synchronously
-    // This is a common pattern for Express apps - configure async but return sync
-    this.configure(app, options).catch(error => {
-      this.expressLogger.error(
-        "Failed to configure Express application",
-        error as Error,
-        {
-          component: "app-creation",
-        }
-      );
-      throw error; // Re-throw to fail fast in development
-    });
-
+    this.configure(app, options);
     return app;
   }
 }

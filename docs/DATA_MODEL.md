@@ -1,6 +1,6 @@
 # Data Model: Identity, Wallets & Exchange Accounts
 
-**Status:** design proposal — nothing here is implemented yet.
+**Status:** C1 (identity core — migration `011_identity_core.sql`), C2 (wallets & exchange accounts — migration `012_wallets_exchange_accounts.sql`), C3a (bot → account binding — migration `013_bot_account_binding.sql`) and C3b (per-account data tables — migration `014_drop_legacy_kodiak.sql`) implemented — all staged PRs of the execution plan have landed. Everything below that did not land remains the target model.
 **Execution plan:** [EXCHANGE_INTEGRATION_PLAN.md](EXCHANGE_INTEGRATION_PLAN.md)
 (defines the staged PRs C1-C3 that implement this document).
 
@@ -111,21 +111,37 @@ Behaviour coupled to it:
 - Verification state feeds `user_level` through a join in
   `getAuthenticatedUserData` (`user-repository.adapter.ts:246-250`).
 
-### Vendor-named data tables
+### Vendor-named data tables — dropped by `014_drop_legacy_kodiak.sql`
 
-| Table               | Key assumption                                                    |
-| ------------------- | ----------------------------------------------------------------- |
-| `kodiak_accounts`   | `UNIQUE(user_id)`                                                 |
-| `kodiak_positions`  | `UNIQUE(user_id, symbol)` — positions per _user_, not per account |
-| `kodiak_balances`   | keyed by `user_id`                                                |
-| `kodiak_statistics` | `UNIQUE(user_id)`                                                 |
-| `trades`            | `user_id` + optional `strategy_id`/`bot_id`; no account reference |
+| Dropped table       | Why it could not stay                                                |
+| ------------------- | -------------------------------------------------------------------- |
+| `kodiak_accounts`   | `UNIQUE(user_id)` — one account per user                             |
+| `kodiak_positions`  | `UNIQUE(user_id, symbol)` — positions per _user_, not per account    |
+| `kodiak_balances`   | keyed by `user_id`                                                   |
+| `kodiak_statistics` | `UNIQUE(user_id)`                                                    |
+| `trades`            | (kept) `user_id` + optional `strategy_id`/`bot_id`; no account reference yet |
+
+C3a created their per-account replacements — `exchange_positions` and
+`exchange_balances`, keyed `UNIQUE(exchange_account_id, …)`. C3b moved the
+readers onto them (`position-repository.adapter`, `balance-repository.adapter`,
+`schema-validation-middleware` validators — all join `exchange_accounts` for
+ownership) and added the venue sync (`exchange-snapshot.adapter`): each
+successful authenticated venue read replaces that account's rows, so the new
+tables repopulate per account from live traffic. `014_drop_legacy_kodiak.sql`
+then made `bot_instances.exchange_account_id` `NOT NULL` (after re-running
+the backfill, with a guard that refuses while any bot is unbound) and dropped
+the four `kodiak_*` tables. No row migration was attempted — legacy rows were
+keyed by `(user_id, symbol)`, ambiguous once a user holds two accounts, and in
+practice all four were empty: the legacy writer was a no-op.
 
 ### `bot_instances` / `strategies` — migrations `001`, `003`, `007`
 
 `bot_instances(strategy_id, user_id, desired_state, actual_state, engine_id, …)`
-and `strategies(user_id, type, config JSONB, active)` have **no exchange or
-account reference**.
+and `strategies(user_id, type, config JSONB, active)` originally had **no
+exchange or account reference**. C3a adds `bot_instances.exchange_account_id`
+(nullable during expand, backfilled from the owner's earliest ACTIVE account,
+`ON DELETE RESTRICT`; `NOT NULL` in C3b), so a bot knows which account it
+trades.
 
 ### Engine credential contract
 
@@ -147,10 +163,11 @@ The backend issues an exchange-agnostic envelope
 `FetchCredentialsResult` (`engine/src/domain/bot-runtime.ts`) is this
 `EngineCredentials` union, fetched from
 `GET /api/bot/engine/credentials/:botId`
-(`backend/src/interfaces/http/bots/engine.ts`), which returns the single
-decrypted credential set for the bot's owner, at most once per
-`(botId, correlationId)`. A `lighter` envelope reaches the factory and fails
-cleanly (`UNSUPPORTED_EXCHANGE`) until workstream B lands the adapter.
+(`backend/src/interfaces/http/bots/engine.ts`), which returns the decrypted
+credential set of the bot's **bound** `exchange_accounts` row (C3a), at most
+once per `(botId, correlationId)`. A bot with no ACTIVE binding is refused
+(409) rather than served a different account's keys, and the factory dispatches
+on `exchange` (kodiak / lighter).
 
 ---
 
@@ -162,7 +179,7 @@ cleanly (`UNSUPPORTED_EXCHANGE`) until workstream B lands the adapter.
 | P2  | Vendor-named tables + Orderly validation    | Lighter credentials (`accountIndex`, `apiKeyIndex`, `privateKey`, `env`) fit nowhere; each new venue would need a new table and endpoints |
 | P3  | `wallet_addresses UNIQUE(user_id)`          | One wallet per user; no chain column, so the same address on two chains cannot be represented, and there is no primary-wallet concept     |
 | P4  | Identity == email                           | No username/nick, no path for social logins; email is required, and JWT claims carry it                                                   |
-| P5  | No bot → account link                       | The engine cannot know which account a bot trades; `/credentials/:botId` has no account parameter                                         |
+| P5  | No bot → account link                       | The engine cannot know which account a bot trades; `/credentials/:botId` has no account parameter — **fixed by C3a**: bots carry `exchange_account_id` and the endpoint resolves it |
 | P6  | `user_level` derived from a vendor join     | With several accounts, one revoked account would flip the whole user, and per-account status is invisible                                 |
 | P7  | Positions/balances keyed by `user_id`       | `UNIQUE(user_id, symbol)` collides when two accounts hold the same symbol                                                                 |
 | P8  | Disconnect deletes credentials + downgrades | Disconnecting one account must be per-account, audited, and must not change global level unless no verified account remains               |
@@ -190,6 +207,11 @@ users ──┬──< user_identities     (password / email / google / github /
 
 ```sql
 -- Identity: who can log in.
+-- C1 note (011_identity_core.sql): username / display_name / avatar_url landed,
+-- user_identities was created and backfilled with one 'password' identity per
+-- user. The two DROP NOT NULL statements below are deliberately NOT applied
+-- yet — login remains email + password, so both columns stay required until
+-- wallet/social login (D4) lands.
 ALTER TABLE users
   ADD COLUMN username     VARCHAR(32),        -- login handle (lowercase, unique)
   ADD COLUMN display_name VARCHAR(64),
@@ -271,6 +293,80 @@ reuses the existing version-aware encryption service.
 
 ---
 
+### 4.4 Bot account sessions — bot = account, N strategies (decided 2026-09-27, planned as plan §D)
+
+Today a bot **is** a running strategy: `bot_instances.strategy_id` is `NOT NULL`, a
+`BotRuntime` holds one strategy plus one `StrategyRunner`, the grid snapshot is
+`<botId>.json`, and only one bot per strategy may be active at a time. That axis
+was right for a single-strategy engine; it is the wrong one for a platform where a
+user runs several strategies, where agents are expected to reason about an
+account, and where the **account** is the risk boundary.
+
+**Decision:** the unit becomes the **account session** — one bot per
+`(user, exchange_accounts)` row, running **N strategies** concurrently.
+
+```
+users ──< exchange_accounts ──< bot_instances        (session: desired/actual_state)
+                                     └──< strategy_runs (bot_id, strategy_id, state, sizing)
+strategies ──────────────────────────┘
+```
+
+```sql
+-- 015_bot_account_sessions.sql (planned)
+ALTER TABLE bot_instances
+  DROP COLUMN strategy_id;                       -- a session is not a strategy
+
+CREATE UNIQUE INDEX bot_instances_one_live_per_account
+  ON bot_instances (exchange_account_id)
+  WHERE actual_state IN ('STARTING', 'RUNNING'); -- one live session per account
+
+CREATE TABLE strategy_runs (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bot_id          UUID NOT NULL REFERENCES bot_instances(id) ON DELETE CASCADE,
+  strategy_id     UUID NOT NULL REFERENCES strategies(id) ON DELETE CASCADE,
+  config_version  INTEGER NOT NULL DEFAULT 1,    -- audit of what this run executed
+  config          JSONB NOT NULL,                -- copied at attach time
+  notional_amount NUMERIC NOT NULL,              -- per-run sizing; account cap on the session
+  state           VARCHAR(10) NOT NULL DEFAULT 'STOPPED'
+                  CHECK (state IN ('STOPPED','STARTING','RUNNING','STOPPING','ERROR')),
+  last_error_code VARCHAR(64),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (bot_id, strategy_id)
+);
+
+CREATE UNIQUE INDEX strategy_runs_one_active_per_strategy
+  ON strategy_runs (strategy_id)
+  WHERE state IN ('STARTING', 'RUNNING');        -- a strategy runs in one session only
+```
+
+Backfill: one run per existing bot (they are 1:1 today), keeping each bot's
+`strategy_id` — test users only, so the cut is clean as in C1–C3b.
+
+Why this shape:
+
+- **A `strategy_runs` table, not a JSONB array on the session** — a run owns its
+  config snapshot, sizing, state and error, and (with the P1 durable ledger) its
+  fill attribution. `strategies.active` stops being a write-once flag written by
+  the lifecycle and becomes derived: "does this strategy have a running run?".
+- **One live session per account replaces one-active-bot-per-strategy.** The
+  account owns the exchange connection, the credential envelope, the position and
+  balance rows and (N3/N4) the reconciliation state — two sessions on one account
+  would fight over exactly that state.
+- **Credentials and portfolio reads do not change.** One account per session means
+  one envelope per bot (what C3a already issues — and *one* fetch instead of one
+  per strategy), and `exchange_positions` / `exchange_balances` are already keyed
+  by `exchange_account_id` (C3b), so a session's portfolio view is that account's
+  rows — also the natural read model for an agent.
+
+Engine-side consequences (plan §D): `START_BOT` becomes the session command, a new
+`START_STRATEGY` / `STOP_STRATEGY` pair addresses a run inside a live session,
+`BotRuntime.strategies` becomes a map of runs each with its own `StrategyRunner`,
+snapshots move to `<botId>/<runId>.json`, and `BotStatus` reports runs rather than
+a single strategy.
+
+---
+
 ## 5. Derived semantics (must be centralised)
 
 | Concept            | Rule                                                                                                                                                                                                                                                                                             |
@@ -347,6 +443,29 @@ _Benefit:_ no compatibility layer, roughly half the work.
 | 5     | Bot → account binding: bot creation UI + API, engine credentials v2 + client selection                                | The same strategy started on two accounts runs two bots against different accounts                                   |
 | 6     | Data-table generalisation: `exchange_positions`/`exchange_balances` replace `kodiak_*`; retire vendor-named tables    | Positions and balances are per account; two accounts holding the same symbol both display correctly                  |
 
+> **C1 landed** (`011_identity_core.sql`): phase-1 schema + backfill plus the
+> optional username handle. Login stays email-based, so phase 2's
+> "log in by username" acceptance is superseded by the revised D2/D3 decisions
+> below — `user_identities` is the substrate that makes username/social login
+> a switch-on later, not part of C1.
+
+> **C3a landed** (`013_bot_account_binding.sql`, plan §3 C3a): phase 5 — a bot
+> binds to one ACTIVE `exchange_accounts` row and `/credentials/:botId` issues
+> that row's envelope. The acceptance property is **per-bot credential identity**
+> (flow run recorded in the gap analysis §4), not concurrency: a bot is currently
+> a running strategy, so the same strategy on two accounts means two bots created
+> sequentially — the coupling §4.4 removes.
+>
+> **C3b landed** (`014_drop_legacy_kodiak.sql`, plan §3 C3b): phase 6 — the
+> position/balance readers and validators moved onto
+> `exchange_positions`/`exchange_balances`, the venue sync repopulates them per
+> account, `exchange_account_id` became `NOT NULL`, and the four `kodiak_*`
+> tables were dropped. Acceptance: positions and balances display per account;
+> two accounts holding the same symbol both display correctly. Both tables were
+> empty before the acceptance run — the per-account rows are produced by the venue
+> sync on the first successful read, so their appearance is itself the evidence
+> that the sync runs.
+
 Phases 1-4 are prerequisites for the Lighter engine work (extended
 `ExchangeClient` + `LighterClient`); Phase 5 is what lets the engine trade a
 specifically chosen account.
@@ -371,10 +490,31 @@ that assume a surrounding transaction.
 
 ---
 
-## 9. Decisions needed
+## 9. Decisions
 
-1. **Migration strategy** — Option A (expand/contract) or Option B (clean cut)?
-2. **Username rules** — length/charset, reserved words, case-insensitive uniqueness, and whether it is changeable.
-3. **Email login during transition** — keep email + password working until social identities land, or switch to username-only immediately?
-4. **Wallet as login** — should a verified wallet also be usable as a login method, or stay link/verification only?
-5. **Default account** — with several accounts, is one marked default for quick bot creation, or must every bot explicitly choose?
+1. **Migration strategy** — **resolved: Option B (clean cut)**, staged C1-C3
+   ([plan §3](EXCHANGE_INTEGRATION_PLAN.md)). Test users only, so each slice is
+   a clean cut with no dual-write.
+2. **Username rules** — **resolved (C1):** 3-32 characters, lowercase
+   `[a-z0-9._-]`, case-insensitive uniqueness via a unique index on
+   `LOWER(username)`; optional at registration (derived from the email local
+   part, numeric-suffix de-duplication, when omitted); immutable for now.
+3. **Email login during transition** — **resolved (C1):** email + password
+   login is retained unchanged; `username` is an additive handle, not a login
+   credential yet. Email verification (and login-by-username / social
+   identities) is a later phase, built on `users.email_verified` and
+   `user_identities.verified_at`.
+4. **Wallet as login** — **deferred (D4).** Wallets stay link/verification
+   only; `user_identities` plus the deferred `DROP NOT NULL`s above are the
+   groundwork. C1 remains email-login-only.
+5. **Default account** — **resolved:** no default flag. Bot creation
+   auto-selects the account when the user has exactly one, and requires an
+   explicit pick otherwise (C3).
+6. **Bot unit of execution** — **decided (2026-09-27): the account session.** One
+   bot per `(user, exchange_accounts)` row running N strategies, with
+   `strategy_runs` as the per-strategy unit and **one live session per account**
+   (§4.4, plan §D). The current bot-per-strategy axis (and its
+   one-active-bot-per-strategy rule) is retained until `015` lands, then replaced.
+   Rationale: the account owns the credentials, balances, positions and
+   reconciliation state, and agents (plan §E) reason about an account's strategies
+   and its exposure — not about one strategy in isolation.

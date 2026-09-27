@@ -22,7 +22,6 @@ import { RoleManagementService } from "./auth/role-management.service.pure";
 import { RoleQualificationService } from "./auth/role-qualification.service";
 import { WalletQualificationService } from "./wallet/wallet-qualification.service.pure";
 import { UserProfileService } from "./user/user-profile.service";
-import { UserKodiakService } from "./user/user-kodiak.service";
 import { BotManagementService } from "./bots/bot-management.service";
 import { StrategyService } from "./strategies/strategy.service";
 import { MarketService } from "./market/market.service";
@@ -30,6 +29,7 @@ import { HealthService } from "./system/health.service.pure";
 import { PositionValidatorService } from "./strategies/position-validator.service.pure";
 import { PositionSyncService } from "./strategies/position-sync.service.pure";
 import { EngineManager } from "./strategies/engine-manager.service.pure";
+import type { ExchangeAccountService } from "./user/exchange-account.service";
 import { contextLogger } from "./logging";
 
 /**
@@ -192,21 +192,21 @@ export class ServiceProvider {
   }
 
   /**
-   * Get User Kodiak Service instance (strict - throws if unavailable)
+   * Get Exchange Account Service instance (strict - throws if unavailable)
    */
-  getUserKodiakService(): UserKodiakService {
-    const service = this.factory.getUserKodiakService();
+  getExchangeAccountService(): ExchangeAccountService {
+    const service = this.factory.getExchangeAccountService();
     if (!service) {
-      throw new Error("User Kodiak Service is unavailable");
+      throw new Error("Exchange Account Service is unavailable");
     }
     return service;
   }
 
   /**
-   * Get User Kodiak Service instance (safe - returns undefined if unavailable)
+   * Get Exchange Account Service instance (safe - returns undefined if unavailable)
    */
-  getUserKodiakServiceSafe(): UserKodiakService | undefined {
-    return this.factory.getUserKodiakService();
+  getExchangeAccountServiceSafe(): ExchangeAccountService | undefined {
+    return this.factory.getExchangeAccountService();
   }
 
   /**
@@ -346,7 +346,7 @@ export class ServiceProvider {
     positionSyncService: PositionSyncService | undefined;
     roleManagementService: RoleManagementService | undefined;
     userProfileService: UserProfileService | undefined;
-    userKodiakService: UserKodiakService | undefined;
+    exchangeAccountService: ExchangeAccountService | undefined;
     botManagementService: BotManagementService | undefined;
     strategyService: StrategyService | undefined;
     marketService: MarketService | undefined;
@@ -445,10 +445,10 @@ export const getUserProfileService = () =>
 export const getUserProfileServiceSafe = () =>
   serviceProvider.getUserProfileServiceSafe();
 
-export const getUserKodiakService = () =>
-  serviceProvider.getUserKodiakService();
-export const getUserKodiakServiceSafe = () =>
-  serviceProvider.getUserKodiakServiceSafe();
+export const getExchangeAccountService = () =>
+  serviceProvider.getExchangeAccountService();
+export const getExchangeAccountServiceSafe = () =>
+  serviceProvider.getExchangeAccountServiceSafe();
 
 export const getBotManagementService = () =>
   serviceProvider.getBotManagementService();

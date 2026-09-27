@@ -509,16 +509,17 @@ export const databaseValidators = {
     validateForeignKeys: true, // Validate user_id, strategy_id, bot_id exist
   }),
 
-  // Balance validation - matches kodiak_balances table constraints
-  balance: validateAgainstTable("kodiak_balances", {
+  // Balance validation - matches exchange_balances table constraints (C3b:
+  // per-account rows; ownership resolves via the exchange_accounts join)
+  balance: validateAgainstTable("exchange_balances", {
     errorPrefix: "Balance validation failed",
-    validateForeignKeys: true, // Validate user_id exists
+    validateForeignKeys: true, // Validate exchange_account_id exists
   }),
 
-  // Position validation - matches kodiak_positions table constraints
-  position: validateAgainstTable("kodiak_positions", {
+  // Position validation - matches exchange_positions table constraints (C3b)
+  position: validateAgainstTable("exchange_positions", {
     errorPrefix: "Position validation failed",
-    validateForeignKeys: true, // Validate user_id exists
+    validateForeignKeys: true, // Validate exchange_account_id exists
   }),
 };
 

@@ -74,7 +74,7 @@ and the engine both read it.
 npm install
 
 # Development — all services, or one at a time
-npm run dev             # backend + frontend + engine (concurrently)
+npm run dev             # sidecar + backend + frontend + engine (concurrently)
 npm run dev:backend     # http://localhost:3000
 npm run dev:frontend    # http://localhost:5173
 npm run dev:engine
@@ -86,7 +86,11 @@ npm run db:seed         # seed baseline data (optional)
 
 # Production
 npm run build           # builds shared → frontend → engine → backend
+npm run prod:all        # sidecar + backend (serves built frontend) + engine (concurrently, single host)
 npm run prod            # starts the built backend (serves the built frontend)
+npm run prod:engine     # starts the built engine (Redis Streams consumer)
+npm run prod:sidecar    # the Lighter signer sidecar — required for Lighter traffic
+                        # (bootstrap the venv once first: npm run dev:sidecar)
 ```
 
 `db:validate` (backend workspace) checks that runtime query validation still
@@ -101,12 +105,32 @@ development only.
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Service health            | `GET /api/system/health` (includes `controlPlane` for the Redis control bus)                                                             |
 | External traffic counters | `GET /api/system/metrics` → `external_traffic` (exchange requests, cache hits/misses, 429s, WebSocket connections, market subscriptions) |
-| Bot state                 | `GET /api/bot/status/:botId` (actual vs. desired state, staleness validation)                                                            |
+| Bot state                 | `GET /api/bot/management/status/:botId` (actual vs. desired state, staleness validation)                                                 |
 | Engine liveness           | `engine_registry` (last heartbeat, status); engines go `OFFLINE` after `ENGINE_HEARTBEAT_TIMEOUT_MS`                                     |
 | Lifecycle audit           | `bot_lifecycle_events` (transitions, credential issuance, reconciliation markers)                                                        |
 | Command tracking          | `bot_commands` (`PENDING` → confirmed, or `TIMED_OUT` with an error code)                                                                |
 | Stream backlog            | Warning logs from the pending-insight scan (stuck count, oldest stuck idle, poison ids)                                                  |
 | Structured logs           | Winston JSON logs with `correlationId` on every protocol message                                                                         |
+
+**Known gaps (2026-09-26 flow audit).** Full evidence in
+[PROJECT_REVIEW_GAP_ANALYSIS.md](PROJECT_REVIEW_GAP_ANALYSIS.md) §3 (findings
+L1–L10). Until those land, the logs below are trustworthy only within these
+limits:
+
+- `/api/auth/*` requests are **not** written to `http-*.log` and carry no
+  per-request context — they inherit the process's boot-time id. Correlate auth
+  traffic by timestamp and via `audit_logs` (L3).
+- Background work (Redis consumer, DB pool, WebSocket handshakes, shutdown)
+  shares that same boot-time `correlationId`, so its `operationDuration` counts
+  from process start — ignore the field for those lines (L8/L9).
+- A response line can carry a **concurrent** request's `correlationId` (1 in 63
+  on 2026-09-26) when the reply is written from the shared Kodiak queue — match a
+  pair by `method` + `url` before trusting the id (L7).
+- `ExchangeAccountService` (connect / verify / revoke) currently logs nothing:
+  its logger dependency is unwired in the service factory, so account operations
+  — successful and failed — appear **only** in `audit_logs` (L4/L5).
+- The graceful-shutdown tail (Phases 2–4 plus "completed") is not observable
+  today (L10).
 
 ---
 
@@ -172,7 +196,8 @@ have committed — so bringing the sidecar back can never reveal a
 double-placed order.
 
 1. Check health: `curl http://127.0.0.1:8790/health` → `{"status":"ok"}`.
-2. Restart it (see `sidecar/lighter-signer/README.md`). It holds no state and
+2. Restart it: dev stack `npm run dev:sidecar` (included in `npm run dev`),
+   or manual per `sidecar/lighter-signer/README.md`. It holds no state and
    no credentials: every request carries its own, and nonces are fetched from
    the venue per transaction, so a restart needs no resynchronisation.
 3. Already-resting orders stay resting at the venue while slots are frozen.
@@ -181,18 +206,63 @@ double-placed order.
 4. A _refused_ transaction (bad credentials, rejected tx) is not an outage:
    it surfaces as a non-retryable error and the bot goes to `ERROR`. Fix the
    credentials instead of restarting anything.
-5. The sidecar is only required when a bot selects `exchange: "lighter"`;
-   Kodiak/Orderly bots are unaffected by its absence.
+5. The sidecar is only required for `exchange: "lighter"` traffic: engine
+   order signing, Settings connect/verify, and the dashboard portfolio reads
+   of a Lighter account (its `auth-token` gates `GET /api/v1/account` /
+   `/api/v1/trades`). One shared loopback instance serves all of them — it
+   holds no per-account state, so there is never a reason to run more than
+   one. Kodiak traffic is unaffected by its absence.
 
 ### 5.8 Post-incident checklist
 
 1. Confirm order/fill/position state **at the exchange**.
-2. Confirm backend state: `GET /api/bot/status/:botId`, then `bot_lifecycle_events`
+2. Confirm backend state: `GET /api/bot/management/status/:botId`, then `bot_lifecycle_events`
    and `bot_commands` for the affected `correlationId`.
 3. Confirm the engine registry shows exactly one authoritative engine and epoch.
 4. Inspect the stream pending list for stuck/poison entries before re-enabling
    trading.
 5. Only then restart the bot.
+
+### 5.9 Bot or account data does not appear in the UI (post-C3 checklist)
+
+The panel is the primary surface for these flows again — the L1/L2/L11 mismatches
+(frontend calling the pre-`/management` paths, a kodiak-pinned portfolio, and
+kodiak-only portfolio endpoints) are all fixed. Reach for the API only when the UI
+disagrees with it.
+
+Routes the frontend actually calls (all under `/management`):
+
+| Action | Route                                     | Body / notes                                                                                                     |
+| ------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| List   | `GET /api/bot/management/instances`       | one row per bot, carrying its `exchangeAccountId`                                                                |
+| Start  | `POST /api/bot/management/start`          | `{ strategyId, exchangeAccountId, notionalAmount }` → **202**; account must be owned + `ACTIVE` (else 400/404) and the user VERIFIED (else 403) |
+| Stop   | `POST /api/bot/management/stop`           | `{ botId }`                                                                                                      |
+| Panic  | `POST /api/bot/management/emergency-stop` | `action: CANCEL_ALL_ORDERS \| CLOSE_POSITIONS \| FULL_SHUTDOWN`                                                   |
+
+Checklist when something is missing:
+
+1. Account exists, belongs to the user, and is ACTIVE:
+   `SELECT id, exchange, environment, status, verified_at FROM exchange_accounts WHERE user_id = …`.
+2. Bot row and its binding:
+   `SELECT id, desired_state, actual_state, exchange_account_id FROM bot_instances WHERE user_id = …`.
+   A UI showing "no bots" is **never** evidence that none exist — this query decides.
+3. The portfolio cards follow the Dashboard's account picker, which offers every
+   ACTIVE account of either venue; the balance/positions/trades reads carry
+   `?exchangeAccountId=`. Empty data for a Lighter account while the signer sidecar
+   is down is expected — see §5.7. Note the open L15 finding: the balance widget has
+   no error channel yet, so a failed read is indistinguishable from a zero balance
+   (positions and trades do surface their error).
+4. A bot cannot exist without an ACTIVE account: `exchange_account_id` has been
+   `NOT NULL` since migration `014`, and an account with bots bound cannot be
+   revoked — `DELETE /api/accounts/:id` answers **409** with `boundBots`.
+5. One active bot per strategy is enforced (a second start while the first is
+   STARTING/RUNNING returns 409). Stop the first bot, or start a bot for a
+   different strategy, before switching accounts.
+6. A strategy badge ("Active"/"Inactive") mirrors bot lifecycle: it is flipped when
+   a start/stop is dispatched and when the engine reports `RUNNING`/`STOPPED`/`ERROR`
+   (`strategies.active`). A stale badge next to a live bot means the best-effort
+   badge sync failed — check `bot_lifecycle_events` (and the logs for "Failed to
+   sync strategy active flag") before assuming the bot is dead.
 
 ---
 
@@ -224,10 +294,12 @@ mode.
 
 ## 7. Deployment
 
-- Build with `npm run build`, start with `npm run prod` (the backend serves the
-  built frontend from `frontend/dist`).
-- The engine is a separate process — deploy and supervise it independently so a
-  backend deploy cannot interrupt strategy execution.
+- Build with `npm run build`. On a single host, start everything with
+  `npm run prod:all` (sidecar + backend serving the built frontend from
+  `frontend/dist` + engine, as concurrently siblings).
+- For independent deploys, `npm run prod` / `npm run prod:engine` /
+  `npm run prod:sidecar` still work standalone — supervise the engine
+  separately so a backend deploy cannot interrupt strategy execution.
 - Give the engine a stable `ENGINE_STATE_FILE`: identity and epoch persistence is
   what lets the backend reject events from superseded processes.
 - Give the engine a persistent `GRID_SNAPSHOT_DIR`; today the snapshots are the

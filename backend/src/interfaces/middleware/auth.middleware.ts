@@ -28,6 +28,7 @@ import {
 } from "./auth-session-hydrator";
 import {
   AUTH_ERROR_CODES,
+  REFRESH_IN_PROGRESS_MESSAGE,
   isDefinitiveRefreshFailure,
 } from "./auth-error-codes";
 
@@ -76,7 +77,7 @@ async function retryTokenRefresh(
   if (mutexKey && !lockAcquired) {
     return {
       success: false,
-      message: "Token refresh already in progress",
+      message: REFRESH_IN_PROGRESS_MESSAGE,
     };
   }
 
@@ -170,11 +171,11 @@ async function retryTokenRefresh(
  * Preserves the "refresh already in progress" contract for concurrent requests.
  */
 function respondToFailedRefresh(res: Response, message?: string): void {
-  if (message === "Token refresh already in progress") {
+  if (message === REFRESH_IN_PROGRESS_MESSAGE) {
     res.status(401).json({
       success: false,
       code: AUTH_ERROR_CODES.REFRESH_FAILED,
-      message: "Token refresh already in progress",
+      message: REFRESH_IN_PROGRESS_MESSAGE,
     });
   } else if (isDefinitiveRefreshFailure(message)) {
     // Refresh token is definitively invalid/legacy (e.g. issued before the
@@ -196,6 +197,39 @@ function respondToFailedRefresh(res: Response, message?: string): void {
       message: "Unauthorized - token refresh failed after multiple attempts",
     });
   }
+}
+
+/**
+ * Log a failed refresh with the right level, wording and meta key.
+ *
+ * - The `mutex:refresh:<userId>` short-circuit is the documented behaviour of
+ *   the concurrency contract: `retryTokenRefresh()` fails fast (no retry loop
+ *   runs) and the client retries once the sibling request lands. It is logged
+ *   at `debug` so a healthy race cannot pollute `error-*.log`.
+ * - The meta key is `reason`, not `message`: winston appends a meta field named
+ *   `message` to the log message itself
+ *   (`node_modules/winston/lib/winston/logger.js`), which used to double the
+ *   entry into "Token refresh failed after retries Token refresh already in
+ *   progress" and lose the real value as a structured field.
+ */
+function logFailedRefresh(
+  result: { message?: string },
+  req: AuthenticatedRequest
+): void {
+  const meta = {
+    reason: result.message,
+    userId: req.user?.userId || "unknown",
+  };
+
+  if (result.message === REFRESH_IN_PROGRESS_MESSAGE) {
+    authLogger.debug(
+      "Token refresh skipped - another request holds the refresh mutex",
+      meta
+    );
+    return;
+  }
+
+  authLogger.error("Token refresh failed", undefined, meta);
 }
 
 /**
@@ -324,10 +358,7 @@ export async function authMiddleware(
         try {
           const refreshResult = await retryTokenRefresh(refreshToken, req);
           if (!refreshResult.success || !refreshResult.tokens) {
-            authLogger.error("Token refresh failed after retries", undefined, {
-              message: refreshResult.message,
-              userId: req.user?.userId || "unknown",
-            });
+            logFailedRefresh(refreshResult, req);
             respondToFailedRefresh(res, refreshResult.message);
             return;
           }
@@ -449,10 +480,7 @@ export async function authMiddleware(
         // Attempt to refresh the token with exponential backoff retry
         const refreshResult = await retryTokenRefresh(refreshToken, req);
         if (!refreshResult.success || !refreshResult.tokens) {
-          authLogger.error("Token refresh failed after retries", undefined, {
-            message: refreshResult.message,
-            userId: req.user?.userId || "unknown",
-          });
+          logFailedRefresh(refreshResult, req);
           respondToFailedRefresh(res, refreshResult.message);
           return;
         }

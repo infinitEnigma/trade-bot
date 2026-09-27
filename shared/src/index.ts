@@ -18,6 +18,8 @@ export enum UserRole {
 export interface User {
   id: string;
   email: string;
+  /** Handle added by the C1 identity redesign; derived from email when the user picks none. */
+  username: string;
   userLevel: UserLevel;
   roles?: UserRole[];
   createdAt: Date;
@@ -25,6 +27,8 @@ export interface User {
 }
 
 export interface UserRegistration {
+  /** Resolved (never blank) before persistence — AuthService derives it from email when omitted at the API. */
+  username: string;
   email: string;
   password: string;
 }
@@ -296,6 +300,12 @@ export { BotActualState, BotDesiredState } from "./protocol/bot-state";
 
 export * from "./types/engine-contract";
 export * from "./types/engine-credentials";
+
+// ============================================
+// Wallets & Exchange Accounts (C2 data-model contract)
+// ============================================
+
+export * from "./types/accounts";
 
 // ============================================
 // Frontend-Backend Integration Contract

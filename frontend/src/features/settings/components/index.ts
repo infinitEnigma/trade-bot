@@ -1,4 +1,6 @@
 /** @format */
 
 export { AccountOverview } from "./AccountOverview";
-export { KodiakCredentials } from "./KodiakCredentials";
+export { ConnectExchangeAccount } from "./ConnectExchangeAccount";
+export { ExchangeAccounts } from "./ExchangeAccounts";
+export { ConnectedWallets } from "./ConnectedWallets";

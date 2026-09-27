@@ -38,7 +38,8 @@ type StrategyFormData = z.infer<typeof strategySchema>;
 interface StrategyFormProps {
   strategy?: Strategy;
   onClose: () => void;
-  onSuccess: () => void;
+  /** `created` carries the freshly created strategy (create flow only). */
+  onSuccess: (created?: Strategy | null) => void;
 }
 
 const AVAILABLE_SYMBOLS = [
@@ -162,8 +163,8 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
         config,
       });
     },
-    onSuccess: () => {
-      onSuccess();
+    onSuccess: response => {
+      onSuccess(response?.data);
       reset();
     },
     onError: (error: unknown) => {

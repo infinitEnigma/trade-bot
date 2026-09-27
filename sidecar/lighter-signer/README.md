@@ -26,6 +26,7 @@ order) and generate authorization tokens without a native TS signer.
 | `POST /v1/create-order` | credentials + `market_index`, `client_order_index`, `base_amount`, `price`, `is_ask`, `order_type`, `time_in_force`, `reduce_only`, `trigger_price`, `order_expiry` | `{ok, tx_hash, client_order_index}` |
 | `POST /v1/cancel-order` | credentials + `market_index`, `order_index` (= the client order index)                                                                                              | `{ok, tx_hash, order_index}`        |
 | `POST /v1/auth-token`   | credentials + `deadline_seconds` (≤ 8h)                                                                                                                             | `{ok, token}`                       |
+| `POST /v1/verify-credentials` | credentials only                                                                                                                                              | `{ok}` / `{ok: false, error}`       |
 
 `base_amount` / `price` are **scaled integers** using the market's
 `supported_size_decimals` / `supported_price_decimals` from

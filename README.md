@@ -42,14 +42,14 @@ Users progress through three access levels. Progression is enforced server-side 
 | -------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | **BASIC**      | Email + password registration and login (no email verification)                                    | Public-source market data (prices, charts) and general dashboard pages         |
 | **REGISTERED** | Connect a wallet on the Dashboard and sign the welcome message (ownership verified by the backend) | Wallet-linked features; exchange credential setup (Settings) becomes available |
-| **VERIFIED**   | Add exchange (Kodiak) API credentials in Settings and have them verified by the backend            | Trading strategies, bot configuration, exchange-specific and private data      |
+| **VERIFIED**   | Add an exchange account (Kodiak or Lighter) in Settings and have it live-verified by the backend   | Trading strategies, bot configuration, exchange-specific and private data      |
 
 ```
 BASIC ──connect wallet + sign message──▶ REGISTERED ──verify exchange keys──▶ VERIFIED
 ```
 
-- Wallet signatures are verified server-side (`POST /api/user/verify-wallet`). The linked wallet is stored independently of exchange credentials (see the `wallet_addresses` migration).
-- Unlinking a wallet (`POST /api/user/unlink-wallet`) is an explicit, audited action that downgrades the account: `VERIFIED → REGISTERED`, `REGISTERED → BASIC`. Disconnecting the browser wallet session alone does **not** change the account level.
+- Wallet signatures are verified server-side (`POST /api/wallets/verify`; `POST /api/user/verify-wallet` is kept as a compat alias). Linked wallets live in the chain-aware `wallets` table (migration `012_wallets_exchange_accounts.sql`), independently of `exchange_accounts`.
+- Unlinking a wallet (`POST /api/wallets/:id/unlink`; `POST /api/user/unlink-wallet` is kept as a compat alias) is an explicit, audited action that downgrades the account: `VERIFIED → REGISTERED`, `REGISTERED → BASIC`. Disconnecting the browser wallet session alone does **not** change the account level.
 - BASIC users receive data from public sources only; REGISTERED and VERIFIED users additionally receive exchange-specific and private data.
 
 ---

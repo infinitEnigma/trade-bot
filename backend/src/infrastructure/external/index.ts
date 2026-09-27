@@ -16,7 +16,6 @@
  */
 
 // Export external integration services
-export { kodiakConnectionService } from "./kodiak-connection.service";
 export { kodiakIntegrationService } from "./kodiak-integration.service";
 
 // Export non-breaking traffic observer

@@ -73,6 +73,14 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
     strategy: Omit<Strategy, "id" | "createdAt" | "updatedAt">
   ): Promise<Strategy> {
     try {
+      // `active` is a lifecycle-derived badge, never a caller input: the CREATE
+      // route's Joi schema has no `active` field, so callers leave it undefined.
+      // Passing that straight into the INSERT stores NULL and bypasses the
+      // column's DEFAULT FALSE, while the shared `Strategy.active` contract is a
+      // non-nullable boolean (and `WHERE active = false` would miss the row).
+      // Resolving it here keeps "created" meaning "inactive" in one place.
+      const active = strategy.active ?? false;
+
       const result = await query<{
         id: string;
         created_at: string;
@@ -84,7 +92,7 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
           strategy.name,
           strategy.type,
           JSON.stringify(strategy.config),
-          strategy.active,
+          active,
         ]
       );
 
@@ -99,7 +107,9 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
         name: strategy.name,
         type: strategy.type,
         config: strategy.config,
-        active: strategy.active,
+        // Resolved above, so the returned strategy matches the persisted flag
+        // rather than echoing back the caller's omitted `undefined`.
+        active,
         created_at: row.created_at,
         updated_at: row.updated_at,
       }) as Strategy;

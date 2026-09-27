@@ -293,6 +293,24 @@ export class BotManagementService {
         "FORCE_STOPPING"
       );
 
+      // Strategy badge (Phase 2): an emergency stop ends the strategy's run.
+      // Best-effort — a badge failure never fails the stop itself.
+      try {
+        await this.deps.strategyRepository.toggleStrategy(
+          botInstance.strategy_id,
+          false
+        );
+      } catch (badgeError) {
+        this.deps.logger.warn("Failed to sync strategy active flag", {
+          strategyId: botInstance.strategy_id,
+          active: false,
+          error:
+            badgeError instanceof Error
+              ? badgeError.message
+              : String(badgeError),
+        });
+      }
+
       // Log emergency stop
       await this.deps.auditLogRepository.logEvent({
         userId,

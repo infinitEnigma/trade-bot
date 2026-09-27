@@ -69,6 +69,20 @@ jest.mock("../../../src/core/bots/bot-lifecycle.service", () => ({
   },
 }));
 
+// C3a: the start route validates the caller's bound ACTIVE account through the
+// adapter, and the credentials route resolves the bot's binding through
+// getBotBoundAccountSecrets. Both are mocked so the suites assert the routing,
+// not the SQL (which the adapter's own suite covers).
+jest.mock(
+  "../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter",
+  () => ({
+    exchangeAccountRepositoryAdapter: {
+      getAccountWithSecret: jest.fn(),
+    },
+    getBotBoundAccountSecrets: jest.fn(),
+  })
+);
+
 jest.mock("../../../src/core/strategies/engine-manager.service.pure", () => ({
   EngineManager: jest.fn().mockImplementation(() => ({
     ensureEngineRunning: jest.fn().mockResolvedValue(undefined),
@@ -270,8 +284,32 @@ describe("Bots Controller", () => {
     });
 
     describe("POST /api/bot/management/start", () => {
-      it("should start a bot instance", async () => {
-        const testStrategyId = "d290f1ee-6c54-4b01-90e6-d701748f0851";
+      const testStrategyId = "d290f1ee-6c54-4b01-90e6-d701748f0851";
+      const testExchangeAccountId = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
+
+      /** C3a: the route resolves + validates the bound account before starting. */
+      const mockBoundAccount = (status = "ACTIVE") => {
+        const {
+          exchangeAccountRepositoryAdapter,
+        } = require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter");
+        exchangeAccountRepositoryAdapter.getAccountWithSecret.mockResolvedValue(
+          {
+            id: testExchangeAccountId,
+            userId: "user-123",
+            exchange: "kodiak",
+            environment: "testnet",
+            accountRef: "kodiak-account-id",
+            status,
+            verifiedAt: null,
+            lastVerifiedAt: null,
+            meta: {},
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }
+        );
+      };
+
+      it("should start a bot bound to the chosen exchange account", async () => {
         const mockLifecycleResult = {
           botId: "test-bot-id",
           desiredState: "RUNNING",
@@ -289,10 +327,13 @@ describe("Bots Controller", () => {
         const query = require("../../../src/database/pool").query;
         query.mockResolvedValue({});
 
+        mockBoundAccount();
+
         const response = await request(app)
           .post("/api/bot/management/start")
           .send({
             strategyId: testStrategyId,
+            exchangeAccountId: testExchangeAccountId,
             notionalAmount: 1000.5,
           });
 
@@ -303,15 +344,70 @@ describe("Bots Controller", () => {
         expect(response.body.data.desiredState).toEqual("RUNNING");
         expect(response.body.data.actualState).toEqual("STARTING");
         expect(response.body.data.correlationId).toEqual("test-correlation-id");
+        // C3a: the account id reaches the lifecycle service, which writes it to
+        // bot_instances.exchange_account_id.
         expect(botLifecycleService.createAndStart).toHaveBeenCalledWith(
           "user-123",
           testStrategyId,
-          1000.5
+          1000.5,
+          testExchangeAccountId
         );
       });
 
+      it("should reject a start with no exchange account", async () => {
+        const {
+          botLifecycleService,
+        } = require("../../../src/core/bots/bot-lifecycle.service");
+
+        const response = await request(app)
+          .post("/api/bot/management/start")
+          .send({
+            strategyId: testStrategyId,
+            notionalAmount: 1000.5,
+          });
+
+        // The engine can never guess which account to trade.
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(botLifecycleService.createAndStart).not.toHaveBeenCalled();
+      });
+
+      it("should 404 an account the user does not own", async () => {
+        const {
+          exchangeAccountRepositoryAdapter,
+        } = require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter");
+        exchangeAccountRepositoryAdapter.getAccountWithSecret.mockResolvedValue(
+          null
+        );
+
+        const response = await request(app)
+          .post("/api/bot/management/start")
+          .send({
+            strategyId: testStrategyId,
+            exchangeAccountId: testExchangeAccountId,
+            notionalAmount: 1000.5,
+          });
+
+        expect(response.status).toBe(404);
+        expect(response.body.success).toBe(false);
+      });
+
+      it("should reject an account that is not ACTIVE", async () => {
+        mockBoundAccount("PENDING");
+
+        const response = await request(app)
+          .post("/api/bot/management/start")
+          .send({
+            strategyId: testStrategyId,
+            exchangeAccountId: testExchangeAccountId,
+            notionalAmount: 1000.5,
+          });
+
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+      });
+
       it("should return 404 when the strategy is not found", async () => {
-        const testStrategyId = "d290f1ee-6c54-4b01-90e6-d701748f0851";
         const notFoundError = new Error("Strategy not found");
         (notFoundError as Error & { statusCode?: number }).statusCode = 404;
 
@@ -320,10 +416,13 @@ describe("Bots Controller", () => {
         } = require("../../../src/core/bots/bot-lifecycle.service");
         botLifecycleService.createAndStart.mockRejectedValueOnce(notFoundError);
 
+        mockBoundAccount();
+
         const response = await request(app)
           .post("/api/bot/management/start")
           .send({
             strategyId: testStrategyId,
+            exchangeAccountId: testExchangeAccountId,
             notionalAmount: 1000.5,
           });
 
@@ -461,25 +560,13 @@ describe("Bots Controller", () => {
       });
     });
 
-    describe("GET /api/bot/management/engine/status", () => {
-      it("should return engine status", async () => {
-        const mockEngineStatus = {
-          running: true,
-          status: "healthy",
-        };
+    it("should 404 the retired duplicate management engine-status (L1)", async () => {
+      // Single canonical engine-status lives at /api/bot/engine/status.
+      const response = await request(app)
+        .get("/api/bot/management/engine/status")
+        .expect(404);
 
-        const engineManager =
-          require("../../../src/core/service-provider").serviceProvider.getEngineManager();
-        engineManager.getEngineStatus.mockResolvedValue(mockEngineStatus);
-
-        const response = await request(app)
-          .get("/api/bot/management/engine/status")
-          .expect(200);
-
-        expect(response.body.success).toBe(true);
-        expect(response.body.data).toEqual(mockEngineStatus);
-        expect(engineManager.getEngineStatus).toHaveBeenCalled();
-      });
+      expect(response.body.success).toBeFalsy();
     });
   });
 
@@ -545,7 +632,8 @@ describe("Bots Controller", () => {
     });
 
     describe("GET /api/bot/engine/credentials/:botId", () => {
-      it("should issue the exchange-agnostic kodiak envelope", async () => {
+      /** Queues the route's own queries: bot lookup, marker check, marker insert. */
+      const queueRouteQueries = () => {
         const query = require("../../../src/database/pool").query;
         query
           .mockResolvedValueOnce({
@@ -559,6 +647,24 @@ describe("Bots Controller", () => {
           }) // bot lookup
           .mockResolvedValueOnce({ rows: [] }) // no prior issuance
           .mockResolvedValueOnce({}); // issuance marker insert
+        return query;
+      };
+
+      it("should issue the bound account's exchange-agnostic kodiak envelope", async () => {
+        const query = queueRouteQueries();
+        const {
+          getBotBoundAccountSecrets,
+        } = require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter");
+        getBotBoundAccountSecrets.mockResolvedValue({
+          account: { environment: "testnet", accountRef: "kodiak-account-id" },
+          request: {
+            exchange: "kodiak",
+            environment: "testnet",
+            accountId: "kodiak-account-id",
+            apiKey: "api-key",
+            secretKey: "secret-key",
+          },
+        });
 
         const response = await request(app)
           .get("/api/bot/engine/credentials/bot-1?correlationId=corr-1")
@@ -566,17 +672,88 @@ describe("Bots Controller", () => {
           .expect(200);
 
         expect(response.body.success).toBe(true);
-        // Workstream A envelope: the discriminator + per-venue payload.
+        // Workstream A envelope, built from the bot's BOUND account (C3a) —
+        // not the user's first kodiak row.
         expect(response.body.data).toEqual({
           exchange: "kodiak",
-          environment: expect.stringMatching(/^(testnet|mainnet)$/),
-          accountRef: "test-value",
+          environment: "testnet",
+          accountRef: "kodiak-account-id",
           credentials: {
-            accountId: "test-value",
-            accessKey: "test-value",
-            secretKey: "test-value",
+            accountId: "kodiak-account-id",
+            accessKey: "api-key",
+            secretKey: "secret-key",
           },
         });
+        expect(getBotBoundAccountSecrets).toHaveBeenCalledWith(
+          "bot-1",
+          expect.any(Object)
+        );
+        // The at-most-once marker is still written after a successful issue.
+        expect(query).toHaveBeenCalledWith(
+          expect.stringContaining("CREDENTIALS_ISSUED"),
+          ["bot-1", "corr-1"]
+        );
+      });
+
+      it("should issue a lighter envelope from a lighter-bound bot", async () => {
+        queueRouteQueries();
+        const {
+          getBotBoundAccountSecrets,
+        } = require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter");
+        getBotBoundAccountSecrets.mockResolvedValue({
+          account: { environment: "testnet", accountRef: "7" },
+          request: {
+            exchange: "lighter",
+            environment: "testnet",
+            accountIndex: 7,
+            apiKeyIndex: 3,
+            privateKey: "0xdeadbeef",
+          },
+        });
+
+        const response = await request(app)
+          .get("/api/bot/engine/credentials/bot-2?correlationId=corr-2")
+          .set("x-bot-engine-key", "test-engine-key")
+          .expect(200);
+
+        expect(response.body.data).toEqual({
+          exchange: "lighter",
+          environment: "testnet",
+          accountRef: "7",
+          credentials: {
+            accountIndex: 7,
+            apiKeyIndex: 3,
+            privateKey: "0xdeadbeef",
+          },
+        });
+      });
+
+      it("should 409 an unbound legacy bot instead of trading the wrong account", async () => {
+        const query = require("../../../src/database/pool").query;
+        query
+          .mockResolvedValueOnce({
+            rows: [
+              {
+                user_id: "user-123",
+                desired_state: "RUNNING",
+                actual_state: "RUNNING",
+              },
+            ],
+          }) // bot lookup
+          .mockResolvedValueOnce({ rows: [] }); // no prior issuance
+
+        const {
+          getBotBoundAccountSecrets,
+        } = require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter");
+        getBotBoundAccountSecrets.mockResolvedValue(null);
+
+        const response = await request(app)
+          .get("/api/bot/engine/credentials/bot-3?correlationId=corr-3")
+          .set("x-bot-engine-key", "test-engine-key")
+          .expect(409);
+
+        expect(response.body.success).toBe(false);
+        expect(response.body.error).toContain("no verified exchange account");
       });
     });
 

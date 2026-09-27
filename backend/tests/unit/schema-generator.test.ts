@@ -368,8 +368,9 @@ describe("SchemaGenerator", () => {
       expect(allSchemas["strategies"]).toBeDefined();
       expect(allSchemas["bot_instances"]).toBeDefined();
       expect(allSchemas["trades"]).toBeDefined();
-      expect(allSchemas["kodiak_balances"]).toBeDefined();
-      expect(allSchemas["kodiak_positions"]).toBeDefined();
+      // C3b: generic per-account tables replaced kodiak_balances/kodiak_positions
+      expect(allSchemas["exchange_balances"]).toBeDefined();
+      expect(allSchemas["exchange_positions"]).toBeDefined();
 
       // Verify the generated schemas are Joi objects
       Object.values(allSchemas).forEach(schema => {
