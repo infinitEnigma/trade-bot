@@ -293,6 +293,80 @@ reuses the existing version-aware encryption service.
 
 ---
 
+### 4.4 Bot account sessions — bot = account, N strategies (decided 2026-09-27, planned as plan §D)
+
+Today a bot **is** a running strategy: `bot_instances.strategy_id` is `NOT NULL`, a
+`BotRuntime` holds one strategy plus one `StrategyRunner`, the grid snapshot is
+`<botId>.json`, and only one bot per strategy may be active at a time. That axis
+was right for a single-strategy engine; it is the wrong one for a platform where a
+user runs several strategies, where agents are expected to reason about an
+account, and where the **account** is the risk boundary.
+
+**Decision:** the unit becomes the **account session** — one bot per
+`(user, exchange_accounts)` row, running **N strategies** concurrently.
+
+```
+users ──< exchange_accounts ──< bot_instances        (session: desired/actual_state)
+                                     └──< strategy_runs (bot_id, strategy_id, state, sizing)
+strategies ──────────────────────────┘
+```
+
+```sql
+-- 015_bot_account_sessions.sql (planned)
+ALTER TABLE bot_instances
+  DROP COLUMN strategy_id;                       -- a session is not a strategy
+
+CREATE UNIQUE INDEX bot_instances_one_live_per_account
+  ON bot_instances (exchange_account_id)
+  WHERE actual_state IN ('STARTING', 'RUNNING'); -- one live session per account
+
+CREATE TABLE strategy_runs (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bot_id          UUID NOT NULL REFERENCES bot_instances(id) ON DELETE CASCADE,
+  strategy_id     UUID NOT NULL REFERENCES strategies(id) ON DELETE CASCADE,
+  config_version  INTEGER NOT NULL DEFAULT 1,    -- audit of what this run executed
+  config          JSONB NOT NULL,                -- copied at attach time
+  notional_amount NUMERIC NOT NULL,              -- per-run sizing; account cap on the session
+  state           VARCHAR(10) NOT NULL DEFAULT 'STOPPED'
+                  CHECK (state IN ('STOPPED','STARTING','RUNNING','STOPPING','ERROR')),
+  last_error_code VARCHAR(64),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (bot_id, strategy_id)
+);
+
+CREATE UNIQUE INDEX strategy_runs_one_active_per_strategy
+  ON strategy_runs (strategy_id)
+  WHERE state IN ('STARTING', 'RUNNING');        -- a strategy runs in one session only
+```
+
+Backfill: one run per existing bot (they are 1:1 today), keeping each bot's
+`strategy_id` — test users only, so the cut is clean as in C1–C3b.
+
+Why this shape:
+
+- **A `strategy_runs` table, not a JSONB array on the session** — a run owns its
+  config snapshot, sizing, state and error, and (with the P1 durable ledger) its
+  fill attribution. `strategies.active` stops being a write-once flag written by
+  the lifecycle and becomes derived: "does this strategy have a running run?".
+- **One live session per account replaces one-active-bot-per-strategy.** The
+  account owns the exchange connection, the credential envelope, the position and
+  balance rows and (N3/N4) the reconciliation state — two sessions on one account
+  would fight over exactly that state.
+- **Credentials and portfolio reads do not change.** One account per session means
+  one envelope per bot (what C3a already issues — and *one* fetch instead of one
+  per strategy), and `exchange_positions` / `exchange_balances` are already keyed
+  by `exchange_account_id` (C3b), so a session's portfolio view is that account's
+  rows — also the natural read model for an agent.
+
+Engine-side consequences (plan §D): `START_BOT` becomes the session command, a new
+`START_STRATEGY` / `STOP_STRATEGY` pair addresses a run inside a live session,
+`BotRuntime.strategies` becomes a map of runs each with its own `StrategyRunner`,
+snapshots move to `<botId>/<runId>.json`, and `BotStatus` reports runs rather than
+a single strategy.
+
+---
+
 ## 5. Derived semantics (must be centralised)
 
 | Concept            | Rule                                                                                                                                                                                                                                                                                             |
@@ -377,14 +451,20 @@ _Benefit:_ no compatibility layer, roughly half the work.
 
 > **C3a landed** (`013_bot_account_binding.sql`, plan §3 C3a): phase 5 — a bot
 > binds to one ACTIVE `exchange_accounts` row and `/credentials/:botId` issues
-> that row's envelope.
+> that row's envelope. The acceptance property is **per-bot credential identity**
+> (flow run recorded in the gap analysis §4), not concurrency: a bot is currently
+> a running strategy, so the same strategy on two accounts means two bots created
+> sequentially — the coupling §4.4 removes.
 >
 > **C3b landed** (`014_drop_legacy_kodiak.sql`, plan §3 C3b): phase 6 — the
 > position/balance readers and validators moved onto
 > `exchange_positions`/`exchange_balances`, the venue sync repopulates them per
 > account, `exchange_account_id` became `NOT NULL`, and the four `kodiak_*`
 > tables were dropped. Acceptance: positions and balances display per account;
-> two accounts holding the same symbol both display correctly.
+> two accounts holding the same symbol both display correctly. Both tables were
+> empty before the acceptance run — the per-account rows are produced by the venue
+> sync on the first successful read, so their appearance is itself the evidence
+> that the sync runs.
 
 Phases 1-4 are prerequisites for the Lighter engine work (extended
 `ExchangeClient` + `LighterClient`); Phase 5 is what lets the engine trade a
@@ -430,3 +510,11 @@ that assume a surrounding transaction.
 5. **Default account** — **resolved:** no default flag. Bot creation
    auto-selects the account when the user has exactly one, and requires an
    explicit pick otherwise (C3).
+6. **Bot unit of execution** — **decided (2026-09-27): the account session.** One
+   bot per `(user, exchange_accounts)` row running N strategies, with
+   `strategy_runs` as the per-strategy unit and **one live session per account**
+   (§4.4, plan §D). The current bot-per-strategy axis (and its
+   one-active-bot-per-strategy rule) is retained until `015` lands, then replaced.
+   Rationale: the account owns the credentials, balances, positions and
+   reconciliation state, and agents (plan §E) reason about an account's strategies
+   and its exposure — not about one strategy in isolation.

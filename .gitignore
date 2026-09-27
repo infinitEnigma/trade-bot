@@ -76,3 +76,6 @@ engine/coverage/
 # Debug files
 backend/debug/.engine-state.json
 engine/.engine-state.json
+# Engine runtime artifacts when it is started from the repo root (see `npm run prod:engine`)
+.engine-state.json
+.grid-snapshots/

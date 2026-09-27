@@ -1,6 +1,6 @@
 # Exchange Integration & Data Model — Execution Plan
 
-**Status:** A, B and C executed — **C1 (identity), C2 (wallets + exchange accounts) and C3 (bot→account binding + per-account data tables) landed**.
+**Status:** A, B and C executed — **C1 (identity), C2 (wallets + exchange accounts) and C3 (bot→account binding + per-account data tables) landed**; **D (bot account sessions) and E (agent participation) are designed and not implemented** (§D, §E).
 **Companion docs:** [DATA_MODEL.md](DATA_MODEL.md) (target schema + why),
 [PROJECT_REVIEW_GAP_ANALYSIS.md](PROJECT_REVIEW_GAP_ANALYSIS.md) (ledger),
 [ARCHITECTURE.md](ARCHITECTURE.md) (current design),
@@ -17,11 +17,18 @@ B. Lighter engine adapter      (2-3 d)  ── verified against testnet (Phase 0
         │
 C1. identity (username handle) (1 d)    ── DB Option B, PR 1 of 3  ✅ landed
 C2. wallets + exchange accounts(1.5 d)  ── PR 2 of 3  (adapter-based credentials) ✅ landed
-C3. bot→account + data tables  (1 d)    ── PR 3 of 3  (engine gets a real account)
+C3. bot→account + data tables  (1 d)    ── PR 3 of 3  (engine gets a real account) ✅ landed
+        │
+D. bot account sessions        (2-3 d)  ── bot = one exchange account, N strategies  ⬜ designed
+        │
+E. agent participation         (1.5-2 d)── advisor → coordinator → executor, engine stays the only executor  ⬜ designed
 ```
 
-A and B are **engine-side**; C is **backend/DB**. C3 is the only step that
-changes what A's contract is fed from — the engine must not need edits then.
+A and B are **engine-side**; C is **backend/DB**; D changes the schema *and* the
+engine runtime; E is a new backend read/command surface with delegated grants. C3 is
+the only step that changes what A's contract is fed from — the engine must not need
+edits then. D simplifies that further: the account session is the credential unit, so
+one fetch serves every run inside it.
 
 ---
 
@@ -216,19 +223,27 @@ different revert costs, so each must be independently releasable and revertible.
   Workstream A); `DELETE /api/accounts/:id` answers 409 while bots are bound
   (FK RESTRICT); the frontend picks the account (and notional size) before
   starting.
-- **Acceptance:** the same strategy started on two different accounts runs two
-  bots, and each engine credential fetch receives its own account's envelope;
-  an unbound legacy bot gets 409 instead of trading the wrong account; revoking
-  an account with bound bots is refused with a clear 409.
-- **Status (2026-09-26):** the backend side is in place and unit-tested, but the
-  acceptance run still cannot be performed from the UI: the frontend calls
-  `/api/bot/{instances,start,stop,emergency-stop}` while the management routes are
-  mounted under `/management` (`bots/index.ts:21`), so all four 404 (observed four
-  times in `http-2026-09-26.log`, `11:14:25-32`). Decision: repoint the frontend
-  and correct the docs instead of aliasing the routes (see
-  [PROJECT_REVIEW_GAP_ANALYSIS.md](PROJECT_REVIEW_GAP_ANALYSIS.md) L1). The
-  Dashboard also pins the portfolio to a **kodiak** account (L2), so a bot bound
-  to a Lighter account would not even be visible until that lands.
+- **Acceptance:** a bot binds to exactly one owned **ACTIVE**
+  `exchange_accounts` row and `/credentials/:botId` issues **that row's own**
+  envelope (kodiak or lighter) — the property C3a establishes is per-bot credential
+  identity, not concurrency. The same strategy traded on two accounts therefore
+  produces two bots, each carrying its own account's envelope; they are created
+  **sequentially** today, because a bot *is* a running strategy and only one bot per
+  strategy may be active at a time (`findActiveBotForStrategy` → 409). Trading
+  several strategies for one account concurrently is the account-session model in
+  §D. Negatives: a foreign or non-ACTIVE account is refused (404/400), and revoking
+  an account with bots bound is refused with a clear 409 (`boundBots`). An *unbound*
+  bot cannot exist: migration `014` made `bot_instances.exchange_account_id`
+  `NOT NULL` and its guard refuses to run while any bot is unbound, so the pre-C3a
+  "unbound legacy bot" is a historical state rather than a reachable one (the
+  `/credentials` 409 for it remains as defence in depth).
+- **Status (2026-09-27):** the blockers recorded on 2026-09-26 are all resolved — L1
+  (the frontend called `/api/bot/{instances,start,stop,emergency-stop}` while the
+  routes are mounted under `/management`, so all four 404'd), L2 (the Dashboard
+  pinned the portfolio to a kodiak account) and L11 (the portfolio endpoints were
+  kodiak-only, so a connected Lighter account rendered empty). The acceptance run
+  and its evidence are recorded in
+  [PROJECT_REVIEW_GAP_ANALYSIS.md](PROJECT_REVIEW_GAP_ANALYSIS.md) §4.
 
 #### C3b — positions/balances generalisation (✅ landed)
 
@@ -262,6 +277,125 @@ different revert costs, so each must be independently releasable and revertible.
 
 ---
 
+## D. Bot account sessions — bot = account, N strategies (design; not implemented)
+
+**Goal:** the unit of execution becomes the **exchange account**, not the strategy:
+one bot per `(user, exchange_accounts)` row, running **N strategies** at once.
+Schema, rationale and the decision record: [DATA_MODEL.md](DATA_MODEL.md) §4.4 and
+its §9.
+
+Why this axis: the account already owns everything account-shaped — the credential
+envelope (C3a), the position/balance rows and the venue sync (C3b), the exchange
+connection, and the order-reconciliation state the N3/N4 work has to own. Today a
+second strategy on the same account means a second bot, a second credential fetch
+and a second reconciler pointed at the same account. Collapsing that is cheaper,
+and it is also the shape agents need (§E).
+
+### D1 — schema (`015_bot_account_sessions.sql`)
+
+| Change        | Detail                                                                                                                                                          |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bot_instances` | drop `strategy_id`; the session identity is `(user_id, exchange_account_id)`; partial unique index `bot_instances_one_live_per_account` on `exchange_account_id` `WHERE actual_state IN ('STARTING','RUNNING')` |
+| `strategy_runs` (new) | `(bot_id, strategy_id, config, config_version, notional_amount, state, last_error_code)` exactly as sketched in DATA_MODEL §4.4, with `UNIQUE(bot_id, strategy_id)` plus a partial unique index (`strategy_id` in one live run) |
+| Backfill      | one run per existing bot (1:1 today) carrying its `strategy_id` and notional; test users only, so a clean cut like C1-C3b                                      |
+| Guard         | refuse the migration while any bot's `strategy_id` belongs to another user, mirroring the `014` guard style                                                      |
+
+### D2 — backend
+
+| File | Change |
+| ---- | ------ |
+| `core/bots/lifecycle/bot-lifecycle.repository.ts` | `findActiveBotForStrategy` → `findLiveSessionForAccount`; `insertBotInstance` drops `strategyId`; `strategy_runs` attach/detach/state accessors |
+| `core/bots/lifecycle/bot-command-dispatcher.ts` | `START_BOT` becomes the session command; new `START_STRATEGY` / `STOP_STRATEGY` carry `runId` |
+| `core/bots/bot-lifecycle.service.ts` | `createAndStart(userId, exchangeAccountId, runs[])`, plus `startStrategy` / `stopStrategy` per run; session state stays CAS-guarded |
+| `core/bots/lifecycle/strategy-active-sync.ts` | deleted — `strategies.active` becomes derived ("has a live run") and the four call sites go with it |
+| `interfaces/http/bots/management.ts` | `POST /start { exchangeAccountId, runs: [{ strategyId, notionalAmount }] }`, `POST /runs`, `DELETE /runs/:runId`; `GET /instances` returns sessions with their runs |
+| `interfaces/http/bots/engine.ts` | unchanged — the envelope is already issued per bound account |
+| `interfaces/http/trading/market-portfolio.routes.ts` | unchanged — the readers are already account-keyed (C3b) |
+
+### D3 — engine
+
+| File | Change |
+| ---- | ------ |
+| `shared/src/types/engine-contract.ts` | `START_STRATEGY` / `STOP_STRATEGY` commands; `BotStatus.runs[]`; `START_BOT` no longer carries `strategyId` |
+| `engine/src/domain/bot-runtime.ts` | `runs: Map<runId, { strategyId, strategy, stopTick }>` instead of a single `strategy` |
+| `engine/src/application/bot-manager.ts` | one credential fetch and one exchange client per session; a runtime, runner and snapshot per run |
+| `engine/src/application/strategy-runner.ts` | unchanged apart from being keyed by `runId` |
+| `engine/src/infrastructure/state/grid-state.ts` | snapshot path `<botId>/<runId>.json`, with a read fallback for the legacy `<botId>.json` |
+
+### D4 — frontend
+
+- Strategies: "Start" becomes **attach to a session** — pick the account once,
+  attach/detach strategies, per-run size; the badge follows the run state.
+- Bots: the account session becomes first-class (one card per account with its
+  runs, aggregate PnL and per-run state).
+- `getBotForStrategy` / `useBotLifecycle` (today `bot.strategy_id === …`) resolve
+  through runs.
+
+**Acceptance:** two strategies attached to one account session run concurrently
+through a single credential fetch and a single exchange connection; detaching one
+leaves the other running; the same strategy cannot be attached to two live sessions
+(409); a second session on the same account is refused (409, partial unique index);
+`strategies.active` reflects run state with no write path; two runs' grid snapshots
+stay independent across an engine restart.
+
+**Estimate:** 2-3 days, staged D1 schema → D2 backend → D3 engine runtime → D4 UI,
+each independently releasable as C1-C3 were.
+
+---
+
+## E. Agent participation — advisor → coordinator → executor (design; not implemented)
+
+**Goal:** let external agents (LLM-driven or otherwise) participate in trading
+**without ever touching the order path**. Three escalating stages, each a separate
+capability, so a user can adopt one and ignore the next. Nothing here is a new
+abstraction over the engine: an agent's actions are the commands a user can already
+issue, gated by a grant and audited.
+
+| Stage | Capability | Acts how |
+| ----- | ---------- | -------- |
+| **Advisor** | read one account session: positions, balances, runs, PnL, fills and the lifecycle event trail | writes `agent_proposals` only — inert until the user approves |
+| **Coordinator** | the above plus attach/detach strategies and set run sizing **within user-approved bounds** | issues `START_STRATEGY` / `STOP_STRATEGY` through `BotLifecycleService`, audit-stamped with its agent id |
+| **Executor** | — | the engine *is* the executor: an agent never signs, never holds credentials and never sends a venue request |
+
+### E1 — identity, delegation, audit
+
+| File | Change |
+| ---- | ------ |
+| `shared/src/index.ts` | `UserRole` gains `AGENT_ADVISOR` / `AGENT_COORDINATOR`, ranked below `QUALIFIED_ALPHA` |
+| `016_agent_participation.sql` (planned) | `agents (id, owner_user_id, name, kind, status)`, `agent_grants (agent_id, user_id, exchange_account_id, capability, max_notional, expires_at, revoked_at)`, `agent_proposals (id, agent_id, bot_id, payload JSONB, status, decided_by, decided_at)`, `agent_actions (id, agent_id, grant_id, action, payload JSONB, result JSONB, created_at)` |
+| `interfaces/http/agents/*.ts` (new) | service-token auth in the style of `botEngineAuth`; every route resolves a **grant** and refuses without one |
+| audit | every agent action is recorded like `bot_lifecycle_events`, carrying `agent_id` and the user it acted for |
+
+### E2 — read surface (advisor)
+
+Wraps what C3b/C3 already produces: `GET /api/market/{positions,balance,trades}?exchangeAccountId=`,
+session/run state, the lifecycle trail, and (once ledger row 4 lands) fills. The
+agent reads the **account-scoped** view, which is why §D is a prerequisite — an
+advisor's unit of reasoning is the session, not a strategy in isolation.
+
+### E3 — proposal and approval flow
+
+`agent_proposals` do nothing until a user approves them; the approval is recorded in
+`agent_actions` and executed through the same lifecycle service a human command
+uses. A coordinator's unattended actions are bounded by `agent_grants`
+(`capability`, `max_notional`, `expires_at`) and refused once the grant is revoked.
+
+**Guardrails (extends §0):** credentials never leave the backend — agents see
+aggregates, never envelopes; no agent writes `bot_instances` / `strategy_runs`
+directly, only through `BotLifecycleService`; every capability is scoped to one
+account and expires.
+
+**Acceptance:** an advisor token reads one granted account's session and cannot read
+another account's; a proposal has no effect until approved; a coordinator grant with
+`max_notional: 500` cannot attach a run sized 5000 (403 + audit row); revoking the
+grant denies the next call immediately; no agent credential or envelope ever appears
+in a log.
+
+**Estimate:** 1.5-2 days for E1-E3 (advisor + proposal/approval), with coordinator
+capabilities on top.
+
+---
+
 ## 4. Interlocks and ordering rules
 
 | Rule                                                             | Why                                                                                   |
@@ -272,6 +406,9 @@ different revert costs, so each must be independently releasable and revertible.
 | C1 → C2 → C3, one PR each, in that order                         | each slice is independently releasable and revertible                                 |
 | C2 depends on nothing in B; C3 depends on B and A                | C can start any time after A if Lighter work is paused                                |
 | Ledger rows updated in the same commit as the code they describe | CONTRIBUTING rule                                                                     |
+| D lands before E (agents)                                        | an agent's unit of reasoning is the account session, not a strategy — building E on the bot-per-strategy axis would only need re-scoping later |
+| D lands after C3 but before the N3/N4 reconciliation work        | reconciliation state becomes per account, so the session should own it — otherwise the reconciler is built twice |
+| E must not add venue or engine paths                             | an agent action is an existing lifecycle command behind a grant; the engine keeps its single control plane |
 
 ## 5. Risks and mitigations
 
@@ -285,6 +422,11 @@ different revert costs, so each must be independently releasable and revertible.
 | Sidecar downtime                                              | `UNREACHABLE` ⇒ slot freeze; health probe + OPERATIONS runbook entry                                                 |
 | C1 breaks many auth suites at once                            | Slice is self-contained (legacy exchange tables untouched); run the suite and update expectations in the same PR     |
 | Dropping vendor tables in C3 while something still reads them | Grep gate + integration suite before the drop; the drop is its own statement at the end of the migration             |
+| Drops `bot_instances.strategy_id` while readers still use it  | Grep gate (`strategy_id` in backend + engine + frontend) plus the suites before the drop; staged D1→D2 so the drop is its own statement, as with the `014` table drops |
+| `<botId>.json` snapshots orphaned by the `<botId>/<runId>.json` layout | D3 reads the legacy path as a fallback during the transition and the fallback is removed in its own commit with a note in OPERATIONS |
+| One live session per account blocks a legitimate use case (e.g. a hedge across strategies) | The session, not the account, owns the cap: extra exposure is expressed as another run inside the same session, never as a second session on one account |
+| Agent capability creep (an advisor quietly becoming an executor) | Separate roles with explicit, expiring grants; no agent code path reaches the signer or an exchange client; every action lands in `agent_actions` |
+| A workspace's build output is never *loaded*, so a config change ships broken (L17) | Every acceptance run starts each process with its documented command (`npm run prod`, `npm run prod:engine`, the sidecar) before any UI check, so a load failure surfaces in minutes rather than at the first bot start |
 
 ## 6. Estimates
 
@@ -295,6 +437,8 @@ different revert costs, so each must be independently releasable and revertible.
 | C1   | identity (username login, identities)               | 1 d      |
 | C2   | wallets + exchange accounts (+ adapters, UI)        | 1.5 d    |
 | C3   | bot → account binding + data tables                 | 1 d      |
+| D    | bot account sessions (schema → backend → engine → UI) | 2-3 d  |
+| E    | agent participation (identity/grants + read + proposals) | 1.5-2 d |
 
 ## 7. Definition of done (per step)
 
@@ -305,3 +449,9 @@ different revert costs, so each must be independently releasable and revertible.
 4. Ledger row in `PROJECT_REVIEW_GAP_ANALYSIS.md` §4 moved to ✅ with the commit
    reference, and `OPERATIONS.md` runbooks updated when behaviour changes
    (sidecar down, account revoked, credential source swap).
+5. Acceptance claims that depend on a live venue are recorded as a run (date,
+   environment, evidence) rather than asserted — the D and E steps inherit the
+   §4 batch-verification pattern.
+6. Agent-facing work (E): every capability scoped to one account and expiring, every
+   action audited, and no credential, envelope or venue request reachable from an
+   agent payload.

@@ -87,6 +87,8 @@ npm run db:seed         # seed baseline data (optional)
 # Production
 npm run build           # builds shared → frontend → engine → backend
 npm run prod            # starts the built backend (serves the built frontend)
+npm run prod:engine     # starts the built engine (Redis Streams consumer)
+npm run dev:sidecar     # the Lighter signer sidecar — required for Lighter traffic
 ```
 
 `db:validate` (backend workspace) checks that runtime query validation still
@@ -219,24 +221,46 @@ double-placed order.
    trading.
 5. Only then restart the bot.
 
-### 5.9 Dashboard shows no bots, or a connected account does not appear (C3 UI pitfalls)
+### 5.9 Bot or account data does not appear in the UI (post-C3 checklist)
 
-Two known mismatches between the UI and the API (audit findings L1/L2). Until
-they land, drive the API directly instead of trusting the panel:
+The panel is the primary surface for these flows again — the L1/L2/L11 mismatches
+(frontend calling the pre-`/management` paths, a kodiak-pinned portfolio, and
+kodiak-only portfolio endpoints) are all fixed. Reach for the API only when the UI
+disagrees with it.
 
-- **`GET /api/bot/instances` answers 404** because the frontend still calls the
-  pre-`/management` paths. The served paths are
-  `GET /api/bot/management/instances`,
-  `POST /api/bot/management/start` `{ strategyId, exchangeAccountId, notionalAmount }`
-  (202; the account must be owned + `ACTIVE`, else 400/404),
-  `POST /api/bot/management/stop` `{ botId }`, and
-  `POST /api/bot/management/emergency-stop`. A UI showing "no bots" is therefore
-  **not** evidence that none exist — check the table:
-  `SELECT id, desired_state, actual_state, exchange_account_id FROM bot_instances WHERE user_id = …`.
-- **A newly connected venue account is invisible in the Dashboard portfolio**: it
-  defaults to the first ACTIVE **kodiak** account (so a Lighter account only shows
-  up in Settings). Confirm ownership and state directly:
-  `SELECT id, exchange, environment, status, verified_at FROM exchange_accounts WHERE user_id = …`.
+Routes the frontend actually calls (all under `/management`):
+
+| Action | Route                                     | Body / notes                                                                                                     |
+| ------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| List   | `GET /api/bot/management/instances`       | one row per bot, carrying its `exchangeAccountId`                                                                |
+| Start  | `POST /api/bot/management/start`          | `{ strategyId, exchangeAccountId, notionalAmount }` → **202**; account must be owned + `ACTIVE` (else 400/404) and the user VERIFIED (else 403) |
+| Stop   | `POST /api/bot/management/stop`           | `{ botId }`                                                                                                      |
+| Panic  | `POST /api/bot/management/emergency-stop` | `action: CANCEL_ALL_ORDERS \| CLOSE_POSITIONS \| FULL_SHUTDOWN`                                                   |
+
+Checklist when something is missing:
+
+1. Account exists, belongs to the user, and is ACTIVE:
+   `SELECT id, exchange, environment, status, verified_at FROM exchange_accounts WHERE user_id = …`.
+2. Bot row and its binding:
+   `SELECT id, desired_state, actual_state, exchange_account_id FROM bot_instances WHERE user_id = …`.
+   A UI showing "no bots" is **never** evidence that none exist — this query decides.
+3. The portfolio cards follow the Dashboard's account picker, which offers every
+   ACTIVE account of either venue; the balance/positions/trades reads carry
+   `?exchangeAccountId=`. Empty data for a Lighter account while the signer sidecar
+   is down is expected — see §5.7. Note the open L15 finding: the balance widget has
+   no error channel yet, so a failed read is indistinguishable from a zero balance
+   (positions and trades do surface their error).
+4. A bot cannot exist without an ACTIVE account: `exchange_account_id` has been
+   `NOT NULL` since migration `014`, and an account with bots bound cannot be
+   revoked — `DELETE /api/accounts/:id` answers **409** with `boundBots`.
+5. One active bot per strategy is enforced (a second start while the first is
+   STARTING/RUNNING returns 409). Stop the first bot, or start a bot for a
+   different strategy, before switching accounts.
+6. A strategy badge ("Active"/"Inactive") mirrors bot lifecycle: it is flipped when
+   a start/stop is dispatched and when the engine reports `RUNNING`/`STOPPED`/`ERROR`
+   (`strategies.active`). A stale badge next to a live bot means the best-effort
+   badge sync failed — check `bot_lifecycle_events` (and the logs for "Failed to
+   sync strategy active flag") before assuming the bot is dead.
 
 ---
 

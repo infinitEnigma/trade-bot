@@ -469,8 +469,10 @@ anything.
 
 `toggleStrategy` existed on both `StrategyService` and the repository adapter but
 **had no caller**: no HTTP route, no UI control, and the bot lifecycle never touched
-it. Rows were created with the DB default `active = FALSE`, so the badge was
-structurally stuck regardless of what the bot did. Separately, the create flow had
+it. Rows were created inactive and the badge was structurally stuck regardless of
+what the bot did — and `active` was actually stored as **NULL**, not `FALSE`: the
+create path passed an omitted field straight into the INSERT and bypassed the
+column's default (L16, found and fixed while preparing the acceptance run). Separately, the create flow had
 no transition into "running": "start" is starting a *bot* bound to the strategy
 (C3a), and nothing offered that right after creation.
 
@@ -497,6 +499,15 @@ instance, not one per strategy.
 Fix: `scripts/dev-sidecar.sh` (venv bootstrap + `.env` load so `SIDECAR_AUTH_TOKEN`
 matches) exposed as `npm run dev:sidecar` and folded into the root `npm run dev`;
 OPERATIONS §5.7 documents the shared-singleton model and what depends on it.
+
+**Verified 2026-09-27 — the loader could not work at all in this environment.** The
+repo `.env` is authored with CRLF line endings, and the loader sourced it under
+`set -e`: a bare `\r` line is a command-not-found that aborts the script (exit 127)
+before uvicorn ever starts. The second half was worse and silent — a sourced
+`SIDECAR_AUTH_TOKEN=…\r` never matches the value Node's dotenv loads (dotenv strips
+CRLF, `source` does not), so had it started, every Lighter call would have been
+rejected as unauthorised. The loader now strips CR before sourcing and when deriving
+the port. `curl http://127.0.0.1:8790/health` → `{"status":"ok","service":"lighter-signer"}`.
 
 #### L14 — 🟡 P2: the frontend reconnects in a loop after `WS_AUTH_FAILED`
 
@@ -530,6 +541,58 @@ swallows the error either way). The real fix is an error channel through
 `globalBalanceManager` → `useBalance` → the Balance widget, plus a venue-neutral
 message — a focused follow-up rather than a half-fix.
 
+#### L16 — 🟡 P2: `strategies.active` was inserted as NULL, bypassing the column default
+
+Found while preparing the C3a/C3b acceptance run: both existing strategy rows held
+`active = NULL`, and a fresh create produced the same. Cause:
+`strategySchema` (Joi, `interfaces/http/trading/strategies.ts`) has no `active` key,
+so the validated value has none either, while
+`strategy-repository.adapter.createStrategy` listed `active` explicitly in the
+INSERT — `strategy.active` is `undefined` at runtime, node-postgres sends that as
+NULL, and the column's `DEFAULT FALSE` therefore never applied.
+
+Impact: nothing looked broken (NULL is falsy, so the badge still read "Inactive"),
+but the shared `Strategy.active: boolean` contract was false for those reads and any
+`WHERE active = false` filter would have missed every row — which is exactly the
+predicate a "my inactive strategies" view would use.
+
+Fix: resolve the flag in the adapter (`strategy.active ?? false`) for both the INSERT
+and the returned strategy, plus a regression test asserting that an omitted `active`
+persists `false`. The two existing rows keep NULL and self-correct on the next
+start/stop; no backfill is needed.
+
+#### L17 — 🔴 P0: the engine process could not start at all (and never had, in this environment)
+
+Found while preparing the C3a acceptance run — which needs a live engine to consume
+`START_BOT`. Both documented start paths fail on Node 24:
+
+- `npm run dev:engine` (`ts-node-dev --respawn --transpile-only src/index.ts`) and
+  `npm run prod:engine` (`node dist/index.js`) →
+  `Cannot find module '…/infrastructure/redis/streams' … at node:internal/modules/esm/resolve`
+- `node dist/index.js` also reports `[MODULE_TYPELESS_PACKAGE_JSON] … Reparsing as ES
+  module because module syntax was detected`.
+
+Cause: `engine/tsconfig.json` combined `module: ES2022` with
+`moduleResolution: bundler` in a package that has no `"type": "module"`. tsc
+therefore emitted ESM syntax with **extensionless** relative specifiers
+(`from "./infrastructure/redis/streams"`), which Node's ESM resolver rejects. The
+test suites kept passing because ts-jest resolves those specifiers itself — this was
+a *load* failure, invisible to type-checking and to unit tests.
+
+Evidence it had never run: no `.engine-state.json` and no `.grid-snapshots/` anywhere
+on the host, consistent with `bot_instances` being empty. Every "engine" line in the
+audit logs is backend-side protocol bookkeeping, not engine output.
+
+Fix: align the engine with the backend's proven configuration — `module: commonjs`,
+`moduleResolution: node`, plus `baseUrl`/`paths` for `@trade-bot/shared`'s
+declarations (the package exposes its types through an `exports` map that plain `node`
+resolution cannot read, which the backend already works around the same way). Verified:
+`npm run prod:engine` boots the process — Redis connected, consumer group created,
+identity `kodiak-engine-ae3a82ee` + heartbeat, "Listening for commands". The one
+ESM-only production dependency (`@noble/ed25519`, used by the Kodiak client) loads
+under Node 24's `require(esm)`, checked directly. `npm run build` is unaffected; the
+engine suite stays green.
+
 ---
 
 ## 4. Remediation ledger
@@ -549,7 +612,7 @@ Phases 6–7 lock it in.
 | 5     | 🟠 P1    | **Accounting correctness (N6).** Sell at the next level / take-profit, PnL from executed price with fees, `reduce_only` exits, position reconciliation from exchange positions, explicit `PARTIALLY_FILLED` handling                                                                                                                                                                                                                                                                                                             | ⬜                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 6     | 🟡 P2    | **Failure-injection harness.** Fake exchange with scripted failures (accept-then-drop, timeout, 500, `NOT_FOUND`, duplicate-key rejection, partial fill) and a test matrix: crash at each point around submission, Redis down/restart, restart with/without/corrupt snapshot, exchange-side orphans                                                                                                                                                                                                                              | ⬜                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 7     | 🟡 P2    | **Documentation split and drift removal.** `README` = what the system is today; `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, this tracker; track `docs/*.md` while keeping `docs/archived/` and `docs/instructions/` untracked; fix badges, dead paths, and the stale ratings table; document engine env vars in `.env.example`                                                                                                                                                                                                 | ✅ (this pass; N8/N9 closed)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| 8     | 🔴 P0    | **Identity & accounts data model** — many wallets and many exchange accounts per user, username (nick) login instead of email, exchange-agnostic credential envelopes, and a bot → exchange-account binding so the engine knows which account to trade. Blocks multi-account trading: `/credentials/:botId` can only return one account today. Design: [DATA_MODEL.md](DATA_MODEL.md); staged PRs **C1** identity, **C2** wallets + exchange accounts, **C3a** bot→account binding, **C3b** data tables: [plan §3](EXCHANGE_INTEGRATION_PLAN.md) | ✅ **C1, C2, C3a and C3b landed** — `users.username` + `user_identities` (C1) and `wallets` + `exchange_accounts` + adapters + UI (C2, migration `012_wallets_exchange_accounts.sql`); legacy tables dropped; single `UserLevelService` authority; Settings multi-wallet and multi-venue accounts wired. **C3a** bot-account binding landed (migration `013_bot_account_binding.sql`): bots carry `exchange_account_id`, `/credentials/:botId` serves that bound account's envelope (kodiak + lighter), revoking an account with bots bound is refused (409), and the start flow requires an explicit account. **C3b** (positions/balances per account, then the `kodiak_*` drops) landed (migration `014_drop_legacy_kodiak.sql`): position/balance readers and schema validators moved onto `exchange_positions`/`exchange_balances` (ownership via `exchange_accounts` join), the venue sync (`exchange-snapshot.adapter`) repopulates them per account from live reads, `GET /api/market/{positions,balance,trades}` accept `?exchangeAccountId=` with account-keyed caches and the Dashboard picker pins display to the selected account, `bot_instances.exchange_account_id` is `NOT NULL`, and `kodiak_accounts`/`kodiak_positions`/`kodiak_balances`/`kodiak_statistics` are dropped (grep gate: zero `kodiak_positions\|kodiak_balances` hits under `backend/src`) |
+| 8     | 🔴 P0    | **Identity & accounts data model** — many wallets and many exchange accounts per user, username (nick) login instead of email, exchange-agnostic credential envelopes, and a bot → exchange-account binding so the engine knows which account to trade. Blocks multi-account trading: `/credentials/:botId` can only return one account today. Design: [DATA_MODEL.md](DATA_MODEL.md); staged PRs **C1** identity, **C2** wallets + exchange accounts, **C3a** bot→account binding, **C3b** data tables: [plan §3](EXCHANGE_INTEGRATION_PLAN.md) | ✅ **C1, C2, C3a and C3b landed** — `users.username` + `user_identities` (C1) and `wallets` + `exchange_accounts` + adapters + UI (C2, migration `012_wallets_exchange_accounts.sql`); legacy tables dropped; single `UserLevelService` authority; Settings multi-wallet and multi-venue accounts wired. **C3a** bot-account binding landed (migration `013_bot_account_binding.sql`): bots carry `exchange_account_id`, `/credentials/:botId` serves that bound account's envelope (kodiak + lighter), revoking an account with bots bound is refused (409), and the start flow requires an explicit account. **C3b** (positions/balances per account, then the `kodiak_*` drops) landed (migration `014_drop_legacy_kodiak.sql`): position/balance readers and schema validators moved onto `exchange_positions`/`exchange_balances` (ownership via `exchange_accounts` join), the venue sync (`exchange-snapshot.adapter`) repopulates them per account from live reads, `GET /api/market/{positions,balance,trades}` accept `?exchangeAccountId=` with account-keyed caches and the Dashboard picker pins display to the selected account, `bot_instances.exchange_account_id` is `NOT NULL`, and `kodiak_accounts`/`kodiak_positions`/`kodiak_balances`/`kodiak_statistics` are dropped (grep gate: zero `kodiak_positions\|kodiak_balances` hits under `backend/src`). Acceptance run and evidence: §4 batch verification (2026-09-27). Follow-ups designed: plan §D (bot account sessions) and §E (agent participation) |
 | 9     | 🔴 P0    | **Credential-contract slice (workstream A)** — `EngineCredentials` discriminated union in `shared`, backend `/credentials/:botId` returns `{ exchange, environment, accountRef, credentials }`, engine client factory selects by exchange. Stops the Orderly-shaped contract being baked further before Lighter lands: [plan §1](EXCHANGE_INTEGRATION_PLAN.md)                                                                                                                                                                   | ✅                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 10    | 🔴 P0    | **Lighter engine adapter (workstream B)** — extend `ExchangeClient` (open-order listing, by-client-order-id lookup that separates NOT_FOUND from UNREACHABLE, confirming cancel, HTTP timeouts), `TransactionSigner` + sidecar client, `LighterClient` encoding the Phase-0-verified status/market/cancel semantics, strategy decoupled from `OrderlyClient`: [plan §2](EXCHANGE_INTEGRATION_PLAN.md)                                                                                                                            | ✅ **B1-B5 complete** (B1 `ExchangeClient` extension + Kodiak timeouts, B2 `TransactionSigner` + sidecar client, B3 `LighterClient` with Phase-0 status/market/int64-id semantics, B4 strategy + BotRuntime on the `ExchangeClient` interface, factory routes lighter; B5 fake-exchange Jest matrix + env-gated testnet smoke **green 2026-09-22** — market resolve → resting order → query by client index → `getOrder` → polling-confirmed cancel, all through the engine's own client. B5 live findings also fixed and pinned by tests: human-unit row mapping (price/qty), OPEN-first row selection over multiple rows per index, active-listing-first liveness, client-index order handle for cancel/`getOrder`. Sidecar runbook: OPERATIONS §5.7) |
 | –     | 🟢 P3    | **Do not** add further abstraction beyond `OrderManager` / `OrderReconciliationService`; **do not** split the `shared` package yet; **no** frontend work                                                                                                                                                                                                                                                                                                                                                                         | –                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -577,6 +640,8 @@ can be repeated meaningfully.
 | L13 | 🟡 P2    | Lighter signer sidecar: `scripts/dev-sidecar.sh` + `npm run dev:sidecar` folded into `npm run dev`; document the shared-singleton model and its three consumers                                    | ✅ Done  |
 | L14 | 🟡 P2    | WS client retries in a loop after `WS_AUTH_FAILED` (stop the timer, refresh the token once, then retry)                                                                                            | ⬜ Open  |
 | L15 | 🟡 P2    | Give the balance widget an error channel (`globalBalanceManager` → `useBalance` → UI) and drop the 400/403→"not connected" mask + venue-neutral message                                                                                            | ⬜ Open  |
+| L16 | 🟡 P2    | `strategies.active` was inserted as NULL (the Joi schema omits the key, the INSERT passed it explicitly, so the column default never applied): resolve to `false` in the adapter + regression test                                                        | ✅ Done  |
+| L17 | 🔴 P0    | The engine process could not start (`module: ES2022` + `moduleResolution: bundler` in a typeless package → ESM emit with extensionless specifiers → `ERR_MODULE_NOT_FOUND`; ts-jest hid it): emit CommonJS like the backend, add the `@trade-bot/shared` `paths` entry, and prove it with `npm run prod:engine` | ✅ Done  |
 
 Batch verification: re-run the manual flow (login → dashboard → settings → connect
 Lighter → strategies → create grid strategy → start a bot on the Lighter account →
@@ -709,6 +774,8 @@ Findings from a security-focused code review, prioritized per severity:
 | ✅ Done  | **2026-09-26/27 batch (L11–L13)** | Venue-dispatched portfolio reads + the Lighter reader, the `strategies.active` lifecycle sync + post-create start prompt, and the dev-stack signer sidecar — resolved; see §3 findings and §4. |
 | 🟠 P1    | **2026-09-26 batch (L5–L10)** | Lighter connect visibility, registration-duplicate log hygiene, response correlation under concurrency, ambient/background context leaks, shutdown observability.                    |
 | 🟡 P2    | **2026-09-27 batch (L14–L15)** | WS client reconnect loop after `WS_AUTH_FAILED`; and the balance widget's missing error channel (the 400/403→"not connected" mask now hides only genuine failures).                    |
+| 🟠 P1    | **Bot account sessions (plan §D)** | The unit of execution becomes `(user, exchange_accounts)` with `strategy_runs` inside it: one credential fetch, one exchange connection and one reconciler per account, which is also the shape the L5–L10-adjacent reconciliation work (N3/N4) needs. Designed, not implemented — [DATA_MODEL.md](DATA_MODEL.md) §4.4, [plan §D](EXCHANGE_INTEGRATION_PLAN.md). |
+| 🟡 P2    | **Agent participation (plan §E)** | Advisor → coordinator → executor on delegated, expiring grants scoped to one account, with proposals inert until a user approves them and the engine as the only executor. Designed, not implemented — [plan §E](EXCHANGE_INTEGRATION_PLAN.md). |
 
 ### How to keep this document honest
 
