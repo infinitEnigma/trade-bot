@@ -91,6 +91,30 @@ in the evidence column; the engine suite was re-run green (3 suites / 19 tests).
 | 12  | README mixes review history into product docs                  | ✅ Confirmed, plus extra drift    | see N8, N9                                                                                                                                                            |
 | 13  | Add failure-injection / integration tests                      | ✅ Agreed                         | engine tests mock the exchange client entirely today                                                                                                                  |
 
+### Verification of the 2026-09-27 review (commit `f40f02a`)
+
+Verified 2026-09-27 against `main` @ `f40f02a` (the `feat/db-redesign-c-identity`
+merge; engine-spawn fix `a811c77` on top) by reading the sources named in the
+evidence column. Findings the same day's live start/stop test added are L18–L19
+in §3.
+
+| #   | Reviewer claim                                                       | Verdict                                  | Evidence |
+| --- | -------------------------------------------------------------------- | ---------------------------------------- | -------- |
+| 1   | 🔴 P0 — dual lifecycle authority: `interfaces/http/bots/engine.ts` writes bot state outside `BotLifecycleService` | ✅ Confirmed — but the writers are dead code today | `/heartbeat` (`engine.ts:99`), `/report-trade` (`:330`), `/bot-error` (`:534`), `/bot-recovery` (`:579`) UPDATE `bot_instances` directly (`:356`, `:550`, `:595`), yet a repo grep finds **zero callers in `engine/`** — liveness flows via `ENGINE_HEARTBEAT` events → `engine-registry.service.ts:222`. Remove or route through the lifecycle service (execution-integrity batch) |
+| 2   | 🟠 P1 — credential issuance is not idempotent (check-then-insert)     | ✅ Confirmed                              | `engine.ts:220-224` SELECTs the `CREDENTIALS_ISSUED` marker, `:303-307` INSERTs it; no unique constraint on `bot_lifecycle_events(bot_id, event_type, correlation_id)` (plain insert at `bot-lifecycle.repository.ts:99`), so two concurrent engine fetches can both pass the check |
+| 3   | 🟠 P1 — the `report-trade` write path is weak                        | ✅ Confirmed (extends N7)                 | raw `INSERT INTO trades` taking `userId`/`strategyId` from the request body (`engine.ts:356`), `UPDATE bot_instances … WHERE strategy_id` (strategy-, not bot-scoped), no unique `trades(order_id)`; still zero engine callers |
+| 4   | 🟠 P1 — position/balance readers are user-scoped, not account-scoped | ✅ Confirmed, partly mitigated by C3b     | `position-repository.adapter.ts:58-62` documents the userId-only interface answering with the "most recently updated row"; account-keyed reads exist only via the portfolio routes / `exchange-snapshot.adapter` |
+| 5   | Account binding + lifecycle validation on start/stop                 | ✅ Confirmed                              | `bot-lifecycle.service.ts` `start`/`stop`/`createAndStart`: ownership checks, owned + `ACTIVE` account binding, desired/actual CAS transitions |
+| 6   | Migration `014_drop_legacy_kodiak.sql` guards the legacy drop        | ✅ Confirmed                              | idempotent backfill → `RAISE EXCEPTION` while any bot is still unbound (`014:41-55`) → `SET NOT NULL`; the drops are gated by grep/empty/FK checks documented in the header |
+| 7   | Credential endpoint flow (`GET /credentials/:botId`, at-most-once marker) | ✅ Confirmed                          | `engine.ts:184` behind `botEngineAuth` (bot-scoped API key); the marker race is claim 2 |
+| 8   | Credentials are write-only in the API contract                       | ✅ Confirmed                              | `shared/src/types/accounts.ts:46-49` — responses never include them |
+| 9   | Account snapshot replace semantics                                   | ✅ Confirmed                              | `exchange-snapshot.adapter.ts:44-101`: `DELETE` + bulk `INSERT … ON CONFLICT` inside one `transaction`; an empty venue report clears the snapshot |
+| 10  | 🟡 P2 — `kodiak_status` in `user_trading_summary`                    | ✅ Confirmed; dead column                 | migration `012_wallets_exchange_accounts.sql:138` recomputes it from `exchange_accounts`; a repo grep finds no code consumer |
+
+The reviewer's recommended next PR — execution-integrity hardening (heartbeat
+authority → credential idempotency → trade idempotency → bot-scoped stats →
+account-scoped position/balance) — is queued **after** L18/L19; see §4 and §6.
+
 ---
 
 ## 3. Findings the 2026-09-20 review missed
@@ -593,6 +617,60 @@ ESM-only production dependency (`@noble/ed25519`, used by the Kodiak client) loa
 under Node 24's `require(esm)`, checked directly. `npm run build` is unaffected; the
 engine suite stays green.
 
+#### L18 — 🔴 P0: the engine silently ACKs `BOT_START`/`BOT_STOP` — dispatch uses legacy guards (the `ENGINE_NO_RESPONSE` root cause)
+
+Found in the 2026-09-27 `npm run prod:all` start/stop test. Start returns 202,
+the command reaches `tradebot:engine:commands` and is consumed (XPENDING → 0),
+but no engine log line follows; after ~135 s the backend logs
+`Lifecycle command timed out … timeoutReason: ENGINE_NO_RESPONSE` and the bot
+lands in `actual_state = ERROR` (2026-09-27 20:39:33, bot `c7147374`,
+`app-2026-09-27.log:2678`).
+
+Cause: backend and engine disagree about the command type.
+
+- The dispatcher publishes protocol envelopes with `type: "BOT_START"` /
+  `"BOT_STOP"` (`backend/src/core/bots/lifecycle/bot-command-dispatcher.ts:39,61`).
+- `command-consumer.ts:93` validates with the **protocol** `isBotCommand`
+  (`shared/src/protocol/bot-command.ts:119`), which accepts `BOT_START` — so
+  the message is not rejected as malformed.
+- The dispatch branches, however, use the **legacy** guards `isStartBotCommand`
+  / `isStopBotCommand` (`engine/src/protocol/command-consumer.ts:133,149` →
+  `shared/src/types/engine-contract.ts:331,346`), which require the flat
+  pre-protocol shape `type === "START_BOT"` / `"STOP_BOT"` with `engineId`,
+  `timestamp`, `credentials`. A protocol envelope can never match.
+- `handleCommand` therefore falls through every branch, returns, and
+  `processMessage` ACKs the command (`command-consumer.ts:107-109`) — no
+  `COMMAND_ACCEPTED`, no `handleStart`, no error. The grep shows this consumer
+  is the last remaining user of the legacy guards.
+
+Fix (next task): switch the two branches to the protocol `isBotStartCommand` /
+`isBotStopCommand` (`shared/src/protocol/bot-command.ts:128,138`), drop the
+legacy imports, and add the engine's first consumer test (`BOT_START` →
+`handleStart` + `publishAccepted`; `BOT_STOP` → `handleStop`; unknown type →
+warn + ACK). Rebuild `engine/dist`, re-run the start/stop flow.
+
+#### L19 — 🟠 P1: Stop returns 404 "Bot not found" — the bot-instances cache stores `strategy_id` as `id`
+
+Same test, 2026-09-27 20:41:06: `POST /api/bot/management/stop` → **404**
+(`logs/http-2026-09-27.log:367-368`; error thrown at
+`bot-lifecycle.service.ts:529-534`), although the bot row exists and is owned
+by the caller.
+
+Cause: the frontend discards the real bot id at read time. The shared
+`["bot-instances"]` cache maps each row with `id: bot.strategy_id`
+(`frontend/src/features/bots/hooks/useBotLifecycle.ts:125`; the same mapping in
+`strategyService.ts:166`) — a legacy "one strategy ⇒ one bot" convention kept
+alive by the `bot.id === botId || bot.strategy_id === botId` fallbacks
+(`useBotLifecycle.ts:181,247`). `BotControls.tsx:338` then sends
+`stopBot(bot!.id)`, i.e. `{"botId": "<strategy uuid>"}` — the logged 48-byte
+body is exactly `{"botId":"<36-char uuid>"}` (strategy `735ad508…` ≠ bot
+`c7147374…`) — and `findBot(<strategy uuid>)` returns null → 404. The emergency
+stop (`BotControls.tsx:357`) is broken the same way.
+
+Fix: map `id: bot.id` (keep `strategy_id`), audit every `bot.id` consumer, and
+pin the contract with a frontend test asserting the stop payload equals the
+`id` returned by `/api/bot/management/instances`.
+
 ---
 
 ## 4. Remediation ledger
@@ -642,6 +720,8 @@ can be repeated meaningfully.
 | L15 | 🟡 P2    | Give the balance widget an error channel (`globalBalanceManager` → `useBalance` → UI) and drop the 400/403→"not connected" mask + venue-neutral message                                                                                            | ⬜ Open  |
 | L16 | 🟡 P2    | `strategies.active` was inserted as NULL (the Joi schema omits the key, the INSERT passed it explicitly, so the column default never applied): resolve to `false` in the adapter + regression test                                                        | ✅ Done  |
 | L17 | 🔴 P0    | The engine process could not start (`module: ES2022` + `moduleResolution: bundler` in a typeless package → ESM emit with extensionless specifiers → `ERR_MODULE_NOT_FOUND`; ts-jest hid it): emit CommonJS like the backend, add the `@trade-bot/shared` `paths` entry, and prove it with `npm run prod:engine` | ✅ Done  |
+| L18 | 🔴 P0    | Engine dispatch uses the legacy `isStartBotCommand`/`isStopBotCommand` guards (`shared/src/types/engine-contract.ts:331,346`), so protocol `BOT_START`/`BOT_STOP` envelopes fall through `handleCommand` and are silently ACKed → `ENGINE_NO_RESPONSE`: switch `engine/src/protocol/command-consumer.ts` to protocol `isBotStartCommand`/`isBotStopCommand`, add the first engine consumer test, rebuild `engine/dist` | ⬜ Open — **next issue** |
+| L19 | 🟠 P1    | Stop/emergency-stop 404: the `bot-instances` cache maps `id: bot.strategy_id` (`useBotLifecycle.ts:125`, `strategyService.ts:166`), so `/management/stop` receives the strategy UUID and `findBot` 404s: map `id: bot.id`, audit every `bot.id` consumer, pin with a frontend test | ⬜ Open  |
 
 Batch verification: re-run the manual flow (login → dashboard → settings → connect
 Lighter → strategies → create grid strategy → start a bot on the Lighter account →
@@ -658,6 +738,11 @@ on the Dashboard, require **non-empty** balance / positions / trades (i.e.
 before; a freshly created strategy shows the **"Start now?"** prompt, and after a
 start its badge reads **Active** and returns to **Inactive** after stop; no
 `UserProgressCard` on the Strategies page; `npm run dev` brings up the sidecar.
+
+Batch verification (2026-09-27, L18–L19): with `npm run prod:all`, Start must
+yield `STATE_CHANGED → RUNNING` with no `ENGINE_NO_RESPONSE`, and Stop /
+emergency stop from the Strategies card must return **202** with the request's
+`botId` equal to the `id` returned by `GET /api/bot/management/instances`.
 
 ---
 
@@ -776,6 +861,8 @@ Findings from a security-focused code review, prioritized per severity:
 | 🟡 P2    | **2026-09-27 batch (L14–L15)** | WS client reconnect loop after `WS_AUTH_FAILED`; and the balance widget's missing error channel (the 400/403→"not connected" mask now hides only genuine failures).                    |
 | 🟠 P1    | **Bot account sessions (plan §D)** | The unit of execution becomes `(user, exchange_accounts)` with `strategy_runs` inside it: one credential fetch, one exchange connection and one reconciler per account, which is also the shape the L5–L10-adjacent reconciliation work (N3/N4) needs. Designed, not implemented — [DATA_MODEL.md](DATA_MODEL.md) §4.4, [plan §D](EXCHANGE_INTEGRATION_PLAN.md). |
 | 🟡 P2    | **Agent participation (plan §E)** | Advisor → coordinator → executor on delegated, expiring grants scoped to one account, with proposals inert until a user approves them and the engine as the only executor. Designed, not implemented — [plan §E](EXCHANGE_INTEGRATION_PLAN.md). |
+| 🔴 P0    | **2026-09-27 test blockers (L18–L19)** | The engine silently ACKs `BOT_START`/`BOT_STOP` (legacy guards → `ENGINE_NO_RESPONSE`), and stop 404s because the frontend cache keeps `strategy_id` as `id`. **L18 is the next issue to address** — see §3/§4.                          |
+| 🟠 P1    | **Execution integrity (verified review of `f40f02a`)** | After L18/L19: retire or re-route the dead `engine.ts` lifecycle writers, credential idempotency (unique index + `ON CONFLICT`), trade idempotency + bot-scoped stats, account-scoped position/balance readers — verdicts in §2.      |
 
 ### How to keep this document honest
 
