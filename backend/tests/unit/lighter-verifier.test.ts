@@ -42,7 +42,6 @@ function axiosError(status: number, data?: unknown) {
   };
 }
 
-
 describe("LighterAccountVerifier", () => {
   it("verifies when the account exists and the venue accepts the key", async () => {
     const { venue, sidecar } = mockClients();
@@ -214,5 +213,107 @@ describe("LighterAccountVerifier", () => {
     expect(result.error?.length).toBeLessThanOrEqual(360);
     expect(result.error).not.toContain(CREDENTIALS.privateKey);
   });
-});
 
+  describe("L5 venue-aware logging", () => {
+    const mockLogger = () => ({ info: jest.fn(), warn: jest.fn() });
+    const logged = (logger: ReturnType<typeof mockLogger>) =>
+      JSON.stringify([...logger.info.mock.calls, ...logger.warn.mock.calls]);
+
+    it("narrates both live steps with the venue, environment and timings", async () => {
+      const { venue, sidecar } = mockClients();
+      venue.get.mockResolvedValue({ data: { accounts: [{}] } });
+      sidecar.post.mockResolvedValue({ data: { ok: true } });
+      const logger = mockLogger();
+      const verifier = new LighterAccountVerifier(
+        { sidecarUrl: "http://127.0.0.1:8790" },
+        { clients: { venue, sidecar }, logger }
+      );
+
+      await verifier.verify(CREDENTIALS);
+
+      expect(logger.info).toHaveBeenCalledWith(
+        "Lighter credentials verified",
+        expect.objectContaining({
+          exchange: "lighter",
+          environment: "testnet",
+          accountIndex: 404,
+          apiKeyIndex: 4,
+          accountLookupMs: expect.any(Number),
+          keyOwnershipMs: expect.any(Number),
+          durationMs: expect.any(Number),
+        })
+      );
+      expect(logger.warn).not.toHaveBeenCalled();
+      expect(logged(logger)).not.toContain(CREDENTIALS.privateKey);
+    });
+
+    it("names the venue and the failing step when the key is rejected", async () => {
+      const { venue, sidecar } = mockClients();
+      venue.get.mockResolvedValue({ data: { accounts: [{}] } });
+      sidecar.post.mockResolvedValue({
+        data: { ok: false, error: "private key does not match" },
+      });
+      const logger = mockLogger();
+      const verifier = new LighterAccountVerifier(
+        { sidecarUrl: "http://127.0.0.1:8790" },
+        { clients: { venue, sidecar }, logger }
+      );
+
+      const result = await verifier.verify(CREDENTIALS);
+
+      expect(result.verified).toBe(false);
+      expect(logger.warn).toHaveBeenCalledWith(
+        "Lighter verification failed - key ownership",
+        expect.objectContaining({
+          exchange: "lighter",
+          environment: "testnet",
+          step: "key-ownership",
+          durationMs: expect.any(Number),
+          reason: expect.stringContaining("private key does not match"),
+        })
+      );
+      expect(logger.info).not.toHaveBeenCalled();
+    });
+
+    it("names the failing step when the account index does not exist", async () => {
+      const { venue, sidecar } = mockClients();
+      venue.get.mockResolvedValue({ data: { accounts: [] } });
+      const logger = mockLogger();
+      const verifier = new LighterAccountVerifier(
+        { sidecarUrl: "http://127.0.0.1:8790" },
+        { clients: { venue, sidecar }, logger }
+      );
+
+      const result = await verifier.verify(CREDENTIALS);
+
+      expect(result.verified).toBe(false);
+      expect(logger.warn).toHaveBeenCalledWith(
+        "Lighter verification failed - account lookup",
+        expect.objectContaining({
+          exchange: "lighter",
+          step: "account-lookup",
+          reason: "Lighter account 404 was not found on testnet",
+        })
+      );
+      expect(sidecar.post).not.toHaveBeenCalled();
+    });
+
+    it("warns when the fail-closed path is taken because no sidecar is configured", async () => {
+      const logger = mockLogger();
+      const verifier = new LighterAccountVerifier({}, { logger });
+
+      const result = await verifier.verify(CREDENTIALS);
+
+      expect(result.verified).toBe(false);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("signer sidecar is not configured"),
+        expect.objectContaining({
+          exchange: "lighter",
+          environment: "testnet",
+          accountIndex: 404,
+        })
+      );
+      expect(logged(logger)).not.toContain(CREDENTIALS.privateKey);
+    });
+  });
+});

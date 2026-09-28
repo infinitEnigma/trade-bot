@@ -117,21 +117,25 @@ development only.
 
 **Known gaps (2026-09-26 flow audit).** Full evidence in
 [PROJECT_REVIEW_GAP_ANALYSIS.md](PROJECT_REVIEW_GAP_ANALYSIS.md) §3 (findings
-L1–L10). Until those land, the logs below are trustworthy only within these
-limits:
+L1–L10). L1–L4 landed on 2026-09-26 and L5–L7 on 2026-09-28; the bullets below
+record where each log signal now stands, and what to trust:
 
-- `/api/auth/*` requests are **not** written to `http-*.log` and carry no
-  per-request context — they inherit the process's boot-time id. Correlate auth
-  traffic by timestamp and via `audit_logs` (L3).
+- `/api/auth/*` requests **are** covered by `http-*.log` again (L3), and their
+  log lines carry a masked email since L6 — the real address lives in
+  `audit_logs` and in the user's own response body.
 - Background work (Redis consumer, DB pool, WebSocket handshakes, shutdown)
   shares that same boot-time `correlationId`, so its `operationDuration` counts
   from process start — ignore the field for those lines (L8/L9).
-- A response line can carry a **concurrent** request's `correlationId` (1 in 63
-  on 2026-09-26) when the reply is written from the shared Kodiak queue — match a
-  pair by `method` + `url` before trusting the id (L7).
-- `ExchangeAccountService` (connect / verify / revoke) currently logs nothing:
-  its logger dependency is unwired in the service factory, so account operations
-  — successful and failed — appear **only** in `audit_logs` (L4/L5).
+- Response lines carry the `correlationId`/`requestId` captured by
+  `httpLogger` itself (L7), so a reply is never attributed to a concurrent
+  request — `method` + `url` matching is no longer needed.
+- Exchange-account connect / verify / revoke **are** logged now (L4/L5):
+  `Exchange account verification started|completed|failed` (with `exchange`,
+  `environment`, `durationMs` and a bounded `reason`) plus
+  `Exchange account connected|verified`, and for Lighter the verifier's own
+  `Lighter credentials verified` / `Lighter verification failed - <step>`
+  lines with per-step timings. Credentials and private keys are never part of
+  a log line.
 - The graceful-shutdown tail (Phases 2–4 plus "completed") is not observable
   today (L10).
 

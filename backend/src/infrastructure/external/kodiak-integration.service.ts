@@ -293,17 +293,22 @@ export class KodiakIntegrationService {
   async testConnectivity(
     credentials: KodiakCredentials
   ): Promise<{ success: boolean; error?: string }> {
+    const startedAt = Date.now();
     try {
       // If this call succeeds without throwing, credentials are valid
       await this.makeKodiakRequest("GET", "/client/info", credentials);
 
       logger.info("Kodiak API connectivity test successful", {
+        exchange: "kodiak",
         accountId: credentials.accountId,
+        durationMs: Date.now() - startedAt,
       });
       return { success: true };
     } catch (error) {
       logger.error("Kodiak API connectivity test error", error as Error, {
+        exchange: "kodiak",
         accountId: credentials.accountId,
+        durationMs: Date.now() - startedAt,
       });
       return {
         success: false,

@@ -5,7 +5,7 @@ import {
   createAuthService,
   AuthServiceDependencies,
 } from "../../src/core/auth/auth.service.pure";
-import { UserLevel } from "@trade-bot/shared";
+import { ErrorCodes, UserLevel } from "@trade-bot/shared";
 
 describe("AuthService", () => {
   // Create mock dependencies for the AuthService
@@ -264,10 +264,60 @@ describe("AuthService", () => {
 
       expect(result.success).toBe(false);
       expect(result.message).toEqual("Email already registered");
-      expect(deps.logger.warn).toHaveBeenCalled();
+      // L6: a duplicate is an expected outcome — logged at `info` with a masked
+      // address, and reported with a distinct code the UI can act on.
+      expect(result.code).toBe(ErrorCodes.EMAIL_ALREADY_REGISTERED);
+      expect(deps.logger.info).toHaveBeenCalledWith(
+        "Registration skipped - email already registered",
+        { email: "t***t@example.com" }
+      );
+      expect(deps.logger.warn).not.toHaveBeenCalledWith(
+        "Registration failed - email already exists",
+        expect.anything()
+      );
       expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
         expect.objectContaining({ action: "USER_REGISTRATION_FAILED" })
       );
+      // The audit trail (not the log file) keeps the real address.
+      expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          details: expect.objectContaining({ email: testEmail }),
+        })
+      );
+    });
+
+    it("masks the email on the registration attempt log (L6)", async () => {
+      const deps = createMockDependencies();
+      const authService = new AuthService(deps);
+
+      (deps.userRepository.findByEmail as jest.Mock).mockResolvedValue(null);
+      (deps.userRepository.findByUsername as jest.Mock).mockResolvedValue(null);
+      (deps.passwordService.hash as jest.Mock).mockResolvedValue("hashed");
+      (deps.userRepository.create as jest.Mock).mockResolvedValue({
+        id: "user-1",
+        username: "test",
+        email: "test@example.com",
+        userLevel: UserLevel.BASIC,
+      });
+
+      await authService.register("test@example.com", "Password123!");
+
+      expect(deps.logger.debug).toHaveBeenCalledWith(
+        "User registration attempt",
+        expect.objectContaining({ email: "t***t@example.com" })
+      );
+      expect(deps.logger.info).toHaveBeenCalledWith(
+        "User registered successfully",
+        expect.objectContaining({ email: "t***t@example.com" })
+      );
+      // ...while the returned payload still carries the user's own address.
+      const loggedMeta = JSON.stringify([
+        ...(deps.logger.debug as jest.Mock).mock.calls,
+        ...(deps.logger.info as jest.Mock).mock.calls,
+        ...(deps.logger.warn as jest.Mock).mock.calls,
+        ...(deps.logger.error as jest.Mock).mock.calls,
+      ]);
+      expect(loggedMeta).not.toContain("test@example.com");
     });
 
     it("should handle registration errors", async () => {
@@ -337,6 +387,11 @@ describe("AuthService", () => {
       expect(deps.tokenService.generateAccessToken).toHaveBeenCalled();
       expect(deps.tokenService.generateRefreshToken).toHaveBeenCalled();
       expect(deps.logger.info).toHaveBeenCalled();
+      // L6: login logs carry a masked address too.
+      expect(deps.logger.info).toHaveBeenCalledWith(
+        "User logged in successfully",
+        expect.objectContaining({ email: "t***t@example.com" })
+      );
       expect(deps.auditLogger?.logEvent).toHaveBeenCalledWith(
         expect.objectContaining({ action: "USER_LOGIN" })
       );

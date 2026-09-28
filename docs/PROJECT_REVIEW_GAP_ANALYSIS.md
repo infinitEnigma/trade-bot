@@ -390,6 +390,24 @@ no line names the venue.
 Impact: "did the Lighter connect reach the sidecar, how long did it take, why did
 it fail" is unanswerable from logs; the venue survives only in the DB audit row.
 
+Fixed (2026-09-28): the dead `LighterVerifierLogger` is now wired in through the
+verifier's deps bag, and every exit of `verify()` is narrated —
+`Lighter credentials verified` (with `exchange`, `environment`, `accountIndex`,
+`apiKeyIndex`, `accountLookupMs`, `keyOwnershipMs`) or
+`Lighter verification failed - account lookup|key ownership` (same venue fields
+plus `step`, `durationMs` and the bounded venue reason); the fail-closed
+"sidecar not configured" path logs at `warn` too. `ExchangeAccountService` now
+logs `Exchange account verification started|completed|failed` around
+`verifyConnectivity` for both `connectAccount` and `verifyAccount` (with
+`exchange`/`environment`/`durationMs`), enriches `Exchange account connected`
+with the venue and `verificationMs`, adds the missing success line to a
+re-verify (`Exchange account verified`), and the Kodiak probe carries
+`exchange: "kodiak"` + `durationMs` for symmetry. No credentials or private keys
+are passed to any log line (asserted in the tests). Pinned by 4
+`lighter-verifier` L5 cases, 2 `exchange-account.service` cases (venue fields,
+outcome, and a no-secret-material assertion) and the `masking`/`verify-connectivity`
+suites staying green.
+
 #### L6 — 🟠 P1: a duplicate registration logs the user's email at `warn`
 
 `11:11:13.331 "User registration attempt"` and `11:11:13.338 "Registration failed
@@ -404,6 +422,23 @@ submission is invisible outside that one line.
 
 Decision: log at `info` with a masked email, keep the audit event, and return a
 distinct error code so the UI can offer "log in instead".
+
+Fixed (2026-09-28): `shared/src/types/errors.ts` gains
+`ErrorCodes.EMAIL_ALREADY_REGISTERED` + `EmailAlreadyRegisteredError` (409, with
+`hint: "log in instead"`); `AuthService.register` now logs
+`Registration skipped - email already registered` at `info` and returns
+`code: EMAIL_ALREADY_REGISTERED` (also on the race-window catch branch, and both
+result shapes carry `code` through `convertToLegacyFormat`); the register route
+maps that code to the conflict error and keeps `ValidationError`/400 for every
+other failure. Log hygiene went wider than the finding: every log site that used
+to emit a raw address in `auth.service.pure.ts` (attempt/failure/success for
+register **and** login) and in `interfaces/http/auth/index.ts` now uses the new
+`maskEmail` helper (`backend/src/shared/utils/masking.ts`), while `logAuditEvent`
+rows and API responses keep the real address. Pinned by 5 `masking` cases, the
+updated duplicate-registration service test (info + masked + code + audit keeps
+the real address), a new attempt-log masking test, the login-path masking
+assertion, and a controller case asserting 409 +
+`code: EMAIL_ALREADY_REGISTERED` + `hint`.
 
 #### L7 — 🟠 P1: one response was logged under a sibling request's correlationId
 
@@ -420,6 +455,17 @@ Impact: 1 of 63 response lines mis-correlates — and the runbook's "grep the
 correlationId" then finds no response at all for the affected request. Fix:
 capture `correlationId`/`requestId` in the middleware closure and pass them
 explicitly on the response line; longer term stop relying on `enterWith`.
+
+Fixed (2026-09-28): `httpLogger` captures `correlationId` **and** `requestId`
+(the latter from the context `contextMiddleware` already minted, else minted)
+into its closure and passes both explicitly on the `"HTTP response"` line. This
+wins over the ambient store because `ContextAwareLogger.getContextInfo()` merges
+per-call meta last, so a reply can no longer be attributed to a concurrent
+request. `operationDuration` still derives from the async store (L8/L9 own the
+background-scope work; dropping `enterWith` altogether is the longer-term fix).
+Pinned by 3 `middleware.logger` cases, including a regression case that swaps the
+ambient ids for a sibling's between the request and `res.end` and asserts the
+response line keeps the captured pair.
 
 #### L8 — 🟡 P2: the boot-time ambient context leaks into every background logger
 
@@ -979,9 +1025,9 @@ can be repeated meaningfully.
 | L2  | 🔴 P0    | Venue-agnostic portfolio account selection + switcher (Dashboard, `BotControls`); no `exchange === "kodiak"` default; the app-global balance widget follows the selection                                                     | ✅ Done  |
 | L3  | 🔴 P0    | Await Express configuration before `listen()`; mount `contextMiddleware` + `httpLogger` before any router (so `/api/auth` is covered); remove the listen-before-routes window                                               | ✅ Done  |
 | L4  | 🔴 P0    | Wire `logger` into the `ServiceFactory`'s `ExchangeAccountService` (or delegate to the DI instance) + a test asserting the dependency exists                                                                                | ✅ Done  |
-| L5  | 🟠 P1    | Venue-aware connect/verify logging (`exchange`, `environment`, verifier step timings, outcome — never secrets), including the Lighter verifier                                                                              | ⬜ Open  |
-| L6  | 🟠 P1    | Duplicate-registration log: `info` + masked email, plus a distinct error code for "email already registered"                                                                                                                | ⬜ Open  |
-| L7  | 🟠 P1    | Pass the request's `correlationId`/`requestId` explicitly when logging the HTTP response (stop resolving ALS at `res.end` time)                                                                                              | ⬜ Open  |
+| L5  | 🟠 P1    | Venue-aware connect/verify logging (`exchange`, `environment`, verifier step timings, outcome — never secrets), including the Lighter verifier                                                                              | ✅ Done  (L5–L7 batch, 2026-09-28) — the dead `LighterVerifierLogger` is wired in and `verify()` narrates both steps (`Lighter credentials verified` / `Lighter verification failed - account lookup\|key ownership`, with `exchange`, `environment`, `accountIndex`/`apiKeyIndex`, `accountLookupMs`, `keyOwnershipMs`, bounded reason); `ExchangeAccountService` logs `Exchange account verification started\|completed\|failed` for connect **and** re-verify with `exchange`/`environment`/`durationMs`, `Exchange account connected\|verified` carry the venue, and the Kodiak probe gains `exchange` + `durationMs`. No credential material on any line (asserted). Pinned by 4 `lighter-verifier` L5 cases + 2 `exchange-account.service` cases |
+| L6  | 🟠 P1    | Duplicate-registration log: `info` + masked email, plus a distinct error code for "email already registered"                                                                                                                | ✅ Done  (L5–L7 batch, 2026-09-28) — `ErrorCodes.EMAIL_ALREADY_REGISTERED` + `EmailAlreadyRegisteredError` (409, `hint: "log in instead"`); `register()` logs `Registration skipped - email already registered` at `info` and returns the code (incl. the race-window branch, mirrored through `convertToLegacyFormat`); the route maps the code to 409, other failures stay 400. Broader hygiene: all raw-email log sites in `auth.service.pure.ts` + `interfaces/http/auth/index.ts` now use `maskEmail` (`backend/src/shared/utils/masking.ts`), while audit rows and responses keep the real address. Pinned by 5 `masking` + updated/added service cases + a controller 409 case |
+| L7  | 🟠 P1    | Pass the request's `correlationId`/`requestId` explicitly when logging the HTTP response (stop resolving ALS at `res.end` time)                                                                                              | ✅ Done  (L5–L7 batch, 2026-09-28) — `httpLogger` captures both ids in its closure and passes them per-call on `"HTTP response"`; per-call meta wins in `ContextAwareLogger.getContextInfo()`, so the sibling-request mis-correlation is gone. `operationDuration` still comes from the async store (L8/L9). Pinned by 3 `middleware.logger` cases incl. an ambient-drift regression |
 | L8  | 🟡 P2    | Remove the boot-wide `setRequestContext`; give each background subsystem its own stable scope                                                                                                                                | ⬜ Open  |
 | L9  | 🟡 P2    | Construct long-lived pools eagerly so they stop inheriting a request context                                                                                                                                                 | ⬜ Open  |
 | L10 | 🟡 P2    | Shutdown: per-stop durations, bounded Phase 1 (`closeIdleConnections`/`closeAllConnections`), flush logs before `process.exit(0)`                                                                                            | ⬜ Open  |
@@ -1142,7 +1188,8 @@ Findings from a security-focused code review, prioritized per severity:
 | 🔴 P0    | **Phase 0–3 items**      | The engine trading-path work in §4 — verified against the exchange before anything else is built on top of it.                                                                          |
 | ✅ Done  | **2026-09-26 batch (L1–L4)** | Bot-route repoint, venue-agnostic portfolio selection, the Express boot-order race, and the unwired `ExchangeAccountService` logger — resolved; see §3 findings and the §4 backlog table. |
 | ✅ Done  | **2026-09-26/27 batch (L11–L13)** | Venue-dispatched portfolio reads + the Lighter reader, the `strategies.active` lifecycle sync + post-create start prompt, and the dev-stack signer sidecar — resolved; see §3 findings and §4. |
-| 🟠 P1    | **2026-09-26 batch (L5–L10)** | Lighter connect visibility, registration-duplicate log hygiene, response correlation under concurrency, ambient/background context leaks, shutdown observability.                    |
+| ✅ Done  | **2026-09-28 batch (L5–L7)** | Lighter/venue-aware connect+verify logging with step timings, registration-duplicate log hygiene (masked, `info`) + a distinct 409 code, and explicit `correlationId`/`requestId` on the HTTP response line — resolved; see §3 findings and §4. |
+| 🟡 P2    | **Remaining from the 2026-09-26 batch (L8–L10)** | Ambient/background context leaks (`setRequestContext` at boot, eager pools) and shutdown observability.                    |
 | 🟡 P2    | **2026-09-27 batch (L14–L15)** | WS client reconnect loop after `WS_AUTH_FAILED`; and the balance widget's missing error channel (the 400/403→"not connected" mask now hides only genuine failures).                    |
 | 🟠 P1    | **Bot account sessions (plan §D)** | The unit of execution becomes `(user, exchange_accounts)` with `strategy_runs` inside it: one credential fetch, one exchange connection and one reconciler per account, which is also the shape the L5–L10-adjacent reconciliation work (N3/N4) needs. Designed, not implemented — [DATA_MODEL.md](DATA_MODEL.md) §4.4, [plan §D](EXCHANGE_INTEGRATION_PLAN.md). |
 | 🟡 P2    | **Agent participation (plan §E)** | Advisor → coordinator → executor on delegated, expiring grants scoped to one account, with proposals inert until a user approves them and the engine as the only executor. Designed, not implemented — [plan §E](EXCHANGE_INTEGRATION_PLAN.md). |

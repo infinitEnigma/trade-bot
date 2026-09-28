@@ -24,6 +24,7 @@
  */
 
 import axios, { AxiosInstance, isAxiosError } from "axios";
+import { integrationLogger } from "../../../core/logging";
 
 /** Venue REST defaults, mirroring the engine's `lighterBaseUrl`. */
 export const LIGHTER_MAINNET_URL = "https://mainnet.zklighter.elliot.ai";
@@ -62,8 +63,20 @@ export interface LighterVerifyResult {
   error?: string;
 }
 
+/**
+ * Minimal logger surface (L5): lets the verifier narrate its two live steps —
+ * venue account lookup and sidecar key-ownership proof — with the venue,
+ * environment, per-step durations and the outcome. Only identifiers and the
+ * (already bounded) venue reason are passed; the private key never is.
+ */
 export interface LighterVerifierLogger {
+  info(message: string, meta?: Record<string, unknown>): void;
   warn(message: string, meta?: Record<string, unknown>): void;
+}
+
+export interface LighterVerifierDeps {
+  clients?: LighterVerifierClients;
+  logger?: LighterVerifierLogger;
 }
 
 /** Environment-shaped config; fields stay absent when unset. */
@@ -88,7 +101,9 @@ export function lighterBaseUrl(environment: string): string {
 export function lighterVerifierFromEnv(
   env: NodeJS.ProcessEnv = process.env
 ): LighterAccountVerifier {
-  return new LighterAccountVerifier(lighterVerifierConfigFromEnv(env));
+  return new LighterAccountVerifier(lighterVerifierConfigFromEnv(env), {
+    logger: integrationLogger,
+  });
 }
 
 function trimReason(value: unknown): string {
@@ -102,13 +117,15 @@ export class LighterAccountVerifier {
   private readonly sidecar?: AxiosInstance;
   private readonly venue?: AxiosInstance;
   private readonly venueUrl: string;
+  private readonly logger?: LighterVerifierLogger;
 
   constructor(
     private readonly config: LighterVerifierConfig,
-    deps: { clients?: LighterVerifierClients } = {}
+    deps: LighterVerifierDeps = {}
   ) {
     const timeout = config.timeoutMs ?? DEFAULT_LIGHTER_VERIFY_TIMEOUT_MS;
     this.venueUrl = (config.baseUrl ?? "").trim().replace(/\/+$/, "");
+    this.logger = deps.logger;
     this.sidecar =
       deps.clients?.sidecar ??
       this.createClient(config.sidecarUrl, timeout, config.sidecarAuthToken);
@@ -137,18 +154,67 @@ export class LighterAccountVerifier {
     });
   }
 
-  /** Full live check: the account exists AND the key belongs to it. */
+  /**
+   * Full live check: the account exists AND the key belongs to it.
+   *
+   * Every exit is narrated (L5) so a failed connect is answerable from the
+   * logs: which venue, which environment, which step, how long it took and
+   * what came back. The credentials themselves are never part of a log line.
+   */
   async verify(credentials: LighterCredentials): Promise<LighterVerifyResult> {
+    const { accountIndex, apiKeyIndex, environment } = credentials;
+    const venueMeta = {
+      exchange: "lighter" as const,
+      environment,
+      accountIndex,
+      apiKeyIndex,
+    };
+
     if (!this.sidecar) {
+      this.logger?.warn(
+        "Lighter verification unavailable - signer sidecar is not configured",
+        venueMeta
+      );
       return {
         verified: false,
         error:
           "Lighter signer sidecar is not configured (LIGHTER_SIDECAR_URL); credentials cannot be verified",
       };
     }
+
+    const lookupStartedAt = Date.now();
     const account = await this.accountExists(credentials);
-    if (!account.verified) return account;
-    return this.verifyOwnership(credentials);
+    const accountLookupMs = Date.now() - lookupStartedAt;
+    if (!account.verified) {
+      this.logger?.warn("Lighter verification failed - account lookup", {
+        ...venueMeta,
+        step: "account-lookup",
+        durationMs: accountLookupMs,
+        reason: account.error,
+      });
+      return account;
+    }
+
+    const ownershipStartedAt = Date.now();
+    const ownership = await this.verifyOwnership(credentials);
+    const keyOwnershipMs = Date.now() - ownershipStartedAt;
+    if (!ownership.verified) {
+      this.logger?.warn("Lighter verification failed - key ownership", {
+        ...venueMeta,
+        step: "key-ownership",
+        durationMs: keyOwnershipMs,
+        reason: ownership.error,
+      });
+      return ownership;
+    }
+
+    this.logger?.info("Lighter credentials verified", {
+      ...venueMeta,
+      accountLookupMs,
+      keyOwnershipMs,
+      durationMs: accountLookupMs + keyOwnershipMs,
+    });
+    return ownership;
   }
 
   /** `GET /api/v1/account` — public, so a wrong index gets its own reason. */

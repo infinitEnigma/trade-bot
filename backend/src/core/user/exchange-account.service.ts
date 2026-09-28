@@ -164,8 +164,24 @@ export class ExchangeAccountService {
       throw error;
     }
 
+    const verificationStartedAt = Date.now();
+    this.deps.logger?.info("Exchange account verification started", {
+      userId,
+      accountId: account.id,
+      exchange: request.exchange,
+      environment: request.environment,
+    });
     const live = await this.deps.verifyConnectivity(request);
+    const verificationMs = Date.now() - verificationStartedAt;
     if (!live.verified) {
+      this.deps.logger?.warn("Exchange account verification failed", {
+        userId,
+        accountId: account.id,
+        exchange: request.exchange,
+        environment: request.environment,
+        durationMs: verificationMs,
+        reason: live.error,
+      });
       await this.deps.exchangeAccountRepository.setStatus(
         userId,
         account.id,
@@ -179,6 +195,14 @@ export class ExchangeAccountService {
         error: live.error,
       };
     }
+    this.deps.logger?.info("Exchange account verification completed", {
+      userId,
+      accountId: account.id,
+      exchange: request.exchange,
+      environment: request.environment,
+      verified: true,
+      durationMs: verificationMs,
+    });
 
     await this.deps.exchangeAccountRepository.setStatus(
       userId,
@@ -209,6 +233,9 @@ export class ExchangeAccountService {
     this.deps.logger?.info("Exchange account connected", {
       userId,
       accountId: account.id,
+      exchange: request.exchange,
+      environment: request.environment,
+      verificationMs,
       userLevel: level,
     });
     return {
@@ -249,8 +276,24 @@ export class ExchangeAccountService {
         error: "Decryption failed",
       };
     }
+    const verificationStartedAt = Date.now();
+    this.deps.logger?.info("Exchange account verification started", {
+      userId,
+      accountId,
+      exchange: request.exchange,
+      environment: request.environment,
+    });
     const live = await this.deps.verifyConnectivity(request);
+    const verificationMs = Date.now() - verificationStartedAt;
     if (!live.verified) {
+      this.deps.logger?.warn("Exchange account verification failed", {
+        userId,
+        accountId,
+        exchange: request.exchange,
+        environment: request.environment,
+        durationMs: verificationMs,
+        reason: live.error,
+      });
       await this.deps.exchangeAccountRepository.setStatus(
         userId,
         accountId,
@@ -283,6 +326,13 @@ export class ExchangeAccountService {
       ...stored,
       status: "ACTIVE" as const,
     };
+    this.deps.logger?.info("Exchange account verified", {
+      userId,
+      accountId,
+      exchange: request.exchange,
+      environment: request.environment,
+      durationMs: verificationMs,
+    });
     return { success: true, message: "Account verified", account: verified };
   }
 

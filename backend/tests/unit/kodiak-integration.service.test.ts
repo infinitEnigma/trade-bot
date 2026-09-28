@@ -97,8 +97,9 @@ describe("KodiakIntegrationService", () => {
     };
 
     it("should return null when the user has no ACTIVE kodiak account", async () => {
-      (exchangeAccountRepositoryAdapter.listAccounts as jest.Mock)
-        .mockResolvedValue([]);
+      (
+        exchangeAccountRepositoryAdapter.listAccounts as jest.Mock
+      ).mockResolvedValue([]);
 
       const result = await service.getUserCredentials("test-user-id");
 
@@ -332,23 +333,18 @@ describe("KodiakIntegrationService", () => {
 
     it("scopes the positions cache key and resolution to the account", async () => {
       (kodiakCache.get as jest.Mock).mockReturnValue(null);
-      (service as any).resolveKodiakAccount = jest
-        .fn()
-        .mockResolvedValue({
-          id: "acct-uuid-1",
-          accountRef: "venue-ref-1",
-          credentials: {
-            accountId: "venue-ref-1",
-            apiKey: "api-key",
-            secretKey: "secret-key",
-          },
-        });
+      (service as any).resolveKodiakAccount = jest.fn().mockResolvedValue({
+        id: "acct-uuid-1",
+        accountRef: "venue-ref-1",
+        credentials: {
+          accountId: "venue-ref-1",
+          apiKey: "api-key",
+          secretKey: "secret-key",
+        },
+      });
       (service as any).makeKodiakRequest = jest.fn().mockResolvedValue([]);
 
-      const result = await service.getPositions(
-        "test-user-id",
-        "acct-uuid-1"
-      );
+      const result = await service.getPositions("test-user-id", "acct-uuid-1");
 
       expect(result.success).toBe(true);
       expect((service as any).resolveKodiakAccount).toHaveBeenCalledWith(
@@ -896,7 +892,9 @@ describe("KodiakIntegrationService", () => {
       expect(logger.info).toHaveBeenCalledWith(
         "Kodiak API connectivity test successful",
         {
+          exchange: "kodiak",
           accountId: "test-account",
+          durationMs: expect.any(Number),
         }
       );
     });
@@ -920,7 +918,9 @@ describe("KodiakIntegrationService", () => {
         "Kodiak API connectivity test error",
         expect.any(Error),
         {
+          exchange: "kodiak",
           accountId: "test-account",
+          durationMs: expect.any(Number),
         }
       );
     });

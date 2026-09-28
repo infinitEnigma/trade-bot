@@ -33,7 +33,9 @@ import {
   TokenPayload,
   TokenType,
   CacheResult,
+  ErrorCodes,
 } from "@trade-bot/shared";
+import { maskEmail } from "../../shared/utils/masking";
 
 export interface AuthServiceDependencies {
   userRepository: IUserRepository;
@@ -63,6 +65,11 @@ export interface AuthServiceDependencies {
 export interface AuthResult {
   success: boolean;
   message?: string;
+  /**
+   * Machine-readable outcome for failures the client must act on differently
+   * (L6: `EMAIL_ALREADY_REGISTERED` → offer "log in instead").
+   */
+  code?: ErrorCodes;
   user?: {
     id: string;
     username: string;
@@ -81,6 +88,8 @@ export interface AuthResult {
 export interface LegacyAuthResult {
   success: boolean;
   message?: string;
+  /** See `AuthResult.code`. */
+  code?: ErrorCodes;
   user?: {
     id: string;
     username: string;
@@ -158,19 +167,31 @@ export class AuthService {
     username?: string
   ): Promise<AuthResult | LegacyAuthResult> {
     try {
-      this.deps.logger.debug("User registration attempt", { email, username });
+      // L6: log lines carry a masked address; the audit rows below (and the
+      // user's own API response) keep the real one.
+      this.deps.logger.debug("User registration attempt", {
+        email: maskEmail(email),
+        username,
+      });
 
       // Check email uniqueness
       const existingUser = await this.deps.userRepository.findByEmail(email);
       if (existingUser) {
-        this.deps.logger.warn("Registration failed - email already exists", {
-          email,
-        });
+        // An expected duplicate is not a warning — it is an actionable outcome
+        // the client can answer with "log in instead".
+        this.deps.logger.info(
+          "Registration skipped - email already registered",
+          { email: maskEmail(email) }
+        );
         await this.logAuditEvent("USER_REGISTRATION_FAILED", {
           email,
           reason: "email_exists",
         });
-        return { success: false, message: "Email already registered" };
+        return {
+          success: false,
+          message: "Email already registered",
+          code: ErrorCodes.EMAIL_ALREADY_REGISTERED,
+        };
       }
 
       // C1 identity: resolve the handle. Explicit picks are validated and
@@ -181,7 +202,7 @@ export class AuthService {
       if (explicit) {
         if (!AuthService.USERNAME_PATTERN.test(explicit)) {
           this.deps.logger.warn("Registration failed - invalid username", {
-            email,
+            email: maskEmail(email),
           });
           await this.logAuditEvent("USER_REGISTRATION_FAILED", {
             email,
@@ -199,7 +220,7 @@ export class AuthService {
           this.deps.logger.warn(
             "Registration failed - username already exists",
             {
-              email,
+              email: maskEmail(email),
               username: explicit,
             }
           );
@@ -240,7 +261,7 @@ export class AuthService {
       this.deps.logger.info("User registered successfully", {
         userId: newUser.id,
         username: newUser.username,
-        email: newUser.email,
+        email: maskEmail(newUser.email),
       });
 
       return {
@@ -261,10 +282,14 @@ export class AuthService {
         return { success: false, message: "Username already taken" };
       }
       if (message === "Email already exists") {
-        return { success: false, message: "Email already registered" };
+        return {
+          success: false,
+          message: "Email already registered",
+          code: ErrorCodes.EMAIL_ALREADY_REGISTERED,
+        };
       }
       this.deps.logger.error("Registration error", {
-        email,
+        email: maskEmail(email),
         error: message,
       });
       return { success: false, message: "Registration failed" };
@@ -284,7 +309,7 @@ export class AuthService {
   async login(credentials: UserLogin): Promise<AuthResult | LegacyAuthResult> {
     try {
       this.deps.logger.debug("User login attempt", {
-        email: credentials.email,
+        email: maskEmail(credentials.email),
       });
 
       // Find user by email with password hash
@@ -293,7 +318,7 @@ export class AuthService {
       );
       if (!user) {
         this.deps.logger.warn("Login failed - user not found", {
-          email: credentials.email,
+          email: maskEmail(credentials.email),
         });
         await this.logAuditEvent("USER_LOGIN_FAILED", {
           email: credentials.email,
@@ -311,7 +336,7 @@ export class AuthService {
       if (!passwordValid) {
         this.deps.logger.warn("Login failed - invalid password", {
           userId: user.id,
-          email: user.email,
+          email: maskEmail(user.email),
         });
         await this.logAuditEvent("USER_LOGIN_FAILED", {
           userId: user.id,
@@ -332,7 +357,7 @@ export class AuthService {
 
       this.deps.logger.info("User logged in successfully", {
         userId: user.id,
-        email: user.email,
+        email: maskEmail(user.email),
       });
 
       return {
@@ -347,7 +372,7 @@ export class AuthService {
       };
     } catch (error) {
       this.deps.logger.error("Login error", {
-        email: credentials.email,
+        email: maskEmail(credentials.email),
         error: error instanceof Error ? error.message : String(error),
       });
       return { success: false, message: "Login failed" };
@@ -1207,6 +1232,7 @@ export class AuthService {
     return {
       success: result.success,
       message: result.message,
+      code: result.code,
       user: result.user,
       tokens: result.tokens
         ? {

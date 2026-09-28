@@ -279,6 +279,32 @@ describe("Auth Controller - Final Working Tests", () => {
         })
       );
     });
+
+    it("should return the distinct conflict code when the address is already registered (L6)", async () => {
+      mockAuthService.register.mockResolvedValue({
+        success: false,
+        message: "Email already registered",
+        code: "EMAIL_ALREADY_REGISTERED",
+      });
+
+      const response = await request(app)
+        .post("/api/auth/register")
+        .send({
+          email: "test@example.com",
+          password: "Password123!",
+        })
+        .expect(409);
+
+      expect(response.body).toEqual(
+        expect.objectContaining({
+          success: false,
+          error: "Email already registered",
+          code: "EMAIL_ALREADY_REGISTERED",
+          hint: "log in instead",
+          correlationId: "test-correlation-id",
+        })
+      );
+    });
   });
 
   describe("POST /api/auth/login", () => {

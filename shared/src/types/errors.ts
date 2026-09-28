@@ -42,6 +42,11 @@ export enum ErrorCodes {
   NOT_FOUND = "NOT_FOUND",
   ALREADY_EXISTS = "ALREADY_EXISTS",
   CONFLICT = "CONFLICT",
+  /**
+   * L6: registration for an address that already has an account. Distinct from
+   * generic CONFLICT so a client can offer the "log in instead" path.
+   */
+  EMAIL_ALREADY_REGISTERED = "EMAIL_ALREADY_REGISTERED",
 
   // Database Errors (500)
   DATABASE_ERROR = "DATABASE_ERROR",
@@ -221,6 +226,25 @@ export class NotFoundError extends AppError {
 export class ConflictError extends AppError {
   constructor(message: string, context: ErrorContext = {}) {
     super(message, ErrorCodes.CONFLICT, 409, context);
+  }
+}
+
+/**
+ * L6: the address being registered already has an account (409).
+ *
+ * A duplicate registration is an expected, actionable outcome — not a
+ * validation failure and not an incident — so it carries its own code and a
+ * `hint` the UI can use to offer "log in instead".
+ */
+export class EmailAlreadyRegisteredError extends ConflictError {
+  constructor(context: ErrorContext = {}) {
+    super("Email already registered", context);
+    this.name = "EmailAlreadyRegisteredError";
+    this.code = ErrorCodes.EMAIL_ALREADY_REGISTERED;
+  }
+
+  protected getAdditionalData() {
+    return { hint: "log in instead" };
   }
 }
 

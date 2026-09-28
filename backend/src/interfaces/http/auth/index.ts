@@ -8,8 +8,14 @@ import {
   AuthenticatedRequest,
 } from "../../middleware/auth.middleware";
 import { UserRole, UserLevel } from "@trade-bot/shared";
-import { createErrorResponse, ValidationError } from "@trade-bot/shared";
+import {
+  EmailAlreadyRegisteredError,
+  ErrorCodes,
+  createErrorResponse,
+  ValidationError,
+} from "@trade-bot/shared";
 import { getCorrelationId } from "../../../shared/utils/context";
+import { maskEmail } from "../../../shared/utils/masking";
 import { validators } from "../../middleware/validation.middleware";
 import { authLogger } from "../../../core/logging";
 import { progressiveAuthLimiter } from "../../../infrastructure/security/rate-limiter.service";
@@ -33,9 +39,13 @@ router.post(
       );
 
       if (!result.success) {
-        const authError = new ValidationError(
-          result.message || "Registration failed"
-        );
+        // L6: an address that already has an account is a conflict the client
+        // can act on ("log in instead"), not a generic validation failure. The
+        // distinct code is what makes that decision possible.
+        const authError =
+          result.code === ErrorCodes.EMAIL_ALREADY_REGISTERED
+            ? new EmailAlreadyRegisteredError()
+            : new ValidationError(result.message || "Registration failed");
         return res
           .status(authError.statusCode)
           .json(createErrorResponse(authError, getCorrelationId()));
@@ -75,7 +85,7 @@ router.post(
         "Registration error",
         err instanceof Error ? err : undefined,
         {
-          email: req.body?.email,
+          email: maskEmail(req.body?.email),
         }
       );
       const internalError = new ValidationError("Registration failed");
@@ -88,14 +98,14 @@ router.post(
 
 // POST /api/auth/login
 router.post("/login", validators.login, async (req: Request, res: Response) => {
-  authLogger.info("Login attempt", { email: req.body?.email });
+  authLogger.info("Login attempt", { email: maskEmail(req.body?.email) });
   try {
     const result = await authService.login({
       email: req.body.email,
       password: req.body.password,
     });
     authLogger.info("Login result", {
-      email: req.body.email,
+      email: maskEmail(req.body.email),
       success: result.success,
       message: result.success ? "success" : result.message,
     });
@@ -115,7 +125,7 @@ router.post("/login", validators.login, async (req: Request, res: Response) => {
     }
 
     authLogger.info("Login successful", {
-      email: result.user?.email,
+      email: maskEmail(result.user?.email),
       userId: result.user?.id,
     });
 
@@ -193,7 +203,7 @@ router.post("/login", validators.login, async (req: Request, res: Response) => {
     });
   } catch (err) {
     authLogger.error("Login error", err instanceof Error ? err : undefined, {
-      email: req.body?.email,
+      email: maskEmail(req.body?.email),
     });
     const internalError = new ValidationError("Login failed");
     res
@@ -507,7 +517,7 @@ router.get(
         userId: user.id,
         userLevel: user.userLevel,
         username: user.username,
-        email: user.email,
+        email: maskEmail(user.email),
         rolesCount: roles.length,
       });
 

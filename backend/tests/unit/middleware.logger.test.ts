@@ -7,6 +7,7 @@ import {
 import { httpLogger as contextHttpLogger } from "../../src/core/logging";
 import {
   getCorrelationId,
+  getCurrentContext,
   runWithContext,
 } from "../../src/shared/utils/context";
 
@@ -20,9 +21,14 @@ jest.mock("../../src/core/logging", () => ({
 
 jest.mock("../../src/shared/utils/context", () => ({
   generateCorrelationId: jest.fn().mockReturnValue("generated-correlation-id"),
+  generateRequestId: jest.fn().mockReturnValue("generated-request-id"),
   // Simulates `contextMiddleware`, which is mounted before this middleware and
-  // already put a correlation id into the request context.
+  // already put a correlation id / request id into the request context.
   getCorrelationId: jest.fn().mockReturnValue("header-correlation-id"),
+  getCurrentContext: jest.fn().mockReturnValue({
+    correlationId: "header-correlation-id",
+    requestId: "header-request-id",
+  }),
   runWithContext: jest.fn((context, callback) => callback()),
   getContextForLogging: jest.fn(),
 }));
@@ -36,6 +42,11 @@ describe("Logger Middleware", () => {
     beforeEach(() => {
       // Reset all mocks before each test
       (contextHttpLogger.http as jest.Mock).mockReset();
+      (getCorrelationId as jest.Mock).mockReturnValue("header-correlation-id");
+      (getCurrentContext as jest.Mock).mockReturnValue({
+        correlationId: "header-correlation-id",
+        requestId: "header-request-id",
+      });
 
       // Create mock request object
       req = {
@@ -176,6 +187,58 @@ describe("Logger Middleware", () => {
       expect(contextHttpLogger.http).toHaveBeenCalledWith(
         "HTTP response",
         expect.objectContaining({ url: "/api/market/trades?limit=50" })
+      );
+    });
+
+    it("should stamp the captured correlation id and request id on the response line (L7)", () => {
+      httpLogger(req, res, next);
+
+      res.end();
+
+      expect(contextHttpLogger.http).toHaveBeenCalledWith(
+        "HTTP response",
+        expect.objectContaining({
+          correlationId: "header-correlation-id",
+          requestId: "header-request-id",
+        })
+      );
+    });
+
+    it("should keep the captured ids when the ambient context drifts before res.end (L7)", () => {
+      httpLogger(req, res, next);
+
+      // The concurrency case from the review: two requests serialized through a
+      // shared async chain (e.g. the Kodiak queue), and `setRequestContext`
+      // (`enterWith`) leaves the *sibling's* store in place when `res.end` runs.
+      (getCorrelationId as jest.Mock).mockReturnValue("sibling-correlation-id");
+      (getCurrentContext as jest.Mock).mockReturnValue({
+        correlationId: "sibling-correlation-id",
+        requestId: "sibling-request-id",
+      });
+
+      res.end();
+
+      const responseLine = (
+        contextHttpLogger.http as jest.Mock
+      ).mock.calls.find(call => call[0] === "HTTP response");
+      expect(responseLine?.[1]).toMatchObject({
+        correlationId: "header-correlation-id",
+        requestId: "header-request-id",
+      });
+    });
+
+    it("should mint a request id when the context has none (L7)", () => {
+      (getCurrentContext as jest.Mock).mockReturnValueOnce(undefined);
+
+      httpLogger(req, res, next);
+      res.end();
+
+      expect(contextHttpLogger.http).toHaveBeenCalledWith(
+        "HTTP response",
+        expect.objectContaining({
+          correlationId: "header-correlation-id",
+          requestId: "generated-request-id",
+        })
       );
     });
   });

@@ -159,6 +159,49 @@ describe("ExchangeAccountService", () => {
       );
       expect(result.success).toBe(true);
       expect(result.account?.status).toBe("ACTIVE");
+
+      // L5: the connect path names the venue, the environment and the outcome.
+      expect(deps.logger?.info).toHaveBeenCalledWith(
+        "Exchange account verification started",
+        expect.objectContaining({
+          userId: "test-user-id",
+          exchange: "kodiak",
+          environment: "mainnet",
+        })
+      );
+      expect(deps.logger?.info).toHaveBeenCalledWith(
+        "Exchange account verification completed",
+        expect.objectContaining({
+          exchange: "kodiak",
+          environment: "mainnet",
+          verified: true,
+          durationMs: expect.any(Number),
+        })
+      );
+      expect(deps.logger?.info).toHaveBeenCalledWith(
+        "Exchange account connected",
+        expect.objectContaining({
+          exchange: "kodiak",
+          environment: "mainnet",
+          verificationMs: expect.any(Number),
+        })
+      );
+      expect(deps.logger?.warn).not.toHaveBeenCalled();
+    });
+
+    it("never logs credential material on the connect path (L5)", async () => {
+      const deps = createDeps();
+      const service = new ExchangeAccountService(deps);
+
+      await service.connectAccount("test-user-id", kodiakRequest);
+
+      const logged = JSON.stringify([
+        ...(deps.logger?.info as jest.Mock).mock.calls,
+        ...(deps.logger?.warn as jest.Mock).mock.calls,
+        ...(deps.logger?.error as jest.Mock).mock.calls,
+      ]);
+      expect(logged).not.toContain(kodiakRequest.secretKey);
+      expect(logged).not.toContain(kodiakRequest.apiKey);
     });
 
     it("should mark the account INVALID when live verification fails", async () => {
@@ -184,6 +227,21 @@ describe("ExchangeAccountService", () => {
       );
       expect(deps.userLevel.recompute).toHaveBeenCalledWith("test-user-id");
       expect(deps.auditLogRepository?.logEvent).not.toHaveBeenCalled();
+
+      // L5: a failed verify is a warn that names the venue and the reason.
+      expect(deps.logger?.warn).toHaveBeenCalledWith(
+        "Exchange account verification failed",
+        expect.objectContaining({
+          exchange: "kodiak",
+          environment: "mainnet",
+          reason: "Bad credentials",
+          durationMs: expect.any(Number),
+        })
+      );
+      expect(deps.logger?.info).not.toHaveBeenCalledWith(
+        "Exchange account verification completed",
+        expect.anything()
+      );
     });
 
     it("should refuse a duplicate account", async () => {
@@ -301,6 +359,16 @@ describe("ExchangeAccountService", () => {
         "account-1",
         "ACTIVE",
         true
+      );
+      // L5: a successful re-verify is logged with the venue it was checked against.
+      expect(deps.logger?.info).toHaveBeenCalledWith(
+        "Exchange account verified",
+        expect.objectContaining({
+          accountId: "account-1",
+          exchange: "kodiak",
+          environment: "mainnet",
+          durationMs: expect.any(Number),
+        })
       );
     });
 
