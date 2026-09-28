@@ -1010,3 +1010,144 @@ describe("bot → account binding", () => {
     );
   });
 });
+
+// ===========================================
+// VENUE SYMBOL GATE (L20)
+// ===========================================
+
+describe("createAndStart venue symbol gate (L20)", () => {
+  let service: BotLifecycleService;
+  const originalFetch = global.fetch;
+
+  const botRow = {
+    id: "bot-1",
+    user_id: "user-1",
+    strategy_id: "strat-1",
+    status: "STOPPED",
+    desired_state: "STOPPED",
+    actual_state: "STOPPED",
+  };
+
+  const lighterAccount = {
+    id: "acc-1",
+    userId: "user-1",
+    exchange: "lighter",
+    environment: "testnet",
+    accountRef: "404",
+    status: "ACTIVE",
+    verifiedAt: null,
+    lastVerifiedAt: null,
+    meta: {},
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    credentialsEncrypted: "sealed",
+    encryptionVersion: 3,
+  };
+
+  /** Route each query by prefix: strategy/insert lookups + the start() flow. */
+  const mockFlow = (symbol: string | null) =>
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-1" }] });
+      }
+      if (text.startsWith("SELECT config FROM strategies")) {
+        return Promise.resolve({
+          rows: [{ config: symbol ? { symbol } : {} }],
+        });
+      }
+      if (text.includes("FROM bot_instances WHERE strategy_id")) {
+        return Promise.resolve({ rows: [] });
+      }
+      if (text.startsWith("INSERT INTO bot_instances")) {
+        return Promise.resolve({ rows: [{ id: "bot-1" }], rowCount: 1 });
+      }
+      if (text.startsWith("SELECT id, user_id")) {
+        return Promise.resolve({ rows: [botRow] });
+      }
+      return okResult();
+    });
+
+  const lighterCatalog = () =>
+    Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          order_books: [{ symbol: "BTC" }, { symbol: "SOL" }],
+        }),
+    } as Response);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new BotLifecycleService({
+      sendCommand: jest.fn().mockResolvedValue({
+        success: true,
+        messageId: "m1",
+        correlationId: "c1",
+      }),
+    } as unknown as EngineProtocolService);
+    service.setAuthorityChecker(async () => true);
+    mockAccountAdapter.getAccountWithSecret.mockResolvedValue(lighterAccount);
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("rejects with 400 before creating a bot when the symbol is not listed on the venue", async () => {
+    mockFlow("PERP_BTC_USDC");
+    global.fetch = jest.fn(() => lighterCatalog()) as unknown as typeof fetch;
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 1000, "acc-1")
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining("not listed on lighter (testnet)"),
+    });
+
+    // Rejected before any state change or BOT_START dispatch.
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO bot_instances"),
+      expect.anything()
+    );
+  });
+
+  it("creates and starts when the symbol is listed on the venue", async () => {
+    mockFlow("BTC");
+    global.fetch = jest.fn(() => lighterCatalog()) as unknown as typeof fetch;
+
+    const result = await service.createAndStart(
+      "user-1",
+      "strat-1",
+      1000,
+      "acc-1"
+    );
+
+    expect(result).toMatchObject({
+      botId: "bot-1",
+      desiredState: "RUNNING",
+      actualState: "STARTING",
+    });
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO bot_instances"),
+      expect.anything()
+    );
+  });
+
+  it("fails open (creates the bot) when the venue catalog cannot be fetched", async () => {
+    mockFlow("PERP_BTC_USDC");
+    global.fetch = jest.fn(() =>
+      Promise.reject(new Error("venue down"))
+    ) as unknown as typeof fetch;
+
+    const result = await service.createAndStart(
+      "user-1",
+      "strat-1",
+      1000,
+      "acc-1"
+    );
+
+    expect(result.botId).toBe("bot-1");
+  });
+});

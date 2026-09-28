@@ -36,6 +36,7 @@ import {
 } from "./lifecycle/bot-event-processor";
 import { BotLifecycleRepository } from "./lifecycle/bot-lifecycle.repository";
 import { exchangeAccountRepositoryAdapter } from "../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
+import { assertSymbolSupported } from "../../infrastructure/external/venue-symbols";
 import { syncStrategyActive } from "./lifecycle/strategy-active-sync";
 import {
   BotLifecycleResult,
@@ -234,6 +235,20 @@ export class BotLifecycleService {
       const error = new Error("Bot is already running for this strategy");
       (error as Error & { statusCode?: number }).statusCode = 409;
       throw error;
+    }
+
+    // L20: the strategy's symbol must be listed on the bound venue. Rejected
+    // here — before any state change or BOT_START dispatch — with a
+    // user-facing reason (start route passes 400 messages through). Fail-open
+    // when the venue catalog cannot be fetched: the engine's own market
+    // resolution stays the authority.
+    const config = await this.repository.findStrategyConfig(strategyId);
+    if (typeof config.symbol === "string" && config.symbol) {
+      await assertSymbolSupported(
+        config.symbol,
+        account.exchange,
+        account.environment
+      );
     }
 
     // Create the instance in the deterministic initial state, bound to the

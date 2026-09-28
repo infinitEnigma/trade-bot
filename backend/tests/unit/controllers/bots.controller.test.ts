@@ -429,6 +429,34 @@ describe("Bots Controller", () => {
         expect(response.status).toBe(404);
         expect(response.body.success).toBe(false);
       });
+
+      it("surfaces the service's validation message on 400 (L20 symbol gate)", async () => {
+        const validationError = new Error(
+          'Symbol "PERP_BTC_USDC" is not listed on lighter (testnet). Supported symbols: BTC, SOL.'
+        );
+        (validationError as Error & { statusCode?: number }).statusCode = 400;
+
+        const {
+          botLifecycleService,
+        } = require("../../../src/core/bots/bot-lifecycle.service");
+        botLifecycleService.createAndStart.mockRejectedValueOnce(
+          validationError
+        );
+
+        mockBoundAccount();
+
+        const response = await request(app)
+          .post("/api/bot/management/start")
+          .send({
+            strategyId: testStrategyId,
+            exchangeAccountId: testExchangeAccountId,
+            notionalAmount: 1000.5,
+          });
+
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.error).toContain("not listed on lighter");
+      });
     });
 
     describe("POST /api/bot/management/stop", () => {

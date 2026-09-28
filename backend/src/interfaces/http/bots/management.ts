@@ -446,7 +446,7 @@ router.post(
       const message =
         statusCode === 404
           ? "Strategy not found"
-          : statusCode === 409
+          : statusCode === 400 || statusCode === 409
             ? (err as Error).message
             : statusCode === 503
               ? (err as Error).message || "Engine communication unavailable"

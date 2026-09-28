@@ -42,6 +42,10 @@ interface StrategyFormProps {
   onSuccess: (created?: Strategy | null) => void;
 }
 
+// Union of the venues the platform trades: Kodiak/Orderly perps plus the
+// markets Lighter lists. Strategy creation is venue-agnostic (the account is
+// only bound at start) — the start gate (L20, `assertSymbolSupported`)
+// validates the chosen symbol against the bound account's venue.
 const AVAILABLE_SYMBOLS = [
   "PERP_BTC_USDC",
   "PERP_ETH_USDC",
@@ -49,6 +53,11 @@ const AVAILABLE_SYMBOLS = [
   "PERP_AVAX_USDC",
   "PERP_MATIC_USDC",
   "PERP_LINK_USDC",
+  "BTC",
+  "SOL",
+  "ETH",
+  "ETH/USDC",
+  "LIT/USDC",
 ];
 
 export const StrategyForm: React.FC<StrategyFormProps> = ({

@@ -668,11 +668,15 @@ pinned by `credential-fetcher.test.ts`), credentials are issued live
 reaches the backend as `COMMAND_FAILED / INIT_FAILED` instead of silence.
 Stop → **202** with the engine logging `Bot not found for stop` — the stop
 branch dispatches too. `ENGINE_NO_RESPONSE` no longer describes "the engine
-ignored the command". Start does **not** yet reach `RUNNING`: the next-layer
-defect L20 (venue symbol mismatch) blocks exchange init — see below; and the
-re-test also surfaced L21 (a `COMMAND_FAILED`-answered command still times
-out as `ENGINE_NO_RESPONSE`) and L22 (non-`CommandError` failures retry
-forever, poison entries logged but never ACKed).
+ignored the command". Start then stopped at the next layer — L20 (venue symbol
+mismatch), which blocked exchange init. **L20 is fixed (2026-09-28)** and its
+live re-test moved the failure one layer deeper: the symbol gate now rejects a
+non-venue symbol before dispatch (400, no bot row), and a valid Lighter symbol
+(`BTC`) reaches engine strategy init (`Grid strategy initialized`,
+`baselinePrice: 82605.2`). The remaining start blocker is **L23** (the Lighter
+order-query path 400s on a contract client-order id, freezing every slot until
+the backend's 30 s command timeout turns the start into ERROR) — surfaced by
+that same re-test, together with the still-open L21 and L22.
 
 #### L19 — 🟠 P1: Stop returns 404 "Bot not found" — the bot-instances cache stores `strategy_id` as `id`
 
@@ -719,6 +723,41 @@ fast with a user-facing reason, not a generic engine failure), and pin with a
 test: a Lighter start carrying a non-Lighter symbol is rejected before the
 engine is dispatched.
 
+**Fixed 2026-09-28.** The gate sits where the venue first becomes known — the
+bound account exists only at start — in
+`backend/src/infrastructure/external/venue-symbols.ts`:
+`listVenueSymbols(exchange, environment)` reads the live catalog (Lighter:
+`{lighterBaseUrl}/api/v1/orderBooks` → `order_books[].symbol`; Kodiak/Orderly:
+`{KODIAK_API_URL | https://api.orderly.org}/v1/public/futures` →
+`data.rows[].symbol`) and `assertSymbolSupported` resolves the strategy's
+symbol case-insensitively, throwing `VenueSymbolError` (400) with the supported
+list when unlisted. It is called from `createAndStart` between the
+one-active-bot 409 and the row insert, so a rejection happens **before** any
+state change or `BOT_START` dispatch; `management.ts`'s start route now passes
+`400`/`409` messages through (previously only 404 did). Design choices that
+keep the engine authoritative: **fail-open** — an unreachable catalog or an
+unmapped venue returns `null` and the start proceeds (the engine's own market
+resolution still rejects); no caching, no new dependency (`fetch`). The
+frontend's `StrategyForm` symbol list became the union of both venues' markets
+(strategy creation stays venue-agnostic — the account is chosen at start), and
+the toast already renders `response.data.error`.
+
+Pinned by `backend/tests/unit/venue-symbols.test.ts` (9 cases: both catalogs,
+unknown venue, fetch failure, non-2xx, bad shape, case-insensitive resolve,
+unlisted → 400, fail-open), `bot-lifecycle.service.test.ts` (3 cases: unlisted
+→ 400 **with no `INSERT INTO bot_instances`**, listed → created + dispatched,
+catalog unavailable → fail-open) and a controller case asserting the 400
+message reaches the response body.
+
+Live re-test (2026-09-28, `npm run prod:all`, minted JWT):
+`POST /api/bot/management/start` for strategy `735ad508` (`PERP_BTC_USDC`) +
+Lighter account `72c483bc` → **400**
+`Symbol "PERP_BTC_USDC" is not listed on lighter (testnet). Supported symbols: BTC, ETH, ETH/USDC, LIT/USDC, SOL. Edit the strategy's symbol and start again.`
+with `bot_instances` unchanged (3 → 3). A second run with a `BTC` strategy
+(`51799e52`, created through the API) → **202** (bot `2b39da69`), engine
+`Credentials fetched for bot … exchange: lighter` → `Grid strategy initialized
+{symbol: BTC}` → `Grid strategy bot started`.
+
 #### L21 — 🟠 P1: `COMMAND_FAILED` does not resolve the tracked lifecycle command — the sweeper still logs `ENGINE_NO_RESPONSE` for an engine that answered
 
 Live, 2026-09-28: the backend received and logged the engine's
@@ -747,6 +786,41 @@ promises "unknown symbols resolve to `CommandError`", but
 `UnknownMarketError extends Error`. Fix: wrap business failures (unknown
 market, backend 4xx responses) into non-retryable `CommandError`s at the
 boundary, and ACK poison entries after the threshold (alert + drop).
+
+#### L23 — 🟠 P1: the Lighter order query 400s on a contract client-order id, so every slot freezes and the start times out (found by L20's live re-test, 2026-09-28)
+
+With L18–L20 in place the start reaches strategy init on Lighter and then never
+acknowledges: bot `2b39da69` (strategy `51799e52`, symbol `BTC`) logged
+`Grid strategy initialized` + `Grid strategy bot started` at `09:43:09`, then
+repeated `Order slot frozen (exchange unreachable) … reason: lighter request
+failed (GET /api/v1/accountOrders): Request failed with status code 400` for
+every level until the backend's sweeper wrote
+`last_error_code: COMMAND_TIMEOUT_ENGINE_NO_RESPONSE` at `09:43:43` → ERROR.
+
+Cause: the grid reconciles a slot through
+`exchange.queryOrderByClientOrderId(symbol, clientOrderId)`
+(`engine/src/strategies/grid.ts:328,396,434`) with the **contract** client
+order id (`3da8db5ad3e05e38ed3b8ec191bd78-03-B` — the Orderly-shaped id the
+grid derives for idempotency). Orderly accepts any string id; Lighter's
+implementation (`exchanges/lighter/client.ts:643`) instead treats its argument
+as the venue's **numeric client order index** and forwards it verbatim as
+`accountOrders?client_order_indexes=<value>` → a non-numeric value → **400**,
+which the client maps to `UNREACHABLE` → the slot freezes (by design: "could not
+ask" never reads as "absent") → no `STATE_CHANGED`/ACK is ever published → the
+30 s command timeout fails the start. `placeOrder` (`client.ts:383`) and
+`cancelOrder` (`client.ts:479`) already derive the numeric index with
+`clientIndexFromString` (numeric strings pass through verbatim); the query path
+doesn't, and its row comparison (`rowClientIndex(row) === clientOrderId`)
+compares against the contract id too.
+
+Fix (next issue): apply `clientIndexFromString` at the top of
+`queryOrderByClientOrderId` and compare rows against the derived index (so both
+the internal numeric-handle callers and the grid's contract ids work), then
+re-run the live re-test and require a start to reach
+`STATE_CHANGED → RUNNING`. Worth adding alongside: an explicit unit case per
+call site (`place`/`cancel`/`query` receive the contract id and hit the same
+index) and a look at whether the slot should distinguish "venue rejected the
+query" from "venue unreachable".
 
 ---
 
@@ -799,9 +873,10 @@ can be repeated meaningfully.
 | L17 | 🔴 P0    | The engine process could not start (`module: ES2022` + `moduleResolution: bundler` in a typeless package → ESM emit with extensionless specifiers → `ERR_MODULE_NOT_FOUND`; ts-jest hid it): emit CommonJS like the backend, add the `@trade-bot/shared` `paths` entry, and prove it with `npm run prod:engine` | ✅ Done  |
 | L18 | 🔴 P0    | Engine dispatch uses the legacy `isStartBotCommand`/`isStopBotCommand` guards (`shared/src/types/engine-contract.ts:331,346`), so protocol `BOT_START`/`BOT_STOP` envelopes fall through `handleCommand` and are silently ACKed → `ENGINE_NO_RESPONSE`: switch `engine/src/protocol/command-consumer.ts` to protocol `isBotStartCommand`/`isBotStopCommand`, add the first engine consumer test, rebuild `engine/dist` (+ in the same change, the credential fetcher's missing `?correlationId` query param found by the live re-test); live 2026-09-28: dispatch proven for both commands | ✅ Done  |
 | L19 | 🟠 P1    | Stop/emergency-stop 404: the `bot-instances` cache maps `id: bot.strategy_id` (`useBotLifecycle.ts:125`, `strategyService.ts:166`), so `/management/stop` receives the strategy UUID and `findBot` 404s: map `id: bot.id`, audit every `bot.id` consumer, pin with a frontend test | ⬜ Open  |
-| L20 | 🟠 P1    | Start never reaches `RUNNING` on Lighter: `strategies.config.symbol` = `PERP_BTC_USDC` is not a Lighter market (venue lists `BTC`/`SOL`/`ETH`/`ETH/USDC`/`LIT/USDC`) → `UnknownMarketError` → `INIT_FAILED` → ERROR: venue-aware symbol validation/filtering at creation and/or start, fail fast with a user-facing reason, pin with a test | ⬜ Open — **next issue** |
+| L20 | 🟠 P1    | Start never reaches `RUNNING` on Lighter: `strategies.config.symbol` = `PERP_BTC_USDC` is not a Lighter market (venue lists `BTC`/`SOL`/`ETH`/`ETH/USDC`/`LIT/USDC`) → `UnknownMarketError` → `INIT_FAILED` → ERROR: venue-aware symbol validation/filtering at creation and/or start, fail fast with a user-facing reason, venue-aware start gate (`venue-symbols.ts`: live catalog per venue, case-insensitive resolve, **fail-open** when unavailable) called from `createAndStart` before the row insert, the start route passing `400`/`409` messages through, the union symbol list in `StrategyForm`; pinned by 9 `venue-symbols` + 3 service + 1 controller case; live 2026-09-28: non-venue symbol → **400** with no bot row, `BTC` → **202** to engine strategy init | ✅ Done  |
 | L21 | 🟠 P1    | `COMMAND_FAILED` does not resolve the tracked lifecycle command — the engine answered (`INIT_FAILED` logged at 08:08:07) yet the same correlationId timed out as `ENGINE_NO_RESPONSE` at 08:08:40: one authority resolves command rows (accept/fail/timeout) + a test that a failure-resolved command never times out | ⬜ Open  |
 | L22 | 🟡 P2    | Non-`CommandError` business failures (unknown market, backend 4xx) are retryable forever and poison entries are only logged, never ACKed: wrap them in non-retryable `CommandError` at the boundary + ACK past the poison threshold (alert + drop) | ⬜ Open  |
+| L23 | 🟠 P1    | Lighter's `queryOrderByClientOrderId` treats its argument as the venue's numeric client order index, but the grid passes the contract id (`grid.ts:328,396,434`) → `accountOrders?client_order_indexes=<string>` → **400** → `UNREACHABLE` → every slot frozen → no ACK → 30 s `COMMAND_TIMEOUT_ENGINE_NO_RESPONSE` → ERROR: derive the index with `clientIndexFromString` in the query path too (numeric handles stay verbatim), compare rows against it, and require a live start to reach `STATE_CHANGED → RUNNING` | ⬜ Open — **next issue** |
 
 Batch verification: re-run the manual flow (login → dashboard → settings → connect
 Lighter → strategies → create grid strategy → start a bot on the Lighter account →
@@ -823,6 +898,9 @@ Batch verification (2026-09-27, L18–L19): with `npm run prod:all`, Start must
 yield `STATE_CHANGED → RUNNING` with no `ENGINE_NO_RESPONSE`, and Stop /
 emergency stop from the Strategies card must return **202** with the request's
 `botId` equal to the `id` returned by `GET /api/bot/management/instances`.
+(2026-09-28 re-run: the L20 gate rejects a non-venue symbol with **400** and
+dispatches a valid symbol to engine strategy init; `RUNNING` itself still
+depends on **L23**.)
 
 ---
 
@@ -941,7 +1019,7 @@ Findings from a security-focused code review, prioritized per severity:
 | 🟡 P2    | **2026-09-27 batch (L14–L15)** | WS client reconnect loop after `WS_AUTH_FAILED`; and the balance widget's missing error channel (the 400/403→"not connected" mask now hides only genuine failures).                    |
 | 🟠 P1    | **Bot account sessions (plan §D)** | The unit of execution becomes `(user, exchange_accounts)` with `strategy_runs` inside it: one credential fetch, one exchange connection and one reconciler per account, which is also the shape the L5–L10-adjacent reconciliation work (N3/N4) needs. Designed, not implemented — [DATA_MODEL.md](DATA_MODEL.md) §4.4, [plan §D](EXCHANGE_INTEGRATION_PLAN.md). |
 | 🟡 P2    | **Agent participation (plan §E)** | Advisor → coordinator → executor on delegated, expiring grants scoped to one account, with proposals inert until a user approves them and the engine as the only executor. Designed, not implemented — [plan §E](EXCHANGE_INTEGRATION_PLAN.md). |
-| 🟠 P1    | **2026-09-27/28 test blockers (L19–L22)** | L18 fixed 2026-09-28 (protocol dispatch guards + the credential fetcher's `?correlationId`; live re-test proves both commands dispatch). Remaining: L19 stop 404 (frontend cache keeps `strategy_id` as `id`), **L20 venue symbol mismatch blocks Start→RUNNING — the next issue**, L21 `COMMAND_FAILED` doesn't resolve the tracked command (spurious `ENGINE_NO_RESPONSE`), L22 non-retryable failures loop / poison never ACKed — see §3/§4. |
+| 🟠 P1    | **2026-09-27/28 test blockers (L19–L23)** | L18 fixed 2026-09-28 (protocol dispatch guards + the credential fetcher's `?correlationId`; live re-test proves both commands dispatch) and **L20 fixed 2026-09-28** (venue-aware start gate; live: the old `PERP_BTC_USDC` symbol → **400** with no bot row, `BTC` → **202** to engine strategy init). Remaining: L19 stop 404 (frontend cache keeps `strategy_id` as `id`), **L23 the Lighter order query 400s on a contract client-order id, freezing slots and timing the start out — the next issue**, L21 `COMMAND_FAILED` doesn't resolve the tracked command (spurious `ENGINE_NO_RESPONSE`), L22 non-retryable failures loop / poison never ACKed — see §3/§4. |
 | 🟠 P1    | **Execution integrity (verified review of `f40f02a`)** | After L19–L22 (incl. L21's command-row resolution): retire or re-route the dead `engine.ts` lifecycle writers, credential idempotency (unique index + `ON CONFLICT`), trade idempotency + bot-scoped stats, account-scoped position/balance readers — verdicts in §2.      |
 
 ### How to keep this document honest
