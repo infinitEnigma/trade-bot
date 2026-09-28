@@ -28,6 +28,9 @@ import type { EngineCredentials } from "@trade-bot/shared";
 const fetchCredentialsMock = fetchCredentials as jest.Mock;
 const createExchangeClientMock = createExchangeClient as jest.Mock;
 
+/** Every manager built via makeManager(), torn down in afterEach. */
+const managers: BotManager[] = [];
+
 const LIGHTER: EngineCredentials = {
   exchange: "lighter",
   environment: "testnet",
@@ -61,12 +64,31 @@ function makeStreamOps(): {
 }
 
 function makeManager(): BotManager {
-  return new BotManager({ engineId: "engine-1", epoch: 1 } as EngineIdentity);
+  const manager = new BotManager({
+    engineId: "engine-1",
+    epoch: 1,
+  } as EngineIdentity);
+  managers.push(manager);
+  return manager;
 }
 
 describe("BotManager.handleStart credential-contract slice (workstream A)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    // A successful handleStart arms a StrategyRunner: a self-rescheduling
+    // setTimeout loop (TICK_INTERVAL_MS) that re-arms after every tick. If the
+    // suite doesn't stop it, the timer keeps the event loop alive forever and
+    // Jest never exits. Stop every runtime any test in this file created.
+    for (const manager of managers) {
+      for (const runtime of manager.getBotRuntimes().values()) {
+        runtime.stopTick();
+      }
+      manager.getBotRuntimes().clear();
+    }
+    managers.length = 0;
   });
 
   it("starts a bot against the kodiak envelope exactly as before", async () => {
