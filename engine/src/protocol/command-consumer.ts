@@ -159,6 +159,16 @@ async function handleCommand(
       command.correlationId
     );
   } else if (isBotStopCommand(command)) {
+    // Parity with BOT_START: the engine must ACK every command it consumes.
+    // Without this accept the tracked BOT_STOP row stayed PENDING even when the
+    // stop completed, so the backend sweep burned a *successful* stop as
+    // COMMAND_NEVER_DELIVERED / STOP_INCOMPLETE (L21).
+    await botManager.publishAccepted(
+      streamOps,
+      command.payload.botId,
+      "BOT_STOP",
+      command.correlationId
+    );
     await botManager.handleStop(
       streamOps,
       command.payload.botId,

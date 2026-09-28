@@ -25,7 +25,10 @@
 import { contextLogger as logger } from "../logging";
 import { botLifecycleService } from "./bot-lifecycle.service";
 import { BotLifecycleRepository } from "./lifecycle/bot-lifecycle.repository";
-import { BOT_COMMAND_TIMEOUT_MS } from "./lifecycle/types";
+import {
+  BOT_COMMAND_TIMEOUT_MS,
+  MAX_STOP_REISSUES_PER_HOUR,
+} from "./lifecycle/types";
 
 /** How often the reconciliation sweep runs. */
 const RECONCILE_INTERVAL_MS = Number(
@@ -34,10 +37,6 @@ const RECONCILE_INTERVAL_MS = Number(
 /** A transitional bot must be stuck for at least this long (3x command timeout). */
 const STUCK_GRACE_MS = Number(
   process.env.LIFECYCLE_RECONCILE_STUCK_GRACE_MS ?? 3 * BOT_COMMAND_TIMEOUT_MS
-);
-/** Max automatic stop-reissues per bot per hour before we stop repairing. */
-const MAX_STOP_REISSUES_PER_HOUR = Number(
-  process.env.LIFECYCLE_RECONCILE_MAX_STOP_REISSUES ?? 3
 );
 
 export interface ReconcileRunResult {

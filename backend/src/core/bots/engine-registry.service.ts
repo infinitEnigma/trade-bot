@@ -34,10 +34,53 @@ const SWEEP_INTERVAL_MS = Number(
 
 interface EngineRow {
   engine_id: string;
-  epoch: number;
+  /**
+   * `engine_registry.epoch` is BIGINT (migration 009) and node-postgres
+   * returns int8 as a STRING - never assume a JS number here (ledger L21).
+   */
+  epoch: number | string;
   status: string;
   version: string | null;
   last_seen_at: Date;
+}
+
+/**
+ * Parse a registry/wire epoch into a comparable integer.
+ *
+ * L21: `engine_registry.epoch` is BIGINT and node-postgres hands BIGINT back
+ * as a string ("19"), while the engine publishes `engineEpoch` as a JSON
+ * number (19). A strict `!==` between the two rejected EVERY runtime event
+ * (COMMAND_ACCEPTED, COMMAND_FAILED, STATE_CHANGED) as "epoch mismatch":
+ * tracked commands were never resolved, STARTING timed out into ERROR with
+ * ENGINE_NO_RESPONSE, and the engine kept trading a bot the backend had
+ * declared dead (L24). Epochs must always be normalised before comparing.
+ *
+ * Returns null for absent/unparsable values so callers fail closed.
+ */
+export function normalizeEpoch(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) ? value : null;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+/**
+ * True when a registered epoch and an event epoch denote the same engine
+ * process. A type mismatch (BIGINT string vs JSON number) is a match; an
+ * unknown/unparsable value never matches (fail closed).
+ */
+export function epochsMatch(registered: unknown, eventEpoch: unknown): boolean {
+  const registeredValue = normalizeEpoch(registered);
+  const eventValue = normalizeEpoch(eventEpoch);
+  return (
+    registeredValue !== null &&
+    eventValue !== null &&
+    registeredValue === eventValue
+  );
 }
 
 export class EngineRegistryService {
@@ -188,11 +231,16 @@ export class EngineRegistryService {
     // event from a superseded process, or an impossible future epoch) is
     // rejected. The registry owns epoch assignment (via registration), so
     // runtime events must match it exactly - not merely trail it.
-    if (epoch !== undefined && row.epoch !== epoch) {
+    //
+    // The comparison must be type-agnostic: the registered epoch comes from a
+    // BIGINT column (string on the wire from node-postgres) and the event
+    // epoch is a JSON number (L21).
+    if (epoch !== undefined && !epochsMatch(row.epoch, epoch)) {
       logger.warn("Engine authority check failed: epoch mismatch", {
         engineId,
         eventEpoch: epoch,
         registeredEpoch: row.epoch,
+        registeredEpochType: typeof row.epoch,
       });
       return false;
     }

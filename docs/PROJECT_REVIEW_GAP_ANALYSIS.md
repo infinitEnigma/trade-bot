@@ -781,6 +781,37 @@ to ERROR. Two distinct defects hide behind "the engine never responded": the
 accepted/failed events do not resolve the tracked command row (this item), and
 the sweeper's timeout does not stop the engine-side runner (L24).
 
+**Fix (2026-09-28).** Root cause found and fixed on both sides:
+
+- **The epoch comparison was type-strict.** `engine_registry.epoch` is `BIGINT`
+  (migration 009), so node-postgres returns it as the **string** `"19"` while the
+  engine publishes `engineEpoch` as a JSON **number** `19`.
+  `EngineRegistryService.assertAuthoritative` compared the two with `!==`, so
+  every runtime event — `COMMAND_ACCEPTED`, `COMMAND_FAILED`, `STATE_CHANGED` —
+  was rejected as an "epoch mismatch". That single defect explains why the
+  accepted *and* the failed path both left the tracked command `PENDING` and why
+  a healthy engine that had answered was reported as `ENGINE_NO_RESPONSE`. Fixed
+  with `normalizeEpoch()`/`epochsMatch()` (`engine-registry.service.ts`): both
+  sides are normalised to a safe integer and the check stays fail-closed (absent
+  or unparsable ⇒ no match); the mismatch log now records `registeredEpochType`.
+- **A rejected runtime event is no longer a silent drop.** The gate in
+  `BotEventProcessor.isAuthoritativeRuntimeEvent()` is fail-closed and logs at
+  `error` level with the event's command context (`type`, `correlationId`,
+  `botId`, `commandType`, `engineId`, `engineEpoch`) — dropping an accept is
+  exactly what leaves a command to be timed out, so it must be visible.
+- **The engine ACKs stops too.** `engine/src/protocol/command-consumer.ts`
+  published no accept for `BOT_STOP`, so even a *successful* stop was burned as
+  `COMMAND_NEVER_DELIVERED`/`STOP_INCOMPLETE`; the stop branch now
+  `publishAccepted`s before `handleStop()`, exactly like `BOT_START`.
+
+Pinned by the new `backend/tests/unit/lifecycle-command-authority.test.ts`
+(8 cases: a command the engine has not answered stays `PENDING` and is timed
+out; `COMMAND_ACCEPTED` and `COMMAND_FAILED` each resolve the row so the sweep
+never sees it; a `BOT_STOP` row resolves on the engine's accept), the epoch-skew
+cases in `backend/tests/unit/engine-registry.service.test.ts` (a `BIGINT` string
+matches the JSON number; a non-numeric/missing epoch never matches), and the
+`BOT_STOP`-accept case in `engine/src/protocol/__tests__/command-consumer.test.ts`.
+
 #### L22 — 🟡 P2: non-`CommandError` failures retry forever, and poison entries are logged but never ACKed
 
 `processMessage`'s catch treats anything that is not a `CommandError` as
@@ -881,6 +912,37 @@ log. Fix together with L21 (one authority for command/state resolution), pinned
 by a test that a timed-out start leaves no engine-side runner alive, and
 verified live by requiring positions/flat exposure after the timeout.
 
+**Fix (2026-09-28).** The timeout sweep and the heartbeat-inventory reconciler
+now *repair* terminal drift instead of only logging it. `BotEventProcessor`
+gained an injected `TerminalBotStopRepair` wired to
+`BotLifecycleService.stopEngineRunnerForTerminalBot()` (injected, not imported —
+`BotLifecycleService` owns command dispatch and must not depend on the
+processor):
+
+- Called from `sweepTimedOutCommands()` (`command-timeout:<TYPE>`) and from
+  `reconcileHeartbeatInventory()` (`heartbeat-inventory-drift`) — the two sweeps
+  that can declare a bot terminal while a healthy engine still holds it.
+- Only a terminal `actual_state` (`ERROR`/`STOPPED`/`UNKNOWN`, the exported
+  `TERMINAL_ACTUAL_STATES`) is repaired. `RUNNING`/`STARTING`/`STOPPING` are
+  explicitly *not* second-guessed: there the engine inventory is merely ahead of
+  the backend — a race, not drift.
+- The stop goes through the normal tracked dispatch path
+  (record-before-publish), so the timeout sweeper supervises it like any other
+  command, and it is bounded by the shared `MAX_STOP_REISSUES_PER_HOUR` (moved
+  to `lifecycle/types.ts` so the reconciler and this repair cannot drift apart).
+  Past the budget the attempt is refused and logged at `error` with the engine
+  id — a dead engine must not be spammed. Each attempt is audited as
+  `RECONCILE_STOP_REISSUED` / `RECONCILE_STOP_REISSUE_FAILED` with
+  `source: "terminal-state-drift"`.
+- Best-effort by contract (it is called from supervision sweeps): it never
+  throws, and an unknown bot, no engine binding or an unwired repair is logged,
+  not fatal.
+
+Pinned by the same new suite: a timed-out start dispatches the engine-side stop
+("no orphaned exposure"), heartbeat drift on a terminal bot stops the runner, the
+hourly budget bounds the repair, and a mid-lifecycle bot is never stopped by
+drift alone.
+
 ---
 
 ## 4. Remediation ledger
@@ -933,10 +995,10 @@ can be repeated meaningfully.
 | L18 | 🔴 P0    | Engine dispatch uses the legacy `isStartBotCommand`/`isStopBotCommand` guards (`shared/src/types/engine-contract.ts:331,346`), so protocol `BOT_START`/`BOT_STOP` envelopes fall through `handleCommand` and are silently ACKed → `ENGINE_NO_RESPONSE`: switch `engine/src/protocol/command-consumer.ts` to protocol `isBotStartCommand`/`isBotStopCommand`, add the first engine consumer test, rebuild `engine/dist` (+ in the same change, the credential fetcher's missing `?correlationId` query param found by the live re-test); live 2026-09-28: dispatch proven for both commands | ✅ Done  |
 | L19 | 🟠 P1    | Stop/emergency-stop 404: the `bot-instances` cache maps `id: bot.strategy_id` (`useBotLifecycle.ts:125`, `strategyService.ts:166`), so `/management/stop` receives the strategy UUID and `findBot` 404s: map `id: bot.id`, audit every `bot.id` consumer, pin with a frontend test | ⬜ Open  |
 | L20 | 🟠 P1    | Start never reaches `RUNNING` on Lighter: `strategies.config.symbol` = `PERP_BTC_USDC` is not a Lighter market (venue lists `BTC`/`SOL`/`ETH`/`ETH/USDC`/`LIT/USDC`) → `UnknownMarketError` → `INIT_FAILED` → ERROR: venue-aware symbol validation/filtering at creation and/or start, fail fast with a user-facing reason, venue-aware start gate (`venue-symbols.ts`: live catalog per venue, case-insensitive resolve, **fail-open** when unavailable) called from `createAndStart` before the row insert, the start route passing `400`/`409` messages through, the union symbol list in `StrategyForm`; pinned by 9 `venue-symbols` + 3 service + 1 controller case; live 2026-09-28: non-venue symbol → **400** with no bot row, `BTC` → **202** to engine strategy init | ✅ Done  |
-| L21 | 🟠 P1    | `COMMAND_FAILED` does not resolve the tracked lifecycle command — the engine answered (`INIT_FAILED` logged at 08:08:07) yet the same correlationId timed out as `ENGINE_NO_RESPONSE` (`COMMAND_FAILED / INIT_FAILED` at 08:08:07 → timeout 08:08:40; and the **accepted** path 2026-09-28: accept published at 10:03:28, orders filled, still `ENGINE_NO_RESPONSE` at 10:03:59): one authority resolves command rows (accept/fail/timeout) + a test that a resolved command never times out | ⬜ Open — **next issue** |
+| L21 | 🟠 P1    | `COMMAND_FAILED` does not resolve the tracked lifecycle command — the engine answered (`INIT_FAILED` logged at 08:08:07) yet the same correlationId timed out as `ENGINE_NO_RESPONSE` (`COMMAND_FAILED / INIT_FAILED` at 08:08:07 → timeout 08:08:40; and the **accepted** path 2026-09-28: accept published at 10:03:28, orders filled, still `ENGINE_NO_RESPONSE` at 10:03:59): one authority resolves command rows (accept/fail/timeout) + a test that a resolved command never times out | ✅ Done 2026-09-28 — root cause: a type-strict epoch check (`engine_registry.epoch` is `BIGINT`, so node-postgres returns `"19"` while the engine sends the JSON number `19`) rejected every accept/fail/state-change as "epoch mismatch"; `epochsMatch`/`normalizeEpoch` make the comparison type-agnostic and fail-closed, a rejected runtime event is now logged at `error` with its command context, and the engine also ACKs `BOT_STOP` — pinned by `lifecycle-command-authority.test.ts` (8 cases) + the epoch-skew cases |
 | L22 | 🟡 P2    | Non-`CommandError` business failures (unknown market, backend 4xx) are retryable forever and poison entries are only logged, never ACKed: wrap them in non-retryable `CommandError` at the boundary + ACK past the poison threshold (alert + drop) | ⬜ Open  |
 | L23 | 🟠 P1    | Lighter's `queryOrderByClientOrderId` treats its argument as the venue's numeric client order index, but the grid passes the contract id (`grid.ts:328,396,434`) → `accountOrders?client_order_indexes=<string>` → **400** → `UNREACHABLE` → every slot frozen → no ACK → 30 s `COMMAND_TIMEOUT_ENGINE_NO_RESPONSE` → ERROR: derive the index with `clientIndexFromString` in the query path too (numeric handles stay verbatim), compare rows against it, and require a live start to reach `STATE_CHANGED → RUNNING` | ✅ Done — live 2026-09-28: orders placed + filled on Lighter, zero slot freezes |
-| L24 | 🔴 P0    | A timed-out `BOT_START` leaves the engine trading while the backend reports ERROR: after the 10:03:59 sweep wrote `COMMAND_TIMEOUT_ENGINE_NO_RESPONSE` the engine kept placing/filling orders and its heartbeat logged `Heartbeat inventory drift` repeatedly (exposure ended only on a manual stop, 10:06:26): the sweep/terminal-error handler must stop the engine-side runner (or the engine must not trade a bot declared ERROR), the drift must alert, pinned by a test that a timed-out start leaves no live runner | ⬜ Open  |
+| L24 | 🔴 P0    | A timed-out `BOT_START` leaves the engine trading while the backend reports ERROR: after the 10:03:59 sweep wrote `COMMAND_TIMEOUT_ENGINE_NO_RESPONSE` the engine kept placing/filling orders and its heartbeat logged `Heartbeat inventory drift` repeatedly (exposure ended only on a manual stop, 10:06:26): the sweep/terminal-error handler must stop the engine-side runner (or the engine must not trade a bot declared ERROR), the drift must alert, pinned by a test that a timed-out start leaves no live runner | ✅ Done 2026-09-28 — the timeout sweep and the heartbeat-drift reconciler now dispatch a bounded, audited `BOT_STOP` (`RECONCILE_STOP_REISSUED`, `MAX_STOP_REISSUES_PER_HOUR`) through `BotLifecycleService.stopEngineRunnerForTerminalBot()` for terminal states only (`ERROR`/`STOPPED`/`UNKNOWN`; mid-lifecycle states are not second-guessed) — pinned by the same suite (no runner left behind after a timeout, budget enforced, mid-lifecycle untouched) |
 
 Batch verification: re-run the manual flow (login → dashboard → settings → connect
 Lighter → strategies → create grid strategy → start a bot on the Lighter account →
@@ -961,8 +1023,11 @@ emergency stop from the Strategies card must return **202** with the request's
 (2026-09-28 re-run: the L20 gate rejects a non-venue symbol with **400** and
 dispatches a valid symbol to engine strategy init. Second re-run after L23:
 Lighter orders are **placed and filled** with zero `Order slot frozen` lines and
-the portfolio shows exactly the filled size; `RUNNING` now depends only on the
-L21/L24 command-resolution fixes.)
+the portfolio shows exactly the filled size. After L21/L24 (2026-09-28) the
+remaining live assertion is that a start the engine answers reaches
+`STATE_CHANGED → RUNNING` with no `ENGINE_NO_RESPONSE`, and that a timeout/ERROR
+leaves no engine-side runner behind (a bounded, audited `RECONCILE_STOP_REISSUED`
+must appear if the engine still held the bot).)
 
 ---
 
@@ -1081,8 +1146,8 @@ Findings from a security-focused code review, prioritized per severity:
 | 🟡 P2    | **2026-09-27 batch (L14–L15)** | WS client reconnect loop after `WS_AUTH_FAILED`; and the balance widget's missing error channel (the 400/403→"not connected" mask now hides only genuine failures).                    |
 | 🟠 P1    | **Bot account sessions (plan §D)** | The unit of execution becomes `(user, exchange_accounts)` with `strategy_runs` inside it: one credential fetch, one exchange connection and one reconciler per account, which is also the shape the L5–L10-adjacent reconciliation work (N3/N4) needs. Designed, not implemented — [DATA_MODEL.md](DATA_MODEL.md) §4.4, [plan §D](EXCHANGE_INTEGRATION_PLAN.md). |
 | 🟡 P2    | **Agent participation (plan §E)** | Advisor → coordinator → executor on delegated, expiring grants scoped to one account, with proposals inert until a user approves them and the engine as the only executor. Designed, not implemented — [plan §E](EXCHANGE_INTEGRATION_PLAN.md). |
-| 🟠 P1    | **2026-09-27/28 test blockers (L19–L24)** | L18 fixed 2026-09-28 (protocol dispatch guards + the credential fetcher's `?correlationId`; live re-test proves both commands dispatch), **L20 fixed 2026-09-28** (venue-aware start gate; non-venue symbol → **400** with no bot row) and **L23 fixed 2026-09-28** (the Lighter query derived the venue index; live: real orders placed + filled, zero freezes). Remaining: **L21 the accepted *and* failed engine events never resolve the tracked command (spurious `ENGINE_NO_RESPONSE`) — the next issue**, **L24 🔴 a timed-out start leaves the engine trading while the backend reports ERROR**, L19 stop 404 (frontend cache keeps `strategy_id` as `id`), L22 non-retryable failures loop / poison never ACKed — see §3/§4. |
-| 🟠 P1    | **Execution integrity (verified review of `f40f02a`)** | After L19–L22 (incl. L21's command-row resolution): retire or re-route the dead `engine.ts` lifecycle writers, credential idempotency (unique index + `ON CONFLICT`), trade idempotency + bot-scoped stats, account-scoped position/balance readers — verdicts in §2.      |
+| 🟠 P1    | **2026-09-27/28 test blockers (L19–L24)** | L18 fixed 2026-09-28 (protocol dispatch guards + the credential fetcher's `?correlationId`; live re-test proves both commands dispatch), **L20 fixed 2026-09-28** (venue-aware start gate; non-venue symbol → **400** with no bot row) and **L23 fixed 2026-09-28** (the Lighter query derived the venue index; live: real orders placed + filled, zero freezes). Remaining: **L21 and L24 fixed 2026-09-28** — a type-strict epoch check (the `BIGINT` `engine_registry.epoch` came back from node-postgres as `"19"` while the engine sent the JSON number `19`) rejected every engine accept/failure, so every command was timed out as `ENGINE_NO_RESPONSE` and the engine was left trading a bot the backend had declared ERROR; the check is now normalised and fail-closed, the engine ACKs `BOT_STOP` as well, and a bot the authority has declared terminal is stopped on the engine side by a bounded, audited repair from the timeout sweep and the heartbeat-drift reconciler. What remains: **L19 stop 404** (the frontend cache keeps `strategy_id` as `id`), **L22 non-retryable failures loop / poison never ACKed** — see §3/§4. |
+| 🟠 P1    | **Execution integrity (verified review of `f40f02a`)** | After L19/L22 (L21's command-row resolution landed 2026-09-28): retire or re-route the dead `engine.ts` lifecycle writers, credential idempotency (unique index + `ON CONFLICT`), trade idempotency + bot-scoped stats, account-scoped position/balance readers — verdicts in §2.      |
 
 ### How to keep this document honest
 

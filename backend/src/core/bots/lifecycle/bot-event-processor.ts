@@ -31,17 +31,46 @@ import {
   TimeoutReason,
 } from "./types";
 
+/**
+ * Actual states from which a bot must NOT be trading. A healthy engine that
+ * still lists such a bot in its heartbeat inventory is unsafe drift (the
+ * authority has already concluded the bot is not running), not a
+ * mid-transition race like RUNNING/STARTING/STOPPING (L24).
+ */
+export const TERMINAL_ACTUAL_STATES: ReadonlySet<BotActualState> = new Set([
+  "ERROR",
+  "STOPPED",
+  "UNKNOWN",
+]);
+
+/** True when a bot in this actual state must not be trading on the engine. */
+export function isTerminalActualState(state: BotActualState): boolean {
+  return TERMINAL_ACTUAL_STATES.has(state);
+}
+
 export type EngineLifecycleEventHandler = (event: BotEvent) => Promise<boolean>;
 /** Validates that (engineId, epoch) is the authoritative engine process. */
 export type EngineAuthorityChecker = (
   engineId: string,
   epoch?: number
 ) => Promise<boolean>;
+/**
+ * Repairs a bot whose engine-side runner must be torn down because the
+ * authority has declared the bot terminal (ERROR/STOPPED/UNKNOWN) while the
+ * engine still reports it active (L24). Resolves true when a stop was actually
+ * dispatched (false when the repair was skipped, refused or failed).
+ */
+export type TerminalBotStopRepair = (
+  botId: string,
+  reason: string
+) => Promise<boolean>;
 
 export class BotEventProcessor {
   private engineLifecycleHandler: EngineLifecycleEventHandler | null = null;
   /** Fail-closed authority check - must be wired for runtime events to apply. */
   private authorityChecker: EngineAuthorityChecker | null = null;
+  /** Terminal-state stop repair - wired to BotLifecycleService (L24). */
+  private terminalBotStopRepair: TerminalBotStopRepair | null = null;
 
   constructor(
     private repository: BotLifecycleRepository,
@@ -62,32 +91,107 @@ export class BotEventProcessor {
   }
 
   /**
-   * Validate that a runtime event comes from the authoritative engine
-   * process: an epoch must be present and the (engineId, epoch) pair must
-   * pass the registry check. DB failures inside the checker THROW (the
-   * message stays unacked for redelivery); unproven authority returns false
-   * (the event is stale/dropped and the message is acked).
+   * Inject the terminal-state stop repair (BotLifecycleService), injected to
+   * avoid a circular dependency. Without it a sweep can only log that the
+   * engine may still be trading - it cannot stop the runner (L24).
    */
-  private async isAuthoritativeEvent(
-    engineId: string,
-    engineEpoch: unknown
+  setTerminalBotStopRepair(repair: TerminalBotStopRepair): void {
+    this.terminalBotStopRepair = repair;
+  }
+
+  /**
+   * Ask the engine to tear down the runner of a bot the authority has already
+   * declared terminal. Best-effort: a failure is logged, never thrown, so a
+   * supervision sweep is not aborted by an unreachable engine.
+   */
+  private async repairTerminalBotStop(
+    botId: string,
+    reason: string
   ): Promise<boolean> {
+    if (!this.terminalBotStopRepair) {
+      logger.warn(
+        "Terminal-state stop repair not wired - engine runner may still be trading",
+        { botId, reason }
+      );
+      return false;
+    }
+    try {
+      return await this.terminalBotStopRepair(botId, reason);
+    } catch (error) {
+      logger.error("Terminal-state stop repair failed", undefined, {
+        botId,
+        reason,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Fail-closed authority gate for runtime (bot lifecycle) events: an epoch
+   * must be present and the (engineId, epoch) pair must pass the registry
+   * check. DB failures inside the checker THROW (the message stays unacked for
+   * redelivery); unproven authority returns false (the event is stale/dropped
+   * and the message is acked).
+   *
+   * A rejected runtime event is logged at error level with its command context:
+   * dropping it is not a no-op - it leaves the tracked command PENDING until
+   * the timeout sweep burns the bot to ERROR. L21: an epoch type skew silently
+   * rejected every accept/fail/state-change event, so a healthy engine that had
+   * answered and was actively trading was reported as ENGINE_NO_RESPONSE.
+   */
+  private async isAuthoritativeRuntimeEvent(
+    event: BotEvent,
+    payload: {
+      botId?: string;
+      commandType?: string;
+      engineId?: unknown;
+      engineEpoch?: unknown;
+    }
+  ): Promise<boolean> {
+    const engineId = payload.engineId;
+    const engineEpoch = payload.engineEpoch;
+
     if (!this.authorityChecker) {
       logger.error(
         "No engine authority checker wired - rejecting runtime event",
         undefined,
-        { engineId, engineEpoch }
+        { eventType: event.type, correlationId: event.correlationId, engineId }
       );
       return false;
     }
-    if (typeof engineEpoch !== "number") {
-      logger.warn("Runtime event without engineEpoch - rejecting", {
-        engineId,
-        engineEpoch,
+    if (typeof engineId !== "string" || engineId === "") {
+      logger.error("Runtime event without engineId - rejecting", undefined, {
+        eventType: event.type,
+        correlationId: event.correlationId,
       });
       return false;
     }
-    return this.authorityChecker(engineId, engineEpoch);
+    if (typeof engineEpoch !== "number") {
+      logger.error("Runtime event without engineEpoch - rejecting", undefined, {
+        eventType: event.type,
+        correlationId: event.correlationId,
+        engineId,
+      });
+      return false;
+    }
+    if (await this.authorityChecker(engineId, engineEpoch)) {
+      return true;
+    }
+
+    logger.error(
+      "Runtime event rejected (engine not authoritative) - tracked command will time out",
+      undefined,
+      {
+        eventType: event.type,
+        correlationId: event.correlationId,
+        botId: payload.botId,
+        commandType: payload.commandType,
+        engineId,
+        engineEpoch,
+      }
+    );
+    return false;
   }
 
   /**
@@ -164,9 +268,7 @@ export class BotEventProcessor {
       engineEpoch?: number;
     };
 
-    if (
-      !(await this.isAuthoritativeEvent(payload.engineId, payload.engineEpoch))
-    ) {
+    if (!(await this.isAuthoritativeRuntimeEvent(event, payload))) {
       return;
     }
 
@@ -208,9 +310,7 @@ export class BotEventProcessor {
       correlationId: event.correlationId,
     });
 
-    if (
-      !(await this.isAuthoritativeEvent(payload.engineId, payload.engineEpoch))
-    ) {
+    if (!(await this.isAuthoritativeRuntimeEvent(event, payload))) {
       return;
     }
 
@@ -293,9 +393,7 @@ export class BotEventProcessor {
       reason?: string;
     };
 
-    if (
-      !(await this.isAuthoritativeEvent(payload.engineId, payload.engineEpoch))
-    ) {
+    if (!(await this.isAuthoritativeRuntimeEvent(event, payload))) {
       return;
     }
 
@@ -476,13 +574,16 @@ export class BotEventProcessor {
    *   transition the bot to UNKNOWN (drift-safe: not ERROR, because the
    *   engine did not report a failure).
    * - the engine lists a bot the backend does not consider running → drift
-   *   warning only (the backend may be mid-transition; a BOT_STATUS_REQUEST
-   *   resolves it authoritatively).
+   *   warning. When the backend state is terminal (ERROR/STOPPED/UNKNOWN -
+   *   i.e. the authority has concluded the bot must not trade) the drift is
+   *   also REPAIRED: a bounded BOT_STOP is dispatched so the engine tears down
+   *   the runner. Warning alone left the engine trading a bot the backend had
+   *   already declared dead (L24).
    */
   async reconcileHeartbeatInventory(
     engineId: string,
     activeBotIds: string[]
-  ): Promise<{ unlisted: number; drift: number }> {
+  ): Promise<{ unlisted: number; drift: number; stopReissued: number }> {
     const activeSet = new Set(activeBotIds);
 
     // 1) Backend RUNNING bots missing from the engine's inventory.
@@ -536,6 +637,7 @@ export class BotEventProcessor {
     const backendBots = await this.repository.findBotsByIds(listed);
     const backendById = new Map(backendBots.map(b => [b.id, b]));
     let drift = 0;
+    let stopReissued = 0;
     for (const botId of listed) {
       const backend = backendById.get(botId);
       if (
@@ -553,10 +655,33 @@ export class BotEventProcessor {
             backendState: backend?.actual_state ?? "not-found",
           }
         );
+
+        // L24: a terminal backend state is not a mid-transition race - the
+        // authority has concluded this bot must not trade, yet the engine still
+        // runs it. Stop the engine-side runner (bounded) instead of only
+        // warning: a timeout/ERROR must never leave orphaned exposure.
+        if (backend && isTerminalActualState(backend.actual_state)) {
+          const repaired = await this.repairTerminalBotStop(
+            botId,
+            "heartbeat-inventory-drift"
+          );
+          if (repaired) {
+            stopReissued++;
+            logger.error(
+              "Unsafe drift repair: engine stopped for a bot the backend reports terminal",
+              undefined,
+              {
+                engineId,
+                botId,
+                backendState: backend.actual_state,
+              }
+            );
+          }
+        }
       }
     }
 
-    return { unlisted, drift };
+    return { unlisted, drift, stopReissued };
   }
 
   /**
@@ -626,6 +751,15 @@ export class BotEventProcessor {
               bot.actual_state,
               targetState,
               cmd.correlation_id
+            );
+
+            // L24: the timeout is backend bookkeeping only - the engine may
+            // still be running (and filling) this bot. The authority has just
+            // declared it terminal, so make the engine tear the runner down
+            // instead of leaving orphaned exposure that only a manual stop ends.
+            await this.repairTerminalBotStop(
+              bot.id,
+              `command-timeout:${cmd.command_type}`
             );
           }
         }

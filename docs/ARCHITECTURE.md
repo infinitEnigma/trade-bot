@@ -83,7 +83,7 @@ through its lifecycle), `engineId` + `engineEpoch` (authority), and a timestamp.
 | Older-Redis fallback     | When `XAUTOCLAIM` is unavailable (Redis < 6.2), falls back to `XPENDING` + `XCLAIM` with a client-side idle filter                                     |
 | Deduplication            | Durable `SET NX EX` marker per `{scope}:{messageId}` (24h TTL) plus an in-memory cache. Marker writes **fail open** — double-processing beats dropping |
 | Poison-message detection | `XPENDING` scan counts redeliveries; entries at or over the threshold are logged for operators                                                         |
-| Staleness rejection      | Events from a non-authoritative engine or a superseded epoch are ignored                                                                               |
+| Staleness rejection      | Events from a non-authoritative engine or a superseded epoch are dropped; `engine_registry.epoch` (`BIGINT`, i.e. a string from node-postgres) and the JSON number an event carries are normalised before comparison, and a rejection is logged at `error` with the event's command context — no authority ⇒ no state change |
 
 **Failure semantics differ by cause on the engine side:** business failures are
 published as `COMMAND_FAILED` and the message is acked; transient infrastructure
@@ -133,10 +133,11 @@ transition already completed.
 
 | Mechanism                   | Behaviour                                                                                                                                                                                                                                 |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Command tracking + timeouts | Every dispatched command is recorded `PENDING`; a sweeper marks expired ones `TIMED_OUT` (`BOT_COMMAND_TIMEOUT_MS`, default 30s) and moves the bot to a terminal state                                                                    |
+| Command tracking + timeouts | Every dispatched command is recorded `PENDING`; the engine's accept/failure resolves the row, so a command the engine answered is never timed out. A sweeper marks genuinely expired ones `TIMED_OUT` (`BOT_COMMAND_TIMEOUT_MS`, default 30s) and moves the bot to a terminal state — a timeout is backend bookkeeping only, so the same sweep also dispatches a bounded, audited `BOT_STOP` (`RECONCILE_STOP_REISSUED`) to tear the engine-side runner down |
 | Engine registry             | Engines register with a persistent `engineId` and a per-restart `epoch`; `RUNNING` bots are moved to `UNKNOWN` when the engine goes `OFFLINE`                                                                                             |
 | Stale-generation rejection  | Events from a superseded engine or epoch are dropped, so a reconnected old process cannot rewrite current state                                                                                                                           |
-| Reconciliation sweep        | Bounded, audited sweep (default every 60s, jittered): re-issues stop (max 3 per bot per hour), degrades stuck transitional states to `UNKNOWN`, and audits `desired=RUNNING` + `ERROR/UNKNOWN` as needing user action — never auto-starts |
+| Reconciliation sweep        | Bounded, audited sweep (default every 60s, jittered): re-issues stop (max 3 per bot per hour, shared with the terminal-state repair), degrades stuck transitional states to `UNKNOWN`, and audits `desired=RUNNING` + `ERROR/UNKNOWN` as needing user action — never auto-starts |
+| Terminal-state stop repair  | A healthy engine still listing a bot the authority has declared terminal (`ERROR`/`STOPPED`/`UNKNOWN`) is drift, not a race: the timeout sweep and the heartbeat-inventory reconciler dispatch a bounded `BOT_STOP` for it. Mid-lifecycle states (`RUNNING`/`STARTING`/`STOPPING`) are never second-guessed |
 
 ---
 

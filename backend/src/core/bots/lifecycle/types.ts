@@ -60,6 +60,15 @@ export const BOT_COMMAND_TIMEOUT_MS = Number(
   process.env.BOT_COMMAND_TIMEOUT_MS ?? 30_000
 );
 
+/**
+ * Max automatic BOT_STOP re-issues per bot per hour before repair attempts are
+ * deferred. Shared by the lifecycle reconciler and the terminal-state stop
+ * repair (L24) so both bound themselves identically against a dead engine.
+ */
+export const MAX_STOP_REISSUES_PER_HOUR = Number(
+  process.env.LIFECYCLE_RECONCILE_MAX_STOP_REISSUES ?? 3
+);
+
 /** A tracked lifecycle command awaiting engine confirmation. */
 export interface TrackedCommandRow {
   correlation_id: string;

@@ -88,16 +88,29 @@ describe("command-consumer processMessage", () => {
     expect(acks).toEqual(["1-0"]);
   });
 
-  it("dispatches a protocol BOT_STOP envelope to handleStop and ACKs", async () => {
+  it("dispatches a protocol BOT_STOP envelope (accept + handleStop) and ACKs", async () => {
     const { acks, ops } = makeStreamOps();
     const { manager, publishAccepted, handleStart, handleStop } = makeManager();
     const command = createBotCommand("BOT_STOP", { botId: "bot-1" }, "corr-2");
 
     await processMessage(ops, manager, msg("1-1", command), new Set());
 
+    // L21: a consumed command must be ACKed even when the engine-side work is a
+    // stop - otherwise the backend's tracked row stays PENDING and a successful
+    // stop is burned as COMMAND_NEVER_DELIVERED by the timeout sweep.
+    expect(publishAccepted).toHaveBeenCalledTimes(1);
+    expect(publishAccepted).toHaveBeenCalledWith(
+      ops,
+      "bot-1",
+      "BOT_STOP",
+      "corr-2"
+    );
     expect(handleStop).toHaveBeenCalledTimes(1);
     expect(handleStop).toHaveBeenCalledWith(ops, "bot-1", "corr-2");
-    expect(publishAccepted).not.toHaveBeenCalled();
+    // The accept must be published before the work starts.
+    expect(publishAccepted.mock.invocationCallOrder[0]).toBeLessThan(
+      handleStop.mock.invocationCallOrder[0]
+    );
     expect(handleStart).not.toHaveBeenCalled();
     expect(acks).toEqual(["1-1"]);
   });

@@ -37,6 +37,9 @@ and the engine both read it.
 | `NODE_ENV`, `PORT`, `FRONTEND_URL`, `CORS_ORIGIN`             | `development` / `3000` / `http://localhost:5173`    | Server configuration                                     |
 | `BOT_COMMAND_TIMEOUT_MS`                                      | `30000`                                             | A delivered command must be confirmed within this window |
 | `ENGINE_HEARTBEAT_TIMEOUT_MS`                                 | `30000`                                             | Silence after which an engine is marked `OFFLINE`        |
+| `LIFECYCLE_RECONCILE_INTERVAL_MS`                             | `60000`                                             | Reconciliation sweep cadence (jittered)                  |
+| `LIFECYCLE_RECONCILE_STUCK_GRACE_MS`                          | `90000` (3× command timeout)                         | Grace before a stuck transitional state degrades to `UNKNOWN` |
+| `LIFECYCLE_RECONCILE_MAX_STOP_REISSUES`                       | `3`                                                 | Max automatic `BOT_STOP` re-issues per bot per hour (reconciler + terminal-state repair) |
 | `PENDING_RECOVERY_MIN_IDLE_MS`                                | `60000`                                             | Minimum idle time before a pending message is claimed    |
 | `PENDING_RECOVERY_INTERVAL_MS`                                | `30000`                                             | How often the pending-recovery pass runs                 |
 | `PENDING_STUCK_ALERT_THRESHOLD_MS`                            | `30000`                                             | Pending entries idle this long count as "stuck"          |
@@ -166,6 +169,18 @@ Investigate the engine log for the matching `correlationId` before retrying.
 bounded `BOT_STOP` re-issue (max 3 per bot per hour, tracked as pending so the
 timeout sweeper keeps supervising it). Once the budget is exhausted the bot is
 degraded to `UNKNOWN` for operator attention instead of looping forever.
+
+The same bounded repair covers **terminal drift**: once the authority has
+concluded a bot must not trade (`ERROR`/`STOPPED`/`UNKNOWN` — typically a
+`COMMAND_TIMEOUT_*` sweep outcome) and a healthy engine still lists it as active,
+the timeout sweeper and the heartbeat-inventory reconciler dispatch a `BOT_STOP`
+and audit `RECONCILE_STOP_REISSUED` (or `RECONCILE_STOP_REISSUE_FAILED`) with
+`source: "terminal-state-drift"`. A timeout is only backend bookkeeping, so this
+is what actually stops an orphaned runner from keeping the grid live: when
+investigating exposure after an `ERROR`, check `bot_lifecycle_events` for that
+event and the engine log for the matching `correlationId`. Mid-lifecycle states
+(`RUNNING`/`STARTING`/`STOPPING`) are never second-guessed — there the engine
+inventory is simply ahead of the backend.
 
 ### 5.5 Engine restart and grid state
 

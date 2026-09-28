@@ -161,6 +161,28 @@ describe("EngineRegistryService", () => {
       expect(await service.isEngineAuthoritative("engine-1", 5)).toBe(true);
     });
 
+    it("accepts a registered epoch delivered as a BIGINT string (L21 regression)", async () => {
+      // node-postgres returns `engine_registry.epoch` (BIGINT, migration 009) as
+      // a string while the engine publishes `engineEpoch` as a JSON number. The
+      // former strict `!==` rejected EVERY runtime event as "epoch mismatch",
+      // so accepts/failures were dropped and healthy engines were reported as
+      // ENGINE_NO_RESPONSE while they kept trading.
+      mockQuery.mockReturnValue({
+        rows: [{ engine_id: "engine-1", epoch: "19", status: "ONLINE" }],
+        rowCount: 1,
+      });
+      expect(await service.isEngineAuthoritative("engine-1", 19)).toBe(true);
+    });
+
+    it("still rejects a genuine epoch mismatch when the registered epoch is a string", async () => {
+      mockQuery.mockReturnValue({
+        rows: [{ engine_id: "engine-1", epoch: "19", status: "ONLINE" }],
+        rowCount: 1,
+      });
+      expect(await service.isEngineAuthoritative("engine-1", 20)).toBe(false);
+      expect(await service.isEngineAuthoritative("engine-1", 18)).toBe(false);
+    });
+
     it("rejects an OFFLINE engine", async () => {
       mockQuery.mockReturnValue({
         rows: [{ engine_id: "engine-1", epoch: 5, status: "OFFLINE" }],

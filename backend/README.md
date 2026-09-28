@@ -133,6 +133,11 @@ after DB, engine protocol, command-timeout sweeper and engine registry supervisi
 - Transitional state stuck beyond grace (3x command timeout) with no `PENDING` command → degrade to
   `UNKNOWN` via compare-and-set + `RECONCILE_MARKED_UNKNOWN` audit event.
 - `desired=RUNNING` but actual `ERROR/UNKNOWN` → audit-only `RECONCILE_NEEDS_USER_ACTION` (no auto-start).
+- Engine still active for a bot whose actual state is terminal (`ERROR/STOPPED/UNKNOWN`, checked by the
+  timeout sweeper and the heartbeat-inventory reconciler too) → dispatch a bounded `BOT_STOP` so the
+  engine-side runner cannot keep trading an orphaned bot (audited `RECONCILE_STOP_REISSUED` /
+  `RECONCILE_STOP_REISSUE_FAILED`, `source: "terminal-state-drift"`, same per-bot/hour budget as the
+  `desired=STOPPED` reissue above). Mid-lifecycle states are never second-guessed.
 
 It never writes lifecycle state directly: all repairs go through `BotLifecycleService`. Phase-0
 attribution counters (Kodiak requests/cache hit-miss/429, Orderly connections, privileged WebSocket
@@ -140,10 +145,10 @@ connections, market subscriptions) are exposed at `GET /api/system/metrics` unde
 
 ### Supervision Mechanisms
 
-- **Command tracking & timeouts**: Every delivered command is recorded as `PENDING`. A sweeper marks expired commands `TIMED_OUT` and transitions stuck bots to `ERROR`.
+- **Command tracking & timeouts**: Every delivered command is recorded as `PENDING`; the engine's accept/failure resolves it, so an answered command never times out. A sweeper marks the expired ones `TIMED_OUT`, transitions stuck bots to `ERROR`/`UNKNOWN`, and then stops the engine-side runner of that terminal bot (bounded, audited) so a timeout cannot leave orphaned exposure.
 - **Concurrency safety**: Every lifecycle UPDATE uses compare-and-set (`WHERE ... AND actual_state = $expected`); concurrent requests return 409.
 - **Engine registration & heartbeat**: Engines register with persistent `engineId` + restart `epoch`. The registry marks engines `OFFLINE` after heartbeat timeout and transitions RUNNING bots to `UNKNOWN`.
-- **Stale-generation rejection**: Events from a non-authoritative engine or superseded epoch are ignored.
+- **Stale-generation rejection**: Events from a non-authoritative engine or superseded epoch are ignored. Epochs are normalised before comparison — `engine_registry.epoch` is `BIGINT` (node-postgres returns a string) while events carry a JSON number — and a rejected runtime event is logged at `error` with its command context, because dropping an accept leaves the tracked command to be timed out.
 
 ---
 

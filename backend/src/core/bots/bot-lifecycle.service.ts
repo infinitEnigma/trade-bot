@@ -33,6 +33,7 @@ import {
   BotEventProcessor,
   EngineAuthorityChecker,
   EngineLifecycleEventHandler,
+  isTerminalActualState,
 } from "./lifecycle/bot-event-processor";
 import { BotLifecycleRepository } from "./lifecycle/bot-lifecycle.repository";
 import { exchangeAccountRepositoryAdapter } from "../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
@@ -42,6 +43,7 @@ import {
   BotLifecycleResult,
   BotRow,
   BOT_COMMAND_TIMEOUT_MS,
+  MAX_STOP_REISSUES_PER_HOUR,
 } from "./lifecycle/types";
 
 // Re-exported for existing consumers (timeout sweeper, tests).
@@ -57,6 +59,12 @@ export class BotLifecycleService {
   constructor(engineProtocol: EngineProtocolService) {
     this.dispatcher = new BotCommandDispatcher(engineProtocol, this.repository);
     this.eventProcessor = new BotEventProcessor(this.repository, this.notifier);
+    // L24: when a supervision sweep declares a bot terminal (timeout → ERROR/
+    // UNKNOWN, heartbeat drift), the engine-side runner must be stopped too -
+    // this service owns command dispatch, so the repair is wired back in here.
+    this.eventProcessor.setTerminalBotStopRepair((botId, reason) =>
+      this.stopEngineRunnerForTerminalBot(botId, reason)
+    );
   }
 
   /** Register the Socket.IO server for frontend `bot.stateChanged` events. */
@@ -388,7 +396,7 @@ export class BotLifecycleService {
   reconcileHeartbeatInventory(
     engineId: string,
     activeBotIds: string[]
-  ): Promise<{ unlisted: number; drift: number }> {
+  ): Promise<{ unlisted: number; drift: number; stopReissued: number }> {
     return this.eventProcessor.reconcileHeartbeatInventory(
       engineId,
       activeBotIds
@@ -466,6 +474,126 @@ export class BotLifecycleService {
       actualState: bot.actual_state,
       correlationId: sendResult.correlationId,
     };
+  }
+
+  /**
+   * L24 repair: stop the engine-side runner of a bot the authority has already
+   * declared terminal (ERROR/STOPPED/UNKNOWN) but which a healthy engine still
+   * reports as active.
+   *
+   * A command timeout is backend bookkeeping only. Without this repair a
+   * timed-out BOT_START left the engine placing and filling orders for a bot
+   * the backend had marked ERROR - exposure that ended only on a manual stop.
+   * The stop goes through the normal tracked dispatch path
+   * (record-before-publish) so it is supervised like any other command, and is
+   * bounded per bot per hour so an unreachable engine cannot be spammed.
+   *
+   * Best-effort by contract: it is called from supervision sweeps, so it never
+   * throws and returns true only when a stop was actually dispatched.
+   */
+  async stopEngineRunnerForTerminalBot(
+    botId: string,
+    reason: string
+  ): Promise<boolean> {
+    try {
+      const bot = await this.repository.findBot(botId);
+      if (!bot) {
+        logger.warn("Terminal-stop repair skipped: unknown bot", {
+          botId,
+          reason,
+        });
+        return false;
+      }
+
+      // Only repair states where the authority has concluded the bot must not
+      // trade. RUNNING/STARTING/STOPPING describe a live lifecycle: there the
+      // engine inventory is simply ahead of the backend and must not be
+      // second-guessed.
+      if (!isTerminalActualState(bot.actual_state)) {
+        logger.debug("Terminal-stop repair skipped: bot is mid-lifecycle", {
+          botId,
+          actualState: bot.actual_state,
+          reason,
+        });
+        return false;
+      }
+
+      if (!bot.engine_id) {
+        logger.warn("Terminal-stop repair skipped: bot has no engine binding", {
+          botId,
+          actualState: bot.actual_state,
+          reason,
+        });
+        return false;
+      }
+
+      const reissues = await this.repository.countRecentStopReissues(botId);
+      if (reissues >= MAX_STOP_REISSUES_PER_HOUR) {
+        logger.error(
+          "Terminal-stop repair budget exhausted - engine may still be trading",
+          undefined,
+          {
+            botId,
+            actualState: bot.actual_state,
+            engineId: bot.engine_id,
+            reissuesLastHour: reissues,
+            reason,
+          }
+        );
+        return false;
+      }
+
+      const sendResult = await this.dispatcher.sendStopCommand(botId);
+      await this.repository.recordLifecycleEvent(botId, {
+        eventType: sendResult.success
+          ? "RECONCILE_STOP_REISSUED"
+          : "RECONCILE_STOP_REISSUE_FAILED",
+        fromState: bot.actual_state,
+        toState: bot.actual_state,
+        correlationId: sendResult.correlationId ?? null,
+        messageId: sendResult.messageId ?? null,
+        metadata: {
+          reason,
+          source: "terminal-state-drift",
+          dispatchError: sendResult.error ?? null,
+        },
+      });
+
+      if (!sendResult.success) {
+        logger.error(
+          "Terminal-stop repair dispatch failed - engine may still be trading",
+          undefined,
+          {
+            botId,
+            actualState: bot.actual_state,
+            engineId: bot.engine_id,
+            error: sendResult.error,
+            reason,
+          }
+        );
+        return false;
+      }
+
+      logger.error(
+        "Terminal-stop repair dispatched: engine must tear down a terminal bot",
+        undefined,
+        {
+          botId,
+          actualState: bot.actual_state,
+          engineId: bot.engine_id,
+          correlationId: sendResult.correlationId,
+          reason,
+        }
+      );
+      return true;
+    } catch (error) {
+      logger.error("Terminal-stop repair failed", undefined, {
+        botId,
+        reason,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
   }
 
   /**
