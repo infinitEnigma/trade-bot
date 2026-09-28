@@ -113,12 +113,12 @@ Behaviour coupled to it:
 
 ### Vendor-named data tables — dropped by `014_drop_legacy_kodiak.sql`
 
-| Dropped table       | Why it could not stay                                                |
-| ------------------- | -------------------------------------------------------------------- |
-| `kodiak_accounts`   | `UNIQUE(user_id)` — one account per user                             |
-| `kodiak_positions`  | `UNIQUE(user_id, symbol)` — positions per _user_, not per account    |
-| `kodiak_balances`   | keyed by `user_id`                                                   |
-| `kodiak_statistics` | `UNIQUE(user_id)`                                                    |
+| Dropped table       | Why it could not stay                                                        |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `kodiak_accounts`   | `UNIQUE(user_id)` — one account per user                                     |
+| `kodiak_positions`  | `UNIQUE(user_id, symbol)` — positions per _user_, not per account            |
+| `kodiak_balances`   | keyed by `user_id`                                                           |
+| `kodiak_statistics` | `UNIQUE(user_id)`                                                            |
 | `trades`            | (kept) `user_id` + optional `strategy_id`/`bot_id`; no account reference yet |
 
 C3a created their per-account replacements — `exchange_positions` and
@@ -173,16 +173,16 @@ on `exchange` (kodiak / lighter).
 
 ## 3. Problems this creates
 
-| #   | Problem                                     | Consequence                                                                                                                               |
-| --- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| P1  | `kodiak_credentials UNIQUE(user_id)`        | A user cannot hold two exchange accounts, or the same venue on two environments (mainnet + testnet)                                       |
-| P2  | Vendor-named tables + Orderly validation    | Lighter credentials (`accountIndex`, `apiKeyIndex`, `privateKey`, `env`) fit nowhere; each new venue would need a new table and endpoints |
-| P3  | `wallet_addresses UNIQUE(user_id)`          | One wallet per user; no chain column, so the same address on two chains cannot be represented, and there is no primary-wallet concept     |
-| P4  | Identity == email                           | No username/nick, no path for social logins; email is required, and JWT claims carry it                                                   |
+| #   | Problem                                     | Consequence                                                                                                                                                                         |
+| --- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1  | `kodiak_credentials UNIQUE(user_id)`        | A user cannot hold two exchange accounts, or the same venue on two environments (mainnet + testnet)                                                                                 |
+| P2  | Vendor-named tables + Orderly validation    | Lighter credentials (`accountIndex`, `apiKeyIndex`, `privateKey`, `env`) fit nowhere; each new venue would need a new table and endpoints                                           |
+| P3  | `wallet_addresses UNIQUE(user_id)`          | One wallet per user; no chain column, so the same address on two chains cannot be represented, and there is no primary-wallet concept                                               |
+| P4  | Identity == email                           | No username/nick, no path for social logins; email is required, and JWT claims carry it                                                                                             |
 | P5  | No bot → account link                       | The engine cannot know which account a bot trades; `/credentials/:botId` has no account parameter — **fixed by C3a**: bots carry `exchange_account_id` and the endpoint resolves it |
-| P6  | `user_level` derived from a vendor join     | With several accounts, one revoked account would flip the whole user, and per-account status is invisible                                 |
-| P7  | Positions/balances keyed by `user_id`       | `UNIQUE(user_id, symbol)` collides when two accounts hold the same symbol                                                                 |
-| P8  | Disconnect deletes credentials + downgrades | Disconnecting one account must be per-account, audited, and must not change global level unless no verified account remains               |
+| P6  | `user_level` derived from a vendor join     | With several accounts, one revoked account would flip the whole user, and per-account status is invisible                                                                           |
+| P7  | Positions/balances keyed by `user_id`       | `UNIQUE(user_id, symbol)` collides when two accounts hold the same symbol                                                                                                           |
+| P8  | Disconnect deletes credentials + downgrades | Disconnecting one account must be per-account, audited, and must not change global level unless no verified account remains                                                         |
 
 ---
 
@@ -354,7 +354,7 @@ Why this shape:
   balance rows and (N3/N4) the reconciliation state — two sessions on one account
   would fight over exactly that state.
 - **Credentials and portfolio reads do not change.** One account per session means
-  one envelope per bot (what C3a already issues — and *one* fetch instead of one
+  one envelope per bot (what C3a already issues — and _one_ fetch instead of one
   per strategy), and `exchange_positions` / `exchange_balances` are already keyed
   by `exchange_account_id` (C3b), so a session's portfolio view is that account's
   rows — also the natural read model for an agent.

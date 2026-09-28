@@ -26,25 +26,25 @@ and the engine both read it.
 
 ### Backend / shared
 
-| Variable                                                      | Default                                             | Purpose                                                  |
-| ------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
-| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | `localhost` / `5432` / `trade_bot` / `postgres` / – | PostgreSQL connection                                    |
-| `REDIS_URL`                                                   | `redis://localhost:6379`                            | Redis connection (the engine uses logical DB 1)          |
-| `JWT_SECRET`, `JWT_REFRESH_SECRET`                            | –                                                   | 32+ chars, required in production                        |
-| `ENCRYPTION_MASTER_KEY`                                       | –                                                   | 32+ chars; encrypts stored exchange credentials          |
-| `BOT_ENGINE_API_KEY`                                          | –                                                   | Authenticates engine → backend calls                     |
-| `KODIAK_API_URL`, `KODIAK_WS_URL`                             | Orderly endpoints                                   | Exchange REST / WebSocket endpoints                      |
-| `NODE_ENV`, `PORT`, `FRONTEND_URL`, `CORS_ORIGIN`             | `development` / `3000` / `http://localhost:5173`    | Server configuration                                     |
-| `BOT_COMMAND_TIMEOUT_MS`                                      | `30000`                                             | A delivered command must be confirmed within this window |
-| `ENGINE_HEARTBEAT_TIMEOUT_MS`                                 | `30000`                                             | Silence after which an engine is marked `OFFLINE`        |
-| `LIFECYCLE_RECONCILE_INTERVAL_MS`                             | `60000`                                             | Reconciliation sweep cadence (jittered)                  |
-| `LIFECYCLE_RECONCILE_STUCK_GRACE_MS`                          | `90000` (3× command timeout)                         | Grace before a stuck transitional state degrades to `UNKNOWN` |
+| Variable                                                      | Default                                             | Purpose                                                                                  |
+| ------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | `localhost` / `5432` / `trade_bot` / `postgres` / – | PostgreSQL connection                                                                    |
+| `REDIS_URL`                                                   | `redis://localhost:6379`                            | Redis connection (the engine uses logical DB 1)                                          |
+| `JWT_SECRET`, `JWT_REFRESH_SECRET`                            | –                                                   | 32+ chars, required in production                                                        |
+| `ENCRYPTION_MASTER_KEY`                                       | –                                                   | 32+ chars; encrypts stored exchange credentials                                          |
+| `BOT_ENGINE_API_KEY`                                          | –                                                   | Authenticates engine → backend calls                                                     |
+| `KODIAK_API_URL`, `KODIAK_WS_URL`                             | Orderly endpoints                                   | Exchange REST / WebSocket endpoints                                                      |
+| `NODE_ENV`, `PORT`, `FRONTEND_URL`, `CORS_ORIGIN`             | `development` / `3000` / `http://localhost:5173`    | Server configuration                                                                     |
+| `BOT_COMMAND_TIMEOUT_MS`                                      | `30000`                                             | A delivered command must be confirmed within this window                                 |
+| `ENGINE_HEARTBEAT_TIMEOUT_MS`                                 | `30000`                                             | Silence after which an engine is marked `OFFLINE`                                        |
+| `LIFECYCLE_RECONCILE_INTERVAL_MS`                             | `60000`                                             | Reconciliation sweep cadence (jittered)                                                  |
+| `LIFECYCLE_RECONCILE_STUCK_GRACE_MS`                          | `90000` (3× command timeout)                        | Grace before a stuck transitional state degrades to `UNKNOWN`                            |
 | `LIFECYCLE_RECONCILE_MAX_STOP_REISSUES`                       | `3`                                                 | Max automatic `BOT_STOP` re-issues per bot per hour (reconciler + terminal-state repair) |
-| `PENDING_RECOVERY_MIN_IDLE_MS`                                | `60000`                                             | Minimum idle time before a pending message is claimed    |
-| `PENDING_RECOVERY_INTERVAL_MS`                                | `30000`                                             | How often the pending-recovery pass runs                 |
-| `PENDING_STUCK_ALERT_THRESHOLD_MS`                            | `30000`                                             | Pending entries idle this long count as "stuck"          |
-| `PENDING_ALERT_THRESHOLD`                                     | `5`                                                 | Stuck-entry count that triggers a backlog warning        |
-| `PENDING_POISON_MAX_DELIVERIES`                               | `10`                                                | Redelivery count treated as a poison message             |
+| `PENDING_RECOVERY_MIN_IDLE_MS`                                | `60000`                                             | Minimum idle time before a pending message is claimed                                    |
+| `PENDING_RECOVERY_INTERVAL_MS`                                | `30000`                                             | How often the pending-recovery pass runs                                                 |
+| `PENDING_STUCK_ALERT_THRESHOLD_MS`                            | `30000`                                             | Pending entries idle this long count as "stuck"                                          |
+| `PENDING_ALERT_THRESHOLD`                                     | `5`                                                 | Stuck-entry count that triggers a backlog warning                                        |
+| `PENDING_POISON_MAX_DELIVERIES`                               | `10`                                                | Redelivery count treated as a poison message                                             |
 
 ### Engine
 
@@ -251,12 +251,12 @@ disagrees with it.
 
 Routes the frontend actually calls (all under `/management`):
 
-| Action | Route                                     | Body / notes                                                                                                     |
-| ------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| List   | `GET /api/bot/management/instances`       | one row per bot, carrying its `exchangeAccountId`                                                                |
+| Action | Route                                     | Body / notes                                                                                                                                    |
+| ------ | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| List   | `GET /api/bot/management/instances`       | one row per bot, carrying its `exchangeAccountId`                                                                                               |
 | Start  | `POST /api/bot/management/start`          | `{ strategyId, exchangeAccountId, notionalAmount }` → **202**; account must be owned + `ACTIVE` (else 400/404) and the user VERIFIED (else 403) |
-| Stop   | `POST /api/bot/management/stop`           | `{ botId }`                                                                                                      |
-| Panic  | `POST /api/bot/management/emergency-stop` | `action: CANCEL_ALL_ORDERS \| CLOSE_POSITIONS \| FULL_SHUTDOWN`                                                   |
+| Stop   | `POST /api/bot/management/stop`           | `{ botId }`                                                                                                                                     |
+| Panic  | `POST /api/bot/management/emergency-stop` | `action: CANCEL_ALL_ORDERS \| CLOSE_POSITIONS \| FULL_SHUTDOWN`                                                                                 |
 
 Checklist when something is missing:
 

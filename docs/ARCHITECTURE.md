@@ -75,14 +75,14 @@ through its lifecycle), `engineId` + `engineEpoch` (authority), and a timestamp.
 
 ### Delivery guarantees
 
-| Property                 | Implementation                                                                                                                                         |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Delivery                 | At-least-once; stream entries are never deleted on read                                                                                                |
-| Acknowledgement          | Manual `XACK` only after the handler resolves                                                                                                          |
-| Crash recovery           | `XAUTOCLAIM` for pending entries idle beyond `PENDING_RECOVERY_MIN_IDLE_MS` (default 60s)                                                              |
-| Older-Redis fallback     | When `XAUTOCLAIM` is unavailable (Redis < 6.2), falls back to `XPENDING` + `XCLAIM` with a client-side idle filter                                     |
-| Deduplication            | Durable `SET NX EX` marker per `{scope}:{messageId}` (24h TTL) plus an in-memory cache. Marker writes **fail open** — double-processing beats dropping |
-| Poison-message detection | `XPENDING` scan counts redeliveries; entries at or over the threshold are logged for operators                                                         |
+| Property                 | Implementation                                                                                                                                                                                                                                                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Delivery                 | At-least-once; stream entries are never deleted on read                                                                                                                                                                                                                                                                      |
+| Acknowledgement          | Manual `XACK` only after the handler resolves                                                                                                                                                                                                                                                                                |
+| Crash recovery           | `XAUTOCLAIM` for pending entries idle beyond `PENDING_RECOVERY_MIN_IDLE_MS` (default 60s)                                                                                                                                                                                                                                    |
+| Older-Redis fallback     | When `XAUTOCLAIM` is unavailable (Redis < 6.2), falls back to `XPENDING` + `XCLAIM` with a client-side idle filter                                                                                                                                                                                                           |
+| Deduplication            | Durable `SET NX EX` marker per `{scope}:{messageId}` (24h TTL) plus an in-memory cache. Marker writes **fail open** — double-processing beats dropping                                                                                                                                                                       |
+| Poison-message detection | `XPENDING` scan counts redeliveries; entries at or over the threshold are logged for operators                                                                                                                                                                                                                               |
 | Staleness rejection      | Events from a non-authoritative engine or a superseded epoch are dropped; `engine_registry.epoch` (`BIGINT`, i.e. a string from node-postgres) and the JSON number an event carries are normalised before comparison, and a rejection is logged at `error` with the event's command context — no authority ⇒ no state change |
 
 **Failure semantics differ by cause on the engine side:** business failures are
@@ -131,13 +131,13 @@ transition already completed.
 
 ### Supervision mechanisms
 
-| Mechanism                   | Behaviour                                                                                                                                                                                                                                 |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mechanism                   | Behaviour                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Command tracking + timeouts | Every dispatched command is recorded `PENDING`; the engine's accept/failure resolves the row, so a command the engine answered is never timed out. A sweeper marks genuinely expired ones `TIMED_OUT` (`BOT_COMMAND_TIMEOUT_MS`, default 30s) and moves the bot to a terminal state — a timeout is backend bookkeeping only, so the same sweep also dispatches a bounded, audited `BOT_STOP` (`RECONCILE_STOP_REISSUED`) to tear the engine-side runner down |
-| Engine registry             | Engines register with a persistent `engineId` and a per-restart `epoch`; `RUNNING` bots are moved to `UNKNOWN` when the engine goes `OFFLINE`                                                                                             |
-| Stale-generation rejection  | Events from a superseded engine or epoch are dropped, so a reconnected old process cannot rewrite current state                                                                                                                           |
-| Reconciliation sweep        | Bounded, audited sweep (default every 60s, jittered): re-issues stop (max 3 per bot per hour, shared with the terminal-state repair), degrades stuck transitional states to `UNKNOWN`, and audits `desired=RUNNING` + `ERROR/UNKNOWN` as needing user action — never auto-starts |
-| Terminal-state stop repair  | A healthy engine still listing a bot the authority has declared terminal (`ERROR`/`STOPPED`/`UNKNOWN`) is drift, not a race: the timeout sweep and the heartbeat-inventory reconciler dispatch a bounded `BOT_STOP` for it. Mid-lifecycle states (`RUNNING`/`STARTING`/`STOPPING`) are never second-guessed |
+| Engine registry             | Engines register with a persistent `engineId` and a per-restart `epoch`; `RUNNING` bots are moved to `UNKNOWN` when the engine goes `OFFLINE`                                                                                                                                                                                                                                                                                                                |
+| Stale-generation rejection  | Events from a superseded engine or epoch are dropped, so a reconnected old process cannot rewrite current state                                                                                                                                                                                                                                                                                                                                              |
+| Reconciliation sweep        | Bounded, audited sweep (default every 60s, jittered): re-issues stop (max 3 per bot per hour, shared with the terminal-state repair), degrades stuck transitional states to `UNKNOWN`, and audits `desired=RUNNING` + `ERROR/UNKNOWN` as needing user action — never auto-starts                                                                                                                                                                             |
+| Terminal-state stop repair  | A healthy engine still listing a bot the authority has declared terminal (`ERROR`/`STOPPED`/`UNKNOWN`) is drift, not a race: the timeout sweep and the heartbeat-inventory reconciler dispatch a bounded `BOT_STOP` for it. Mid-lifecycle states (`RUNNING`/`STARTING`/`STOPPING`) are never second-guessed                                                                                                                                                  |
 
 ---
 
@@ -213,12 +213,12 @@ the durable ledger and the reconciliation work need.
 
 ## 6. Data ownership
 
-| Store       | Authoritative for                                                                         |
-| ----------- | ----------------------------------------------------------------------------------------- |
+| Store       | Authoritative for                                                                                          |
+| ----------- | ---------------------------------------------------------------------------------------------------------- |
 | PostgreSQL  | Lifecycle state + audit, command tracking, engine registry, credentials, wallet addresses, user identities |
-| Engine disk | Per-bot grid slot snapshot (operational cache)                                            |
-| Redis       | Control-plane streams, dedup markers, engine liveness                                     |
-| Exchange    | Live orders, fills, positions, balances — the ultimate source of truth                    |
+| Engine disk | Per-bot grid slot snapshot (operational cache)                                                             |
+| Redis       | Control-plane streams, dedup markers, engine liveness                                                      |
+| Exchange    | Live orders, fills, positions, balances — the ultimate source of truth                                     |
 
 There are therefore **three authorities** (backend database, engine snapshot,
 exchange) and no single transaction spans them. Correctness depends on explicit
@@ -230,7 +230,7 @@ accounts, and the bot → account binding) landed in C1–C3: a user holds many 
 and many venue accounts, a bot binds to **one** ACTIVE account whose credential
 envelope the engine fetches out-of-band, and positions/balances are stored per
 account (`exchange_positions` / `exchange_balances`). What remains open is the
-**unit of execution**: today a bot *is* a running strategy, so an account running two
+**unit of execution**: today a bot _is_ a running strategy, so an account running two
 strategies runs two bots and performs two credential fetches. The planned
 account-session model (bot = one account, N strategies, one fetch) is designed in
 [DATA_MODEL.md](DATA_MODEL.md) §4.4 and plan §D; the agent layer that reads a session
@@ -252,23 +252,23 @@ debt, deliberately deferred (P2).
 
 ## 8. Database migrations
 
-| Migration                           | Adds                                                                                                                                    |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `001_base_schema.sql`               | `users`, `kodiak_credentials`, `strategies`, `bot_instances`, `trades`, Kodiak account/position/balance/statistics tables, `audit_logs` |
-| `002_initial_data.sql`              | Baseline indexes and reference data                                                                                                     |
-| `002_user_roles.sql`                | `user_roles`                                                                                                                            |
-| `003_safety_features.sql`           | Safety limits, audit + trade/position/statistics extensions                                                                             |
-| `004_encryption_versioning.sql`     | `encryption_keys` (credential key rotation)                                                                                             |
-| `005_performance_indexes.sql`       | Additional query indexes                                                                                                                |
-| `006_fix_user_level_constraint.sql` | Aligns the user-level constraint with the access tiers                                                                                  |
-| `007_bot_lifecycle.sql`             | `bot_lifecycle_events` (state-machine audit trail)                                                                                      |
-| `008_bot_command_tracking.sql`      | `bot_commands` (pending / delivered / timeout tracking)                                                                                 |
-| `009_engine_registry.sql`           | `engine_registry` (identity, epoch, heartbeat liveness)                                                                                 |
-| `010_wallet_addresses.sql`          | `wallet_addresses` (wallet linking independent of exchange keys)                                                                        |
-| `011_identity_core.sql`             | `users.username` (+ unique index on LOWER(username)), `display_name`, `avatar_url`; `user_identities` (one backfilled password identity per user) |
-| `012_wallets_exchange_accounts.sql` | `wallets` (many chain-aware wallets per user) and `exchange_accounts` (many venue/environment accounts, sealed credential envelope); backfills `wallet_addresses` / `kodiak_credentials` |
-| `013_bot_account_binding.sql`       | `bot_instances.exchange_account_id` (nullable + backfill to the owner's earliest ACTIVE account, `ON DELETE RESTRICT`); creates the empty per-account `exchange_positions` / `exchange_balances` tables |
-| `014_drop_legacy_kodiak.sql`         | Re-runs the backfill, makes `bot_instances.exchange_account_id` `NOT NULL` (guard refuses while any bot is unbound), drops `kodiak_accounts` / `kodiak_positions` / `kodiak_balances` / `kodiak_statistics` (all empty — the C3b venue sync repopulates `exchange_*` instead) |
+| Migration                           | Adds                                                                                                                                                                                                                                                                          |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `001_base_schema.sql`               | `users`, `kodiak_credentials`, `strategies`, `bot_instances`, `trades`, Kodiak account/position/balance/statistics tables, `audit_logs`                                                                                                                                       |
+| `002_initial_data.sql`              | Baseline indexes and reference data                                                                                                                                                                                                                                           |
+| `002_user_roles.sql`                | `user_roles`                                                                                                                                                                                                                                                                  |
+| `003_safety_features.sql`           | Safety limits, audit + trade/position/statistics extensions                                                                                                                                                                                                                   |
+| `004_encryption_versioning.sql`     | `encryption_keys` (credential key rotation)                                                                                                                                                                                                                                   |
+| `005_performance_indexes.sql`       | Additional query indexes                                                                                                                                                                                                                                                      |
+| `006_fix_user_level_constraint.sql` | Aligns the user-level constraint with the access tiers                                                                                                                                                                                                                        |
+| `007_bot_lifecycle.sql`             | `bot_lifecycle_events` (state-machine audit trail)                                                                                                                                                                                                                            |
+| `008_bot_command_tracking.sql`      | `bot_commands` (pending / delivered / timeout tracking)                                                                                                                                                                                                                       |
+| `009_engine_registry.sql`           | `engine_registry` (identity, epoch, heartbeat liveness)                                                                                                                                                                                                                       |
+| `010_wallet_addresses.sql`          | `wallet_addresses` (wallet linking independent of exchange keys)                                                                                                                                                                                                              |
+| `011_identity_core.sql`             | `users.username` (+ unique index on LOWER(username)), `display_name`, `avatar_url`; `user_identities` (one backfilled password identity per user)                                                                                                                             |
+| `012_wallets_exchange_accounts.sql` | `wallets` (many chain-aware wallets per user) and `exchange_accounts` (many venue/environment accounts, sealed credential envelope); backfills `wallet_addresses` / `kodiak_credentials`                                                                                      |
+| `013_bot_account_binding.sql`       | `bot_instances.exchange_account_id` (nullable + backfill to the owner's earliest ACTIVE account, `ON DELETE RESTRICT`); creates the empty per-account `exchange_positions` / `exchange_balances` tables                                                                       |
+| `014_drop_legacy_kodiak.sql`        | Re-runs the backfill, makes `bot_instances.exchange_account_id` `NOT NULL` (guard refuses while any bot is unbound), drops `kodiak_accounts` / `kodiak_positions` / `kodiak_balances` / `kodiak_statistics` (all empty — the C3b venue sync repopulates `exchange_*` instead) |
 
 Planned (designed, not implemented): `015_bot_account_sessions.sql` — bot = one
 exchange account with `strategy_runs` per strategy (plan §D); and

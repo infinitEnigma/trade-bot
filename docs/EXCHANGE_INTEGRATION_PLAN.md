@@ -24,7 +24,7 @@ D. bot account sessions        (2-3 d)  ── bot = one exchange account, N str
 E. agent participation         (1.5-2 d)── advisor → coordinator → executor, engine stays the only executor  ⬜ designed
 ```
 
-A and B are **engine-side**; C is **backend/DB**; D changes the schema *and* the
+A and B are **engine-side**; C is **backend/DB**; D changes the schema _and_ the
 engine runtime; E is a new backend read/command surface with delegated grants. C3 is
 the only step that changes what A's contract is fed from — the engine must not need
 edits then. D simplifies that further: the account session is the credential unit, so
@@ -151,7 +151,7 @@ each PR is a clean cut for its own slice: no dual-write, re-seed test accounts.
 ### C1 — identity: username handle + `user_identities` (≈1 day) — ✅ **landed**
 
 **Revised during execution** (recorded in [DATA_MODEL.md](DATA_MODEL.md) §9 D2/D3):
-email + password login stays exactly as it was; `username` is an *additive*
+email + password login stays exactly as it was; `username` is an _additive_
 handle, not a login credential yet, and email verification is a later phase.
 This removed the `TokenPayload` swap, the login-form rewrite, and the
 `email: string | null` ripple from the slice.
@@ -228,11 +228,11 @@ different revert costs, so each must be independently releasable and revertible.
   envelope (kodiak or lighter) — the property C3a establishes is per-bot credential
   identity, not concurrency. The same strategy traded on two accounts therefore
   produces two bots, each carrying its own account's envelope; they are created
-  **sequentially** today, because a bot *is* a running strategy and only one bot per
+  **sequentially** today, because a bot _is_ a running strategy and only one bot per
   strategy may be active at a time (`findActiveBotForStrategy` → 409). Trading
   several strategies for one account concurrently is the account-session model in
   §D. Negatives: a foreign or non-ACTIVE account is refused (404/400), and revoking
-  an account with bots bound is refused with a clear 409 (`boundBots`). An *unbound*
+  an account with bots bound is refused with a clear 409 (`boundBots`). An _unbound_
   bot cannot exist: migration `014` made `bot_instances.exchange_account_id`
   `NOT NULL` and its guard refuses to run while any bot is unbound, so the pre-C3a
   "unbound legacy bot" is a historical state rather than a reachable one (the
@@ -293,34 +293,34 @@ and it is also the shape agents need (§E).
 
 ### D1 — schema (`015_bot_account_sessions.sql`)
 
-| Change        | Detail                                                                                                                                                          |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bot_instances` | drop `strategy_id`; the session identity is `(user_id, exchange_account_id)`; partial unique index `bot_instances_one_live_per_account` on `exchange_account_id` `WHERE actual_state IN ('STARTING','RUNNING')` |
+| Change                | Detail                                                                                                                                                                                                                          |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bot_instances`       | drop `strategy_id`; the session identity is `(user_id, exchange_account_id)`; partial unique index `bot_instances_one_live_per_account` on `exchange_account_id` `WHERE actual_state IN ('STARTING','RUNNING')`                 |
 | `strategy_runs` (new) | `(bot_id, strategy_id, config, config_version, notional_amount, state, last_error_code)` exactly as sketched in DATA_MODEL §4.4, with `UNIQUE(bot_id, strategy_id)` plus a partial unique index (`strategy_id` in one live run) |
-| Backfill      | one run per existing bot (1:1 today) carrying its `strategy_id` and notional; test users only, so a clean cut like C1-C3b                                      |
-| Guard         | refuse the migration while any bot's `strategy_id` belongs to another user, mirroring the `014` guard style                                                      |
+| Backfill              | one run per existing bot (1:1 today) carrying its `strategy_id` and notional; test users only, so a clean cut like C1-C3b                                                                                                       |
+| Guard                 | refuse the migration while any bot's `strategy_id` belongs to another user, mirroring the `014` guard style                                                                                                                     |
 
 ### D2 — backend
 
-| File | Change |
-| ---- | ------ |
-| `core/bots/lifecycle/bot-lifecycle.repository.ts` | `findActiveBotForStrategy` → `findLiveSessionForAccount`; `insertBotInstance` drops `strategyId`; `strategy_runs` attach/detach/state accessors |
-| `core/bots/lifecycle/bot-command-dispatcher.ts` | `START_BOT` becomes the session command; new `START_STRATEGY` / `STOP_STRATEGY` carry `runId` |
-| `core/bots/bot-lifecycle.service.ts` | `createAndStart(userId, exchangeAccountId, runs[])`, plus `startStrategy` / `stopStrategy` per run; session state stays CAS-guarded |
-| `core/bots/lifecycle/strategy-active-sync.ts` | deleted — `strategies.active` becomes derived ("has a live run") and the four call sites go with it |
-| `interfaces/http/bots/management.ts` | `POST /start { exchangeAccountId, runs: [{ strategyId, notionalAmount }] }`, `POST /runs`, `DELETE /runs/:runId`; `GET /instances` returns sessions with their runs |
-| `interfaces/http/bots/engine.ts` | unchanged — the envelope is already issued per bound account |
-| `interfaces/http/trading/market-portfolio.routes.ts` | unchanged — the readers are already account-keyed (C3b) |
+| File                                                 | Change                                                                                                                                                              |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core/bots/lifecycle/bot-lifecycle.repository.ts`    | `findActiveBotForStrategy` → `findLiveSessionForAccount`; `insertBotInstance` drops `strategyId`; `strategy_runs` attach/detach/state accessors                     |
+| `core/bots/lifecycle/bot-command-dispatcher.ts`      | `START_BOT` becomes the session command; new `START_STRATEGY` / `STOP_STRATEGY` carry `runId`                                                                       |
+| `core/bots/bot-lifecycle.service.ts`                 | `createAndStart(userId, exchangeAccountId, runs[])`, plus `startStrategy` / `stopStrategy` per run; session state stays CAS-guarded                                 |
+| `core/bots/lifecycle/strategy-active-sync.ts`        | deleted — `strategies.active` becomes derived ("has a live run") and the four call sites go with it                                                                 |
+| `interfaces/http/bots/management.ts`                 | `POST /start { exchangeAccountId, runs: [{ strategyId, notionalAmount }] }`, `POST /runs`, `DELETE /runs/:runId`; `GET /instances` returns sessions with their runs |
+| `interfaces/http/bots/engine.ts`                     | unchanged — the envelope is already issued per bound account                                                                                                        |
+| `interfaces/http/trading/market-portfolio.routes.ts` | unchanged — the readers are already account-keyed (C3b)                                                                                                             |
 
 ### D3 — engine
 
-| File | Change |
-| ---- | ------ |
-| `shared/src/types/engine-contract.ts` | `START_STRATEGY` / `STOP_STRATEGY` commands; `BotStatus.runs[]`; `START_BOT` no longer carries `strategyId` |
-| `engine/src/domain/bot-runtime.ts` | `runs: Map<runId, { strategyId, strategy, stopTick }>` instead of a single `strategy` |
-| `engine/src/application/bot-manager.ts` | one credential fetch and one exchange client per session; a runtime, runner and snapshot per run |
-| `engine/src/application/strategy-runner.ts` | unchanged apart from being keyed by `runId` |
-| `engine/src/infrastructure/state/grid-state.ts` | snapshot path `<botId>/<runId>.json`, with a read fallback for the legacy `<botId>.json` |
+| File                                            | Change                                                                                                      |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `shared/src/types/engine-contract.ts`           | `START_STRATEGY` / `STOP_STRATEGY` commands; `BotStatus.runs[]`; `START_BOT` no longer carries `strategyId` |
+| `engine/src/domain/bot-runtime.ts`              | `runs: Map<runId, { strategyId, strategy, stopTick }>` instead of a single `strategy`                       |
+| `engine/src/application/bot-manager.ts`         | one credential fetch and one exchange client per session; a runtime, runner and snapshot per run            |
+| `engine/src/application/strategy-runner.ts`     | unchanged apart from being keyed by `runId`                                                                 |
+| `engine/src/infrastructure/state/grid-state.ts` | snapshot path `<botId>/<runId>.json`, with a read fallback for the legacy `<botId>.json`                    |
 
 ### D4 — frontend
 
@@ -351,20 +351,20 @@ capability, so a user can adopt one and ignore the next. Nothing here is a new
 abstraction over the engine: an agent's actions are the commands a user can already
 issue, gated by a grant and audited.
 
-| Stage | Capability | Acts how |
-| ----- | ---------- | -------- |
-| **Advisor** | read one account session: positions, balances, runs, PnL, fills and the lifecycle event trail | writes `agent_proposals` only — inert until the user approves |
-| **Coordinator** | the above plus attach/detach strategies and set run sizing **within user-approved bounds** | issues `START_STRATEGY` / `STOP_STRATEGY` through `BotLifecycleService`, audit-stamped with its agent id |
-| **Executor** | — | the engine *is* the executor: an agent never signs, never holds credentials and never sends a venue request |
+| Stage           | Capability                                                                                    | Acts how                                                                                                    |
+| --------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Advisor**     | read one account session: positions, balances, runs, PnL, fills and the lifecycle event trail | writes `agent_proposals` only — inert until the user approves                                               |
+| **Coordinator** | the above plus attach/detach strategies and set run sizing **within user-approved bounds**    | issues `START_STRATEGY` / `STOP_STRATEGY` through `BotLifecycleService`, audit-stamped with its agent id    |
+| **Executor**    | —                                                                                             | the engine _is_ the executor: an agent never signs, never holds credentials and never sends a venue request |
 
 ### E1 — identity, delegation, audit
 
-| File | Change |
-| ---- | ------ |
-| `shared/src/index.ts` | `UserRole` gains `AGENT_ADVISOR` / `AGENT_COORDINATOR`, ranked below `QUALIFIED_ALPHA` |
+| File                                    | Change                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/src/index.ts`                   | `UserRole` gains `AGENT_ADVISOR` / `AGENT_COORDINATOR`, ranked below `QUALIFIED_ALPHA`                                                                                                                                                                                                                                                          |
 | `016_agent_participation.sql` (planned) | `agents (id, owner_user_id, name, kind, status)`, `agent_grants (agent_id, user_id, exchange_account_id, capability, max_notional, expires_at, revoked_at)`, `agent_proposals (id, agent_id, bot_id, payload JSONB, status, decided_by, decided_at)`, `agent_actions (id, agent_id, grant_id, action, payload JSONB, result JSONB, created_at)` |
-| `interfaces/http/agents/*.ts` (new) | service-token auth in the style of `botEngineAuth`; every route resolves a **grant** and refuses without one |
-| audit | every agent action is recorded like `bot_lifecycle_events`, carrying `agent_id` and the user it acted for |
+| `interfaces/http/agents/*.ts` (new)     | service-token auth in the style of `botEngineAuth`; every route resolves a **grant** and refuses without one                                                                                                                                                                                                                                    |
+| audit                                   | every agent action is recorded like `bot_lifecycle_events`, carrying `agent_id` and the user it acted for                                                                                                                                                                                                                                       |
 
 ### E2 — read surface (advisor)
 
@@ -398,47 +398,47 @@ capabilities on top.
 
 ## 4. Interlocks and ordering rules
 
-| Rule                                                             | Why                                                                                   |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| A lands before B's `BotManager` wiring                           | the factory must exist before a second venue is registered                            |
-| B1 (`ExchangeClient` extension) lands before B3/B4               | the strategy must be typed against the interface before another implementation exists |
-| B must not read `bot_instances` or credential columns directly   | keeps C3 a data-source swap                                                           |
-| C1 → C2 → C3, one PR each, in that order                         | each slice is independently releasable and revertible                                 |
-| C2 depends on nothing in B; C3 depends on B and A                | C can start any time after A if Lighter work is paused                                |
-| Ledger rows updated in the same commit as the code they describe | CONTRIBUTING rule                                                                     |
+| Rule                                                             | Why                                                                                                                                            |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| A lands before B's `BotManager` wiring                           | the factory must exist before a second venue is registered                                                                                     |
+| B1 (`ExchangeClient` extension) lands before B3/B4               | the strategy must be typed against the interface before another implementation exists                                                          |
+| B must not read `bot_instances` or credential columns directly   | keeps C3 a data-source swap                                                                                                                    |
+| C1 → C2 → C3, one PR each, in that order                         | each slice is independently releasable and revertible                                                                                          |
+| C2 depends on nothing in B; C3 depends on B and A                | C can start any time after A if Lighter work is paused                                                                                         |
+| Ledger rows updated in the same commit as the code they describe | CONTRIBUTING rule                                                                                                                              |
 | D lands before E (agents)                                        | an agent's unit of reasoning is the account session, not a strategy — building E on the bot-per-strategy axis would only need re-scoping later |
-| D lands after C3 but before the N3/N4 reconciliation work        | reconciliation state becomes per account, so the session should own it — otherwise the reconciler is built twice |
-| E must not add venue or engine paths                             | an agent action is an existing lifecycle command behind a grant; the engine keeps its single control plane |
+| D lands after C3 but before the N3/N4 reconciliation work        | reconciliation state becomes per account, so the session should own it — otherwise the reconciler is built twice                               |
+| E must not add venue or engine paths                             | an agent action is an existing lifecycle command behind a grant; the engine keeps its single control plane                                     |
 
 ## 5. Risks and mitigations
 
-| Risk                                                          | Mitigation                                                                                                           |
-| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Baking Lighter fields into the Orderly credential shape       | Guardrail 1 + the A slice landing first                                                                              |
-| `grid.ts` staying coupled to `OrderlyClient`                  | B4 is an explicit deliverable; the fake-exchange tests only compile if the strategy is interface-typed               |
-| Two symbol conventions (`PERP_BTC_USDC` vs `ETH`)             | Adapter-owned `market-map.ts`; unknown symbol ⇒ `CommandError`, never a guessed market                               |
-| Client-order-id formats differ (string ≤36 vs int64)          | `client-order-id.ts` exposes one derivation per representation, both unit-tested for stability across restarts       |
-| Eventually-consistent cancel/query (verified in Phase 0)      | Poll with bounded retries in the client; the reconciler treats mid-flight results as `UNRESOLVED`, never as "absent" |
-| Sidecar downtime                                              | `UNREACHABLE` ⇒ slot freeze; health probe + OPERATIONS runbook entry                                                 |
-| C1 breaks many auth suites at once                            | Slice is self-contained (legacy exchange tables untouched); run the suite and update expectations in the same PR     |
-| Dropping vendor tables in C3 while something still reads them | Grep gate + integration suite before the drop; the drop is its own statement at the end of the migration             |
-| Drops `bot_instances.strategy_id` while readers still use it  | Grep gate (`strategy_id` in backend + engine + frontend) plus the suites before the drop; staged D1→D2 so the drop is its own statement, as with the `014` table drops |
-| `<botId>.json` snapshots orphaned by the `<botId>/<runId>.json` layout | D3 reads the legacy path as a fallback during the transition and the fallback is removed in its own commit with a note in OPERATIONS |
-| One live session per account blocks a legitimate use case (e.g. a hedge across strategies) | The session, not the account, owns the cap: extra exposure is expressed as another run inside the same session, never as a second session on one account |
-| Agent capability creep (an advisor quietly becoming an executor) | Separate roles with explicit, expiring grants; no agent code path reaches the signer or an exchange client; every action lands in `agent_actions` |
-| A workspace's build output is never *loaded*, so a config change ships broken (L17) | Every acceptance run starts each process with its documented command (`npm run prod`, `npm run prod:engine`, the sidecar) before any UI check, so a load failure surfaces in minutes rather than at the first bot start |
+| Risk                                                                                       | Mitigation                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Baking Lighter fields into the Orderly credential shape                                    | Guardrail 1 + the A slice landing first                                                                                                                                                                                 |
+| `grid.ts` staying coupled to `OrderlyClient`                                               | B4 is an explicit deliverable; the fake-exchange tests only compile if the strategy is interface-typed                                                                                                                  |
+| Two symbol conventions (`PERP_BTC_USDC` vs `ETH`)                                          | Adapter-owned `market-map.ts`; unknown symbol ⇒ `CommandError`, never a guessed market                                                                                                                                  |
+| Client-order-id formats differ (string ≤36 vs int64)                                       | `client-order-id.ts` exposes one derivation per representation, both unit-tested for stability across restarts                                                                                                          |
+| Eventually-consistent cancel/query (verified in Phase 0)                                   | Poll with bounded retries in the client; the reconciler treats mid-flight results as `UNRESOLVED`, never as "absent"                                                                                                    |
+| Sidecar downtime                                                                           | `UNREACHABLE` ⇒ slot freeze; health probe + OPERATIONS runbook entry                                                                                                                                                    |
+| C1 breaks many auth suites at once                                                         | Slice is self-contained (legacy exchange tables untouched); run the suite and update expectations in the same PR                                                                                                        |
+| Dropping vendor tables in C3 while something still reads them                              | Grep gate + integration suite before the drop; the drop is its own statement at the end of the migration                                                                                                                |
+| Drops `bot_instances.strategy_id` while readers still use it                               | Grep gate (`strategy_id` in backend + engine + frontend) plus the suites before the drop; staged D1→D2 so the drop is its own statement, as with the `014` table drops                                                  |
+| `<botId>.json` snapshots orphaned by the `<botId>/<runId>.json` layout                     | D3 reads the legacy path as a fallback during the transition and the fallback is removed in its own commit with a note in OPERATIONS                                                                                    |
+| One live session per account blocks a legitimate use case (e.g. a hedge across strategies) | The session, not the account, owns the cap: extra exposure is expressed as another run inside the same session, never as a second session on one account                                                                |
+| Agent capability creep (an advisor quietly becoming an executor)                           | Separate roles with explicit, expiring grants; no agent code path reaches the signer or an exchange client; every action lands in `agent_actions`                                                                       |
+| A workspace's build output is never _loaded_, so a config change ships broken (L17)        | Every acceptance run starts each process with its documented command (`npm run prod`, `npm run prod:engine`, the sidecar) before any UI check, so a load failure surfaces in minutes rather than at the first bot start |
 
 ## 6. Estimates
 
-| Step | Scope                                               | Estimate |
-| ---- | --------------------------------------------------- | -------- |
-| A    | credential-contract slice                           | 0.5 d    |
-| B    | Lighter adapter + interface + signer wiring + tests | 2-3 d    |
-| C1   | identity (username login, identities)               | 1 d      |
-| C2   | wallets + exchange accounts (+ adapters, UI)        | 1.5 d    |
-| C3   | bot → account binding + data tables                 | 1 d      |
-| D    | bot account sessions (schema → backend → engine → UI) | 2-3 d  |
-| E    | agent participation (identity/grants + read + proposals) | 1.5-2 d |
+| Step | Scope                                                    | Estimate |
+| ---- | -------------------------------------------------------- | -------- |
+| A    | credential-contract slice                                | 0.5 d    |
+| B    | Lighter adapter + interface + signer wiring + tests      | 2-3 d    |
+| C1   | identity (username login, identities)                    | 1 d      |
+| C2   | wallets + exchange accounts (+ adapters, UI)             | 1.5 d    |
+| C3   | bot → account binding + data tables                      | 1 d      |
+| D    | bot account sessions (schema → backend → engine → UI)    | 2-3 d    |
+| E    | agent participation (identity/grants + read + proposals) | 1.5-2 d  |
 
 ## 7. Definition of done (per step)
 
