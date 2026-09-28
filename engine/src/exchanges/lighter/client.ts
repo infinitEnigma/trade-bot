@@ -640,11 +640,30 @@ export class LighterClient implements ExchangeClient {
       .map(row => this.toOpenOrder(row, symbol, market));
   }
 
+  /**
+   * Query one order by the id the caller knows it under.
+   *
+   * Two conventions reach this method and both must land on the *same* venue
+   * index:
+   * - the adapter's own handle — the client order index (`createOrder`,
+   *   `adoptAfterRefusal`, `pollForOrder`, `cancelOrder` all pass it back);
+   * - the grid's deterministic **contract** id
+   *   (`<botKey>-<levelIndex>-<side>`, `strategies/grid.ts`), which is what it
+   *   opened the order with.
+   *
+   * The venue indexes orders by number, so the contract id has to be derived
+   * exactly as `createOrder` derives it (`clientIndexFromString`; a numeric
+   * handle passes through verbatim). Forwarding the raw contract id asked the
+   * venue `accountOrders?client_order_indexes=<contract id>`, which it
+   * answered **400** → `UNREACHABLE` → the slot froze on every tick and the
+   * start never acknowledged (L23).
+   */
   async queryOrderByClientOrderId(
     symbol: string,
     clientOrderId: string
   ): Promise<OrderLookup> {
     if (!clientOrderId) return { kind: "NOT_FOUND" };
+    const index = String(clientIndexFromString(clientOrderId));
     let market: LighterMarket;
     try {
       market = await this.marketOf(symbol);
@@ -657,7 +676,7 @@ export class LighterClient implements ExchangeClient {
     // Liveness first: `accountActiveOrders` is the listing that knows what
     // is live, and history can still show a stale terminal row for an index
     // the venue has already re-used — so history must never overrule it.
-    const active = await this.queryActive(symbol, clientOrderId);
+    const active = await this.queryActive(symbol, index);
     if (active.kind !== "NOT_FOUND") return active;
     let response;
     try {
@@ -665,7 +684,7 @@ export class LighterClient implements ExchangeClient {
         account_index: this.credentials.accountIndex,
         // Verified against testnet: the venue reads the PLURAL key
         // (`client_order_indexes`); the singular form 400s.
-        client_order_indexes: clientOrderId,
+        client_order_indexes: index,
       });
     } catch (error) {
       return { kind: "UNREACHABLE", reason: messageOf(error) };
@@ -675,7 +694,7 @@ export class LighterClient implements ExchangeClient {
     const matches = rows
       .map(row => (row ?? {}) as LighterOrderRow)
       .filter(row => rowInMarket(row, market.marketIndex))
-      .filter(row => rowClientIndex(row) === clientOrderId);
+      .filter(row => rowClientIndex(row) === index);
     // One index can carry several rows (the venue re-uses it after a fill,
     // live-verified) and history lags a fill by seconds — pick OPEN-first
     // instead of taking `rows[0]`.

@@ -357,4 +357,103 @@ describe("B5 query mapping", () => {
       .catch((e: unknown) => e);
     expect(malformed).toBeInstanceOf(CommandError); // never silently hashed
   });
+
+  it("looks a contract client order id up under the index it was placed with", async () => {
+    // L23: the grid only knows its deterministic contract id
+    // (`<botKey>-<levelIndex>-<side>`), while the venue indexes orders by
+    // number. The query must therefore derive the same index `createOrder`
+    // placed the order under; forwarding the contract id itself made the
+    // venue answer 400 (`accountOrders?client_order_indexes=<contract id>`),
+    // which the client reports as UNREACHABLE — every slot froze and the bot
+    // never reached RUNNING.
+    const contractId = "3da8db5ad3e05e38ed3b8ec191bd78-03-B";
+    const placed: number[] = [];
+    const asked: Record<string, unknown>[] = [];
+    const params = (p?: unknown) => (p ?? {}) as Record<string, unknown>;
+    const echo = new LighterClient({
+      baseUrl: "http://stub",
+      credentials: CREDS,
+      signer: {
+        ...signer(),
+        createOrder: async (_credentials, request) => {
+          placed.push(request.clientOrderIndex);
+          return { txHash: "0x1", clientOrderIndex: request.clientOrderIndex };
+        },
+      },
+      rest: rest({
+        "/api/v1/orderBooks": () => BOOKS,
+        "/api/v1/orderBookDetails": () => DETAILS,
+        "/api/v1/accountActiveOrders": p => {
+          asked.push(params(p));
+          return { orders: [] };
+        },
+        // Echo the index we were asked for, exactly as the venue does for a
+        // live order: a client that asked with the contract id would get the
+        // contract id back and find nothing.
+        "/api/v1/accountOrders": p => {
+          asked.push(params(p));
+          return {
+            orders: [
+              {
+                order_id: "562949945880386",
+                client_order_index: params(p).client_order_indexes,
+                status: "open",
+              },
+            ],
+          };
+        },
+      }),
+    });
+
+    const placedOrder = await echo.createOrder({
+      symbol: "ETH",
+      side: "BUY",
+      orderType: "LIMIT",
+      orderPrice: 2500,
+      orderQuantity: 0.01,
+      clientOrderId: contractId,
+    });
+    const lookup = await echo.queryOrderByClientOrderId("ETH", contractId);
+
+    expect(placed).toHaveLength(1);
+    // The venue was asked by number, never by the contract id…
+    expect(String(asked[asked.length - 1].client_order_indexes)).toMatch(
+      /^\d+$/
+    );
+    expect(lookup).toMatchObject({ kind: "FOUND_OPEN" });
+    // …and it is the same number the order was placed under.
+    expect(placedOrder.orderId).toBe(String(placed[0]));
+    if (lookup.kind === "FOUND_OPEN") {
+      expect(lookup.order.orderId).toBe(String(placed[0]));
+    }
+  });
+
+  it("forwards a numeric handle verbatim (no re-hash)", async () => {
+    // The adapter's own callers (createOrder's confirmation poll,
+    // cancelOrder's confirmation, adoptAfterRefusal) pass the index as a
+    // numeric handle; the derivation must leave those untouched.
+    const asked: Record<string, unknown>[] = [];
+    const c = new LighterClient({
+      baseUrl: "http://stub",
+      credentials: CREDS,
+      signer: signer(),
+      rest: rest({
+        "/api/v1/orderBooks": () => BOOKS,
+        "/api/v1/orderBookDetails": () => DETAILS,
+        "/api/v1/accountActiveOrders": () => ({ orders: [] }),
+        "/api/v1/accountOrders": p => {
+          asked.push((p ?? {}) as Record<string, unknown>);
+          return {
+            orders: [
+              { order_id: "9", client_order_index: "42", status: "open" },
+            ],
+          };
+        },
+      }),
+    });
+    expect((await c.queryOrderByClientOrderId("ETH", "42")).kind).toBe(
+      "FOUND_OPEN"
+    );
+    expect(asked[0].client_order_indexes).toBe("42");
+  });
 });
