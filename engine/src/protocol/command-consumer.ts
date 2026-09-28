@@ -10,10 +10,9 @@
 import {
   BotCommand,
   isBotCommand,
-  isStartBotCommand,
-  isStopBotCommand,
+  isBotStartCommand,
+  isBotStopCommand,
   isStatusRequestCommand,
-  StartBotCommandPayload,
 } from "@trade-bot/shared";
 import {
   RedisStreamOperations,
@@ -82,7 +81,12 @@ export async function listenForCommands(
   }
 }
 
-async function processMessage(
+/**
+ * Validate, deduplicate, dispatch, and ACK a single stream message.
+ *
+ * Exported for unit tests (the `listenForCommands` loop itself never returns).
+ */
+export async function processMessage(
   streamOps: RedisStreamOperations,
   botManager: BotManager,
   msg: StreamMessage,
@@ -130,8 +134,16 @@ async function handleCommand(
   streamOps: RedisStreamOperations,
   command: BotCommand
 ): Promise<void> {
-  if (isStartBotCommand(command)) {
-    const payload = command.payload as StartBotCommandPayload;
+  // Capture before the type-predicate chain: after the false branches of
+  // isBotStartCommand/isBotStopCommand, TypeScript narrows `command` to
+  // `never`, so the status/fallback branches must use these.
+  const { type: commandType, payload } = command;
+  // Protocol guards (type + payload.botId) — the legacy flat-shape
+  // isStartBotCommand/isStopBotCommand guards can never match a protocol
+  // envelope, and using them here silently ACKed every BOT_START/BOT_STOP
+  // without dispatching (ENGINE_NO_RESPONSE, ledger L18).
+  if (isBotStartCommand(command)) {
+    const payload = command.payload;
     await botManager.publishAccepted(
       streamOps,
       payload.botId,
@@ -146,7 +158,7 @@ async function handleCommand(
       payload.config,
       command.correlationId
     );
-  } else if (isStopBotCommand(command)) {
+  } else if (isBotStopCommand(command)) {
     await botManager.handleStop(
       streamOps,
       command.payload.botId,
@@ -154,7 +166,12 @@ async function handleCommand(
     );
   } else if (isStatusRequestCommand(command)) {
     // Status request handling
-    logger.debug("Status request received", { botId: command.payload.botId });
+    logger.debug("Status request received", { botId: payload.botId });
+  } else {
+    // Envelope says BOT_* but the payload failed its guard (e.g. missing
+    // botId). The command is still ACKed, so log loudly — otherwise this
+    // fall-through would be completely invisible (the L18 failure mode).
+    logger.warn("Command payload failed type guards", { type: commandType });
   }
 }
 

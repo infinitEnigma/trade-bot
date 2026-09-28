@@ -643,11 +643,36 @@ Cause: backend and engine disagree about the command type.
   `COMMAND_ACCEPTED`, no `handleStart`, no error. The grep shows this consumer
   is the last remaining user of the legacy guards.
 
-Fix (next task): switch the two branches to the protocol `isBotStartCommand` /
-`isBotStopCommand` (`shared/src/protocol/bot-command.ts:128,138`), drop the
-legacy imports, and add the engine's first consumer test (`BOT_START` →
-`handleStart` + `publishAccepted`; `BOT_STOP` → `handleStop`; unknown type →
-warn + ACK). Rebuild `engine/dist`, re-run the start/stop flow.
+Fix (2026-09-28): switched the two branches to the protocol
+`isBotStartCommand`/`isBotStopCommand` (`shared/src/protocol/bot-command.ts:128,138`),
+dropped the legacy imports, added a `logger.warn` on the remaining fall-through
+(a `BOT_*` envelope whose payload fails its guards was previously invisible),
+and exported `processMessage` for tests. Added the engine's first consumer
+suite — `engine/src/protocol/__tests__/command-consumer.test.ts` (6 cases:
+`BOT_START` → `publishAccepted` + `handleStart` + ACK; `BOT_STOP` →
+`handleStop` + ACK; duplicate `messageId` dispatched once; legacy flat
+`START_BOT` and unknown type → ACK without dispatch; `BOT_STATUS_REQUEST` →
+no start/stop dispatch). Rebuilt `engine/dist`.
+
+Live verification (2026-09-28, `npm run prod` + `prod:engine`, CSRF cookie +
+minted access token for the existing test user): Start → **202** and the
+engine *dispatches* (was: zero output, silent ACK) — it fetched credentials
+over `GET /api/bot/engine/credentials/:botId`, which exposed a fourth-layer
+defect fixed in the same change: the fetcher sent `correlationId` only as an
+`x-correlation-id` **header** while the route validates `req.query.correlationId`
+(`backend/src/interfaces/http/bots/engine.ts:190-196` → 400 "correlationId
+required", despite both READMEs documenting `?correlationId=…`). With
+`params: { correlationId }` added (`engine/src/protocol/credential-fetcher.ts`,
+pinned by `credential-fetcher.test.ts`), credentials are issued live
+(`Engine credentials issued`, bot `fbfeb3fc`) and the subsequent failure
+reaches the backend as `COMMAND_FAILED / INIT_FAILED` instead of silence.
+Stop → **202** with the engine logging `Bot not found for stop` — the stop
+branch dispatches too. `ENGINE_NO_RESPONSE` no longer describes "the engine
+ignored the command". Start does **not** yet reach `RUNNING`: the next-layer
+defect L20 (venue symbol mismatch) blocks exchange init — see below; and the
+re-test also surfaced L21 (a `COMMAND_FAILED`-answered command still times
+out as `ENGINE_NO_RESPONSE`) and L22 (non-`CommandError` failures retry
+forever, poison entries logged but never ACKed).
 
 #### L19 — 🟠 P1: Stop returns 404 "Bot not found" — the bot-instances cache stores `strategy_id` as `id`
 
@@ -670,6 +695,58 @@ stop (`BotControls.tsx:357`) is broken the same way.
 Fix: map `id: bot.id` (keep `strategy_id`), audit every `bot.id` consumer, and
 pin the contract with a frontend test asserting the stop payload equals the
 `id` returned by `/api/bot/management/instances`.
+
+#### L20 — 🟠 P1: Start cannot reach `RUNNING` on Lighter — the strategy symbol `PERP_BTC_USDC` is not a Lighter market (found by L18's live re-test, 2026-09-28)
+
+With L18 + the fetcher fix in place the engine completes `publishAccepted` →
+`fetchCredentials`, then fails during exchange init:
+`Unknown Lighter market for symbol "PERP_BTC_USDC" (no guessed market)`
+(`engine/src/exchanges/lighter/market-map.ts:38`, via `resolveLighterMarket`)
+→ `COMMAND_FAILED / INIT_FAILED` → bot → ERROR (`logs/app-2026-09-28.log`,
+bot `fbfeb3fc`, correlation `11283029`, 08:08:07).
+
+The venue is reachable and strict by design ("never a guessed market"):
+`GET https://testnet.zklighter.elliot.ai/api/v1/orderBooks` lists `BTC`,
+`SOL`, `ETH`, `ETH/USDC`, `LIT/USDC` — no `PERP_BTC_USDC`. That symbol is a
+Kodiak/Orderly-era name the strategy carried from creation
+(`strategies.config.symbol`, strategy `735ad508`), and nothing validates
+`config.symbol` against the bound account's venue — so any Lighter-bound bot
+created from this strategy can never initialize.
+
+Fix (next issue): make the symbol venue-aware — filter/validate the symbol
+catalog against the account's venue at strategy creation and/or start (fail
+fast with a user-facing reason, not a generic engine failure), and pin with a
+test: a Lighter start carrying a non-Lighter symbol is rejected before the
+engine is dispatched.
+
+#### L21 — 🟠 P1: `COMMAND_FAILED` does not resolve the tracked lifecycle command — the sweeper still logs `ENGINE_NO_RESPONSE` for an engine that answered
+
+Live, 2026-09-28: the backend received and logged the engine's
+`COMMAND_FAILED / INIT_FAILED` for correlation `11283029` at `08:08:07.603`
+(`Command failed in engine …`), yet at `08:08:40.841` the **same**
+correlationId logged `Lifecycle command timed out … timeoutReason:
+ENGINE_NO_RESPONSE`. An answered failure is labeled "engine never responded"
+— the failure event did not clear the `PENDING` command row (same class of
+problem as the dead `engine.ts` lifecycle writers in §2), or the timeout
+reason ignores an observed response. Fix as part of the execution-integrity
+batch: one authority resolves command rows (accept / fail / timeout), covered
+by a test asserting a `COMMAND_FAILED`-resolved command never times out.
+
+#### L22 — 🟡 P2: non-`CommandError` failures retry forever, and poison entries are logged but never ACKed
+
+`processMessage`'s catch treats anything that is not a `CommandError` as
+retryable → no ACK → `recoverPending` reclaims after 60 s. Business failures
+surfaced as plain `Error`s therefore loop: the `UnknownMarketError` start
+above re-delivered, and the stale `BOT_START` from the *previous* bot
+(`1790582472690-0`, for which the backend correctly answered 409 "not in a
+startable state") re-delivered until `checkPendingInsight` flagged
+`Poison commands detected {poisonIds: ["1790582472690-0"]}` — which only
+**logs**; no code path ever ACKs a poison entry (`recoverPending` /
+`checkPendingInsight` in `command-consumer.ts`). The market-map docblock even
+promises "unknown symbols resolve to `CommandError`", but
+`UnknownMarketError extends Error`. Fix: wrap business failures (unknown
+market, backend 4xx responses) into non-retryable `CommandError`s at the
+boundary, and ACK poison entries after the threshold (alert + drop).
 
 ---
 
@@ -720,8 +797,11 @@ can be repeated meaningfully.
 | L15 | 🟡 P2    | Give the balance widget an error channel (`globalBalanceManager` → `useBalance` → UI) and drop the 400/403→"not connected" mask + venue-neutral message                                                                                            | ⬜ Open  |
 | L16 | 🟡 P2    | `strategies.active` was inserted as NULL (the Joi schema omits the key, the INSERT passed it explicitly, so the column default never applied): resolve to `false` in the adapter + regression test                                                        | ✅ Done  |
 | L17 | 🔴 P0    | The engine process could not start (`module: ES2022` + `moduleResolution: bundler` in a typeless package → ESM emit with extensionless specifiers → `ERR_MODULE_NOT_FOUND`; ts-jest hid it): emit CommonJS like the backend, add the `@trade-bot/shared` `paths` entry, and prove it with `npm run prod:engine` | ✅ Done  |
-| L18 | 🔴 P0    | Engine dispatch uses the legacy `isStartBotCommand`/`isStopBotCommand` guards (`shared/src/types/engine-contract.ts:331,346`), so protocol `BOT_START`/`BOT_STOP` envelopes fall through `handleCommand` and are silently ACKed → `ENGINE_NO_RESPONSE`: switch `engine/src/protocol/command-consumer.ts` to protocol `isBotStartCommand`/`isBotStopCommand`, add the first engine consumer test, rebuild `engine/dist` | ⬜ Open — **next issue** |
+| L18 | 🔴 P0    | Engine dispatch uses the legacy `isStartBotCommand`/`isStopBotCommand` guards (`shared/src/types/engine-contract.ts:331,346`), so protocol `BOT_START`/`BOT_STOP` envelopes fall through `handleCommand` and are silently ACKed → `ENGINE_NO_RESPONSE`: switch `engine/src/protocol/command-consumer.ts` to protocol `isBotStartCommand`/`isBotStopCommand`, add the first engine consumer test, rebuild `engine/dist` (+ in the same change, the credential fetcher's missing `?correlationId` query param found by the live re-test); live 2026-09-28: dispatch proven for both commands | ✅ Done  |
 | L19 | 🟠 P1    | Stop/emergency-stop 404: the `bot-instances` cache maps `id: bot.strategy_id` (`useBotLifecycle.ts:125`, `strategyService.ts:166`), so `/management/stop` receives the strategy UUID and `findBot` 404s: map `id: bot.id`, audit every `bot.id` consumer, pin with a frontend test | ⬜ Open  |
+| L20 | 🟠 P1    | Start never reaches `RUNNING` on Lighter: `strategies.config.symbol` = `PERP_BTC_USDC` is not a Lighter market (venue lists `BTC`/`SOL`/`ETH`/`ETH/USDC`/`LIT/USDC`) → `UnknownMarketError` → `INIT_FAILED` → ERROR: venue-aware symbol validation/filtering at creation and/or start, fail fast with a user-facing reason, pin with a test | ⬜ Open — **next issue** |
+| L21 | 🟠 P1    | `COMMAND_FAILED` does not resolve the tracked lifecycle command — the engine answered (`INIT_FAILED` logged at 08:08:07) yet the same correlationId timed out as `ENGINE_NO_RESPONSE` at 08:08:40: one authority resolves command rows (accept/fail/timeout) + a test that a failure-resolved command never times out | ⬜ Open  |
+| L22 | 🟡 P2    | Non-`CommandError` business failures (unknown market, backend 4xx) are retryable forever and poison entries are only logged, never ACKed: wrap them in non-retryable `CommandError` at the boundary + ACK past the poison threshold (alert + drop) | ⬜ Open  |
 
 Batch verification: re-run the manual flow (login → dashboard → settings → connect
 Lighter → strategies → create grid strategy → start a bot on the Lighter account →
@@ -861,8 +941,8 @@ Findings from a security-focused code review, prioritized per severity:
 | 🟡 P2    | **2026-09-27 batch (L14–L15)** | WS client reconnect loop after `WS_AUTH_FAILED`; and the balance widget's missing error channel (the 400/403→"not connected" mask now hides only genuine failures).                    |
 | 🟠 P1    | **Bot account sessions (plan §D)** | The unit of execution becomes `(user, exchange_accounts)` with `strategy_runs` inside it: one credential fetch, one exchange connection and one reconciler per account, which is also the shape the L5–L10-adjacent reconciliation work (N3/N4) needs. Designed, not implemented — [DATA_MODEL.md](DATA_MODEL.md) §4.4, [plan §D](EXCHANGE_INTEGRATION_PLAN.md). |
 | 🟡 P2    | **Agent participation (plan §E)** | Advisor → coordinator → executor on delegated, expiring grants scoped to one account, with proposals inert until a user approves them and the engine as the only executor. Designed, not implemented — [plan §E](EXCHANGE_INTEGRATION_PLAN.md). |
-| 🔴 P0    | **2026-09-27 test blockers (L18–L19)** | The engine silently ACKs `BOT_START`/`BOT_STOP` (legacy guards → `ENGINE_NO_RESPONSE`), and stop 404s because the frontend cache keeps `strategy_id` as `id`. **L18 is the next issue to address** — see §3/§4.                          |
-| 🟠 P1    | **Execution integrity (verified review of `f40f02a`)** | After L18/L19: retire or re-route the dead `engine.ts` lifecycle writers, credential idempotency (unique index + `ON CONFLICT`), trade idempotency + bot-scoped stats, account-scoped position/balance readers — verdicts in §2.      |
+| 🟠 P1    | **2026-09-27/28 test blockers (L19–L22)** | L18 fixed 2026-09-28 (protocol dispatch guards + the credential fetcher's `?correlationId`; live re-test proves both commands dispatch). Remaining: L19 stop 404 (frontend cache keeps `strategy_id` as `id`), **L20 venue symbol mismatch blocks Start→RUNNING — the next issue**, L21 `COMMAND_FAILED` doesn't resolve the tracked command (spurious `ENGINE_NO_RESPONSE`), L22 non-retryable failures loop / poison never ACKed — see §3/§4. |
+| 🟠 P1    | **Execution integrity (verified review of `f40f02a`)** | After L19–L22 (incl. L21's command-row resolution): retire or re-route the dead `engine.ts` lifecycle writers, credential idempotency (unique index + `ON CONFLICT`), trade idempotency + bot-scoped stats, account-scoped position/balance readers — verdicts in §2.      |
 
 ### How to keep this document honest
 

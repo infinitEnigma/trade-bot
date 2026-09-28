@@ -31,6 +31,9 @@ export async function fetchCredentials(
   const response = await axios.get(
     `${BACKEND_URL}/api/bot/engine/credentials/${botId}`,
     {
+      // The backend route reads correlationId from the query string
+      // (`?correlationId=...`, engine.ts) — the header alone gets a 400.
+      params: { correlationId },
       headers: {
         "x-correlation-id": correlationId,
         "x-bot-engine-key": BOT_ENGINE_API_KEY,
