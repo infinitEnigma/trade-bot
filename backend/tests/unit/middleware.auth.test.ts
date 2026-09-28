@@ -31,6 +31,7 @@ import {
 } from "../../src/interfaces/middleware";
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import { authLogger } from "../../src/core/logging";
 
 // Mock Redis service
 jest.mock("../../src/infrastructure/cache/redis.service", () => ({
@@ -423,6 +424,8 @@ describe("Auth Middleware", () => {
     (redisService.getClient as jest.Mock).mockReturnValue(mockRedisClient);
     (redisService.del as jest.Mock).mockResolvedValue({ success: true });
 
+    const infoSpy = jest.spyOn(authLogger, "info");
+
     await authMiddleware(req as Request, res as Response, next);
 
     expect(mockAuthService.refreshToken).toHaveBeenCalledWith(
@@ -430,6 +433,17 @@ describe("Auth Middleware", () => {
     );
     expect(mockAuthService.refreshToken).toHaveBeenCalledTimes(1); // Should only be called once on success
     expect(next).not.toHaveBeenCalled();
+
+    // L6: the refresh log line carries a masked address, never the raw one
+    const refreshLog = infoSpy.mock.calls.find(
+      call => call[0] === "Token automatically refreshed"
+    );
+    infoSpy.mockRestore();
+    expect(refreshLog).toBeDefined();
+    expect(JSON.stringify(refreshLog![1])).not.toContain("test@example.com");
+    expect((refreshLog![1] as { email?: string }).email).toBe(
+      "t***t@example.com"
+    );
   });
 
   it("should handle token refresh failure after retries", async () => {

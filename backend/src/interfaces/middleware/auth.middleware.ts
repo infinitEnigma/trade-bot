@@ -14,6 +14,7 @@ import { serviceProvider } from "../../core/service-provider";
 const getAuthService = (): AuthService => serviceProvider.getAuthService();
 
 import { setUserContext } from "../../shared/utils/context";
+import { maskEmail } from "../../shared/utils/masking";
 //import { roleManagementService } from "../../core/auth/role-management.service";
 import { authLogger } from "../../core/logging";
 import { progressiveAuthLimiter } from "../../infrastructure/security/rate-limiter.service";
@@ -251,7 +252,8 @@ async function finalizeRefreshedSession(
 
   authLogger.info("Token automatically refreshed", {
     userId: refreshResult.user?.id,
-    email: refreshResult.user?.email,
+    // L6: log lines never carry a raw address — only the audit trail does.
+    email: maskEmail(refreshResult.user?.email),
   });
 
   // Set rotated session cookies (access/refresh + fresh CSRF pair)
