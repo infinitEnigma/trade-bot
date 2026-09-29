@@ -267,10 +267,11 @@ Checklist when something is missing:
    A UI showing "no bots" is **never** evidence that none exist — this query decides.
 3. The portfolio cards follow the Dashboard's account picker, which offers every
    ACTIVE account of either venue; the balance/positions/trades reads carry
-   `?exchangeAccountId=`. Empty data for a Lighter account while the signer sidecar
-   is down is expected — see §5.7. Note the open L15 finding: the balance widget has
-   no error channel yet, so a failed read is indistinguishable from a zero balance
-   (positions and trades do surface their error).
+   `?exchangeAccountId=`. A failed balance read (e.g. signer sidecar down,
+   venue-side wiped account) renders "Balance unavailable" with the server's
+   reason (L15 fixed 2026-09-29 — error channel `getKodiakBalance` →
+   `globalBalanceManager` → `useBalance` → UI), never $0/stale; positions
+   and trades carry their own error state.
 4. A bot cannot exist without an ACTIVE account: `exchange_account_id` has been
    `NOT NULL` since migration `014`, and an account with *live* bots bound
    (`actual_state` STARTING/RUNNING/STOPPING) cannot be revoked —

@@ -22,6 +22,7 @@ export interface Balance {
 
 interface BalanceSubscriber {
   callback: (balance: Balance) => void;
+  errorCallback?: (error: string) => void;
   id: string;
 }
 
@@ -30,6 +31,8 @@ class GlobalBalanceManager {
   private subscribers = new Map<string, BalanceSubscriber>();
   private refreshTimer: NodeJS.Timeout | null = null;
   private lastBalanceData: Balance | null = null;
+  /** L15: last venue-neutral failure text (null when the last read succeeded). */
+  private lastBalanceError: string | null = null;
   private isRefreshing = false;
   /** C3b: pin every balance read to one exchange account (null = legacy default). */
   private activeExchangeAccountId: string | null = null;
@@ -44,12 +47,18 @@ class GlobalBalanceManager {
   }
 
   /**
-   * Subscribe to balance updates
+   * L15: `onError` receives the venue-neutral failure text so subscribers
+   * can render it instead of stale/$0. Error callbacks never throw into
+   * the manager (guarded per subscriber).
    */
-  subscribe(id: string, callback: (balance: Balance) => void): () => void {
+  subscribe(
+    id: string,
+    callback: (balance: Balance) => void,
+    onError?: (error: string) => void
+  ): () => void {
     console.log(`💰 Global Balance: Subscribing ${id}`);
 
-    this.subscribers.set(id, { callback, id });
+    this.subscribers.set(id, { callback, errorCallback: onError, id });
 
     // Start global timer if this is the first subscriber
     if (this.subscribers.size === 1) {
@@ -112,6 +121,7 @@ class GlobalBalanceManager {
     if (this.activeExchangeAccountId === exchangeAccountId) return;
     this.activeExchangeAccountId = exchangeAccountId;
     this.lastBalanceData = null;
+    this.lastBalanceError = null;
     if (this.subscribers.size > 0) {
       void this.refreshBalance();
     }
@@ -150,6 +160,7 @@ class GlobalBalanceManager {
         };
 
         this.lastBalanceData = legacyBalance;
+        this.lastBalanceError = null;
         console.log("💰 Global Balance: Updated, notifying subscribers");
 
         // Notify all subscribers
@@ -164,13 +175,36 @@ class GlobalBalanceManager {
           }
         });
       } else {
-        console.warn("💰 Global Balance: Refresh failed:", response.error);
+        // L15: a venue read failure is a first-class state, not a warn.
+        // Keep the last good value but tell subscribers why it is stale.
+        const message =
+          response.error || "Balance unavailable: venue read failed";
+        this.lastBalanceError = message;
+        console.warn("💰 Global Balance: Refresh failed:", message);
+        this.notifyError(message);
       }
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.lastBalanceError = message;
       console.error("💰 Global Balance: Refresh error:", error);
+      this.notifyError(message);
     } finally {
       this.isRefreshing = false;
     }
+  }
+
+  /** Fan out a read failure without touching the last good value. */
+  private notifyError(message: string): void {
+    this.subscribers.forEach(subscriber => {
+      try {
+        subscriber.errorCallback?.(message);
+      } catch (error) {
+        console.error(
+          `💰 Global Balance: Subscriber ${subscriber.id} error callback failed:`,
+          error
+        );
+      }
+    });
   }
 
   /**
@@ -178,6 +212,11 @@ class GlobalBalanceManager {
    */
   getLastBalanceData(): Balance | null {
     return this.lastBalanceData;
+  }
+
+  /** L15: last failure text (null after a successful read). */
+  getLastBalanceError(): string | null {
+    return this.lastBalanceError;
   }
 
   /**
@@ -203,6 +242,7 @@ class GlobalBalanceManager {
     this.subscribers.clear();
     this.stopGlobalTimer();
     this.lastBalanceData = null;
+    this.lastBalanceError = null;
   }
 }
 

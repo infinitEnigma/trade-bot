@@ -145,7 +145,12 @@ const Strategies: React.FC = React.memo(() => {
   };
 
   // ✅ Fetch real balance data (WebSocket for verified users)
-  const { balance: realBalance, loading: realBalanceLoading } = useBalance();
+  // L15: `balanceError` renders "unavailable" — never $0/stale on failure.
+  const {
+    balance: realBalance,
+    loading: realBalanceLoading,
+    error: realBalanceError,
+  } = useBalance();
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -279,6 +284,16 @@ const Strategies: React.FC = React.memo(() => {
                   </div>
                 </div>
               ))}
+            </div>
+          ) : realBalanceError ? (
+            <div className="glass-card p-8 text-center">
+              <div className="w-12 h-12 mx-auto mb-4 bg-warning/10 rounded-full flex items-center justify-center">
+                <div className="w-6 h-6 bg-warning rounded"></div>
+              </div>
+              <h3 className="text-lg font-semibold text-text mb-2">
+                Balance unavailable
+              </h3>
+              <p className="text-textMuted mb-4">{realBalanceError}</p>
             </div>
           ) : realBalance ||
             user?.userLevel === "VERIFIED" ||

@@ -61,7 +61,31 @@ export interface KodiakBalanceResponse {
 interface ApiError extends Error {
   response?: {
     status?: number;
+    data?: { error?: string; message?: string };
   };
+}
+
+/**
+ * L15: venue-neutral balance failure. The server answers 400 with a reason
+ * when a venue read fails (sidecar down, venue 401 like the wiped Lighter
+ * testnet account, unknown account); the message must not name a venue and
+ * must never leak secrets — the server already sanitises it.
+ */
+export function toBalanceError(error: unknown): Error {
+  const apiError = error as ApiError;
+  const serverReason =
+    apiError?.response?.data?.error || apiError?.response?.data?.message;
+  if (serverReason) {
+    return new Error(`Balance unavailable: ${serverReason}`);
+  }
+  if (apiError?.response?.status) {
+    return new Error(
+      `Balance unavailable (request failed with status ${apiError.response.status})`
+    );
+  }
+  return new Error(
+    (apiError as Error)?.message || "Balance unavailable: network error"
+  );
 }
 
 /**
@@ -188,19 +212,9 @@ class KodiakApi {
             });
           return response.data;
         } catch (error: unknown) {
-          // Return empty data instead of throwing for missing credentials
-          const apiError = error as ApiError;
-          if (
-            apiError.response?.status === 403 ||
-            apiError.response?.status === 400
-          ) {
-            return {
-              success: true,
-              data: null,
-              message: "Kodiak account not connected",
-            };
-          }
-          throw error;
+          // L15: propagate — masking 400/403 as success made a failed read
+          // indistinguishable from a zero balance.
+          throw toBalanceError(error);
         }
       },
       "tradingApi"

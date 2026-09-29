@@ -278,7 +278,13 @@ const Dashboard: React.FC = () => {
   const [currentTime] = useState(() => Date.now());
 
   // ✅ Fetch real balance data - moved to top
-  const { balance: realBalance, loading: realBalanceLoading } = useBalance();
+  // L15: `balanceError` is a first-class state — a failed venue read renders
+  // "unavailable" with the server's reason, never $0/stale.
+  const {
+    balance: realBalance,
+    loading: realBalanceLoading,
+    error: realBalanceError,
+  } = useBalance();
 
   // Fetch portfolio data - optimized with proper deduplication
   const hasPortfolioAccess =
@@ -439,6 +445,25 @@ const Dashboard: React.FC = () => {
               </Card>
             ))}
           </div>
+        ) : realBalanceError ? (
+          <Card className="mb-8 border-warning/20 bg-warning/5">
+            <div className="flex items-start gap-3 p-6">
+              <Activity className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-semibold text-text">
+                  Balance unavailable
+                </h3>
+                <p className="text-sm text-textMuted mt-1 break-words">
+                  {realBalanceError}
+                </p>
+                <p className="text-xs text-textMuted mt-2">
+                  Positions and trades below carry their own error state — this
+                  card only reflects the failed balance read, not a zero
+                  balance.
+                </p>
+              </div>
+            </div>
+          </Card>
         ) : portfolio ? (
           <div className="mb-8">
             <SectionHeader

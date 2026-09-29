@@ -30,7 +30,12 @@ function convertDomainBalanceToLegacy(domainBalance: DomainBalance): Balance {
 
 /**
  * useBalance hook - migrated to trading/balance feature
- * Now uses global balance manager for coordinated API requests
+ * Now uses global balance manager for coordinated API requests.
+ *
+ * L15: the hook carries an error channel — a failed venue read sets `error`
+ * (venue-neutral text from the server) and clears the stale balance to null
+ * so the UI renders "unavailable" instead of $0/stale. A later successful
+ * read clears the error via the data callback.
  */
 export const useBalance = (autoRefresh: boolean = true) => {
   const { user } = useAuth();
@@ -56,6 +61,13 @@ export const useBalance = (autoRefresh: boolean = true) => {
       setError(null);
 
       // Use global manager's last known data first
+      const lastError = globalBalanceManager.getLastBalanceError();
+      if (lastError) {
+        setError(lastError);
+        setBalance(null);
+      } else {
+        setError(null);
+      }
       const lastData = globalBalanceManager.getLastBalanceData();
       if (lastData) {
         // Handle both domain Balance class and legacy format
@@ -88,7 +100,10 @@ export const useBalance = (autoRefresh: boolean = true) => {
   const refresh = async () => {
     try {
       setLoading(true);
+      setError(null);
       await globalBalanceManager.forceRefresh();
+      const failure = globalBalanceManager.getLastBalanceError();
+      if (failure) setError(failure);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -117,26 +132,36 @@ export const useBalance = (autoRefresh: boolean = true) => {
     console.log(`💰 useBalance: Subscribing ${hookId} to global manager`);
 
     // Subscribe to global balance updates
-    const unsubscribe = globalBalanceManager.subscribe(hookId, newBalance => {
-      console.log(`💰 useBalance: Received update for ${hookId}`);
+    const unsubscribe = globalBalanceManager.subscribe(
+      hookId,
+      newBalance => {
+        console.log(`💰 useBalance: Received update for ${hookId}`);
 
-      // Handle both domain Balance class and legacy format
-      let balanceToSet: Balance | null = null;
-      if (newBalance instanceof DomainBalance) {
-        // Convert domain balance to legacy format
-        balanceToSet = convertDomainBalanceToLegacy(newBalance);
-      } else if (
-        newBalance &&
-        typeof newBalance === "object" &&
-        "timestamp" in newBalance
-      ) {
-        // Already in legacy format
-        balanceToSet = newBalance as unknown as Balance;
+        // Handle both domain Balance class and legacy format
+        let balanceToSet: Balance | null = null;
+        if (newBalance instanceof DomainBalance) {
+          // Convert domain balance to legacy format
+          balanceToSet = convertDomainBalanceToLegacy(newBalance);
+        } else if (
+          newBalance &&
+          typeof newBalance === "object" &&
+          "timestamp" in newBalance
+        ) {
+          // Already in legacy format
+          balanceToSet = newBalance as unknown as Balance;
+        }
+
+        setBalance(balanceToSet);
+        setError(null);
+      },
+      failure => {
+        // L15: surface the failure and drop the stale value — rendering
+        // $0/stale is exactly what this channel exists to prevent.
+        console.warn(`💰 useBalance: Balance read failed for ${hookId}`);
+        setError(failure);
+        setBalance(null);
       }
-
-      setBalance(balanceToSet);
-      setError(null);
-    });
+    );
 
     // Cleanup subscription
     return () => {

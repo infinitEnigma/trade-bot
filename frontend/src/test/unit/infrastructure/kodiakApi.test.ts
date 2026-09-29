@@ -221,6 +221,23 @@ describe("kodiakApi", () => {
       expect(result).toEqual(mockResponse);
       spy.mockRestore();
     });
+
+    it("should surface the server reason instead of masking 400/403 (L15)", async () => {
+      mockGet.mockRejectedValue({
+        response: {
+          status: 400,
+          data: { error: "signer sidecar unavailable" },
+        },
+      });
+      (httpClient.getClient as Mock).mockReturnValue({ get: mockGet });
+
+      await expect(kodiakApi.getKodiakBalance("acct-1")).rejects.toThrow(
+        "Balance unavailable: signer sidecar unavailable"
+      );
+      expect(mockGet).toHaveBeenCalledWith("/api/market/balance", {
+        params: { exchangeAccountId: "acct-1" },
+      });
+    });
   });
 
   describe("validateCredentialsFormat", () => {
