@@ -2,6 +2,7 @@
 
 import { Pool, PoolClient } from "pg";
 import { databaseLogger } from "../core/logging";
+import { runWithBackgroundContext } from "../shared/utils/context";
 import { DatabaseError, DatabaseResult } from "@trade-bot/shared";
 
 // ✅ Singleton pattern - only one pool instance ever created
@@ -107,9 +108,12 @@ export function initializePool(): Pool {
     lock_timeout: 10000,
   });
 
-  // ✅ Error event handler
+  // ✅ Error event handler — runs in the stable db-pool scope (L8) so pool
+  // errors never carry a boot/request ambient correlation id.
   pool.on("error", err => {
-    databaseLogger.error("Unexpected error on idle client", err);
+    runWithBackgroundContext("db-pool", () => {
+      databaseLogger.error("Unexpected error on idle client", err);
+    });
     throw new DatabaseError("Database connection pool error", {
       service: "postgresql",
       operation: "pool_error_handler",
@@ -119,36 +123,43 @@ export function initializePool(): Pool {
 
   // ✅ Connect event handler - set per-connection timeouts
   pool.on("connect", async client => {
-    poolMetrics.totalConnections++;
+    await runWithBackgroundContext("db-pool", async () => {
+      poolMetrics.totalConnections++;
 
-    try {
-      // Set PostgreSQL session timeouts on each new connection
-      await client.query(
-        `SET statement_timeout = ${currentTimeoutConfig.default}`
-      );
-      await client.query(`SET lock_timeout = 10000`); // 10 seconds for locks
+      try {
+        // Set PostgreSQL session timeouts on each new connection
+        await client.query(
+          `SET statement_timeout = ${currentTimeoutConfig.default}`
+        );
+        await client.query(`SET lock_timeout = 10000`); // 10 seconds for locks
 
-      databaseLogger.debug("Database connection timeouts configured", {
-        statementTimeout: currentTimeoutConfig.default,
-        lockTimeout: 10000,
+        databaseLogger.debug("Database connection timeouts configured", {
+          statementTimeout: currentTimeoutConfig.default,
+          lockTimeout: 10000,
+        });
+      } catch (error) {
+        databaseLogger.error(
+          "Failed to set connection timeouts",
+          error as Error
+        );
+      }
+
+      databaseLogger.info("New database connection established", {
+        totalConnections: poolMetrics.totalConnections,
       });
-    } catch (error) {
-      databaseLogger.error("Failed to set connection timeouts", error as Error);
-    }
-
-    databaseLogger.info("New database connection established", {
-      totalConnections: poolMetrics.totalConnections,
     });
   });
 
   // ✅ Connection removed from pool
   pool.on("remove", _client => {
-    poolMetrics.totalConnections = Math.max(
-      0,
-      poolMetrics.totalConnections - 1
-    );
-    databaseLogger.debug("Database connection removed from pool", {
-      totalConnections: poolMetrics.totalConnections,
+    runWithBackgroundContext("db-pool", () => {
+      poolMetrics.totalConnections = Math.max(
+        0,
+        poolMetrics.totalConnections - 1
+      );
+      databaseLogger.debug("Database connection removed from pool", {
+        totalConnections: poolMetrics.totalConnections,
+      });
     });
   });
 
@@ -645,10 +656,33 @@ function stopMetricsInterval(): void {
   }
 }
 
+/**
+ * Start the pool metrics interval inside the stable `db-pool` background
+ * scope (L8/L9). Called from boot; keeps the 30 s `setInterval` callback
+ * from inheriting whatever request context happened to be ambient when the
+ * module was first imported.
+ */
+export function startPoolMetrics(): void {
+  runWithBackgroundContext("db-pool", () => {
+    startMetricsInterval();
+  });
+}
+
+/**
+ * Stop the pool metrics interval (L10 — called during graceful shutdown).
+ */
+export function stopPoolMetrics(): void {
+  stopMetricsInterval();
+}
+
 // Start metrics interval by default (for production)
 // Only start in production environment, not in test environment
+// The interval callback runs inside the stable `db-pool` background scope
+// (L8) so pool logs never inherit a request/boot ambient context.
 if (process.env.NODE_ENV !== "test" && !process.env.JEST_WORKER_ID) {
-  startMetricsInterval();
+  runWithBackgroundContext("db-pool", () => {
+    startMetricsInterval();
+  });
 } else {
   // In test environment, ensure metrics interval is stopped
   stopMetricsInterval();

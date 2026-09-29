@@ -9,6 +9,7 @@ import { Worker } from "worker_threads";
 import { EventEmitter } from "events";
 import * as os from "os";
 import { securityLogger as logger } from "../core/logging/context-aware-logger.service";
+import { runWithBackgroundContext } from "../shared/utils/context";
 //import * as bcrypt from 'bcryptjs';
 import * as path from "path";
 
@@ -118,10 +119,16 @@ class PasswordWorkerPool extends EventEmitter {
 
   /**
    * Start periodic health checks for worker threads
+   *
+   * The interval callback runs inside the stable `password-pool` background
+   * scope (L8/L9) so health lines never carry the login/register request
+   * context that first constructed the lazy pool.
    */
   private startHealthCheck(): void {
     this.workerHealthCheckInterval = setInterval(() => {
-      this.performHealthCheck();
+      runWithBackgroundContext("password-pool", () => {
+        this.performHealthCheck();
+      });
     }, 10000); // Check every 10 seconds
   }
 
@@ -170,26 +177,32 @@ class PasswordWorkerPool extends EventEmitter {
     });
 
     worker.on("message", message => {
-      this.handleWorkerMessage(worker, message);
+      runWithBackgroundContext("password-pool", () => {
+        this.handleWorkerMessage(worker, message);
+      });
     });
 
     worker.on("error", error => {
-      logger.warn("Password worker error", {
-        error: (error as Error).message,
-        stack: (error as Error).stack,
+      runWithBackgroundContext("password-pool", () => {
+        logger.warn("Password worker error", {
+          error: (error as Error).message,
+          stack: (error as Error).stack,
+        });
+        this.handleWorkerError(worker, error as Error);
       });
-      this.handleWorkerError(worker, error as Error);
     });
 
     worker.on("exit", code => {
-      // `worker.terminate()` during graceful shutdown resolves with a non-zero
-      // code — that is the expected path, so don't warn about it.
-      if (this.isShuttingDown) {
-        logger.debug("Password worker exited during shutdown", { code });
-      } else {
-        logger.warn("Password worker exited", { code });
-      }
-      this.handleWorkerExit(worker, code);
+      runWithBackgroundContext("password-pool", () => {
+        // `worker.terminate()` during graceful shutdown resolves with a non-zero
+        // code — that is the expected path, so don't warn about it.
+        if (this.isShuttingDown) {
+          logger.debug("Password worker exited during shutdown", { code });
+        } else {
+          logger.warn("Password worker exited", { code });
+        }
+        this.handleWorkerExit(worker, code);
+      });
     });
 
     // Handle worker thread uncaught exceptions
@@ -199,21 +212,27 @@ class PasswordWorkerPool extends EventEmitter {
         typeof message === "object" &&
         message.type === "uncaughtException"
       ) {
-        this.handleWorkerUncaughtException(
-          worker,
-          new Error(message.error || "Unknown error")
-        );
+        runWithBackgroundContext("password-pool", () => {
+          this.handleWorkerUncaughtException(
+            worker,
+            new Error(message.error || "Unknown error")
+          );
+        });
       }
     });
 
     worker.on("online", () => {
-      logger.debug("Password worker online", { workerId: worker.threadId });
+      runWithBackgroundContext("password-pool", () => {
+        logger.debug("Password worker online", { workerId: worker.threadId });
+      });
     });
 
     worker.on("messageerror", error => {
-      logger.error("Password worker message error", error as Error, {
-        error: error.message,
-        stack: error.stack,
+      runWithBackgroundContext("password-pool", () => {
+        logger.error("Password worker message error", error as Error, {
+          error: error.message,
+          stack: error.stack,
+        });
       });
     });
 
@@ -831,6 +850,19 @@ function getPasswordWorkerPool(): PasswordWorkerPool {
     _passwordWorkerPool = new PasswordWorkerPool();
   }
   return _passwordWorkerPool;
+}
+
+/**
+ * Eagerly construct the pool inside the stable `password-pool` background
+ * scope (L9). Called from boot before `listen()` so the health-check
+ * interval, worker listeners and init logs never inherit a login/register
+ * request context. Safe to call from tests: it is a no-op in `test` env.
+ */
+export function ensurePasswordWorkerPool(): PasswordWorkerPool {
+  return runWithBackgroundContext(
+    "password-pool",
+    () => getPasswordWorkerPool() as PasswordWorkerPool
+  ) as PasswordWorkerPool;
 }
 
 // Graceful shutdown handling - only register if not in test environment

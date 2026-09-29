@@ -79,13 +79,72 @@ export function setRequestContext(
 
 /**
  * Run a function with the given request context
+ *
+ * Uses `AsyncLocalStorage.run` only (never `enterWith`) so the context is
+ * scoped to `fn`'s async chain. The previous implementation called
+ * `setRequestContext` (which uses `enterWith`) before `run`, leaking the new
+ * store into whatever async chain happened to be active — one response was
+ * logged under a sibling request's correlationId (L7).
  */
 export function runWithContext<T>(
   context: Partial<RequestContext>,
   fn: () => T | Promise<T>
 ): T | Promise<T> {
-  const ctx = setRequestContext(context);
+  const currentContext = getCurrentContext();
+  const ctx: RequestContext = {
+    correlationId:
+      context.correlationId ||
+      currentContext?.correlationId ||
+      generateCorrelationId(),
+    userId: context.userId ?? currentContext?.userId,
+    userLevel: context.userLevel ?? currentContext?.userLevel,
+    startTime: context.startTime ?? currentContext?.startTime ?? Date.now(),
+    requestId:
+      context.requestId || currentContext?.requestId || generateRequestId(),
+  };
+
   return asyncLocalStorage.run(ctx, fn);
+}
+
+/**
+ * Stable background scopes for long-lived subsystems (L8).
+ *
+ * Background work (Redis consumer, DB pool, engine protocol, intervals,
+ * boot init) must never inherit the boot-wide ambient context nor a request
+ * context. Each subsystem gets its own stable correlation id of the form
+ * `bg_<subsystem>_<8hex>` so its logs are greppable and `operationDuration`
+ * measures time since the scope was created rather than since boot/login.
+ */
+const backgroundContexts = new Map<string, RequestContext>();
+
+export function getBackgroundContext(subsystem: string): RequestContext {
+  const existing = backgroundContexts.get(subsystem);
+  if (existing) return existing;
+  const ctx: RequestContext = {
+    correlationId: `bg_${subsystem}_${randomBytes(4).toString("hex")}`,
+    startTime: Date.now(),
+    requestId: `bg_${subsystem}`,
+  };
+  backgroundContexts.set(subsystem, ctx);
+  return ctx;
+}
+
+/**
+ * Run `fn` inside the stable background scope for `subsystem`.
+ * Uses `AsyncLocalStorage.run` only — never `enterWith`.
+ */
+export function runWithBackgroundContext<T>(
+  subsystem: string,
+  fn: () => T | Promise<T>
+): T | Promise<T> {
+  return asyncLocalStorage.run(getBackgroundContext(subsystem), fn);
+}
+
+/**
+ * Clear cached background scopes (tests only).
+ */
+export function clearBackgroundContextsForTests(): void {
+  backgroundContexts.clear();
 }
 
 /**

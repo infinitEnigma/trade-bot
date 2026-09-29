@@ -60,18 +60,12 @@ import { engineProtocolService } from "./core/bots/engine-protocol.service";
 import { botLifecycleService } from "./core/bots/bot-lifecycle.service";
 import { commandTimeoutSweeper } from "./core/bots/command-timeout.sweeper";
 import { engineRegistryService } from "./core/bots/engine-registry.service";
-import {
-  setRequestContext,
-  generateCorrelationId,
-  generateRequestId,
-} from "./shared/utils/context";
-
-// Set default context for application initialization
-setRequestContext({
-  correlationId: generateCorrelationId(),
-  startTime: Date.now(),
-  requestId: generateRequestId(),
-});
+// L8: no boot-wide `setRequestContext` — the old ambient store leaked its
+// correlationId/startTime into every background logger (Redis consumer,
+// DB pool, password-pool health ticks) and made `operationDuration` measure
+// time-since-boot. Background subsystems run in their own stable scopes via
+// `runWithBackgroundContext` instead.
+import { runWithBackgroundContext } from "./shared/utils/context";
 
 // Application start time for uptime tracking
 const START_TIME = Date.now();
@@ -167,11 +161,21 @@ import { lifecycleReconciliationService } from "./core/bots/lifecycle-reconcilia
 // ===========================================
 
 // ✅ Initialize database pool first (before routes)
-import { initializePool, closePool } from "./database/pool";
+import {
+  initializePool,
+  closePool,
+  startPoolMetrics,
+  stopPoolMetrics,
+} from "./database/pool";
+import { ensurePasswordWorkerPool } from "./workers/password-worker";
+import { flushLogs } from "./core/logging/logger.service";
 
-// Initialize PostgreSQL connection pool
+// Initialize PostgreSQL connection pool inside the stable db-pool scope (L8)
 try {
-  initializePool();
+  runWithBackgroundContext("db-pool", () => {
+    initializePool();
+    startPoolMetrics();
+  });
   logger.info("✅ PostgreSQL connection pool initialized");
 } catch (error) {
   logger.error(
@@ -181,15 +185,32 @@ try {
   throw new Error("Database pool initialization failed");
 }
 
+// Eagerly construct the password worker pool inside its own stable scope
+// (L9) so the health-check interval and worker listeners never inherit the
+// first login/register request's context.
+if (process.env.NODE_ENV !== "test" && !process.env.JEST_WORKER_ID) {
+  try {
+    ensurePasswordWorkerPool();
+    logger.info("✅ Password worker pool warmed up");
+  } catch (error) {
+    logger.error(
+      "❌ Failed to warm up password worker pool",
+      error instanceof Error ? error : new Error(String(error))
+    );
+  }
+}
+
 // Connect to Redis on startup (now imported from infrastructure)
-redisService.connect().catch((error: unknown) => {
-  logger.error(
-    "❌ Failed to connect to Redis",
-    error instanceof Error ? error : new Error(String(error))
-  );
-  // The application stays online without Redis. Endpoints that require the
-  // trading control plane (bot start/stop) return 503 via redisService.isHealthy()
-  // rather than silently dispatching a command that cannot reach the engine.
+runWithBackgroundContext("redis", () => {
+  redisService.connect().catch((error: unknown) => {
+    logger.error(
+      "❌ Failed to connect to Redis",
+      error instanceof Error ? error : new Error(String(error))
+    );
+    // The application stays online without Redis. Endpoints that require the
+    // trading control plane (bot start/stop) return 503 via redisService.isHealthy()
+    // rather than silently dispatching a command that cannot reach the engine.
+  });
 });
 
 // Initialize dependency injection container
@@ -235,6 +256,12 @@ const app = ExpressConfig.createApp({
 
 // Create HTTP server for both Express and WebSocket support
 const httpServer = createServer(app);
+
+// L10: bound keep-alive so Phase 1 of graceful shutdown never waits ~10 s
+// for idle sockets. 5 s keep-alive matches the forced `closeAllConnections`
+// bound in `stopServer` below.
+httpServer.keepAliveTimeout = 5000;
+httpServer.headersTimeout = 60000;
 
 // Initialize Socket.IO with CORS configuration
 const io = new Server(httpServer, {
@@ -297,14 +324,18 @@ logger.info(
   "Socket.IO running in single server mode (Redis Streams adapter disabled)"
 );
 
-// Add error handler to prevent server crash from Socket.IO protocol errors
+// Add global error handler for Socket.IO server
+// L8: engine-socket callbacks run in the stable `websocket` background scope
+// so they never inherit a request ambient correlation id.
 io.engine.on(
   "connection_error",
   (err: Error & { context?: unknown; code?: string | number }) => {
-    logger.warn("Socket.IO connection error", {
-      message: err.message,
-      context: err.context,
-      code: err.code,
+    runWithBackgroundContext("websocket", () => {
+      logger.warn("Socket.IO connection error", {
+        message: err.message,
+        context: err.context,
+        code: err.code,
+      });
     });
   }
 );
@@ -316,9 +347,11 @@ io.engine.on(
     on: (event: string, callback: (err: Error) => void) => void;
   }) => {
     socket.on("error", (err: Error) => {
-      logger.warn("Socket.IO engine socket error", {
-        socketId: socket.id,
-        error: err.message,
+      runWithBackgroundContext("websocket", () => {
+        logger.warn("Socket.IO engine socket error", {
+          socketId: socket.id,
+          error: err.message,
+        });
       });
     });
   }
@@ -326,11 +359,15 @@ io.engine.on(
 
 // Add global error handler for Socket.IO server
 io.on("error", (error: Error) => {
-  logger.warn("Socket.IO server error", {
-    message: error.message,
-    stack: error.stack,
+  runWithBackgroundContext("websocket", () => {
+    logger.warn("Socket.IO server error", {
+      message: error.message,
+      stack: error.stack,
+    });
   });
 });
+
+// Make io available to routes
 
 // Make io available to routes
 app.set("io", io);
@@ -476,29 +513,61 @@ export const startServer = (): Promise<typeof httpServer> => {
 };
 
 /**
- * Stops the HTTP and WebSocket server gracefully
+ * Stops the HTTP and WebSocket server gracefully (L10).
+ *
+ * `httpServer.close()` alone waits indefinitely for keep-alive connections
+ * (the ~9.7 s Phase 1 in the flow-test logs). We close idle connections
+ * immediately, force-close the remainder after 5 s, and bound the whole
+ * stop so shutdown can never hang here.
  * @returns A promise that resolves when the server is stopped
  */
 export const stopServer = (): Promise<void> => {
-  return new Promise((resolve, reject) => {
+  return new Promise(resolve => {
     // Check if server is actually running before trying to close
     // This prevents errors in test environments where server might not have been started
+    let idleTimer: NodeJS.Timeout | undefined;
+    let forceTimer: NodeJS.Timeout | undefined;
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      if (forceTimer) clearTimeout(forceTimer);
+      if (idleTimer) clearTimeout(idleTimer);
+      logger.info("HTTP server closed - no longer accepting connections");
+      resolve();
+    };
 
     try {
+      // Idle keep-alive sockets stop `close()` from ever resolving — drop
+      // them immediately (Node ≥18.2), then force-close whatever is left.
+      const closeIdle = (
+        httpServer as unknown as { closeIdleConnections?: () => void }
+      ).closeIdleConnections?.bind(httpServer);
+      const closeAll = (
+        httpServer as unknown as { closeAllConnections?: () => void }
+      ).closeAllConnections?.bind(httpServer);
+      closeIdle?.();
+      idleTimer = setTimeout(() => closeAll?.(), 5000);
+      forceTimer = setTimeout(() => {
+        logger.warn("HTTP server close timed out - forcing shutdown", {
+          timeoutMs: 10000,
+        });
+        closeAll?.();
+        finish();
+      }, 10000);
       // In test/mock environments, this check may fail, so we'll try to close directly
       // with error handling
-      httpServer.close(err => {
+      httpServer.close((err?: Error) => {
         if (err) {
           // If error is about server not running, just resolve
           if (err.message && err.message.includes("Server is not running")) {
-            resolve();
+            finish();
           } else {
             logger.error("Error closing HTTP server", err);
-            reject(err);
+            finish();
           }
         } else {
-          logger.info("HTTP server closed - no longer accepting connections");
-          resolve();
+          finish();
         }
       });
     } catch {
@@ -516,10 +585,28 @@ export const stopServer = (): Promise<void> => {
 // ===========================================
 
 /**
- * Graceful shutdown handler
- * Ensures all connections are properly closed before exiting
+ * Graceful shutdown handler (L10)
+ * Ensures all connections are properly closed before exiting, with a
+ * per-stop duration on every step so the next slow shutdown is attributable.
  */
 let shutdownInProgress = false;
+
+/** Run one shutdown step and log its duration. Never throws. */
+async function timedShutdownStep(
+  step: string,
+  fn: () => void | Promise<unknown>
+): Promise<number> {
+  const start = Date.now();
+  try {
+    await fn();
+  } catch (error) {
+    logger.error(`Error during shutdown step: ${step}`, error as Error);
+  }
+  const durationMs = Date.now() - start;
+  logger.info(`Shutdown step completed: ${step}`, { step, durationMs });
+  return durationMs;
+}
+
 const gracefulShutdown = async (signal: string): Promise<void> => {
   // Prevent multiple shutdown attempts
   if (shutdownInProgress) {
@@ -537,7 +624,8 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
   const shutdownStart = Date.now();
   let shutdownCompleted = false;
 
-  // Set a maximum shutdown timeout (30 seconds)
+  // Set a maximum shutdown timeout (30 seconds). Best-effort flush before
+  // forcing out so the timeout path also leaves a tail in the log file.
   const shutdownTimeout = setTimeout(() => {
     if (!shutdownCompleted) {
       logger.warn(
@@ -546,65 +634,79 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
           shutdownDuration: Date.now() - shutdownStart,
         }
       );
-
-      // Don't call process.exit() in test environment to avoid test failure
-      if (process.env.NODE_ENV === "test") {
-        shutdownCompleted = true;
-        logger.warn("Graceful shutdown timed out");
-        process.exitCode = 1;
-      } else {
-        logger.warn("Process will exit due to shutdown timeout");
-        // eslint-disable-next-line no-process-exit -- process entrypoint: forced exit when the graceful shutdown deadline expires
-        process.exit(1); // Force exit after timeout
-        //process.exitCode = 1;
-      }
+      void flushLogs().finally(() => {
+        // Don't call process.exit() in test environment to avoid test failure
+        if (process.env.NODE_ENV === "test") {
+          shutdownCompleted = true;
+          logger.warn("Graceful shutdown timed out");
+          process.exitCode = 1;
+        } else {
+          logger.warn("Process will exit due to shutdown timeout");
+          // eslint-disable-next-line no-process-exit -- process entrypoint: forced exit when the graceful shutdown deadline expires
+          process.exit(1); // Force exit after timeout
+          //process.exitCode = 1;
+        }
+      });
     }
   }, 30000);
 
   try {
-    // Phase 1: Stop accepting new connections
+    await timedShutdownStep("stop-socketio", async () => {
+      await io.close();
+      logger.info("Socket.IO server closed");
+    });
+
+    // Phase 1: Stop accepting new connections (bounded — see stopServer)
     logger.info("Phase 1: Stopping new connections");
-    await stopServer();
+    const phase1Ms = await timedShutdownStep("stop-http", () => stopServer());
+    logger.info("Phase 1 complete: HTTP server stopped", {
+      phase: 1,
+      durationMs: phase1Ms,
+    });
 
     // Stop consuming engine events (leaves in-flight messages for redelivery)
-    try {
+    await timedShutdownStep("stop-engine-listeners", () => {
       lifecycleReconciliationService.stop();
       commandTimeoutSweeper.stop();
       engineRegistryService.stop();
       engineProtocolService.stop();
       logger.info("Engine protocol listener stopped");
-    } catch (error) {
-      logger.error(
-        "Error stopping engine protocol listener",
-        error instanceof Error ? error : new Error(String(error))
-      );
-    }
+    });
 
     // Phase 2: Close external service connections
     logger.info("Phase 2: Closing external connections");
 
     // Disconnect Redis
-    try {
+    await timedShutdownStep("disconnect-redis", async () => {
       await redisService.disconnect();
       logger.info("Redis connection closed");
-    } catch (error) {
-      logger.error(
-        "Error closing Redis connection",
-        error instanceof Error ? error : new Error(String(error))
-      );
-    }
+    });
+
+    await timedShutdownStep("stop-db-metrics", () => {
+      stopPoolMetrics();
+    });
+
+    await timedShutdownStep("shutdown-password-pool", async () => {
+      try {
+        const { passwordWorkerPool } =
+          await import("./workers/password-worker");
+        await passwordWorkerPool.shutdown();
+        logger.info("Password worker pool shut down");
+      } catch (error) {
+        // Lazy pool may never have been constructed (e.g. no logins since
+        // boot, or test env) — that is fine.
+        logger.debug("Password worker pool shutdown skipped", {
+          reason: (error as Error).message,
+        });
+      }
+    });
 
     // Phase 3: Close database connections
     logger.info("Phase 3: Closing database connections");
-    try {
+    await timedShutdownStep("close-db-pool", async () => {
       await closePool();
       logger.info("Database pool closed");
-    } catch (error) {
-      logger.error(
-        "Error closing database pool",
-        error instanceof Error ? error : new Error(String(error))
-      );
-    }
+    });
 
     // Phase 4: Final cleanup
     logger.info("Phase 4: Final cleanup completed");
@@ -617,6 +719,10 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
 
     shutdownCompleted = true;
     clearTimeout(shutdownTimeout);
+
+    // Flush buffered file logs before exiting (L10) — otherwise the
+    // "completed successfully" tail above can be truncated by process.exit.
+    await flushLogs();
 
     // Don't call process.exit() in test environment to avoid test failure
     if (process.env.NODE_ENV !== "test") {
@@ -634,6 +740,9 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
     );
     shutdownCompleted = true;
     clearTimeout(shutdownTimeout);
+
+    // Best-effort flush so the error tail survives the forced exit below.
+    await flushLogs();
 
     // Don't call process.exit() in test environment to avoid test failure
     if (process.env.NODE_ENV === "test") {

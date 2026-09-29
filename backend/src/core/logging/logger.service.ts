@@ -147,4 +147,46 @@ logger.add(
   })
 );
 
+/**
+ * Flush buffered log output before process exit (L10).
+ *
+ * Winston file transports buffer writes; `process.exit(0)` immediately after
+ * the last `logger.info` can truncate the shutdown tail (the missing
+ * "Graceful shutdown completed successfully" line). Best-effort: ends each
+ * file transport and waits for its `finish`/`close`, bounded by `timeoutMs`
+ * so shutdown can never hang on logging.
+ */
+export async function flushLogs(timeoutMs = 3000): Promise<void> {
+  const fileTransports = logger.transports.filter(
+    t => t instanceof DailyRotateFile
+  );
+  if (fileTransports.length === 0) return;
+  await Promise.race([
+    Promise.all(
+      fileTransports.map(
+        t =>
+          new Promise<void>(resolve => {
+            const done = (): void => {
+              t.removeListener("finish", done);
+              t.removeListener("error", done);
+              resolve();
+            };
+            t.once("finish", done);
+            t.once("error", done);
+            try {
+              t.end(done);
+            } catch {
+              resolve();
+            }
+          })
+      )
+    ),
+    new Promise<void>(resolve => {
+      const timer = setTimeout(resolve, timeoutMs);
+      // Don't let the flush bound itself keep the loop alive.
+      (timer as unknown as { unref?: () => void }).unref?.();
+    }),
+  ]);
+}
+
 export default logger;

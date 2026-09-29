@@ -17,6 +17,7 @@
 
 import { createClient, RedisClientType } from "redis";
 import { redisLogger as logger } from "../../../core/logging/context-aware-logger.service";
+import { runWithBackgroundContext } from "../../../shared/utils/context";
 
 export interface ConnectionConfig {
   url?: string;
@@ -59,6 +60,9 @@ export class RedisConnectionManager {
 
   /**
    * Setup Redis client event handlers
+   *
+   * Callbacks run inside the stable `redis` background scope (L8) so
+   * connection logs never inherit a boot/request ambient correlation id.
    */
   private setupEventHandlers(): void {
     this.client.on("error", (error: Error) => {
@@ -66,9 +70,11 @@ export class RedisConnectionManager {
       this.health.ready = false;
       this.health.lastError = error.message;
 
-      logger.warn("Redis client error", {
-        error: error.message,
-        url: this.config.url,
+      runWithBackgroundContext("redis", () => {
+        logger.warn("Redis client error", {
+          error: error.message,
+          url: this.config.url,
+        });
       });
     });
 
@@ -76,16 +82,20 @@ export class RedisConnectionManager {
       this.health.connected = true;
       this.health.lastConnected = Date.now();
 
-      logger.info("Redis client connected", {
-        url: this.config.url,
+      runWithBackgroundContext("redis", () => {
+        logger.info("Redis client connected", {
+          url: this.config.url,
+        });
       });
     });
 
     this.client.on("ready", () => {
       this.health.ready = true;
 
-      logger.info("Redis client ready", {
-        database: this.config.database,
+      runWithBackgroundContext("redis", () => {
+        logger.info("Redis client ready", {
+          database: this.config.database,
+        });
       });
     });
 
@@ -93,7 +103,9 @@ export class RedisConnectionManager {
       this.health.connected = false;
       this.health.ready = false;
 
-      logger.warn("Redis client connection ended");
+      runWithBackgroundContext("redis", () => {
+        logger.warn("Redis client connection ended");
+      });
     });
   }
 
