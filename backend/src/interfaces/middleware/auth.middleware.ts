@@ -402,6 +402,50 @@ export async function authMiddleware(
     // Verify token
     const payload = await getAuthService().validateToken(token);
     if (!payload) {
+      // L14 live fix (2026-09-29): validateToken() never throws — the token
+      // adapter's catch swallows TokenExpiredError and returns null — so an
+      // expired-but-refreshable session landed here and got a hard 403/-1002
+      // without ever touching the refresh cookie (the catch block below was
+      // unreachable for expiry). Renew exactly like the missing-token branch:
+      // only a definitively dead refresh cookie falls through to -1002.
+      const refreshTokenOnInvalid = req.cookies?.refreshToken;
+      if (refreshTokenOnInvalid) {
+        authLogger.debug(
+          "Access token invalid or expired, attempting refresh with refresh token",
+          { path: req.path, method: req.method }
+        );
+        try {
+          const refreshResult = await retryTokenRefresh(
+            refreshTokenOnInvalid,
+            req
+          );
+          if (!refreshResult.success || !refreshResult.tokens) {
+            logFailedRefresh(refreshResult, req);
+            respondToFailedRefresh(res, refreshResult.message);
+            return;
+          }
+          await finalizeRefreshedSession(req, res, refreshResult, next);
+          return;
+        } catch (refreshError) {
+          authLogger.error(
+            "Token refresh process failed",
+            refreshError instanceof Error ? refreshError : undefined,
+            {
+              error:
+                refreshError instanceof Error
+                  ? refreshError.message
+                  : String(refreshError),
+            }
+          );
+          res.status(401).json({
+            success: false,
+            code: -1006,
+            message: "Unauthorized - token refresh error",
+          });
+          return;
+        }
+      }
+
       res.status(403).json({
         success: false,
         code: -1002,

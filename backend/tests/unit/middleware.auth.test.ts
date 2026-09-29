@@ -371,6 +371,10 @@ describe("Auth Middleware", () => {
     (req as any).cookies.accessToken = token;
     (req as any).cookies.refreshToken = "valid-refresh-token";
     (req as any).path = "/api/user/profile"; // Use a non-lightweight endpoint
+    // setRefreshedSessionCookies() needs res.cookie — without it finalize()
+    // threw a TypeError before the post-refresh validation, masking the real
+    // success path (and leaking the mockResolvedValueOnce queue below).
+    (res as any).cookie = jest.fn().mockReturnThis();
     // Mock token validation to throw TokenExpiredError (triggers refresh)
     (mockAuthService.validateToken as jest.Mock)
       .mockRejectedValueOnce(
@@ -432,7 +436,9 @@ describe("Auth Middleware", () => {
       "valid-refresh-token"
     );
     expect(mockAuthService.refreshToken).toHaveBeenCalledTimes(1); // Should only be called once on success
-    expect(next).not.toHaveBeenCalled();
+    // A successful refresh continues the request chain with the hydrated user
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.user?.userId).toBe("test-user");
 
     // L6: the refresh log line carries a masked address, never the raw one
     const refreshLog = infoSpy.mock.calls.find(
@@ -444,6 +450,131 @@ describe("Auth Middleware", () => {
     expect((refreshLog![1] as { email?: string }).email).toBe(
       "t***t@example.com"
     );
+  });
+
+  it("L14: should refresh and rotate cookies when validateToken resolves null (expired access, valid refresh)", async () => {
+    // L14 live defect (2026-09-29): the JWT adapter's catch swallows
+    // TokenExpiredError, so validateToken() resolves null for an expired
+    // access token — the thrown-error refresh path below was unreachable in
+    // production. This test pins the real production shape of expiry.
+    const expiredToken = jwt.sign(
+      { userId: "test-user", email: "test@example.com" },
+      process.env.JWT_SECRET || "test-secret",
+      { expiresIn: "-1h" }
+    );
+
+    (req as any).cookies.accessToken = expiredToken;
+    (req as any).cookies.refreshToken = "valid-refresh-token";
+    (req as any).path = "/api/user/profile"; // Non-lightweight endpoint
+
+    // setRefreshedSessionCookies() needs res.cookie — the shared beforeEach
+    // mock only stubs status/json/clearCookie.
+    (res as any).cookie = jest.fn().mockReturnThis();
+
+    // Call 1: expired access → null (production behavior). Call 2: the
+    // freshly-rotated access token validates.
+    (mockAuthService.validateToken as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        userId: "test-user",
+        email: "test@example.com",
+        userLevel: "BASIC",
+      });
+
+    (mockAuthService.refreshToken as jest.Mock).mockResolvedValue({
+      success: true,
+      tokens: {
+        accessToken: "new-access-token",
+        refreshToken: "new-refresh-token",
+        expiresIn: 14400,
+      },
+      user: {
+        id: "test-user",
+        email: "test@example.com",
+        userLevel: "BASIC",
+      },
+    });
+
+    (mockAuthService.getUserById as jest.Mock).mockResolvedValue({
+      id: "test-user",
+      email: "test@example.com",
+      userLevel: "BASIC",
+    });
+    (mockAuthService.getAuthenticatedUserData as jest.Mock).mockResolvedValue({
+      user: {
+        id: "test-user",
+        email: "test@example.com",
+        userLevel: "BASIC",
+        roles: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      roles: [],
+      hasCredentials: false,
+    });
+
+    await authMiddleware(req as Request, res as Response, next);
+
+    // The refresh cookie was presented instead of a hard 403/-1002
+    expect(mockAuthService.refreshToken).toHaveBeenCalledWith(
+      "valid-refresh-token"
+    );
+    expect(mockAuthService.refreshToken).toHaveBeenCalledTimes(1);
+    // Rotated session cookies were written
+    expect((res as any).cookie).toHaveBeenCalledWith(
+      "accessToken",
+      "new-access-token",
+      expect.anything()
+    );
+    expect((res as any).cookie).toHaveBeenCalledWith(
+      "refreshToken",
+      "new-refresh-token",
+      expect.anything()
+    );
+    // Request continued down the chain with the hydrated user
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.user).toBeDefined();
+    expect(req.user?.userId).toBe("test-user");
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it("L14: should answer 401/-1002 and clear cookies when null-payload refresh is definitively dead", async () => {
+    const expiredToken = jwt.sign(
+      { userId: "test-user", email: "test@example.com" },
+      process.env.JWT_SECRET || "test-secret",
+      { expiresIn: "-1h" }
+    );
+
+    (req as any).cookies.accessToken = expiredToken;
+    (req as any).cookies.refreshToken = "refresh-token";
+
+    (mockAuthService.validateToken as jest.Mock).mockResolvedValue(null);
+    (mockAuthService.refreshToken as jest.Mock).mockResolvedValue({
+      success: false,
+      message: "Token refresh failed - invalid token", // definitive
+    });
+
+    await authMiddleware(req as Request, res as Response, next);
+
+    expect(mockAuthService.refreshToken).toHaveBeenCalledWith("refresh-token");
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      code: -1002,
+      message: "Session expired - please log in again",
+    });
+    for (const cookieName of [
+      "accessToken",
+      "refreshToken",
+      "csrfSecret",
+      "csrfToken",
+    ]) {
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        cookieName,
+        expect.anything()
+      );
+    }
+    expect(next).not.toHaveBeenCalled();
   });
 
   it("should handle token refresh failure after retries", async () => {
@@ -479,12 +610,22 @@ describe("Auth Middleware", () => {
     expect(mockAuthService.refreshToken).not.toHaveBeenCalledWith(
       "valid-refresh-token"
     );
-    expect(res.status).not.toHaveBeenCalledWith(401);
-    expect(res.json).not.toHaveBeenCalledWith({
+    // Definitive refresh failure contract (respondToFailedRefresh): the
+    // presented refresh token is invalid → 401 + -1002 with cookies cleared —
+    // never the transient -1004 and never a continued request chain.
+    // (The previous `not401` assertion was stale: it only held while a leaked
+    // mockResolvedValueOnce queue from the test above short-circuited this
+    // flow into the generic 500 branch.)
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({
       success: false,
-      code: -1004,
-      message: "Unauthorized - token refresh failed after multiple attempts",
+      code: -1002,
+      message: "Session expired - please log in again",
     });
+    expect(res.clearCookie).toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalledWith(
+      expect.objectContaining({ code: -1004 })
+    );
     expect(next).not.toHaveBeenCalled();
   });
 
