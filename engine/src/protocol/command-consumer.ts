@@ -125,7 +125,46 @@ export async function processMessage(
     if (!retryable && data) {
       processedMessageIds.add(data.messageId);
       await safeAck(streamOps, msg.id);
+      return;
     }
+
+    // L22 safety net: a command that keeps failing past the poison threshold
+    // is alert-and-dropped instead of redelivered forever. The insight pass
+    // could only *log* the poison entry; this caps it at the point of failure.
+    const deliveries = await pendingDeliveries(streamOps, msg.id);
+    if (deliveries >= PENDING_POISON_MAX_DELIVERIES) {
+      logger.error(
+        "Poison command ACKed and dropped after repeated redelivery",
+        {
+          streamId: msg.id,
+          messageId: data?.messageId,
+          commandType: data?.type,
+          deliveries,
+          maxDeliveries: PENDING_POISON_MAX_DELIVERIES,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+      if (data) {
+        processedMessageIds.add(data.messageId);
+      }
+      await safeAck(streamOps, msg.id);
+    }
+  }
+}
+
+/** Redelivery counter for one pending entry; 0 when unknown (keep retrying). */
+async function pendingDeliveries(
+  streamOps: RedisStreamOperations,
+  streamId: string
+): Promise<number> {
+  try {
+    return await streamOps.getPendingDeliveries(
+      ENGINE_COMMANDS_STREAM,
+      ENGINE_COMMANDS_CONSUMER_GROUP,
+      streamId
+    );
+  } catch {
+    return 0;
   }
 }
 

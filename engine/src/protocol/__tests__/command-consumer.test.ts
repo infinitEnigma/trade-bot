@@ -3,6 +3,7 @@
 import { createBotCommand, ProtocolMessage } from "@trade-bot/shared";
 import { processMessage } from "../command-consumer";
 import { BotManager } from "../../application/bot-manager";
+import { CommandError } from "../../application/command-error";
 import {
   RedisStreamOperations,
   StreamMessage,
@@ -14,11 +15,13 @@ import {
  * BOT_START/BOT_STOP envelopes without dispatching → ENGINE_NO_RESPONSE).
  */
 describe("command-consumer processMessage", () => {
-  function makeStreamOps(): {
+  function makeStreamOps(deliveries = 0): {
     acks: string[];
     ops: RedisStreamOperations;
+    getPendingDeliveries: jest.Mock;
   } {
     const acks: string[] = [];
+    const getPendingDeliveries = jest.fn(async () => deliveries);
     const ops = {
       ack: jest.fn(
         async (_stream: string, _group: string, streamId: string) => {
@@ -26,8 +29,13 @@ describe("command-consumer processMessage", () => {
           return { success: true as const };
         }
       ),
+      getPendingDeliveries,
     };
-    return { acks, ops: ops as unknown as RedisStreamOperations };
+    return {
+      acks,
+      ops: ops as unknown as RedisStreamOperations,
+      getPendingDeliveries,
+    };
   }
 
   function makeManager(): {
@@ -176,5 +184,72 @@ describe("command-consumer processMessage", () => {
     expect(handleStart).not.toHaveBeenCalled();
     expect(handleStop).not.toHaveBeenCalled();
     expect(acks).toEqual(["1-5"]);
+  });
+
+  // ===========================================
+  // L22: business failures ACK, transient failures stop at the poison cap
+  // ===========================================
+
+  function startCommand(correlationId: string): ProtocolMessage<unknown> {
+    return createBotCommand(
+      "BOT_START",
+      {
+        botId: "bot-1",
+        userId: "user-1",
+        strategyId: "strategy-1",
+        configVersion: 1,
+        config: { symbol: "BTC-USD" },
+      },
+      correlationId
+    ) as ProtocolMessage<unknown>;
+  }
+
+  it("ACKs a business failure (non-retryable CommandError) instead of redelivering it", async () => {
+    const { acks, ops, getPendingDeliveries } = makeStreamOps();
+    const { manager, handleStart } = makeManager();
+    handleStart.mockRejectedValue(new CommandError(false, "unknown market"));
+
+    await processMessage(
+      ops,
+      manager,
+      msg("1-22", startCommand("corr-a")),
+      new Set()
+    );
+
+    expect(acks).toEqual(["1-22"]);
+    // The non-retryable branch resolves immediately: no PEL round-trip needed.
+    expect(getPendingDeliveries).not.toHaveBeenCalled();
+  });
+
+  it("leaves a transient failure pending while it is under the poison threshold", async () => {
+    const { acks, ops } = makeStreamOps(3);
+    const { manager, handleStart } = makeManager();
+    handleStart.mockRejectedValue(new Error("redis blip"));
+
+    await processMessage(
+      ops,
+      manager,
+      msg("1-23", startCommand("corr-b")),
+      new Set()
+    );
+
+    expect(acks).toEqual([]);
+  });
+
+  it("ACKs and drops a command that failed past the poison threshold (L22)", async () => {
+    // == PENDING_POISON_MAX_DELIVERIES (default 10): the entry has already been
+    // redelivered enough times that retrying can only keep the PEL spinning.
+    const { acks, ops } = makeStreamOps(10);
+    const { manager, handleStart } = makeManager();
+    handleStart.mockRejectedValue(new Error("keeps failing"));
+
+    await processMessage(
+      ops,
+      manager,
+      msg("1-24", startCommand("corr-c")),
+      new Set()
+    );
+
+    expect(acks).toEqual(["1-24"]);
   });
 });

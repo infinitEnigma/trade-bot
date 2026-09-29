@@ -163,7 +163,6 @@ describe("BotManager.handleStart credential-contract slice (workstream A)", () =
     const failed = published.filter(entry => entry.type === "COMMAND_FAILED");
     expect(failed).toHaveLength(1);
     expect(String(failed[0].payload.message)).toMatch(/UNSUPPORTED_EXCHANGE/);
-
     const movedToError = published.filter(
       entry =>
         entry.type === "STATE_CHANGED" &&
@@ -174,6 +173,50 @@ describe("BotManager.handleStart credential-contract slice (workstream A)", () =
     expect(String(movedToError[0].payload.reason)).toMatch(
       /UNSUPPORTED_EXCHANGE/
     );
+    expect(manager.hasBot("bot-1")).toBe(false);
+  });
+
+  it("wraps a plain failure reported to the backend as a non-retryable CommandError (L22)", async () => {
+    // A business failure that escapes unwrapped (an axios 4xx from the
+    // credential/market round-trip - the live L22 case, 42 deliveries in 3.2 h)
+    // must not stay classified as retryable: the backend has already been told
+    // COMMAND_FAILED + STATE_CHANGED ERROR, so the consumer has to ACK it
+    // instead of redelivering the same command forever.
+    fetchCredentialsMock.mockResolvedValue({
+      exchange: "kodiak",
+      environment: "testnet",
+      accountRef: "0xabc",
+      credentials: {
+        accountId: "0xabc",
+        accessKey: "key",
+        secretKey: "secret",
+      },
+    });
+    createExchangeClientMock.mockReturnValue({
+      getTicker: jest
+        .fn()
+        .mockRejectedValue(new Error("Request failed with status code 409")),
+    });
+
+    const manager = makeManager();
+    const { published, ops } = makeStreamOps();
+
+    await expect(
+      manager.handleStart(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ops as any,
+        "bot-1",
+        "user-1",
+        "strategy-1",
+        { symbol: "S", gridSize: 3, gridRange: 5, orderQuantity: 1 },
+        "corr-l22"
+      )
+    ).rejects.toMatchObject({ name: "CommandError", retryable: false });
+
+    // The failure was reported exactly once before it was rethrown.
+    expect(
+      published.filter(entry => entry.type === "COMMAND_FAILED")
+    ).toHaveLength(1);
     expect(manager.hasBot("bot-1")).toBe(false);
   });
 });

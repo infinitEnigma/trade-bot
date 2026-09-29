@@ -347,6 +347,33 @@ export class EngineProtocolService {
 
       await this.safeAck(streamId);
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      // L22/L25: cap the redelivery loop. A handler that keeps throwing for
+      // the same event is a poison message (e.g. an event that cannot be
+      // applied to the bot's current state); leaving it unacked forever makes
+      // the PEL spin once per pending-recovery pass. Past the threshold the
+      // entry is alert-and-dropped so it cannot bury the stream.
+      const deliveries = await this.pendingDeliveries(streamId);
+      if (deliveries >= PENDING_POISON_MAX_DELIVERIES) {
+        logger.error(
+          "Poison engine event ACKed and dropped after repeated redelivery",
+          undefined,
+          {
+            streamId,
+            messageId: data.messageId,
+            eventType: data.type,
+            deliveries,
+            maxDeliveries: PENDING_POISON_MAX_DELIVERIES,
+            error: errorMessage,
+          }
+        );
+        await this.markProcessed(data.messageId);
+        await this.safeAck(streamId);
+        return;
+      }
+
       logger.error(
         "Engine event handler failed, message left unacked for redelivery",
         undefined,
@@ -354,9 +381,26 @@ export class EngineProtocolService {
           streamId,
           messageId: data.messageId,
           eventType: data.type,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage,
         }
       );
+    }
+  }
+
+  /** Redelivery counter for one pending entry; 0 when unknown (keep retrying). */
+  private async pendingDeliveries(streamId: string): Promise<number> {
+    try {
+      return await this.streamOperations.getPendingDeliveries(
+        BOT_EVENTS_STREAM,
+        BACKEND_EVENTS_CONSUMER_GROUP,
+        streamId
+      );
+    } catch (error) {
+      logger.debug("Pending deliveries lookup failed", {
+        streamId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return 0;
     }
   }
 

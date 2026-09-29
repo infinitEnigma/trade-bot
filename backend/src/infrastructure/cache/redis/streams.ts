@@ -423,6 +423,42 @@ export class RedisStreamOperations {
   }
 
   /**
+   * Redelivery counter of a single pending entry (0 when the id is not
+   * pending or the lookup fails - failing open keeps the message eligible
+   * for the normal retry path instead of dropping it prematurely).
+   *
+   * Consumers use it to cap a poison loop: an entry that has been redelivered
+   * `PENDING_POISON_MAX_DELIVERIES` times without ever being ACKed is
+   * alert-and-dropped instead of retried forever (L22/L25).
+   */
+  async getPendingDeliveries(
+    stream: string,
+    consumerGroup: string,
+    messageId: string
+  ): Promise<number> {
+    try {
+      const client = this.connectionManager.getClient();
+      // XPENDING with an exact start/end id returns just that entry.
+      const rows = await client.xPendingRange(
+        stream,
+        consumerGroup,
+        messageId,
+        messageId,
+        1
+      );
+      const row = (rows ?? []).find(entry => entry.id === messageId);
+      return row?.deliveriesCounter ?? 0;
+    } catch (error) {
+      logger.error("Pending deliveries lookup failed", error as Error, {
+        stream,
+        consumerGroup,
+        messageId,
+      });
+      return 0;
+    }
+  }
+
+  /**
    * Durable at-least-once deduplication marker. Unlike the in-memory set,
    * this survives process restarts (stored in Redis with a TTL).
    * Returns true if this process is the first to mark the message.

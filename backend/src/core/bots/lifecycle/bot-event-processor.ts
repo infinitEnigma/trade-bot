@@ -327,29 +327,56 @@ export class BotEventProcessor {
     }
 
     if (bot.actual_state !== "ERROR") {
-      const nextState = assertTransition(bot.actual_state, "ERROR");
-      const persisted = await this.repository.persistTransition(
-        bot.id,
-        {
-          desiredState: "STOPPED",
-          actualState: nextState,
-          errorCode: payload.errorCode,
-          errorMessage: payload.message,
-        },
-        bot.actual_state
-      );
-      if (!persisted) {
+      // L25: a failure report can arrive after the bot already sits in a
+      // state with no edge to ERROR (STOPPED -> ERROR is illegal). Applying
+      // it as a transition threw InvalidStateTransitionError, the event
+      // stayed unacked, and the same COMMAND_FAILED redelivered forever
+      // (observed 12x over 11 minutes, then reproduced on demand). A bot
+      // that cannot fail further keeps its state: the failure is recorded
+      // as bookkeeping below, exactly like the ERROR -> ERROR case.
+      if (!canTransition(bot.actual_state, "ERROR")) {
         logger.warn(
-          "Command failed processed against stale bot state - skipping",
+          "Command failed for a bot past a failable state - recorded as bookkeeping",
           {
             botId: bot.id,
             actualState: bot.actual_state,
+            commandType: payload.commandType,
+            errorCode: payload.errorCode,
             correlationId: event.correlationId,
           }
         );
-        return;
+      } else {
+        const nextState = assertTransition(bot.actual_state, "ERROR");
+        const persisted = await this.repository.persistTransition(
+          bot.id,
+          {
+            desiredState: "STOPPED",
+            actualState: nextState,
+            errorCode: payload.errorCode,
+            errorMessage: payload.message,
+          },
+          bot.actual_state
+        );
+        if (!persisted) {
+          logger.warn(
+            "Command failed processed against stale bot state - skipping",
+            {
+              botId: bot.id,
+              actualState: bot.actual_state,
+              correlationId: event.correlationId,
+            }
+          );
+          return;
+        }
       }
     }
+
+    // What the bot's actual state is after the failure was applied: ERROR
+    // when the transition happened, the unchanged state when the report was
+    // pure bookkeeping (terminal bot, or already ERROR).
+    const failedState: BotActualState = canTransition(bot.actual_state, "ERROR")
+      ? "ERROR"
+      : bot.actual_state;
 
     // Strategy badge (Phase 2): a failed command lands the bot in ERROR.
     await syncStrategyActive(bot.strategy_id, false);
@@ -364,7 +391,7 @@ export class BotEventProcessor {
     await this.repository.recordLifecycleEvent(bot.id, {
       eventType: "COMMAND_FAILED",
       fromState: bot.actual_state,
-      toState: "ERROR",
+      toState: failedState,
       correlationId: event.correlationId,
       messageId: event.messageId,
       metadata: {
@@ -374,13 +401,17 @@ export class BotEventProcessor {
       },
     });
 
-    this.notifier.emitStateChanged(
-      bot.id,
-      bot.user_id,
-      bot.actual_state,
-      "ERROR",
-      event.correlationId
-    );
+    // Only notify when the state actually moved; a bookkeeping failure must
+    // not tell the UI the bot is ERROR when the row still says STOPPED.
+    if (failedState !== bot.actual_state) {
+      this.notifier.emitStateChanged(
+        bot.id,
+        bot.user_id,
+        bot.actual_state,
+        failedState,
+        event.correlationId
+      );
+    }
   }
 
   private async handleStateChanged(event: BotEvent): Promise<void> {

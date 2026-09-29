@@ -357,7 +357,16 @@ export class BotManager {
         correlationId,
         err.message
       );
-      throw error;
+      // L22: the outcome is already authoritative on the wire (COMMAND_FAILED
+      // + STATE_CHANGED ERROR), so retrying this command can only re-run a
+      // start the backend has failed. Rethrowing the original error left
+      // plain errors (axios 4xx, unknown market, ...) classified as
+      // retryable, and the consumer redelivered the same command forever
+      // (42 deliveries in 3.2 h in the live log). Surface every post-report
+      // failure as a non-retryable CommandError so the consumer ACKs it.
+      const reported = new CommandError(false, err.message);
+      reported.stack = err.stack ?? reported.stack;
+      throw reported;
     }
   }
 

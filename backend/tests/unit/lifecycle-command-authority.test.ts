@@ -359,6 +359,47 @@ describe("lifecycle command authority (L21) & terminal stop repair (L24)", () =>
   });
 
   // ===========================================
+  // L25: a failure report for a terminal bot is bookkeeping, not a transition
+  // ===========================================
+
+  it("applies COMMAND_FAILED for an already-STOPPED bot without an illegal transition (L25)", async () => {
+    // Live shape (2026-09-28 20:29): desired RUNNING / actual STOPPED after a
+    // heartbeat drift, then a stop. The engine has no runner left and answers
+    // BOT_NOT_FOUND; the backend must not apply the illegal STOPPED -> ERROR,
+    // which used to throw, leave the event unacked and redeliver it forever.
+    bot.desired_state = "RUNNING";
+    bot.actual_state = "STOPPED";
+
+    await service.stop(BOT_ID, "user-1");
+    const stopId = dispatched("BOT_STOP")[0];
+    expect(bot.actual_state).toBe("STOPPED");
+
+    // If the failure report were still applied as a transition this would
+    // reject with InvalidStateTransitionError (the L25 redelivery loop).
+    await service.handleEngineEvent(
+      engineEvent(
+        "COMMAND_FAILED",
+        {
+          commandType: "BOT_STOP",
+          errorCode: "BOT_NOT_FOUND",
+          message: "Bot not found",
+        },
+        stopId
+      )
+    );
+
+    // Bookkeeping: the tracked command resolves, the bot keeps its terminal
+    // state (no ERROR rewrite, no state-changed notification), and the audit
+    // trail still records the engine's answer.
+    expect(commands.get(stopId)?.state).toBe("FAILED");
+    expect(bot.actual_state).toBe("STOPPED");
+    expect(bot.desired_state).toBe("STOPPED");
+    expect(
+      lifecycleEvents.filter(event => event.event_type === "COMMAND_FAILED")
+    ).toHaveLength(1);
+  });
+
+  // ===========================================
   // L24: a timeout must not leave a live runner
   // ===========================================
 
