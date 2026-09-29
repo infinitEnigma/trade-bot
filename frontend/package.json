@@ -6,7 +6,7 @@
     "dev": "vite --host",
     "build": "tsc -p tsconfig.build.json && npx vite build",
     "preview": "vite preview",
-    "test": "vitest",
+    "test": "vitest run",
     "lint": "eslint src --ext .ts,.tsx,.js,.jsx --max-warnings 0",
     "lint:fix": "eslint src --ext .ts,.tsx,.js,.jsx --fix",
     "format": "prettier --write src",

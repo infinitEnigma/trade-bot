@@ -156,6 +156,7 @@ export class StrategyService {
       if (response.success && response.data) {
         return response.data.map(
           (bot: {
+            id: string;
             strategy_id: string;
             status: string;
             total_trades: number;
@@ -163,7 +164,9 @@ export class StrategyService {
             last_updated: string;
             config?: unknown;
           }) => ({
-            id: bot.strategy_id,
+            // L19: the bot-instance id (what /management/stop expects), not
+            // the strategy id.
+            id: bot.id,
             strategy_id: bot.strategy_id,
             status: bot.status as
               "RUNNING" | "STOPPED" | "ERROR" | "STARTING" | "STOPPING",

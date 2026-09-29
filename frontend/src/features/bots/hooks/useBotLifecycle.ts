@@ -115,6 +115,7 @@ export function useBotLifecycle(botId?: string) {
     if (response?.success && rows.length > 0) {
       return rows.map(
         (bot: {
+          id: string;
           strategy_id: string;
           status: string;
           total_trades: number;
@@ -122,7 +123,12 @@ export function useBotLifecycle(botId?: string) {
           last_updated: string;
           config?: unknown;
         }) => ({
-          id: bot.strategy_id,
+          // L19: `id` is the bot-instance id, never the strategy id — stop,
+          // emergency-stop and the `bot.stateChanged` cache patch are all
+          // keyed on it. Mapping it to `strategy_id` (the legacy "one strategy
+          // ⇒ one bot" convention) sent the strategy UUID to
+          // `/api/bot/management/stop`, which 404s.
+          id: bot.id,
           strategy_id: bot.strategy_id,
           status: bot.status as BotInstance["status"],
           total_trades: bot.total_trades,
