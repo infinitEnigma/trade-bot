@@ -3,6 +3,10 @@
 import { io, Socket } from "socket.io-client";
 import { getWebSocketUrl } from "../config";
 import { refreshSessionOnce } from "../api/session-refresh";
+import {
+  consumeHttpSessionExpiredMark,
+  dispatchSessionExpired,
+} from "../api/session-events";
 import { TickData, KlineData, MarkPriceData } from "@trade-bot/shared";
 
 /**
@@ -641,9 +645,15 @@ export class WebSocketClient {
       return;
     }
     this.authFailureNotified = true;
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("auth:session-expired"));
+    if (typeof window === "undefined") {
+      return;
     }
+    // L14: if the HTTP interceptor already surfaced this failure (401 + -1002
+    // on the silent /me refresh), its dispatch is the one listeners get.
+    if (consumeHttpSessionExpiredMark()) {
+      return;
+    }
+    dispatchSessionExpired();
   }
 
   /**
@@ -657,6 +667,9 @@ export class WebSocketClient {
     this.authRecoveryAttempted = false;
     this.authRecoveryPromise = null;
     this.authRecoveryGeneration++;
+    // Discard any HTTP-layer session-expired mark this episode produced —
+    // a later, distinct episode must be free to surface its own event.
+    consumeHttpSessionExpiredMark();
   }
 
   /**

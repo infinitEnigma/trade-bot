@@ -1,6 +1,10 @@
 /** @format */
 
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from "axios";
+import {
+  dispatchSessionExpired,
+  markSessionExpiredByHttp,
+} from "./session-events";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
 console.log("API_BASE_URL:", API_BASE_URL);
@@ -15,8 +19,12 @@ console.log("API_BASE_URL:", API_BASE_URL);
  */
 const forceReauthentication = (reason: string): void => {
   console.warn("Forcing re-authentication:", reason);
-  // Notify any in-app listeners BEFORE navigating (they may flush state)
-  window.dispatchEvent(new CustomEvent("auth:session-expired"));
+  // Notify any in-app listeners BEFORE navigating (they may flush state).
+  // L14: mark the dispatch so the WS client's one-shot refresh budget — which
+  // observes this same definitive failure via its silent /me refresh — can
+  // skip its own dispatch and keep "exactly one session-expired" per episode.
+  markSessionExpiredByHttp();
+  dispatchSessionExpired();
   // Clear the persisted zustand auth store so /login doesn't rehydrate
   // a stale "authenticated" user (root cause of the wallet-signing bug
   // where the settings page reloaded still showing BASIC).
