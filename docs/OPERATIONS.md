@@ -44,7 +44,7 @@ and the engine both read it.
 | `PENDING_RECOVERY_INTERVAL_MS`                                | `30000`                                             | How often the pending-recovery pass runs                                                 |
 | `PENDING_STUCK_ALERT_THRESHOLD_MS`                            | `30000`                                             | Pending entries idle this long count as "stuck"                                          |
 | `PENDING_ALERT_THRESHOLD`                                     | `5`                                                 | Stuck-entry count that triggers a backlog warning                                        |
-| `PENDING_POISON_MAX_DELIVERIES`                               | `10`                                                | Redelivery count treated as a poison message                                             |
+| `PENDING_POISON_MAX_DELIVERIES`                               | `10`                                                | Redeliveries after which a poison entry is alert-and-ACKed (dropped)                     |
 
 ### Engine
 
@@ -58,7 +58,7 @@ and the engine both read it.
 | `ENGINE_HEARTBEAT_INTERVAL_MS`     | `10000`                  | `ENGINE_HEARTBEAT` cadence                             |
 | `PENDING_RECOVERY_MIN_IDLE_MS`     | `60000`                  | Command-side pending recovery threshold                |
 | `PENDING_STUCK_ALERT_THRESHOLD_MS` | `30000`                  | Stuck-command alert threshold                          |
-| `PENDING_POISON_MAX_DELIVERIES`    | `10`                     | Poison-command threshold                               |
+| `PENDING_POISON_MAX_DELIVERIES`    | `10`                     | Poison-command threshold (alert-and-ACK past it)       |
 | `LIGHTER_ENV`                      | `testnet`                | Lighter venue environment (`testnet` or `mainnet`)     |
 | `LIGHTER_BASE_URL`                 | venue default            | Lighter REST base URL                                  |
 | `LIGHTER_ACCOUNT_INDEX`            | –                        | Venue account index (per user; encrypted at rest)      |
