@@ -37,6 +37,7 @@ describe("StrategyService", () => {
         getBotInstances: jest.fn(),
         getBotInstance: jest.fn(),
         getActiveBotInstances: jest.fn(),
+        getBotInstancesByStrategy: jest.fn(),
         createBotInstance: jest.fn(),
         updateBotStatus: jest.fn(),
         updateBotPerformance: jest.fn(),
@@ -285,7 +286,7 @@ describe("StrategyService", () => {
         { id: "bot-2", strategy_id: testStrategyId },
       ];
       (
-        deps.botInstanceRepository.getActiveBotInstances as jest.Mock
+        deps.botInstanceRepository.getBotInstancesByStrategy as jest.Mock
       ).mockResolvedValue(mockBotInstances);
       (
         deps.botInstanceRepository.deleteBotInstance as jest.Mock
@@ -297,8 +298,8 @@ describe("StrategyService", () => {
       await strategyService.deleteStrategy(testStrategyId);
 
       expect(
-        deps.botInstanceRepository.getActiveBotInstances
-      ).toHaveBeenCalled();
+        deps.botInstanceRepository.getBotInstancesByStrategy
+      ).toHaveBeenCalledWith(testStrategyId);
       expect(
         deps.botInstanceRepository.deleteBotInstance
       ).toHaveBeenCalledTimes(mockBotInstances.length);
@@ -319,7 +320,7 @@ describe("StrategyService", () => {
 
       const testStrategyId = "strategy-123";
       (
-        deps.botInstanceRepository.getActiveBotInstances as jest.Mock
+        deps.botInstanceRepository.getBotInstancesByStrategy as jest.Mock
       ).mockResolvedValue([]);
       (deps.strategyRepository.deleteStrategy as jest.Mock).mockResolvedValue(
         undefined
@@ -328,8 +329,8 @@ describe("StrategyService", () => {
       await strategyService.deleteStrategy(testStrategyId);
 
       expect(
-        deps.botInstanceRepository.getActiveBotInstances
-      ).toHaveBeenCalled();
+        deps.botInstanceRepository.getBotInstancesByStrategy
+      ).toHaveBeenCalledWith(testStrategyId);
       expect(
         deps.botInstanceRepository.deleteBotInstance
       ).not.toHaveBeenCalled();
@@ -346,7 +347,7 @@ describe("StrategyService", () => {
       const testStrategyId = "strategy-123";
       const testError = new Error("Failed to delete strategy");
       (
-        deps.botInstanceRepository.getActiveBotInstances as jest.Mock
+        deps.botInstanceRepository.getBotInstancesByStrategy as jest.Mock
       ).mockRejectedValue(testError);
 
       await expect(

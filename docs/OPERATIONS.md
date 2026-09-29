@@ -272,8 +272,13 @@ Checklist when something is missing:
    no error channel yet, so a failed read is indistinguishable from a zero balance
    (positions and trades do surface their error).
 4. A bot cannot exist without an ACTIVE account: `exchange_account_id` has been
-   `NOT NULL` since migration `014`, and an account with bots bound cannot be
-   revoked — `DELETE /api/accounts/:id` answers **409** with `boundBots`.
+   `NOT NULL` since migration `014`, and an account with *live* bots bound
+   (`actual_state` STARTING/RUNNING/STOPPING) cannot be revoked —
+   `DELETE /api/accounts/:id` answers **409** with `boundBots`. Terminal
+   history (STOPPED/ERROR/UNKNOWN) is cleared as part of the revoke and
+   never blocks it, so a venue-side wipe (Lighter testnet reset) no longer
+   deadlocks the disconnect; `DELETE /api/bot/management/instances/:botId`
+   clears single terminal rows without deleting the strategy.
 5. One active bot per strategy is enforced (a second start while the first is
    STARTING/RUNNING returns 409). Stop the first bot, or start a bot for a
    different strategy, before switching accounts.

@@ -58,7 +58,17 @@ export const ExchangeAccounts: React.FC = () => {
       SmartToast.success(response.message || "Account disconnected");
       invalidate();
     },
-    onError: () => SmartToast.error("Failed to disconnect account"),
+    onError: (error: unknown) => {
+      const candidate = error as {
+        response?: { data?: { error?: string }; status?: number };
+        message?: string;
+      };
+      SmartToast.error(
+        candidate?.response?.data?.error ||
+          candidate?.message ||
+          "Failed to disconnect account"
+      );
+    },
   });
 
   const accounts = accountsQuery.data?.data?.accounts ?? [];

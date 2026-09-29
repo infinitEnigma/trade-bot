@@ -14,6 +14,7 @@ describe("BotManagementService", () => {
         getBotInstances: jest.fn(),
         getBotInstance: jest.fn(),
         getActiveBotInstances: jest.fn(),
+        getBotInstancesByStrategy: jest.fn(),
         createBotInstance: jest.fn(),
         updateBotStatus: jest.fn(),
         updateBotPerformance: jest.fn(),
@@ -593,6 +594,125 @@ describe("BotManagementService", () => {
         botManagementService.emergencyStop(testBotId, testUserId)
       ).rejects.toThrow(testError);
       expect(deps.logger.error).toHaveBeenCalled();
+    });
+  });
+
+  describe("Delete Terminal Bot", () => {
+    it("should delete a STOPPED bot", async () => {
+      const deps = createMockDependencies();
+      const botManagementService = new BotManagementService(deps);
+
+      const mockBot = {
+        id: "bot-1",
+        strategy_id: "strategy-1",
+        user_id: "user-123",
+        status: "STOPPED",
+        actual_state: "STOPPED",
+        desired_state: "STOPPED",
+        running_time: 0,
+        total_trades: 0,
+        total_pnl: 0,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+      (
+        deps.botInstanceRepository.getBotInstance as jest.Mock
+      ).mockResolvedValue(mockBot);
+      (
+        deps.botInstanceRepository.deleteBotInstance as jest.Mock
+      ).mockResolvedValue(undefined);
+
+      await botManagementService.deleteTerminalBot("bot-1", "user-123");
+
+      expect(deps.botInstanceRepository.deleteBotInstance).toHaveBeenCalledWith(
+        "bot-1"
+      );
+    });
+
+    it("should delete an ERROR bot", async () => {
+      const deps = createMockDependencies();
+      const botManagementService = new BotManagementService(deps);
+
+      (
+        deps.botInstanceRepository.getBotInstance as jest.Mock
+      ).mockResolvedValue({
+        id: "bot-2",
+        user_id: "user-123",
+        status: "ERROR",
+        actual_state: "ERROR",
+        desired_state: "STOPPED",
+      });
+
+      await botManagementService.deleteTerminalBot("bot-2", "user-123");
+
+      expect(deps.botInstanceRepository.deleteBotInstance).toHaveBeenCalledWith(
+        "bot-2"
+      );
+    });
+
+    it("should refuse a RUNNING bot", async () => {
+      const deps = createMockDependencies();
+      const botManagementService = new BotManagementService(deps);
+
+      (
+        deps.botInstanceRepository.getBotInstance as jest.Mock
+      ).mockResolvedValue({
+        id: "bot-3",
+        user_id: "user-123",
+        status: "RUNNING",
+        actual_state: "RUNNING",
+        desired_state: "RUNNING",
+      });
+
+      await expect(
+        botManagementService.deleteTerminalBot("bot-3", "user-123")
+      ).rejects.toThrow("still active");
+      expect(
+        deps.botInstanceRepository.deleteBotInstance
+      ).not.toHaveBeenCalled();
+    });
+
+    it("should refuse another user's bot", async () => {
+      const deps = createMockDependencies();
+      const botManagementService = new BotManagementService(deps);
+
+      (
+        deps.botInstanceRepository.getBotInstance as jest.Mock
+      ).mockResolvedValue({
+        id: "bot-4",
+        user_id: "other-user",
+        status: "STOPPED",
+        actual_state: "STOPPED",
+      });
+
+      await expect(
+        botManagementService.deleteTerminalBot("bot-4", "user-123")
+      ).rejects.toThrow("does not belong");
+    });
+  });
+
+  describe("Delete Bots For Strategy", () => {
+    it("should delete every bot bound to the strategy", async () => {
+      const deps = createMockDependencies();
+      const botManagementService = new BotManagementService(deps);
+
+      (
+        deps.botInstanceRepository.getBotInstancesByStrategy as jest.Mock
+      ).mockResolvedValue([{ id: "bot-1" }, { id: "bot-2" }]);
+      (
+        deps.botInstanceRepository.deleteBotInstance as jest.Mock
+      ).mockResolvedValue(undefined);
+
+      const count =
+        await botManagementService.deleteBotsForStrategy("strategy-1");
+
+      expect(count).toBe(2);
+      expect(
+        deps.botInstanceRepository.getBotInstancesByStrategy
+      ).toHaveBeenCalledWith("strategy-1");
+      expect(
+        deps.botInstanceRepository.deleteBotInstance
+      ).toHaveBeenCalledTimes(2);
     });
   });
 

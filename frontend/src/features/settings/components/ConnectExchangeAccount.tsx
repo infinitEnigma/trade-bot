@@ -58,7 +58,7 @@ function secretsCleared(form: FormState): Partial<FormState> {
 }
 
 interface ConnectExchangeAccountProps {
-  /** Existing accounts, so a duplicate venue+environment can be blocked. */
+  /** Existing accounts, so an exact duplicate account can be blocked. */
   accounts?: ExchangeAccountDto[];
 }
 
@@ -86,12 +86,35 @@ export const ConnectExchangeAccount: React.FC<ConnectExchangeAccountProps> = ({
     (value: string): void =>
       setForm(previous => ({ ...previous, [field]: value }));
 
-  const duplicate = accounts.some(
-    account =>
-      account.exchange === form.exchange &&
-      account.environment === form.environment &&
-      account.status !== "REVOKED"
-  );
+  // Exact-account duplicate guard. The backend unique key is
+  // (user_id, exchange, environment, account_ref) — one venue+environment
+  // may hold several accounts (e.g. a replacement Lighter index after the
+  // venue wiped the old one), so only the same account_ref blocks here.
+  // Kodiak's ref is the account ID; Lighter's ref is the account index.
+  const pendingRef = isKodiak
+    ? form.accountId.trim()
+    : /^\d+$/.test(form.accountIndex.trim())
+      ? String(Number(form.accountIndex.trim()))
+      : form.accountIndex.trim();
+
+  const duplicate =
+    pendingRef.length > 0 &&
+    accounts.some(
+      account =>
+        account.exchange === form.exchange &&
+        account.environment === form.environment &&
+        account.accountRef === pendingRef &&
+        account.status !== "REVOKED"
+    );
+
+  const duplicateVenueNotice =
+    !duplicate &&
+    accounts.some(
+      account =>
+        account.exchange === form.exchange &&
+        account.environment === form.environment &&
+        account.status !== "REVOKED"
+    );
 
   const validate = (): string => {
     if (isKodiak) {
@@ -333,8 +356,19 @@ export const ConnectExchangeAccount: React.FC<ConnectExchangeAccountProps> = ({
           <div className="flex items-center gap-3 p-4 rounded-lg bg-info/10 border border-info/20">
             <AlertCircle className="w-4 h-4 text-info shrink-0" />
             <p className="text-info text-sm">
-              A {form.exchange} ({form.environment}) account is already
-              connected — disconnect it first to replace it.
+              This {form.exchange} ({form.environment}) account
+              &quot;{pendingRef}&quot; is already connected.
+            </p>
+          </div>
+        )}
+
+        {duplicateVenueNotice && (
+          <div className="flex items-center gap-3 p-4 rounded-lg bg-white/5 border border-white/10">
+            <AlertCircle className="w-4 h-4 text-textMuted shrink-0" />
+            <p className="text-textMuted text-sm">
+              Another {form.exchange} ({form.environment}) account is already
+              connected — both can coexist; the backend keys accounts by
+              account reference.
             </p>
           </div>
         )}

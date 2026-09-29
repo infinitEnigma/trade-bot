@@ -208,6 +208,28 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
       throw new Error(`Failed to get active bot instances: ${errorMessage}`);
     }
   }
+
+  /**
+   * Every bot instance bound to one strategy (any lifecycle state).
+   */
+  async getBotInstancesByStrategy(
+    strategyId: string
+  ): Promise<BotInstanceRecord[]> {
+    try {
+      const result = await query<BotInstanceRecord>(
+        `SELECT * FROM bot_instances WHERE strategy_id = $1 ORDER BY created_at DESC`,
+        [strategyId]
+      );
+      return result.rows;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to get bot instances for strategy", error as Error);
+      throw new Error(
+        `Failed to get bot instances for strategy: ${errorMessage}`
+      );
+    }
+  }
 }
 
 // Export singleton instance

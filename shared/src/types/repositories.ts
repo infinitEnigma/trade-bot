@@ -403,6 +403,13 @@ export interface IBotInstanceRepository {
   deleteBotInstance(id: string): Promise<void>;
 
   /**
+   * Every bot instance bound to one strategy (any lifecycle state).
+   * Strategy delete must clear terminal history too — `getActiveBotInstances`
+   * only covers live rows.
+   */
+  getBotInstancesByStrategy(strategyId: string): Promise<BotInstanceRecord[]>;
+
+  /**
    * Get active bot instances
    */
   getActiveBotInstances(): Promise<BotInstanceRecord[]>;

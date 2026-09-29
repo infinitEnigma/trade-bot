@@ -257,5 +257,25 @@ describe("tradingApi", () => {
         expect(result).toEqual(mockResponse);
       });
     });
+
+    describe("deleteBotInstance", () => {
+      it("should call delete terminal bot endpoint", async () => {
+        const botId = "1";
+        const mockResponse = {
+          success: true,
+          data: { botId },
+        };
+
+        mockDelete.mockResolvedValue({ data: mockResponse });
+
+        const result = await tradingApi.deleteBotInstance(botId);
+
+        expect(httpClient.getClient).toHaveBeenCalled();
+        expect(mockDelete).toHaveBeenCalledWith(
+          `/api/bot/management/instances/${botId}`
+        );
+        expect(result).toEqual(mockResponse);
+      });
+    });
   });
 });

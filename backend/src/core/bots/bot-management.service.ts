@@ -272,6 +272,70 @@ export class BotManagementService {
   }
 
   /**
+   * Delete a stopped bot instance (terminal history cleanup).
+   *
+   * Only bots in a terminal `actual_state` (STOPPED/ERROR/UNKNOWN) can be
+   * deleted: they cannot be trading on the engine, so removal is pure
+   * history cleanup and can never orphan exposure. Live bots
+   * (STARTING/RUNNING/STOPPING) or `desired_state=RUNNING` are refused with
+   * an error the route maps to 409 — stop them first.
+   */
+  async deleteTerminalBot(botId: string, userId: string): Promise<void> {
+    try {
+      const botInstance =
+        await this.deps.botInstanceRepository.getBotInstance(botId);
+      if (!botInstance || botInstance.user_id !== userId) {
+        throw new Error("Bot not found or does not belong to user");
+      }
+      const actual = (botInstance.actual_state ?? botInstance.status) as string;
+      const desired = (botInstance as { desired_state?: string })
+        .desired_state;
+      if (
+        desired === "RUNNING" ||
+        actual === "STARTING" ||
+        actual === "RUNNING" ||
+        actual === "STOPPING"
+      ) {
+        throw new Error(
+          "Bot is still active. Stop it before deleting its history."
+        );
+      }
+      await this.deps.botInstanceRepository.deleteBotInstance(botId);
+      this.deps.logger.info("Terminal bot deleted", {
+        botId,
+        userId,
+        actualState: actual,
+      });
+    } catch (error) {
+      this.deps.logger.error("Failed to delete terminal bot", {
+        error: error instanceof Error ? error.message : String(error),
+        userId,
+        botId,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Delete every bot instance bound to one strategy (strategy delete helper).
+   *
+   * The FK `strategies → bot_instances` is ON DELETE CASCADE, but legacy
+   * lifecycle children (`bot_lifecycle_events`, `bot_commands`) are cascade
+   * too — an explicit per-row delete keeps the audit path and works when
+   * the strategy row is already gone (orphaned Terminal history).
+   */
+  async deleteBotsForStrategy(strategyId: string): Promise<number> {
+    const bots =
+      await this.deps.botInstanceRepository.getBotInstancesByStrategy(
+        strategyId
+      );
+    for (const bot of bots) {
+      await this.deps.botInstanceRepository.deleteBotInstance(bot.id);
+    }
+    return bots.length;
+  }
+
+  /**
    * Initiate emergency stop for a bot
    */
   async emergencyStop(botId: string, userId: string): Promise<void> {

@@ -23,6 +23,7 @@
  *
  * API ENDPOINTS (served under /api/bot/management — see bots/index.ts):
  * - GET /api/bot/management/instances - List user's bot instances
+ * - DELETE /api/bot/management/instances/:botId - Delete terminal bot history
  * - POST /api/bot/management/start - Start bot with secure credential transmission
  * - POST /api/bot/management/stop - Graceful bot shutdown
  * - GET /api/bot/management/status/:botId - Real-time bot status with reconciliation
@@ -669,6 +670,57 @@ router.get(
         botId: req.params.botId,
       });
       const dbError = new DatabaseError("Failed to get bot performance");
+      res
+        .status(dbError.statusCode)
+        .json(createErrorResponse(dbError, getCorrelationId()));
+    }
+  }
+);
+
+// DELETE /api/bot/management/instances/:botId — delete terminal bot history.
+//
+// A bot that is STOPPED/ERROR/UNKNOWN cannot be trading, so its row is pure
+// history and can be removed without touching the engine. Live bots
+// (STARTING/RUNNING/STOPPING, desired RUNNING) are refused with 409 — stop
+// them first. Without this, dead test history (e.g. after a Lighter testnet
+// venue-side wipe) piles up with no way to clear it except deleting the
+// whole strategy.
+router.delete(
+  "/instances/:botId",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const botId = req.params.botId as string;
+
+      const botManagementService = serviceProvider.getBotManagementService();
+      await botManagementService.deleteTerminalBot(botId, userId);
+
+      res.json({
+        success: true,
+        data: { botId },
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error("Delete bot error", err as Error, {
+        userId: req.user?.userId,
+        botId: req.params.botId,
+      });
+      if (/not found|does not belong/i.test(message)) {
+        const notFoundError = new NotFoundError("Bot not found");
+        return res
+          .status(notFoundError.statusCode)
+          .json(createErrorResponse(notFoundError, getCorrelationId()));
+      }
+      if (/still active/i.test(message)) {
+        return res.status(409).json({
+          success: false,
+          error: message,
+          timestamp: Date.now(),
+        });
+      }
+      const dbError = new DatabaseError("Failed to delete bot");
       res
         .status(dbError.statusCode)
         .json(createErrorResponse(dbError, getCorrelationId()));

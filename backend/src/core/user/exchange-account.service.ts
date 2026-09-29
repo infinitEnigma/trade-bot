@@ -63,11 +63,15 @@ export interface ExchangeAccountServiceDeps {
   userLevel: { recompute(userId: string): Promise<unknown> };
   /**
    * C3a: bots bound to the account. `countBoundBots` returns how many
-   * `bot_instances` rows reference it — revoke is blocked while > 0 because
-   * the FK is ON DELETE RESTRICT (migration 013).
+   * *live* `bot_instances` rows reference it (`actual_state` in
+   * STARTING/RUNNING/STOPPING — the only states that may still trade on the
+   * engine). Terminal history (STOPPED/ERROR/UNKNOWN) never blocks a revoke:
+   * it cannot trade, so `revokeAccount` clears it first and the FK
+   * (ON DELETE RESTRICT, migration 013) only ever guards live bots.
    */
   boundBots?: {
     countBoundBots(userId: string, accountId: string): Promise<number>;
+    clearTerminalBots(userId: string, accountId: string): Promise<number>;
   };
   auditLogRepository?: {
     logEvent(event: {
@@ -339,19 +343,32 @@ export class ExchangeAccountService {
   async revokeAccount(
     userId: string,
     accountId: string
-  ): Promise<{ success: boolean; message: string; boundBots?: number }> {
-    // C3a: the FK is ON DELETE RESTRICT — an account with bots bound cannot
-    // be hard-deleted. Block with a clear message instead of leaking the
-    // FK violation. Stop/re-home the bots first.
+  ): Promise<{
+    success: boolean;
+    message: string;
+    boundBots?: number;
+    clearedBots?: number;
+  }> {
+    // C3a: the FK is ON DELETE RESTRICT — an account with *live* bots bound
+    // cannot be hard-deleted. Block with a clear message instead of leaking
+    // the FK violation. Terminal history (STOPPED/ERROR/UNKNOWN) cannot
+    // trade, so it is cleared first and never blocks the revoke — otherwise
+    // a venue-side wipe (e.g. Lighter testnet reset) deadlocks the user:
+    // they can neither disconnect nor re-connect the replacement.
+    let clearedBots = 0;
     if (this.deps.boundBots) {
       const bound = await this.deps.boundBots.countBoundBots(userId, accountId);
       if (bound > 0) {
         return {
           success: false,
-          message: `Account has ${bound} bot${bound === 1 ? "" : "s"} bound to it. Stop or delete the bots first.`,
+          message: `Account has ${bound} active bot${bound === 1 ? "" : "s"} bound to it. Stop or delete the bots first.`,
           boundBots: bound,
         };
       }
+      clearedBots = await this.deps.boundBots.clearTerminalBots(
+        userId,
+        accountId
+      );
     }
     const deleted = await this.deps.exchangeAccountRepository.deleteAccount(
       userId,
@@ -363,12 +380,19 @@ export class ExchangeAccountService {
       await this.deps.auditLogRepository?.logEvent({
         userId,
         action: "EXCHANGE_ACCOUNT_REVOKED",
-        details: { accountId },
+        details: { accountId, clearedBots },
       });
     } catch {
       this.deps.logger?.warn("Failed to audit account revoke", { userId });
     }
-    return { success: true, message: "Exchange account disconnected" };
+    return {
+      success: true,
+      message:
+        clearedBots > 0
+          ? `Exchange account disconnected (${clearedBots} stopped bot${clearedBots === 1 ? "" : "s"} cleared)`
+          : "Exchange account disconnected",
+      clearedBots,
+    };
   }
 
   /**

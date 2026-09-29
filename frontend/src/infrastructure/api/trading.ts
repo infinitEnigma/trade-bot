@@ -65,6 +65,17 @@ export const tradingApi = {
     );
   },
 
+  /**
+   * Delete a terminal (STOPPED/ERROR/UNKNOWN) bot's history row. Live bots
+   * are refused with 409 — stop them first.
+   */
+  async deleteBotInstance(botId: string) {
+    const response = await httpClient
+      .getClient()
+      .delete(`/api/bot/management/instances/${botId}`);
+    return response.data;
+  },
+
   async getEngineStatus() {
     return globalRequestManager.deduplicateRequest(
       "bots:engine-status",

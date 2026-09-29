@@ -506,9 +506,12 @@ describe("ExchangeAccountService", () => {
       expect(deps.userLevel.recompute).not.toHaveBeenCalled();
     });
 
-    it("should block the revoke while bots are bound (FK RESTRICT, C3a)", async () => {
+    it("should block the revoke while live bots are bound (FK RESTRICT, C3a)", async () => {
       const deps = createDeps({
-        boundBots: { countBoundBots: jest.fn().mockResolvedValue(2) },
+        boundBots: {
+          countBoundBots: jest.fn().mockResolvedValue(2),
+          clearTerminalBots: jest.fn(),
+        },
       });
       const service = new ExchangeAccountService(deps);
 
@@ -516,18 +519,59 @@ describe("ExchangeAccountService", () => {
 
       expect(result.success).toBe(false);
       expect(result.boundBots).toBe(2);
-      expect(result.message).toContain("2 bots bound");
-      // Nothing is deleted and the level is untouched: the account still holds
-      // ACTIVE bots.
+      expect(result.message).toContain("2 active bots bound");
+      // Nothing is cleared or deleted and the level is untouched: the
+      // account still holds live bots.
+      expect(deps.boundBots?.clearTerminalBots).not.toHaveBeenCalled();
       expect(
         deps.exchangeAccountRepository.deleteAccount
       ).not.toHaveBeenCalled();
       expect(deps.userLevel.recompute).not.toHaveBeenCalled();
     });
 
+    it("should clear terminal history and revoke when no live bot is bound", async () => {
+      const deps = createDeps({
+        boundBots: {
+          countBoundBots: jest.fn().mockResolvedValue(0),
+          clearTerminalBots: jest.fn().mockResolvedValue(11),
+        },
+      });
+      const service = new ExchangeAccountService(deps);
+
+      const result = await service.revokeAccount("test-user-id", "account-1");
+
+      expect(result.success).toBe(true);
+      expect(deps.boundBots?.countBoundBots).toHaveBeenCalledWith(
+        "test-user-id",
+        "account-1"
+      );
+      expect(deps.boundBots?.clearTerminalBots).toHaveBeenCalledWith(
+        "test-user-id",
+        "account-1"
+      );
+      expect(deps.exchangeAccountRepository.deleteAccount).toHaveBeenCalledWith(
+        "test-user-id",
+        "account-1"
+      );
+      expect(result.clearedBots).toBe(11);
+      expect(result.message).toContain("11 stopped bots cleared");
+      expect(deps.auditLogRepository?.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "EXCHANGE_ACCOUNT_REVOKED",
+          details: expect.objectContaining({
+            accountId: "account-1",
+            clearedBots: 11,
+          }),
+        })
+      );
+    });
+
     it("should revoke normally when no bot is bound", async () => {
       const deps = createDeps({
-        boundBots: { countBoundBots: jest.fn().mockResolvedValue(0) },
+        boundBots: {
+          countBoundBots: jest.fn().mockResolvedValue(0),
+          clearTerminalBots: jest.fn().mockResolvedValue(0),
+        },
       });
       const service = new ExchangeAccountService(deps);
 

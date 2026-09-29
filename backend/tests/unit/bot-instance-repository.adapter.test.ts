@@ -376,4 +376,29 @@ describe("BotInstanceRepositoryAdapter", () => {
       );
     });
   });
+
+  describe("getBotInstancesByStrategy", () => {
+    it("should return every bot bound to the strategy", async () => {
+      const rows = [{ id: "bot-1" }, { id: "bot-2" }];
+      (query as jest.Mock).mockResolvedValue({ rows });
+      const adapter = new BotInstanceRepositoryAdapter();
+
+      const bots = await adapter.getBotInstancesByStrategy("strategy-1");
+
+      expect(bots).toEqual(rows);
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("WHERE strategy_id = $1"),
+        ["strategy-1"]
+      );
+    });
+
+    it("should throw error when query fails", async () => {
+      (query as jest.Mock).mockRejectedValue(new Error("Query failed"));
+      const adapter = new BotInstanceRepositoryAdapter();
+
+      await expect(
+        adapter.getBotInstancesByStrategy("strategy-1")
+      ).rejects.toThrow("Failed to get bot instances for strategy");
+    });
+  });
 });

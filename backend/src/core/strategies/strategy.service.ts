@@ -136,13 +136,15 @@ export class StrategyService {
    */
   async deleteStrategy(id: string): Promise<void> {
     try {
-      // Delete associated bot instances first
+      // Delete ALL associated bot instances first — live and terminal.
+      // getActiveBotInstances only covers live rows (legacy `status`), so a
+      // strategy delete through it would leak STOPPED/ERROR/UNKNOWN history
+      // that keeps blocking the venue-account revoke (FK RESTRICT, 013).
+      // The strategy→bot FK is ON DELETE CASCADE (001), but the explicit
+      // per-row delete also clears lifecycle children deterministically.
       const botInstances =
-        await this.deps.botInstanceRepository.getActiveBotInstances();
-      const strategyBotInstances = botInstances.filter(
-        bot => bot.strategy_id === id
-      );
-      for (const botInstance of strategyBotInstances) {
+        await this.deps.botInstanceRepository.getBotInstancesByStrategy(id);
+      for (const botInstance of botInstances) {
         await this.deps.botInstanceRepository.deleteBotInstance(botInstance.id);
       }
 
