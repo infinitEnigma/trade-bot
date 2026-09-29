@@ -150,17 +150,50 @@ logger.add(
 /**
  * Flush buffered log output before process exit (L10).
  *
- * Winston file transports buffer writes; `process.exit(0)` immediately after
- * the last `logger.info` can truncate the shutdown tail (the missing
- * "Graceful shutdown completed successfully" line). Best-effort: ends each
- * file transport and waits for its `finish`/`close`, bounded by `timeoutMs`
- * so shutdown can never hang on logging.
+ * Two-stage drain, both bounded by `timeoutMs` so shutdown can never hang:
+ *
+ * 1. Drain the logger→transport pipe. The winston Logger is a Transform
+ *    piping into each transport; entries logged moments before exit can still
+ *    be sitting in that pipe. Ending the transports directly (the original
+ *    implementation) dropped everything still in flight — the whole
+ *    "Graceful shutdown completed successfully" tail never reached disk in
+ *    production (confirmed live 2026-09-29: sequence ran, exit 0, file silent).
+ *
+ * 2. Close each DailyRotateFile via its own `close()`. `t.end()` only waits
+ *    for the transport's write queue — but `DailyRotateFile.log()` invokes its
+ *    callback synchronously after buffering the chunk in `logStream`, so that
+ *    queue is empty long before the bytes hit the file. `close()` ends
+ *    `logStream` and emits `finish` only once the underlying file stream has
+ *    flushed, which is the real barrier before `process.exit()`.
  */
 export async function flushLogs(timeoutMs = 3000): Promise<void> {
   const fileTransports = logger.transports.filter(
     t => t instanceof DailyRotateFile
-  );
+  ) as DailyRotateFile[];
   if (fileTransports.length === 0) return;
+
+  const deadline = Date.now() + timeoutMs;
+
+  // Stage 1: wait until the logger's Transform buffers and every transport's
+  // write queue are empty (each iteration lets the event loop move data).
+  const pipePending = (): boolean => {
+    const l = logger as unknown as {
+      writableLength?: number;
+      readableLength?: number;
+    };
+    if ((l.writableLength ?? 0) > 0 || (l.readableLength ?? 0) > 0) return true;
+    return fileTransports.some(
+      t =>
+        ((t as unknown as { writableLength?: number }).writableLength ?? 0) > 0
+    );
+  };
+  while (pipePending() && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+
+  // Stage 2: close the rotate streams and wait for their flush barrier
+  // (`close()` → `logStream.end()` → `finish`), racing the remaining budget.
+  const remaining = Math.max(0, deadline - Date.now());
   await Promise.race([
     Promise.all(
       fileTransports.map(
@@ -173,8 +206,25 @@ export async function flushLogs(timeoutMs = 3000): Promise<void> {
             };
             t.once("finish", done);
             t.once("error", done);
+            // After close(), any logging that still happens (e.g. later tests
+            // in the same process) writes to an ended file stream; dRF does
+            // not listen for that error and an unhandled 'error' event would
+            // crash the process. Post-flush writes are best-effort — swallow.
+            const logStream = (
+              t as unknown as {
+                logStream?: { on?: (ev: string, fn: () => void) => void };
+              }
+            ).logStream;
+            logStream?.on?.("error", () => undefined);
             try {
-              t.end(done);
+              const closable = t as unknown as { close?: () => void };
+              if (typeof closable.close === "function") {
+                closable.close();
+              } else {
+                // Transport without dRF's close barrier (defensive) — fall
+                // back to ending the transport itself.
+                t.end(done);
+              }
             } catch {
               resolve();
             }
@@ -182,7 +232,7 @@ export async function flushLogs(timeoutMs = 3000): Promise<void> {
       )
     ),
     new Promise<void>(resolve => {
-      const timer = setTimeout(resolve, timeoutMs);
+      const timer = setTimeout(resolve, remaining);
       // Don't let the flush bound itself keep the loop alive.
       (timer as unknown as { unref?: () => void }).unref?.();
     }),
