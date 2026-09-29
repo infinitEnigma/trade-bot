@@ -536,6 +536,11 @@ describe("Application Entry Point (index.ts)", () => {
       jest.mock("../../src/database/pool", () => ({
         initializePool: jest.fn().mockImplementation(() => {}),
         closePool: jest.fn().mockResolvedValue(true),
+        // L8/L9 made pool metrics start eagerly at import; the factory mock
+        // must provide them or index.ts throws "Database pool initialization
+        // failed" before the Redis path under test is reached.
+        startPoolMetrics: jest.fn(),
+        stopPoolMetrics: jest.fn(),
       }));
 
       jest.mock("../../src/infrastructure", () => ({
@@ -581,6 +586,9 @@ describe("Application Entry Point (index.ts)", () => {
       jest.mock("../../src/database/pool", () => ({
         initializePool: jest.fn().mockImplementation(() => {}),
         closePool: jest.fn().mockResolvedValue(true),
+        // L8/L9: eagerly-called pool metrics (see the Redis connection test).
+        startPoolMetrics: jest.fn(),
+        stopPoolMetrics: jest.fn(),
       }));
 
       jest.mock("../../src/infrastructure", () => ({
@@ -630,8 +638,10 @@ describe("Application Entry Point (index.ts)", () => {
         process.emit("SIGTERM");
       });
 
+      // L10: shutdown steps run through timedShutdownStep, which logs
+      // "Error during shutdown step: <step>" instead of the old ad-hoc text.
       expect(contextLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining("Error closing Redis connection"),
+        expect.stringContaining("Error during shutdown step: disconnect-redis"),
         expect.anything()
       );
 
@@ -684,6 +694,9 @@ describe("Application Entry Point (index.ts)", () => {
       jest.mock("../../src/database/pool", () => ({
         initializePool: jest.fn().mockImplementation(() => {}),
         closePool: jest.fn().mockResolvedValue(true),
+        // L8/L9: eagerly-called pool metrics (see the Redis connection test).
+        startPoolMetrics: jest.fn(),
+        stopPoolMetrics: jest.fn(),
       }));
 
       // Override di container to reject
