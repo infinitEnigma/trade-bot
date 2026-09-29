@@ -48,7 +48,14 @@ vi.mock("../../../infrastructure/config", () => ({
   getWebSocketUrl: () => "ws://test",
 }));
 
+// L14: the one silent cookie-based refresh is mocked so the tests can drive
+// both outcomes (refreshable session vs. dead refresh cookie) deterministically.
+vi.mock("../../../infrastructure/api/session-refresh", () => ({
+  refreshSessionOnce: vi.fn(),
+}));
+
 import { io } from "socket.io-client";
+import { refreshSessionOnce } from "../../../infrastructure/api/session-refresh";
 import {
   WebSocketClient,
   WebSocketStatus,
@@ -74,6 +81,9 @@ interface FakeSocket {
 function lastSocket(): FakeSocket {
   return socketInstances[socketInstances.length - 1];
 }
+
+/** Structural view of `vi.spyOn(window, "dispatchEvent")` used by the tests. */
+type DispatchSpy = { mock: { calls: Array<[Event]> } };
 
 describe("WebSocketClient reconnect hardening", () => {
   let client: WebSocketClient;
@@ -104,6 +114,24 @@ describe("WebSocketClient reconnect hardening", () => {
 
   function emitConnectError(): void {
     lastSocket().__emit("connect_error", new Error("boom"));
+  }
+
+  function emitDefinitiveAuthError(code = "WS_INVALID_TOKEN"): void {
+    const error = new Error("Invalid token") as Error & {
+      data: { code: string; definitive: true };
+    };
+    error.data = { code, definitive: true };
+    lastSocket().__emit("connect_error", error);
+  }
+
+  /** `auth:session-expired` CustomEvents observed on window. */
+  function sessionExpiredEvents(spy: DispatchSpy): CustomEvent[] {
+    return spy.mock.calls
+      .map(args => args[0])
+      .filter(
+        (event): event is CustomEvent =>
+          event instanceof CustomEvent && event.type === "auth:session-expired"
+      );
   }
 
   it("single-flight: concurrent connect() calls share one socket and one promise", () => {
@@ -179,5 +207,81 @@ describe("WebSocketClient reconnect hardening", () => {
     vi.advanceTimersByTime(10_000);
     // Without the supersede, the old timer would ALSO have fired -> 3 calls.
     expect(vi.mocked(io)).toHaveBeenCalledTimes(2);
+  });
+
+  it("definitive auth failure spends one silent refresh, then reconnects", async () => {
+    vi.mocked(refreshSessionOnce).mockResolvedValue(true);
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+
+    client.connect().catch(() => {});
+    emitDefinitiveAuthError();
+    // Let the refresh settle so the follow-up connect() can open a new socket.
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(vi.mocked(refreshSessionOnce)).toHaveBeenCalledTimes(1);
+    // The post-refresh handshake opened exactly one new socket.
+    expect(vi.mocked(io)).toHaveBeenCalledTimes(2);
+    // The session was rescued silently - no re-login signal.
+    expect(sessionExpiredEvents(dispatchSpy)).toHaveLength(0);
+
+    emitConnect();
+    expect(client.getStatus()).toBe("connected");
+  });
+
+  it("dead refresh cookie notifies session-expired once and never retries the handshake", async () => {
+    vi.mocked(refreshSessionOnce).mockResolvedValue(false);
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+
+    client.connect().catch(() => {});
+    emitDefinitiveAuthError();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(vi.mocked(refreshSessionOnce)).toHaveBeenCalledTimes(1);
+    expect(sessionExpiredEvents(dispatchSpy)).toHaveLength(1);
+    expect(client.getStatus()).toBe("error");
+
+    // A repeat definitive failure for the same episode must neither refresh nor
+    // notify again.
+    emitDefinitiveAuthError();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.mocked(refreshSessionOnce)).toHaveBeenCalledTimes(1);
+    expect(sessionExpiredEvents(dispatchSpy)).toHaveLength(1);
+
+    // And no retry is ever scheduled: only the original socket exists.
+    vi.advanceTimersByTime(120_000);
+    expect(vi.mocked(io)).toHaveBeenCalledTimes(1);
+  });
+
+  it("a successful reconnect resets the one-refresh budget for a later failure", async () => {
+    vi.mocked(refreshSessionOnce).mockResolvedValue(true);
+
+    client.connect().catch(() => {});
+    emitDefinitiveAuthError();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.mocked(refreshSessionOnce)).toHaveBeenCalledTimes(1);
+
+    // The post-refresh handshake succeeds -> episode ends, budget resets.
+    emitConnect();
+    expect(client.getStatus()).toBe("connected");
+
+    // The access token expires again later: a fresh episode may refresh once.
+    lastSocket().connected = false;
+    emitDefinitiveAuthError();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(vi.mocked(refreshSessionOnce)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(io)).toHaveBeenCalledTimes(3);
+  });
+
+  it("transient auth failures keep retrying and never spend the silent refresh", async () => {
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+
+    client.connect().catch(() => {});
+    emitConnectError();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(vi.mocked(refreshSessionOnce)).not.toHaveBeenCalled();
+    expect(sessionExpiredEvents(dispatchSpy)).toHaveLength(0);
+    expect(client.getStatus()).toBe("reconnecting");
   });
 });

@@ -2,6 +2,7 @@
 
 import { io, Socket } from "socket.io-client";
 import { getWebSocketUrl } from "../config";
+import { refreshSessionOnce } from "../api/session-refresh";
 import { TickData, KlineData, MarkPriceData } from "@trade-bot/shared";
 
 /**
@@ -42,6 +43,12 @@ export class WebSocketClient {
   private reconnectTimer: NodeJS.Timeout | null = null;
   /** Fires once per failure episode so re-auth is requested exactly once. */
   private authFailureNotified: boolean = false;
+  /** Single-flight promise for the one silent session refresh per episode. */
+  private authRecoveryPromise: Promise<void> | null = null;
+  /** Bounds the silent refresh to one attempt per connection episode (L14). */
+  private authRecoveryAttempted: boolean = false;
+  /** Cancels stale refresh callbacks when the episode is superseded. */
+  private authRecoveryGeneration: number = 0;
   /** Single-flight guard: at most one connection attempt in progress. */
   private connectPromise: Promise<Socket> | null = null;
   /** Deferred settle hooks for the in-flight connect() promise. */
@@ -160,7 +167,7 @@ export class WebSocketClient {
 
     this.status = WebSocketStatus.DISCONNECTED;
     this.reconnectAttempts = 0;
-    this.authFailureNotified = false;
+    this.resetAuthEpisode();
     this.notifyStatusChange();
     console.log("📡 WebSocket disconnected");
   }
@@ -360,7 +367,7 @@ export class WebSocketClient {
       console.log("📡 WebSocket connected successfully");
       this.status = WebSocketStatus.CONNECTED;
       this.reconnectAttempts = 0;
-      this.authFailureNotified = false;
+      this.resetAuthEpisode();
       // Settle the single-flight connect() promise first so concurrent
       // callers unblock, then notify listeners and resubscribe.
       this.pendingConnect?.resolve(this.socket!);
@@ -411,13 +418,11 @@ export class WebSocketClient {
         this.pendingConnect = null;
         this.connectPromise = null;
         this.notifyStatusChange();
-        if (!this.authFailureNotified) {
-          this.authFailureNotified = true;
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent("auth:session-expired"));
-          }
-        }
         this.notifyError(error);
+        // L14: the access token may simply have expired while the refresh
+        // cookie is still valid — spend one silent refresh before declaring
+        // the session dead. No retry timer is scheduled meanwhile.
+        this.recoverSessionAfterAuthFailure();
         return;
       }
 
@@ -571,6 +576,87 @@ export class WebSocketClient {
         // connect_error already scheduled the next attempt.
       });
     }, delay);
+  }
+
+  /**
+   * L14: a definitive handshake failure may just mean the access token expired
+   * while the refresh cookie is still valid. Spend exactly one silent,
+   * cookie-based refresh per episode proving the session is really dead before
+   * asking the app to re-login:
+   *
+   * - refresh succeeds → retry the handshake immediately (no retry timer);
+   * - refresh fails → surface `auth:session-expired` once so the HTTP client's
+   *   `/login` redirect takes over;
+   * - the handshake fails definitively a second time → the one refresh budget
+   *   is already spent, so surface it and stop.
+   */
+  private recoverSessionAfterAuthFailure(): void {
+    // A silent refresh is already in flight — it will decide the outcome.
+    if (this.authRecoveryPromise) {
+      return;
+    }
+    // The per-episode refresh budget is spent and the handshake still fails
+    // definitively: this session cannot be rescued without a re-login.
+    if (this.authRecoveryAttempted) {
+      this.notifyAuthFailureOnce();
+      return;
+    }
+
+    this.authRecoveryAttempted = true;
+    const generation = this.authRecoveryGeneration;
+
+    const attempt = refreshSessionOnce()
+      .then(refreshed => {
+        // A disconnect or a successful reconnect superseded this attempt.
+        if (generation !== this.authRecoveryGeneration) {
+          return;
+        }
+        if (refreshed) {
+          console.log("📡 Session refreshed - retrying WebSocket handshake");
+          this.connect().catch(() => {
+            /* handled by connection error listeners */
+          });
+          return;
+        }
+        console.warn("📡 Session refresh failed - re-authentication required");
+        this.notifyAuthFailureOnce();
+      })
+      .finally(() => {
+        // Only clear our own promise (a newer episode may already have one).
+        if (this.authRecoveryPromise === attempt) {
+          this.authRecoveryPromise = null;
+        }
+      });
+
+    this.authRecoveryPromise = attempt;
+  }
+
+  /**
+   * Ask the app to re-authenticate exactly once per failure episode.
+   * Only called once the one permitted silent refresh has failed (or been
+   * superseded by a repeat definitive failure).
+   */
+  private notifyAuthFailureOnce(): void {
+    if (this.authFailureNotified) {
+      return;
+    }
+    this.authFailureNotified = true;
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("auth:session-expired"));
+    }
+  }
+
+  /**
+   * Reset the per-episode auth-failure state. Called when an episode ends —
+   * a successful (re)connect or an explicit disconnect — so a later failure
+   * may spend its one silent refresh and re-notify. Bumping the generation
+   * invalidates any refresh that is still in flight.
+   */
+  private resetAuthEpisode(): void {
+    this.authFailureNotified = false;
+    this.authRecoveryAttempted = false;
+    this.authRecoveryPromise = null;
+    this.authRecoveryGeneration++;
   }
 
   /**
