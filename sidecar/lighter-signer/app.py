@@ -43,8 +43,10 @@ class CreateOrderRequest(Credentials):
     is_ask: bool
     order_type: int = Field(default=0, description="0 LIMIT, 1 MARKET")
     # 0 = IOC, 1 = GTT (resting), 2 = post-only. The signer binary refuses a
-    # positive expiry for IOC orders and requires one for GTT, so the default
-    # must be GTT: it is the only mode a grid bot uses.
+    # positive expiry for IOC orders (it must be 0) and requires one for GTT,
+    # so the default must be GTT: it is the only mode a grid bot uses. The
+    # service resolves the expiry per mode (`SignerService._resolve_expiry`),
+    # so an IOC create is normalised to 0 without the caller sending it.
     time_in_force: int = Field(default=1, description="0 IOC, 1 GTT (resting), 2 post-only")
     reduce_only: bool = False
     trigger_price: int = 0

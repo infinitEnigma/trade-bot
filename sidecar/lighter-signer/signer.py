@@ -108,8 +108,13 @@ class SignerService:
 
     # ------------------------------------------------------------------- ops
 
-    @staticmethod
-    def _resolve_expiry(value: Any) -> int:
+    # --------------------------------------------------------------- TIF/expiry
+
+    # Mirrors `app.CreateOrderRequest`: 0 IOC, 1 GTT (resting), 2 post-only.
+    _TIME_IN_FORCE_IOC = 0
+
+    @classmethod
+    def _resolve_expiry(cls, value: Any, time_in_force: Any = 1) -> int:
         """Resolve the caller's `order_expiry` to the value the SDK accepts.
 
         The SDK's `-1`/"default" sentinel is rejected by the signer binary
@@ -118,11 +123,23 @@ class SignerService:
         SECONDS is refused with venue code 21711 `invalid expiry`, while the
         same instant in ms is accepted). So a negative/absent/unknown value
         resolves to now + 28 days in ms.
+
+        An **IOC** order is the opposite: it must carry expiry 0. A positive
+        expiry is refused with "OrderExpiry is invalid" (live-verified on
+        testnet 2026-09-30 via /v1/create-order: the same request succeeds
+        with `order_expiry: 0`), which is what the engine's panic flatten
+        (MARKET → IOC limit) sends.
         """
         try:
             expiry = int(value) if value is not None else -1
         except (TypeError, ValueError):
             expiry = -1
+        try:
+            ioc = int(time_in_force) == cls._TIME_IN_FORCE_IOC
+        except (TypeError, ValueError):
+            ioc = False
+        if ioc:
+            return 0
         if expiry < 0:
             return int(time.time() * 1000) + 28 * 24 * 60 * 60 * 1000
         return expiry
@@ -150,7 +167,9 @@ class SignerService:
                 time_in_force=req.get("time_in_force", 1),
                 reduce_only=req.get("reduce_only", False),
                 trigger_price=req.get("trigger_price", 0),
-                order_expiry=self._resolve_expiry(req.get("order_expiry", -1)),
+                order_expiry=self._resolve_expiry(
+                    req.get("order_expiry", -1), req.get("time_in_force", 1)
+                ),
             )
             _tx, tx_hash, err = await _await_maybe(call)
         if err:

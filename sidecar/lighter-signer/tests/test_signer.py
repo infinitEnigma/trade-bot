@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -308,3 +309,49 @@ def test_resting_default_time_in_force_is_gtt():
     assert result["ok"] is True
     create = [c for c in _calls if c.get("op") == "create"][-1]
     assert create["time_in_force"] == 1
+
+
+def test_ioc_order_carries_zero_expiry():
+    """An IOC order (the engine's panic flatten: MARKET → IOC limit) must carry
+    `order_expiry` 0 — the signer binary refuses a positive expiry with
+    "OrderExpiry is invalid" (live-verified on testnet). The default GTT
+    resolution (now + 28d in ms) must NOT leak into an IOC create."""
+    service = SignerService()
+    result = asyncio.run(
+        service.create_order(
+            {
+                **CREDS,
+                "market_index": 0,
+                "client_order_index": 100,
+                "base_amount": 10,
+                "price": 100,
+                "is_ask": True,
+                "time_in_force": 0,
+            }
+        )
+    )
+    assert result["ok"] is True
+    create = [c for c in _calls if c.get("op") == "create"][-1]
+    assert create["time_in_force"] == 0
+    assert create["order_expiry"] == 0
+
+
+def test_gtt_order_keeps_a_positive_expiry():
+    """GTT still needs a positive ms expiry — the IOC rule must not swallow it."""
+    service = SignerService()
+    result = asyncio.run(
+        service.create_order(
+            {
+                **CREDS,
+                "market_index": 0,
+                "client_order_index": 101,
+                "base_amount": 10,
+                "price": 100,
+                "is_ask": False,
+                "time_in_force": 1,
+            }
+        )
+    )
+    assert result["ok"] is True
+    create = [c for c in _calls if c.get("op") == "create"][-1]
+    assert create["order_expiry"] > int(time.time() * 1000)
