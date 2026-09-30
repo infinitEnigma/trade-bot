@@ -26,6 +26,8 @@
  *   `accountActiveOrders`, and history rows are picked OPEN-first.
  * - the identifier cancel/`getOrder` accept is the **client order index**;
  *   the venue's `order_id` is exposed as `venueOrderId` for audit only.
+ * - there is no market order type in the signer contract: a `MARKET` request
+ *   is signed as an IOC limit crossed off the mark price (M1 panic flatten).
  */
 
 import axios, { AxiosError, AxiosInstance } from "axios";
@@ -75,6 +77,22 @@ export interface LighterClientConfig {
 /** Cancel/query poll discipline (probe: cancel needs up to ~6 commits). */
 const CONFIRM_ATTEMPTS = 6;
 const CONFIRM_DELAY_MS = 1000;
+
+/**
+ * Crossing band for a `MARKET` request. The signer this adapter drives signs
+ * LIMIT orders only, so a `MARKET` request is executed as an IOC limit priced
+ * *through* the book: SELL below the reference price, BUY above it, by this
+ * many basis points. The reference is the mark price (the only public price
+ * this adapter reads — `getTicker`), and IOC means the order fills what it can
+ * and the remainder dies instead of resting, so a market order can never leave
+ * an untracked order behind. The band is deliberately wide: getting out of a
+ * position matters more than the last few basis points, and a band that fails
+ * to cross would silently leave exposure open.
+ */
+const MARKET_ORDER_SLIPPAGE_BPS = 100;
+
+/** Lighter SDK `time_in_force`: 0 IOC, 1 GTT, 2 post-only (probe-verified). */
+const LIGHTER_TIME_IN_FORCE_IOC = 0;
 
 /** Auth-token cache: minted tokens live well under the 8h sidecar cap. */
 const AUTH_TOKEN_TTL_MS = 10 * 60 * 1000;
@@ -347,17 +365,37 @@ export class LighterClient implements ExchangeClient {
     request: ExchangeOrderRequest
   ): Promise<ExchangeOrderResponse> {
     const market = await this.marketOf(request.symbol);
-    if (request.orderType !== "LIMIT") {
-      throw new CommandError(
-        false,
-        `lighter adapter supports LIMIT orders only, got ${request.orderType}`
-      );
-    }
-    if (
-      request.orderPrice === undefined ||
-      !Number.isFinite(request.orderPrice)
-    ) {
-      throw new CommandError(false, "LIMIT orders require a finite orderPrice");
+    // The signer signs LIMIT orders only (venue fact: the sidecar request has
+    // no market type this adapter can trust), so a MARKET request is executed
+    // as an IOC limit priced through the book — see MARKET_ORDER_SLIPPAGE_BPS.
+    let orderPrice: number;
+    let timeInForce: number | undefined;
+    if (request.orderType === "MARKET") {
+      const ticker = await this.getTicker(request.symbol);
+      const reference = ticker.mark_price ?? ticker.price;
+      if (!Number.isFinite(reference) || reference <= 0) {
+        throw new CommandError(
+          false,
+          `lighter has no usable reference price for a MARKET order on ${request.symbol}`
+        );
+      }
+      const band = MARKET_ORDER_SLIPPAGE_BPS / 10_000;
+      orderPrice =
+        request.side === "SELL"
+          ? reference * (1 - band)
+          : reference * (1 + band);
+      timeInForce = LIGHTER_TIME_IN_FORCE_IOC;
+    } else {
+      if (
+        request.orderPrice === undefined ||
+        !Number.isFinite(request.orderPrice)
+      ) {
+        throw new CommandError(
+          false,
+          "LIMIT orders require a finite orderPrice"
+        );
+      }
+      orderPrice = request.orderPrice;
     }
     if (!Number.isFinite(request.orderQuantity) || request.orderQuantity <= 0) {
       throw new CommandError(
@@ -365,7 +403,7 @@ export class LighterClient implements ExchangeClient {
         "orderQuantity must be a finite positive number"
       );
     }
-    const price = Math.round(request.orderPrice * 10 ** market.priceDecimals);
+    const price = Math.round(orderPrice * 10 ** market.priceDecimals);
     const baseAmount = Math.round(
       request.orderQuantity * 10 ** market.sizeDecimals
     );
@@ -392,6 +430,9 @@ export class LighterClient implements ExchangeClient {
         baseAmount,
         price,
         isAsk: request.side === "SELL",
+        // Only set for MARKET (IOC); `undefined` keeps the signer default
+        // (GTT) that resting grid levels require.
+        timeInForce,
       });
       logger.info("Lighter order submitted", {
         symbol: request.symbol,
@@ -447,10 +488,21 @@ export class LighterClient implements ExchangeClient {
         executedQuantity: lookup.order.quantity,
       };
     }
+    // The refusal is the actionable fact: it is the venue's/sidecar's reason
+    // the order does not exist (e.g. "ClientOrderIndex should not be larger
+    // than 281474976710655"), and the follow-up lookup can fail on its own
+    // (live P4: the history 400'd, hiding the refusal behind "unreachable").
+    // Log it and carry it in the message so an operator sees WHY.
+    logger.warn("Lighter create refused", {
+      symbol,
+      clientOrderIndex: index,
+      refusal: cause.message,
+      lookup: lookup.kind,
+    });
     if (lookup.kind === "UNREACHABLE") {
       throw new CommandError(
         true,
-        `lighter unreachable after refusal: ${lookup.reason}`
+        `lighter unreachable after refusal: create refused (${cause.message}); lookup: ${lookup.reason}`
       );
     }
     throw new CommandError(false, `lighter create refused: ${cause.message}`);
@@ -722,6 +774,12 @@ export class LighterClient implements ExchangeClient {
     try {
       response = await this.authorizedGet(path, params);
     } catch (error) {
+      // `authorizedGet` already names the endpoint (`GET <path>`); `what` adds
+      // the caller's intent (e.g. `getOrder 42`), so a 4xx body or a transport
+      // failure is attributable to the call that produced it.
+      if (error instanceof CommandError) {
+        throw new CommandError(error.retryable, `${what}: ${error.message}`);
+      }
       throw unreachable(what, error);
     }
     const orders = response.data?.orders;
@@ -812,6 +870,27 @@ function clientIndexFromString(value: string): number {
   return hash;
 }
 
+/**
+ * Render the venue's own error body (`{"code":…,"message":…}`) when present.
+ *
+ * The HTTP status alone cannot distinguish a malformed request from an outage
+ * (live P4: the derived 2^62 client order index made `accountOrders` answer
+ * `400 invalid param : invalid client order index`, which read as
+ * "unreachable"). The body is the actionable part, so it rides along in the
+ * message that reaches the operator's log.
+ */
+function venueDetailOf(error: unknown): string {
+  if (!axios.isAxiosError(error)) return "";
+  const data = (error as AxiosError<{ code?: unknown; message?: unknown }>)
+    .response?.data;
+  if (!data || typeof data !== "object") return "";
+  const { code, message } = data as { code?: unknown; message?: unknown };
+  const parts = [code, message]
+    .filter(value => value !== undefined && value !== null && value !== "")
+    .map(value => String(value));
+  return parts.length > 0 ? ` (venue: ${parts.join(" ")})` : "";
+}
+
 function unreachable(what: string, error: unknown): CommandError {
   if (error instanceof CommandError) return error;
   if (axios.isAxiosError(error)) {
@@ -828,7 +907,7 @@ function unreachable(what: string, error: unknown): CommandError {
     }
     return new CommandError(
       false,
-      `lighter request failed (${what}): ${err.message}`
+      `lighter request failed (${what}): ${err.message}${venueDetailOf(err)}`
     );
   }
   return new CommandError(

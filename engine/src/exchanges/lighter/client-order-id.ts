@@ -8,24 +8,30 @@
  * (bot + level + side) to derive the same index after a crash/restart or a
  * redelivered command, while distinct inputs map to distinct indices.
  *
- * Derivation: sha256(`<botId>|<levelIndex>|<side>`) mod 2^62. The 2^62
- * bound (not 2^63-1) keeps every output exactly representable as a JS
- * `number` (well under `Number.MAX_SAFE_INTEGER` ≈ 9.0e15) and always
- * non-negative, so it survives JSON without BigInt handling.
+ * Derivation: sha256(`<key>|<side>`) mod 2^48. The output is always
+ * non-negative, exactly representable as a JS `number`, and inside the
+ * venue's accepted index range.
+ *
+ * The 2^48 bound is a hard venue rule, live-verified on testnet
+ * (account 123, 2026-09-30):
+ * - `create-order` refuses a larger index: "ClientOrderIndex should not be
+ *   larger than 281474976710655" (2^48 - 1);
+ * - `GET /api/v1/accountOrders?client_order_indexes=<max>` answers
+ *   `400 {"code":20001,"message":"invalid param : invalid client order index"}`
+ *   for anything above that bound, while 2^48 - 1 returns `200`.
+ * A 2^62 index therefore broke the emergency flatten twice over: the venue
+ * refused the signed order AND the post-refusal lookup 400'd, which surfaced
+ * as "lighter unreachable after refusal" instead of the real refusal.
  */
 
 import { createHash } from "crypto";
 
-/** Upper bound: 2^62 — every output is a non-negative int64. */
-export const LIGHTER_CLIENT_ORDER_INDEX_MOD = 2 ** 62;
-
 /**
- * Largest exactly-representable output: 2^62 - 1 needs 62 bits, but JS
- * `number` holds only 53 bits of integer precision. The adapter therefore
- * emits indices in int64 range on the wire as strings where precision
- * matters — see the client's `String(index)` query path. The derivation
- * itself stays within 2^62 so it is always a valid non-negative int64.
+ * Upper bound: 2^48 — the venue's maximum accepted `client_order_index`
+ * is 281474976710655 (`2 ** 48 - 1`), and every output also stays exactly
+ * representable as a JS `number`.
  */
+export const LIGHTER_CLIENT_ORDER_INDEX_MOD = 2 ** 48;
 
 export type LighterOrderSide = "BUY" | "SELL";
 
@@ -33,9 +39,9 @@ function hashToIndex(input: string): number {
   const digest = createHash("sha256").update(input).digest();
   const high = digest.readUInt32BE(0);
   const low = digest.readUInt32BE(4);
-  // 64-bit value mod 2^62 == low 62 bits: mask the top two bits of `high`.
-  const maskedHigh = high & 0x3fffffff;
-  return maskedHigh * 2 ** 32 + low;
+  // 64-bit value mod 2^48 == low 48 bits; the 16-bit bound is the venue's
+  // maximum accepted client order index (see the module header).
+  return (high * 2 ** 32 + low) % LIGHTER_CLIENT_ORDER_INDEX_MOD;
 }
 
 /**

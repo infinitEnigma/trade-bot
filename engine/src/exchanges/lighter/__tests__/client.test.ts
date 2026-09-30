@@ -52,6 +52,22 @@ function restStub(handlers: Record<string, (params?: unknown) => unknown>) {
   return { instance, calls };
 }
 
+/**
+ * Minimal axios-shaped failure (`isAxiosError` + `response.status/data`) so the
+ * adapter's error mapping can be exercised without a live venue.
+ */
+function httpError(status: number, data: unknown) {
+  const error = new Error(
+    `Request failed with status code ${status}`
+  ) as Error & {
+    isAxiosError: boolean;
+    response: { status: number; data: unknown };
+  };
+  error.isAxiosError = true;
+  error.response = { status, data };
+  return error;
+}
+
 function signerStub(
   overrides: Partial<TransactionSigner> = {}
 ): TransactionSigner {
@@ -185,6 +201,152 @@ describe("LighterClient", () => {
     expect(polls).toBeGreaterThanOrEqual(2);
   });
 
+  it("fills a MARKET request as an IOC limit crossed below the mark (SELL)", async () => {
+    // The panic flatten asks for a MARKET order. This venue signs LIMIT orders
+    // only, so the adapter crosses the mark price: SELL below it, IOC so the
+    // remainder dies instead of resting. Without this the emergency stop could
+    // not close exposure at all (live P4: "supports LIMIT orders only").
+    const signed: Array<{
+      price: number;
+      isAsk: boolean;
+      timeInForce?: number;
+      baseAmount: number;
+    }> = [];
+    const client = clientWith(
+      {
+        ...BASE_HANDLERS,
+        "/api/v1/accountOrders": () => ({
+          orders: [
+            {
+              order_id: "11",
+              client_order_index: "11",
+              status: "filled",
+              is_ask: true,
+              price: "2475.49",
+              initial_base_amount: "2.5",
+            },
+          ],
+        }),
+      },
+      signerStub({
+        createOrder: async (_credentials, request) => {
+          signed.push({
+            price: request.price,
+            isAsk: request.isAsk,
+            timeInForce: request.timeInForce,
+            baseAmount: request.baseAmount,
+          });
+          return { txHash: "0xm", clientOrderIndex: request.clientOrderIndex };
+        },
+      })
+    );
+
+    const order = await client.createOrder({
+      symbol: "ETH",
+      side: "SELL",
+      orderType: "MARKET",
+      orderQuantity: 2.5,
+      clientOrderId: "11",
+    });
+
+    // mark 2500.5 × (1 − 1%) = 2475.495 → scaled by the 2 price decimals.
+    expect(signed).toHaveLength(1);
+    expect(signed[0].price).toBe(247550);
+    expect(signed[0].isAsk).toBe(true);
+    // 0 = IOC: fills what it can, cancels the rest (no resting residue).
+    expect(signed[0].timeInForce).toBe(0);
+    // 2.5 scaled by the 3 size decimals.
+    expect(signed[0].baseAmount).toBe(2500);
+    expect(order.orderId).toBe("11");
+  });
+
+  it("fills a MARKET request crossed above the mark (BUY)", async () => {
+    const signed: Array<{
+      price: number;
+      isAsk: boolean;
+      timeInForce?: number;
+    }> = [];
+    const client = clientWith(
+      {
+        ...BASE_HANDLERS,
+        "/api/v1/accountActiveOrders": () => ({
+          orders: [
+            {
+              order_id: "12",
+              client_order_index: "12",
+              status: "open",
+              is_ask: false,
+              price: "2525.51",
+              initial_base_amount: "0.5",
+            },
+          ],
+        }),
+      },
+      signerStub({
+        createOrder: async (_credentials, request) => {
+          signed.push({
+            price: request.price,
+            isAsk: request.isAsk,
+            timeInForce: request.timeInForce,
+          });
+          return { txHash: "0xm", clientOrderIndex: request.clientOrderIndex };
+        },
+      })
+    );
+
+    await client.createOrder({
+      symbol: "ETH",
+      side: "BUY",
+      orderType: "MARKET",
+      orderQuantity: 0.5,
+      clientOrderId: "12",
+    });
+
+    // mark 2500.5 × (1 + 1%) = 2525.505 → 252551 scaled.
+    expect(signed).toHaveLength(1);
+    expect(signed[0].price).toBe(252551);
+    expect(signed[0].isAsk).toBe(false);
+    expect(signed[0].timeInForce).toBe(0);
+  });
+
+  it("keeps LIMIT orders on the signer default (resting GTT)", async () => {
+    let timeInForce: number | undefined = -1;
+    const client = clientWith(
+      {
+        ...BASE_HANDLERS,
+        "/api/v1/accountOrders": () => ({
+          orders: [
+            {
+              order_id: "21",
+              client_order_index: "21",
+              status: "open",
+              price: "2400",
+              initial_base_amount: "0.01",
+            },
+          ],
+        }),
+      },
+      signerStub({
+        createOrder: async (_credentials, request) => {
+          timeInForce = request.timeInForce;
+          return { txHash: "0x1", clientOrderIndex: request.clientOrderIndex };
+        },
+      })
+    );
+
+    await client.createOrder({
+      symbol: "ETH",
+      side: "BUY",
+      orderType: "LIMIT",
+      orderPrice: 2400,
+      orderQuantity: 0.01,
+      clientOrderId: "21",
+    });
+
+    // Undefined lets the signer fall back to GTT — grid levels must rest.
+    expect(timeInForce).toBeUndefined();
+  });
+
   it("cancelOrder forwards the client index the venue accepts", async () => {
     // The contract hands cancel the handle `createOrder` returned. For this
     // venue the signer takes the client order index as `order_index` — the
@@ -213,5 +375,128 @@ describe("LighterClient", () => {
     );
     await client.cancelOrder("7", "ETH");
     expect(sent).toBe(7);
+  });
+
+  // A flatten request carries no `clientOrderId`, so it takes the DERIVED
+  // index path — the one live P4 broke (2^62 index refused by the venue).
+  const VENUE_MAX_CLIENT_ORDER_INDEX = 281474976710655; // 2^48 - 1
+
+  it("derives a flatten index inside the venue's accepted range", async () => {
+    let index: number | undefined;
+    const client = clientWith(
+      {
+        ...BASE_HANDLERS,
+        // Echo back whatever index the signer was handed: the poll that
+        // follows the signature looks the order up by that same index.
+        "/api/v1/accountActiveOrders": () => ({
+          orders:
+            index === undefined
+              ? []
+              : [
+                  {
+                    order_id: String(index),
+                    client_order_index: String(index),
+                    status: "open",
+                    is_ask: true,
+                    price: "2475.49",
+                    initial_base_amount: "2.5",
+                  },
+                ],
+        }),
+      },
+      signerStub({
+        createOrder: async (_credentials, request) => {
+          index = request.clientOrderIndex;
+          return { txHash: "0xm", clientOrderIndex: request.clientOrderIndex };
+        },
+      })
+    );
+
+    const order = await client.createOrder({
+      symbol: "ETH",
+      side: "SELL",
+      orderType: "MARKET",
+      orderQuantity: 2.5,
+    });
+
+    // Live P4: a 2^62 index made the venue refuse the signed order
+    // ("ClientOrderIndex should not be larger than 281474976710655") and
+    // 400 the follow-up history query, so the panic flatten never cleared
+    // exposure. The derived index must stay at or below the venue bound.
+    expect(index).toBeDefined();
+    expect(Number.isInteger(index)).toBe(true);
+    expect(index).toBeGreaterThanOrEqual(0);
+    expect(index).toBeLessThanOrEqual(VENUE_MAX_CLIENT_ORDER_INDEX);
+    expect(order.orderId).toBe(String(index));
+  });
+
+  it("surfaces the refusal cause even when the follow-up lookup also fails", async () => {
+    // Live P4 sequence: the venue refused the flatten, then the history query
+    // for that same index answered 400 — the adapter used to report only
+    // "lighter unreachable after refusal", hiding the actionable reason.
+    const refused =
+      "ClientOrderIndex should not be larger than 281474976710655";
+    const client = clientWith(
+      {
+        ...BASE_HANDLERS,
+        "/api/v1/accountOrders": () => {
+          throw httpError(400, {
+            code: 20001,
+            message: "invalid param : invalid client order index",
+          });
+        },
+      },
+      signerStub({
+        createOrder: async () => {
+          throw new SignerError(refused);
+        },
+      })
+    );
+
+    const error = (await client
+      .createOrder({
+        symbol: "ETH",
+        side: "SELL",
+        orderType: "MARKET",
+        orderQuantity: 0.1,
+      })
+      .catch(reason => reason)) as CommandError;
+
+    expect(error).toBeInstanceOf(CommandError);
+    expect(error.message).toContain(`create refused (${refused})`);
+    // The venue's own body rides along: status 400 alone reads as an outage.
+    expect(error.message).toContain(
+      "venue: 20001 invalid param : invalid client order index"
+    );
+    expect(error.retryable).toBe(true);
+  });
+
+  it("carries the venue's error body in a plain transport failure", async () => {
+    const client = clientWith(
+      {
+        ...BASE_HANDLERS,
+        "/api/v1/accountActiveOrders": () => {
+          throw httpError(400, {
+            code: 20001,
+            message: "invalid param : invalid client order index",
+          });
+        },
+      },
+      signerStub()
+    );
+
+    const error = (await client
+      .getOrder("42")
+      .catch(reason => reason)) as CommandError;
+
+    expect(error).toBeInstanceOf(CommandError);
+    expect(error.message).toContain(
+      "getOrder 42: lighter request failed (GET /api/v1/accountActiveOrders)"
+    );
+    expect(error.message).toContain(
+      "venue: 20001 invalid param : invalid client order index"
+    );
+    // A malformed request is a business failure (no blind retry).
+    expect(error.retryable).toBe(false);
   });
 });

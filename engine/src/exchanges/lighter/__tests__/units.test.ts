@@ -46,13 +46,18 @@ describe("deriveLighterClientOrderIndex", () => {
     expect(deriveLighterClientOrderIndex("bot-2", 3, "BUY")).not.toBe(a);
   });
 
-  it("stays a non-negative int64 below 2^62", () => {
+  it("stays a non-negative integer inside the venue's index bound", () => {
+    // The venue refuses larger indices ("ClientOrderIndex should not be larger
+    // than 281474976710655") and 400s a history query with one — so the
+    // derivation must land at or below 2^48 - 1, not anywhere in int64.
+    expect(LIGHTER_CLIENT_ORDER_INDEX_MOD).toBe(2 ** 48);
+    const venueMax = 281474976710655; // 2^48 - 1, live-verified on testnet
     for (let level = 0; level < 25; level++) {
       for (const side of ["BUY", "SELL"] as const) {
         const index = deriveLighterClientOrderIndex("bot-uuid-1", level, side);
         expect(Number.isInteger(index)).toBe(true);
         expect(index).toBeGreaterThanOrEqual(0);
-        expect(index).toBeLessThan(LIGHTER_CLIENT_ORDER_INDEX_MOD);
+        expect(index).toBeLessThanOrEqual(venueMax);
       }
     }
   });
