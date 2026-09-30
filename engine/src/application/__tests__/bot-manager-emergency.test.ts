@@ -87,6 +87,15 @@ function transitions(
     .map(entry => `${String(entry.payload.from)}->${String(entry.payload.to)}`);
 }
 
+/** Reasons of the STATE_CHANGED reports, in publication order. */
+function reasons(
+  published: Array<{ type: string; payload: Record<string, unknown> }>
+): string[] {
+  return published
+    .filter(entry => entry.type === "STATE_CHANGED")
+    .map(entry => String(entry.payload.reason));
+}
+
 describe("BotManager.handleEmergencyStop (M1)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -222,6 +231,60 @@ describe("BotManager.handleEmergencyStop (M1)", () => {
       "STOPPING->STOPPED",
     ]);
     expect(harness.manager.hasBot("bot-1")).toBe(false);
+    // The stop genuinely happened, but the reason must carry the unfinished
+    // cleanup so the backend can keep it visible next to the STOPPED row.
+    const [stopping, stopped] = reasons(published);
+    expect(stopping).toBe("emergency_stop:FULL_SHUTDOWN");
+    expect(stopped).toContain("cleanup_incomplete");
+    expect(stopped).toContain("open-order listing failed: listing down");
+  });
+
+  it("reports a failed flatten in the terminal reason (exposure may remain)", async () => {
+    const harness = registerBot("bot-1", "ETH");
+    const { published, ops } = makeStreamOps();
+    harness.client.getPositions.mockResolvedValue([
+      { symbol: "ETH", position_qty: 2.5, mark_price: 3000 },
+    ]);
+    harness.client.createOrder.mockRejectedValue(
+      new Error("lighter adapter supports LIMIT orders only, got MARKET")
+    );
+
+    await harness.manager.handleEmergencyStop(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "FULL_SHUTDOWN",
+      "corr-7"
+    );
+
+    const [, stopped] = reasons(published);
+    expect(stopped).toContain("cleanup_incomplete");
+    expect(stopped).toContain("2.5");
+    expect(stopped).toContain("not flattened");
+    // The badge-clearing report still goes out: a stuck FORCE_STOPPING badge
+    // would hide the very fact the operator has to act on.
+    expect(transitions(published)).toEqual([
+      "RUNNING->STOPPING",
+      "STOPPING->STOPPED",
+    ]);
+  });
+
+  it("keeps the terminal reason clean when every cleanup step succeeds", async () => {
+    const harness = registerBot("bot-1", "ETH");
+    const { published, ops } = makeStreamOps();
+
+    await harness.manager.handleEmergencyStop(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "FULL_SHUTDOWN",
+      "corr-8"
+    );
+
+    expect(reasons(published)).toEqual([
+      "emergency_stop:FULL_SHUTDOWN",
+      "emergency_stop:FULL_SHUTDOWN",
+    ]);
   });
 
   it("reports COMMAND_FAILED for an unknown bot and emits no state change", async () => {

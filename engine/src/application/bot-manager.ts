@@ -26,6 +26,25 @@ import { StrategyRunner } from "./strategy-runner";
 
 const TICK_INTERVAL_MS = 5000;
 
+/**
+ * Marker the engine puts in the terminal STATE_CHANGED `reason` when a panic
+ * stop could not finish its venue-side cleanup (an order cancel or the flatten
+ * failed, so exposure may remain). The backend keys off it to keep the fact
+ * visible after the row converges to STOPPED — the row itself cannot carry the
+ * reason, and a clean-looking STOPPED is exactly the lie a panic button must
+ * never tell. Wire contract: keep in sync with the backend's
+ * `CLEANUP_INCOMPLETE_MARKER`.
+ */
+export const CLEANUP_INCOMPLETE_MARKER = "cleanup_incomplete";
+
+/** How many cleanup problems are folded into the terminal reason. */
+const MAX_CLEANUP_PROBLEMS_IN_REASON = 3;
+
+/** Error → message, for logs and the terminal stop reason. */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export class BotManager {
   private bots: Map<string, BotRuntime> = new Map();
   private initializing: Set<string> = new Set();
@@ -288,10 +307,19 @@ export class BotManager {
     this.bots.delete(botId);
 
     // 2. Venue-side cleanup (best-effort, never blocks the STOPPED report).
-    await this.emergencyCancelOpenOrders(existing);
+    const problems = await this.emergencyCancelOpenOrders(existing);
     if (action !== "CANCEL_ALL_ORDERS") {
-      await this.emergencyClosePosition(existing);
+      problems.push(...(await this.emergencyClosePosition(existing)));
     }
+
+    // The STOPPED report is what clears the backend's FORCE_STOPPING badge, so
+    // it must always go out — but a cleanup that could not finish has to travel
+    // with it. Otherwise the row converges to a clean-looking STOPPED while the
+    // venue still holds orders/position: exactly the lie a panic button must
+    // never tell.
+    const terminalReason = problems.length
+      ? `${reason}; ${CLEANUP_INCOMPLETE_MARKER}: ${summarizeProblems(problems)}`
+      : reason;
 
     await this.publishStateChanged(
       streamOps,
@@ -299,8 +327,15 @@ export class BotManager {
       "STOPPING",
       "STOPPED",
       correlationId,
-      reason
+      terminalReason
     );
+    if (problems.length) {
+      logger.error("Emergency stop: cleanup incomplete", {
+        botId,
+        action,
+        problems,
+      });
+    }
     logger.warn("Emergency stop complete", { botId, action });
   }
 
@@ -308,21 +343,28 @@ export class BotManager {
    * Cancel every order still open on the bot's symbol. `strategy.stop()` has
    * already cancelled the tracked grid orders and the runner is dead, so
    * whatever this lists is an orphan (e.g. a placement that landed after the
-   * strategy's last bookkeeping). Per-order failures are logged and skipped.
+   * strategy's last bookkeeping). Per-order failures are logged and skipped,
+   * but returned so the terminal report can say the cleanup was incomplete.
+   *
+   * @returns one human-readable problem per failed step (empty ⇒ clean).
    */
-  private async emergencyCancelOpenOrders(runtime: BotRuntime): Promise<void> {
+  private async emergencyCancelOpenOrders(
+    runtime: BotRuntime
+  ): Promise<string[]> {
     let open: ExchangeOpenOrder[];
     try {
       open = await runtime.exchangeClient.listOpenOrders(runtime.symbol);
     } catch (error) {
+      const detail = messageOf(error);
       logger.error("Emergency stop: open-order listing failed", {
         botId: runtime.botId,
         symbol: runtime.symbol,
-        error: error instanceof Error ? error.message : String(error),
+        error: detail,
       });
-      return;
+      return [`open-order listing failed: ${detail}`];
     }
 
+    const problems: string[] = [];
     for (const order of open) {
       try {
         await runtime.exchangeClient.cancelOrder(
@@ -335,13 +377,16 @@ export class BotManager {
           symbol: runtime.symbol,
         });
       } catch (error) {
+        const detail = messageOf(error);
         logger.error("Emergency stop: orphan order cancel failed", {
           botId: runtime.botId,
           orderId: order.orderId,
-          error: error instanceof Error ? error.message : String(error),
+          error: detail,
         });
+        problems.push(`orphan order ${order.orderId} not cancelled: ${detail}`);
       }
     }
+    return problems;
   }
 
   /**
@@ -354,10 +399,12 @@ export class BotManager {
    *   exposure).
    * - When the venue reports no position for the symbol the step is a no-op.
    * - Sizing/precision is the adapter's job (it scales to the market's size
-   *   decimals and rejects sub-minimum sizes); a rejected flatten is logged
+   *   decimals and rejects sub-minimum sizes); a rejected flatten is reported
    *   as an incomplete cleanup, never as a silent success.
+   *
+   * @returns the problems that left exposure open (empty ⇒ flat or nothing to do).
    */
-  private async emergencyClosePosition(runtime: BotRuntime): Promise<void> {
+  private async emergencyClosePosition(runtime: BotRuntime): Promise<string[]> {
     for (const [otherId, other] of this.bots) {
       if (otherId !== runtime.botId && other.symbol === runtime.symbol) {
         logger.warn(
@@ -368,7 +415,7 @@ export class BotManager {
             symbol: runtime.symbol,
           }
         );
-        return;
+        return [];
       }
     }
 
@@ -376,12 +423,13 @@ export class BotManager {
     try {
       positions = await runtime.exchangeClient.getPositions();
     } catch (error) {
+      const detail = messageOf(error);
       logger.error("Emergency stop: position fetch failed", {
         botId: runtime.botId,
         symbol: runtime.symbol,
-        error: error instanceof Error ? error.message : String(error),
+        error: detail,
       });
-      return;
+      return [`position fetch failed (exposure unknown): ${detail}`];
     }
 
     const position = positions.find(
@@ -395,7 +443,7 @@ export class BotManager {
         botId: runtime.botId,
         symbol: runtime.symbol,
       });
-      return;
+      return [];
     }
 
     const positionQty = Number(position.position_qty);
@@ -415,7 +463,9 @@ export class BotManager {
         orderId: order.orderId,
         status: order.status,
       });
+      return [];
     } catch (error) {
+      const detail = messageOf(error);
       logger.error(
         "Emergency stop: position flatten failed - exposure may remain",
         {
@@ -423,9 +473,12 @@ export class BotManager {
           symbol: runtime.symbol,
           side,
           positionQty,
-          error: error instanceof Error ? error.message : String(error),
+          error: detail,
         }
       );
+      return [
+        `position ${positionQty} ${runtime.symbol} not flattened: ${detail}`,
+      ];
     }
   }
 
@@ -595,4 +648,16 @@ function symbolsMatch(venueSymbol: string, configSymbol: string): boolean {
       .trim()
       .toUpperCase()
   );
+}
+
+/**
+ * Fold cleanup problems into one bounded, log-line-safe reason: the first few
+ * details plus a count of the rest. The reason is copied into the audit trail
+ * and the operator's UI, so it must stay short and free of newlines.
+ */
+function summarizeProblems(problems: string[]): string {
+  const shown = problems.slice(0, MAX_CLEANUP_PROBLEMS_IN_REASON);
+  const rest = problems.length - shown.length;
+  const text = shown.map(problem => problem.replace(/\s+/g, " ")).join("; ");
+  return rest > 0 ? `${text}; +${rest} more` : text;
 }
