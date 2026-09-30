@@ -39,7 +39,7 @@ function hashToIndex(input: string): number {
   const digest = createHash("sha256").update(input).digest();
   const high = digest.readUInt32BE(0);
   const low = digest.readUInt32BE(4);
-  // 64-bit value mod 2^48 == low 48 bits; the 16-bit bound is the venue's
+  // 64-bit value mod 2^48 == low 48 bits; the 48-bit bound is the venue's
   // maximum accepted client order index (see the module header).
   return (high * 2 ** 32 + low) % LIGHTER_CLIENT_ORDER_INDEX_MOD;
 }
