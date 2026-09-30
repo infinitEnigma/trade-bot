@@ -1,8 +1,19 @@
 /**
  * Pure Bot Management Service - Clean Architecture Implementation
  *
- * Business logic for bot instance operations including creation, starting, stopping, and monitoring.
- * This service contains pure business logic and depends only on interfaces from shared.
+ * READ-side business logic for bot instances: listing, lifecycle snapshots,
+ * performance metrics and terminal-history cleanup. This service contains
+ * pure business logic and depends only on interfaces from shared.
+ *
+ * Lifecycle WRITES do not live here. `createAndStartBot()` / `stopBot()`
+ * flipped `bot_instances.status` directly — no compare-and-set, no
+ * `assertTransition()`, no `bot_lifecycle_events` trail and, worst of all,
+ * no command to the engine, so a bot could read RUNNING in the database
+ * while nothing was traded (and STOPPED while it still was). Both were
+ * superseded by `BotLifecycleService` — the sole owner of lifecycle state —
+ * and had zero callers outside their own tests, so they were removed the
+ * same way the `emergencyStop()` row-flip stub was. Start/stop goes through
+ * `BotLifecycleService.createAndStart()` / `.stop()`.
  *
  * Dependencies (injected):
  * - IBotInstanceRepository: Bot instance data access abstraction
@@ -92,114 +103,6 @@ export class BotManagementService {
         botId: id,
       });
       throw new Error("Failed to get bot instance");
-    }
-  }
-
-  /**
-   * Create and start a new bot instance
-   */
-  async createAndStartBot(
-    userId: string,
-    strategyId: string,
-    notionalAmount: number
-  ): Promise<BotInstanceRecord> {
-    try {
-      // Verify strategy belongs to user
-      const strategy =
-        await this.deps.strategyRepository.getStrategy(strategyId);
-      if (!strategy || strategy.userId !== userId) {
-        throw new Error("Strategy not found or does not belong to user");
-      }
-
-      // Check if bot can be started
-      const activeBots =
-        await this.deps.botInstanceRepository.getActiveBotInstances();
-      const runningBot = activeBots.find(bot => bot.strategy_id === strategyId);
-      if (runningBot) {
-        throw new Error("Bot is already running for this strategy");
-      }
-
-      // Create bot instance
-      const botId = this.generateBotId();
-      const botInstance =
-        await this.deps.botInstanceRepository.createBotInstance({
-          id: botId,
-          strategy_id: strategyId,
-          user_id: userId,
-          status: "RUNNING",
-          running_time: 0,
-          total_trades: 0,
-          total_pnl: 0,
-        });
-
-      // Log bot creation
-      await this.deps.auditLogRepository.logEvent({
-        userId,
-        action: "BOT_CREATED",
-        details: {
-          botId,
-          strategyId,
-          notionalAmount,
-        },
-      });
-
-      this.deps.logger.info("Bot created and started successfully", {
-        botId,
-        strategyId,
-        userId,
-      });
-
-      return botInstance;
-    } catch (error) {
-      this.deps.logger.error("Failed to create and start bot", {
-        error: error instanceof Error ? error.message : String(error),
-        userId,
-        strategyId,
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Stop a running bot instance
-   */
-  async stopBot(userId: string, botId: string): Promise<void> {
-    try {
-      // Validate bot ownership
-      const botInstance =
-        await this.deps.botInstanceRepository.getBotInstance(botId);
-      if (!botInstance || botInstance.user_id !== userId) {
-        throw new Error("Bot not found or does not belong to user");
-      }
-
-      if (botInstance.status !== "RUNNING") {
-        throw new Error("Bot is not running");
-      }
-
-      // Update bot status
-      await this.deps.botInstanceRepository.updateBotStatus(botId, "STOPPED");
-
-      // Log bot stop
-      await this.deps.auditLogRepository.logEvent({
-        userId,
-        action: "BOT_STOPPED",
-        details: {
-          botId,
-          strategyId: botInstance.strategy_id,
-        },
-      });
-
-      this.deps.logger.info("Bot stopped successfully", {
-        botId,
-        userId,
-      });
-    } catch (error) {
-      this.deps.logger.error("Failed to stop bot", {
-        error: error instanceof Error ? error.message : String(error),
-        userId,
-        botId,
-      });
-      throw error;
     }
   }
 
@@ -332,13 +235,6 @@ export class BotManagementService {
       await this.deps.botInstanceRepository.deleteBotInstance(bot.id);
     }
     return bots.length;
-  }
-
-  /**
-   * Generate unique bot ID
-   */
-  private generateBotId(): string {
-    return `bot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 }
 
