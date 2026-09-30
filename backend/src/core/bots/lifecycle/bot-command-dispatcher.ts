@@ -11,6 +11,7 @@ import {
   EngineProtocolService,
   SendCommandResult,
 } from "../engine-protocol.service";
+import { EmergencyStopAction } from "@trade-bot/shared";
 import { contextLogger as logger } from "../../logging";
 import { BotLifecycleRepository } from "./bot-lifecycle.repository";
 
@@ -51,6 +52,18 @@ export class BotCommandDispatcher {
   }
 
   /**
+   * Send EMERGENCY_STOP for a bot instance. Tracked exactly like BOT_STOP so
+   * the timeout sweeper supervises it (M1: the panic path must be a real,
+   * audited command, not a row update).
+   */
+  sendEmergencyStopCommand(
+    botId: string,
+    action: EmergencyStopAction
+  ): Promise<SendCommandResult> {
+    return this.publishTrackedCommand("EMERGENCY_STOP", { botId, action });
+  }
+
+  /**
    * Record the command as PENDING, then publish it. Order matters:
    * 1. Generate correlationId
    * 2. INSERT bot_commands(PENDING)
@@ -58,7 +71,7 @@ export class BotCommandDispatcher {
    * 4. if XADD fails → mark the pending command FAILED
    */
   private async publishTrackedCommand(
-    type: "BOT_START" | "BOT_STOP",
+    type: "BOT_START" | "BOT_STOP" | "EMERGENCY_STOP",
     payload: unknown
   ): Promise<SendCommandResult> {
     const correlationId = crypto.randomUUID();
@@ -102,7 +115,7 @@ export class BotCommandDispatcher {
   async trackPending(
     botId: string,
     result: SendCommandResult,
-    commandType: "BOT_START" | "BOT_STOP"
+    commandType: "BOT_START" | "BOT_STOP" | "EMERGENCY_STOP"
   ): Promise<void> {
     if (!result.correlationId) {
       return;

@@ -21,7 +21,11 @@
  * @format
  */
 
-import { assertTransition, BotEvent } from "@trade-bot/shared";
+import {
+  assertTransition,
+  BotEvent,
+  EmergencyStopAction,
+} from "@trade-bot/shared";
 import { contextLogger as logger } from "../logging";
 import {
   EngineProtocolService,
@@ -364,6 +368,118 @@ export class BotLifecycleService {
 
     // Strategy badge (Phase 2): the strategy is being stopped with this bot.
     await syncStrategyActive(bot.strategy_id, false);
+
+    return {
+      botId,
+      desiredState: "STOPPED",
+      actualState: nextState,
+      correlationId: sendResult.correlationId,
+    };
+  }
+
+  // ===========================================
+  // EMERGENCY STOP (M1)
+  // ===========================================
+
+  /**
+   * Emergency stop: dispatch a real, audited EMERGENCY_STOP command to the
+   * engine (which stops the runner and performs the venue-side cleanup
+   * selected by `action`) and badge the row FORCE_STOPPING.
+   *
+   * `status` is set to FORCE_STOPPING *after* the CAS transition (which
+   * mirrors status to actual_state); the engine's terminal STATE_CHANGED
+   * converges the row back to STOPPED through the normal event path, so the
+   * badge can never outlive the engine work it describes.
+   *
+   * Only a RUNNING bot can be emergency-stopped: anything else has no runner
+   * to kill, and reporting success would leave a FORCE_STOPPING row with no
+   * command behind it (409 instead).
+   */
+  async emergencyStop(
+    botId: string,
+    userId: string,
+    action: EmergencyStopAction
+  ): Promise<BotLifecycleResult> {
+    const bot = await this.getOwnedBot(botId, userId);
+
+    if (bot.actual_state !== "RUNNING") {
+      const error = new Error(
+        `Bot is not running (actual state: ${bot.actual_state})`
+      );
+      (error as Error & { statusCode?: number }).statusCode = 409;
+      throw error;
+    }
+
+    const fromState = bot.actual_state;
+    const nextState = assertTransition(fromState, "STOPPING");
+
+    const persisted = await this.repository.persistTransition(
+      botId,
+      { desiredState: "STOPPED", actualState: nextState, stoppedAt: null },
+      fromState
+    );
+    if (!persisted) {
+      const error = new Error(
+        "Bot lifecycle state changed concurrently - retry"
+      );
+      (error as Error & { statusCode?: number }).statusCode = 409;
+      throw error;
+    }
+
+    await this.repository.recordLifecycleEvent(botId, {
+      eventType: "EMERGENCY_STOP_REQUESTED",
+      fromState,
+      toState: nextState,
+      correlationId: null,
+      messageId: null,
+      metadata: { userId, action },
+    });
+
+    // Badge only after the transition (persistTransition mirrors status).
+    await this.repository.updateStatus(botId, "FORCE_STOPPING");
+
+    const sendResult = await this.dispatcher.sendEmergencyStopCommand(
+      botId,
+      action
+    );
+    if (!sendResult.success) {
+      // No engine work is in flight: drop the badge so the row reflects the
+      // graceful STOPPING recovery path (reconciliation re-issues BOT_STOP).
+      await this.repository.updateStatus(botId, nextState);
+      await this.repository.recordLifecycleEvent(botId, {
+        eventType: "EMERGENCY_STOP_FAILED",
+        fromState: nextState,
+        toState: nextState,
+        correlationId: sendResult.correlationId ?? null,
+        messageId: sendResult.messageId ?? null,
+        metadata: { action, reason: sendResult.error ?? "unknown" },
+      });
+      const error = new Error(
+        "Failed to deliver emergency stop command to engine"
+      );
+      (error as Error & { statusCode?: number }).statusCode = 503;
+      throw error;
+    }
+
+    await this.repository.recordLifecycleEvent(botId, {
+      eventType: "EMERGENCY_STOP_COMMAND_SENT",
+      fromState: nextState,
+      toState: nextState,
+      correlationId: sendResult.correlationId ?? null,
+      messageId: sendResult.messageId ?? null,
+      metadata: { action },
+    });
+
+    // Strategy badge (Phase 2): the strategy is being stopped with this bot.
+    await syncStrategyActive(bot.strategy_id, false);
+
+    logger.warn("Emergency stop dispatched", {
+      botId,
+      action,
+      fromState,
+      toState: nextState,
+      correlationId: sendResult.correlationId,
+    });
 
     return {
       botId,

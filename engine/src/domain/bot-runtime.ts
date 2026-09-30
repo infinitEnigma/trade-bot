@@ -21,6 +21,8 @@ export interface BotRuntime {
   botId: string;
   strategyId: string;
   userId: string;
+  /** Trading symbol the runner was started with (config.symbol). */
+  symbol: string;
   state: BotActualState;
   strategy: GridTradingStrategy;
   stopTick: () => void;

@@ -9,7 +9,9 @@
 
 import {
   BotCommand,
+  EmergencyStopCommandPayload,
   isBotCommand,
+  isBotEmergencyStopCommand,
   isBotStartCommand,
   isBotStopCommand,
   isStatusRequestCommand,
@@ -176,7 +178,7 @@ async function handleCommand(
   // Capture before the type-predicate chain: after the false branches of
   // isBotStartCommand/isBotStopCommand, TypeScript narrows `command` to
   // `never`, so the status/fallback branches must use these.
-  const { type: commandType, payload } = command;
+  const { type: commandType, payload, correlationId } = command;
   // Protocol guards (type + payload.botId) — the legacy flat-shape
   // isStartBotCommand/isStopBotCommand guards can never match a protocol
   // envelope, and using them here silently ACKed every BOT_START/BOT_STOP
@@ -212,6 +214,27 @@ async function handleCommand(
       streamOps,
       command.payload.botId,
       command.correlationId
+    );
+  } else if (isBotEmergencyStopCommand(command)) {
+    // M1: the panic button publishes a real EMERGENCY_STOP command. ACK it
+    // (the tracked row stays PENDING until the engine reports) and run the
+    // stop + venue-side cleanup selected by the payload action.
+    //
+    // `command` narrows to `never` here for the same reason as the status
+    // branch above, so read the fields off the captured payload — the guard
+    // has already validated botId and action.
+    const emergency = payload as EmergencyStopCommandPayload;
+    await botManager.publishAccepted(
+      streamOps,
+      emergency.botId,
+      "EMERGENCY_STOP",
+      correlationId
+    );
+    await botManager.handleEmergencyStop(
+      streamOps,
+      emergency.botId,
+      emergency.action,
+      correlationId
     );
   } else if (isStatusRequestCommand(command)) {
     // Status request handling

@@ -85,6 +85,11 @@ import {
   getContextForLogging,
 } from "../../../shared/utils/context";
 import { validators } from "../../middleware/validation.middleware";
+import {
+  DEFAULT_EMERGENCY_STOP_ACTION,
+  EMERGENCY_STOP_ACTIONS,
+  EmergencyStopAction,
+} from "@trade-bot/shared";
 import { serviceProvider } from "../../../core/service-provider";
 import { botLifecycleService } from "../../../core/bots/bot-lifecycle.service";
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
@@ -732,10 +737,22 @@ router.delete(
 router.post(
   "/emergency-stop",
   authMiddleware,
+  // Only VERIFIED users can emergency-stop bots (parity with /stop)
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const userLevel = req.user?.userLevel;
+    if (userLevel !== "VERIFIED") {
+      return res.status(403).json({
+        success: false,
+        error:
+          "Bot functions require VERIFIED user level. Please complete wallet verification.",
+      });
+    }
+    next();
+  },
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = getUserId(req);
-      const { botId } = req.body;
+      const { botId, action } = req.body;
 
       if (!botId) {
         return res
@@ -743,16 +760,67 @@ router.post(
           .json({ success: false, error: "Bot ID required" });
       }
 
-      // Initiate emergency stop using service
-      const botManagementService = serviceProvider.getBotManagementService();
-      await botManagementService.emergencyStop(botId, userId);
+      // Optional cleanup scope — the panic button sends none and gets the
+      // maximum-safety default (cancel everything + flatten the position).
+      const stopAction: EmergencyStopAction =
+        action === undefined
+          ? DEFAULT_EMERGENCY_STOP_ACTION
+          : (action as EmergencyStopAction);
+      if (!(EMERGENCY_STOP_ACTIONS as readonly string[]).includes(stopAction)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid action. Expected one of: ${EMERGENCY_STOP_ACTIONS.join(", ")}`,
+          timestamp: Date.now(),
+        });
+      }
 
-      res.json({
+      // Control-plane health: Redis Streams must be available to deliver the
+      // EMERGENCY_STOP command to the engine (an emergency stop that cannot
+      // reach the engine is worse than a clear 503).
+      const controlPlaneHealthy = await redisService.isHealthy();
+      if (!controlPlaneHealthy) {
+        logger.warn(
+          "Emergency stop rejected: control plane (Redis) not operational",
+          { userId, botId }
+        );
+        return res.status(503).json({
+          success: false,
+          error:
+            "Trading control plane is not operational. Please try again later.",
+          retryAfter: 30,
+          timestamp: Date.now(),
+        });
+      }
+
+      // Desired-state transition + audited EMERGENCY_STOP command: persists
+      // desired_state=STOPPED / actual_state=STOPPING, badges the row
+      // FORCE_STOPPING, records the lifecycle trail and publishes the command
+      // (tracked as PENDING for timeout supervision).
+      const lifecycle = await botLifecycleService.emergencyStop(
+        botId,
+        userId,
+        stopAction
+      );
+
+      logger.warn("Emergency stop initiated", {
+        userId,
+        botId,
+        action: stopAction,
+        correlationId: lifecycle.correlationId,
+      });
+
+      // 202 Accepted: the bot is FORCE_STOPPING until the engine confirms.
+      res.status(202).json({
         success: true,
         data: {
-          botId,
+          botId: lifecycle.botId,
           status: "FORCE_STOPPING",
-          message: "Emergency stop initiated. All orders will be cancelled.",
+          desiredState: lifecycle.desiredState,
+          actualState: lifecycle.actualState,
+          action: stopAction,
+          correlationId: lifecycle.correlationId,
+          message:
+            "Emergency stop initiated. Orders are cancelled and positions closed by the engine.",
         },
         timestamp: Date.now(),
       });
@@ -760,9 +828,20 @@ router.post(
       logger.error("Emergency stop error", err as Error, {
         userId: req.user?.userId,
       });
-      res
-        .status(500)
-        .json({ success: false, error: "Failed to initiate emergency stop" });
+      const statusCode =
+        (err as Error & { statusCode?: number }).statusCode ?? 500;
+      res.status(statusCode).json({
+        success: false,
+        error:
+          statusCode === 404
+            ? "Bot not found"
+            : statusCode === 409
+              ? "Bot is not running"
+              : statusCode === 503
+                ? "Engine communication unavailable"
+                : "Failed to initiate emergency stop",
+        timestamp: Date.now(),
+      });
     }
   }
 );

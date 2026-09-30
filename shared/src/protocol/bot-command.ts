@@ -39,7 +39,29 @@ export interface ProtocolMessage<T> {
 // COMMAND TYPES
 // ===========================================
 
-export type BotCommandType = "BOT_START" | "BOT_STOP" | "BOT_STATUS_REQUEST";
+export type BotCommandType =
+  "BOT_START" | "BOT_STOP" | "BOT_STATUS_REQUEST" | "EMERGENCY_STOP";
+
+/**
+ * Emergency-stop venue cleanup scope. Every action stops the runner and
+ * cancels the strategy's orders; the action selects how far the
+ * venue-side cleanup goes (cumulative ladder):
+ * - CANCEL_ALL_ORDERS: cancel open orders for the bot's symbol (incl. orphans)
+ * - CLOSE_POSITIONS:   additionally flatten the bot's symbol position
+ * - FULL_SHUTDOWN:     cancel + flatten (the default; maximum safety)
+ */
+export type EmergencyStopAction =
+  "CANCEL_ALL_ORDERS" | "CLOSE_POSITIONS" | "FULL_SHUTDOWN";
+
+export const EMERGENCY_STOP_ACTIONS: readonly EmergencyStopAction[] = [
+  "CANCEL_ALL_ORDERS",
+  "CLOSE_POSITIONS",
+  "FULL_SHUTDOWN",
+];
+
+/** Default when the API caller omits `action` (panic button sends none). */
+export const DEFAULT_EMERGENCY_STOP_ACTION: EmergencyStopAction =
+  "FULL_SHUTDOWN";
 
 /**
  * Start a bot. `config` carries non-secret strategy configuration only.
@@ -63,8 +85,16 @@ export interface StatusRequestCommandPayload {
   botId: string;
 }
 
+export interface EmergencyStopCommandPayload {
+  botId: string;
+  action: EmergencyStopAction;
+}
+
 export type BotCommandPayload =
-  StartBotCommandPayload | StopBotCommandPayload | StatusRequestCommandPayload;
+  | StartBotCommandPayload
+  | StopBotCommandPayload
+  | StatusRequestCommandPayload
+  | EmergencyStopCommandPayload;
 
 export type BotCommand = ProtocolMessage<BotCommandPayload>;
 
@@ -119,9 +149,14 @@ export function isProtocolMessage(
 export function isBotCommand(obj: unknown): obj is BotCommand {
   return (
     isProtocolMessage(obj) &&
-    (["BOT_START", "BOT_STOP", "BOT_STATUS_REQUEST"] as string[]).includes(
-      obj.type
-    )
+    (
+      [
+        "BOT_START",
+        "BOT_STOP",
+        "BOT_STATUS_REQUEST",
+        "EMERGENCY_STOP",
+      ] as string[]
+    ).includes(obj.type)
   );
 }
 
@@ -153,6 +188,20 @@ export function isStatusRequestCommand(
     obj.type === "BOT_STATUS_REQUEST" &&
     typeof (obj.payload as StatusRequestCommandPayload)?.botId === "string"
   );
+}
+
+export function isBotEmergencyStopCommand(
+  obj: unknown
+): obj is ProtocolMessage<EmergencyStopCommandPayload> {
+  if (
+    !isProtocolMessage(obj) ||
+    obj.type !== "EMERGENCY_STOP" ||
+    typeof (obj.payload as EmergencyStopCommandPayload)?.botId !== "string"
+  ) {
+    return false;
+  }
+  const action = (obj.payload as EmergencyStopCommandPayload).action;
+  return (EMERGENCY_STOP_ACTIONS as readonly string[]).includes(action);
 }
 
 // ===========================================

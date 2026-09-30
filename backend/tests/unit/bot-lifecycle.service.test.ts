@@ -48,6 +48,10 @@ jest.mock(
 import { query } from "../../src/database/pool";
 import { BotLifecycleRepository } from "../../src/core/bots/lifecycle/bot-lifecycle.repository";
 import { exchangeAccountRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter";
+import {
+  getTimeoutReason,
+  TimeoutReason,
+} from "../../src/core/bots/lifecycle/types";
 
 const mockQuery = query as jest.Mock;
 
@@ -343,6 +347,90 @@ describe("BotLifecycleService", () => {
       expect(result.actualState).toBe("STOPPED");
       expect(engineProtocol.sendCommand).not.toHaveBeenCalled();
     });
+  });
+
+  describe("emergencyStop (M1)", () => {
+    it("transitions RUNNING -> STOPPING, badges FORCE_STOPPING and sends EMERGENCY_STOP", async () => {
+      mockQuery.mockImplementation((sql: string) => {
+        if (String(sql).startsWith("SELECT id, user_id")) {
+          return Promise.resolve({
+            rows: [
+              { ...botRow, desired_state: "RUNNING", actual_state: "RUNNING" },
+            ],
+          });
+        }
+        return okResult();
+      });
+
+      const result = await service.emergencyStop(
+        "bot-1",
+        "user-1",
+        "FULL_SHUTDOWN"
+      );
+
+      expect(result).toMatchObject({
+        desiredState: "STOPPED",
+        actualState: "STOPPING",
+      });
+      // Real, audited command on the live protocol (record-before-publish).
+      expect(engineProtocol.sendCommand).toHaveBeenCalledWith(
+        "EMERGENCY_STOP",
+        { botId: "bot-1", action: "FULL_SHUTDOWN" },
+        expect.any(String)
+      );
+      // The row is badged FORCE_STOPPING after the CAS transition.
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE bot_instances SET status"),
+        ["FORCE_STOPPING", "bot-1"]
+      );
+    });
+
+    it("rejects a non-RUNNING bot with 409 and sends no command", async () => {
+      mockQuery.mockResolvedValue({ rows: [botRow] });
+
+      await expect(
+        service.emergencyStop("bot-1", "user-1", "CANCEL_ALL_ORDERS")
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(engineProtocol.sendCommand).not.toHaveBeenCalled();
+    });
+
+    it("drops the FORCE_STOPPING badge and throws 503 when dispatch fails", async () => {
+      engineProtocol.sendCommand.mockResolvedValue({
+        success: false,
+        error: "redis unavailable",
+      });
+      mockQuery.mockImplementation((sql: string) => {
+        if (String(sql).startsWith("SELECT id, user_id")) {
+          return Promise.resolve({
+            rows: [
+              { ...botRow, desired_state: "RUNNING", actual_state: "RUNNING" },
+            ],
+          });
+        }
+        return okResult();
+      });
+
+      await expect(
+        service.emergencyStop("bot-1", "user-1", "CLOSE_POSITIONS")
+      ).rejects.toMatchObject({ statusCode: 503 });
+
+      const statusWrites = mockQuery.mock.calls.filter(call =>
+        String(call[0]).includes("UPDATE bot_instances SET status")
+      );
+      expect(statusWrites.map(call => call[1])).toEqual([
+        ["FORCE_STOPPING", "bot-1"],
+        ["STOPPING", "bot-1"],
+      ]);
+    });
+  });
+
+  it("classifies a timed-out EMERGENCY_STOP as an incomplete stop", () => {
+    // The emergency command is supervised like BOT_STOP: a STOPPING bot whose
+    // emergency stop never completed must be recovered (UNKNOWN + stop repair),
+    // not burned as COMMAND_NEVER_DELIVERED / ERROR.
+    expect(getTimeoutReason("EMERGENCY_STOP", "STOPPING")).toBe(
+      TimeoutReason.STOP_INCOMPLETE
+    );
   });
 
   describe("handleEngineEvent", () => {

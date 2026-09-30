@@ -673,40 +673,6 @@ export class EngineManager {
   }
 
   /**
-   * Send emergency stop command
-   */
-  async sendEmergencyStopCommand(
-    botId: string,
-    action: "CANCEL_ALL_ORDERS" | "CLOSE_POSITIONS" | "FULL_SHUTDOWN"
-  ): Promise<void> {
-    const command = {
-      type: "EMERGENCY_STOP",
-      engineId: this.engineId || "default-engine",
-      botId,
-      action,
-      timestamp: Date.now(),
-    };
-
-    const result = await this.streamOperations.publish(
-      "engine:commands",
-      command
-    );
-
-    if (result.success) {
-      this.deps.logger.warn("Emergency stop command sent", {
-        botId,
-        action,
-      });
-    } else {
-      this.deps.logger.error("Failed to send emergency stop command", {
-        botId,
-        action,
-        error: result.error,
-      });
-    }
-  }
-
-  /**
    * Send update strategy config command
    */
   async sendUpdateStrategyConfigCommand(

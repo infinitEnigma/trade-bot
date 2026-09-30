@@ -43,16 +43,24 @@ describe("command-consumer processMessage", () => {
     publishAccepted: jest.Mock;
     handleStart: jest.Mock;
     handleStop: jest.Mock;
+    handleEmergencyStop: jest.Mock;
   } {
     const publishAccepted = jest.fn().mockResolvedValue(undefined);
     const handleStart = jest.fn().mockResolvedValue(undefined);
     const handleStop = jest.fn().mockResolvedValue(undefined);
-    const manager = { publishAccepted, handleStart, handleStop };
+    const handleEmergencyStop = jest.fn().mockResolvedValue(undefined);
+    const manager = {
+      publishAccepted,
+      handleStart,
+      handleStop,
+      handleEmergencyStop,
+    };
     return {
       manager: manager as unknown as BotManager,
       publishAccepted,
       handleStart,
       handleStop,
+      handleEmergencyStop,
     };
   }
 
@@ -94,6 +102,56 @@ describe("command-consumer processMessage", () => {
     );
     expect(handleStop).not.toHaveBeenCalled();
     expect(acks).toEqual(["1-0"]);
+  });
+
+  it("dispatches a protocol EMERGENCY_STOP envelope (accept + handleEmergencyStop) and ACKs", async () => {
+    const { acks, ops } = makeStreamOps();
+    const { manager, publishAccepted, handleStop, handleEmergencyStop } =
+      makeManager();
+    const command = createBotCommand(
+      "EMERGENCY_STOP",
+      { botId: "bot-1", action: "FULL_SHUTDOWN" },
+      "corr-3"
+    );
+
+    await processMessage(ops, manager, msg("1-2", command), new Set());
+
+    // M1: the panic path must be a real command - ACKed like every other
+    // consumed command, with the cleanup action handed to the manager.
+    expect(publishAccepted).toHaveBeenCalledTimes(1);
+    expect(publishAccepted).toHaveBeenCalledWith(
+      ops,
+      "bot-1",
+      "EMERGENCY_STOP",
+      "corr-3"
+    );
+    expect(handleEmergencyStop).toHaveBeenCalledWith(
+      ops,
+      "bot-1",
+      "FULL_SHUTDOWN",
+      "corr-3"
+    );
+    expect(handleStop).not.toHaveBeenCalled();
+    expect(acks).toEqual(["1-2"]);
+  });
+
+  it("ACCs a malformed EMERGENCY_STOP payload without dispatching", async () => {
+    const { acks, ops } = makeStreamOps();
+    const { manager, handleEmergencyStop, handleStart, handleStop } =
+      makeManager();
+    // Unknown action fails the guard (payload never reaches the manager).
+    const command = createBotCommand(
+      "EMERGENCY_STOP",
+      { botId: "bot-1", action: "NOPE" },
+      "corr-4"
+    );
+
+    await processMessage(ops, manager, msg("1-3", command), new Set());
+
+    expect(handleEmergencyStop).not.toHaveBeenCalled();
+    expect(handleStart).not.toHaveBeenCalled();
+    expect(handleStop).not.toHaveBeenCalled();
+    expect(acks).toEqual(["1-3"]);
   });
 
   it("dispatches a protocol BOT_STOP envelope (accept + handleStop) and ACKs", async () => {

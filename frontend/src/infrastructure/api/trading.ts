@@ -2,6 +2,7 @@
 
 import { httpClient } from "./client";
 import { globalRequestManager } from "../request-manager";
+import type { EmergencyStopAction } from "@trade-bot/shared";
 
 /**
  * Trading API endpoints
@@ -115,11 +116,17 @@ export const tradingApi = {
     return response.data;
   },
 
-  async emergencyStop(botId: string) {
+  /**
+   * Emergency stop (M1). `action` selects the venue-side cleanup scope; the
+   * panic button omits it and the backend applies FULL_SHUTDOWN (cancel every
+   * order + flatten the position).
+   */
+  async emergencyStop(botId: string, action?: EmergencyStopAction) {
     const response = await httpClient
       .getClient()
       .post("/api/bot/management/emergency-stop", {
         botId,
+        ...(action ? { action } : {}),
       });
     return response.data;
   },

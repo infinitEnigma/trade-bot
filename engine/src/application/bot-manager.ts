@@ -7,13 +7,14 @@
  * @format
  */
 
-import { BotActualState } from "@trade-bot/shared";
+import { BotActualState, EmergencyStopAction } from "@trade-bot/shared";
 import { GridTradingStrategy } from "../strategies/grid";
 import { createExchangeClient } from "../exchanges/factory";
 import { isEngineCredentials } from "@trade-bot/shared";
 import { RedisStreamOperations } from "../infrastructure/redis/streams";
 import { logger } from "../utils/logger";
 import { BotRuntime, EngineIdentity } from "../domain/bot-runtime";
+import { ExchangeOpenOrder, ExchangePosition } from "../domain/exchange";
 import {
   publishEvent,
   publishAccepted,
@@ -228,6 +229,207 @@ export class BotManager {
   }
 
   /**
+   * Handle EMERGENCY_STOP command (M1).
+   *
+   * Order of operations matters and is deliberate:
+   * 1. Report RUNNING → STOPPING (the backend badges FORCE_STOPPING on it).
+   * 2. Kill trading: `strategy.stop()` flips the grid's running flag and
+   *    cancels the orders it tracks, then the tick runner is stopped and the
+   *    bot is deregistered. Nothing can re-place afterwards.
+   * 3. Venue-side cleanup for the selected action — orphan orders for the
+   *    bot's symbol, then (unless CANCEL_ALL_ORDERS) a flattening order.
+   * 4. Report STOPPING → STOPPED.
+   *
+   * Every cleanup step is best-effort: failures are logged loudly but never
+   * block the terminal STATE_CHANGED, because the backend's FORCE_STOPPING
+   * badge is only cleared by that report and a stuck badge hides the facts.
+   */
+  async handleEmergencyStop(
+    streamOps: RedisStreamOperations,
+    botId: string,
+    action: EmergencyStopAction,
+    correlationId: string
+  ): Promise<void> {
+    const existing = this.bots.get(botId);
+    if (!existing) {
+      logger.warn("Bot not found for emergency stop", { botId, action });
+      await this.publishFailed(
+        streamOps,
+        botId,
+        "EMERGENCY_STOP",
+        "BOT_NOT_FOUND",
+        "Bot not found",
+        correlationId
+      );
+      return;
+    }
+
+    const reason = `emergency_stop:${action}`;
+    logger.warn("Emergency stop started", { botId, action });
+    await this.publishStateChanged(
+      streamOps,
+      botId,
+      "RUNNING",
+      "STOPPING",
+      correlationId,
+      reason
+    );
+
+    // 1. Kill trading first (strategy.stop cancels the orders it tracks).
+    try {
+      await existing.strategy.stop();
+    } catch (error) {
+      logger.error("Emergency stop: strategy stop error", {
+        botId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    existing.stopTick();
+    this.bots.delete(botId);
+
+    // 2. Venue-side cleanup (best-effort, never blocks the STOPPED report).
+    await this.emergencyCancelOpenOrders(existing);
+    if (action !== "CANCEL_ALL_ORDERS") {
+      await this.emergencyClosePosition(existing);
+    }
+
+    await this.publishStateChanged(
+      streamOps,
+      botId,
+      "STOPPING",
+      "STOPPED",
+      correlationId,
+      reason
+    );
+    logger.warn("Emergency stop complete", { botId, action });
+  }
+
+  /**
+   * Cancel every order still open on the bot's symbol. `strategy.stop()` has
+   * already cancelled the tracked grid orders and the runner is dead, so
+   * whatever this lists is an orphan (e.g. a placement that landed after the
+   * strategy's last bookkeeping). Per-order failures are logged and skipped.
+   */
+  private async emergencyCancelOpenOrders(runtime: BotRuntime): Promise<void> {
+    let open: ExchangeOpenOrder[];
+    try {
+      open = await runtime.exchangeClient.listOpenOrders(runtime.symbol);
+    } catch (error) {
+      logger.error("Emergency stop: open-order listing failed", {
+        botId: runtime.botId,
+        symbol: runtime.symbol,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    for (const order of open) {
+      try {
+        await runtime.exchangeClient.cancelOrder(
+          order.orderId,
+          order.symbol || runtime.symbol
+        );
+        logger.warn("Emergency stop: orphan order cancelled", {
+          botId: runtime.botId,
+          orderId: order.orderId,
+          symbol: runtime.symbol,
+        });
+      } catch (error) {
+        logger.error("Emergency stop: orphan order cancel failed", {
+          botId: runtime.botId,
+          orderId: order.orderId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  /**
+   * Flatten the bot's position with an opposite MARKET order.
+   *
+   * Deliberately conservative — on this venue positions belong to the
+   * *account*, not the bot:
+   * - Skipped entirely when another engine bot trades the same symbol (that
+   *   bot owns the same position; closing it would close someone else's
+   *   exposure).
+   * - When the venue reports no position for the symbol the step is a no-op.
+   * - Sizing/precision is the adapter's job (it scales to the market's size
+   *   decimals and rejects sub-minimum sizes); a rejected flatten is logged
+   *   as an incomplete cleanup, never as a silent success.
+   */
+  private async emergencyClosePosition(runtime: BotRuntime): Promise<void> {
+    for (const [otherId, other] of this.bots) {
+      if (otherId !== runtime.botId && other.symbol === runtime.symbol) {
+        logger.warn(
+          "Emergency stop: position flatten skipped - another bot trades this symbol",
+          {
+            botId: runtime.botId,
+            otherBotId: otherId,
+            symbol: runtime.symbol,
+          }
+        );
+        return;
+      }
+    }
+
+    let positions: ExchangePosition[];
+    try {
+      positions = await runtime.exchangeClient.getPositions();
+    } catch (error) {
+      logger.error("Emergency stop: position fetch failed", {
+        botId: runtime.botId,
+        symbol: runtime.symbol,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    const position = positions.find(
+      p =>
+        symbolsMatch(p.symbol, runtime.symbol) &&
+        Number.isFinite(Number(p.position_qty)) &&
+        Number(p.position_qty) !== 0
+    );
+    if (!position) {
+      logger.info("Emergency stop: no open position to close", {
+        botId: runtime.botId,
+        symbol: runtime.symbol,
+      });
+      return;
+    }
+
+    const positionQty = Number(position.position_qty);
+    const side: "BUY" | "SELL" = positionQty > 0 ? "SELL" : "BUY";
+    try {
+      const order = await runtime.exchangeClient.createOrder({
+        symbol: runtime.symbol,
+        side,
+        orderType: "MARKET",
+        orderQuantity: Math.abs(positionQty),
+      });
+      logger.warn("Emergency stop: position flatten order placed", {
+        botId: runtime.botId,
+        symbol: runtime.symbol,
+        side,
+        positionQty,
+        orderId: order.orderId,
+        status: order.status,
+      });
+    } catch (error) {
+      logger.error(
+        "Emergency stop: position flatten failed - exposure may remain",
+        {
+          botId: runtime.botId,
+          symbol: runtime.symbol,
+          side,
+          positionQty,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+    }
+  }
+
+  /**
    * Core bot initialization.
    */
   private async doStartBot(
@@ -323,6 +525,7 @@ export class BotManager {
         botId,
         strategyId,
         userId,
+        symbol,
         state: "RUNNING",
         strategy: gridStrategy,
         stopTick: stopRunner,
@@ -376,4 +579,20 @@ export class BotManager {
       throw new CommandError(false, "Bot initialization cancelled");
     }
   }
+}
+
+/**
+ * Compare a venue-reported position symbol with the bot's configured symbol.
+ * Case/whitespace-insensitive only — a mismatch (unknown symbol format) must
+ * skip the flatten rather than close the wrong market.
+ */
+function symbolsMatch(venueSymbol: string, configSymbol: string): boolean {
+  return (
+    String(venueSymbol ?? "")
+      .trim()
+      .toUpperCase() ===
+    String(configSymbol ?? "")
+      .trim()
+      .toUpperCase()
+  );
 }

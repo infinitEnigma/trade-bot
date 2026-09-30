@@ -99,7 +99,6 @@ jest.mock("../../../src/core/service-provider", () => ({
       getBotPerformance: jest.fn(),
       createAndStartBot: jest.fn(),
       stopBot: jest.fn(),
-      emergencyStop: jest.fn(),
     }),
     getMarketService: jest.fn().mockReturnValue({
       hasUserKodiakCredentials: jest.fn().mockResolvedValue(true),

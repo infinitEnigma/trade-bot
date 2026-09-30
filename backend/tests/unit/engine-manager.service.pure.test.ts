@@ -168,30 +168,6 @@ describe("EngineManager", () => {
       );
     });
 
-    it("should send emergency stop command", async () => {
-      // Arrange
-      const publishSpy = (
-        mockStreamOperations.publish as jest.Mock
-      ).mockResolvedValue({ success: true });
-      const botId = "test-bot";
-      const action = "CANCEL_ALL_ORDERS";
-
-      // Act
-      await engineManager.sendEmergencyStopCommand(botId, action);
-
-      // Assert
-      expect(publishSpy).toHaveBeenCalledWith(
-        "engine:commands",
-        expect.objectContaining({
-          type: "EMERGENCY_STOP",
-          engineId: expect.any(String),
-          botId,
-          action,
-          timestamp: expect.any(Number),
-        })
-      );
-    });
-
     it("should send update strategy config command", async () => {
       // Arrange
       const publishSpy = (

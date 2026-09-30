@@ -288,8 +288,7 @@ export class BotManagementService {
         throw new Error("Bot not found or does not belong to user");
       }
       const actual = (botInstance.actual_state ?? botInstance.status) as string;
-      const desired = (botInstance as { desired_state?: string })
-        .desired_state;
+      const desired = (botInstance as { desired_state?: string }).desired_state;
       if (
         desired === "RUNNING" ||
         actual === "STARTING" ||
@@ -333,70 +332,6 @@ export class BotManagementService {
       await this.deps.botInstanceRepository.deleteBotInstance(bot.id);
     }
     return bots.length;
-  }
-
-  /**
-   * Initiate emergency stop for a bot
-   */
-  async emergencyStop(botId: string, userId: string): Promise<void> {
-    try {
-      // Validate bot ownership
-      const botInstance =
-        await this.deps.botInstanceRepository.getBotInstance(botId);
-      if (!botInstance || botInstance.user_id !== userId) {
-        throw new Error("Bot not found or does not belong to user");
-      }
-
-      if (botInstance.status !== "RUNNING") {
-        throw new Error("Bot is not running");
-      }
-
-      // Update bot status
-      await this.deps.botInstanceRepository.updateBotStatus(
-        botId,
-        "FORCE_STOPPING"
-      );
-
-      // Strategy badge (Phase 2): an emergency stop ends the strategy's run.
-      // Best-effort — a badge failure never fails the stop itself.
-      try {
-        await this.deps.strategyRepository.toggleStrategy(
-          botInstance.strategy_id,
-          false
-        );
-      } catch (badgeError) {
-        this.deps.logger.warn("Failed to sync strategy active flag", {
-          strategyId: botInstance.strategy_id,
-          active: false,
-          error:
-            badgeError instanceof Error
-              ? badgeError.message
-              : String(badgeError),
-        });
-      }
-
-      // Log emergency stop
-      await this.deps.auditLogRepository.logEvent({
-        userId,
-        action: "EMERGENCY_STOP",
-        details: {
-          botId,
-          strategyId: botInstance.strategy_id,
-        },
-      });
-
-      this.deps.logger.warn("Emergency stop initiated", {
-        botId,
-        userId,
-      });
-    } catch (error) {
-      this.deps.logger.error("Failed to initiate emergency stop", {
-        error: error instanceof Error ? error.message : String(error),
-        userId,
-        botId,
-      });
-      throw error;
-    }
   }
 
   /**

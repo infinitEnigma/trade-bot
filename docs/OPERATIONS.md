@@ -256,7 +256,7 @@ Routes the frontend actually calls (all under `/management`):
 | List   | `GET /api/bot/management/instances`       | one row per bot, carrying its `exchangeAccountId`                                                                                               |
 | Start  | `POST /api/bot/management/start`          | `{ strategyId, exchangeAccountId, notionalAmount }` → **202**; account must be owned + `ACTIVE` (else 400/404) and the user VERIFIED (else 403) |
 | Stop   | `POST /api/bot/management/stop`           | `{ botId }`                                                                                                                                     |
-| Panic  | `POST /api/bot/management/emergency-stop` | `action: CANCEL_ALL_ORDERS \| CLOSE_POSITIONS \| FULL_SHUTDOWN`                                                                                 |
+| Panic  | `POST /api/bot/management/emergency-stop` | `{ botId, action? }` → **202**; (M1) real `EMERGENCY_STOP` command — engine stops the runner, cancels the bot’s orders and (unless `action: CANCEL_ALL_ORDERS`) flattens its position; default `FULL_SHUTDOWN`, flatten skipped while another engine bot trades the symbol |
 
 Checklist when something is missing:
 

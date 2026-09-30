@@ -87,6 +87,28 @@ export class BotLifecycleRepository {
   }
 
   /**
+   * Write the display/authoritative `status` column directly. Used by the
+   * emergency-stop flow to mark FORCE_STOPPING after a persistTransition
+   * (which mirrors `status` to `actual_state`); the next engine STATE_CHANGED
+   * converges it back to the actual state.
+   */
+  async updateStatus(botId: string, status: string): Promise<void> {
+    try {
+      await query(
+        "UPDATE bot_instances SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+        [status, botId]
+      );
+    } catch (error) {
+      logger.error("Failed to update bot status", undefined, {
+        botId,
+        status,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Append to the lifecycle audit trail. Audit failures never break the
    * lifecycle flow itself - they are logged and swallowed.
    */

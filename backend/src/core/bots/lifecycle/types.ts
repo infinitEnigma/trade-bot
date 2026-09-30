@@ -102,7 +102,10 @@ export function getTimeoutReason(
     // Bot is already running - engine likely processed the start but events were lost
     return TimeoutReason.STATE_MISMATCH;
   }
-  if (commandType === "BOT_STOP" && botState === "STOPPING") {
+  if (
+    (commandType === "BOT_STOP" || commandType === "EMERGENCY_STOP") &&
+    botState === "STOPPING"
+  ) {
     // Stop was initiated but never completed
     return TimeoutReason.STOP_INCOMPLETE;
   }
