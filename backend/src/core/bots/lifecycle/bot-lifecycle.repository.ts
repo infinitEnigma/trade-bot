@@ -109,6 +109,28 @@ export class BotLifecycleRepository {
   }
 
   /**
+   * Record why a force stop left the venue in a state the operator must know
+   * about (M1: the engine's `cleanup_incomplete` marker). Unlike
+   * `last_error_message` — which the terminal transition clears, because the
+   * stop itself succeeded — this column is never reset, so the fact survives
+   * the next start/stop cycle and stays visible in the row and the audit trail.
+   */
+  async recordForceStopReason(botId: string, reason: string): Promise<void> {
+    try {
+      await query(
+        "UPDATE bot_instances SET force_stop_reason = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+        [reason, botId]
+      );
+    } catch (error) {
+      logger.error("Failed to record force stop reason", undefined, {
+        botId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Append to the lifecycle audit trail. Audit failures never break the
    * lifecycle flow itself - they are logged and swallowed.
    */

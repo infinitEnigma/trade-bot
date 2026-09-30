@@ -69,6 +69,18 @@ export const MAX_STOP_REISSUES_PER_HOUR = Number(
   process.env.LIFECYCLE_RECONCILE_MAX_STOP_REISSUES ?? 3
 );
 
+/**
+ * Marker the engine puts in the terminal STATE_CHANGED `reason` when a panic
+ * stop could not finish its venue-side cleanup (M1). The row converges to
+ * STOPPED either way — the stop itself succeeded — so this marker is the only
+ * signal that orders/position may still be live on the venue. The processor
+ * copies such a reason into `bot_instances.force_stop_reason`, which nothing
+ * else rewrites, so the fact survives the next transition and stays queryable
+ * by operators. Wire contract: keep in sync with the engine's
+ * `CLEANUP_INCOMPLETE_MARKER`.
+ */
+export const CLEANUP_INCOMPLETE_MARKER = "cleanup_incomplete";
+
 /** A tracked lifecycle command awaiting engine confirmation. */
 export interface TrackedCommandRow {
   correlation_id: string;

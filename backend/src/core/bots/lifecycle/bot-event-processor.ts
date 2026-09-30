@@ -26,6 +26,7 @@ import { BotLifecycleNotifier } from "./bot-lifecycle-notifier";
 import { syncStrategyActive } from "./strategy-active-sync";
 import {
   BOT_COMMAND_TIMEOUT_MS,
+  CLEANUP_INCOMPLETE_MARKER,
   getTimeoutReason,
   getTimeoutTargetState,
   TimeoutReason,
@@ -525,6 +526,21 @@ export class BotEventProcessor {
       messageId: event.messageId,
       metadata: { engineId: payload.engineId, reason: payload.reason ?? null },
     });
+
+    // A panic stop that could not finish its venue cleanup (M1) reports the
+    // same terminal STOPPED as a clean one, so the engine marks the reason.
+    // The row cannot carry that reason — `persistTransition` just cleared the
+    // error fields, precisely because the stop itself succeeded — hence the
+    // dedicated column. A clean-looking STOPPED next to live venue exposure is
+    // the one failure mode an operator cannot recover from without being told.
+    if (isStopped && payload.reason?.includes(CLEANUP_INCOMPLETE_MARKER)) {
+      await this.repository.recordForceStopReason(bot.id, payload.reason);
+      logger.warn("Bot stopped with incomplete venue cleanup", {
+        botId: bot.id,
+        reason: payload.reason,
+        correlationId: event.correlationId,
+      });
+    }
 
     logger.info("Bot state changed", {
       botId: bot.id,

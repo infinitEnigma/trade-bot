@@ -467,6 +467,88 @@ describe("BotLifecycleService", () => {
       expect(updates[0][1][2]).toBe("RUNNING");
     });
 
+    it("keeps an incomplete emergency cleanup visible after the row is STOPPED", async () => {
+      // M1: the panic stop reports the same terminal STOPPED whether or not the
+      // venue cleanup finished, so the engine marks the reason. Without this
+      // write the operator would see a clean row over live venue exposure.
+      const event = createBotEvent(
+        "STATE_CHANGED",
+        {
+          botId: "bot-1",
+          engineId: "engine-1",
+          engineEpoch: 1,
+          from: "STOPPING",
+          to: "STOPPED",
+          reason:
+            "emergency_stop:FULL_SHUTDOWN; cleanup_incomplete: position 0.1 ETH not flattened: adapter refused MARKET",
+        },
+        "corr-1"
+      );
+
+      mockQuery.mockImplementation((sql: string) => {
+        if (String(sql).startsWith("SELECT id, user_id")) {
+          return Promise.resolve({
+            rows: [
+              {
+                ...botRow,
+                desired_state: "STOPPED",
+                actual_state: "STOPPING",
+              },
+            ],
+          });
+        }
+        return okResult();
+      });
+
+      await service.handleEngineEvent(event);
+
+      const writes = mockQuery.mock.calls.filter(call =>
+        String(call[0]).includes("force_stop_reason")
+      );
+      expect(writes).toHaveLength(1);
+      expect(writes[0][1][1]).toBe("bot-1");
+      expect(String(writes[0][1][0])).toContain("cleanup_incomplete");
+      expect(String(writes[0][1][0])).toContain("not flattened");
+    });
+
+    it("leaves force_stop_reason alone for a clean stop", async () => {
+      const event = createBotEvent(
+        "STATE_CHANGED",
+        {
+          botId: "bot-1",
+          engineId: "engine-1",
+          engineEpoch: 1,
+          from: "STOPPING",
+          to: "STOPPED",
+          reason: "emergency_stop:FULL_SHUTDOWN",
+        },
+        "corr-1"
+      );
+
+      mockQuery.mockImplementation((sql: string) => {
+        if (String(sql).startsWith("SELECT id, user_id")) {
+          return Promise.resolve({
+            rows: [
+              {
+                ...botRow,
+                desired_state: "STOPPED",
+                actual_state: "STOPPING",
+              },
+            ],
+          });
+        }
+        return okResult();
+      });
+
+      await service.handleEngineEvent(event);
+
+      expect(
+        mockQuery.mock.calls.filter(call =>
+          String(call[0]).includes("force_stop_reason")
+        )
+      ).toHaveLength(0);
+    });
+
     it("ignores illegal engine-reported transitions without throwing", async () => {
       const event = createBotEvent(
         "STATE_CHANGED",
