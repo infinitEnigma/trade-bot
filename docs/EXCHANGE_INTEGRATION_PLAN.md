@@ -118,6 +118,20 @@ consistent** (poll, don't one-shot); a duplicate `client_order_index` is
 **accepted idempotently** (adopt the existing live order, never assume rejection);
 `market_id` is the order identifier (4095 for testnet ETH).
 
+Two further venue rules were pinned live on 2026-09-30 (M1, evidence
+`.git/gatelogs/prod/27-p4-m1-live-fix2.log`, logged in the M1 row of
+`docs/PROJECT_REVIEW_GAP_ANALYSIS.md`):
+
+- **`client_order_index` ≤ 281474976710655 (2^48 − 1).** A larger index is
+  refused by `create-order` ("ClientOrderIndex should not be larger than
+  281474976710655") and 400s `accountOrders?client_order_indexes=` (`20001
+  invalid param : invalid client order index`) — hence
+  `LIGHTER_CLIENT_ORDER_INDEX_MOD = 2 ** 48` in `client-order-id.ts`.
+- **`time_in_force: 0` (IOC) requires `order_expiry: 0`** ("OrderExpiry is
+  invalid" otherwise), while GTT requires a positive ms timestamp. The engine's
+  panic flatten is a MARKET → IOC limit, and the sidecar normalises the expiry
+  per TIF (`SignerService._resolve_expiry`).
+
 ### B4 — strategy decoupling
 
 `engine/src/strategies/grid.ts` currently imports the concrete `OrderlyClient`
