@@ -228,23 +228,45 @@ export class BotManager {
       "normal_stop"
     );
     try {
-      await existing.strategy.stop();
+      const stopProblems = await existing.strategy.stop();
+      existing.stopTick();
+      this.bots.delete(botId);
+
+      // A clean STOPPED must never hide orders a cancel could not confirm (N5):
+      // carry the problems in the terminal reason, exactly like the panic path.
+      const terminalReason = stopProblems.length
+        ? `normal_stop; ${CLEANUP_INCOMPLETE_MARKER}: ${summarizeProblems(stopProblems)}`
+        : "normal_stop";
+      if (stopProblems.length) {
+        logger.error("Normal stop: cancellation not confirmed", {
+          botId,
+          problems: stopProblems,
+        });
+      }
+      await this.publishStateChanged(
+        streamOps,
+        botId,
+        "STOPPING",
+        "STOPPED",
+        correlationId,
+        terminalReason
+      );
     } catch (error) {
+      existing.stopTick();
+      this.bots.delete(botId);
       logger.error("Strategy stop error", {
         botId,
         error: error instanceof Error ? error.message : String(error),
       });
+      await this.publishStateChanged(
+        streamOps,
+        botId,
+        "STOPPING",
+        "STOPPED",
+        correlationId,
+        `normal_stop; ${CLEANUP_INCOMPLETE_MARKER}: stop failed`
+      );
     }
-    existing.stopTick();
-    this.bots.delete(botId);
-    await this.publishStateChanged(
-      streamOps,
-      botId,
-      "STOPPING",
-      "STOPPED",
-      correlationId,
-      "normal_stop"
-    );
   }
 
   /**
@@ -295,19 +317,21 @@ export class BotManager {
     );
 
     // 1. Kill trading first (strategy.stop cancels the orders it tracks).
+    let problems: string[] = [];
     try {
-      await existing.strategy.stop();
+      problems = await existing.strategy.stop();
     } catch (error) {
+      problems = [messageOf(error)];
       logger.error("Emergency stop: strategy stop error", {
         botId,
-        error: error instanceof Error ? error.message : String(error),
+        error: messageOf(error),
       });
     }
     existing.stopTick();
     this.bots.delete(botId);
 
     // 2. Venue-side cleanup (best-effort, never blocks the STOPPED report).
-    const problems = await this.emergencyCancelOpenOrders(existing);
+    problems.push(...(await this.emergencyCancelOpenOrders(existing)));
     if (action !== "CANCEL_ALL_ORDERS") {
       problems.push(...(await this.emergencyClosePosition(existing)));
     }

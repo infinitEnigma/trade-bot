@@ -2,7 +2,7 @@
 
 import { BotRuntime, EngineIdentity } from "../../domain/bot-runtime";
 import type { GridTradingStrategy } from "../../strategies/grid";
-import { BotManager } from "../bot-manager";
+import { BotManager, CLEANUP_INCOMPLETE_MARKER } from "../bot-manager";
 
 jest.mock("../../protocol/credential-fetcher", () => ({
   fetchCredentials: jest.fn(),
@@ -54,7 +54,7 @@ function registerBot(botId: string, symbol: string): RuntimeHarness {
     engineId: "engine-1",
     epoch: 1,
   } as EngineIdentity);
-  const strategyStop = jest.fn().mockResolvedValue(undefined);
+  const strategyStop = jest.fn().mockResolvedValue([]);
   const stopTick = jest.fn();
   const client = {
     listOpenOrders: jest.fn().mockResolvedValue([]),
@@ -306,5 +306,47 @@ describe("BotManager.handleEmergencyStop (M1)", () => {
     expect(failures).toHaveLength(1);
     expect(failures[0].payload.errorCode).toBe("BOT_NOT_FOUND");
     expect(transitions(published)).toEqual([]);
+  });
+});
+
+describe("BotManager.handleStop (N5)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("marks the stop incomplete when a cancel is not confirmed", async () => {
+    const harness = registerBot("bot-1", "ETH");
+    const { published, ops } = makeStreamOps();
+    harness.strategyStop.mockResolvedValue(["BUY@100 not cancelled: timeout"]);
+
+    await harness.manager.handleStop(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "corr-la"
+    );
+
+    expect(transitions(published)).toEqual([
+      "RUNNING->STOPPING",
+      "STOPPING->STOPPED",
+    ]);
+    const [, stopped] = reasons(published);
+    expect(stopped).toContain(CLEANUP_INCOMPLETE_MARKER);
+    expect(stopped).toContain("not cancelled");
+    expect(harness.manager.hasBot("bot-1")).toBe(false);
+  });
+
+  it("keeps normal_stop clean when every cancel is confirmed", async () => {
+    const harness = registerBot("bot-1", "ETH");
+    const { published, ops } = makeStreamOps();
+
+    await harness.manager.handleStop(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "corr-lb"
+    );
+
+    expect(reasons(published)).toEqual(["normal_stop", "normal_stop"]);
   });
 });

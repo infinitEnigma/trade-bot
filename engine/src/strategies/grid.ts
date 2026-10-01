@@ -1,12 +1,6 @@
 /** @format */
 
-// TODO
-
-import {
-  ExchangeClient,
-  ExchangeOrderRequest,
-  OrderLookup,
-} from "../domain/exchange";
+import { ExchangeClient, ExchangeOpenOrder } from "../domain/exchange";
 import {
   GridStrategyConfig,
   GridLevel,
@@ -20,10 +14,15 @@ import {
   GridSnapshotLevel,
   GRID_SNAPSHOT_VERSION,
 } from "../domain/grid-snapshot";
+import { SlotOutcome } from "../domain/order-state";
 import {
-  loadGridSnapshot,
+  loadGridSnapshotResult,
+  SnapshotLoadResult,
   saveGridSnapshot,
 } from "../infrastructure/state/grid-state";
+import { CommandError } from "../application/command-error";
+import { OrderManager } from "../application/order-manager";
+import { OrderReconciliationService } from "../application/order-reconciliation.service";
 
 /**
  * How often a single slot's order is re-checked against the exchange (ms).
@@ -32,13 +31,16 @@ import {
  */
 const ORDER_CHECK_INTERVAL_MS = 5000;
 
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * Grid strategy over the exchange-agnostic `ExchangeClient` contract.
  *
- * The strategy used to take the concrete `OrderlyClient`. Workstream B4
- * decouples it: every exchange interaction goes through the interface
- * (`getTicker` / `createOrder` / `cancelOrder` / `queryOrderByClientOrderId` /
- * `listOpenOrders`), which is what makes a second venue possible at all.
+ * Exchange↔local failure semantics live in `OrderReconciliationService`; this
+ * class owns the grid geometry, the tick loop and the (simplified, mark-to-
+ * market) trade counters. Slot identity is written only through `OrderManager`.
  */
 export class GridTradingStrategy {
   private config: GridStrategyConfig;
@@ -53,6 +55,8 @@ export class GridTradingStrategy {
   private trades: Trade[] = [];
   private lastOrderCheck: Map<string, Date> = new Map();
   private clientOrderIdGenerator: ClientOrderIdGenerator;
+  private manager: OrderManager | null = null;
+  private reconcile: OrderReconciliationService | null = null;
 
   constructor(
     botId: string,
@@ -68,7 +72,8 @@ export class GridTradingStrategy {
   async initialize(currentPrice: number): Promise<void> {
     this.currentPrice = currentPrice;
 
-    const snapshot = loadGridSnapshot(this.botId);
+    const snapResult = loadGridSnapshotResult(this.botId);
+    const snapshot = snapResult.status === "OK" ? snapResult.snapshot : null;
     const canRestore =
       snapshot !== null &&
       snapshot.version === GRID_SNAPSHOT_VERSION &&
@@ -76,37 +81,28 @@ export class GridTradingStrategy {
       snapshot.gridSize === this.config.gridSize &&
       snapshot.gridRangePercent === this.config.gridRangePercent;
 
-    if (canRestore) {
+    if (canRestore && snapshot) {
       // Restore at the saved baseline so level prices (and the live order IDs
       // sitting at them on the exchange) stay stable across a restart.
       this.baselinePrice = snapshot.baselinePrice;
-      const restored = this.mergeRestoredLevels(
+      this.levels = this.mergeRestoredLevels(
         this.buildLevels(snapshot.baselinePrice),
         snapshot.levels
       );
-      if (restored.length > 0) {
-        this.levels = restored;
-        const restoredCount = this.levels.filter(
+      logger.info("Grid strategy initialized (restored from snapshot)", {
+        symbol: this.config.symbol,
+        levels: this.levels.length,
+        restoredCount: this.levels.filter(
           l => l.buyOrderId || l.sellOrderId || l.filled
-        ).length;
-        logger.info("Grid strategy initialized (restored from snapshot)", {
-          symbol: this.config.symbol,
-          levels: this.levels.length,
-          restoredCount,
-          baselinePrice: this.baselinePrice,
-          botId: this.botId,
-        });
-      } else {
-        this.levels = this.buildLevels(currentPrice);
-        this.baselinePrice = currentPrice;
-        logger.info("Grid strategy initialized", {
-          symbol: this.config.symbol,
-          levels: this.levels.length,
-          baselinePrice: this.baselinePrice,
-          botId: this.botId,
-        });
-      }
+        ).length,
+        baselinePrice: this.baselinePrice,
+        botId: this.botId,
+      });
     } else {
+      // No trustworthy snapshot: before rebuilding (which would re-place levels
+      // whose orders may still be live) refuse when the venue holds orders we
+      // cannot map, or when we cannot ask (D1 — fail closed).
+      await this.requireEmptyBook(snapResult);
       this.levels = this.buildLevels(currentPrice);
       this.baselinePrice = currentPrice;
       logger.info("Grid strategy initialized", {
@@ -117,7 +113,74 @@ export class GridTradingStrategy {
       });
     }
 
+    // Wire order bookkeeping onto the (restored or fresh) levels.
+    this.manager = new OrderManager(this.levels, this.clientOrderIdGenerator);
+    this.reconcile = new OrderReconciliationService(
+      this.botId,
+      this.exchange,
+      this.config.symbol,
+      this.clientOrderIdGenerator,
+      this.manager
+    );
+
+    if (canRestore) {
+      const report = await this.reconcile.reconcileSymbol();
+      if (!report.reachable) {
+        throw new CommandError(
+          false,
+          `Grid startup reconciliation could not reach the exchange: ${report.reason}`
+        );
+      }
+      if (report.orphans.length > 0) {
+        logger.warn(
+          "Startup reconcile: live orders not owned by the grid (reported, not cancelled)",
+          {
+            botId: this.botId,
+            symbol: this.config.symbol,
+            adopted: report.adopted,
+            filled: report.filled,
+            orphans: report.orphans.map(o => ({
+              orderId: o.orderId,
+              clientOrderId: o.clientOrderId,
+              status: o.status,
+            })),
+          }
+        );
+      }
+    }
+
     await this.persistSnapshot();
+  }
+
+  /**
+   * Fail closed when there is no snapshot to trust. If the venue already holds
+   * orders for the symbol (or cannot be asked), rebuilding the grid could place
+   * a second order at a level that is already live — so refuse to start instead.
+   */
+  private async requireEmptyBook(
+    snapResult: SnapshotLoadResult
+  ): Promise<void> {
+    let open: ExchangeOpenOrder[];
+    try {
+      open = await this.exchange.listOpenOrders(this.config.symbol);
+    } catch (error) {
+      throw new CommandError(
+        false,
+        `Refusing to start: cannot verify open orders for ${this.config.symbol} (${messageOf(error)})`
+      );
+    }
+    if (open.length > 0) {
+      const detail =
+        snapResult.status === "CORRUPT"
+          ? `corrupt snapshot (${snapResult.detail})`
+          : snapResult.status === "MISSING"
+            ? "no snapshot"
+            : "snapshot does not match this config";
+      throw new CommandError(
+        false,
+        `Refusing to start: ${detail} while ${open.length} live order(s) exist for ${this.config.symbol}`
+      );
+    }
   }
 
   async start(): Promise<void> {
@@ -129,38 +192,50 @@ export class GridTradingStrategy {
     });
   }
 
-  async stop(): Promise<void> {
+  /**
+   * Stop the strategy and cancel its live orders. Returns one human-readable
+   * problem per order whose cancellation could not be confirmed (N5): the
+   * caller decides how to report it — a clean STOPPED must never hide live
+   * orders.
+   */
+  async stop(): Promise<string[]> {
     this.running = false;
-    // Cancel all pending orders
-    for (const level of this.levels) {
-      if (level.buyOrderId) {
-        try {
-          await this.exchange.cancelOrder(level.buyOrderId, this.config.symbol);
-        } catch {
-          /* Order may already be filled or cancelled */
-        }
-      }
-      if (level.sellOrderId) {
-        try {
-          await this.exchange.cancelOrder(
-            level.sellOrderId,
-            this.config.symbol
-          );
-        } catch {
-          /* Order may already be filled or cancelled */
-        }
-      }
-    }
+    const problems = await this.cancelAllOrders();
     logger.info("Grid strategy bot stopped", {
       botId: this.botId,
       symbol: this.config.symbol,
+      unresolved: problems.length,
     });
-
     await this.persistSnapshot();
+    return problems;
+  }
+
+  private async cancelAllOrders(): Promise<string[]> {
+    const problems: string[] = [];
+    for (let i = 0; i < this.levels.length; i++) {
+      for (const side of ["BUY", "SELL"] as const) {
+        const handle =
+          side === "BUY"
+            ? this.levels[i].buyOrderId
+            : this.levels[i].sellOrderId;
+        if (!handle) continue;
+        try {
+          // The adapter polls to confirmation; a thrown error means the cancel
+          // is NOT confirmed, so the slot is reported rather than assumed clean.
+          await this.exchange.cancelOrder(handle, this.config.symbol);
+          this.manager?.markNotFound(this.generateClientOrderId(i, side));
+        } catch (error) {
+          problems.push(
+            `${side}@${this.levels[i].price} not cancelled: ${messageOf(error)}`
+          );
+        }
+      }
+    }
+    return problems;
   }
 
   async tick(): Promise<void> {
-    if (!this.running) return;
+    if (!this.running || !this.reconcile) return;
 
     try {
       // Get current price
@@ -177,7 +252,15 @@ export class GridTradingStrategy {
           !level.buyOrderId &&
           !level.filled
         ) {
-          await this.placeBuyOrder(level, i);
+          const outcome = await this.reconcile.ensureSlotOrder(
+            i,
+            "BUY",
+            level.price,
+            this.config.orderQuantity
+          );
+          if (outcome.kind === "FILLED") {
+            this.recordTrade(i, level, "BUY", outcome);
+          }
         }
 
         // Sell order: place if price is at or above level and we have a position
@@ -186,22 +269,97 @@ export class GridTradingStrategy {
           !level.sellOrderId &&
           level.filled
         ) {
-          await this.placeSellOrder(level, i);
+          const outcome = await this.reconcile.ensureSlotOrder(
+            i,
+            "SELL",
+            level.price,
+            this.config.orderQuantity
+          );
+          if (outcome.kind === "FILLED") {
+            this.recordTrade(i, level, "SELL", outcome);
+          }
         }
       }
 
-      // Check order status
-      await this.checkOrders();
+      // Reconcile live slots against the exchange (fill / gone / unreachable).
+      await this.reconcileOrders();
 
       // Persist slot state unconditionally so a restart picks up fills/orders.
       await this.persistSnapshot();
     } catch (error) {
       logger.error("Grid strategy tick error", {
-        error: error instanceof Error ? error.message : String(error),
+        error: messageOf(error),
         botId: this.botId,
         symbol: this.config.symbol,
       });
     }
+  }
+
+  /**
+   * Verify every live slot against the exchange (throttled per slot). A slot
+   * whose order has vanished is cleared so it can be re-armed (N3); an
+   * unreachable exchange freezes it (the handle is left untouched).
+   */
+  private async reconcileOrders(): Promise<void> {
+    if (!this.reconcile) return;
+    for (let i = 0; i < this.levels.length; i++) {
+      const level = this.levels[i];
+      for (const side of ["BUY", "SELL"] as const) {
+        const handle = side === "BUY" ? level.buyOrderId : level.sellOrderId;
+        if (!handle) continue;
+
+        const clientOrderId = this.generateClientOrderId(i, side);
+        const lastCheck = this.lastOrderCheck.get(clientOrderId);
+        if (
+          lastCheck &&
+          Date.now() - lastCheck.getTime() <= ORDER_CHECK_INTERVAL_MS
+        ) {
+          continue;
+        }
+
+        const outcome = await this.reconcile.checkSlot(i, side);
+        if (outcome.kind === "FILLED") {
+          this.recordTrade(i, level, side, outcome);
+        }
+        this.lastOrderCheck.set(clientOrderId, new Date());
+      }
+    }
+  }
+
+  /**
+   * Record a fill and its simplified mark-to-market PnL. Executed-price
+   * accounting with fees is Phase 5, not something to change here.
+   */
+  private recordTrade(
+    levelIndex: number,
+    level: GridLevel,
+    side: "BUY" | "SELL",
+    outcome: Extract<SlotOutcome, { kind: "FILLED" }>
+  ): void {
+    const quantity = outcome.filledQty || this.config.orderQuantity;
+    const tradePnl =
+      side === "BUY"
+        ? (this.currentPrice - level.price) * this.config.orderQuantity
+        : (level.price - this.currentPrice) * this.config.orderQuantity;
+
+    this.totalTrades += 1;
+    this.totalPnl += tradePnl;
+    this.trades.push({
+      orderId: this.generateClientOrderId(levelIndex, side),
+      symbol: this.config.symbol,
+      side,
+      quantity,
+      price: level.price,
+      executedAt: new Date(),
+      pnl: tradePnl,
+    });
+
+    logger.info(side === "BUY" ? "Buy order filled" : "Sell order filled", {
+      price: level.price,
+      pnl: tradePnl.toFixed(2),
+      botId: this.botId,
+      symbol: this.config.symbol,
+    });
   }
 
   /**
@@ -210,8 +368,6 @@ export class GridTradingStrategy {
    * Delegates to `ClientOrderIdGenerator`, which packs the bot id, the level
    * index and the side into the exchange's `client_order_id` contract (max 36
    * chars, hyphen allowed but not first — see `utils/client-order-id.ts`).
-   * The same bot/level/side always yields the same id, so a redelivered
-   * command or a restart regenerates the key the exchange can match/reject.
    */
   private generateClientOrderId(
     levelIndex: number,
@@ -288,284 +444,6 @@ export class GridTradingStrategy {
 
   private async persistSnapshot(): Promise<void> {
     await saveGridSnapshot(this.buildSnapshot());
-  }
-
-  private async placeBuyOrder(level: GridLevel, index: number): Promise<void> {
-    return this.placeSlotOrder(level, index, "BUY");
-  }
-
-  private async placeSellOrder(level: GridLevel, index: number): Promise<void> {
-    return this.placeSlotOrder(level, index, "SELL");
-  }
-
-  /**
-   * Idempotent slot placement, shared by both sides.
-   *
-   * Every branch is driven by the contract's `OrderLookup`, so the failure
-   * semantics live in exactly one place instead of being re-implemented per
-   * side:
-   * - `FOUND_OPEN` — adopt the live order; a lost create response is never a
-   *   reason to place a second one.
-   * - `FOUND_FILLED` — the order already executed; record the fill.
-   * - `FOUND_CANCELED` / `NOT_FOUND` — definitively not live; place.
-   * - `UNREACHABLE` — the exchange could not be asked: leave the slot
-   *   untouched rather than risk a duplicate order.
-   */
-  private async placeSlotOrder(
-    level: GridLevel,
-    index: number,
-    side: "BUY" | "SELL"
-  ): Promise<void> {
-    // Deterministic clientOrderId: the same bot/level/side always derives the
-    // same key, so a redelivered command or a restart reconciles against the
-    // exchange instead of risking a duplicate submission.
-    const clientOrderId = this.generateClientOrderId(index, side);
-
-    // Get-before-create: adopt an already-live order (lost response) rather
-    // than submitting a second one for the same slot.
-    let lookup: OrderLookup;
-    try {
-      lookup = await this.exchange.queryOrderByClientOrderId(
-        this.config.symbol,
-        clientOrderId
-      );
-    } catch (error) {
-      logger.warn("Order slot frozen (lookup failed)", {
-        side,
-        price: level.price,
-        clientOrderId,
-        error: error instanceof Error ? error.message : String(error),
-        botId: this.botId,
-        symbol: this.config.symbol,
-      });
-      return;
-    }
-
-    if (lookup.kind === "UNREACHABLE") {
-      logger.warn("Order slot frozen (exchange unreachable)", {
-        side,
-        price: level.price,
-        clientOrderId,
-        reason: lookup.reason,
-        botId: this.botId,
-        symbol: this.config.symbol,
-      });
-      return;
-    }
-    if (lookup.kind === "FOUND_OPEN") {
-      this.adoptSlotOrder(level, side, lookup.order.orderId);
-      return;
-    }
-    if (lookup.kind === "FOUND_FILLED") {
-      this.recordFill(level, side, lookup.order.orderId, lookup.order.quantity);
-      return;
-    }
-    if (lookup.kind === "FOUND_CANCELED") {
-      logger.info("Re-placing canceled order", {
-        side,
-        price: level.price,
-        orderId: lookup.order.orderId,
-        botId: this.botId,
-        symbol: this.config.symbol,
-      });
-    }
-
-    const request: ExchangeOrderRequest = {
-      symbol: this.config.symbol,
-      orderType: "LIMIT",
-      side,
-      orderPrice: level.price,
-      orderQuantity: this.config.orderQuantity,
-      clientOrderId,
-    };
-
-    try {
-      const result = await this.exchange.createOrder(request);
-      this.setSlotOrderId(level, side, result.orderId);
-      logger.info("Placed order", {
-        side,
-        price: level.price,
-        orderId: result.orderId,
-        botId: this.botId,
-        symbol: this.config.symbol,
-      });
-    } catch (error) {
-      // The exchange may have accepted the order while the response was lost.
-      // Reconcile before giving up so we never double-place the same slot.
-      const recovered = await this.exchange
-        .queryOrderByClientOrderId(this.config.symbol, clientOrderId)
-        .catch(() => null);
-      if (recovered && recovered.kind === "FOUND_OPEN") {
-        this.adoptSlotOrder(level, side, recovered.order.orderId, true);
-        return;
-      }
-      if (recovered && recovered.kind === "FOUND_FILLED") {
-        this.recordFill(
-          level,
-          side,
-          recovered.order.orderId,
-          recovered.order.quantity
-        );
-        return;
-      }
-      logger.error("Failed to place order", {
-        side,
-        price: level.price,
-        error: error instanceof Error ? error.message : String(error),
-        botId: this.botId,
-        symbol: this.config.symbol,
-      });
-    }
-  }
-
-  /**
-   * Client-order-id lookup that never throws.
-   *
-   * The contract already reports "could not ask" as `UNREACHABLE`; a thrown
-   * error (adapter bug, malformed row) is folded into the same bucket rather
-   * than escaping into the tick, because the only safe reaction to an unknown
-   * outcome is to leave the slot alone.
-   */
-  private async lookupSlot(
-    index: number,
-    side: "BUY" | "SELL"
-  ): Promise<OrderLookup> {
-    try {
-      return await this.exchange.queryOrderByClientOrderId(
-        this.config.symbol,
-        this.generateClientOrderId(index, side)
-      );
-    } catch (error) {
-      return {
-        kind: "UNREACHABLE",
-        reason: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-
-  private slotOrderId(
-    level: GridLevel,
-    side: "BUY" | "SELL"
-  ): string | undefined {
-    return side === "BUY" ? level.buyOrderId : level.sellOrderId;
-  }
-
-  private setSlotOrderId(
-    level: GridLevel,
-    side: "BUY" | "SELL",
-    orderId?: string
-  ): void {
-    if (side === "BUY") {
-      level.buyOrderId = orderId;
-    } else {
-      level.sellOrderId = orderId;
-    }
-  }
-
-  /**
-   * Adopt an order the exchange already holds for this slot. A lost create
-   * response must never turn into a second live order on the same level.
-   */
-  private adoptSlotOrder(
-    level: GridLevel,
-    side: "BUY" | "SELL",
-    orderId: string,
-    recovered = false
-  ): void {
-    this.setSlotOrderId(level, side, orderId);
-    const meta = {
-      price: level.price,
-      orderId,
-      botId: this.botId,
-      symbol: this.config.symbol,
-    };
-    if (recovered) {
-      logger.warn("Reconciled slot order after submission error", meta);
-    } else {
-      logger.info("Adopted existing slot order (idempotent reconcile)", meta);
-    }
-  }
-
-  /**
-   * Record a fill and flip the slot to the side that closes it: a filled BUY
-   * arms the level's sell, a filled SELL re-arms its buy.
-   *
-   * PnL stays the simplified mark-to-market estimate it has always been —
-   * executed-price accounting with fees is workstream row 5, not something to
-   * change silently while decoupling the venue.
-   */
-  private recordFill(
-    level: GridLevel,
-    side: "BUY" | "SELL",
-    orderId: string,
-    executedQuantity?: number
-  ): void {
-    const quantity = executedQuantity || this.config.orderQuantity;
-    let tradePnl: number;
-    if (side === "BUY") {
-      level.filled = true;
-      tradePnl = (this.currentPrice - level.price) * this.config.orderQuantity;
-    } else {
-      level.filled = false;
-      tradePnl = (level.price - this.currentPrice) * this.config.orderQuantity;
-    }
-
-    this.setSlotOrderId(level, side, undefined);
-    this.lastOrderCheck.delete(orderId);
-    this.totalTrades++;
-    this.totalPnl += tradePnl;
-
-    this.trades.push({
-      orderId,
-      symbol: this.config.symbol,
-      side,
-      quantity,
-      price: level.price,
-      executedAt: new Date(),
-      pnl: tradePnl,
-    });
-
-    logger.info(side === "BUY" ? "Buy order filled" : "Sell order filled", {
-      price: level.price,
-      pnl: tradePnl.toFixed(2),
-      botId: this.botId,
-      symbol: this.config.symbol,
-      orderId,
-    });
-  }
-
-  private async checkOrders(): Promise<void> {
-    for (const level of this.levels) {
-      for (const side of ["BUY", "SELL"] as const) {
-        const orderId = this.slotOrderId(level, side);
-        if (!orderId) continue;
-
-        const lastCheck = this.lastOrderCheck.get(orderId);
-        if (
-          lastCheck &&
-          Date.now() - lastCheck.getTime() <= ORDER_CHECK_INTERVAL_MS
-        ) {
-          continue;
-        }
-        try {
-          const order = await this.exchange.getOrder(orderId);
-          if (order.status === "FILLED" || order.status === "FULLY_FILLED") {
-            this.recordFill(level, side, order.orderId, order.executedQuantity);
-          } else if (
-            order.status === "CANCELLED" ||
-            order.status === "REJECTED"
-          ) {
-            this.setSlotOrderId(level, side, undefined);
-          }
-          const currentId = this.slotOrderId(level, side);
-          if (currentId) {
-            this.lastOrderCheck.set(currentId, new Date());
-          }
-        } catch {
-          // Order may not exist anymore
-        }
-      }
-    }
   }
 
   getStatus(): BotStatus {

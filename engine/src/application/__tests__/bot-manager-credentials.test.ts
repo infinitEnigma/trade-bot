@@ -15,7 +15,7 @@ jest.mock("../../strategies/grid", () => ({
   GridTradingStrategy: jest.fn().mockImplementation(() => ({
     initialize: jest.fn().mockResolvedValue(undefined),
     start: jest.fn().mockResolvedValue(undefined),
-    stop: jest.fn().mockResolvedValue(undefined),
+    stop: jest.fn().mockResolvedValue([]),
     tick: jest.fn().mockResolvedValue(undefined),
   })),
 }));
