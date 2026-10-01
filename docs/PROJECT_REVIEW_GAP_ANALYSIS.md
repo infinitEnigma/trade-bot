@@ -106,8 +106,8 @@ the review and this incorporation.
 | 9 | `report-trade` endpoint still accepts `userId`/`strategyId` and updates all bots sharing the strategy | ❌ **Stale — fixed post-review** | Route deleted in `132fbd1` (zero engine callers; durable path = Phase 4 `TRADE_EXECUTED` event ingest) |
 | 10 | Credential issuance not DB-safe (check-then-insert race) | ❌ **Stale — fixed post-review** | `77506bf`: partial unique index `015_credentials_issued_unique.sql` + `ON CONFLICT DO NOTHING` → 409 |
 | 11 | Legacy HTTP writers (`/heartbeat`, `/report-trade`, `/bot-error`, `/bot-recovery`, `/engine-status`) still present | ❌ **Stale — fixed post-review** | Deleted in `132fbd1` + `cc8da7c`; liveness now comes from `EngineRegistryService.getEngineLiveness()` |
-| 12 | `OrderReconciliationService` still the most important missing abstraction (state machine `INTENDED → … → SAFE_TO_RECREATE`) | ✅ Confirmed open | No `OrderManager`/`OrderReconciliationService` exists under `engine/src` (repo grep) — section 4, Phase 2 |
-| 13 | Snapshot durability insufficient (no tmp+fsync+rename, no checksum; snapshot ≠ exchange truth) | ✅ Confirmed open | `engine/src/infrastructure/state/grid-state.ts:60` — plain `writeFile` — section 4, Phase 3 |
+| 12 | `OrderReconciliationService` still the most important missing abstraction (state machine `INTENDED → … → SAFE_TO_RECREATE`) | ✅ **Resolved post-review** | Implemented 2026-10-01 (`d746c4c`): `OrderManager` + `OrderReconciliationService` + `domain/order-state.ts` — section 4, Phase 2 |
+| 13 | Snapshot durability insufficient (no tmp+fsync+rename, no checksum; snapshot ≠ exchange truth) | ✅ **Resolved post-review** | Implemented 2026-10-01 (`d5aa842`): `durable-write.ts` + checksum + level validation; missing vs corrupt distinguished — section 4, Phase 3 |
 | 14 | Trade idempotency + bot-scoped statistics still missing | ✅ Confirmed open | N7 below; no unique `trades(order_id)`; Phase 4 is the single trade-write path now |
 | 15 | `position-repository` userId-only interface answers with the most recently updated row | ✅ Confirmed open | `position-repository.adapter.ts:60` documents the heuristic — section 4 (account-scoped domain APIs) |
 | 16 | Frontend still carries `bot.id === botId` \|\| `bot.strategy_id === botId` compatibility logic (residue: `strategy ≈ bot`) | ✅ Confirmed | `useBotLifecycle.ts:187,253` — section 3 residue |
@@ -119,9 +119,11 @@ Closed findings — the N-series resolution notes and every `#### L…` narrativ
 (L1–L30), plus the M1 emergency-stop record and the 2026-09-26/27 flow-audit
 evidence — are preserved verbatim in
 [`docs/archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md`](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md).
-Only findings that still apply to the code at `cc8da7c` are listed here.
+Only findings that applied to the code at `cc8da7c` are listed here. N3/N4/N5
+were resolved 2026-10-01 (Phase 2, `d746c4c`) and are kept as short records;
+N6/N7/R1/R2 remain open.
 
-### N3 — 🔴 P0: a missing exchange order permanently blocks a grid slot
+### N3 — ✅ Resolved (`d746c4c`): a missing exchange order permanently blocks a grid slot
 
 `grid.ts` polls each live order and swallows every failure:
 
@@ -137,7 +139,7 @@ from a transient network error — exactly the reviewer's "local order exists bu
 exchange order doesn't" case. **Owned by Phase 2** (`OrderManager` state machine
 with `NOT_FOUND → SAFE_TO_RECREATE`).
 
-### N4 — 🔴 P0: restart has no exchange cross-check (orphan/duplicate blind spot)
+### N4 — ✅ Resolved (`d746c4c`): restart has no exchange cross-check (orphan/duplicate blind spot)
 
 `initialize()` trusts the snapshot, and otherwise silently rebuilds the grid
 from the current price. Nothing lists the symbol's open orders and compares
@@ -151,7 +153,7 @@ order live at the _old_ index-0 price — is adopted into the _new_ level 0 at a
 _different_ price, so local state attributes an order to the wrong price level.
 **Owned by Phase 2 (startup reconciliation) + Phase 3 (snapshot durability).**
 
-### N5 — 🟠 P1: cancellation ambiguity is reported as `STOPPED`
+### N5 — ✅ Resolved (`d746c4c`): cancellation ambiguity was reported as `STOPPED`
 
 `GridTradingStrategy.stop()` swallows every `cancelOrder` failure, and the
 lifecycle coordinator then publishes `STATE_CHANGED → STOPPED`. The backend
@@ -211,13 +213,14 @@ Sequencing rationale: Phase 1 must precede Phase 2 (building reconciliation on
 top of a request that never carries `client_order_id` would be built on sand);
 Phase 3 protects the state Phase 2 depends on; Phases 4–5 make the outputs
 trustworthy; Phase 6 locks it in. Closed rows (phases 1, 8, 9; ledger L1–L30;
-M1) are in the archived cycle document.
+M1) are in the archived cycle document. **Phase 2 (`d746c4c`) and Phase 3
+(`d5aa842`) closed 2026-10-01** — see the rows below.
 
 | Phase | Priority | Item | Status |
 | ----- | -------- | ---- | ------ |
 | 0 | 🔴 P0 | **Prove the P0s before changing code.** Verify N1/N2 against the Orderly testnet (place a LIMIT with a `client_order_id`, then resubmit the same key and record the rejection); add a zero-client-id Orderly smoke test to the suite that runs on every PR. | 🔶 code-side done (`client.wire.test.ts`: body keys, signature verified with an independent implementation, resubmission returns `duplicate client order id`); **live testnet duplicate-order proof still open** |
-| 2 | 🔴 P0 | **`OrderManager` + `OrderReconciliationService`** (reviewer's PR 1 — next milestone). Explicit order state machine (`INTENDED → SUBMITTING → UNKNOWN → OPEN / FILLED / NOT_FOUND(SAFE_TO_RECREATE) / EXCHANGE_UNAVAILABLE`); startup reconciliation (list venue orders, adopt/cancel/report orphans — N4); `NOT_FOUND` vs `UNREACHABLE` distinguished (N3); confirmed cancellation instead of swallowed errors (N5). | ⬜ open — the central trading-reliability gap |
-| 3 | 🔴 P0 | **Snapshot durability** (reviewer's PR 1/2). Temp file → `fsync` → atomic rename; keep the previous snapshot; checksum + schema validation of level entries; distinguish "no snapshot" from "corrupt snapshot"; `snapshot ≠ exchange truth` stays explicit — reconciliation (Phase 2) is what makes the snapshot safe. | ⬜ open — `grid-state.ts:60` still plain `writeFile` |
+| 2 | 🔴 P0 | **`OrderManager` + `OrderReconciliationService`** (reviewer's PR 1 — next milestone). Explicit order state machine (`INTENDED → SUBMITTING → UNKNOWN → OPEN / FILLED / NOT_FOUND(SAFE_TO_RECREATE) / EXCHANGE_UNAVAILABLE`); startup reconciliation (list venue orders, adopt/cancel/report orphans — N4); `NOT_FOUND` vs `UNREACHABLE` distinguished (N3); confirmed cancellation instead of swallowed errors (N5). | ✅ Done `d746c4c` — `order-manager.ts` + `order-reconciliation.service.ts` + `domain/order-state.ts`; the grid routes every slot write through the manager |
+| 3 | 🔴 P0 | **Snapshot durability** (reviewer's PR 1/2). Temp file → `fsync` → atomic rename; keep the previous snapshot; checksum + schema validation of level entries; distinguish "no snapshot" from "corrupt snapshot"; `snapshot ≠ exchange truth` stays explicit — reconciliation (Phase 2) is what makes the snapshot safe. | ✅ Done `d5aa842` — `durable-write.ts` (tmp → fsync → rename, keep `.prev`) + checksum + level-entry validation |
 | 4 | 🟠 P1 | **Durable trading ledger** (reviewer's PR 2). Persist order/fill intent before create; wire `TRADE_EXECUTED` events to an idempotent DB write (unique `(bot_id, client_order_id, exchange_order_id, fill_id)`); fix the `trades.status` vocabulary; filter `bot_instances` updates by `bot_id`, not `strategy_id` (N7). | ⬜ open |
 | 5 | 🟠 P1 | **Accounting correctness** (reviewer's PR 3; N6). Sell at the next level / take-profit, PnL from executed price with fees, `reduce_only` exits, position reconciliation from exchange positions, explicit `PARTIALLY_FILLED`. | ⬜ open |
 | 6 | 🟡 P2 | **Failure-injection harness** (reviewer's PR 4). Fake exchange with scripted failures (accept-then-drop, timeout, 500, `NOT_FOUND`, duplicate-key rejection, partial fill) and a test matrix: crash at each step of create, Redis down/restart, restart with/without/corrupt snapshot, exchange-side orphans. | ⬜ open — only after Phases 2–3 exist |
@@ -237,6 +240,7 @@ M1) are in the archived cycle document.
 | 2026-09-27 (independent reviewer) | `f40f02a` | "Execution-integrity hardening" batch (dead `engine.ts` writers, credential idempotency, trade path) — all items ✅ Done 2026-09-30/10-01, see §2 rows 9–11. |
 | 2026-09-26/27 flow audits | live runs | L1–L24 narratives — all ✅ Done; archived with the cycle document. |
 | 2026-09-30 (M1 live gate) | `.git/gatelogs/prod/` | Emergency stop end-to-end, 20/20 live; two venue rules pinned. Ledger row M1 ✅ — archived. |
+| 2026-10-01 (engine hardening) | `main` @ `d746c4c` | Reviewer's PR 1 landed: Phase 3 durable snapshots (`d5aa842`) + Phase 2 `OrderManager`/`OrderReconciliationService` (N3/N4/N5 closed). Live Lighter duplicate-order proof still deferred. |
 | 2026-10-01 (independent reviewer) | `624e599` → verified @ `cc8da7c` | **This document.** Architecture no longer the concern; focus = reconciliation + durable financial state. |
 
 Earlier passes (2026-01 … 2026-09-14 ratings, the first gap-analysis rounds)
@@ -249,7 +253,7 @@ are in `docs/archived/` (`PROJECT_REVIEW.md`, the original
 
 | Priority | Item | Where |
 | -------- | ---- | ----- |
-| 🔴 P0 | **Engine trading-path hardening:** Phase 0 live duplicate-order proof, Phase 2 `OrderManager` + `OrderReconciliationService`, Phase 3 snapshot durability — the reviewer's PR 1 | §4 |
+| 🔴 P0 | **Engine trading-path hardening:** Phase 0 live Lighter duplicate-order proof (deferred — D5) — Phase 2 (`d746c4c`) and Phase 3 (`d5aa842`) ✅ Done | §4 |
 | 🟠 P1 | Durable order/fill ledger (Phase 4), accounting correctness (Phase 5), bot account sessions (plan §D), account-scoped position domain APIs | §4 |
 | 🟡 P2 | Failure-injection harness (Phase 6), agent participation (plan §E), frontend identity residue (R1), `shared` split (defer) | §4, §3 |
 
