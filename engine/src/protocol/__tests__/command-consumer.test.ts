@@ -19,9 +19,13 @@ describe("command-consumer processMessage", () => {
     acks: string[];
     ops: RedisStreamOperations;
     getPendingDeliveries: jest.Mock;
+    isMessageProcessed: jest.Mock;
+    markMessageProcessed: jest.Mock;
   } {
     const acks: string[] = [];
     const getPendingDeliveries = jest.fn(async () => deliveries);
+    const isMessageProcessed = jest.fn(async () => false);
+    const markMessageProcessed = jest.fn(async () => true);
     const ops = {
       ack: jest.fn(
         async (_stream: string, _group: string, streamId: string) => {
@@ -30,11 +34,15 @@ describe("command-consumer processMessage", () => {
         }
       ),
       getPendingDeliveries,
+      isMessageProcessed,
+      markMessageProcessed,
     };
     return {
       acks,
       ops: ops as unknown as RedisStreamOperations,
       getPendingDeliveries,
+      isMessageProcessed,
+      markMessageProcessed,
     };
   }
 
@@ -309,5 +317,76 @@ describe("command-consumer processMessage", () => {
     );
 
     expect(acks).toEqual(["1-24"]);
+  });
+
+  // ===========================================
+  // Durable dedup: the Redis marker survives restarts; the set does not
+  // ===========================================
+
+  it("ACKs a duplicate the durable Redis marker already knows (empty in-memory set)", async () => {
+    const { acks, ops, isMessageProcessed, markMessageProcessed } =
+      makeStreamOps();
+    const { manager, publishAccepted, handleStart } = makeManager();
+    isMessageProcessed.mockResolvedValue(true);
+    const command = startCommand("corr-dup");
+
+    await processMessage(ops, manager, msg("1-dedup-r", command), new Set());
+
+    expect(isMessageProcessed).toHaveBeenCalledWith(
+      "engine-commands",
+      command.messageId
+    );
+    expect(publishAccepted).not.toHaveBeenCalled();
+    expect(handleStart).not.toHaveBeenCalled();
+    expect(markMessageProcessed).not.toHaveBeenCalled();
+    expect(acks).toEqual(["1-dedup-r"]);
+  });
+
+  it("skips the Redis read when the in-memory set already has the messageId", async () => {
+    const { acks, ops, isMessageProcessed } = makeStreamOps();
+    const { manager, publishAccepted } = makeManager();
+    const command = startCommand("corr-mem");
+
+    await processMessage(
+      ops,
+      manager,
+      msg("1-dedup-m", command),
+      new Set([command.messageId])
+    );
+
+    expect(isMessageProcessed).not.toHaveBeenCalled();
+    expect(publishAccepted).not.toHaveBeenCalled();
+    expect(acks).toEqual(["1-dedup-m"]);
+  });
+
+  it("writes the durable marker after a successful dispatch", async () => {
+    const { acks, ops, markMessageProcessed } = makeStreamOps();
+    const { manager, publishAccepted, handleStart } = makeManager();
+    const command = startCommand("corr-ok");
+
+    await processMessage(ops, manager, msg("1-dedup-ok", command), new Set());
+
+    expect(publishAccepted).toHaveBeenCalledTimes(1);
+    expect(handleStart).toHaveBeenCalledTimes(1);
+    expect(markMessageProcessed).toHaveBeenCalledWith(
+      "engine-commands",
+      command.messageId
+    );
+    expect(acks).toEqual(["1-dedup-ok"]);
+  });
+
+  it("writes the durable marker for an ACKed non-retryable business failure", async () => {
+    const { acks, ops, markMessageProcessed } = makeStreamOps();
+    const { manager, handleStart } = makeManager();
+    handleStart.mockRejectedValue(new CommandError(false, "unknown market"));
+    const command = startCommand("corr-nr");
+
+    await processMessage(ops, manager, msg("1-dedup-nr", command), new Set());
+
+    expect(markMessageProcessed).toHaveBeenCalledWith(
+      "engine-commands",
+      command.messageId
+    );
+    expect(acks).toEqual(["1-dedup-nr"]);
   });
 });

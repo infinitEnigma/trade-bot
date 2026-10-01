@@ -2,7 +2,8 @@
  * Command Consumer
  *
  * Reads commands from Redis Streams and dispatches them to the BotManager.
- * Handles deduplication, pending message recovery, and poison message detection.
+ * Handles deduplication (in-memory fast path + Redis-backed durable markers),
+ * pending message recovery, and poison message detection.
  *
  * @format
  */
@@ -38,6 +39,11 @@ const PENDING_POISON_MAX_DELIVERIES = Number(
 const PENDING_INSIGHT_INTERVAL_MS = Number(
   process.env.PENDING_INSIGHT_INTERVAL_MS || 30_000
 );
+
+// Durable dedup (Redis marker scope + bounded in-memory fast path) — mirrors
+// the backend's engine-protocol.service constants.
+const DEDUP_SCOPE = "engine-commands";
+const DEDUP_SET_MAX_SIZE = 10_000;
 
 /**
  * Start listening for commands from the backend.
@@ -84,6 +90,46 @@ export async function listenForCommands(
 }
 
 /**
+ * Durable (Redis, TTL 24h) plus in-memory fast-path dedup check — the mirror
+ * of the backend's `engine-protocol.service` `alreadyProcessed()`. The set
+ * alone lost every processed messageId on restart, so a recovered pending
+ * command (`recoverPending` / XAUTOCLAIM) was re-dispatched after a crash.
+ * Both Redis helpers fail open (`streams.ts`): a double-dispatch beats a
+ * silently dropped command.
+ */
+async function alreadyProcessed(
+  streamOps: RedisStreamOperations,
+  processedMessageIds: Set<string>,
+  messageId: string
+): Promise<boolean> {
+  if (processedMessageIds.has(messageId)) {
+    return true;
+  }
+  return streamOps.isMessageProcessed(DEDUP_SCOPE, messageId);
+}
+
+/**
+ * Record a handled messageId in both layers — the mirror of the backend's
+ * `markProcessed()`. The in-memory set stays bounded (trimmed to the newest
+ * half past DEDUP_SET_MAX_SIZE); the Redis marker is the durable half.
+ */
+async function markProcessed(
+  streamOps: RedisStreamOperations,
+  processedMessageIds: Set<string>,
+  messageId: string
+): Promise<void> {
+  processedMessageIds.add(messageId);
+  if (processedMessageIds.size > DEDUP_SET_MAX_SIZE) {
+    const keep = Array.from(processedMessageIds).slice(-DEDUP_SET_MAX_SIZE / 2);
+    processedMessageIds.clear();
+    for (const id of keep) {
+      processedMessageIds.add(id);
+    }
+  }
+  await streamOps.markMessageProcessed(DEDUP_SCOPE, messageId);
+}
+
+/**
  * Validate, deduplicate, dispatch, and ACK a single stream message.
  *
  * Exported for unit tests (the `listenForCommands` loop itself never returns).
@@ -103,15 +149,20 @@ export async function processMessage(
       return;
     }
 
-    // Dedup check
-    if (processedMessageIds.has(data.messageId)) {
+    // Dedup check: in-memory fast path + durable Redis marker (24h TTL), so a
+    // command recovered from the PEL after a restart is not re-dispatched —
+    // the set alone forgot every processed messageId the moment the process
+    // died, and XAUTOCLAIM happily redelivers what a dead engine already ran.
+    if (
+      await alreadyProcessed(streamOps, processedMessageIds, data.messageId)
+    ) {
       logger.debug("Duplicate command ignored", { messageId: data.messageId });
       await safeAck(streamOps, msg.id);
       return;
     }
 
     await handleCommand(botManager, streamOps, data);
-    processedMessageIds.add(data.messageId);
+    await markProcessed(streamOps, processedMessageIds, data.messageId);
     await safeAck(streamOps, msg.id);
   } catch (error) {
     logger.error("Failed to process command", {
@@ -125,7 +176,7 @@ export async function processMessage(
     const retryable =
       !data || !(error instanceof CommandError) ? true : error.retryable;
     if (!retryable && data) {
-      processedMessageIds.add(data.messageId);
+      await markProcessed(streamOps, processedMessageIds, data.messageId);
       await safeAck(streamOps, msg.id);
       return;
     }
@@ -147,7 +198,7 @@ export async function processMessage(
         }
       );
       if (data) {
-        processedMessageIds.add(data.messageId);
+        await markProcessed(streamOps, processedMessageIds, data.messageId);
       }
       await safeAck(streamOps, msg.id);
     }
