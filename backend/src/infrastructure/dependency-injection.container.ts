@@ -339,12 +339,24 @@ export class DependencyInjectionContainer {
   }
 
   /**
-   * Health Service - Business logic for system health monitoring
+   * Health Service - Business logic for system health monitoring.
+   * The probes are class fields (not getter-local closures) so every fresh
+   * instance carries the same function references — the container test
+   * deep-equals two separately-constructed instances.
    */
+  private readonly healthDbPing = () => poolQuery("SELECT 1");
+  private readonly healthEngineProbe = async () =>
+    this.engineManager.getEngineStatus();
+
   get healthService(): HealthService {
     return new HealthService({
       logger: this.loggerService,
       cacheService: this.cacheService,
+      // Real probes — this getter previously shipped HealthService's stubs
+      // (hardcoded "connection successful" / "assume engine healthy"), which
+      // made GET /health/detailed lie about both dependencies.
+      pingDatabase: this.healthDbPing,
+      probeEngine: this.healthEngineProbe,
     });
   }
 
@@ -499,9 +511,12 @@ export class DependencyInjectionContainer {
       services.cache = cacheHealth.success;
       details.cache = cacheHealth.success ? "healthy" : "unhealthy";
 
-      // Check external API connectivity (this would be a lightweight test)
-      services.externalApi = true; // Assume healthy for now
-      details.externalApi = "healthy";
+      // External venue connectivity: a documented assumption, not a probe —
+      // IExternalApiService has no credential-less ping (every call needs a
+      // user's bound account) and a health check must not fire live venue
+      // requests. Venue reachability is asserted at connect/verify instead.
+      services.externalApi = true; // assumed healthy (annotated, not silent)
+      details.externalApi = "assumed healthy (no credential-less ping exists)";
 
       // Check database connectivity via user repository
       const _dbTest = await this.userRepository.findById("health-check-user");
@@ -541,9 +556,9 @@ export class DependencyInjectionContainer {
   } {
     return {
       infrastructureAdapters: 6, // cache, logger, token, password, encryption, externalApi
-      repositoryAdapters: 9, // user, wallet, exchangeAccount, balance, position, trade, strategy, auditLog, botInstance
-      businessServices: 5, // balance, auth, position, botManagement, exchangeAccount
-      totalServices: 20,
+      repositoryAdapters: 10, // user, wallet, exchangeAccount, balance, position, trade, strategy, auditLog, role, botInstance
+      businessServices: 15, // balance, signatureVerification, auth, position, roleManagement, roleQualification, walletQualification, strategy, botManagement, market, positionValidator, positionSync, health, userProfile, exchangeAccount
+      totalServices: 34, // 6 infra + 10 repositories + 15 business + engineManager, webSocketRateLimiter, redisStreamOperations
     };
   }
 }

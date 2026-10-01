@@ -137,68 +137,6 @@ describe("BotManagementService", () => {
     });
   });
 
-  describe("Get Bot Status", () => {
-    it("should retrieve bot status information", async () => {
-      const deps = createMockDependencies();
-      const botManagementService = new BotManagementService(deps);
-
-      const testBotId = "bot-123";
-      const mockBotInstance = {
-        id: testBotId,
-        user_id: "user-123",
-        status: "RUNNING",
-      };
-      (
-        deps.botInstanceRepository.getBotInstance as jest.Mock
-      ).mockResolvedValue(mockBotInstance);
-
-      const result = await botManagementService.getBotStatus(testBotId);
-
-      expect(result).toEqual(
-        expect.objectContaining({
-          ...mockBotInstance,
-          statusValidation: expect.any(Object),
-        })
-      );
-      expect(result.statusValidation.isStale).toBe(false);
-      expect(deps.botInstanceRepository.getBotInstance).toHaveBeenCalledWith(
-        testBotId
-      );
-      expect(deps.logger.debug).toHaveBeenCalled();
-    });
-
-    it("should throw error if bot not found", async () => {
-      const deps = createMockDependencies();
-      const botManagementService = new BotManagementService(deps);
-
-      const testBotId = "bot-123";
-      (
-        deps.botInstanceRepository.getBotInstance as jest.Mock
-      ).mockResolvedValue(null);
-
-      await expect(
-        botManagementService.getBotStatus(testBotId)
-      ).rejects.toThrow("Failed to get bot status");
-      expect(deps.logger.error).toHaveBeenCalled();
-    });
-
-    it("should handle errors when getting bot status", async () => {
-      const deps = createMockDependencies();
-      const botManagementService = new BotManagementService(deps);
-
-      const testBotId = "bot-123";
-      const testError = new Error("Database error");
-      (
-        deps.botInstanceRepository.getBotInstance as jest.Mock
-      ).mockRejectedValue(testError);
-
-      await expect(
-        botManagementService.getBotStatus(testBotId)
-      ).rejects.toThrow("Failed to get bot status");
-      expect(deps.logger.error).toHaveBeenCalled();
-    });
-  });
-
   describe("Get Bot Performance", () => {
     it("should retrieve bot performance metrics", async () => {
       const deps = createMockDependencies();

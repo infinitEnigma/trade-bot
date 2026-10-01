@@ -39,19 +39,6 @@ export interface BotManagementServiceDependencies {
   logger: ILogger;
 }
 
-/** Lifecycle snapshot returned by {@link BotManagementService.getBotStatus}. */
-export interface BotStatusSnapshot extends BotInstanceRecord {
-  statusValidation: {
-    isStale: boolean;
-    lastHeartbeatAge: number;
-    engineHealth: {
-      running: boolean;
-      lastHealthCheck: number;
-      status: string;
-    };
-  };
-}
-
 /** Metrics returned by {@link BotManagementService.getBotPerformance}. */
 export interface BotPerformanceMetrics {
   totalTrades: number;
@@ -103,41 +90,6 @@ export class BotManagementService {
         botId: id,
       });
       throw new Error("Failed to get bot instance");
-    }
-  }
-
-  /**
-   * Get bot status
-   */
-  async getBotStatus(botId: string): Promise<BotStatusSnapshot> {
-    try {
-      const botInstance =
-        await this.deps.botInstanceRepository.getBotInstance(botId);
-      if (!botInstance) {
-        throw new Error("Bot not found");
-      }
-
-      const statusInfo = {
-        ...botInstance,
-        statusValidation: {
-          isStale: false,
-          lastHeartbeatAge: 0,
-          engineHealth: {
-            running: true,
-            lastHealthCheck: Date.now(),
-            status: "healthy",
-          },
-        },
-      };
-
-      this.deps.logger.debug("Bot status retrieved successfully", { botId });
-      return statusInfo;
-    } catch (error) {
-      this.deps.logger.error("Failed to get bot status", {
-        error: error instanceof Error ? error.message : String(error),
-        botId,
-      });
-      throw new Error("Failed to get bot status");
     }
   }
 

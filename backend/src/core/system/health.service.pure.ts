@@ -7,12 +7,19 @@
  * @format
  */
 
+import { monitorEventLoopDelay } from "perf_hooks";
 import { ILogger, ICacheService } from "@trade-bot/shared";
 
 export interface HealthServiceDependencies {
   logger: ILogger;
   cacheService: ICacheService;
-  // We should also abstract the database query, but for now, let's fix the logger and cache
+  /** Real DB probe (SELECT 1 through the pool); must reject when unreachable. */
+  pingDatabase: () => Promise<unknown>;
+  /**
+   * Real engine probe — the engine manager pings the engine's
+   * `/api/engine/health`; `running: false` means the engine is down.
+   */
+  probeEngine: () => Promise<{ running: boolean }>;
 }
 
 /** Outcome of a single health check. */
@@ -46,6 +53,14 @@ export interface PerformanceMetricsSnapshot {
   memory: NodeJS.MemoryUsage;
   eventLoop: number;
 }
+
+/**
+ * Event-loop delay histogram for this process — enabled once at import so
+ * every HealthService instance (the container builds a fresh one per
+ * getter access) samples the same lifetime window.
+ */
+const eventLoopDelay = monitorEventLoopDelay({ resolution: 10 });
+eventLoopDelay.enable();
 
 export class HealthService {
   constructor(private deps: HealthServiceDependencies) {}
@@ -100,19 +115,20 @@ export class HealthService {
   }
 
   /**
-   * Check API status
+   * Check API status — self-liveness: reaching this check means the API
+   * process is up and serving requests, so the constant answer is the truth.
    */
   private async checkApiStatus(): Promise<string> {
     return "API is running";
   }
 
   /**
-   * Check database connectivity
+   * Check database connectivity — real probe through the injected pool ping;
+   * a failed connection rejects and the aggregate marks the check unhealthy.
    */
   private async checkDatabaseStatus(): Promise<string> {
     try {
-      // Note: We should abstract this with a database adapter
-      // For now, we'll mock this check to avoid direct database dependency
+      await this.deps.pingDatabase();
       return "Database connection successful";
     } catch (error) {
       this.deps.logger.error("Database health check failed", {
@@ -141,11 +157,23 @@ export class HealthService {
   }
 
   /**
-   * Check trading engine status
+   * Check trading engine status — real probe through the engine manager's
+   * HTTP health endpoint (2s timeout, `running: false` when unreachable);
+   * previously this returned a hardcoded "assume engine is healthy".
    */
   private async checkTradingEngineStatus(): Promise<string> {
-    // For now, assume engine is healthy
-    return "Trading engine is running";
+    try {
+      const status = await this.deps.probeEngine();
+      if (!status.running) {
+        throw new Error("Trading engine is not running");
+      }
+      return "Trading engine is running";
+    } catch (error) {
+      this.deps.logger.error("Trading engine health check failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   /**
@@ -195,19 +223,32 @@ export class HealthService {
   }
 
   /**
-   * Get CPU usage (simple approximation)
+   * Get CPU usage — real measurement: cumulative CPU burned since process
+   * start as a percentage of one core's wall time (process.cpuUsage() is in
+   * µs, so µs / (uptime seconds × 10 000) = percent), clamped to the
+   * metric's 0–100 contract (a multi-core burst can exceed 100 early on).
    */
   private getCpuUsage(): number {
-    // Simple CPU usage approximation
-    return Math.floor(Math.random() * 100);
+    const usage = process.cpuUsage();
+    const uptimeSeconds = process.uptime();
+    if (uptimeSeconds <= 0) {
+      return 0;
+    }
+    const percent = (usage.user + usage.system) / (uptimeSeconds * 10_000);
+    return Math.min(100, Math.max(0, Math.round(percent)));
   }
 
   /**
-   * Get event loop delay
+   * Get event loop delay — real measurement: the mean of the process-lifetime
+   * `monitorEventLoopDelay` histogram (ns → ms, 2 decimals); 0 until the
+   * first sample lands. Previously a `Math.random()` value.
    */
   private getEventLoopDelay(): number {
-    // For now, return random value
-    return Math.floor(Math.random() * 50);
+    const meanNs = eventLoopDelay.mean;
+    if (!Number.isFinite(meanNs) || meanNs <= 0) {
+      return 0;
+    }
+    return Math.round((meanNs / 1e6) * 100) / 100;
   }
 }
 
