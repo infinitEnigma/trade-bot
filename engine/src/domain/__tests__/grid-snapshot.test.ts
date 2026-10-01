@@ -3,6 +3,7 @@ import * as path from "path";
 import * as fs from "fs";
 import {
   loadGridSnapshot,
+  loadGridSnapshotResult,
   saveGridSnapshot,
   getSnapshotDir,
 } from "../../infrastructure/state/grid-state";
@@ -106,5 +107,87 @@ describe("grid-snapshot state persistence", () => {
     process.env.GRID_SNAPSHOT_DIR = file;
 
     await expect(saveGridSnapshot(validSnapshot())).resolves.toBeUndefined();
+  });
+
+  describe("durability (Phase 3)", () => {
+    it("reports MISSING (not CORRUPT) when no snapshot exists", () => {
+      useTempDir();
+      expect(loadGridSnapshotResult("bot-1")).toEqual({ status: "MISSING" });
+    });
+
+    it("writes a checksum and leaves no temp file behind", async () => {
+      useTempDir();
+      await saveGridSnapshot(validSnapshot());
+
+      const onDisk = JSON.parse(
+        fs.readFileSync(path.join(tmpDir, "bot-1.json"), "utf-8")
+      );
+      expect(typeof onDisk.checksum).toBe("string");
+      expect(onDisk.checksum).toHaveLength(64);
+
+      const leftovers = fs.readdirSync(tmpDir).filter(f => f.endsWith(".tmp"));
+      expect(leftovers).toEqual([]);
+      // A clean round-trip still validates.
+      expect(loadGridSnapshotResult("bot-1").status).toBe("OK");
+    });
+
+    it("recovers the previous version when the current file is corrupt", async () => {
+      useTempDir();
+      const first = { ...validSnapshot(), baselinePrice: 100 };
+      const second = { ...validSnapshot(), baselinePrice: 200 };
+      await saveGridSnapshot(first);
+      await saveGridSnapshot(second);
+
+      // Corrupt the live file; the previous version (baseline 100) survives.
+      fs.writeFileSync(
+        path.join(tmpDir, "bot-1.json"),
+        "{half-written",
+        "utf-8"
+      );
+
+      const result = loadGridSnapshotResult("bot-1");
+      expect(result.status).toBe("OK");
+      if (result.status === "OK") {
+        expect(result.snapshot.baselinePrice).toBe(100);
+      }
+    });
+
+    it("reports CORRUPT when both the current and previous files are corrupt", async () => {
+      useTempDir();
+      fs.mkdirSync(tmpDir, { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, "bot-1.json"), "not json", "utf-8");
+      fs.writeFileSync(
+        path.join(tmpDir, "bot-1.json.prev"),
+        "also bad",
+        "utf-8"
+      );
+      expect(loadGridSnapshotResult("bot-1").status).toBe("CORRUPT");
+    });
+
+    it("rejects a checksum mismatch", async () => {
+      useTempDir();
+      await saveGridSnapshot(validSnapshot());
+      const file = path.join(tmpDir, "bot-1.json");
+      const tampered = JSON.parse(fs.readFileSync(file, "utf-8"));
+      // Change the payload but keep the original checksum.
+      tampered.baselinePrice = 999;
+      fs.writeFileSync(file, JSON.stringify(tampered), "utf-8");
+      expect(loadGridSnapshotResult("bot-1").status).toBe("CORRUPT");
+    });
+
+    it("rejects a snapshot with an invalid level entry", () => {
+      useTempDir();
+      fs.mkdirSync(tmpDir, { recursive: true });
+      const bad = {
+        ...validSnapshot(),
+        levels: [{ price: "not-a-number", filled: false }],
+      };
+      fs.writeFileSync(
+        path.join(tmpDir, "bot-1.json"),
+        JSON.stringify(bad),
+        "utf-8"
+      );
+      expect(loadGridSnapshotResult("bot-1").status).toBe("CORRUPT");
+    });
   });
 });
