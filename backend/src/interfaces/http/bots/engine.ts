@@ -116,8 +116,9 @@ const botEngineAuth = (req: Request, res: Response, next: NextFunction) => {
 // - bot must exist with desired_state = RUNNING
 // - bot must be bound to an ACTIVE exchange account
 //   (legacy unbound rows get 409: recreate the bot with an account)
-// - credentials are issued at most once per (botId, correlationId),
-//   enforced via a bot_lifecycle_events marker row.
+// - credentials are issued at most once per (botId, correlationId):
+//   marker SELECT (fast path) + partial unique index with ON CONFLICT
+//   (race guard, migration 015_credentials_issued_unique.sql).
 router.get(
   "/credentials/:botId",
   botEngineAuth,
@@ -154,7 +155,10 @@ router.get(
           .json({ success: false, error: "Bot is not in a startable state" });
       }
 
-      // Issue at most once per (botId, correlationId).
+      // Issue at most once per (botId, correlationId). This SELECT is only
+      // the fast path — check-then-insert alone lets two concurrent fetches
+      // both pass it; the INSERT below is arbitrated by the partial unique
+      // index from migration 015.
       const issuedMarker = await query(
         "SELECT id FROM bot_lifecycle_events WHERE bot_id = $1 AND event_type = 'CREDENTIALS_ISSUED' AND correlation_id = $2",
         [botId, correlationId]
@@ -237,11 +241,24 @@ router.get(
               },
             };
 
-      await query(
+      // The partial unique index (migration 015) arbitrates concurrent
+      // fetches: if a competing request already inserted this marker,
+      // DO NOTHING yields rowCount 0 and the envelope must not go out twice.
+      const marker = await query(
         `INSERT INTO bot_lifecycle_events (bot_id, event_type, correlation_id, metadata)
-             VALUES ($1, 'CREDENTIALS_ISSUED', $2, '{}')`,
+             VALUES ($1, 'CREDENTIALS_ISSUED', $2, '{}')
+             ON CONFLICT (bot_id, correlation_id)
+             WHERE event_type = 'CREDENTIALS_ISSUED'
+             DO NOTHING
+             RETURNING id`,
         [botId, correlationId]
       );
+      if (marker.rowCount === 0) {
+        return res.status(409).json({
+          success: false,
+          error: "Credentials already issued for this correlation",
+        });
+      }
 
       logger.info("Engine credentials issued", {
         botId,

@@ -597,9 +597,23 @@ describe("Bots Controller", () => {
 
   describe("Bot Engine Routes", () => {
     describe("GET /api/bot/engine/credentials/:botId", () => {
-      /** Queues the route's own queries: bot lookup, marker check, marker insert. */
-      const queueRouteQueries = () => {
+      /**
+       * Queues the route's own queries: bot lookup, marker check, marker insert.
+       * Also hands back the mocked binding resolver so a test can set it up
+       * without a second inline `require()`.
+       */
+      const queueRouteQueries = (
+        markerInsert: { rows: unknown[]; rowCount: number } = {
+          rows: [{ id: "marker-1" }],
+          rowCount: 1,
+        }
+      ) => {
         const query = require("../../../src/database/pool").query;
+        const {
+          getBotBoundAccountSecrets,
+        } = jest.requireMock(
+          "../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter"
+        );
         query
           .mockResolvedValueOnce({
             rows: [
@@ -611,12 +625,12 @@ describe("Bots Controller", () => {
             ],
           }) // bot lookup
           .mockResolvedValueOnce({ rows: [] }) // no prior issuance
-          .mockResolvedValueOnce({}); // issuance marker insert
-        return query;
+          .mockResolvedValueOnce(markerInsert); // issuance marker insert (real query() always reports rowCount)
+        return { query, getBotBoundAccountSecrets };
       };
 
       it("should issue the bound account's exchange-agnostic kodiak envelope", async () => {
-        const query = queueRouteQueries();
+        const { query } = queueRouteQueries();
         const {
           getBotBoundAccountSecrets,
         } = require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter");
@@ -653,9 +667,13 @@ describe("Bots Controller", () => {
           "bot-1",
           expect.any(Object)
         );
-        // The at-most-once marker is still written after a successful issue.
+        // The at-most-once marker is still written after a successful issue,
+        // now atomically: the INSERT must carry the ON CONFLICT arbiter of
+        // the partial unique index (migration 015), not a bare INSERT.
         expect(query).toHaveBeenCalledWith(
-          expect.stringContaining("CREDENTIALS_ISSUED"),
+          expect.stringMatching(
+            /INSERT INTO bot_lifecycle_events[\s\S]*ON CONFLICT \(bot_id, correlation_id\)[\s\S]*DO NOTHING[\s\S]*RETURNING id/
+          ),
           ["bot-1", "corr-1"]
         );
       });
@@ -719,6 +737,40 @@ describe("Bots Controller", () => {
 
         expect(response.body.success).toBe(false);
         expect(response.body.error).toContain("no verified exchange account");
+      });
+
+      it("should 409 when the marker insert loses the concurrent-fetch race", async () => {
+        // The SELECT fast path passes for both fetches; only the index
+        // arbitration decides, and the loser must not receive the envelope.
+        const { query, getBotBoundAccountSecrets } = queueRouteQueries({
+          rows: [],
+          rowCount: 0,
+        });
+        getBotBoundAccountSecrets.mockResolvedValue({
+          account: { environment: "testnet", accountRef: "kodiak-account-id" },
+          request: {
+            exchange: "kodiak",
+            environment: "testnet",
+            accountId: "kodiak-account-id",
+            apiKey: "api-key",
+            secretKey: "secret-key",
+          },
+        });
+
+        const response = await request(app)
+          .get("/api/bot/engine/credentials/bot-race?correlationId=corr-race")
+          .set("x-bot-engine-key", "test-engine-key")
+          .expect(409);
+
+        expect(response.body.success).toBe(false);
+        expect(response.body.error).toContain("already issued");
+        // The envelope the losing fetch built must never be sent.
+        expect(response.body.data).toBeUndefined();
+        // The insert still went through the index-arbitrated statement.
+        expect(query).toHaveBeenCalledWith(
+          expect.stringMatching(/ON CONFLICT \(bot_id, correlation_id\)/),
+          ["bot-race", "corr-race"]
+        );
       });
     });
 
