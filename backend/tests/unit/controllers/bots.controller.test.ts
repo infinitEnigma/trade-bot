@@ -596,66 +596,6 @@ describe("Bots Controller", () => {
   });
 
   describe("Bot Engine Routes", () => {
-    describe("POST /api/bot/engine/heartbeat", () => {
-      it("should record bot heartbeat", async () => {
-        const query = require("../../../src/database/pool").query;
-        query
-          .mockResolvedValueOnce({ rows: [{}] }) // Check bot exists
-          .mockResolvedValueOnce({}); // Update bot
-
-        const response = await request(app)
-          .post("/api/bot/engine/heartbeat")
-          .set("x-bot-engine-key", "test-engine-key")
-          .send({
-            bot_id: "bot-1",
-            status: "RUNNING",
-            position: 100,
-            exposure: 50,
-            timestamp: Date.now(),
-          })
-          .expect(200);
-
-        expect(response.body.success).toBe(true);
-        expect(query).toHaveBeenCalled();
-      });
-    });
-
-    describe("POST /api/bot/engine/report-trade", () => {
-      it("should record trade report", async () => {
-        const query = require("../../../src/database/pool").query;
-        query
-          .mockResolvedValueOnce({}) // Insert trade
-          .mockResolvedValueOnce({}); // Update bot statistics
-
-        // Create a new app with properly mocked io
-        const testApp = createTestApp();
-        testApp.set("io", {
-          to: jest.fn().mockReturnThis(),
-          emit: jest.fn(),
-        });
-
-        const response = await request(testApp)
-          .post("/api/bot/engine/report-trade")
-          .set("x-bot-engine-key", "test-engine-key")
-          .send({
-            userId: "user-123",
-            strategyId: "strategy-1",
-            orderId: "order-1",
-            symbol: "PERP_BTC_USDC",
-            side: "BUY",
-            quantity: 0.5,
-            price: 50000,
-            pnl: 100,
-            fee: 0.1,
-            status: "FILLED",
-          })
-          .expect(200);
-
-        expect(response.body.success).toBe(true);
-        expect(query).toHaveBeenCalled();
-      });
-    });
-
     describe("GET /api/bot/engine/credentials/:botId", () => {
       /** Queues the route's own queries: bot lookup, marker check, marker insert. */
       const queueRouteQueries = () => {

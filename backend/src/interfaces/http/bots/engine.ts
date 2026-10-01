@@ -1,8 +1,17 @@
 /**
  * Bot Engine Routes
  *
- * Handles communication between the bot engine and backend API.
- * Processes heartbeats, trade reports, and engine status updates.
+ * Out-of-band HTTP surface between the bot engine and the backend API,
+ * gated by botEngineAuth (x-bot-engine-key): lifecycle credential issue
+ * (GET /credentials/:botId), the engine-status acknowledgement, and the
+ * status/health probes.
+ *
+ * The legacy writer routes - POST /heartbeat, /report-trade, /bot-error
+ * and /bot-recovery - were removed: a repo-wide search found zero engine
+ * callers. Liveness flows via ENGINE_HEARTBEAT events (engine-registry),
+ * and trade ingestion is planned through the TRADE_EXECUTED event path
+ * (Phase 4), not HTTP. See docs/PROJECT_REVIEW_GAP_ANALYSIS.md §2 claims
+ * 1 and 3.
  */
 
 import { Router, Request, Response, NextFunction } from "express";
@@ -94,78 +103,6 @@ const botEngineAuth = (req: Request, res: Response, next: NextFunction) => {
 
   next();
 };
-
-// POST /api/bot/heartbeat (called by bot engine)
-router.post(
-  "/heartbeat",
-  botEngineAuth,
-  async (req: Request, res: Response) => {
-    try {
-      const { bot_id, status, position, exposure, timestamp } = req.body;
-
-      if (!bot_id) {
-        return res
-          .status(400)
-          .json({ success: false, error: "Bot ID required" });
-      }
-
-      // Validate bot exists (simplified - no ownership validation for engine calls)
-      const botExists = await query(
-        "SELECT id FROM bot_instances WHERE id = $1",
-        [bot_id]
-      );
-      if (botExists.rows.length === 0) {
-        return res.status(404).json({ success: false, error: "Bot not found" });
-      }
-
-      // Update bot with heartbeat data
-      await query(
-        `UPDATE bot_instances
-             SET status = $1, position = $2, exposure = $3, last_heartbeat = $4, updated_at = CURRENT_TIMESTAMP
-             WHERE id = $5`,
-        [
-          status,
-          position || 0,
-          exposure || 0,
-          new Date(timestamp || Date.now()),
-          bot_id,
-        ]
-      );
-
-      logger.info("Bot heartbeat received", {
-        botId: bot_id,
-        status,
-        position,
-        exposure,
-      });
-
-      res.json({ success: true });
-    } catch (error) {
-      const err = error as Error;
-      logger.error("Heartbeat error", err, {
-        botId: req.body?.bot_id,
-      });
-
-      // Notify about heartbeat processing failures
-      await errorNotificationService.notifyError(
-        err,
-        {
-          category: ErrorCategory.SYSTEM,
-          operation: "bot_heartbeat_processing",
-          metadata: {
-            botId: req.body?.bot_id,
-            heartbeatFailure: true,
-          },
-        },
-        ErrorSeverity.MEDIUM
-      );
-
-      res
-        .status(500)
-        .json({ success: false, error: "Failed to record heartbeat" });
-    }
-  }
-);
 
 // GET /api/bot/engine/credentials/:botId?correlationId=... (called by engine)
 //
@@ -326,127 +263,6 @@ router.get(
   }
 );
 
-// POST /api/bot/report-trade (called by bot engine)
-router.post(
-  "/report-trade",
-  botEngineAuth,
-  async (req: Request, res: Response) => {
-    try {
-      const {
-        userId,
-        strategyId,
-        orderId,
-        symbol,
-        side,
-        quantity,
-        price,
-        pnl,
-        fee,
-        status,
-      } = req.body;
-
-      if (!userId || !orderId) {
-        return res
-          .status(400)
-          .json({ success: false, error: "Missing required fields" });
-      }
-
-      // Insert trade record
-      await query(
-        `INSERT INTO trades (user_id, strategy_id, order_id, symbol, side, quantity, price, pnl, fee, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [
-          userId,
-          strategyId,
-          orderId,
-          symbol,
-          side,
-          quantity,
-          price,
-          pnl,
-          fee,
-          status,
-        ]
-      );
-
-      // Update bot statistics
-      if (strategyId) {
-        await query(
-          `UPDATE bot_instances
-                 SET total_trades = total_trades + 1,
-                     total_pnl = total_pnl + COALESCE($1, 0),
-                     updated_at = CURRENT_TIMESTAMP
-                 WHERE strategy_id = $2`,
-          [pnl, strategyId]
-        );
-      }
-
-      // Performance cache invalidation removed - bot services not implemented
-
-      // Emit WebSocket event to notify frontend
-      const io = req.app.get("io");
-      if (io) {
-        io.to(`user:${userId}`).emit("trade:executed", {
-          userId,
-          strategyId,
-          orderId,
-          symbol,
-          side,
-          quantity,
-          price,
-          pnl,
-          fee,
-          status,
-          timestamp: Date.now(),
-        });
-      }
-
-      logger.info("Trade reported successfully", {
-        userId,
-        strategyId,
-        orderId,
-        symbol,
-        side,
-        quantity,
-        price,
-        pnl,
-        status,
-      });
-
-      res.json({ success: true });
-    } catch (error) {
-      const err = error as Error;
-      logger.error("Report trade error", err, {
-        tradeData: {
-          userId: req.body?.userId,
-          strategyId: req.body?.strategyId,
-          orderId: req.body?.orderId,
-          symbol: req.body?.symbol,
-        },
-      });
-
-      // Notify about trade reporting failures
-      await errorNotificationService.notifyError(
-        err,
-        {
-          category: ErrorCategory.BUSINESS_LOGIC,
-          operation: "trade_reporting",
-          userId: req.body?.userId,
-          metadata: {
-            strategyId: req.body?.strategyId,
-            orderId: req.body?.orderId,
-            symbol: req.body?.symbol,
-            tradeReportingFailure: true,
-          },
-        },
-        ErrorSeverity.HIGH
-      );
-
-      res.status(500).json({ success: false, error: "Failed to report trade" });
-    }
-  }
-);
-
 // POST /api/bot/engine-status (called by bot engine)
 router.post(
   "/engine-status",
@@ -524,96 +340,6 @@ router.post(
       res.status(500).json({
         success: false,
         error: "Failed to process engine status update",
-      });
-    }
-  }
-);
-
-// POST /api/bot/bot-error (called by bot engine when bot encounters error)
-// Simplified - bot services not implemented
-router.post(
-  "/bot-error",
-  botEngineAuth,
-  async (req: Request, res: Response) => {
-    try {
-      const { botId, error } = req.body;
-
-      if (!botId || !error) {
-        return res.status(400).json({
-          success: false,
-          error: "Bot ID and error message required",
-        });
-      }
-
-      // Update bot status to ERROR (simplified)
-      await query(
-        "UPDATE bot_instances SET status = 'ERROR', last_error = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
-        [error, botId]
-      );
-
-      logger.error("Bot error reported by engine", new Error(error), {
-        botId,
-      });
-
-      res.json({
-        success: true,
-        acknowledged: true,
-        timestamp: Date.now(),
-      });
-    } catch (err) {
-      const error = err as Error;
-      logger.error("Bot error reporting failed", error, {
-        botId: req.body?.botId,
-      });
-
-      res.status(500).json({
-        success: false,
-        error: "Failed to process bot error report",
-      });
-    }
-  }
-);
-
-// POST /api/bot/bot-recovery (called by bot engine when bot recovers)
-// Simplified - bot services not implemented
-router.post(
-  "/bot-recovery",
-  botEngineAuth,
-  async (req: Request, res: Response) => {
-    try {
-      const { botId } = req.body;
-
-      if (!botId) {
-        return res.status(400).json({
-          success: false,
-          error: "Bot ID required",
-        });
-      }
-
-      // Update bot status to RUNNING (simplified)
-      await query(
-        "UPDATE bot_instances SET status = 'RUNNING', last_error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
-        [botId]
-      );
-
-      logger.info("Bot recovery reported by engine", {
-        botId,
-      });
-
-      res.json({
-        success: true,
-        acknowledged: true,
-        timestamp: Date.now(),
-      });
-    } catch (error) {
-      const err = error as Error;
-      logger.error("Bot recovery reporting failed", err, {
-        botId: req.body?.botId,
-      });
-
-      res.status(500).json({
-        success: false,
-        error: "Failed to process bot recovery report",
       });
     }
   }

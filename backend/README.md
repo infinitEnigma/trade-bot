@@ -241,7 +241,6 @@ npm run build && npm start
 ### Engine (internal)
 
 - `GET /api/bot/engine/credentials/:botId` - Engine fetches credentials out-of-band (bot-scoped API key)
-- `POST /api/bot/engine/report-trade` - Trade/fill reporting endpoint; present but **not called by the engine today** (see Known Issues)
 
 ### Other
 
@@ -267,8 +266,6 @@ Notable backend behaviours worth knowing before changing lifecycle code:
 - Command timeouts are tracked with reason codes (`STATE_MISMATCH`,
   `STOP_INCOMPLETE`, `ENGINE_NO_RESPONSE`, `COMMAND_NEVER_DELIVERED`) and map to
   target states (`UNKNOWN` for ambiguous state, `ERROR` for engine failures).
-- `POST /api/bot/engine/report-trade` exists and writes to `trades`, but **no
-  engine code calls it today**; see finding N7 before relying on it.
 
 ## Code Standards
 
