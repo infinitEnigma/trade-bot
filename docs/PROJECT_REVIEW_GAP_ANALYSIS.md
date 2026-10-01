@@ -218,7 +218,7 @@ M1) are in the archived cycle document. **Phase 2 (`d746c4c`) and Phase 3
 
 | Phase | Priority | Item | Status |
 | ----- | -------- | ---- | ------ |
-| 0 | 🔴 P0 | **Prove the P0s before changing code.** Verify N1/N2 against the Orderly testnet (place a LIMIT with a `client_order_id`, then resubmit the same key and record the rejection); add a zero-client-id Orderly smoke test to the suite that runs on every PR. | 🔶 code-side done (`client.wire.test.ts`: body keys, signature verified with an independent implementation, resubmission returns `duplicate client order id`); **live testnet duplicate-order proof still open** |
+| 0 | 🔴 P0 | **Prove the P0s before changing code.** Verify N1/N2 against the Orderly testnet (place a LIMIT with a `client_order_id`, then resubmit the same key and record the rejection); add a zero-client-id Orderly smoke test to the suite that runs on every PR. | 🔶 code-side done (`client.wire.test.ts`); **live proof done 2026-10-01 on Lighter testnet** (`.git/gatelogs/live/gate0.log`): probe 12/12 (1 note), engine smoke pass, venue left clean. Live finding: Lighter **accepts** a reused `client_order_index` silently (`ACCEPTED_NO_VISIBLE_CHANGE` — no second order), so idempotency there is venue **dedup**, not a rejection; Orderly's rejection stays wire-test only (mainnet connectivity-only). |
 | 2 | 🔴 P0 | **`OrderManager` + `OrderReconciliationService`** (reviewer's PR 1 — next milestone). Explicit order state machine (`INTENDED → SUBMITTING → UNKNOWN → OPEN / FILLED / NOT_FOUND(SAFE_TO_RECREATE) / EXCHANGE_UNAVAILABLE`); startup reconciliation (list venue orders, adopt/cancel/report orphans — N4); `NOT_FOUND` vs `UNREACHABLE` distinguished (N3); confirmed cancellation instead of swallowed errors (N5). | ✅ Done `d746c4c` — `order-manager.ts` + `order-reconciliation.service.ts` + `domain/order-state.ts`; the grid routes every slot write through the manager |
 | 3 | 🔴 P0 | **Snapshot durability** (reviewer's PR 1/2). Temp file → `fsync` → atomic rename; keep the previous snapshot; checksum + schema validation of level entries; distinguish "no snapshot" from "corrupt snapshot"; `snapshot ≠ exchange truth` stays explicit — reconciliation (Phase 2) is what makes the snapshot safe. | ✅ Done `d5aa842` — `durable-write.ts` (tmp → fsync → rename, keep `.prev`) + checksum + level-entry validation |
 | 4 | 🟠 P1 | **Durable trading ledger** (reviewer's PR 2). Persist order/fill intent before create; wire `TRADE_EXECUTED` events to an idempotent DB write (unique `(bot_id, client_order_id, exchange_order_id, fill_id)`); fix the `trades.status` vocabulary; filter `bot_instances` updates by `bot_id`, not `strategy_id` (N7). | ⬜ open |
@@ -241,6 +241,7 @@ M1) are in the archived cycle document. **Phase 2 (`d746c4c`) and Phase 3
 | 2026-09-26/27 flow audits | live runs | L1–L24 narratives — all ✅ Done; archived with the cycle document. |
 | 2026-09-30 (M1 live gate) | `.git/gatelogs/prod/` | Emergency stop end-to-end, 20/20 live; two venue rules pinned. Ledger row M1 ✅ — archived. |
 | 2026-10-01 (engine hardening) | `main` @ `d746c4c` | Reviewer's PR 1 landed: Phase 3 durable snapshots (`d5aa842`) + Phase 2 `OrderManager`/`OrderReconciliationService` (N3/N4/N5 closed). Live Lighter duplicate-order proof still deferred. |
+| 2026-10-01 (live Gate 0) | `.git/gatelogs/live/` | Lighter testnet Phase-0 proof **green**: duplicate `client_order_index` accepted-silently (no second order), lost-response recovery PASS, engine smoke PASS, venue clean. Probe `cancel-order` step fixed — it had leaked the lost-response order (left the venue dirty). |
 | 2026-10-01 (independent reviewer) | `624e599` → verified @ `cc8da7c` | **This document.** Architecture no longer the concern; focus = reconciliation + durable financial state. |
 
 Earlier passes (2026-01 … 2026-09-14 ratings, the first gap-analysis rounds)
@@ -253,8 +254,7 @@ are in `docs/archived/` (`PROJECT_REVIEW.md`, the original
 
 | Priority | Item | Where |
 | -------- | ---- | ----- |
-| 🔴 P0 | **Engine trading-path hardening:** Phase 0 live Lighter duplicate-order proof (deferred — D5) — Phase 2 (`d746c4c`) and Phase 3 (`d5aa842`) ✅ Done | §4 |
-| 🟠 P1 | Durable order/fill ledger (Phase 4), accounting correctness (Phase 5), bot account sessions (plan §D), account-scoped position domain APIs | §4 |
+| 🟠 P1 | **PR-1 (engine trading-path P0s) fully closed** — Phase 0 live proof ✅ 2026-10-01, Phase 2 ✅ `d746c4c`, Phase 3 ✅ `d5aa842`. Next: durable order/fill ledger (Phase 4), accounting correctness (Phase 5), bot account sessions (plan §D), account-scoped position domain APIs | §4 |
 | 🟡 P2 | Failure-injection harness (Phase 6), agent participation (plan §E), frontend identity residue (R1), `shared` split (defer) | §4, §3 |
 
 ### How to keep this document honest

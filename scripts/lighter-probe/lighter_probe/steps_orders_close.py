@@ -72,41 +72,60 @@ async def step_lost_response_recovery(
 
 
 async def step_cancel_order(session: ProbeSession, state: dict[str, Any]) -> StepResult:
-    """Cancel the first probe order and confirm the final status via query.
+    """Cancel every probe order and confirm the final status via query.
 
     Cancel commits are eventually consistent: accountOrders can lag behind
     accountActiveOrders (verified live: a canceled order reads as missing once
     before settling on "canceled"). This step polls instead of one-shot
     reading - the same discipline the engine's reconciler must follow.
+
+    Both orders the run places are cancelled: the `place-order` index and the
+    `lost-response-recovery` index. (The latter was left resting by an earlier
+    version of this step - the venue stayed dirty after a run.)
     """
-    index = state.get("client_order_index")
-    if index is None:
+    indices = [state.get("client_order_index"), state.get("lost_response_index")]
+    indices = [i for i in dict.fromkeys(indices) if i is not None]
+    if not indices:
         raise OrderProbeError("no order placed yet")
     market = await resolve_market(session)
-    api_key_index, nonce = await session.next_nonce()
-    call = session.signer.cancel_order(
-        market_index=market_index_of(market),
-        order_index=int(index),  # cancel accepts the client order index
-        nonce=nonce,
-        api_key_index=api_key_index,
-    )
-    _tx, _tx_hash, err = await await_maybe(call)
-    order: dict[str, Any] | None = None
-    for _ in range(6):
-        await sleep_for_commit()
-        order = await query_order(session, int(index))
-        if order and resolution(order.get("status")) != "UNRESOLVED":
-            break
-    status = (order or {}).get("status")
-    canceled = resolution(status) == "CANCELED"
+
+    results: list[dict[str, Any]] = []
+    ok = True
+    for index in indices:
+        api_key_index, nonce = await session.next_nonce()
+        call = session.signer.cancel_order(
+            market_index=market_index_of(market),
+            order_index=int(index),  # cancel accepts the client order index
+            nonce=nonce,
+            api_key_index=api_key_index,
+        )
+        _tx, _tx_hash, err = await await_maybe(call)
+        order: dict[str, Any] | None = None
+        for _ in range(8):
+            await sleep_for_commit()
+            order = await query_order(session, int(index))
+            # Lighter: a canceled order reads as *missing* before it settles on
+            # "canceled" (Phase 0 fact), so absence after an accepted cancel is
+            # confirmation too.
+            if order is None:
+                break
+            if resolution(order.get("status")) != "UNRESOLVED":
+                break
+        status = (order or {}).get("status")
+        canceled = resolution(status) == "CANCELED" or (order is None and not err)
+        ok = ok and not err and canceled
+        results.append(
+            {
+                "client_order_index": index,
+                "cancel_err": str(err) if err else None,
+                "status": status,
+                "status_name": status_name(status),
+                "resolution": resolution(status) if order is not None else "CANCELED",
+            }
+        )
+
     return StepResult(
         "cancel + confirm",
-        "PASS" if not err and canceled else "FAIL",
-        {
-            "client_order_index": index,
-            "cancel_err": str(err) if err else None,
-            "status": status,
-            "status_name": status_name(status),
-            "resolution": resolution(status),
-        },
+        "PASS" if ok else "FAIL",
+        results[0] if len(results) == 1 else {"orders": results},
     )
