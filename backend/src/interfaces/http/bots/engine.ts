@@ -14,7 +14,9 @@
  * and trade ingestion is planned through the TRADE_EXECUTED event path
  * (Phase 4), not HTTP. POST /engine-status was removed for the same
  * reason: zero callers, and its stats payload was logged and discarded.
- * See docs/PROJECT_REVIEW_GAP_ANALYSIS.md §2 claims 1 and 3, ledger L30.
+ * See docs/archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md
+ * §2 claims 1 and 3, ledger L30 (the live gap analysis now tracks only
+ * open work).
  */
 
 import { Router, Request, Response, NextFunction } from "express";

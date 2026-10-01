@@ -120,7 +120,7 @@ consistent** (poll, don't one-shot); a duplicate `client_order_index` is
 
 Two further venue rules were pinned live on 2026-09-30 (M1, evidence
 `.git/gatelogs/prod/27-p4-m1-live-fix2.log`, logged in the M1 row of
-`docs/PROJECT_REVIEW_GAP_ANALYSIS.md`):
+`docs/archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md`):
 
 - **`client_order_index` ≤ 281474976710655 (2^48 − 1).** A larger index is
   refused by `create-order` ("ClientOrderIndex should not be larger than
@@ -461,8 +461,9 @@ capabilities on top.
 2. Phase-0-verified exchange facts encoded (not re-derived from documentation).
 3. No exchange name outside its adapter; no vendor name in a new schema object.
 4. Ledger row in `PROJECT_REVIEW_GAP_ANALYSIS.md` §4 moved to ✅ with the commit
-   reference, and `OPERATIONS.md` runbooks updated when behaviour changes
-   (sidecar down, account revoked, credential source swap).
+   reference, then moved to the archived cycle document once closed (the live
+   §4 tracks open work only), and `OPERATIONS.md` runbooks updated when
+   behaviour changes (sidecar down, account revoked, credential source swap).
 5. Acceptance claims that depend on a live venue are recorded as a run (date,
    environment, evidence) rather than asserted — the D and E steps inherit the
    §4 batch-verification pattern.

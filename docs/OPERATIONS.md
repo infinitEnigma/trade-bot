@@ -116,8 +116,9 @@ development only.
 | Structured logs           | Winston JSON logs with `correlationId` on every protocol message                                                                         |
 
 **Known gaps (2026-09-26 flow audit).** Full evidence in
-[PROJECT_REVIEW_GAP_ANALYSIS.md](PROJECT_REVIEW_GAP_ANALYSIS.md) §3 (findings
-L1–L10). L1–L4 landed on 2026-09-26 and L5–L7 on 2026-09-28; the bullets below
+[archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md)
+§3 (findings L1–L10, all closed). L1–L4 landed on 2026-09-26 and L5–L7 on
+2026-09-28; the bullets below
 record where each log signal now stands, and what to trust:
 
 - `/api/auth/*` requests **are** covered by `http-*.log` again (L3), and their
