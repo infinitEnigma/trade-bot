@@ -34,6 +34,7 @@ import { query as poolQuery } from "../database/pool";
 
 // Pure Services
 import { BotManagementService } from "../core/bots/bot-management.service";
+import { engineRegistryService } from "../core/bots/engine-registry.service";
 import {
   WebSocketRateLimiter,
   webSocketRateLimiter,
@@ -345,8 +346,14 @@ export class DependencyInjectionContainer {
    * deep-equals two separately-constructed instances.
    */
   private readonly healthDbPing = () => poolQuery("SELECT 1");
-  private readonly healthEngineProbe = async () =>
-    this.engineManager.getEngineStatus();
+  private readonly healthEngineProbe = async () => {
+    // Registry-backed liveness (the same authority as GET /engine/status) —
+    // NOT EngineManager.getEngineStatus(), which HTTP-probes a port the
+    // Redis-only engine process never opens (its answer was always
+    // running: false).
+    const { running } = await engineRegistryService.getEngineLiveness();
+    return { running };
+  };
 
   get healthService(): HealthService {
     return new HealthService({

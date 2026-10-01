@@ -248,6 +248,41 @@ export class EngineRegistryService {
   }
 
   // ===========================================
+  // LIVENESS QUERY
+  // ===========================================
+
+  /**
+   * Is any engine process currently alive? The single source of truth for
+   * "is the engine running" (UI status banner, health probe): an engine
+   * counts when it is ONLINE *and* its heartbeat is fresh — so the answer
+   * stays correct even if the periodic sweep has not run yet to flip a
+   * stale ONLINE row to OFFLINE. DB errors THROW (fail closed: the caller
+   * must not conclude "running" when the registry could not be read).
+   */
+  async getEngineLiveness(): Promise<{
+    running: boolean;
+    engines: Array<{ engineId: string; status: string; lastSeenAt: Date }>;
+  }> {
+    const result = await query<EngineRow>(
+      `SELECT engine_id, epoch, status, version, last_seen_at
+             FROM engine_registry
+             ORDER BY last_seen_at DESC`
+    );
+    const freshnessCutoffMs = Date.now() - ENGINE_HEARTBEAT_TIMEOUT_MS * 2;
+    const engines = result.rows.map(row => ({
+      engineId: row.engine_id,
+      status: row.status,
+      lastSeenAt: row.last_seen_at,
+    }));
+    const running = result.rows.some(
+      row =>
+        row.status === "ONLINE" &&
+        new Date(row.last_seen_at).getTime() >= freshnessCutoffMs
+    );
+    return { running, engines };
+  }
+
+  // ===========================================
   // SUPERVISION SWEEP
   // ===========================================
 

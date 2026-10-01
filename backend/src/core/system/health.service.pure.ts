@@ -16,8 +16,10 @@ export interface HealthServiceDependencies {
   /** Real DB probe (SELECT 1 through the pool); must reject when unreachable. */
   pingDatabase: () => Promise<unknown>;
   /**
-   * Real engine probe — the engine manager pings the engine's
-   * `/api/engine/health`; `running: false` means the engine is down.
+   * Real engine probe — the engine registry's heartbeat liveness
+   * (ONLINE + fresh `last_seen_at`); `running: false` means no live engine.
+   * Not the engine manager's HTTP probe: the Redis-only engine process
+   * never opens that port.
    */
   probeEngine: () => Promise<{ running: boolean }>;
 }

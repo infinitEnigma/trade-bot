@@ -3,27 +3,25 @@
  *
  * Out-of-band HTTP surface between the bot engine and the backend API,
  * gated by botEngineAuth (x-bot-engine-key): lifecycle credential issue
- * (GET /credentials/:botId), the engine-status acknowledgement, and the
- * status/health probes.
+ * (GET /credentials/:botId) and the status/health probes. GET /status
+ * reads engine liveness from the engine_registry (ENGINE_HEARTBEAT →
+ * last_seen_at) — the same authority that gates command routing — instead
+ * of inferring it from bot rows.
  *
  * The legacy writer routes - POST /heartbeat, /report-trade, /bot-error
  * and /bot-recovery - were removed: a repo-wide search found zero engine
  * callers. Liveness flows via ENGINE_HEARTBEAT events (engine-registry),
  * and trade ingestion is planned through the TRADE_EXECUTED event path
- * (Phase 4), not HTTP. See docs/PROJECT_REVIEW_GAP_ANALYSIS.md §2 claims
- * 1 and 3.
+ * (Phase 4), not HTTP. POST /engine-status was removed for the same
+ * reason: zero callers, and its stats payload was logged and discarded.
+ * See docs/PROJECT_REVIEW_GAP_ANALYSIS.md §2 claims 1 and 3, ledger L30.
  */
 
 import { Router, Request, Response, NextFunction } from "express";
 import { timingSafeEqual } from "crypto";
 import { query } from "../../../database/pool";
 // Bot services have been removed - using direct database operations instead
-import { serviceProvider } from "../../../core/service-provider";
-import {
-  errorNotificationService,
-  ErrorSeverity,
-  ErrorCategory,
-} from "../../../core/notifications/error-notification.service";
+import { engineRegistryService } from "../../../core/bots/engine-registry.service";
 import {
   exchangeAccountRepositoryAdapter,
   getBotBoundAccountSecrets,
@@ -280,93 +278,11 @@ router.get(
   }
 );
 
-// POST /api/bot/engine-status (called by bot engine)
-router.post(
-  "/engine-status",
-  botEngineAuth,
-  async (req: Request, res: Response) => {
-    try {
-      const { status, activeBots, totalBots, uptime, memoryUsage, cpuUsage } =
-        req.body;
-
-      // Update engine status in memory
-      // This could be extended to store in database if needed
-      const engineStatus = {
-        running: status === "running",
-        status,
-        activeBots: activeBots || 0,
-        totalBots: totalBots || 0,
-        uptime: uptime || 0,
-        memoryUsage,
-        cpuUsage,
-        lastUpdate: Date.now(),
-      };
-
-      // Store engine status (could be in Redis or database)
-      // For now, we'll just log it and potentially store in a simple cache
-      logger.info("Engine status update received", {
-        status,
-        activeBots,
-        totalBots,
-        uptime,
-        memoryUsage,
-        cpuUsage,
-      });
-
-      // Check for engine health issues
-      if (status !== "running") {
-        await errorNotificationService.notifyError(
-          new Error(`Engine status: ${status}`),
-          {
-            category: ErrorCategory.SYSTEM,
-            operation: "engine_health_check",
-            metadata: {
-              engineStatus,
-              engineHealthIssue: true,
-            },
-          },
-          status === "error" ? ErrorSeverity.CRITICAL : ErrorSeverity.HIGH
-        );
-      }
-
-      // Check if we should stop engine (no active bots)
-      if (activeBots === 0 && status === "running") {
-        setTimeout(async () => {
-          try {
-            await serviceProvider.getEngineManager().stopEngineIfNoActiveBots();
-          } catch (error) {
-            logger.error(
-              "Failed to check engine stop condition",
-              error as Error
-            );
-          }
-        }, 5000); // 5 second delay to allow for race conditions
-      }
-
-      res.json({
-        success: true,
-        acknowledged: true,
-        timestamp: Date.now(),
-      });
-    } catch (error) {
-      const err = error as Error;
-      logger.error("Engine status update error", err, {
-        statusData: req.body,
-      });
-
-      res.status(500).json({
-        success: false,
-        error: "Failed to process engine status update",
-      });
-    }
-  }
-);
-
 // GET /api/bot/engine/status (for frontend to check engine status)
 // Note: Since this router is mounted at /engine, the path is just /status
 router.get("/status", async (req: Request, res: Response) => {
   try {
-    // Get bot statistics from database to determine engine status
+    // Bot activity below is informational — it does NOT decide liveness.
     const botStatsResult = await query(`
             SELECT
                 COUNT(*) as total_bots,
@@ -382,16 +298,30 @@ router.get("/status", async (req: Request, res: Response) => {
       error_bots: string;
     };
 
-    // Engine is considered running if there are any running bots
-    const running = parseInt(botStats.running_bots || "0") > 0;
+    const activeBots = parseInt(botStats.running_bots || "0");
+
+    // Engine liveness comes from the engine_registry (ENGINE_HEARTBEAT →
+    // last_seen_at), the same authority that gates command routing. The old
+    // heuristic — running = COUNT(running bot rows) > 0 — was wrong in both
+    // directions: an idle engine read as "not running" (the Strategies page
+    // then told users to start an already-running engine), and a crashed
+    // engine whose rows still said RUNNING read as running until the sweep
+    // flipped them.
+    const liveness = await engineRegistryService.getEngineLiveness();
+
+    let status = "offline";
+    if (liveness.running) {
+      status = activeBots > 0 ? "running" : "idle";
+    }
 
     const engineStatus = {
-      running,
-      status: running ? "running" : "idle",
-      activeBots: parseInt(botStats.running_bots || "0"),
+      running: liveness.running,
+      status,
+      activeBots,
       totalBots: parseInt(botStats.total_bots || "0"),
       stoppedBots: parseInt(botStats.stopped_bots || "0"),
       errorBots: parseInt(botStats.error_bots || "0"),
+      engines: liveness.engines,
       lastUpdate: Date.now(),
     };
 

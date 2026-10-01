@@ -28,7 +28,10 @@ jest.mock("../../src/core/bots/bot-lifecycle.service", () => ({
 
 import { query } from "../../src/database/pool";
 import { botLifecycleService } from "../../src/core/bots/bot-lifecycle.service";
-import { EngineRegistryService } from "../../src/core/bots/engine-registry.service";
+import {
+  ENGINE_HEARTBEAT_TIMEOUT_MS,
+  EngineRegistryService,
+} from "../../src/core/bots/engine-registry.service";
 
 const mockQuery = query as jest.Mock;
 const ok = () => ({ rows: [], rowCount: 1 });
@@ -339,6 +342,66 @@ describe("EngineRegistryService", () => {
       expect(
         botLifecycleService.markBotsUnknownForEngine
       ).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("getEngineLiveness", () => {
+    const engineRow = (overrides: Record<string, unknown> = {}) => ({
+      engine_id: "engine-1",
+      epoch: 3,
+      status: "ONLINE",
+      version: null,
+      last_seen_at: new Date(),
+      ...overrides,
+    });
+
+    it("is running when an engine is ONLINE with a fresh heartbeat", async () => {
+      mockQuery.mockReturnValue({ rows: [engineRow()] });
+
+      const liveness = await service.getEngineLiveness();
+
+      expect(liveness.running).toBe(true);
+      expect(liveness.engines).toEqual([
+        {
+          engineId: "engine-1",
+          status: "ONLINE",
+          lastSeenAt: expect.any(Date),
+        },
+      ]);
+    });
+
+    it("is not running when the ONLINE engine's heartbeat is stale (sweep not yet run)", async () => {
+      mockQuery.mockReturnValue({
+        rows: [
+          engineRow({
+            last_seen_at: new Date(
+              Date.now() - ENGINE_HEARTBEAT_TIMEOUT_MS * 3
+            ),
+          }),
+        ],
+      });
+
+      const liveness = await service.getEngineLiveness();
+
+      expect(liveness.running).toBe(false);
+      expect(liveness.engines).toHaveLength(1);
+    });
+
+    it("is not running when the engine is OFFLINE", async () => {
+      mockQuery.mockReturnValue({ rows: [engineRow({ status: "OFFLINE" })] });
+
+      const liveness = await service.getEngineLiveness();
+
+      expect(liveness.running).toBe(false);
+    });
+
+    it("is not running when the registry is empty", async () => {
+      mockQuery.mockReturnValue({ rows: [] });
+
+      const liveness = await service.getEngineLiveness();
+
+      expect(liveness.running).toBe(false);
+      expect(liveness.engines).toEqual([]);
     });
   });
 });

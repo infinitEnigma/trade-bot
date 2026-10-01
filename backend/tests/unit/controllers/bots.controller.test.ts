@@ -69,6 +69,12 @@ jest.mock("../../../src/core/bots/bot-lifecycle.service", () => ({
   },
 }));
 
+jest.mock("../../../src/core/bots/engine-registry.service", () => ({
+  engineRegistryService: {
+    getEngineLiveness: jest.fn(),
+  },
+}));
+
 // C3a: the start route validates the caller's bound ACTIVE account through the
 // adapter, and the credentials route resolves the bot's binding through
 // getBotBoundAccountSecrets. Both are mocked so the suites assert the routing,
@@ -774,23 +780,74 @@ describe("Bots Controller", () => {
       });
     });
 
-    describe("POST /api/bot/engine/engine-status", () => {
-      it("should process engine status update", async () => {
+    describe("GET /api/bot/engine/status", () => {
+      const { engineRegistryService } = jest.requireMock(
+        "../../../src/core/bots/engine-registry.service"
+      );
+      const { query } = jest.requireMock("../../../src/database/pool");
+
+      it("reports the engine running from the registry even with zero running bots", async () => {
+        query.mockResolvedValueOnce({
+          rows: [
+            {
+              total_bots: "5",
+              running_bots: "0",
+              stopped_bots: "5",
+              error_bots: "0",
+            },
+          ],
+        });
+        engineRegistryService.getEngineLiveness.mockResolvedValue({
+          running: true,
+          engines: [
+            {
+              engineId: "engine-1",
+              status: "ONLINE",
+              lastSeenAt: new Date(),
+            },
+          ],
+        });
+
         const response = await request(app)
-          .post("/api/bot/engine/engine-status")
-          .set("x-bot-engine-key", "test-engine-key")
-          .send({
-            status: "running",
-            activeBots: 2,
-            totalBots: 5,
-            uptime: 3600,
-            memoryUsage: { rss: 100000000 },
-            cpuUsage: 0.1,
-          })
+          .get("/api/bot/engine/status")
           .expect(200);
 
         expect(response.body.success).toBe(true);
-        expect(response.body.acknowledged).toBe(true);
+        // Idle engine: zero running bots, registry alive — the old bot-row
+        // heuristic said running:false here and showed a false banner.
+        expect(response.body.data.running).toBe(true);
+        expect(response.body.data.status).toBe("idle");
+        expect(response.body.data.activeBots).toBe(0);
+        expect(response.body.data.totalBots).toBe(5);
+        expect(response.body.data.engines).toHaveLength(1);
+      });
+
+      it("reports offline when no live engine is registered, even with RUNNING bot rows", async () => {
+        query.mockResolvedValueOnce({
+          rows: [
+            {
+              total_bots: "5",
+              running_bots: "3",
+              stopped_bots: "2",
+              error_bots: "0",
+            },
+          ],
+        });
+        engineRegistryService.getEngineLiveness.mockResolvedValue({
+          running: false,
+          engines: [],
+        });
+
+        const response = await request(app)
+          .get("/api/bot/engine/status")
+          .expect(200);
+
+        // Rows stay informational: a crashed engine with rows still RUNNING
+        // must read as offline, not running.
+        expect(response.body.data.running).toBe(false);
+        expect(response.body.data.status).toBe("offline");
+        expect(response.body.data.activeBots).toBe(3);
+        expect(response.body.data.engines).toEqual([]);
       });
     });
 
