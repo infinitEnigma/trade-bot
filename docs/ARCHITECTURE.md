@@ -68,7 +68,13 @@ acknowledgement. The engine selects Redis logical database `1`.
 
 **Commands:** `BOT_START`, `BOT_STOP` (plus engine-level control commands).
 **Events:** `COMMAND_ACCEPTED`, `COMMAND_FAILED`, `STATE_CHANGED`,
-`ENGINE_REGISTER`, `ENGINE_HEARTBEAT`.
+`ENGINE_REGISTER`, `ENGINE_HEARTBEAT`, plus the durable financial-state
+family `ORDER_INTENT` / `TRADE_EXECUTED` / `POSITION_UPDATED` /
+`PERFORMANCE_SNAPSHOT` (Phase 4): the engine is the only trade-write path —
+the backend persists them idempotently into the `bot_trade_fills` ledger
+(unique `(bot_id, client_order_id, exchange_order_id, fill_id)`) behind the
+same `engineId` + `engineEpoch` authority check, so a redelivered or replayed
+fill collapses to one row (see `docs/PROJECT_REVIEW_GAP_ANALYSIS.md` §4).
 
 Envelopes carry `messageId` (deduplication), `correlationId` (trace a command
 through its lifecycle), `engineId` + `engineEpoch` (authority), and a timestamp.

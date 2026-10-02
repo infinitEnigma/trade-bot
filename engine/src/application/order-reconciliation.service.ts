@@ -30,6 +30,7 @@ import {
 import { SlotOutcome, StartupReconcileReport } from "../domain/order-state";
 import { ClientOrderIdGenerator } from "../utils/client-order-id";
 import { CommandError } from "./command-error";
+import { TradeReporter } from "./trade-reporter";
 import { OrderManager } from "./order-manager";
 import { logger } from "../utils/logger";
 
@@ -47,12 +48,19 @@ export class OrderReconciliationService {
     private exchange: ExchangeClient,
     private symbol: string,
     private ids: ClientOrderIdGenerator,
-    private manager: OrderManager
+    private manager: OrderManager,
+    /** Phase 4 ledger emission; absent in strategy unit tests. */
+    private reporter?: TradeReporter
   ) {}
 
   /**
    * Idempotent slot placement: adopt an already-live order, or place one.
    * Returns the resulting state; the caller only records the trade on FILLED.
+   *
+   * Intent-before-create (Phase 4): right before `createOrder` the intent is
+   * published to the ledger. If it cannot be persisted the order is NOT
+   * placed — a submission the backend never saw is exactly the orphan the
+   * durable ledger exists to prevent (fail-closed, same spirit as D1).
    */
   async ensureSlotOrder(
     levelIndex: number,
@@ -66,6 +74,24 @@ export class OrderReconciliationService {
 
     const pre = await this.lookupByClientOrderId(clientOrderId);
     if (pre.kind !== "SAFE_TO_RECREATE") return pre;
+
+    if (this.reporter) {
+      const intentPersisted = await this.reporter.reportOrderIntent({
+        botId: this.botId,
+        symbol: this.symbol,
+        side,
+        price,
+        quantity,
+        clientOrderId,
+      });
+      if (!intentPersisted) {
+        this.manager.markUnavailable(
+          clientOrderId,
+          "order intent not persisted"
+        );
+        return { kind: "UNAVAILABLE", reason: "order intent not persisted" };
+      }
+    }
 
     try {
       const result = await this.exchange.createOrder({

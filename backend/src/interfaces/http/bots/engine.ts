@@ -11,9 +11,10 @@
  * The legacy writer routes - POST /heartbeat, /report-trade, /bot-error
  * and /bot-recovery - were removed: a repo-wide search found zero engine
  * callers. Liveness flows via ENGINE_HEARTBEAT events (engine-registry),
- * and trade ingestion is planned through the TRADE_EXECUTED event path
- * (Phase 4), not HTTP. POST /engine-status was removed for the same
- * reason: zero callers, and its stats payload was logged and discarded.
+ * and trade ingestion is the TRADE_EXECUTED event path (Phase 4, landed
+ * 2026-10-02: engine-ledger events → TradeLedgerService → bot_trade_fills).
+ * POST /engine-status was removed for the same reason: zero callers, and
+ * its stats payload was logged and discarded.
  * See docs/archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md
  * §2 claims 1 and 3, ledger L30 (the live gap analysis now tracks only
  * open work).

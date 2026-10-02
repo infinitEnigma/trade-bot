@@ -60,6 +60,7 @@ import { engineProtocolService } from "./core/bots/engine-protocol.service";
 import { botLifecycleService } from "./core/bots/bot-lifecycle.service";
 import { commandTimeoutSweeper } from "./core/bots/command-timeout.sweeper";
 import { engineRegistryService } from "./core/bots/engine-registry.service";
+import { tradeLedgerService } from "./core/strategies/trade-ledger.service";
 // L8: no boot-wide `setRequestContext` — the old ambient store leaked its
 // correlationId/startTime into every background logger (Redis consumer,
 // DB pool, password-pool health ticks) and made `operationDuration` measure
@@ -467,6 +468,12 @@ export const startServer = (): Promise<typeof httpServer> => {
       // registered engine process with a current epoch.
       botLifecycleService.setAuthorityChecker((engineId, epoch) =>
         engineRegistryService.isEngineAuthoritative(engineId, epoch)
+      );
+      // Durable financial-state ingest (Phase 4): ORDER_INTENT /
+      // TRADE_EXECUTED / POSITION_UPDATED / PERFORMANCE_SNAPSHOT →
+      // idempotent ledger writes (trade-ledger.service).
+      botLifecycleService.setTradeLedgerHandler(event =>
+        tradeLedgerService.handle(event)
       );
       engineProtocolService
         .start(event => botLifecycleService.handleEngineEvent(event))

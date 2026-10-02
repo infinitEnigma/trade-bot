@@ -23,6 +23,7 @@ import {
 import { CommandError } from "../application/command-error";
 import { OrderManager } from "../application/order-manager";
 import { OrderReconciliationService } from "../application/order-reconciliation.service";
+import { PositionReport, TradeReporter } from "../application/trade-reporter";
 
 /**
  * How often a single slot's order is re-checked against the exchange (ms).
@@ -57,15 +58,23 @@ export class GridTradingStrategy {
   private clientOrderIdGenerator: ClientOrderIdGenerator;
   private manager: OrderManager | null = null;
   private reconcile: OrderReconciliationService | null = null;
+  /**
+   * Ledger event emission (Phase 4). Optional so strategy unit tests can run
+   * without a stream; production always wires it (`BotManager.startBot`), and
+   * while it is absent no ORDER_INTENT gating applies.
+   */
+  private reporter: TradeReporter | null;
 
   constructor(
     botId: string,
     config: GridStrategyConfig,
-    exchange: ExchangeClient
+    exchange: ExchangeClient,
+    reporter?: TradeReporter
   ) {
     this.botId = botId;
     this.config = config;
     this.exchange = exchange;
+    this.reporter = reporter ?? null;
     this.clientOrderIdGenerator = new ClientOrderIdGenerator(botId);
   }
 
@@ -120,7 +129,8 @@ export class GridTradingStrategy {
       this.exchange,
       this.config.symbol,
       this.clientOrderIdGenerator,
-      this.manager
+      this.manager,
+      this.reporter ?? undefined
     );
 
     if (canRestore) {
@@ -259,7 +269,7 @@ export class GridTradingStrategy {
             this.config.orderQuantity
           );
           if (outcome.kind === "FILLED") {
-            this.recordTrade(i, level, "BUY", outcome);
+            await this.recordTrade(i, level, "BUY", outcome);
           }
         }
 
@@ -276,7 +286,7 @@ export class GridTradingStrategy {
             this.config.orderQuantity
           );
           if (outcome.kind === "FILLED") {
-            this.recordTrade(i, level, "SELL", outcome);
+            await this.recordTrade(i, level, "SELL", outcome);
           }
         }
       }
@@ -319,7 +329,7 @@ export class GridTradingStrategy {
 
         const outcome = await this.reconcile.checkSlot(i, side);
         if (outcome.kind === "FILLED") {
-          this.recordTrade(i, level, side, outcome);
+          await this.recordTrade(i, level, side, outcome);
         }
         this.lastOrderCheck.set(clientOrderId, new Date());
       }
@@ -327,15 +337,18 @@ export class GridTradingStrategy {
   }
 
   /**
-   * Record a fill and its simplified mark-to-market PnL. Executed-price
-   * accounting with fees is Phase 5, not something to change here.
+   * Record a fill and its simplified mark-to-market PnL, then emit the
+   * durable ledger events (TRADE_EXECUTED + POSITION_UPDATED +
+   * PERFORMANCE_SNAPSHOT). Executed-price accounting with fees is Phase 5,
+   * not something to change here. Reporting never throws — a tick must not
+   * die on a publish failure (the reporter logs the payload for replay).
    */
-  private recordTrade(
+  private async recordTrade(
     levelIndex: number,
     level: GridLevel,
     side: "BUY" | "SELL",
     outcome: Extract<SlotOutcome, { kind: "FILLED" }>
-  ): void {
+  ): Promise<void> {
     const quantity = outcome.filledQty || this.config.orderQuantity;
     const tradePnl =
       side === "BUY"
@@ -344,8 +357,9 @@ export class GridTradingStrategy {
 
     this.totalTrades += 1;
     this.totalPnl += tradePnl;
+    const clientOrderId = this.generateClientOrderId(levelIndex, side);
     this.trades.push({
-      orderId: this.generateClientOrderId(levelIndex, side),
+      orderId: clientOrderId,
       symbol: this.config.symbol,
       side,
       quantity,
@@ -360,6 +374,64 @@ export class GridTradingStrategy {
       botId: this.botId,
       symbol: this.config.symbol,
     });
+
+    if (!this.reporter) return;
+    const executedAt = new Date().toISOString();
+    try {
+      await this.reporter.reportFill({
+        botId: this.botId,
+        symbol: this.config.symbol,
+        side,
+        price: level.price,
+        quantity,
+        pnl: tradePnl,
+        status: "FILLED",
+        clientOrderId,
+        exchangeOrderId: outcome.orderId ?? clientOrderId,
+        executedAt,
+      });
+      await this.reporter.reportPosition(this.buildPositionReport());
+      await this.reporter.reportPerformance({
+        botId: this.botId,
+        totalTrades: this.totalTrades,
+        totalPnl: this.totalPnl,
+      });
+    } catch (error) {
+      logger.error("Failed to emit ledger events for fill", {
+        error: messageOf(error),
+        botId: this.botId,
+        symbol: this.config.symbol,
+        clientOrderId,
+      });
+    }
+  }
+
+  /**
+   * The engine's aggregate position over the grid: every level with a filled
+   * BUY holds `orderQuantity` long (a filled SELL clears the flag again via
+   * `OrderManager.markFilled`). FLAT is reported explicitly so the backend
+   * never has to guess what "absent" means.
+   */
+  private buildPositionReport(): PositionReport {
+    const filledLevels = this.levels.filter(l => l.filled);
+    const quantity =
+      filledLevels.length > 0
+        ? Number((filledLevels.length * this.config.orderQuantity).toFixed(8))
+        : 0;
+    const entryPrice =
+      filledLevels.length > 0
+        ? filledLevels.reduce((sum, l) => sum + l.price, 0) /
+          filledLevels.length
+        : 0;
+    return {
+      botId: this.botId,
+      symbol: this.config.symbol,
+      side: quantity > 0 ? "LONG" : "FLAT",
+      quantity,
+      entryPrice: Number(entryPrice.toFixed(8)),
+      markPrice: this.currentPrice,
+      pnl: this.totalPnl,
+    };
   }
 
   /**

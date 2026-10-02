@@ -43,8 +43,7 @@ describe("EngineManager", () => {
   });
 
   afterEach(() => {
-    // Clean up the event listener loop
-    (engineManager as any).stopListeningForEvents();
+    jest.restoreAllMocks();
   });
 
   describe("EngineManager initialization", () => {
@@ -55,20 +54,6 @@ describe("EngineManager", () => {
   });
 
   describe("Engine management methods", () => {
-    it("should start listening for events", async () => {
-      // Arrange
-      const startListeningSpy = jest.spyOn(
-        engineManager as any,
-        "startListeningForEvents"
-      );
-
-      // Act
-      await (engineManager as any).startListeningForEvents();
-
-      // Assert
-      expect(startListeningSpy).toHaveBeenCalled();
-    });
-
     it("should send start engine command", async () => {
       // Arrange
       const publishSpy = (
@@ -502,91 +487,6 @@ describe("EngineManager", () => {
   });
 
   describe("Redis stream communication methods", () => {
-    it("should stop listening for events", () => {
-      // Arrange
-      (engineManager as any).isListening = true;
-
-      // Act
-      engineManager.stopListeningForEvents();
-
-      // Assert
-      expect((engineManager as any).isListening).toBe(false);
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        "Stopped listening for engine events"
-      );
-    });
-
-    it("should handle engine events", async () => {
-      // Arrange
-      const events = [
-        { type: "ENGINE_STARTED", engineId: "engine1", uptime: 1000 },
-        {
-          type: "ENGINE_STOPPED",
-          engineId: "engine1",
-          reason: "test",
-          uptime: 3600,
-        },
-        {
-          type: "BOT_STARTED",
-          botId: "bot1",
-          strategyId: "strategy1",
-          symbol: "BTC/USDT",
-          strategyType: "grid",
-        },
-        { type: "BOT_STOPPED", botId: "bot1", reason: "test" },
-        {
-          type: "BOT_HEARTBEAT",
-          botId: "bot1",
-          status: "active",
-          currentPrice: 50000,
-          totalTrades: 10,
-          totalPnl: 100,
-        },
-        {
-          type: "ENGINE_ERROR",
-          botId: "bot1",
-          error: "Test error",
-          stack: "Stack trace",
-        },
-        {
-          type: "TRADE_EXECUTED",
-          botId: "bot1",
-          symbol: "BTC/USDT",
-          side: "buy",
-          price: 50000,
-          quantity: 0.01,
-          fee: 0.1,
-          pnl: 10,
-          orderId: "order1",
-        },
-        {
-          type: "POSITION_UPDATED",
-          botId: "bot1",
-          symbol: "BTC/USDT",
-          side: "long",
-          quantity: 0.01,
-          entryPrice: 49000,
-          markPrice: 50000,
-          pnl: 100,
-        },
-        {
-          type: "PERFORMANCE_SNAPSHOT",
-          botId: "bot1",
-          metrics: { profit: 100, winRate: 0.75 },
-        },
-        { type: "UNKNOWN_EVENT", data: "test" }, // Test unknown event
-      ];
-
-      // Act
-      for (const event of events) {
-        (engineManager as any).handleEngineEvent(event);
-      }
-
-      // Assert
-      // Verify logger was called for various events
-      expect(mockLogger.info).toHaveBeenCalled();
-    });
-
     it("should handle errors when publishing commands", async () => {
       // Arrange
       const errorMessage = "Redis connection error";

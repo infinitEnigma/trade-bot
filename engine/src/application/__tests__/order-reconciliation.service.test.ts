@@ -10,6 +10,7 @@ import { GridLevel } from "../../types/strategy";
 import { CommandError } from "../command-error";
 import { OrderManager } from "../order-manager";
 import { OrderReconciliationService } from "../order-reconciliation.service";
+import { TradeReporter } from "../trade-reporter";
 
 const SYMBOL = "ETH";
 
@@ -254,5 +255,114 @@ describe("OrderReconciliationService — reconcileSymbol", () => {
     const report = await service.reconcileSymbol();
     expect(report.reachable).toBe(false);
     expect(report.reason).toContain("listing down");
+  });
+});
+
+describe("OrderReconciliationService — ORDER_INTENT gate (Phase 4)", () => {
+  function withReporter(script: Script, intentPersisted: boolean) {
+    const trace: string[] = [];
+    const base = setup(script);
+    const reportOrderIntent = jest.fn(async () => {
+      trace.push("intent");
+      return intentPersisted;
+    });
+    const reporter = {
+      reportOrderIntent,
+      reportFill: jest.fn(),
+      reportPosition: jest.fn(),
+      reportPerformance: jest.fn(),
+    } as unknown as TradeReporter;
+    const service = new OrderReconciliationService(
+      "bot-x",
+      base.exchange,
+      SYMBOL,
+      base.ids,
+      base.manager,
+      reporter
+    );
+    const exchange = base.exchange as typeof base.exchange & {
+      created: unknown[];
+    };
+    return { service, exchange, reportOrderIntent, trace };
+  }
+
+  it("publishes the intent strictly before createOrder", async () => {
+    const trace: string[] = [];
+    const base = setup({
+      createOrder: async () => {
+        trace.push("create");
+        throw new Error("traced");
+      },
+    });
+    const reportOrderIntent = jest.fn(async () => {
+      trace.push("intent");
+      return true;
+    });
+    const service = new OrderReconciliationService(
+      "bot-x",
+      base.exchange,
+      SYMBOL,
+      base.ids,
+      base.manager,
+      { reportOrderIntent } as unknown as TradeReporter
+    );
+
+    await service.ensureSlotOrder(0, "BUY", 100, 1);
+
+    expect(reportOrderIntent).toHaveBeenCalledTimes(1);
+    expect(reportOrderIntent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        botId: "bot-x",
+        symbol: SYMBOL,
+        side: "BUY",
+        price: 100,
+        quantity: 1,
+        clientOrderId: expect.any(String),
+      })
+    );
+    expect(trace).toEqual(["intent", "create"]);
+  });
+
+  it("does NOT place the order when the intent cannot be persisted", async () => {
+    const { exchange, service } = withReporter({}, false);
+
+    const outcome = await service.ensureSlotOrder(0, "BUY", 100, 1);
+
+    expect(outcome).toEqual({
+      kind: "UNAVAILABLE",
+      reason: "order intent not persisted",
+    });
+    expect(exchange.created).toHaveLength(0);
+    // The slot freezes as EXCHANGE_UNAVAILABLE (no orderId) so the next tick
+    // retries rather than leaving a possibly-live order behind.
+    expect((outcome as { kind: string }).kind).toBe("UNAVAILABLE");
+  });
+
+  it("places after a persisted intent", async () => {
+    const { exchange, service, reportOrderIntent } = withReporter({}, true);
+
+    const outcome = await service.ensureSlotOrder(0, "BUY", 100, 1);
+
+    expect(outcome.kind).toBe("OPEN");
+    expect(reportOrderIntent).toHaveBeenCalledTimes(1);
+    expect(exchange.created).toHaveLength(1);
+  });
+
+  it("publishes no intent when the pre-submit lookup adopts a live order", async () => {
+    const { exchange, service, reportOrderIntent } = withReporter(
+      {
+        query: async () => ({
+          kind: "FOUND_OPEN" as const,
+          order: { orderId: "live-1", symbol: SYMBOL, status: "OPEN" },
+        }),
+      },
+      true
+    );
+
+    const outcome = await service.ensureSlotOrder(0, "BUY", 100, 1);
+
+    expect(outcome).toEqual({ kind: "OPEN", orderId: "live-1" });
+    expect(reportOrderIntent).not.toHaveBeenCalled();
+    expect(exchange.created).toHaveLength(0);
   });
 });

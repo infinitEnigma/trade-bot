@@ -37,6 +37,7 @@ import {
   BotEventProcessor,
   EngineAuthorityChecker,
   EngineLifecycleEventHandler,
+  TradeLedgerEventHandler,
   isTerminalActualState,
 } from "./lifecycle/bot-event-processor";
 import { BotLifecycleRepository } from "./lifecycle/bot-lifecycle.repository";
@@ -84,6 +85,15 @@ export class BotLifecycleService {
    */
   setEngineLifecycleHandler(handler: EngineLifecycleEventHandler): void {
     this.eventProcessor.setEngineLifecycleHandler(handler);
+  }
+
+  /**
+   * Register the durable financial-state ingest (Phase 4 / N7):
+   * ORDER_INTENT / TRADE_EXECUTED / POSITION_UPDATED / PERFORMANCE_SNAPSHOT
+   * (injected to avoid a circular dependency with TradeLedgerService).
+   */
+  setTradeLedgerHandler(handler: TradeLedgerEventHandler): void {
+    this.eventProcessor.setTradeLedgerHandler(handler);
   }
 
   /**

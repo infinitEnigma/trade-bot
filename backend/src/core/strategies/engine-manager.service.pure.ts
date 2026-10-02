@@ -12,19 +12,9 @@
  */
 
 import {
-  BotHeartbeatEvent,
-  BotStartedEvent,
-  BotStoppedEvent,
-  EngineErrorEvent,
-  EngineEvent,
-  EngineStartedEvent,
-  EngineStoppedEvent,
   IBotInstanceRepository,
   ILogger,
-  PerformanceSnapshotEvent,
-  PositionUpdatedEvent,
   StartBotCommand,
-  TradeExecutedEvent,
 } from "@trade-bot/shared";
 import {
   ProcessSpawner,
@@ -49,22 +39,6 @@ interface EngineStatus {
     uptime: number;
   };
 }
-
-/**
- * Discriminated union of the legacy engine → backend runtime events handled by
- * this manager. The stream layer only guarantees the base `EngineEvent` shape,
- * so the discriminant is validated by the handler's `switch`.
- */
-type EngineRuntimeEvent =
-  | EngineStartedEvent
-  | EngineStoppedEvent
-  | BotStartedEvent
-  | BotStoppedEvent
-  | BotHeartbeatEvent
-  | EngineErrorEvent
-  | TradeExecutedEvent
-  | PositionUpdatedEvent
-  | PerformanceSnapshotEvent;
 
 export interface EngineManagerServiceDependencies {
   botInstanceRepository: IBotInstanceRepository;
@@ -95,7 +69,6 @@ export class EngineManager {
   // Engine state
   private engineStatus: EngineStatus = { running: false };
   private engineId: string | null = null;
-  private isListening = false;
 
   constructor(
     private deps: EngineManagerServiceDependencies,
@@ -331,232 +304,11 @@ export class EngineManager {
   // ===========================================
   // 🚀 REDIS STREAM COMMUNICATION METHODS
   // ===========================================
-
-  /**
-   * Start listening for engine events
-   */
-  async startListeningForEvents(): Promise<void> {
-    if (this.isListening) {
-      this.deps.logger.debug("Already listening for engine events");
-      return;
-    }
-
-    this.isListening = true;
-    this.deps.logger.info("Starting to listen for engine events");
-
-    // Create consumer group if it doesn't exist
-    await this.streamOperations.createConsumerGroup(
-      "engine:events",
-      "backend-group"
-    );
-
-    // Start event listener loop
-    this.listenForEventsLoop();
-  }
-
-  /**
-   * Stop listening for engine events
-   */
-  stopListeningForEvents(): void {
-    this.isListening = false;
-    this.deps.logger.info("Stopped listening for engine events");
-  }
-
-  /**
-   * Event listener loop
-   */
-  private async listenForEventsLoop(): Promise<void> {
-    while (this.isListening) {
-      try {
-        const result = await this.streamOperations.read("engine:events", {
-          block: 1000, // Reduced block time for faster shutdown
-          count: 10,
-          consumerGroup: "backend-group",
-          consumerName: "backend-consumer",
-        });
-
-        if (result.success && result.messages && result.messages.length > 0) {
-          for (const message of result.messages) {
-            this.handleEngineEvent(message.data as EngineRuntimeEvent);
-          }
-        }
-      } catch (error) {
-        this.deps.logger.error("Error reading engine events", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-  }
-
-  /**
-   * Handle incoming engine events
-   */
-  private handleEngineEvent(event: EngineRuntimeEvent): void {
-    try {
-      this.deps.logger.debug("Received engine event", {
-        type: event.type,
-        engineId: event.engineId,
-        timestamp: event.timestamp,
-      });
-
-      switch (event.type) {
-        case "ENGINE_STARTED":
-          this.handleEngineStarted(event);
-          break;
-        case "ENGINE_STOPPED":
-          this.handleEngineStopped(event);
-          break;
-        case "BOT_STARTED":
-          this.handleBotStarted(event);
-          break;
-        case "BOT_STOPPED":
-          this.handleBotStopped(event);
-          break;
-        case "BOT_HEARTBEAT":
-          this.handleBotHeartbeat(event);
-          break;
-        case "ENGINE_ERROR":
-          this.handleEngineError(event);
-          break;
-        case "TRADE_EXECUTED":
-          this.handleTradeExecuted(event);
-          break;
-        case "POSITION_UPDATED":
-          this.handlePositionUpdated(event);
-          break;
-        case "PERFORMANCE_SNAPSHOT":
-          this.handlePerformanceSnapshot(event);
-          break;
-        default:
-          this.deps.logger.warn("Unknown engine event type", {
-            type: (event as EngineEvent).type,
-          });
-      }
-    } catch (error) {
-      this.deps.logger.error("Error handling engine event", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  /**
-   * Handle engine started event
-   */
-  private handleEngineStarted(event: EngineStartedEvent): void {
-    this.engineId = event.engineId;
-    this.engineStatus = {
-      running: true,
-      health: {
-        status: "HEALTHY",
-        bots: 0,
-        uptime: event.uptime,
-      },
-    };
-
-    this.deps.logger.info("Engine started successfully", {
-      engineId: event.engineId,
-      uptime: event.uptime,
-    });
-  }
-
-  /**
-   * Handle engine stopped event
-   */
-  private handleEngineStopped(event: EngineStoppedEvent): void {
-    this.engineStatus.running = false;
-    this.deps.logger.info("Engine stopped", {
-      engineId: event.engineId,
-      reason: event.reason,
-      uptime: event.uptime,
-    });
-  }
-
-  /**
-   * Handle bot started event
-   */
-  private handleBotStarted(event: BotStartedEvent): void {
-    this.deps.logger.info("Bot started", {
-      botId: event.botId,
-      strategyId: event.strategyId,
-      symbol: event.symbol,
-      strategyType: event.strategyType,
-    });
-  }
-
-  /**
-   * Handle bot stopped event
-   */
-  private handleBotStopped(event: BotStoppedEvent): void {
-    this.deps.logger.info("Bot stopped", {
-      botId: event.botId,
-      reason: event.reason,
-    });
-  }
-
-  /**
-   * Handle bot heartbeat event
-   */
-  private handleBotHeartbeat(event: BotHeartbeatEvent): void {
-    this.deps.logger.debug("Bot heartbeat received", {
-      botId: event.botId,
-      status: event.status,
-      currentPrice: event.currentPrice,
-      totalTrades: event.totalTrades,
-      totalPnl: event.totalPnl,
-    });
-  }
-
-  /**
-   * Handle engine error event
-   */
-  private handleEngineError(event: EngineErrorEvent): void {
-    this.deps.logger.error("Engine error", {
-      botId: event.botId,
-      error: event.error,
-      stack: event.stack,
-    });
-  }
-
-  /**
-   * Handle trade executed event
-   */
-  private handleTradeExecuted(event: TradeExecutedEvent): void {
-    this.deps.logger.info("Trade executed", {
-      botId: event.botId,
-      symbol: event.symbol,
-      side: event.side,
-      price: event.price,
-      quantity: event.quantity,
-      fee: event.fee,
-      pnl: event.pnl,
-      orderId: event.orderId,
-    });
-  }
-
-  /**
-   * Handle position updated event
-   */
-  private handlePositionUpdated(event: PositionUpdatedEvent): void {
-    this.deps.logger.debug("Position updated", {
-      botId: event.botId,
-      symbol: event.symbol,
-      side: event.side,
-      quantity: event.quantity,
-      entryPrice: event.entryPrice,
-      markPrice: event.markPrice,
-      pnl: event.pnl,
-    });
-  }
-
-  /**
-   * Handle performance snapshot event
-   */
-  private handlePerformanceSnapshot(event: PerformanceSnapshotEvent): void {
-    this.deps.logger.debug("Performance snapshot received", {
-      botId: event.botId,
-      metrics: event.metrics,
-    });
-  }
+  //
+  // Note (Phase 4): the legacy `engine:events` listener and its log-only
+  // runtime handlers (incl. TRADE_EXECUTED) were removed — nothing published
+  // to that stream. The live event path is EngineProtocolService →
+  // BotEventProcessor → TradeLedgerService (durable ledger ingest).
 
   /**
    * Send start engine command

@@ -3,7 +3,8 @@
  *
  * Handles publishing engine events to Redis Streams.
  * All events (COMMAND_ACCEPTED, COMMAND_FAILED, STATE_CHANGED,
- * ENGINE_REGISTER, ENGINE_HEARTBEAT) flow through here.
+ * ENGINE_REGISTER, ENGINE_HEARTBEAT, and the ledger family ORDER_INTENT /
+ * TRADE_EXECUTED / POSITION_UPDATED / PERFORMANCE_SNAPSHOT) flow through here.
  *
  * @format
  */
@@ -13,6 +14,10 @@ import {
   BotActualState,
   BotEventPayload,
   createBotEvent,
+  OrderIntentEventPayload,
+  TradeExecutedEventPayload,
+  PositionUpdatedEventPayload,
+  PerformanceSnapshotEventPayload,
 } from "@trade-bot/shared";
 import {
   RedisStreamOperations,
@@ -168,6 +173,50 @@ export async function publishStateChanged(
       to,
       reason: reason || "",
     },
+    correlationId
+  );
+}
+
+/**
+ * Publish ORDER_INTENT — must be awaited BEFORE `createOrder` so the intent
+ * is durable before the venue can accept anything (Phase 4 intent-before-create).
+ */
+export async function publishOrderIntent(
+  streamOps: RedisStreamOperations,
+  payload: OrderIntentEventPayload,
+  correlationId: string
+): Promise<PublishResult> {
+  return publishEvent(streamOps, "ORDER_INTENT", payload, correlationId);
+}
+
+/** Publish TRADE_EXECUTED — one per detected fill (idempotent downstream). */
+export async function publishTradeExecuted(
+  streamOps: RedisStreamOperations,
+  payload: TradeExecutedEventPayload,
+  correlationId: string
+): Promise<PublishResult> {
+  return publishEvent(streamOps, "TRADE_EXECUTED", payload, correlationId);
+}
+
+/** Publish POSITION_UPDATED — the engine's aggregate position view. */
+export async function publishPositionUpdated(
+  streamOps: RedisStreamOperations,
+  payload: PositionUpdatedEventPayload,
+  correlationId: string
+): Promise<PublishResult> {
+  return publishEvent(streamOps, "POSITION_UPDATED", payload, correlationId);
+}
+
+/** Publish PERFORMANCE_SNAPSHOT — engine-side counters (telemetry only). */
+export async function publishPerformanceSnapshot(
+  streamOps: RedisStreamOperations,
+  payload: PerformanceSnapshotEventPayload,
+  correlationId: string
+): Promise<PublishResult> {
+  return publishEvent(
+    streamOps,
+    "PERFORMANCE_SNAPSHOT",
+    payload,
     correlationId
   );
 }

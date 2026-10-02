@@ -290,6 +290,7 @@ export * from "./protocol/bot-state";
 export * from "./protocol/bot-command";
 export * from "./protocol/bot-event";
 export * from "./protocol/engine-lifecycle";
+export * from "./protocol/engine-ledger";
 
 // Canonical bot lifecycle state (replaces legacy BotStatus)
 export { BotActualState, BotDesiredState } from "./protocol/bot-state";

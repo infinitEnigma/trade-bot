@@ -10,6 +10,8 @@
  * - COMMAND_FAILED:   engine could not complete the command (after acceptance).
  * - STATE_CHANGED:    the authoritative lifecycle transition report.
  *   Only STATE_CHANGED to RUNNING means the bot is actually running.
+ * - ORDER_INTENT / TRADE_EXECUTED / POSITION_UPDATED / PERFORMANCE_SNAPSHOT:
+ *   the durable financial-state family — see engine-ledger.ts.
  *
  * @format
  */
@@ -17,6 +19,7 @@
 import { ProtocolMessage } from "./bot-command";
 import { BotActualState } from "./bot-state";
 import { EngineLifecycleEventPayload } from "./engine-lifecycle";
+import { EngineLedgerEventPayload } from "./engine-ledger";
 
 // ===========================================
 // EVENT TYPES
@@ -28,7 +31,12 @@ export type BotEventType =
   | "STATE_CHANGED"
   // Engine lifecycle events (registration / heartbeat) - see engine-lifecycle.ts
   | "ENGINE_REGISTER"
-  | "ENGINE_HEARTBEAT";
+  | "ENGINE_HEARTBEAT"
+  // Durable financial-state events (order/fill ledger) - see engine-ledger.ts
+  | "ORDER_INTENT"
+  | "TRADE_EXECUTED"
+  | "POSITION_UPDATED"
+  | "PERFORMANCE_SNAPSHOT";
 
 export interface CommandAcceptedEventPayload {
   botId: string;
@@ -67,7 +75,8 @@ export type BotEventPayload =
   | CommandAcceptedEventPayload
   | CommandFailedEventPayload
   | StateChangedEventPayload
-  | EngineLifecycleEventPayload;
+  | EngineLifecycleEventPayload
+  | EngineLedgerEventPayload;
 
 export type BotEvent = ProtocolMessage<BotEventPayload>;
 
@@ -111,6 +120,10 @@ export function isBotEvent(obj: unknown): obj is BotEvent {
         "STATE_CHANGED",
         "ENGINE_REGISTER",
         "ENGINE_HEARTBEAT",
+        "ORDER_INTENT",
+        "TRADE_EXECUTED",
+        "POSITION_UPDATED",
+        "PERFORMANCE_SNAPSHOT",
       ] as string[]
     ).includes(obj.type)
   );

@@ -23,6 +23,7 @@ import {
 import { fetchCredentials } from "../protocol/credential-fetcher";
 import { CommandError } from "./command-error";
 import { StrategyRunner } from "./strategy-runner";
+import { LedgerTradeReporter } from "./trade-reporter";
 
 const TICK_INTERVAL_MS = 5000;
 
@@ -564,7 +565,15 @@ export class BotManager {
         );
       }
 
-      // 4. Create and start strategy
+      // 4. Create and start strategy. The ledger reporter closes over this
+      // engine's identity (engineId + epoch — the backend's authority check
+      // rejects payloads without them) and the events stream, so fills,
+      // positions and order intents reach the durable ledger (Phase 4).
+      const tradeReporter = new LedgerTradeReporter(
+        streamOps,
+        this.engineId,
+        this.epoch
+      );
       const gridStrategy = new GridTradingStrategy(
         botId,
         {
@@ -573,7 +582,8 @@ export class BotManager {
           gridRangePercent: Number(config.gridRange) || 5,
           orderQuantity: Number(config.orderQuantity) || 1,
         },
-        exchangeClient
+        exchangeClient,
+        tradeReporter
       );
       await gridStrategy.initialize(currentPrice);
       this.throwIfCancelled(botId);

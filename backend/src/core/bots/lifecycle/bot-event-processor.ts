@@ -50,6 +50,11 @@ export function isTerminalActualState(state: BotActualState): boolean {
 }
 
 export type EngineLifecycleEventHandler = (event: BotEvent) => Promise<boolean>;
+/**
+ * Durable financial-state ingest (Phase 4) — ORDER_INTENT / TRADE_EXECUTED /
+ * POSITION_UPDATED / PERFORMANCE_SNAPSHOT. Wired to `TradeLedgerService`.
+ */
+export type TradeLedgerEventHandler = (event: BotEvent) => Promise<void>;
 /** Validates that (engineId, epoch) is the authoritative engine process. */
 export type EngineAuthorityChecker = (
   engineId: string,
@@ -68,6 +73,8 @@ export type TerminalBotStopRepair = (
 
 export class BotEventProcessor {
   private engineLifecycleHandler: EngineLifecycleEventHandler | null = null;
+  /** Durable financial-state ingest (Phase 4). Null = ledger events rejected. */
+  private tradeLedgerHandler: TradeLedgerEventHandler | null = null;
   /** Fail-closed authority check - must be wired for runtime events to apply. */
   private authorityChecker: EngineAuthorityChecker | null = null;
   /** Terminal-state stop repair - wired to BotLifecycleService (L24). */
@@ -81,6 +88,15 @@ export class BotEventProcessor {
   /** Injected to avoid a circular dependency with EngineRegistryService. */
   setEngineLifecycleHandler(handler: EngineLifecycleEventHandler): void {
     this.engineLifecycleHandler = handler;
+  }
+
+  /**
+   * Inject the durable ledger ingest (TradeLedgerService), injected to avoid a
+   * circular dependency. Without a wired handler the ledger events are
+   * rejected (fail closed) so fills are never silently dropped without a log.
+   */
+  setTradeLedgerHandler(handler: TradeLedgerEventHandler): void {
+    this.tradeLedgerHandler = handler;
   }
 
   /**
@@ -223,12 +239,46 @@ export class BotEventProcessor {
       case "STATE_CHANGED":
         await this.handleStateChanged(event);
         break;
+      case "ORDER_INTENT":
+      case "TRADE_EXECUTED":
+      case "POSITION_UPDATED":
+      case "PERFORMANCE_SNAPSHOT":
+        await this.handleLedgerEvent(event);
+        break;
       default:
         logger.warn("Unknown bot event type", {
           type: event.type,
           messageId: event.messageId,
         });
     }
+  }
+
+  /**
+   * Durable financial-state events (Phase 4 / N7). These carry no tracked
+   * command, so only the fail-closed authority check applies (no staleness
+   * check): the payload's (engineId, engineEpoch) must identify the current
+   * authoritative engine. The ledger handler itself owns payload validation
+   * and the idempotent write; its persistence failures throw, which leaves
+   * the message unacked for redelivery.
+   */
+  private async handleLedgerEvent(event: BotEvent): Promise<void> {
+    if (!this.tradeLedgerHandler) {
+      logger.error(
+        "No trade ledger handler wired - rejecting ledger event",
+        undefined,
+        { eventType: event.type, correlationId: event.correlationId }
+      );
+      return;
+    }
+    const payload = event.payload as {
+      botId?: string;
+      engineId?: unknown;
+      engineEpoch?: unknown;
+    };
+    if (!(await this.isAuthoritativeRuntimeEvent(event, payload))) {
+      return;
+    }
+    await this.tradeLedgerHandler(event);
   }
 
   /**

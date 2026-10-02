@@ -60,9 +60,9 @@ Strategy intent → OrderManager → Order Reconciliation → Exchange
 | 🔴 P0    | `OrderManager` + `OrderReconciliationService` | **Open** (section 4, Phase 2)                 |
 | 🔴 P0    | Snapshot atomicity/corruption handling        | **Open** (section 4, Phase 3)                 |
 | 🔴 P0    | Live testnet duplicate-order proof            | **Open** (section 4, Phase 0, code-side done) |
-| 🟠 P1    | Durable order/fill ledger                     | **Open** (section 4, Phase 4)                 |
+| 🟠 P1    | Durable order/fill ledger                     | ✅ **Done 2026-10-02** (section 4, Phase 4)    |
 | 🟠 P1    | Credential issuance DB idempotency            | ✅ **Done post-review** (`77506bf`) — see section 2 |
-| 🟠 P1    | Correct trade reporting / bot-scoped stats    | **Open** (section 4, Phase 4, N7)             |
+| 🟠 P1    | Correct trade reporting / bot-scoped stats    | ✅ **Done 2026-10-02** (section 4, Phase 4, N7) |
 | 🟠 P1    | Account-scoped position/balance domain APIs   | **Partially done** (section 4)                |
 | 🟠 P1    | Accounting/PnL correctness                    | **Open** (section 4, Phase 5, N6)             |
 | 🟡 P2    | Failure-injection harness                     | **Open** (section 4, Phase 6)                 |
@@ -108,7 +108,7 @@ the review and this incorporation.
 | 11 | Legacy HTTP writers (`/heartbeat`, `/report-trade`, `/bot-error`, `/bot-recovery`, `/engine-status`) still present | ❌ **Stale — fixed post-review** | Deleted in `132fbd1` + `cc8da7c`; liveness now comes from `EngineRegistryService.getEngineLiveness()` |
 | 12 | `OrderReconciliationService` still the most important missing abstraction (state machine `INTENDED → … → SAFE_TO_RECREATE`) | ✅ **Resolved post-review** | Implemented 2026-10-01 (`d746c4c`): `OrderManager` + `OrderReconciliationService` + `domain/order-state.ts` — section 4, Phase 2 |
 | 13 | Snapshot durability insufficient (no tmp+fsync+rename, no checksum; snapshot ≠ exchange truth) | ✅ **Resolved post-review** | Implemented 2026-10-01 (`d5aa842`): `durable-write.ts` + checksum + level validation; missing vs corrupt distinguished — section 4, Phase 3 |
-| 14 | Trade idempotency + bot-scoped statistics still missing | ✅ Confirmed open | N7 below; no unique `trades(order_id)`; Phase 4 is the single trade-write path now |
+| 14 | Trade idempotency + bot-scoped statistics still missing | ✅ **Resolved 2026-10-02** | Phase 4: idempotent `bot_trade_fills(…)` unique key + `bot_instances` totals keyed by `bot_id` — N7 record below |
 | 15 | `position-repository` userId-only interface answers with the most recently updated row | ✅ Confirmed open | `position-repository.adapter.ts:60` documents the heuristic — section 4 (account-scoped domain APIs) |
 | 16 | Frontend still carries `bot.id === botId` \|\| `bot.strategy_id === botId` compatibility logic (residue: `strategy ≈ bot`) | ✅ Confirmed | `useBotLifecycle.ts:187,253` — section 3 residue |
 
@@ -121,7 +121,7 @@ evidence — are preserved verbatim in
 [`docs/archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md`](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md).
 Only findings that applied to the code at `cc8da7c` are listed here. N3/N4/N5
 were resolved 2026-10-01 (Phase 2, `d746c4c`) and are kept as short records;
-N6/N7/R1/R2 remain open.
+N7 resolved 2026-10-02 (Phase 4); N6/R1/R2 remain open.
 
 ### N3 — ✅ Resolved (`d746c4c`): a missing exchange order permanently blocks a grid slot
 
@@ -174,20 +174,21 @@ exchange. **Owned by Phase 2** (confirmed cancellation).
 
 **Owned by Phase 5 (accounting correctness).**
 
-### N7 — 🟠 P1: the durable trade ledger is still unreachable
+### N7 — ✅ Resolved (2026-10-02): the durable trade ledger is now reachable
 
-- The backend's `TRADE_EXECUTED` / `POSITION_UPDATED` / `PERFORMANCE_SNAPSHOT`
-  handlers only log; the engine never publishes them. (The spoofable
-  `POST /report-trade` HTTP path was deleted in `132fbd1` — the event path is
-  now the single intended trade-write path.)
-- Engine-side `trades[]`, `totalPnl`, `totalTrades` live in memory and are absent
-  from the grid snapshot, so all accounting is lost on restart.
-- `trades.status` has a CHECK constraint (`PENDING | FILLED | PARTIAL |
-  CANCELLED | REJECTED`) while engine statuses include `OPEN` / `SUBMITTED` /
-  `FULLY_FILLED`; there is still no idempotency key (unique `trades(order_id)`),
-  and bot-scoped statistics updates are part of this work.
-
-**Owned by Phase 4 (durable trading ledger).**
+Phase 4 landed: the engine publishes the ledger event family
+(`ORDER_INTENT` / `TRADE_EXECUTED` / `POSITION_UPDATED` /
+`PERFORMANCE_SNAPSHOT`, `shared/src/protocol/engine-ledger.ts`), the backend
+ingests it fail-closed through `TradeLedgerService` into an idempotent
+`bot_trade_fills` ledger (unique `(bot_id, client_order_id,
+exchange_order_id, fill_id)`, migration `016_durable_trading_ledger.sql`),
+`trades.status` is narrowed on ingest (`FULLY_FILLED → FILLED`,
+`PARTIALLY_FILLED → PARTIAL`), and `bot_instances` totals increment by
+`bot_id` only when a ledger row was actually inserted — so `total_pnl`
+reconciles with `SUM(bot_trade_fills.pnl)`. Intent-before-create is enforced
+(a slot whose intent cannot be persisted does not place). Original narrative
+preserved in the
+[archived cycle document](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md).
 
 ### R1 — 🟡 P2: frontend bot/strategy identity residue
 
@@ -214,16 +215,17 @@ top of a request that never carries `client_order_id` would be built on sand);
 Phase 3 protects the state Phase 2 depends on; Phases 4–5 make the outputs
 trustworthy; Phase 6 locks it in. Closed rows (phases 1, 8, 9; ledger L1–L30;
 M1) are in the archived cycle document. **Phase 2 (`d746c4c`) and Phase 3
-(`d5aa842`) closed 2026-10-01** — see the rows below.
+(`d5aa842`) closed 2026-10-01; Phase 4 closed 2026-10-02** — see the rows
+below.
 
 | Phase | Priority | Item | Status |
 | ----- | -------- | ---- | ------ |
 | 0 | 🔴 P0 | **Prove the P0s before changing code.** Verify N1/N2 against the Orderly testnet (place a LIMIT with a `client_order_id`, then resubmit the same key and record the rejection); add a zero-client-id Orderly smoke test to the suite that runs on every PR. | 🔶 code-side done (`client.wire.test.ts`); **live proof done 2026-10-01 on Lighter testnet** (`.git/gatelogs/live/gate0.log`): probe 12/12 (1 note), engine smoke pass, venue left clean. Live finding: Lighter **accepts** a reused `client_order_index` silently (`ACCEPTED_NO_VISIBLE_CHANGE` — no second order), so idempotency there is venue **dedup**, not a rejection; Orderly's rejection stays wire-test only (mainnet connectivity-only). |
 | 2 | 🔴 P0 | **`OrderManager` + `OrderReconciliationService`** (reviewer's PR 1 — next milestone). Explicit order state machine (`INTENDED → SUBMITTING → UNKNOWN → OPEN / FILLED / NOT_FOUND(SAFE_TO_RECREATE) / EXCHANGE_UNAVAILABLE`); startup reconciliation (list venue orders, adopt/cancel/report orphans — N4); `NOT_FOUND` vs `UNREACHABLE` distinguished (N3); confirmed cancellation instead of swallowed errors (N5). | ✅ Done `d746c4c` — `order-manager.ts` + `order-reconciliation.service.ts` + `domain/order-state.ts`; the grid routes every slot write through the manager |
 | 3 | 🔴 P0 | **Snapshot durability** (reviewer's PR 1/2). Temp file → `fsync` → atomic rename; keep the previous snapshot; checksum + schema validation of level entries; distinguish "no snapshot" from "corrupt snapshot"; `snapshot ≠ exchange truth` stays explicit — reconciliation (Phase 2) is what makes the snapshot safe. | ✅ Done `d5aa842` — `durable-write.ts` (tmp → fsync → rename, keep `.prev`) + checksum + level-entry validation |
-| 4 | 🟠 P1 | **Durable trading ledger** (reviewer's PR 2). Persist order/fill intent before create; wire `TRADE_EXECUTED` events to an idempotent DB write (unique `(bot_id, client_order_id, exchange_order_id, fill_id)`); fix the `trades.status` vocabulary; filter `bot_instances` updates by `bot_id`, not `strategy_id` (N7). | ⬜ open |
+| 4 | 🟠 P1 | **Durable trading ledger** (reviewer's PR 2). Persist order/fill intent before create; wire `TRADE_EXECUTED` events to an idempotent DB write (unique `(bot_id, client_order_id, exchange_order_id, fill_id)`); fix the `trades.status` vocabulary; filter `bot_instances` updates by `bot_id`, not `strategy_id` (N7). | ✅ Done 2026-10-02 — migration `016_durable_trading_ledger.sql` (`bot_trade_fills` + `bot_order_intents` + `bot_positions` + `bot_performance_snapshots`); `shared/src/protocol/engine-ledger.ts` event family; engine `LedgerTradeReporter` (intent-before-create, fail-closed); backend `TradeLedgerService`/`TradeLedgerRepository` ingested via `BotEventProcessor` behind the authority check; legacy `engine:events` listener removed |
 | 5 | 🟠 P1 | **Accounting correctness** (reviewer's PR 3; N6). Sell at the next level / take-profit, PnL from executed price with fees, `reduce_only` exits, position reconciliation from exchange positions, explicit `PARTIALLY_FILLED`. | ⬜ open |
-| 6 | 🟡 P2 | **Failure-injection harness** (reviewer's PR 4). Fake exchange with scripted failures (accept-then-drop, timeout, 500, `NOT_FOUND`, duplicate-key rejection, partial fill) and a test matrix: crash at each step of create, Redis down/restart, restart with/without/corrupt snapshot, exchange-side orphans. | ⬜ open — only after Phases 2–3 exist |
+| 6 | 🟡 P2 | **Failure-injection harness** (reviewer's PR 4). Fake exchange with scripted failures (accept-then-drop, timeout, 500, `NOT_FOUND`, duplicate-key rejection, partial fill) and a test matrix: crash at each step of create, Redis down/restart, restart with/without/corrupt snapshot, exchange-side orphans. | ⬜ open — only after Phases 2–4 exist |
 | – | 🟠 P1 | **Account-scoped position/balance domain APIs.** Retire the userId-only most-recent-row heuristic (R2); `getPosition(accountId, symbol)` with user-level aggregation separate. (P2: drop the unconsumed `kodiak_status` column from `user_trading_summary`.) | ⬜ partially done — portfolio reads are account-scoped; the domain interface is not |
 | – | 🟡 P2 | **Frontend identity residue.** Remove the `bot.strategy_id === botId` compatibility fallback once no caller passes a strategy id (R1). | ⬜ open |
 | D | 🟠 P1 | **Bot account sessions.** The unit of execution becomes `(user, exchange_accounts)` with `strategy_runs` inside it: one credential fetch, one exchange connection and one reconciler per account — also the shape N3/N4 reconciliation needs. Designed, not implemented — [DATA_MODEL.md](DATA_MODEL.md) §4.4, [plan §D](EXCHANGE_INTEGRATION_PLAN.md). | ⬜ open |
@@ -254,7 +256,7 @@ are in `docs/archived/` (`PROJECT_REVIEW.md`, the original
 
 | Priority | Item | Where |
 | -------- | ---- | ----- |
-| 🟠 P1 | **PR-1 (engine trading-path P0s) fully closed** — Phase 0 live proof ✅ 2026-10-01, Phase 2 ✅ `d746c4c`, Phase 3 ✅ `d5aa842`. Next: durable order/fill ledger (Phase 4), accounting correctness (Phase 5), bot account sessions (plan §D), account-scoped position domain APIs | §4 |
+| 🟠 P1 | **PR-1 (engine trading-path P0s) fully closed** — Phase 0 live proof ✅ 2026-10-01, Phase 2 ✅ `d746c4c`, Phase 3 ✅ `d5aa842`. Durable order/fill ledger (Phase 4) ✅ 2026-10-02. Next: accounting correctness (Phase 5), bot account sessions (plan §D), account-scoped position domain APIs | §4 |
 | 🟡 P2 | Failure-injection harness (Phase 6), agent participation (plan §E), frontend identity residue (R1), `shared` split (defer) | §4, §3 |
 
 ### How to keep this document honest

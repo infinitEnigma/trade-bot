@@ -21,7 +21,8 @@ shared/src/
 │   ├── bot-state.ts      # State machine & transitions
 │   ├── bot-command.ts    # Command types & envelope
 │   ├── bot-event.ts      # Event types
-│   └── engine-lifecycle.ts # Engine registration & heartbeat
+│   ├── engine-lifecycle.ts # Engine registration & heartbeat
+│   └── engine-ledger.ts   # Durable financial-state events (Phase 4)
 └── types/                # Domain models & contracts
     ├── domain.ts         # Rich domain models (Position, etc.)
     ├── infrastructure.ts # Infrastructure contracts
@@ -81,7 +82,12 @@ type BotEventType =
   | "COMMAND_FAILED"
   | "STATE_CHANGED"
   | "ENGINE_REGISTER"
-  | "ENGINE_HEARTBEAT";
+  | "ENGINE_HEARTBEAT"
+  // Durable financial-state family — see engine-ledger.ts
+  | "ORDER_INTENT"
+  | "TRADE_EXECUTED"
+  | "POSITION_UPDATED"
+  | "PERFORMANCE_SNAPSHOT";
 ```
 
 ### Engine Lifecycle (`engine-lifecycle.ts`)
@@ -101,6 +107,37 @@ interface EngineHeartbeatEventPayload {
   version: string;
 }
 ```
+
+### Engine Ledger Events (`engine-ledger.ts`)
+
+The durable financial-state family (Phase 4). Every payload carries
+`engineId` + `engineEpoch` for the backend's fail-closed authority check;
+identity (`user_id`, `strategy_id`) is resolved server-side from
+`bot_instances`, never taken from the wire.
+
+```typescript
+// intent-before-create: persisted before the venue can accept anything
+interface OrderIntentEventPayload {
+  botId: string; engineId: string; engineEpoch: number;
+  symbol: string; side: "BUY" | "SELL";
+  price: number; quantity: number; clientOrderId: string;
+}
+
+// one per detected fill; backend dedups on
+// (bot_id, client_order_id, exchange_order_id, fill_id)
+interface TradeExecutedEventPayload {
+  botId: string; engineId: string; engineEpoch: number;
+  symbol: string; side: "BUY" | "SELL";
+  price: number; quantity: number; fee?: number; pnl?: number;
+  status: "FILLED" | "PARTIALLY_FILLED";
+  clientOrderId: string; exchangeOrderId: string; fillId: string;
+  executedAt: string; // ISO-8601
+}
+```
+
+Also `POSITION_UPDATED` (`side: "LONG" | "SHORT" | "FLAT"`) and
+`PERFORMANCE_SNAPSHOT` (engine counters — telemetry only; `bot_instances`
+totals derive exclusively from the fill ledger).
 
 ---
 
