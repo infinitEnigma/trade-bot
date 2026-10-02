@@ -128,7 +128,6 @@ export class GridTradingStrategy {
       this.botId,
       this.exchange,
       this.config.symbol,
-      this.clientOrderIdGenerator,
       this.manager,
       this.reporter ?? undefined
     );
@@ -357,7 +356,10 @@ export class GridTradingStrategy {
 
     this.totalTrades += 1;
     this.totalPnl += tradePnl;
-    const clientOrderId = this.generateClientOrderId(levelIndex, side);
+    // The id the fill actually happened under — NOT a fresh generation (the
+    // slot's gen already bumped inside markFilled; deriving a new id here
+    // would book a ledger identity the venue has never seen).
+    const clientOrderId = outcome.clientOrderId;
     this.trades.push({
       orderId: clientOrderId,
       symbol: this.config.symbol,
@@ -435,17 +437,23 @@ export class GridTradingStrategy {
   }
 
   /**
-   * Generate a deterministic client order id for idempotency.
+   * Generate the deterministic client order id for a slot's **current**
+   * generation (G1): after a fill books, `OrderManager.markFilled` bumps the
+   * side's generation, so this derives a fresh id whose venue history cannot
+   * contain the spent cycle's terminal row.
    *
    * Delegates to `ClientOrderIdGenerator`, which packs the bot id, the level
-   * index and the side into the exchange's `client_order_id` contract (max 36
-   * chars, hyphen allowed but not first — see `utils/client-order-id.ts`).
+   * index, the side and (when ≥ 1) the generation into the exchange's
+   * `client_order_id` contract (max 36 chars, hyphen allowed but not first —
+   * see `utils/client-order-id.ts`).
    */
   private generateClientOrderId(
     levelIndex: number,
     side: "BUY" | "SELL"
   ): string {
-    return this.clientOrderIdGenerator.generate(levelIndex, side);
+    const level = this.levels[levelIndex];
+    const generation = (side === "BUY" ? level?.buyGen : level?.sellGen) ?? 0;
+    return this.clientOrderIdGenerator.generate(levelIndex, side, generation);
   }
 
   /**
@@ -472,6 +480,13 @@ export class GridTradingStrategy {
    * Merge saved slot state onto freshly-built levels by exact price match.
    * Saved buyOrderId/sellOrderId/filled are carried over only when the level
    * price still exists in the rebuilt grid (guards against config changes).
+   *
+   * Slot id generations (G1): entries written by current builds always carry
+   * both generations and are restored verbatim. A legacy (pre-G1) entry has
+   * neither field — its generation-0 id may already carry a terminal history
+   * row at the venue (that is exactly what G1 booked as a phantom fill), so a
+   * handle-less side starts at generation 1: a side with a live handle keeps
+   * generation 0 because that id must keep resolving the open order.
    */
   private mergeRestoredLevels(
     base: GridLevel[],
@@ -485,11 +500,23 @@ export class GridTradingStrategy {
     return base.map(level => {
       const savedLevel = byPrice.get(level.price);
       if (savedLevel) {
+        const currentGen =
+          savedLevel.buyGen !== undefined || savedLevel.sellGen !== undefined;
+        const genFor = (
+          current: number | undefined,
+          handle: string | undefined
+        ): number => {
+          if (current !== undefined) return current;
+          if (currentGen) return 0;
+          return handle ? 0 : 1;
+        };
         return {
           price: level.price,
           buyOrderId: savedLevel.buyOrderId,
           sellOrderId: savedLevel.sellOrderId,
           filled: savedLevel.filled,
+          buyGen: genFor(savedLevel.buyGen, savedLevel.buyOrderId),
+          sellGen: genFor(savedLevel.sellGen, savedLevel.sellOrderId),
         };
       }
       return { ...level };
@@ -509,6 +536,8 @@ export class GridTradingStrategy {
         buyOrderId: l.buyOrderId,
         sellOrderId: l.sellOrderId,
         filled: l.filled,
+        buyGen: l.buyGen ?? 0,
+        sellGen: l.sellGen ?? 0,
       })),
       savedAt: new Date().toISOString(),
     };

@@ -135,6 +135,15 @@ function validateLevel(level: unknown, index: number): Validation {
       return { ok: false, detail: `level ${index} has an invalid ${key}` };
     }
   }
+  for (const key of ["buyGen", "sellGen"] as const) {
+    const value = entry[key];
+    if (
+      value !== undefined &&
+      (!Number.isInteger(value) || (value as number) < 0)
+    ) {
+      return { ok: false, detail: `level ${index} has an invalid ${key}` };
+    }
+  }
   return { ok: true };
 }
 

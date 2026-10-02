@@ -1,4 +1,7 @@
-import { ClientOrderIdGenerator } from "../client-order-id";
+import {
+  ClientOrderIdGenerator,
+  CLIENT_ORDER_ID_MAX_GENERATION,
+} from "../client-order-id";
 
 const UUID = "8f14e45f-ceea-467f-abf5-ee02d76df6b2"; // 36-char bot id
 
@@ -47,5 +50,62 @@ describe("ClientOrderIdGenerator", () => {
     expect(() => new ClientOrderIdGenerator("")).toThrow(/botId/);
     expect(() => gen(UUID).generate(-1, "BUY")).toThrow(/levelIndex/);
     expect(() => gen(UUID).generate(1.5, "BUY")).toThrow(/levelIndex/);
+    expect(() => gen(UUID).generate(0, "BUY", -1)).toThrow(/generation/);
+    expect(() => gen(UUID).generate(0, "BUY", 1.5)).toThrow(/generation/);
+    expect(() =>
+      gen(UUID).generate(0, "BUY", CLIENT_ORDER_ID_MAX_GENERATION + 1)
+    ).toThrow(/generation/);
+  });
+
+  describe("slot generations (G1)", () => {
+    it("renders generation 0 byte-identical to the legacy format", () => {
+      // Ids already live on an exchange must keep resolving after an upgrade.
+      expect(gen(UUID).generate(5, "SELL", 0)).toBe(
+        gen(UUID).generate(5, "SELL")
+      );
+      expect(gen(UUID).generate(5, "SELL", 0)).toMatch(/^[0-9a-f]{30}-05-S$/);
+      expect(new ClientOrderIdGenerator("bot-1").generate(0, "BUY", 0)).toBe(
+        "bot1-00-B"
+      );
+    });
+
+    it("derives a fresh distinct id per generation (fresh venue index)", () => {
+      const g = gen(UUID);
+      const seen = new Set<string>();
+      for (let generation = 0; generation <= 40; generation++) {
+        seen.add(g.generate(7, "BUY", generation));
+      }
+      expect(seen.size).toBe(41);
+      expect(g.generate(7, "BUY", 1)).not.toBe(g.generate(7, "BUY", 0));
+      // Deterministic across restarts (lost-response adoption depends on it).
+      expect(gen(UUID).generate(7, "BUY", 1)).toBe(g.generate(7, "BUY", 1));
+      // One side's generation never disturbs the other side's id.
+      expect(g.generate(7, "SELL", 0)).not.toBe(g.generate(7, "BUY", 1));
+    });
+
+    it("keeps every generation inside the 36-char exchange contract", () => {
+      const generator = gen(UUID);
+      const generations = [
+        0,
+        1,
+        35,
+        36,
+        1295,
+        1296,
+        46655,
+        CLIENT_ORDER_ID_MAX_GENERATION,
+      ];
+      for (const generation of generations) {
+        for (const side of ["BUY", "SELL"] as const) {
+          const id = generator.generate(1295, side, generation);
+          expect(id.length).toBeLessThanOrEqual(36);
+          expect(id).toMatch(/^[A-Za-z0-9][A-Za-z0-9-]*$/);
+          expect(id).not.toContain(":");
+        }
+      }
+      expect(() =>
+        generator.generate(0, "BUY", CLIENT_ORDER_ID_MAX_GENERATION)
+      ).not.toThrow();
+    });
   });
 });

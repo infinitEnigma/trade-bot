@@ -60,7 +60,7 @@ export class OrderManager {
     price: number,
     orderId: string
   ): void {
-    const clientOrderId = this.ids.generate(levelIndex, side);
+    const clientOrderId = this.idFor(levelIndex, side);
     this.write({
       clientOrderId,
       levelIndex,
@@ -72,6 +72,17 @@ export class OrderManager {
       state: "UNKNOWN",
       updatedAt: now(),
     });
+  }
+
+  /**
+   * The client order id this slot would submit with right now: the slot's
+   * current generation of `(levelIndex, side)`. Generation 0 is the legacy
+   * id — it must keep resolving an order already live on the venue.
+   */
+  idFor(levelIndex: number, side: "BUY" | "SELL"): string {
+    const level = this.levels[levelIndex];
+    const generation = (side === "BUY" ? level?.buyGen : level?.sellGen) ?? 0;
+    return this.ids.generate(levelIndex, side, generation);
   }
 
   private write(record: OrderRecord): OrderRecord {
@@ -151,9 +162,12 @@ export class OrderManager {
   }
 
   /**
-   * Executed: clear the handle, and flip the level's `filled` flag to the side
+   * Executed: clear the handle, flip the level's `filled` flag to the side
    * that closes the trade (a filled BUY arms the sell, a filled SELL re-arms
-   * the buy).
+   * the buy), and spend the slot's id — the generation for this side bumps so
+   * the next cycle derives a fresh client order id (G1: a pre-submit lookup
+   * must never find the venue's terminal history row for an id whose fill is
+   * already booked; that row booked phantom fills and blocked re-placement).
    */
   markFilled(
     clientOrderId: string,
@@ -172,7 +186,14 @@ export class OrderManager {
     });
     this.setHandle(record.levelIndex, record.side, undefined);
     const level = this.levels[record.levelIndex];
-    if (level) level.filled = record.side === "BUY";
+    if (level) {
+      level.filled = record.side === "BUY";
+      if (record.side === "BUY") {
+        level.buyGen = (level.buyGen ?? 0) + 1;
+      } else {
+        level.sellGen = (level.sellGen ?? 0) + 1;
+      }
+    }
   }
 
   /** Definitively absent: clear the handle so the slot is safe to recreate. */

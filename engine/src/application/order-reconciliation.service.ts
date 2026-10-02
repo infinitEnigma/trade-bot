@@ -28,7 +28,6 @@ import {
   OrderLookup,
 } from "../domain/exchange";
 import { SlotOutcome, StartupReconcileReport } from "../domain/order-state";
-import { ClientOrderIdGenerator } from "../utils/client-order-id";
 import { CommandError } from "./command-error";
 import { TradeReporter } from "./trade-reporter";
 import { OrderManager } from "./order-manager";
@@ -47,7 +46,6 @@ export class OrderReconciliationService {
     private botId: string,
     private exchange: ExchangeClient,
     private symbol: string,
-    private ids: ClientOrderIdGenerator,
     private manager: OrderManager,
     /** Phase 4 ledger emission; absent in strategy unit tests. */
     private reporter?: TradeReporter
@@ -56,6 +54,13 @@ export class OrderReconciliationService {
   /**
    * Idempotent slot placement: adopt an already-live order, or place one.
    * Returns the resulting state; the caller only records the trade on FILLED.
+   *
+   * The pre-submit lookup runs against the slot's **current generation**
+   * (`manager.idFor`) — never the previous cycle's spent id — so the venue's
+   * terminal history row for that id is unreachable and cannot short-circuit
+   * the placement with a phantom `FOUND_FILLED` (G1). Within a cycle the id
+   * is stable, which is what still lets a lost create response adopt the live
+   * order instead of double-placing.
    *
    * Intent-before-create (Phase 4): right before `createOrder` the intent is
    * published to the ledger. If it cannot be persisted the order is NOT
@@ -68,7 +73,7 @@ export class OrderReconciliationService {
     price: number,
     quantity: number
   ): Promise<SlotOutcome> {
-    const clientOrderId = this.ids.generate(levelIndex, side);
+    const clientOrderId = this.manager.idFor(levelIndex, side);
     this.manager.beginSubmit(clientOrderId, levelIndex, side, price, quantity);
     this.manager.markSubmitting(clientOrderId);
 
@@ -159,7 +164,12 @@ export class OrderReconciliationService {
     const orderId = order.orderId ?? record.orderId;
     if (FILLED_STATUSES.has(status)) {
       this.manager.markFilled(clientOrderId, orderId, order.executedQuantity);
-      return { kind: "FILLED", orderId, filledQty: order.executedQuantity };
+      return {
+        kind: "FILLED",
+        orderId,
+        filledQty: order.executedQuantity,
+        clientOrderId,
+      };
     }
     if (DEAD_STATUSES.has(status)) {
       this.manager.markNotFound(clientOrderId);
@@ -238,6 +248,7 @@ export class OrderReconciliationService {
           kind: "FILLED",
           orderId: lookup.order.orderId,
           filledQty: lookup.order.quantity,
+          clientOrderId,
         };
       case "FOUND_CANCELED":
       case "NOT_FOUND":

@@ -16,6 +16,14 @@ export interface GridSnapshotLevel {
   buyOrderId?: string;
   sellOrderId?: string;
   filled: boolean;
+  /**
+   * Slot id generations (G1) — see `GridLevel.buyGen`. Both fields are always
+   * written by current builds; `undefined` marks a legacy (pre-G1) snapshot,
+   * whose handle-less sides must start at generation 1 on restore so their
+   * spent generation-0 ids are never re-queried (Gate 1 report §3.1).
+   */
+  buyGen?: number;
+  sellGen?: number;
 }
 
 /** Persisted snapshot for one bot's grid. */

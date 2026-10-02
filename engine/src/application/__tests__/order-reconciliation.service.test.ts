@@ -62,7 +62,6 @@ function setup(script: Script) {
     "bot-x",
     exchange,
     SYMBOL,
-    ids,
     manager
   );
   return { levels, manager, exchange, service, ids };
@@ -220,7 +219,6 @@ describe("OrderReconciliationService — reconcileSymbol", () => {
       "bot-x",
       exchange,
       SYMBOL,
-      ids,
       manager
     );
     return { levels, service };
@@ -258,6 +256,94 @@ describe("OrderReconciliationService — reconcileSymbol", () => {
   });
 });
 
+describe("OrderReconciliationService — G1 (stale history never books a phantom fill)", () => {
+  const ids = new ClientOrderIdGenerator("bot-x");
+
+  it("queries and places only the slot's current generation", async () => {
+    // A spent cycle left its id at generation 0; the slot is armed for a new
+    // cycle at generation 1 (legacy seed-bump or a booked fill).
+    const levels: GridLevel[] = [{ price: 100, filled: false, buyGen: 1 }];
+    const manager = new OrderManager(levels, ids);
+    const queried: string[] = [];
+    const exchange = fakeExchange({
+      query: async id => {
+        queried.push(id);
+        return notFound();
+      },
+    });
+    const service = new OrderReconciliationService(
+      "bot-x",
+      exchange,
+      SYMBOL,
+      manager
+    );
+
+    const outcome = await service.ensureSlotOrder(0, "BUY", 100, 1);
+
+    const staleId = ids.generate(0, "BUY", 0);
+    const freshId = ids.generate(0, "BUY", 1);
+    expect(outcome.kind).toBe("OPEN");
+    // The spent id is never asked about — its terminal history row (the G1
+    // phantom source) is unreachable by construction.
+    expect(queried).toEqual([freshId]);
+    expect(queried).not.toContain(staleId);
+    expect(exchange.created).toHaveLength(1);
+    expect(
+      (exchange.created[0] as { clientOrderId: string }).clientOrderId
+    ).toBe(freshId);
+  });
+
+  it("spends the slot id on a fill booked through checkSlot", async () => {
+    const { service, levels, manager } = setup({
+      query: async () => notFound(),
+      getOrder: async (orderId: string) => ({ orderId, status: "FILLED" }),
+    });
+    await service.ensureSlotOrder(0, "BUY", 100, 1);
+
+    const outcome = await service.checkSlot(0, "BUY");
+
+    expect(outcome.kind).toBe("FILLED");
+    // The outcome carries the id the fill happened under (gen 0) — not the
+    // fresh one the generation bump just opened for the next cycle.
+    expect((outcome as { clientOrderId: string }).clientOrderId).toBe(
+      ids.generate(0, "BUY", 0)
+    );
+    expect(levels[0].buyGen).toBe(1);
+    expect((await service.ensureSlotOrder(0, "BUY", 100, 1)).kind).toBe("OPEN");
+    expect(manager.idFor(0, "BUY")).toBe(ids.generate(0, "BUY", 1));
+  });
+
+  it("spends the slot id on a fill booked through the pre-submit lookup", async () => {
+    // Lost-response adoption: the order went live AND filled before the
+    // retry — booking it is correct, and the generation must still spend so
+    // the NEXT cycle cannot re-query this row (the G1 path).
+    let queries = 0;
+    const { service, levels } = setup({
+      query: async () => {
+        queries += 1;
+        return queries === 1
+          ? notFound()
+          : {
+              kind: "FOUND_FILLED" as const,
+              order: { orderId: "filled-1", symbol: SYMBOL, status: "FILLED" },
+            };
+      },
+      createOrder: async () => {
+        throw new Error("connection reset after accept");
+      },
+    });
+
+    const outcome = await service.ensureSlotOrder(0, "BUY", 100, 1);
+
+    expect(outcome.kind).toBe("FILLED");
+    expect((outcome as { clientOrderId: string }).clientOrderId).toBe(
+      ids.generate(0, "BUY", 0)
+    );
+    expect(levels[0].buyGen).toBe(1);
+    expect(levels[0].filled).toBe(true);
+  });
+});
+
 describe("OrderReconciliationService — ORDER_INTENT gate (Phase 4)", () => {
   function withReporter(script: Script, intentPersisted: boolean) {
     const trace: string[] = [];
@@ -276,7 +362,6 @@ describe("OrderReconciliationService — ORDER_INTENT gate (Phase 4)", () => {
       "bot-x",
       base.exchange,
       SYMBOL,
-      base.ids,
       base.manager,
       reporter
     );
@@ -302,7 +387,6 @@ describe("OrderReconciliationService — ORDER_INTENT gate (Phase 4)", () => {
       "bot-x",
       base.exchange,
       SYMBOL,
-      base.ids,
       base.manager,
       { reportOrderIntent } as unknown as TradeReporter
     );

@@ -47,7 +47,17 @@ export interface OrderRecord {
 /** Outcome of reconciling one slot, consumed by the grid's tick. */
 export type SlotOutcome =
   | { kind: "OPEN"; orderId: string }
-  | { kind: "FILLED"; orderId?: string; filledQty?: number }
+  | {
+      kind: "FILLED";
+      orderId?: string;
+      filledQty?: number;
+      /**
+       * The client order id the fill actually happened under — captured
+       * before `OrderManager.markFilled` bumps the slot's generation, so the
+       * ledger books the identity the venue's history row belongs to (G1).
+       */
+      clientOrderId: string;
+    }
   | { kind: "SAFE_TO_RECREATE" }
   | { kind: "UNAVAILABLE"; reason: string };
 

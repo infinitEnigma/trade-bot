@@ -121,7 +121,24 @@ evidence — are preserved verbatim in
 [`docs/archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md`](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md).
 Only findings that applied to the code at `cc8da7c` are listed here. N3/N4/N5
 were resolved 2026-10-01 (Phase 2, `d746c4c`) and are kept as short records;
-N7 resolved 2026-10-02 (Phase 4); N6/R1/R2 remain open.
+N7 resolved 2026-10-02 (Phase 4); G1 (Gate 1) resolved 2026-10-02 (§4 row
+2b); N6/R1/R2 remain open.
+
+### G1 — ✅ Resolved (2026-10-02): stale deterministic-id history books phantom fills
+
+Gate 1 report §3.1: cycle N+1's `ensureSlotOrder` pre-submit lookup
+(`queryOrderByClientOrderId`) found the **terminal history row of cycle N's**
+spent `(bot, level, side)` id — `active: NOT_FOUND → history: FOUND_FILLED` —
+and booked a fill without any submission: bogus mark-to-market PnL, flipped
+`filled` flags, and no way to place a real order for that slot while the
+history row persisted (all five clean sells that window were first-time ids;
+level 5, whose id had history, never submitted).
+
+**Fix (§4 row 2b):** slot id generations. `OrderManager.markFilled` spends
+the slot's id (side generation bump), the next cycle derives a fresh id whose
+venue history cannot contain the spent row; generation 0 renders byte-identical
+to the legacy format so live handles keep resolving, and legacy (pre-generation)
+snapshots seed handle-less sides at generation 1 on restore.
 
 ### N3 — ✅ Resolved (`d746c4c`): a missing exchange order permanently blocks a grid slot
 
@@ -222,6 +239,7 @@ below.
 | ----- | -------- | ---- | ------ |
 | 0 | 🔴 P0 | **Prove the P0s before changing code.** Verify N1/N2 against the Orderly testnet (place a LIMIT with a `client_order_id`, then resubmit the same key and record the rejection); add a zero-client-id Orderly smoke test to the suite that runs on every PR. | 🔶 code-side done (`client.wire.test.ts`); **live proof done 2026-10-01 on Lighter testnet** (`.git/gatelogs/live/gate0.log`): probe 12/12 (1 note), engine smoke pass, venue left clean. Live finding: Lighter **accepts** a reused `client_order_index` silently (`ACCEPTED_NO_VISIBLE_CHANGE` — no second order), so idempotency there is venue **dedup**, not a rejection; Orderly's rejection stays wire-test only (mainnet connectivity-only). |
 | 2 | 🔴 P0 | **`OrderManager` + `OrderReconciliationService`** (reviewer's PR 1 — next milestone). Explicit order state machine (`INTENDED → SUBMITTING → UNKNOWN → OPEN / FILLED / NOT_FOUND(SAFE_TO_RECREATE) / EXCHANGE_UNAVAILABLE`); startup reconciliation (list venue orders, adopt/cancel/report orphans — N4); `NOT_FOUND` vs `UNREACHABLE` distinguished (N3); confirmed cancellation instead of swallowed errors (N5). | ✅ Done `d746c4c` — `order-manager.ts` + `order-reconciliation.service.ts` + `domain/order-state.ts`; the grid routes every slot write through the manager |
+| 2b | 🟠 P1 | **G1 — stale deterministic-id history books phantom fills** (Gate 1 report §3.1, Phase 2 residual). The pre-submit lookup for a spent slot id found the venue's terminal history row → `FOUND_FILLED` → phantom `markFilled` + `recordTrade` (bogus PnL, flipped `filled` flags) and blocked re-placement while history persisted. Fix: slot id **generations** — `markFilled` spends the slot's id (gen bump), legacy snapshots seed handle-less sides at generation 1, generation-0 ids stay byte-identical so live handles keep resolving. | ✅ Done 2026-10-02 — `client-order-id.ts` (`generation` suffix, legacy-exact gen 0) + `OrderManager.idFor`/`markFilled` bump + `GridLevel`/`GridSnapshotLevel` `buyGen`/`sellGen` + `SlotOutcome.FILLED.clientOrderId`; regression suite `grid-g1.test.ts` |
 | 3 | 🔴 P0 | **Snapshot durability** (reviewer's PR 1/2). Temp file → `fsync` → atomic rename; keep the previous snapshot; checksum + schema validation of level entries; distinguish "no snapshot" from "corrupt snapshot"; `snapshot ≠ exchange truth` stays explicit — reconciliation (Phase 2) is what makes the snapshot safe. | ✅ Done `d5aa842` — `durable-write.ts` (tmp → fsync → rename, keep `.prev`) + checksum + level-entry validation |
 | 4 | 🟠 P1 | **Durable trading ledger** (reviewer's PR 2). Persist order/fill intent before create; wire `TRADE_EXECUTED` events to an idempotent DB write (unique `(bot_id, client_order_id, exchange_order_id, fill_id)`); fix the `trades.status` vocabulary; filter `bot_instances` updates by `bot_id`, not `strategy_id` (N7). | ✅ Done `5d1cef9` (2026-10-02) — migration `016_durable_trading_ledger.sql` (`bot_trade_fills` + `bot_order_intents` + `bot_positions` + `bot_performance_snapshots`); `shared/src/protocol/engine-ledger.ts` event family; engine `LedgerTradeReporter` (intent-before-create, fail-closed); backend `TradeLedgerService`/`TradeLedgerRepository` ingested via `BotEventProcessor` behind the authority check; legacy `engine:events` listener removed |
 | 5 | 🟠 P1 | **Accounting correctness** (reviewer's PR 3; N6). Sell at the next level / take-profit, PnL from executed price with fees, `reduce_only` exits, position reconciliation from exchange positions, explicit `PARTIALLY_FILLED`. | ⬜ open |
@@ -256,7 +274,7 @@ are in `docs/archived/` (`PROJECT_REVIEW.md`, the original
 
 | Priority | Item | Where |
 | -------- | ---- | ----- |
-| 🟠 P1 | **PR-1 (engine trading-path P0s) fully closed** — Phase 0 live proof ✅ 2026-10-01, Phase 2 ✅ `d746c4c`, Phase 3 ✅ `d5aa842`. Durable order/fill ledger (Phase 4) ✅ 2026-10-02. Next: accounting correctness (Phase 5), bot account sessions (plan §D), account-scoped position domain APIs | §4 |
+| 🟠 P1 | **PR-1 (engine trading-path P0s) fully closed** — Phase 0 live proof ✅ 2026-10-01, Phase 2 ✅ `d746c4c`, Phase 3 ✅ `d5aa842`. Durable order/fill ledger (Phase 4) ✅ 2026-10-02. G1 (stale-id phantom fills, Gate 1 §3.1) ✅ 2026-10-02 (§4 row 2b). Next: accounting correctness (Phase 5), bot account sessions (plan §D), account-scoped position domain APIs | §4 |
 | 🟡 P2 | Failure-injection harness (Phase 6), agent participation (plan §E), frontend identity residue (R1), `shared` split (defer) | §4, §3 |
 
 ### How to keep this document honest

@@ -16,6 +16,15 @@ export interface GridLevel {
   buyOrderId?: string;
   sellOrderId?: string;
   filled: boolean;
+  /**
+   * Slot id generation for this side (G1). `OrderManager.markFilled` bumps it
+   * whenever a fill books, so the next cycle derives a fresh client order id
+   * and the pre-submit lookup can never re-query the venue's terminal history
+   * row for the spent id (stale `FOUND_FILLED` → phantom fill + blocked
+   * re-placement, Gate 1 report §3.1). Absent = 0 (legacy snapshots).
+   */
+  buyGen?: number;
+  sellGen?: number;
 }
 
 export interface BotStatus {
