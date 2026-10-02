@@ -60,9 +60,9 @@ Strategy intent → OrderManager → Order Reconciliation → Exchange
 | 🔴 P0    | `OrderManager` + `OrderReconciliationService` | **Open** (section 4, Phase 2)                 |
 | 🔴 P0    | Snapshot atomicity/corruption handling        | **Open** (section 4, Phase 3)                 |
 | 🔴 P0    | Live testnet duplicate-order proof            | **Open** (section 4, Phase 0, code-side done) |
-| 🟠 P1    | Durable order/fill ledger                     | ✅ **Done 2026-10-02** (section 4, Phase 4)    |
+| 🟠 P1    | Durable order/fill ledger                     | ✅ **Done** `5d1cef9` (section 4, Phase 4)     |
 | 🟠 P1    | Credential issuance DB idempotency            | ✅ **Done post-review** (`77506bf`) — see section 2 |
-| 🟠 P1    | Correct trade reporting / bot-scoped stats    | ✅ **Done 2026-10-02** (section 4, Phase 4, N7) |
+| 🟠 P1    | Correct trade reporting / bot-scoped stats    | ✅ **Done** `5d1cef9` (section 4, Phase 4, N7)  |
 | 🟠 P1    | Account-scoped position/balance domain APIs   | **Partially done** (section 4)                |
 | 🟠 P1    | Accounting/PnL correctness                    | **Open** (section 4, Phase 5, N6)             |
 | 🟡 P2    | Failure-injection harness                     | **Open** (section 4, Phase 6)                 |
@@ -174,7 +174,7 @@ exchange. **Owned by Phase 2** (confirmed cancellation).
 
 **Owned by Phase 5 (accounting correctness).**
 
-### N7 — ✅ Resolved (2026-10-02): the durable trade ledger is now reachable
+### N7 — ✅ Resolved (`5d1cef9`, 2026-10-02): the durable trade ledger is now reachable
 
 Phase 4 landed: the engine publishes the ledger event family
 (`ORDER_INTENT` / `TRADE_EXECUTED` / `POSITION_UPDATED` /
@@ -223,7 +223,7 @@ below.
 | 0 | 🔴 P0 | **Prove the P0s before changing code.** Verify N1/N2 against the Orderly testnet (place a LIMIT with a `client_order_id`, then resubmit the same key and record the rejection); add a zero-client-id Orderly smoke test to the suite that runs on every PR. | 🔶 code-side done (`client.wire.test.ts`); **live proof done 2026-10-01 on Lighter testnet** (`.git/gatelogs/live/gate0.log`): probe 12/12 (1 note), engine smoke pass, venue left clean. Live finding: Lighter **accepts** a reused `client_order_index` silently (`ACCEPTED_NO_VISIBLE_CHANGE` — no second order), so idempotency there is venue **dedup**, not a rejection; Orderly's rejection stays wire-test only (mainnet connectivity-only). |
 | 2 | 🔴 P0 | **`OrderManager` + `OrderReconciliationService`** (reviewer's PR 1 — next milestone). Explicit order state machine (`INTENDED → SUBMITTING → UNKNOWN → OPEN / FILLED / NOT_FOUND(SAFE_TO_RECREATE) / EXCHANGE_UNAVAILABLE`); startup reconciliation (list venue orders, adopt/cancel/report orphans — N4); `NOT_FOUND` vs `UNREACHABLE` distinguished (N3); confirmed cancellation instead of swallowed errors (N5). | ✅ Done `d746c4c` — `order-manager.ts` + `order-reconciliation.service.ts` + `domain/order-state.ts`; the grid routes every slot write through the manager |
 | 3 | 🔴 P0 | **Snapshot durability** (reviewer's PR 1/2). Temp file → `fsync` → atomic rename; keep the previous snapshot; checksum + schema validation of level entries; distinguish "no snapshot" from "corrupt snapshot"; `snapshot ≠ exchange truth` stays explicit — reconciliation (Phase 2) is what makes the snapshot safe. | ✅ Done `d5aa842` — `durable-write.ts` (tmp → fsync → rename, keep `.prev`) + checksum + level-entry validation |
-| 4 | 🟠 P1 | **Durable trading ledger** (reviewer's PR 2). Persist order/fill intent before create; wire `TRADE_EXECUTED` events to an idempotent DB write (unique `(bot_id, client_order_id, exchange_order_id, fill_id)`); fix the `trades.status` vocabulary; filter `bot_instances` updates by `bot_id`, not `strategy_id` (N7). | ✅ Done 2026-10-02 — migration `016_durable_trading_ledger.sql` (`bot_trade_fills` + `bot_order_intents` + `bot_positions` + `bot_performance_snapshots`); `shared/src/protocol/engine-ledger.ts` event family; engine `LedgerTradeReporter` (intent-before-create, fail-closed); backend `TradeLedgerService`/`TradeLedgerRepository` ingested via `BotEventProcessor` behind the authority check; legacy `engine:events` listener removed |
+| 4 | 🟠 P1 | **Durable trading ledger** (reviewer's PR 2). Persist order/fill intent before create; wire `TRADE_EXECUTED` events to an idempotent DB write (unique `(bot_id, client_order_id, exchange_order_id, fill_id)`); fix the `trades.status` vocabulary; filter `bot_instances` updates by `bot_id`, not `strategy_id` (N7). | ✅ Done `5d1cef9` (2026-10-02) — migration `016_durable_trading_ledger.sql` (`bot_trade_fills` + `bot_order_intents` + `bot_positions` + `bot_performance_snapshots`); `shared/src/protocol/engine-ledger.ts` event family; engine `LedgerTradeReporter` (intent-before-create, fail-closed); backend `TradeLedgerService`/`TradeLedgerRepository` ingested via `BotEventProcessor` behind the authority check; legacy `engine:events` listener removed |
 | 5 | 🟠 P1 | **Accounting correctness** (reviewer's PR 3; N6). Sell at the next level / take-profit, PnL from executed price with fees, `reduce_only` exits, position reconciliation from exchange positions, explicit `PARTIALLY_FILLED`. | ⬜ open |
 | 6 | 🟡 P2 | **Failure-injection harness** (reviewer's PR 4). Fake exchange with scripted failures (accept-then-drop, timeout, 500, `NOT_FOUND`, duplicate-key rejection, partial fill) and a test matrix: crash at each step of create, Redis down/restart, restart with/without/corrupt snapshot, exchange-side orphans. | ⬜ open — only after Phases 2–4 exist |
 | – | 🟠 P1 | **Account-scoped position/balance domain APIs.** Retire the userId-only most-recent-row heuristic (R2); `getPosition(accountId, symbol)` with user-level aggregation separate. (P2: drop the unconsumed `kodiak_status` column from `user_trading_summary`.) | ⬜ partially done — portfolio reads are account-scoped; the domain interface is not |
