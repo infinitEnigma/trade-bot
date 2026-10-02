@@ -35,6 +35,7 @@ import {
   DEFAULT_EXCHANGE_HTTP_TIMEOUT_MS,
   ExchangeAccountInfo,
   ExchangeClient,
+  ExchangeFeeRates,
   ExchangeOpenOrder,
   ExchangeOrderRequest,
   ExchangeOrderResponse,
@@ -57,6 +58,7 @@ import {
   UnknownMarketError,
 } from "./market-map";
 import { deriveLighterClientOrderIndexForKey } from "./client-order-id";
+import { resolveLighterFeeRates } from "./fees";
 
 export interface LighterClientConfig {
   /** Lighter REST base URL (testnet or mainnet). */
@@ -96,6 +98,14 @@ const LIGHTER_TIME_IN_FORCE_IOC = 0;
 
 /** Auth-token cache: minted tokens live well under the 8h sidecar cap. */
 const AUTH_TOKEN_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Fee-rate cache TTL (ms). An account tier can only change once a day (the
+ * venue enforces a cooldown on `/changeAccountTier`), so a cached read is
+ * safe — and a *failed* read is never cached, so an outage cannot be
+ * remembered as a rate.
+ */
+const FEE_RATES_TTL_MS = 5 * 60 * 1000;
 
 interface LighterOrderRow {
   order_id?: unknown;
@@ -223,6 +233,7 @@ export class LighterClient implements ExchangeClient {
   private readonly signer: TransactionSigner;
   private authToken: string | null = null;
   private authTokenAt = 0;
+  private feeRates: { at: number; value: ExchangeFeeRates } | null = null;
 
   constructor(config: LighterClientConfig) {
     if (!config.baseUrl) {
@@ -359,6 +370,29 @@ export class LighterClient implements ExchangeClient {
       );
     }
     return { symbol, price, mark_price: price };
+  }
+
+  /**
+   * Venue-reported fee rates for this account (`GET /api/v1/accountLimits`,
+   * authenticated) — the only account-scoped fee signal the venue exposes
+   * (Phase-1 finding, see `fees.ts`): no REST tape carries a per-fill fee, and
+   * market metadata reads `0.0000` everywhere. The rate is therefore derived
+   * from the account's tier, and the engine books `notional × rate` per fill.
+   *
+   * Fails loudly rather than answering a default: a transport failure rejects
+   * with `CommandError` (retryable when the venue is unreachable), because
+   * booking a wrong rate is worse than booking none.
+   */
+  async getFeeRates(): Promise<ExchangeFeeRates> {
+    if (this.feeRates && Date.now() - this.feeRates.at < FEE_RATES_TTL_MS) {
+      return this.feeRates.value;
+    }
+    const response = await this.authorizedGet("/api/v1/accountLimits", {
+      account_index: this.credentials.accountIndex,
+    });
+    const rates = resolveLighterFeeRates(response.data);
+    this.feeRates = { at: Date.now(), value: rates };
+    return rates;
   }
 
   async createOrder(

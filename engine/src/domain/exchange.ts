@@ -68,6 +68,34 @@ export interface ExchangeAccountInfo {
 }
 
 /**
+ * Account fee rates as reported by the venue, expressed as **fractions of the
+ * traded notional** (`0.0004` = 0.04% = 4 bps).
+ *
+ * Fee rates are an account-level fact, not a per-fill field: Phase-1
+ * reconnaissance (2026-10-02) found that Lighter exposes **no** fee on any
+ * REST tape — including the authenticated, account-scoped `/api/v1/trades` —
+ * so the engine derives a fill's fee as `notional × rate` from this type.
+ * Provenance rides along so the ledger can record where a number came from.
+ */
+export interface ExchangeFeeRates {
+  /** Maker fee as a fraction of notional (0.0004 = 0.04% = 4 bps). */
+  makerRate: number;
+  /** Taker fee as a fraction of notional. */
+  takerRate: number;
+  /** Venue-reported tier label when the venue names one (e.g. "standard"). */
+  tier?: string;
+  /** True when these rates describe the account's own venue-reported tier. */
+  venueReported?: boolean;
+  /**
+   * True when `makerRate`/`takerRate` are the exact published rates; false
+   * when an unapplied discount or an unmapped tier makes them an upper bound.
+   */
+  exact?: boolean;
+  /** Human-readable provenance of the numbers (venue fields / fallback). */
+  basis?: string;
+}
+
+/**
  * Order lookup result for idempotency reconciliation.
  *
  * `NOT_FOUND` means the exchange definitively reports the order absent
@@ -136,6 +164,15 @@ export interface ExchangeClient {
    * Get account information.
    */
   getAccountInfo(): Promise<ExchangeAccountInfo>;
+
+  /**
+   * Venue-reported fee rates for this account, when the venue exposes them.
+   *
+   * Optional by design: an adapter whose venue publishes no account fee tier
+   * omits it, and callers must then fall back to configured rates — an absent
+   * method means "unknown", never "fee-free".
+   */
+  getFeeRates?(): Promise<ExchangeFeeRates>;
 
   /**
    * List open orders for a symbol — the startup orphan cross-check source.

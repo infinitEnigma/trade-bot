@@ -500,3 +500,77 @@ describe("LighterClient", () => {
     expect(error.retryable).toBe(false);
   });
 });
+
+describe("LighterClient.getFeeRates", () => {
+  // The live body `GET /api/v1/accountLimits` returns for the testnet account.
+  const ACCOUNT_LIMITS = {
+    code: 200,
+    user_tier: "standard",
+    user_tier_name: "standard",
+    current_maker_fee_tick: 0,
+    current_taker_fee_tick: 0,
+    effective_lit_stakes: "0.00000000",
+  };
+
+  function feeClient(handler: (params?: unknown) => unknown): {
+    client: LighterClient;
+    calls: { path: string; params?: unknown }[];
+  } {
+    const { instance, calls } = restStub({
+      ...BASE_HANDLERS,
+      "/api/v1/accountLimits": handler,
+    });
+    const client = new LighterClient({
+      baseUrl: "http://stub",
+      credentials: CREDS,
+      signer: signerStub(),
+      rest: instance,
+    });
+    return { client, calls };
+  }
+
+  it("reads the account tier from the authenticated accountLimits endpoint", async () => {
+    const { client, calls } = feeClient(() => ACCOUNT_LIMITS);
+
+    const rates = await client.getFeeRates();
+
+    expect(rates).toMatchObject({
+      makerRate: 0,
+      takerRate: 0,
+      tier: "standard",
+      venueReported: true,
+      exact: true,
+    });
+    expect(calls.map(call => call.path)).toEqual(["/api/v1/accountLimits"]);
+    // The account must be named explicitly: the endpoint is account-scoped.
+    expect(calls[0].params).toEqual({ account_index: CREDS.accountIndex });
+  });
+
+  it("caches the tier read (a tier can only change once a day)", async () => {
+    const { client, calls } = feeClient(() => ACCOUNT_LIMITS);
+
+    await client.getFeeRates();
+    await client.getFeeRates();
+
+    expect(calls).toHaveLength(1);
+  });
+
+  it("rejects instead of answering a default rate when the venue fails", async () => {
+    const { client, calls } = feeClient(() => {
+      throw httpError(500, { code: 500, message: "venue down" });
+    });
+
+    const first = (await client.getFeeRates().catch(reason => reason)) as
+      CommandError | undefined;
+
+    expect(first).toBeInstanceOf(CommandError);
+    expect((first as CommandError).retryable).toBe(true);
+    expect((first as CommandError).message).toContain(
+      "GET /api/v1/accountLimits"
+    );
+
+    // A failed read is never cached as a rate — the next call retries.
+    await client.getFeeRates().catch(() => undefined);
+    expect(calls).toHaveLength(2);
+  });
+});

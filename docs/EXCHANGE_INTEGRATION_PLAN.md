@@ -93,6 +93,12 @@ findings, not against the published docs.
 `client_order_id` ≤36 chars, `GET /v1/orders` listing) so the adapter keeps
 compiling and stays the reference implementation.
 
+The accounting track added one more **optional** member: `getFeeRates?()` →
+`ExchangeFeeRates` (venue-reported account maker/taker rates). Optional
+because only a venue that publishes an account fee tier can answer it — an
+absent method means "unknown", never "fee-free" (decision N6a in
+`PROJECT_REVIEW_GAP_ANALYSIS.md`).
+
 ### B2 — signer plumbing (sidecar already exists)
 
 | File                                                        | Change                                                                                                                         |
@@ -131,6 +137,15 @@ Two further venue rules were pinned live on 2026-09-30 (M1, evidence
   invalid" otherwise), while GTT requires a positive ms timestamp. The engine's
   panic flatten is a MARKET → IOC limit, and the sidecar normalises the expiry
   per TIF (`SignerService._resolve_expiry`).
+
+Fee sourcing (accounting track, added 2026-10-02): `fees.ts` maps the account
+tier reported by `GET /api/v1/accountLimits` (auth) onto the published rates —
+Standard 0 / 0, Plus 0.005% both sides, Premium 0.0040% maker / 0.0280% taker
+(undiscounted; the LIT-stake discount is not applied, so the number is an upper
+bound). No Lighter REST tape carries a per-fill fee and market metadata reads
+`0.0000` everywhere (decision N6a), so `LighterClient.getFeeRates()`
+(TTL-cached, fails loudly) is the engine's only fee source and a fill's fee is
+`notional × rate`.
 
 ### B4 — strategy decoupling
 

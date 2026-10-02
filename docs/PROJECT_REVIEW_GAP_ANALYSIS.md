@@ -191,6 +191,30 @@ exchange. **Owned by Phase 2** (confirmed cancellation).
 
 **Owned by Phase 5 (accounting correctness).**
 
+**Phase-5 prerequisite — fee sourcing (N6a, settled 2026-10-02).** PnL "from
+executed price with fees" needs a fee number, and the venue exposes no per-fill
+fee: `/api/v1/trades` returns the same key set publicly and authenticated
+(`account_index`, `order_index`, `client_id` filters all 200) with **no**
+`maker_fee`/`taker_fee`, even though the L1 `Trade` event carries `tf`/`mf`;
+`orderBookDetails.maker_fee`/`taker_fee` read `0.0000` for all 237 mainnet
+markets (a placeholder). The only account-scoped fee signal is the
+authenticated `GET /api/v1/accountLimits`: `user_tier`/`user_tier_name`
+(`"standard"` for the testnet account), `current_{maker,taker}_fee_tick`
+(`0` there — the tick→rate scale is undocumented and uncalibratable while no
+fee is charged) and `effective_lit_stakes`. **Decision:** source the *rate*
+from the venue-reported tier through the published schedule (Standard 0/0,
+Plus 0.005% both sides, Premium 0.0040%/0.0280% undiscounted) and let the
+engine book `notional × rate` per fill — even though the venue is zero-fee
+today, so a tier change (or a non-zero-fee venue) books correctly without new
+plumbing. Landed as Phase-1 code: `ExchangeFeeRates` +
+`ExchangeClient.getFeeRates?()` in `engine/src/domain/exchange.ts` and
+`LighterClient.getFeeRates()` (TTL-cached, fails loudly, never defaults a
+rate) over the pure mapper `engine/src/exchanges/lighter/fees.ts`. Provenance
+(`tier`, `venueReported`, `exact`, `basis`) rides on the returned rates so the
+ledger can record where a number came from; an unmapped tier falls back to the
+**worst** published rate with `venueReported: false` rather than inventing a
+zero.
+
 ### N7 — ✅ Resolved (`5d1cef9`, 2026-10-02): the durable trade ledger is now reachable
 
 Phase 4 landed: the engine publishes the ledger event family
@@ -242,7 +266,7 @@ below.
 | 2b | 🟠 P1 | **G1 — stale deterministic-id history books phantom fills** (Gate 1 report §3.1, Phase 2 residual). The pre-submit lookup for a spent slot id found the venue's terminal history row → `FOUND_FILLED` → phantom `markFilled` + `recordTrade` (bogus PnL, flipped `filled` flags) and blocked re-placement while history persisted. Fix: slot id **generations** — `markFilled` spends the slot's id (gen bump), legacy snapshots seed handle-less sides at generation 1, generation-0 ids stay byte-identical so live handles keep resolving. | ✅ Done 2026-10-02 — `client-order-id.ts` (`generation` suffix, legacy-exact gen 0) + `OrderManager.idFor`/`markFilled` bump + `GridLevel`/`GridSnapshotLevel` `buyGen`/`sellGen` + `SlotOutcome.FILLED.clientOrderId`; regression suite `grid-g1.test.ts` |
 | 3 | 🔴 P0 | **Snapshot durability** (reviewer's PR 1/2). Temp file → `fsync` → atomic rename; keep the previous snapshot; checksum + schema validation of level entries; distinguish "no snapshot" from "corrupt snapshot"; `snapshot ≠ exchange truth` stays explicit — reconciliation (Phase 2) is what makes the snapshot safe. | ✅ Done `d5aa842` — `durable-write.ts` (tmp → fsync → rename, keep `.prev`) + checksum + level-entry validation |
 | 4 | 🟠 P1 | **Durable trading ledger** (reviewer's PR 2). Persist order/fill intent before create; wire `TRADE_EXECUTED` events to an idempotent DB write (unique `(bot_id, client_order_id, exchange_order_id, fill_id)`); fix the `trades.status` vocabulary; filter `bot_instances` updates by `bot_id`, not `strategy_id` (N7). | ✅ Done `5d1cef9` (2026-10-02) — migration `016_durable_trading_ledger.sql` (`bot_trade_fills` + `bot_order_intents` + `bot_positions` + `bot_performance_snapshots`); `shared/src/protocol/engine-ledger.ts` event family; engine `LedgerTradeReporter` (intent-before-create, fail-closed); backend `TradeLedgerService`/`TradeLedgerRepository` ingested via `BotEventProcessor` behind the authority check; legacy `engine:events` listener removed |
-| 5 | 🟠 P1 | **Accounting correctness** (reviewer's PR 3; N6). Sell at the next level / take-profit, PnL from executed price with fees, `reduce_only` exits, position reconciliation from exchange positions, explicit `PARTIALLY_FILLED`. | ⬜ open |
+| 5 | 🟠 P1 | **Accounting correctness** (reviewer's PR 3; N6). Sell at the next level / take-profit, PnL from executed price with fees, `reduce_only` exits, position reconciliation from exchange positions, explicit `PARTIALLY_FILLED`. | 🔶 in progress — **fee sourcing done 2026-10-02** (N6a: rate from the venue-reported account tier, `notional × rate` per fill; `ExchangeClient.getFeeRates?()` + `LighterClient.getFeeRates()` + `fees.ts`, tests green); PnL/reduce_only/PARTIAL still open |
 | 6 | 🟡 P2 | **Failure-injection harness** (reviewer's PR 4). Fake exchange with scripted failures (accept-then-drop, timeout, 500, `NOT_FOUND`, duplicate-key rejection, partial fill) and a test matrix: crash at each step of create, Redis down/restart, restart with/without/corrupt snapshot, exchange-side orphans. | ⬜ open — only after Phases 2–4 exist |
 | – | 🟠 P1 | **Account-scoped position/balance domain APIs.** Retire the userId-only most-recent-row heuristic (R2); `getPosition(accountId, symbol)` with user-level aggregation separate. (P2: drop the unconsumed `kodiak_status` column from `user_trading_summary`.) | ⬜ partially done — portfolio reads are account-scoped; the domain interface is not |
 | – | 🟡 P2 | **Frontend identity residue.** Remove the `bot.strategy_id === botId` compatibility fallback once no caller passes a strategy id (R1). | ⬜ open |
