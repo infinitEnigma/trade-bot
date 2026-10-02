@@ -356,8 +356,8 @@ export const ConnectExchangeAccount: React.FC<ConnectExchangeAccountProps> = ({
           <div className="flex items-center gap-3 p-4 rounded-lg bg-info/10 border border-info/20">
             <AlertCircle className="w-4 h-4 text-info shrink-0" />
             <p className="text-info text-sm">
-              This {form.exchange} ({form.environment}) account
-              &quot;{pendingRef}&quot; is already connected.
+              This {form.exchange} ({form.environment}) account &quot;
+              {pendingRef}&quot; is already connected.
             </p>
           </div>
         )}
@@ -367,8 +367,8 @@ export const ConnectExchangeAccount: React.FC<ConnectExchangeAccountProps> = ({
             <AlertCircle className="w-4 h-4 text-textMuted shrink-0" />
             <p className="text-textMuted text-sm">
               Another {form.exchange} ({form.environment}) account is already
-              connected — both can coexist; the backend keys accounts by
-              account reference.
+              connected — both can coexist; the backend keys accounts by account
+              reference.
             </p>
           </div>
         )}
