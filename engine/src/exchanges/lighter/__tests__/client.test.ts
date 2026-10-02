@@ -129,6 +129,46 @@ describe("LighterClient", () => {
     expect(order.orderId).toBe("42");
   });
 
+  it("forwards reduceOnly to the signing sidecar on an exit (N6)", async () => {
+    const signed: Array<{ reduceOnly?: boolean }> = [];
+    const client = clientWith(
+      {
+        ...BASE_HANDLERS,
+        "/api/v1/accountActiveOrders": () => ({
+          orders: [
+            {
+              order_id: "31",
+              client_order_index: "31",
+              status: "open",
+              is_ask: true,
+              price: "2600",
+              initial_base_amount: "1",
+            },
+          ],
+        }),
+      },
+      signerStub({
+        createOrder: async (_credentials, request) => {
+          signed.push({ reduceOnly: request.reduceOnly });
+          return { txHash: "0xr", clientOrderIndex: request.clientOrderIndex };
+        },
+      })
+    );
+
+    await client.createOrder({
+      symbol: "ETH",
+      side: "SELL",
+      orderType: "LIMIT",
+      orderPrice: 2600,
+      orderQuantity: 1,
+      clientOrderId: "31",
+      reduceOnly: true,
+    });
+
+    expect(signed).toHaveLength(1);
+    expect(signed[0].reduceOnly).toBe(true);
+  });
+
   it("rejects unknown symbols without guessing a market", async () => {
     const client = clientWith(
       {

@@ -467,6 +467,10 @@ export class LighterClient implements ExchangeClient {
         // Only set for MARKET (IOC); `undefined` keeps the signer default
         // (GTT) that resting grid levels require.
         timeInForce,
+        // Reduce-only exit (N6): forwarded verbatim to the sidecar, which
+        // already accepts `reduce_only`. Undefined keeps the venue default
+        // (false); the grid sets `true` on its exit legs.
+        reduceOnly: request.reduceOnly,
       });
       logger.info("Lighter order submitted", {
         symbol: request.symbol,

@@ -66,12 +66,17 @@ export class OrderReconciliationService {
    * published to the ledger. If it cannot be persisted the order is NOT
    * placed — a submission the backend never saw is exactly the orphan the
    * durable ledger exists to prevent (fail-closed, same spirit as D1).
+   *
+   * `reduceOnly` is forwarded to the adapter on the create request; the grid
+   * sets it on exit legs so a stale sell can never open a short (N6). It is the
+   * caller's decision — this service never infers it from the side.
    */
   async ensureSlotOrder(
     levelIndex: number,
     side: "BUY" | "SELL",
     price: number,
-    quantity: number
+    quantity: number,
+    reduceOnly = false
   ): Promise<SlotOutcome> {
     const clientOrderId = this.manager.idFor(levelIndex, side);
     this.manager.beginSubmit(clientOrderId, levelIndex, side, price, quantity);
@@ -106,6 +111,7 @@ export class OrderReconciliationService {
         orderPrice: price,
         orderQuantity: quantity,
         clientOrderId,
+        reduceOnly,
       });
       this.manager.markOpen(clientOrderId, result.orderId);
       logger.info("Placed order", {

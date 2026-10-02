@@ -8,11 +8,13 @@
  * Wire contract facts (per the repo's archived Orderly API reference and
  * orderly.network docs, "Create order"):
  * - Request body keys are snake_case: `symbol`, `order_type`, `side`,
- *   `order_price`, `order_quantity`, `client_order_id`.
+ *   `order_price`, `order_quantity`, `client_order_id`, `reduce_only`.
  * - `order_type`: LIMIT / MARKET / IOC / FOK / POST_ONLY / ASK / BID.
  * - `side`: BUY / SELL.
  * - `client_order_id`: max 36 chars; hyphen accepted but not as the first
  *   character; must be unique among the account's open orders.
+ * - `reduce_only`: documented boolean (default false) that restricts the order
+ *   to shrinking an existing position — the grid's exit legs set it (N6).
  * - Order status vocabulary: NEW / CANCELLED / PARTIAL_FILLED / FILLED /
  *   REJECTED / INCOMPLETE / COMPLETED.
  *
@@ -31,6 +33,7 @@ export interface OrderlyOrderPayload {
   order_quantity?: number;
   order_amount?: number;
   client_order_id?: string;
+  reduce_only?: boolean;
 }
 
 /**
@@ -54,7 +57,8 @@ export function isAcceptedOrderlyClientOrderId(value: string): boolean {
 
 /**
  * Map an internal `OrderRequest` onto the exact snake_case body the exchange
- * expects, dropping internal-only fields (e.g. `reduceOnly`).
+ * expects. `reduceOnly` is emitted only when set to `true`, so ordinary orders
+ * keep the exact pre-N6 wire body (the exchange's own default is false).
  *
  * Limit orders require `orderPrice`; market orders must not carry a price.
  * `orderQuantity` is required for every order this engine places.
@@ -103,6 +107,13 @@ export function toOrderlyOrderPayload(
       );
     }
     payload.client_order_id = request.clientOrderId;
+  }
+
+  // Emit `reduce_only` only for a genuine reduce-only exit: a `false`/absent
+  // value must not add a key to the wire body (keeps BUY placements byte-for-
+  // byte identical to before N6).
+  if (request.reduceOnly === true) {
+    payload.reduce_only = true;
   }
 
   return payload;

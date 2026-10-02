@@ -25,6 +25,18 @@ describe("toOrderlyOrderPayload", () => {
     });
   });
 
+  it("emits the wire `reduce_only` key only for a reduce-only order", () => {
+    // N6: exit legs set reduceOnly, ordinary placements must keep the exact
+    // pre-N6 wire body (no `reduce_only` key at all).
+    expect(toOrderlyOrderPayload({ ...BASE, reduceOnly: true })).toMatchObject({
+      reduce_only: true,
+    });
+    expect(toOrderlyOrderPayload(BASE)).not.toHaveProperty("reduce_only");
+    expect(
+      toOrderlyOrderPayload({ ...BASE, reduceOnly: false })
+    ).not.toHaveProperty("reduce_only");
+  });
+
   it("emits exactly the wire keys with no camelCase remnants", () => {
     const payload = toOrderlyOrderPayload(BASE) as unknown as Record<
       string,

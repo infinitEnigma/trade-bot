@@ -164,6 +164,13 @@ Booking (N6 core, added 2026-10-02) — how the grid uses those rates:
 - `PositionReport.pnl` is realised PnL net of fees; `unrealizedPnl` marks the
   open inventory at the ticker price. Both are stored (`bot_positions.pnl`,
   `unrealized_pnl` — migration `017_accounting_pnl_split.sql`).
+- Exit legs are **reduce-only** (added 2026-10-02): `ExchangeOrderRequest`
+  (and the adapter-side `OrderRequest`) carries `reduceOnly`, Orderly's
+  documented `reduce_only` is mapped (`payload.ts`), and Lighter forwards it
+  through the signing sidecar (which already accepted it). The grid sets it
+  `true` on the SELL leg via `OrderReconciliationService.ensureSlotOrder`, so a
+  stale sell can never open a short. Ordinary orders omit the key entirely, so
+  entry placements keep the exact pre-N6 wire body.
 
 ### B4 — strategy decoupling
 

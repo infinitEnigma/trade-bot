@@ -64,6 +64,8 @@ export interface OrderRequest {
   orderPrice?: number;
   orderQuantity: number;
   clientOrderId?: string;
+  /** Reduce-only exit (N6) — see `ExchangeOrderRequest.reduceOnly`. */
+  reduceOnly?: boolean;
 }
 
 export interface OrderResponse {

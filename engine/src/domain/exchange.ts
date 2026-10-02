@@ -28,6 +28,15 @@ export interface ExchangeOrderRequest {
   orderPrice?: number;
   orderQuantity: number;
   clientOrderId?: string;
+  /**
+   * Venue-level "reduce only" flag (N6): the order may only shrink the
+   * account's existing position, never open or grow one. The **caller** decides
+   * — the grid sets it on its exit legs, whose only job is to close a level's
+   * long — and the adapter forwards it verbatim (Orderly `reduce_only`;
+   * Lighter `reduce_only` through the signing sidecar). Undefined means "not
+   * requested", not "false".
+   */
+  reduceOnly?: boolean;
 }
 
 /**

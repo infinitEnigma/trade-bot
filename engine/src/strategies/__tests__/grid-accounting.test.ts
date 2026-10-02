@@ -252,6 +252,27 @@ describe("GridTradingStrategy executed-price accounting (N6)", () => {
     expect(sells[0].orderPrice).toBe(99.35);
     expect(sells[0].orderPrice).toBeGreaterThan(97.4);
   });
+
+  it("marks the exit leg reduce-only and leaves entries plain (N6)", async () => {
+    const exchange = makeExchange();
+    const s = makeStrategy("bot-n6-reduceonly", exchange);
+    await s.initialize(100);
+    await s.start();
+    await s.tick();
+    await fillBuy(s, exchange, 0, LEVEL_0 - 0.1);
+    await tickAt(s, exchange, LEVEL_0 + 0.5);
+
+    const requests = exchange.createOrder.mock.calls.map(
+      c => c[0] as { side: string; reduceOnly?: boolean }
+    );
+    const sells = requests.filter(r => r.side === "SELL");
+    expect(sells).toHaveLength(1);
+    expect(sells[0].reduceOnly).toBe(true);
+    // Entries are ordinary orders: reduceOnly defaults off, never true.
+    const buys = requests.filter(r => r.side === "BUY");
+    expect(buys.length).toBeGreaterThan(0);
+    expect(buys.every(r => r.reduceOnly === false)).toBe(true);
+  });
 });
 
 describe("GridTradingStrategy realised PnL with fees (N6)", () => {

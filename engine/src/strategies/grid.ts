@@ -303,7 +303,10 @@ export class GridTradingStrategy {
               i,
               "SELL",
               sellPrice,
-              this.config.orderQuantity
+              this.config.orderQuantity,
+              // Reduce-only (N6): the exit's only job is to close this level's
+              // long, so a stale sell must never open a short.
+              true
             );
             if (outcome.kind === "FILLED") {
               await this.recordTrade(i, level, "SELL", outcome);

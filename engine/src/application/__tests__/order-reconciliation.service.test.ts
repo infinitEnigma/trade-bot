@@ -132,6 +132,23 @@ describe("OrderReconciliationService — ensureSlotOrder", () => {
     expect(exchange.created).toHaveLength(1);
     expect(levels[0].buyOrderId).toBe("recovered-1");
   });
+
+  it("forwards reduceOnly on the create request (grid exit legs, N6)", async () => {
+    const { exchange, service } = setup({ query: async () => notFound() });
+    await service.ensureSlotOrder(0, "SELL", 110, 1, true);
+    expect(exchange.created).toHaveLength(1);
+    expect(exchange.created[0]).toMatchObject({
+      side: "SELL",
+      reduceOnly: true,
+    });
+  });
+
+  it("defaults reduceOnly off for ordinary placements", async () => {
+    const { exchange, service } = setup({ query: async () => notFound() });
+    await service.ensureSlotOrder(0, "BUY", 100, 1);
+    const created = exchange.created[0] as { reduceOnly?: boolean };
+    expect(created.reduceOnly).toBe(false);
+  });
 });
 
 describe("OrderReconciliationService — checkSlot", () => {
