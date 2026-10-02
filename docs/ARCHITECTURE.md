@@ -209,9 +209,10 @@ The only strategy implemented today is the grid (`strategies/grid.ts`):
 lifecycle is reconciled against the exchange (`OrderManager` +
 `OrderReconciliationService`), every order/fill reaches the durable ledger, and
 exits now price above the executed entry with fee-inclusive realised PnL (N6).
-Exit legs are `reduce_only`, so a stale sell can no longer open a short.
-Still open: per-fill `PARTIALLY_FILLED` accounting (deferred pending a venue
-observation) and position reconciliation against `exchange.getPositions()`.
+Exit legs are `reduce_only`, so a stale sell can no longer open a short, and the
+grid cross-checks its position against `exchange.getPositions()`, reporting
+venue truth on drift. Still open: per-fill `PARTIALLY_FILLED` accounting
+(deferred pending a venue observation).
 
 Model note: order identity, slot state and the snapshot are **bot-scoped** today
 (`<botId>.json`, one `GridTradingStrategy` per `BotRuntime`). Under the planned

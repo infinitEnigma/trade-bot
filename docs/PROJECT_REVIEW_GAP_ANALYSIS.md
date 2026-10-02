@@ -64,7 +64,7 @@ Strategy intent → OrderManager → Order Reconciliation → Exchange
 | 🟠 P1    | Credential issuance DB idempotency            | ✅ **Done post-review** (`77506bf`) — see section 2 |
 | 🟠 P1    | Correct trade reporting / bot-scoped stats    | ✅ **Done** `5d1cef9` (section 4, Phase 4, N7)  |
 | 🟠 P1    | Account-scoped position/balance domain APIs   | **Partially done** (section 4)                |
-| 🟠 P1    | Accounting/PnL correctness                    | **Core done + `reduce_only`** (section 4, Phase 5, N6) — partial fills / venue position reconciliation open |
+| 🟠 P1    | Accounting/PnL correctness                    | **Core done + `reduce_only` + position reconciliation** (section 4, Phase 5, N6) — partial fills open |
 | 🟡 P2    | Failure-injection harness                     | **Open** (section 4, Phase 6)                 |
 | 🟡 P2    | Remove legacy engine HTTP writers             | ✅ **Done post-review** (`132fbd1`, `cc8da7c`) — see section 2 |
 | 🟡 P2    | Split `shared` package                        | **Defer** (section 4)                         |
@@ -233,10 +233,18 @@ sidecar, which already accepted it — and the grid sets it `true` on every exit
 leg (`OrderReconciliationService.ensureSlotOrder(..., reduceOnly)`), so a stale
 sell can no longer open a short.
 
+**Position reconciliation landed 2026-10-02.** The grid periodically
+cross-checks its own position (`buildPositionReport`) against the venue's
+`exchange.getPositions()` — throttled, and seeded at `start()` so the first read
+is one interval after start, never on the first tick. Drift beyond half an order
+is logged and the `POSITION_UPDATED` then reports the **venue** quantity/entry
+(realised `pnl` stays the ledger-derived local number); the local levels are
+deliberately not rewritten by a single read. A failed read is logged and
+skipped, never failing a tick.
+
 **Still open under Phase 5:** per-fill `PARTIALLY_FILLED` accounting (partials
 need their own fill identity — deferred pending a Lighter testnet observation of
-a genuine partial fill) and position reconciliation against
-`exchange.getPositions()`.
+a genuine partial fill).
 
 **Phase-5 prerequisite — fee sourcing (N6a, settled 2026-10-02).** PnL "from
 executed price with fees" needs a fee number, and the venue exposes no per-fill
@@ -316,7 +324,7 @@ below.
 | 2b | 🟠 P1 | **G1 — stale deterministic-id history books phantom fills** (Gate 1 report §3.1, Phase 2 residual). The pre-submit lookup for a spent slot id found the venue's terminal history row → `FOUND_FILLED` → phantom `markFilled` + `recordTrade` (bogus PnL, flipped `filled` flags) and blocked re-placement while history persisted. Fix: slot id **generations** — `markFilled` spends the slot's id (gen bump), legacy snapshots seed handle-less sides at generation 1, generation-0 ids stay byte-identical so live handles keep resolving. | ✅ Done 2026-10-02 — `client-order-id.ts` (`generation` suffix, legacy-exact gen 0) + `OrderManager.idFor`/`markFilled` bump + `GridLevel`/`GridSnapshotLevel` `buyGen`/`sellGen` + `SlotOutcome.FILLED.clientOrderId`; regression suite `grid-g1.test.ts` |
 | 3 | 🔴 P0 | **Snapshot durability** (reviewer's PR 1/2). Temp file → `fsync` → atomic rename; keep the previous snapshot; checksum + schema validation of level entries; distinguish "no snapshot" from "corrupt snapshot"; `snapshot ≠ exchange truth` stays explicit — reconciliation (Phase 2) is what makes the snapshot safe. | ✅ Done `d5aa842` — `durable-write.ts` (tmp → fsync → rename, keep `.prev`) + checksum + level-entry validation |
 | 4 | 🟠 P1 | **Durable trading ledger** (reviewer's PR 2). Persist order/fill intent before create; wire `TRADE_EXECUTED` events to an idempotent DB write (unique `(bot_id, client_order_id, exchange_order_id, fill_id)`); fix the `trades.status` vocabulary; filter `bot_instances` updates by `bot_id`, not `strategy_id` (N7). | ✅ Done `5d1cef9` (2026-10-02) — migration `016_durable_trading_ledger.sql` (`bot_trade_fills` + `bot_order_intents` + `bot_positions` + `bot_performance_snapshots`); `shared/src/protocol/engine-ledger.ts` event family; engine `LedgerTradeReporter` (intent-before-create, fail-closed); backend `TradeLedgerService`/`TradeLedgerRepository` ingested via `BotEventProcessor` behind the authority check; legacy `engine:events` listener removed |
-| 5 | 🟠 P1 | **Accounting correctness** (reviewer's PR 3; N6). Sell at the next level / take-profit, PnL from executed price with fees, `reduce_only` exits, position reconciliation from exchange positions, explicit `PARTIALLY_FILLED`. | 🔶 **N6 core done 2026-10-02** (`8495254`). Fee sourcing (N6a): rate from the venue-reported account tier, `notional × rate` per fill (`ExchangeClient.getFeeRates?()` + `LighterClient.getFeeRates()` + `fees.ts`). Executed-price accounting: exits price one grid step above the level (or `takeProfitPercent` above the **executed** entry) and are never armed at/below it; a BUY books `0 - fee` while the closing SELL books `(sellExec − entryExec) × qty − fee`, so `SUM(bot_trade_fills.pnl)` stays exact; `PositionReport.pnl` is realised and `unrealizedPnl` marks the open inventory (`bot_positions.unrealized_pnl`, migration `017`). `reduce_only` exits landed 2026-10-02 (`ExchangeOrderRequest.reduceOnly` + `OrderRequest.reduceOnly`; Orderly `reduce_only` mapped in `payload.ts`, Lighter forwarded through the sidecar; grid sets it on SELL). Still open: per-fill `PARTIALLY_FILLED`, `getPositions()` reconciliation |
+| 5 | 🟠 P1 | **Accounting correctness** (reviewer's PR 3; N6). Sell at the next level / take-profit, PnL from executed price with fees, `reduce_only` exits, position reconciliation from exchange positions, explicit `PARTIALLY_FILLED`. | 🔶 **N6 core done 2026-10-02** (`8495254`). Fee sourcing (N6a): rate from the venue-reported account tier, `notional × rate` per fill (`ExchangeClient.getFeeRates?()` + `LighterClient.getFeeRates()` + `fees.ts`). Executed-price accounting: exits price one grid step above the level (or `takeProfitPercent` above the **executed** entry) and are never armed at/below it; a BUY books `0 - fee` while the closing SELL books `(sellExec − entryExec) × qty − fee`, so `SUM(bot_trade_fills.pnl)` stays exact; `PositionReport.pnl` is realised and `unrealizedPnl` marks the open inventory (`bot_positions.unrealized_pnl`, migration `017`). `reduce_only` exits landed 2026-10-02 (`ExchangeOrderRequest.reduceOnly` + `OrderRequest.reduceOnly`; Orderly `reduce_only` mapped in `payload.ts`, Lighter forwarded through the sidecar; grid sets it on SELL); position reconciliation landed 2026-10-02 (throttled `exchange.getPositions()` cross-check, venue truth reported on drift). Still open: per-fill `PARTIALLY_FILLED` |
 | 6 | 🟡 P2 | **Failure-injection harness** (reviewer's PR 4). Fake exchange with scripted failures (accept-then-drop, timeout, 500, `NOT_FOUND`, duplicate-key rejection, partial fill) and a test matrix: crash at each step of create, Redis down/restart, restart with/without/corrupt snapshot, exchange-side orphans. | ⬜ open — only after Phases 2–4 exist |
 | – | 🟠 P1 | **Account-scoped position/balance domain APIs.** Retire the userId-only most-recent-row heuristic (R2); `getPosition(accountId, symbol)` with user-level aggregation separate. (P2: drop the unconsumed `kodiak_status` column from `user_trading_summary`.) | ⬜ partially done — portfolio reads are account-scoped; the domain interface is not |
 | – | 🟡 P2 | **Frontend identity residue.** Remove the `bot.strategy_id === botId` compatibility fallback once no caller passes a strategy id (R1). | ⬜ open |

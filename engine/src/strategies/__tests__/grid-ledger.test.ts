@@ -33,6 +33,7 @@ type MockExchange = {
   getOrder: jest.Mock;
   createOrder: jest.Mock;
   cancelOrder: jest.Mock;
+  getPositions: jest.Mock;
   listOpenOrders: jest.Mock;
   queryOrderByClientOrderId: jest.Mock;
 };
@@ -43,6 +44,7 @@ function makeExchange(): MockExchange {
     getOrder: jest.fn().mockResolvedValue({ orderId: "O", status: "OPEN" }),
     createOrder: jest.fn().mockResolvedValue({ orderId: "O1", status: "OPEN" }),
     cancelOrder: jest.fn().mockResolvedValue({ status: "CANCELLED" }),
+    getPositions: jest.fn().mockResolvedValue([]),
     listOpenOrders: jest.fn().mockResolvedValue([]),
     queryOrderByClientOrderId: jest
       .fn()

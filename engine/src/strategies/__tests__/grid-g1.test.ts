@@ -35,6 +35,7 @@ type MockExchange = {
   getOrder: jest.Mock;
   createOrder: jest.Mock;
   cancelOrder: jest.Mock;
+  getPositions: jest.Mock;
   listOpenOrders: jest.Mock;
   queryOrderByClientOrderId: jest.Mock;
 };
@@ -49,6 +50,7 @@ function makeExchange(): MockExchange {
       status: "OPEN",
     })),
     cancelOrder: jest.fn().mockResolvedValue({ status: "CANCELLED" }),
+    getPositions: jest.fn().mockResolvedValue([]),
     listOpenOrders: jest.fn().mockResolvedValue([]),
     queryOrderByClientOrderId: jest
       .fn()

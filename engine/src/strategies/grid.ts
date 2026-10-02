@@ -4,6 +4,7 @@ import {
   ExchangeClient,
   ExchangeFeeRates,
   ExchangeOpenOrder,
+  ExchangePosition,
 } from "../domain/exchange";
 import {
   GridStrategyConfig,
@@ -36,6 +37,22 @@ import { PositionReport, TradeReporter } from "../application/trade-reporter";
  */
 const ORDER_CHECK_INTERVAL_MS = 5000;
 
+/**
+ * How often the grid-derived position is cross-checked against the venue's own
+ * position view (N6). Deliberately far slower than the slot check: this is a
+ * safety cross-check, not a fill-detection path, and the venue position read is
+ * a portfolio call.
+ */
+const POSITION_RECONCILE_INTERVAL_MS = 60000;
+
+/**
+ * Drift tolerance for the venue position cross-check, as a multiple of one
+ * order quantity. A difference up to half an order is treated as noise — an
+ * execution the venue has booked but the engine has not yet detected between
+ * slot checks (order-check cadence is 5s). Anything larger is real drift.
+ */
+const POSITION_DRIFT_TOLERANCE_FRACTION = 0.5;
+
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -61,6 +78,11 @@ export class GridTradingStrategy {
   private totalTrades: number = 0;
   private trades: Trade[] = [];
   private lastOrderCheck: Map<string, Date> = new Map();
+  /**
+   * Last venue position cross-check (epoch ms). Seeded at `start()` so the first
+   * reconcile runs one full interval later — never on the first tick.
+   */
+  private lastPositionReconcile: number = 0;
   private clientOrderIdGenerator: ClientOrderIdGenerator;
   private manager: OrderManager | null = null;
   private reconcile: OrderReconciliationService | null = null;
@@ -201,6 +223,8 @@ export class GridTradingStrategy {
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    // First venue position cross-check runs one interval after start.
+    this.lastPositionReconcile = Date.now();
     logger.info("Grid strategy bot started", {
       botId: this.botId,
       symbol: this.config.symbol,
@@ -317,6 +341,9 @@ export class GridTradingStrategy {
 
       // Reconcile live slots against the exchange (fill / gone / unreachable).
       await this.reconcileOrders();
+
+      // Cross-check the grid-derived position against the venue (N6).
+      await this.reconcilePosition();
 
       // Persist slot state unconditionally so a restart picks up fills/orders.
       await this.persistSnapshot();
@@ -502,6 +529,91 @@ export class GridTradingStrategy {
       pnl: this.totalPnl,
       unrealizedPnl: Number(unrealizedPnl.toFixed(8)),
     };
+  }
+
+  /**
+   * Cross-check the grid-derived position against the venue's own view (N6).
+   *
+   * The level flags / snapshot are a *projection*; `exchange.getPositions()` is
+   * the venue's authority for what the account actually holds. On drift beyond
+   * tolerance the venue wins for the emitted `POSITION_UPDATED` (and the
+   * mismatch is logged), but the local levels are deliberately **not** rewritten
+   * — a single portfolio read is not a basis for silently mutating grid state,
+   * and the next detected fill re-syncs the projection anyway.
+   *
+   * Throttled, and a failed read is logged and skipped: a portfolio read must
+   * never take down the trading tick.
+   */
+  private async reconcilePosition(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastPositionReconcile < POSITION_RECONCILE_INTERVAL_MS) {
+      return;
+    }
+    this.lastPositionReconcile = now;
+
+    let positions: ExchangePosition[];
+    try {
+      positions = await this.exchange.getPositions();
+    } catch (error) {
+      logger.warn("Position reconciliation skipped - getPositions failed", {
+        botId: this.botId,
+        symbol: this.config.symbol,
+        error: messageOf(error),
+      });
+      return;
+    }
+
+    const venue = positions.find(p => p.symbol === this.config.symbol);
+    const venueQty = Number(venue?.position_qty ?? 0);
+    const local = this.buildPositionReport();
+    const tolerance = Math.max(
+      this.config.orderQuantity * POSITION_DRIFT_TOLERANCE_FRACTION,
+      1e-8
+    );
+    const drift = Math.abs(local.quantity - venueQty);
+    if (drift <= tolerance) return;
+
+    logger.warn("Position drift vs venue - reporting venue truth (N6)", {
+      botId: this.botId,
+      symbol: this.config.symbol,
+      localQuantity: local.quantity,
+      venueQuantity: venueQty,
+      drift,
+    });
+
+    if (!this.reporter) return;
+    const entryPrice =
+      venueQty === 0 ? 0 : (this.venueEntryPrice(venue) ?? local.entryPrice);
+    const side: "LONG" | "SHORT" | "FLAT" =
+      venueQty === 0 ? "FLAT" : venueQty > 0 ? "LONG" : "SHORT";
+    await this.reporter.reportPosition({
+      botId: this.botId,
+      symbol: this.config.symbol,
+      side,
+      quantity: Math.abs(venueQty),
+      entryPrice,
+      markPrice: this.currentPrice,
+      // Realised PnL stays the ledger-derived local number (the venue does not
+      // report it); only the quantity/entry come from the venue here.
+      pnl: this.totalPnl,
+      unrealizedPnl: Number(
+        ((this.currentPrice - entryPrice) * venueQty).toFixed(8)
+      ),
+    });
+  }
+
+  /**
+   * Venue-reported entry price when the adapter's position row carries one
+   * (Orderly/Lighter both expose extras beyond the contract's `position_qty` /
+   * `mark_price`); `undefined` when absent so the local weighted entry is used.
+   */
+  private venueEntryPrice(
+    position: ExchangePosition | undefined
+  ): number | undefined {
+    if (!position) return undefined;
+    const raw = position.entry_price ?? position.average_open_price;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : undefined;
   }
 
   /**

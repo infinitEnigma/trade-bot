@@ -171,6 +171,11 @@ Booking (N6 core, added 2026-10-02) — how the grid uses those rates:
   `true` on the SELL leg via `OrderReconciliationService.ensureSlotOrder`, so a
   stale sell can never open a short. Ordinary orders omit the key entirely, so
   entry placements keep the exact pre-N6 wire body.
+- The grid cross-checks its position against the venue (added 2026-10-02,
+  `GridTradingStrategy.reconcilePosition`): a throttled `exchange.getPositions()`
+  read compares the grid-derived quantity with the venue's; drift beyond half an
+  order is logged and the emitted `POSITION_UPDATED` carries the **venue**
+  quantity/entry. Local levels are deliberately not rewritten by a single read.
 
 ### B4 — strategy decoupling
 
