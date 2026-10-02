@@ -198,7 +198,11 @@ export class TradeLedgerService {
       !isNonNegativeFinite(payload.quantity) ||
       !isNonNegativeFinite(payload.entryPrice) ||
       !isNonNegativeFinite(payload.markPrice) ||
-      !isFiniteNumber(payload.pnl)
+      !isFiniteNumber(payload.pnl) ||
+      // Unrealised PnL is signed (an open loss is negative) and optional for
+      // engines older than the N6 split.
+      (payload.unrealizedPnl !== undefined &&
+        !isFiniteNumber(payload.unrealizedPnl))
     ) {
       return this.ignore(event, "invalid POSITION_UPDATED fields");
     }
@@ -211,6 +215,7 @@ export class TradeLedgerService {
       entryPrice: payload.entryPrice,
       markPrice: payload.markPrice,
       pnl: payload.pnl,
+      unrealizedPnl: payload.unrealizedPnl ?? 0,
     });
     if (!known) {
       logger.warn("Position update for unknown bot - ignored", {

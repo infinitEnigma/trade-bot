@@ -171,7 +171,8 @@ engine/src/
 │   ├── exchange.ts           # ExchangeClient interface (extension point)
 │   └── grid-snapshot.ts      # persisted grid slot state schema + version
 ├── exchanges/kodiak/client.ts # Orderly/Kodiak REST client (orders, queries)
-├── strategies/grid.ts        # grid strategy: levels, ticks, order lifecycle
+├── strategies/grid.ts        # grid strategy: levels, ticks, order lifecycle,
+│                             #   executed-price PnL + fee-inclusive accounting
 └── infrastructure/
     ├── redis/streams.ts      # streams, consumer groups, XAUTOCLAIM, dedup markers
     └── state/grid-state.ts   # snapshot load/save on disk
@@ -193,21 +194,23 @@ The only strategy implemented today is the grid (`strategies/grid.ts`):
 
 | Concern            | Behaviour                                                                                                                                                                                              |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Config             | `symbol`, `gridSize`, `gridRangePercent`, `orderQuantity` (resolved by `BotManager` from the strategy config)                                                                                          |
+| Config             | `symbol`, `gridSize`, `gridRangePercent`, `orderQuantity`, optional `takeProfitPercent` (resolved by `BotManager` from the strategy config)                                                          |
 | Level construction | `gridSize + 1` prices evenly spaced across `±gridRangePercent/2` around a baseline price                                                                                                               |
 | Baseline           | Restored from the snapshot when present, otherwise the current mark price                                                                                                                              |
-| Slot state         | Per level: `price`, `buyOrderId`, `sellOrderId`, `filled`                                                                                                                                              |
-| Tick               | Fetch mark price → place buys below / sells above where no order exists → poll order status (5s per order) → persist the snapshot                                                                      |
+| Slot state         | Per level: `price`, `buyOrderId`, `sellOrderId`, `filled`, `entryPrice` (executed entry of the open long)                                                                                              |
+| Tick               | Fetch mark price → place buys below / an exit above the executed entry where no order exists → poll order status (5s per order) → persist the snapshot                                                  |
+| Exit pricing       | A filled level's sell sits one grid step above its line (or `takeProfitPercent` above the executed entry); an exit that would price at or below the entry is never armed (N6)                           |
+| PnL / fees         | Realised PnL = `(sellExec − entryExec) × qty − fee`, booked on the closing leg (the entry leg books its own fee); `unrealizedPnl` marks open inventory. Unknown venue rate ⇒ fee/PnL omitted, never `0` |
 | Order identity     | Deterministic `clientOrderId` = `<botKey>-<level(base36)>-<B\|S>` (`utils/client-order-id.ts`), within the exchange's 36-char contract, so a redelivered command or a restart regenerates the same key |
 | Duplicate defence  | Get-before-create: list open orders for the symbol and adopt one matching the `clientOrderId`; on a create error, re-query before giving up                                                            |
 | Wire payload       | `exchanges/kodiak/payload.ts` maps the camelCase request to the documented snake_case body before signing; the signed string is the exact body sent                                                    |
 
-**Currently uncovered transitions** (owned by the remediation plan; see
-`PROJECT_REVIEW_GAP_ANALYSIS.md` §3): a `NOT_FOUND` order query leaves the slot
-occupied forever, there is no startup cross-check of exchange orders against
-restored slots, cancellation failures are swallowed while `STOPPED` is still
-reported, and sell legs are placed at the buy price with mark-price PnL and no
-`reduce_only`.
+**Remediation status** (see `PROJECT_REVIEW_GAP_ANALYSIS.md` §3-4): the order
+lifecycle is reconciled against the exchange (`OrderManager` +
+`OrderReconciliationService`), every order/fill reaches the durable ledger, and
+exits now price above the executed entry with fee-inclusive realised PnL (N6).
+Still open: `reduce_only` on exits, per-fill `PARTIALLY_FILLED` accounting, and
+position reconciliation against `exchange.getPositions()`.
 
 Model note: order identity, slot state and the snapshot are **bot-scoped** today
 (`<botId>.json`, one `GridTradingStrategy` per `BotRuntime`). Under the planned

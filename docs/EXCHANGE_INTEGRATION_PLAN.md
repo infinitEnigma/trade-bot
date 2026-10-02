@@ -144,8 +144,26 @@ Standard 0 / 0, Plus 0.005% both sides, Premium 0.0040% maker / 0.0280% taker
 (undiscounted; the LIT-stake discount is not applied, so the number is an upper
 bound). No Lighter REST tape carries a per-fill fee and market metadata reads
 `0.0000` everywhere (decision N6a), so `LighterClient.getFeeRates()`
-(TTL-cached, fails loudly) is the engine's only fee source and a fill's fee is
-`notional × rate`.
+(TTL-cached, fails loudly) is the engine's only fee source.
+
+Booking (N6 core, added 2026-10-02) — how the grid uses those rates:
+
+- A fill's fee is `executedPrice × quantity × takerRate`. The **taker** rate is
+  used because the venue never reports whether a fill was maker or taker, and
+  the taker rate is the upper bound of the two (overstating a fee understates
+  profit, the safe direction). A rate that cannot be sourced leaves the fill's
+  `fee` *and* `pnl` absent — never a made-up `0`.
+- Realised PnL is booked per leg so the Phase-4 ledger invariant
+  `SUM(bot_trade_fills.pnl) == bot_instances.total_pnl` stays exact: an entry
+  BUY books `0 - fee` (its spread is unrealised until the exit) and the closing
+  SELL books `(sellExec − entryExec) × quantity - fee`.
+- The exit is priced one grid step above the level (`levels[i+1].price`, or one
+  spacing above the top line) or `takeProfitPercent` above the **executed**
+  entry when the strategy configures a take profit; an exit that would price at
+  or below the entry is never armed (the level is left unarmed and logged).
+- `PositionReport.pnl` is realised PnL net of fees; `unrealizedPnl` marks the
+  open inventory at the ticker price. Both are stored (`bot_positions.pnl`,
+  `unrealized_pnl` — migration `017_accounting_pnl_split.sql`).
 
 ### B4 — strategy decoupling
 

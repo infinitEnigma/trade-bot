@@ -229,7 +229,52 @@ describe("TradeLedgerService", () => {
         entryPrice: 2700,
         markPrice: 2710,
         pnl: 0.1,
+        unrealizedPnl: 0,
       } satisfies LedgerPosition);
+    });
+
+    it("passes the unrealised split through and accepts a negative value", async () => {
+      await service.handle(
+        createBotEvent(
+          "POSITION_UPDATED",
+          {
+            ...BASE,
+            symbol: "ETH",
+            side: "LONG",
+            quantity: 0.01,
+            entryPrice: 2700,
+            markPrice: 2690,
+            pnl: -0.09,
+            unrealizedPnl: -0.1,
+          },
+          "corr-pos-split"
+        )
+      );
+
+      expect(repo.upsertPosition).toHaveBeenCalledWith(
+        expect.objectContaining({ pnl: -0.09, unrealizedPnl: -0.1 })
+      );
+    });
+
+    it("rejects a non-finite unrealised PnL without touching the repository", async () => {
+      await service.handle(
+        createBotEvent(
+          "POSITION_UPDATED",
+          {
+            ...BASE,
+            symbol: "ETH",
+            side: "LONG",
+            quantity: 0.01,
+            entryPrice: 2700,
+            markPrice: 2710,
+            pnl: 0.1,
+            unrealizedPnl: Number.NaN,
+          },
+          "corr-pos-bad"
+        )
+      );
+
+      expect(repo.upsertPosition).not.toHaveBeenCalled();
     });
 
     it("accepts an explicit FLAT report (quantity 0)", async () => {

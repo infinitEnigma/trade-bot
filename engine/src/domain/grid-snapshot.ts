@@ -17,6 +17,12 @@ export interface GridSnapshotLevel {
   sellOrderId?: string;
   filled: boolean;
   /**
+   * Executed entry price of this level's open long (Phase 5 accounting).
+   * Optional so pre-accounting snapshots still load (the strategy then falls
+   * back to `price`); always written by current builds.
+   */
+  entryPrice?: number;
+  /**
    * Slot id generations (G1) — see `GridLevel.buyGen`. Both fields are always
    * written by current builds; `undefined` marks a legacy (pre-G1) snapshot,
    * whose handle-less sides must start at generation 1 on restore so their

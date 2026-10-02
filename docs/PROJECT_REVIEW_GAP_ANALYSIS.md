@@ -64,7 +64,7 @@ Strategy intent → OrderManager → Order Reconciliation → Exchange
 | 🟠 P1    | Credential issuance DB idempotency            | ✅ **Done post-review** (`77506bf`) — see section 2 |
 | 🟠 P1    | Correct trade reporting / bot-scoped stats    | ✅ **Done** `5d1cef9` (section 4, Phase 4, N7)  |
 | 🟠 P1    | Account-scoped position/balance domain APIs   | **Partially done** (section 4)                |
-| 🟠 P1    | Accounting/PnL correctness                    | **Open** (section 4, Phase 5, N6)             |
+| 🟠 P1    | Accounting/PnL correctness                    | **Core done** (section 4, Phase 5, N6) — `reduce_only` / partial fills / venue position reconciliation open |
 | 🟡 P2    | Failure-injection harness                     | **Open** (section 4, Phase 6)                 |
 | 🟡 P2    | Remove legacy engine HTTP writers             | ✅ **Done post-review** (`132fbd1`, `cc8da7c`) — see section 2 |
 | 🟡 P2    | Split `shared` package                        | **Defer** (section 4)                         |
@@ -122,7 +122,9 @@ evidence — are preserved verbatim in
 Only findings that applied to the code at `cc8da7c` are listed here. N3/N4/N5
 were resolved 2026-10-01 (Phase 2, `d746c4c`) and are kept as short records;
 N7 resolved 2026-10-02 (Phase 4); G1 (Gate 1) resolved 2026-10-02 (§4 row
-2b); N6/R1/R2 remain open.
+2b); **N6's core settled 2026-10-02** (executed-price PnL, fee booking, exit
+pricing) with `reduce_only` / per-fill `PARTIALLY_FILLED` / venue position
+reconciliation still open; R1/R2 remain open.
 
 ### G1 — ✅ Resolved (2026-10-02): stale deterministic-id history books phantom fills
 
@@ -179,10 +181,12 @@ exchange. **Owned by Phase 2** (confirmed cancellation).
 
 ### N6 — 🟠 P1: the grid's profit logic is not meaningful
 
-- Sell legs are placed at **`level.price`** — the same price as the buy that
-  filled — so there is zero spread before fees and rebates.
-- PnL is derived from the **mark price at check time**, not the executed price,
-  and ignores fees: `(this.currentPrice - level.price) * orderQuantity`.
+Original findings (repository state `cc8da7c`, 2026-10-01):
+
+- Sell legs were placed at **`level.price`** — the same price as the buy that
+  filled — so there was zero spread before fees and rebates.
+- PnL was derived from the **mark price at check time**, not the executed price,
+  and ignored fees: `(this.currentPrice - level.price) * orderQuantity`.
 - Sell legs are never marked `reduce_only` (the domain model has the field and
   the exchange supports it), so a stale sell can open a short instead of
   closing the grid leg.
@@ -190,6 +194,38 @@ exchange. **Owned by Phase 2** (confirmed cancellation).
   accounting and no `PARTIALLY_FILLED` branch.
 
 **Owned by Phase 5 (accounting correctness).**
+
+**N6 core settled 2026-10-02** (executed-price accounting, fees, exit pricing):
+
+- **Exit pricing.** A filled level's sell is priced one grid step above its
+  line (`levels[i+1].price`, or one spacing above the top line at the top
+  level), or `takeProfitPercent` above the **executed** entry when the bot
+  configures a take profit (`config.takeProfit` → `takeProfitPercent`) — never
+  at `level.price`. If neither geometry can price strictly above the entry (a
+  degenerate grid whose spacing rounds to zero at the symbol's price scale) the
+  level is left **unarmed** with a logged reason, rather than placing a
+  guaranteed-loss exit.
+- **Executed prices.** `SlotOutcome.FILLED` carries `executedPrice`
+  (`getOrder` → Orderly's `average_executed_price`, Lighter's order price;
+  `queryOrderByClientOrderId` → the listed row's price), and the grid persists
+  the executed entry per level (`GridLevel.entryPrice` /
+  `GridSnapshotLevel.entryPrice`, so a restart re-derives the exit from the
+  real entry).
+- **Realised PnL + fees.** A BUY books `0 - fee` (its spread stays unrealised
+  until the paired exit); the closing SELL books
+  `(sellExec − entryExec) × quantity − fee`. That keeps the Phase-4 invariant
+  `SUM(bot_trade_fills.pnl) == bot_instances.total_pnl` exact while counting
+  each leg's fee exactly once. The venue never says whether a fill was maker or
+  taker, so the **taker** rate (the upper bound) prices the fee; an
+  unsourceable rate omits `fee` *and* `pnl` — never a made-up `0`.
+- **Position split.** `PositionReport.pnl` is realised PnL net of fees and
+  `unrealizedPnl` marks the open inventory at the ticker price; the backend
+  stores both (`bot_positions.unrealized_pnl`, migration
+  `017_accounting_pnl_split.sql`).
+
+**Still open under Phase 5:** `reduce_only` on exits (a stale sell can still
+open a short), per-fill `PARTIALLY_FILLED` accounting (partials need their own
+fill identity), and position reconciliation against `exchange.getPositions()`.
 
 **Phase-5 prerequisite — fee sourcing (N6a, settled 2026-10-02).** PnL "from
 executed price with fees" needs a fee number, and the venue exposes no per-fill
@@ -213,7 +249,10 @@ rate) over the pure mapper `engine/src/exchanges/lighter/fees.ts`. Provenance
 (`tier`, `venueReported`, `exact`, `basis`) rides on the returned rates so the
 ledger can record where a number came from; an unmapped tier falls back to the
 **worst** published rate with `venueReported: false` rather than inventing a
-zero.
+zero. The grid consumes it as `notional × takerRate` per fill (N6 core above):
+the taker rate is the upper bound because the venue never reports the fill's
+role, and a rate that cannot be sourced leaves the row's `fee`/`pnl` absent
+instead of asserting a zero.
 
 ### N7 — ✅ Resolved (`5d1cef9`, 2026-10-02): the durable trade ledger is now reachable
 
@@ -266,7 +305,7 @@ below.
 | 2b | 🟠 P1 | **G1 — stale deterministic-id history books phantom fills** (Gate 1 report §3.1, Phase 2 residual). The pre-submit lookup for a spent slot id found the venue's terminal history row → `FOUND_FILLED` → phantom `markFilled` + `recordTrade` (bogus PnL, flipped `filled` flags) and blocked re-placement while history persisted. Fix: slot id **generations** — `markFilled` spends the slot's id (gen bump), legacy snapshots seed handle-less sides at generation 1, generation-0 ids stay byte-identical so live handles keep resolving. | ✅ Done 2026-10-02 — `client-order-id.ts` (`generation` suffix, legacy-exact gen 0) + `OrderManager.idFor`/`markFilled` bump + `GridLevel`/`GridSnapshotLevel` `buyGen`/`sellGen` + `SlotOutcome.FILLED.clientOrderId`; regression suite `grid-g1.test.ts` |
 | 3 | 🔴 P0 | **Snapshot durability** (reviewer's PR 1/2). Temp file → `fsync` → atomic rename; keep the previous snapshot; checksum + schema validation of level entries; distinguish "no snapshot" from "corrupt snapshot"; `snapshot ≠ exchange truth` stays explicit — reconciliation (Phase 2) is what makes the snapshot safe. | ✅ Done `d5aa842` — `durable-write.ts` (tmp → fsync → rename, keep `.prev`) + checksum + level-entry validation |
 | 4 | 🟠 P1 | **Durable trading ledger** (reviewer's PR 2). Persist order/fill intent before create; wire `TRADE_EXECUTED` events to an idempotent DB write (unique `(bot_id, client_order_id, exchange_order_id, fill_id)`); fix the `trades.status` vocabulary; filter `bot_instances` updates by `bot_id`, not `strategy_id` (N7). | ✅ Done `5d1cef9` (2026-10-02) — migration `016_durable_trading_ledger.sql` (`bot_trade_fills` + `bot_order_intents` + `bot_positions` + `bot_performance_snapshots`); `shared/src/protocol/engine-ledger.ts` event family; engine `LedgerTradeReporter` (intent-before-create, fail-closed); backend `TradeLedgerService`/`TradeLedgerRepository` ingested via `BotEventProcessor` behind the authority check; legacy `engine:events` listener removed |
-| 5 | 🟠 P1 | **Accounting correctness** (reviewer's PR 3; N6). Sell at the next level / take-profit, PnL from executed price with fees, `reduce_only` exits, position reconciliation from exchange positions, explicit `PARTIALLY_FILLED`. | 🔶 in progress — **fee sourcing done 2026-10-02** (N6a: rate from the venue-reported account tier, `notional × rate` per fill; `ExchangeClient.getFeeRates?()` + `LighterClient.getFeeRates()` + `fees.ts`, tests green); PnL/reduce_only/PARTIAL still open |
+| 5 | 🟠 P1 | **Accounting correctness** (reviewer's PR 3; N6). Sell at the next level / take-profit, PnL from executed price with fees, `reduce_only` exits, position reconciliation from exchange positions, explicit `PARTIALLY_FILLED`. | 🔶 **N6 core done 2026-10-02.** Fee sourcing (N6a): rate from the venue-reported account tier, `notional × rate` per fill (`ExchangeClient.getFeeRates?()` + `LighterClient.getFeeRates()` + `fees.ts`). Executed-price accounting: exits price one grid step above the level (or `takeProfitPercent` above the **executed** entry) and are never armed at/below it; a BUY books `0 - fee` while the closing SELL books `(sellExec − entryExec) × qty − fee`, so `SUM(bot_trade_fills.pnl)` stays exact; `PositionReport.pnl` is realised and `unrealizedPnl` marks the open inventory (`bot_positions.unrealized_pnl`, migration `017`). Still open: `reduce_only` exits, per-fill `PARTIALLY_FILLED`, `getPositions()` reconciliation |
 | 6 | 🟡 P2 | **Failure-injection harness** (reviewer's PR 4). Fake exchange with scripted failures (accept-then-drop, timeout, 500, `NOT_FOUND`, duplicate-key rejection, partial fill) and a test matrix: crash at each step of create, Redis down/restart, restart with/without/corrupt snapshot, exchange-side orphans. | ⬜ open — only after Phases 2–4 exist |
 | – | 🟠 P1 | **Account-scoped position/balance domain APIs.** Retire the userId-only most-recent-row heuristic (R2); `getPosition(accountId, symbol)` with user-level aggregation separate. (P2: drop the unconsumed `kodiak_status` column from `user_trading_summary`.) | ⬜ partially done — portfolio reads are account-scoped; the domain interface is not |
 | – | 🟡 P2 | **Frontend identity residue.** Remove the `bot.strategy_id === botId` compatibility fallback once no caller passes a strategy id (R1). | ⬜ open |
@@ -287,6 +326,7 @@ below.
 | 2026-10-01 (engine hardening) | `main` @ `d746c4c` | Reviewer's PR 1 landed: Phase 3 durable snapshots (`d5aa842`) + Phase 2 `OrderManager`/`OrderReconciliationService` (N3/N4/N5 closed). Live Lighter duplicate-order proof still deferred. |
 | 2026-10-01 (live Gate 0) | `.git/gatelogs/live/` | Lighter testnet Phase-0 proof **green**: duplicate `client_order_index` accepted-silently (no second order), lost-response recovery PASS, engine smoke PASS, venue clean. Probe `cancel-order` step fixed — it had leaked the lost-response order (left the venue dirty). |
 | 2026-10-01 (independent reviewer) | `624e599` → verified @ `cc8da7c` | **This document.** Architecture no longer the concern; focus = reconciliation + durable financial state. |
+| 2026-10-02 (accounting core) | `main` | N6 core landed: fee sourcing from the venue-reported tier (`af3da2c`), then executed-price exit pricing, fee-inclusive realised PnL with an unrealised split, and a persisted executed entry. `reduce_only` / per-fill `PARTIALLY_FILLED` / `getPositions()` reconciliation remain. |
 
 Earlier passes (2026-01 … 2026-09-14 ratings, the first gap-analysis rounds)
 are in `docs/archived/` (`PROJECT_REVIEW.md`, the original

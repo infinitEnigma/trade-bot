@@ -168,6 +168,7 @@ export class OrderReconciliationService {
         kind: "FILLED",
         orderId,
         filledQty: order.executedQuantity,
+        executedPrice: order.executedPrice,
         clientOrderId,
       };
     }
@@ -248,6 +249,10 @@ export class OrderReconciliationService {
           kind: "FILLED",
           orderId: lookup.order.orderId,
           filledQty: lookup.order.quantity,
+          // The row's price is the order's limit price — the honest executed
+          // price for a resting maker fill, and the only one the listing
+          // carries (see `SlotOutcome.FILLED.executedPrice`).
+          executedPrice: lookup.order.price,
           clientOrderId,
         };
       case "FOUND_CANCELED":

@@ -17,6 +17,15 @@ export interface GridLevel {
   sellOrderId?: string;
   filled: boolean;
   /**
+   * Executed price of the BUY fill that opened this level's long (Phase 5).
+   * The exit leg prices itself from this — never from `price`, which is only
+   * the level's limit line — and realised PnL is `(sellExec - entryPrice) ×
+   * qty - fees`. Set on a BUY fill, cleared when the paired SELL closes the
+   * leg; absent on a level whose long predates executed-price accounting, in
+   * which case `price` is the fallback.
+   */
+  entryPrice?: number;
+  /**
    * Slot id generation for this side (G1). `OrderManager.markFilled` bumps it
    * whenever a fill books, so the next cycle derives a fresh client order id
    * and the pre-submit lookup can never re-query the venue's terminal history

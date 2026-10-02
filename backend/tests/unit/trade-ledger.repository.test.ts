@@ -212,13 +212,26 @@ describe("TradeLedgerRepository", () => {
         entryPrice: 2698.59,
         markPrice: 2710,
         pnl: 0.11,
+        unrealizedPnl: -0.4,
       });
 
       expect(known).toBe(true);
-      const [sql] = mockQuery.mock.calls[0];
+      const [sql, params] = mockQuery.mock.calls[0];
       expect(sql).toContain("INSERT INTO bot_positions");
+      expect(sql).toContain("unrealized_pnl");
       expect(sql).toContain("ON CONFLICT (bot_id, symbol)");
       expect(sql).toContain("updated_at = CURRENT_TIMESTAMP");
+      // Realised pnl and the unrealised half ride in the same upsert (N6).
+      expect(params).toEqual([
+        BOT_ID,
+        "ETH",
+        "LONG",
+        0.01,
+        2698.59,
+        2710,
+        0.11,
+        -0.4,
+      ]);
     });
 
     it("returns false when the bot is unknown", async () => {

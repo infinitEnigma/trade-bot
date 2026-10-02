@@ -144,6 +144,17 @@ function validateLevel(level: unknown, index: number): Validation {
       return { ok: false, detail: `level ${index} has an invalid ${key}` };
     }
   }
+  // Executed entry price (Phase 5): optional, but a present value must be a
+  // sane price — a corrupt one would silently corrupt the exit's PnL.
+  if (entry.entryPrice !== undefined) {
+    if (
+      typeof entry.entryPrice !== "number" ||
+      !Number.isFinite(entry.entryPrice) ||
+      entry.entryPrice < 0
+    ) {
+      return { ok: false, detail: `level ${index} has an invalid entryPrice` };
+    }
+  }
   return { ok: true };
 }
 

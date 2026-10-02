@@ -64,7 +64,10 @@ export interface LedgerPosition {
   quantity: number;
   entryPrice: number;
   markPrice: number;
+  /** Realised PnL net of fees (sums to `bot_trade_fills.pnl`, N6). */
   pnl: number;
+  /** Mark-to-market PnL of the open inventory; 0 when the engine omits it. */
+  unrealizedPnl?: number;
 }
 
 export interface LedgerPerformance {
@@ -224,9 +227,10 @@ export class TradeLedgerRepository {
   async upsertPosition(position: LedgerPosition): Promise<boolean> {
     const result = await query(
       `INSERT INTO bot_positions (
-         bot_id, symbol, side, quantity, entry_price, mark_price, pnl
+         bot_id, symbol, side, quantity, entry_price, mark_price, pnl,
+         unrealized_pnl
        )
-       SELECT bi.id, $2, $3, $4, $5, $6, $7
+       SELECT bi.id, $2, $3, $4, $5, $6, $7, $8
        FROM bot_instances bi WHERE bi.id = $1
        ON CONFLICT (bot_id, symbol) DO UPDATE SET
          side = EXCLUDED.side,
@@ -234,6 +238,7 @@ export class TradeLedgerRepository {
          entry_price = EXCLUDED.entry_price,
          mark_price = EXCLUDED.mark_price,
          pnl = EXCLUDED.pnl,
+         unrealized_pnl = EXCLUDED.unrealized_pnl,
          updated_at = CURRENT_TIMESTAMP`,
       [
         position.botId,
@@ -243,6 +248,7 @@ export class TradeLedgerRepository {
         position.entryPrice,
         position.markPrice,
         position.pnl,
+        position.unrealizedPnl ?? 0,
       ]
     );
     return (result.rowCount ?? 0) > 0;

@@ -74,12 +74,26 @@ export interface TradeExecutedEventPayload {
   engineEpoch: number;
   symbol: string;
   side: LedgerOrderSide;
-  /** Executed price (Phase 5 will re-derive PnL from this + fees). */
+  /**
+   * Executed price of the fill: what the venue reported (`average_executed_price`
+   * on Orderly, the order's own price on Lighter), else the limit price the
+   * engine submitted. Never the mark price at check time (N6).
+   */
   price: number;
   quantity: number;
-  /** Fee as known at fill time; absent until the venue reports one. */
+  /**
+   * Fee booked for this fill as `notional × rate`, sourced from the venue's
+   * own account tier (N6a). Absent when the rate could not be sourced — an
+   * unknown fee is never written as a made-up `0`.
+   */
   fee?: number;
-  /** Engine-computed trade PnL — stored verbatim (Phase 5 owns the math). */
+  /**
+   * Realised PnL contributed by this fill: `0 - fee` on an entry leg (its
+   * spread is unrealised until the paired exit) and
+   * `(sellExec - entryExec) × quantity - fee` on the closing leg — so
+   * `SUM(pnl)` over the ledger is realised PnL net of fees and reconciles with
+   * `bot_instances.total_pnl` (N6). Absent when the fee is unknown.
+   */
   pnl?: number;
   status: LedgerFillStatus;
   /** Deterministic client order id of the filled slot. */
@@ -107,8 +121,14 @@ export interface PositionUpdatedEventPayload {
   quantity: number;
   entryPrice: number;
   markPrice: number;
-  /** Engine's aggregate mark-to-market PnL (Phase 5 owns the math). */
+  /** Realised PnL net of fees — sums to the engine's fill ledger (N6). */
   pnl: number;
+  /**
+   * Mark-to-market PnL of the open inventory (N6). Optional so reports from
+   * engines older than the split still validate; stored for display, never
+   * added to `bot_instances.total_pnl` (that stays ledger-derived).
+   */
+  unrealizedPnl?: number;
 }
 
 export interface PerformanceSnapshotEventPayload {

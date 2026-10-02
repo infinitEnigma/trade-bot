@@ -581,6 +581,13 @@ export class BotManager {
           gridSize: Number(config.gridSize) || 10,
           gridRangePercent: Number(config.gridRange) || 5,
           orderQuantity: Number(config.orderQuantity) || 1,
+          // Optional take profit (the API validates it as `takeProfit`). When
+          // set, exits price `takeProfitPercent` above the executed entry
+          // instead of at the next grid line (N6).
+          takeProfitPercent:
+            Number(config.takeProfit) > 0
+              ? Number(config.takeProfit)
+              : undefined,
         },
         exchangeClient,
         tradeReporter

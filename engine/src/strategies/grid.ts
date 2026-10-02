@@ -1,6 +1,10 @@
 /** @format */
 
-import { ExchangeClient, ExchangeOpenOrder } from "../domain/exchange";
+import {
+  ExchangeClient,
+  ExchangeFeeRates,
+  ExchangeOpenOrder,
+} from "../domain/exchange";
 import {
   GridStrategyConfig,
   GridLevel,
@@ -40,8 +44,10 @@ function messageOf(error: unknown): string {
  * Grid strategy over the exchange-agnostic `ExchangeClient` contract.
  *
  * Exchange↔local failure semantics live in `OrderReconciliationService`; this
- * class owns the grid geometry, the tick loop and the (simplified, mark-to-
- * market) trade counters. Slot identity is written only through `OrderManager`.
+ * class owns the grid geometry, the tick loop and the executed-price
+ * accounting (realised PnL + fees, N6). Slot identity is written only through
+ * `OrderManager`; a level's executed entry price is accounting state and is
+ * written here.
  */
 export class GridTradingStrategy {
   private config: GridStrategyConfig;
@@ -272,20 +278,36 @@ export class GridTradingStrategy {
           }
         }
 
-        // Sell order: place if price is at or above level and we have a position
+        // Sell order: the exit of a filled level's long. Its price comes from
+        // `sellTargetPrice` — the next grid line up, or the configured take
+        // profit above the *executed* entry — never `level.price`, which is
+        // the very price the buy just filled at (zero spread before fees: N6).
         if (
           this.currentPrice >= level.price &&
           !level.sellOrderId &&
           level.filled
         ) {
-          const outcome = await this.reconcile.ensureSlotOrder(
-            i,
-            "SELL",
-            level.price,
-            this.config.orderQuantity
-          );
-          if (outcome.kind === "FILLED") {
-            await this.recordTrade(i, level, "SELL", outcome);
+          const sellPrice = this.sellTargetPrice(i, level);
+          if (sellPrice === undefined) {
+            logger.warn(
+              "No exit price above the executed entry - level left without a sell",
+              {
+                botId: this.botId,
+                symbol: this.config.symbol,
+                levelPrice: level.price,
+                entryPrice: level.entryPrice ?? level.price,
+              }
+            );
+          } else {
+            const outcome = await this.reconcile.ensureSlotOrder(
+              i,
+              "SELL",
+              sellPrice,
+              this.config.orderQuantity
+            );
+            if (outcome.kind === "FILLED") {
+              await this.recordTrade(i, level, "SELL", outcome);
+            }
           }
         }
       }
@@ -336,11 +358,21 @@ export class GridTradingStrategy {
   }
 
   /**
-   * Record a fill and its simplified mark-to-market PnL, then emit the
+   * Record a fill and its executed-price accounting (N6), then emit the
    * durable ledger events (TRADE_EXECUTED + POSITION_UPDATED +
-   * PERFORMANCE_SNAPSHOT). Executed-price accounting with fees is Phase 5,
-   * not something to change here. Reporting never throws — a tick must not
-   * die on a publish failure (the reporter logs the payload for replay).
+   * PERFORMANCE_SNAPSHOT). Reporting never throws — a tick must not die on a
+   * publish failure (the reporter logs the payload for replay).
+   *
+   * Money rules, locked against the ledger invariant
+   * (`bot_instances.total_pnl == SUM(bot_trade_fills.pnl)`):
+   * - A BUY opens a long. Its spread is *unrealised* until the paired exit, so
+   *   only the fee it incurred is booked (`0 - fee`).
+   * - A SELL closes the level's long: `(sellExec - entryExec) × qty - fee` is
+   *   realised and booked. The BUY leg's fee is already on its own row, so the
+   *   sum over the round trip is `gross - both fees` exactly once.
+   * - When the venue's fee rate cannot be sourced, the fee *and* the PnL are
+   *   omitted (never `0`): booking an unknown fee as fee-free would silently
+   *   overstate profit, so the row declares the money unknown and logs it.
    */
   private async recordTrade(
     levelIndex: number,
@@ -349,13 +381,32 @@ export class GridTradingStrategy {
     outcome: Extract<SlotOutcome, { kind: "FILLED" }>
   ): Promise<void> {
     const quantity = outcome.filledQty || this.config.orderQuantity;
-    const tradePnl =
-      side === "BUY"
-        ? (this.currentPrice - level.price) * this.config.orderQuantity
-        : (level.price - this.currentPrice) * this.config.orderQuantity;
+    // Executed price: what the venue reported for this fill; else the limit
+    // price this slot actually submitted (a resting maker fill executes at its
+    // own price); else the level line as a last resort.
+    const submitted = this.manager?.getBySlot(levelIndex, side);
+    const executedPrice =
+      outcome.executedPrice ?? submitted?.price ?? level.price;
+    const fee = await this.resolveFee(executedPrice, quantity);
+
+    let entryExec: number | undefined;
+    let tradePnl: number | undefined;
+    if (side === "BUY") {
+      level.entryPrice = executedPrice;
+      tradePnl = fee === undefined ? undefined : 0 - fee;
+    } else {
+      // The price this long was opened at — a level whose long predates
+      // executed-price accounting falls back to its own limit line.
+      entryExec = level.entryPrice ?? level.price;
+      tradePnl =
+        fee === undefined
+          ? undefined
+          : (executedPrice - entryExec) * quantity - fee;
+      level.entryPrice = undefined;
+    }
 
     this.totalTrades += 1;
-    this.totalPnl += tradePnl;
+    if (tradePnl !== undefined) this.totalPnl += tradePnl;
     // The id the fill actually happened under — NOT a fresh generation (the
     // slot's gen already bumped inside markFilled; deriving a new id here
     // would book a ledger identity the venue has never seen).
@@ -365,14 +416,16 @@ export class GridTradingStrategy {
       symbol: this.config.symbol,
       side,
       quantity,
-      price: level.price,
+      price: executedPrice,
       executedAt: new Date(),
       pnl: tradePnl,
     });
 
     logger.info(side === "BUY" ? "Buy order filled" : "Sell order filled", {
-      price: level.price,
-      pnl: tradePnl.toFixed(2),
+      executedPrice,
+      entryPrice: entryExec,
+      fee,
+      realizedPnl: tradePnl,
       botId: this.botId,
       symbol: this.config.symbol,
     });
@@ -384,8 +437,9 @@ export class GridTradingStrategy {
         botId: this.botId,
         symbol: this.config.symbol,
         side,
-        price: level.price,
+        price: executedPrice,
         quantity,
+        fee,
         pnl: tradePnl,
         status: "FILLED",
         clientOrderId,
@@ -413,18 +467,28 @@ export class GridTradingStrategy {
    * BUY holds `orderQuantity` long (a filled SELL clears the flag again via
    * `OrderManager.markFilled`). FLAT is reported explicitly so the backend
    * never has to guess what "absent" means.
+   *
+   * N6 split: `pnl` is *realised* PnL net of fees — the number the fill ledger
+   * sums to — while open inventory is marked to the last ticker price into
+   * `unrealizedPnl`. Entry price is the executed entry of each open leg, not
+   * the level's limit line.
    */
   private buildPositionReport(): PositionReport {
-    const filledLevels = this.levels.filter(l => l.filled);
-    const quantity =
-      filledLevels.length > 0
-        ? Number((filledLevels.length * this.config.orderQuantity).toFixed(8))
-        : 0;
-    const entryPrice =
-      filledLevels.length > 0
-        ? filledLevels.reduce((sum, l) => sum + l.price, 0) /
-          filledLevels.length
-        : 0;
+    const openLevels = this.levels.filter(l => l.filled);
+    const quantity = openLevels.length
+      ? Number((openLevels.length * this.config.orderQuantity).toFixed(8))
+      : 0;
+    const entryPrice = openLevels.length
+      ? openLevels.reduce((sum, l) => sum + (l.entryPrice ?? l.price), 0) /
+        openLevels.length
+      : 0;
+    const unrealizedPnl = openLevels.reduce(
+      (sum, l) =>
+        sum +
+        (this.currentPrice - (l.entryPrice ?? l.price)) *
+          this.config.orderQuantity,
+      0
+    );
     return {
       botId: this.botId,
       symbol: this.config.symbol,
@@ -433,7 +497,91 @@ export class GridTradingStrategy {
       entryPrice: Number(entryPrice.toFixed(8)),
       markPrice: this.currentPrice,
       pnl: this.totalPnl,
+      unrealizedPnl: Number(unrealizedPnl.toFixed(8)),
     };
+  }
+
+  /**
+   * Price for a filled level's exit (N6).
+   *
+   * The sell used to be placed at `level.price` — the very price the buy had
+   * just filled at, i.e. zero spread before fees. The exit now sits one grid
+   * step above the level, or `takeProfitPercent` above the *executed* entry
+   * when the bot configures a take profit.
+   *
+   * Returns undefined when neither geometry yields a price strictly above the
+   * entry (a degenerate grid — e.g. a spacing that rounds to zero at the
+   * symbol's price scale). The caller then leaves the slot unarmed rather than
+   * placing a guaranteed-loss exit.
+   */
+  private sellTargetPrice(
+    levelIndex: number,
+    level: GridLevel
+  ): number | undefined {
+    const entry = level.entryPrice ?? level.price;
+    const stepPrice = this.priceAboveLevel(levelIndex, level);
+    const takeProfit = this.config.takeProfitPercent;
+    const target =
+      takeProfit !== undefined && takeProfit > 0
+        ? Number((entry * (1 + takeProfit / 100)).toFixed(2))
+        : stepPrice;
+    if (target === undefined) return undefined;
+    if (target > entry) return target;
+    // Take-profit rounding can land back on the entry at coarse price scales;
+    // the grid step (strictly above the level line) is the safe fallback.
+    if (stepPrice !== undefined && stepPrice > entry) return stepPrice;
+    return undefined;
+  }
+
+  /** The next grid line up, or one spacing above the top line. */
+  private priceAboveLevel(
+    levelIndex: number,
+    level: GridLevel
+  ): number | undefined {
+    const above = this.levels[levelIndex + 1];
+    if (above) return above.price;
+    const spacing = this.gridSpacing();
+    if (!(spacing > 0)) return undefined;
+    return Number((level.price + spacing).toFixed(2));
+  }
+
+  /** Distance between adjacent grid lines (0 when the grid degenerates). */
+  private gridSpacing(): number {
+    if (this.levels.length < 2) return 0;
+    return this.levels[1].price - this.levels[0].price;
+  }
+
+  /**
+   * Fee for one fill as `notional × rate`, from the venue's own account tier
+   * (`ExchangeClient.getFeeRates`, N6a).
+   *
+   * The venue exposes no per-fill fee and never tells the engine whether a
+   * fill was maker or taker, so the *taker* rate is used: it is the upper
+   * bound of the two, and overstating a fee understates profit — the safe
+   * direction for money the venue never confirmed. Resolves `undefined` (never
+   * `0`) when the adapter has no fee source or the read fails: an unknown rate
+   * must not be booked as fee-free.
+   */
+  private async resolveFee(
+    executedPrice: number,
+    quantity: number
+  ): Promise<number | undefined> {
+    const source = this.exchange.getFeeRates;
+    if (!source) return undefined;
+    let rates: ExchangeFeeRates;
+    try {
+      rates = await source.call(this.exchange);
+    } catch (error) {
+      logger.error("Fee rate unavailable - fill booked without fee/PnL (N6)", {
+        botId: this.botId,
+        symbol: this.config.symbol,
+        executedPrice,
+        quantity,
+        error: messageOf(error),
+      });
+      return undefined;
+    }
+    return Number((executedPrice * quantity * rates.takerRate).toFixed(8));
   }
 
   /**
@@ -515,6 +663,8 @@ export class GridTradingStrategy {
           buyOrderId: savedLevel.buyOrderId,
           sellOrderId: savedLevel.sellOrderId,
           filled: savedLevel.filled,
+          // Executed entry is only meaningful while the long is open.
+          entryPrice: savedLevel.filled ? savedLevel.entryPrice : undefined,
           buyGen: genFor(savedLevel.buyGen, savedLevel.buyOrderId),
           sellGen: genFor(savedLevel.sellGen, savedLevel.sellOrderId),
         };
@@ -536,6 +686,7 @@ export class GridTradingStrategy {
         buyOrderId: l.buyOrderId,
         sellOrderId: l.sellOrderId,
         filled: l.filled,
+        entryPrice: l.entryPrice,
         buyGen: l.buyGen ?? 0,
         sellGen: l.sellGen ?? 0,
       })),

@@ -131,6 +131,10 @@ describe("GridTradingStrategy ledger emission (Phase 4)", () => {
       })
     );
     expect(Number.isFinite(Date.parse(fill.executedAt))).toBe(true);
+    // This exchange has no fee source: the fee (and therefore the booked PnL)
+    // is *absent*, never an invented 0 (N6).
+    expect(fill.fee).toBeUndefined();
+    expect(fill.pnl).toBeUndefined();
 
     // One filled BUY level → LONG with one level's quantity.
     expect(reporter.reportPosition).toHaveBeenCalledTimes(1);
@@ -141,6 +145,9 @@ describe("GridTradingStrategy ledger emission (Phase 4)", () => {
         side: "LONG",
         quantity: 1,
         entryPrice: 97.5,
+        // Mark-to-market of the open leg at the ticker price (1); realised PnL
+        // stays 0 until the paired exit books it (N6 split).
+        unrealizedPnl: (1 - 97.5) * 1,
       })
     );
 
@@ -148,7 +155,9 @@ describe("GridTradingStrategy ledger emission (Phase 4)", () => {
     expect(reporter.reportPerformance.mock.calls[0][0]).toEqual({
       botId: "bot-ledger",
       totalTrades: 1,
-      totalPnl: (1 - 97.5) * 1,
+      // A BUY opens the long: its spread is unrealised, and this exchange has
+      // no fee source, so nothing is realised (N6 — no mark-to-market here).
+      totalPnl: 0,
     } satisfies PerformanceReport);
 
     // The fill slot never publishes an intent (nothing was created); the two

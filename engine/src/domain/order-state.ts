@@ -52,6 +52,17 @@ export type SlotOutcome =
       orderId?: string;
       filledQty?: number;
       /**
+       * Executed price of the fill — what Phase-5 accounting books realised
+       * PnL from (the mark price at check time is *not* an execution fact).
+       *
+       * Both adapters surface the best number their tape carries: Orderly
+       * reports `average_executed_price`, Lighter reports the order's own
+       * limit price (its REST tapes carry no average). Absent when the venue
+       * reported neither — the caller then falls back to the limit price it
+       * submitted, which for a maker fill *is* the executed price.
+       */
+      executedPrice?: number;
+      /**
        * The client order id the fill actually happened under — captured
        * before `OrderManager.markFilled` bumps the slot's generation, so the
        * ledger books the identity the venue's history row belongs to (G1).

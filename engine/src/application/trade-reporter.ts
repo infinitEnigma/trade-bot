@@ -43,9 +43,18 @@ export interface FillReport {
   botId: string;
   symbol: string;
   side: "BUY" | "SELL";
+  /** Executed price of the fill (venue-reported, else the submitted limit). */
   price: number;
   quantity: number;
+  /**
+   * Fee booked as `notional × rate` (N6a). Omitted when the venue's rate could
+   * not be sourced — absence means unknown, never fee-free.
+   */
   fee?: number;
+  /**
+   * Realised PnL this fill contributed (see `TradeExecutedEventPayload.pnl`).
+   * Omitted together with `fee` when the rate is unknown.
+   */
   pnl?: number;
   status: "FILLED" | "PARTIALLY_FILLED";
   clientOrderId: string;
@@ -59,9 +68,20 @@ export interface PositionReport {
   symbol: string;
   side: "LONG" | "SHORT" | "FLAT";
   quantity: number;
+  /** Executed entry price of the open inventory (weighted by level). */
   entryPrice: number;
   markPrice: number;
+  /**
+   * Realised PnL net of fees — the sum of the fill rows this engine booked, so
+   * the backend's `bot_instances.total_pnl` reconciles with the ledger (N6).
+   */
   pnl: number;
+  /**
+   * Mark-to-market PnL of the *open* inventory at `markPrice`, net of fees
+   * already booked on the entry legs. Kept separate from `pnl` so a viewer can
+   * tell closed profit from profit on paper.
+   */
+  unrealizedPnl: number;
 }
 
 export interface PerformanceReport {
