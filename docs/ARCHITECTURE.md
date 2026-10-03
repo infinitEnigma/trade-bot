@@ -215,7 +215,10 @@ venue truth on drift. Still open: per-fill `PARTIALLY_FILLED` accounting —
 **unblocked by Gate 4 (2026-10-03)**, which observed a genuine partial
 (partially-filled resting orders report status `open` with a cumulative,
 monotonic `filled_base_amount` and no per-trade id, so the fill identity is a
-cumulative-qty segment on `client_order_index`); implementation is Phase 4.
+cumulative-qty segment on `client_order_index`). Implementation is in
+progress (Phase 4): the identity/domain layer and the `OrderManager`
+delta/generation accounting landed 2026-10-03 (`6381110`, `efa6c5c`); the
+observation paths, grid wiring and tests remain.
 
 Model note: order identity, slot state and the snapshot are **bot-scoped** today
 (`<botId>.json`, one `GridTradingStrategy` per `BotRuntime`). Under the planned
