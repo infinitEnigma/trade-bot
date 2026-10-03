@@ -85,6 +85,8 @@ const ROW = {
   side: "BUY",
   order_price: 100,
   order_quantity: 1,
+  // Phase 4: the venue's cumulative, distinct from the order's size above.
+  executed_quantity: 0.4,
 };
 
 describe("OrderlyClient.listOpenOrders", () => {
@@ -107,6 +109,10 @@ describe("OrderlyClient.listOpenOrders", () => {
         symbol: "PERP_ETH_USDC",
         status: "NEW",
         side: "BUY",
+        // Phase 4: the size stays the size while the cumulative rides along —
+        // booking the size of a partly executed order would overstate the fill.
+        quantity: 1,
+        executedQuantity: 0.4,
       });
     } finally {
       await stub.close();

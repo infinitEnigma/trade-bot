@@ -75,12 +75,25 @@ describe("B5 query mapping", () => {
   it("partially_filled is FOUND_OPEN (live)", async () => {
     const c = queryClient(() => ({
       orders: [
-        { order_id: "3", client_order_index: "3", status: "partially_filled" },
+        {
+          order_id: "3",
+          client_order_index: "3",
+          status: "partially_filled",
+          initial_base_amount: "0.0100",
+          remaining_base_amount: "0.0060",
+          filled_base_amount: "0.0040",
+        },
       ],
     }));
-    expect((await c.queryOrderByClientOrderId("ETH", "3")).kind).toBe(
-      "FOUND_OPEN"
-    );
+    const lookup = await c.queryOrderByClientOrderId("ETH", "3");
+    expect(lookup.kind).toBe("FOUND_OPEN");
+    // Phase 4: a live row carries its cumulative too, so a fill that lands
+    // before the placement response is adopted (or between polls) is booked
+    // instead of waiting for the terminal row — `quantity` stays the *size*.
+    if (lookup.kind === "FOUND_OPEN") {
+      expect(lookup.order.quantity).toBe(0.01);
+      expect(lookup.order.executedQuantity).toBe(0.004);
+    }
   });
   it("filled and canceled map to terminal kinds", async () => {
     const f = queryClient(() => ({
@@ -268,7 +281,8 @@ describe("B5 query mapping", () => {
               price: "1375.32",
               base_price: 137532,
               initial_base_amount: "0.0100",
-              remaining_base_amount: "0.0100",
+              remaining_base_amount: "0.0060",
+              filled_base_amount: "0.0040",
             },
           ],
         }),
@@ -281,6 +295,10 @@ describe("B5 query mapping", () => {
     expect(order.venueOrderId).toBe("562949945880386");
     expect(order.price).toBe(1375.32);
     expect(order.quantity).toBe(0.01);
+    // Phase 4: the partial is visible on the listing itself — `quantity` is the
+    // order's size (0.01) while the venue's cumulative (0.004) is what the
+    // reconciliation service books a segment from.
+    expect(order.executedQuantity).toBe(0.004);
     expect(order.status).toBe("OPEN");
     expect(order.side).toBe("BUY");
   });

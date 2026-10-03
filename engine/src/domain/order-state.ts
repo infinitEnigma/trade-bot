@@ -58,7 +58,24 @@ export type SlotOutcome =
   | {
       kind: "FILLED";
       orderId?: string;
+      /**
+       * The venue's cumulative executed quantity for the order — the upper
+       * bound of the fill segment this row closes (risk A1/B2). Absent when
+       * the venue reported no cumulative at all (the legacy adapter case), in
+       * which case the manager assumed the instance's own size.
+       */
       filledQty?: number;
+      /**
+       * Newly-booked quantity (Phase 4, risk A2): the remainder this terminal
+       * row added on top of any `PARTIALLY_FILLED` segment already booked.
+       * `OrderManager.markFilled` has already granted exactly this much to the
+       * level's held quantity, so it is the **only** quantity the grid may
+       * book into the ledger — never `filledQty`, which is the whole order.
+       * `0` when the observation added nothing (a re-detection of an
+       * already-booked fill: the ledger's dedup already collapsed that row,
+       * and the level must not move twice either).
+       */
+      delta: number;
       /**
        * Executed price of the fill — what Phase-5 accounting books realised
        * PnL from (the mark price at check time is *not* an execution fact).
@@ -113,16 +130,32 @@ export type SlotOutcome =
        * Absent when the venue reported no unbooked remainder — the plain
        * vanish path, byte-identical to pre-Phase-4 behavior.
        */
-      pendingFill?: {
-        cumQty: number;
-        delta: number;
-        executedPrice?: number;
-        clientOrderId: string;
-        /** Handle of the dead order, when the observation had one. */
-        orderId?: string;
-      };
+      pendingFill?: PendingFill;
     }
   | { kind: "UNAVAILABLE"; reason: string };
+
+/**
+ * A dying order's unbooked executions (Phase 4, risk A3) — the fill that landed
+ * between the last poll and the cancel, plus the identity it must be booked
+ * under. Produced by `OrderReconciliationService.bookRemainder` and carried on
+ * `SlotOutcome.SAFE_TO_RECREATE`, because the slot is about to re-arm and this
+ * row must reach the ledger before it does.
+ */
+export interface PendingFill {
+  /** The venue's cumulative executed quantity for the dying order. */
+  cumQty: number;
+  /** Newly-booked delta: `cumQty − previously booked`, always > 0. */
+  delta: number;
+  /** Executed price of the segment — same rules as `SlotOutcome.FILLED`. */
+  executedPrice?: number;
+  clientOrderId: string;
+  /**
+   * Handle of the dead order, when the observation had one — the handle we
+   * queried under, so every segment of one order shares one exchange id
+   * (risk B2).
+   */
+  orderId?: string;
+}
 
 /** Result of a startup reconciliation pass over the bot's symbol. */
 export interface StartupReconcileReport {

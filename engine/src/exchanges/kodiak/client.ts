@@ -92,6 +92,14 @@ function toExchangeOpenOrder(
     price: row.order_price != null ? Number(row.order_price) : undefined,
     quantity:
       row.order_quantity != null ? Number(row.order_quantity) : undefined,
+    /**
+     * Phase 4: the venue's cumulative for the order, the field the
+     * reconciliation service books segments from. `order_quantity` is the
+     * order's *size* — on a partly executed order the two differ, and on a
+     * terminal cancel the size is exactly the wrong number to book.
+     */
+    executedQuantity:
+      row.executed_quantity != null ? Number(row.executed_quantity) : undefined,
   };
 }
 

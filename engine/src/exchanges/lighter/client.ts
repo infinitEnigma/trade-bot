@@ -343,6 +343,17 @@ export class LighterClient implements ExchangeClient {
       side: rowSide(row),
       price,
       quantity,
+      /**
+       * Phase 4: the venue's own cumulative for this order. A partially filled
+       * resting row reads `status` `open` with `filled_base_amount` > 0 — this
+       * field is what the reconciliation service books segments from, so it
+       * must never be conflated with `quantity` (the order's *size*), which is
+       * what a terminal cancel reports and therefore the wrong number to book.
+       * Absent when the tape omits it: the observation then books nothing (risk
+       * D1 — never guess), and `getOrder`, which does carry it, catches the
+       * fill within one slot-check interval.
+       */
+      executedQuantity: toNumberOrUndefined(row.filled_base_amount),
       marketIndex: market.marketIndex,
       resolution,
       venueOrderId:

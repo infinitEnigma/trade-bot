@@ -16,7 +16,12 @@ const SYMBOL = "ETH";
 
 type Script = {
   query?: (clientOrderId: string) => Promise<OrderLookup>;
-  getOrder?: (orderId: string) => Promise<{ orderId: string; status: string }>;
+  getOrder?: (orderId: string) => Promise<{
+    orderId: string;
+    status: string;
+    executedPrice?: number;
+    executedQuantity?: number;
+  }>;
   createOrder?: (request: unknown) => Promise<{ orderId: string }>;
   listOpenOrders?: () => Promise<unknown[]>;
 };
@@ -465,5 +470,317 @@ describe("OrderReconciliationService — ORDER_INTENT gate (Phase 4)", () => {
     expect(outcome).toEqual({ kind: "OPEN", orderId: "live-1" });
     expect(reportOrderIntent).not.toHaveBeenCalled();
     expect(exchange.created).toHaveLength(0);
+  });
+});
+
+describe("OrderReconciliationService — partial-fill observation (Phase 4)", () => {
+  const ids = new ClientOrderIdGenerator("bot-x");
+
+  it("books a live partial segment and keeps the slot on the order", async () => {
+    const { service, levels, manager } = setup({
+      query: async () => notFound(),
+      getOrder: async orderId => ({
+        orderId,
+        status: "OPEN",
+        executedQuantity: 0.4,
+        executedPrice: 100,
+      }),
+    });
+    await service.ensureSlotOrder(0, "BUY", 100, 1);
+    const handle = levels[0].buyOrderId;
+
+    const outcome = await service.checkSlot(0, "BUY");
+
+    expect(outcome).toEqual({
+      kind: "PARTIALLY_FILLED",
+      orderId: handle,
+      cumQty: 0.4,
+      delta: 0.4,
+      executedPrice: 100,
+      clientOrderId: ids.generate(0, "BUY", 0),
+    });
+    // The position moved by the booked segment while the slot keeps holding
+    // the order: a live partial spends nothing (B1) and cannot read as long.
+    expect(levels[0].heldQty).toBeCloseTo(0.4, 8);
+    expect(levels[0].filled).toBe(false);
+    expect(levels[0].buyOrderId).toBe(handle);
+    expect(levels[0].buyGen).toBeUndefined();
+    expect(manager.getBySlot(0, "BUY")?.filledQty).toBeCloseTo(0.4, 8);
+  });
+
+  it("re-observing the same cumulative books nothing (idempotent re-poll)", async () => {
+    const { service, levels } = setup({
+      query: async () => notFound(),
+      getOrder: async orderId => ({
+        orderId,
+        status: "OPEN",
+        executedQuantity: 0.4,
+      }),
+    });
+    await service.ensureSlotOrder(0, "BUY", 100, 1);
+    const handle = levels[0].buyOrderId;
+    await service.checkSlot(0, "BUY");
+
+    const again = await service.checkSlot(0, "BUY");
+
+    expect(again).toEqual({ kind: "OPEN", orderId: handle });
+    expect(levels[0].heldQty).toBeCloseTo(0.4, 8);
+  });
+
+  it("books only the remainder when the order completes after a partial (A2)", async () => {
+    let status = "OPEN";
+    let executedQuantity: number | undefined = 0.4;
+    const { service, levels } = setup({
+      query: async () => notFound(),
+      getOrder: async orderId => ({ orderId, status, executedQuantity }),
+    });
+    await service.ensureSlotOrder(0, "BUY", 100, 1);
+    const first = await service.checkSlot(0, "BUY");
+    expect(first.kind).toBe("PARTIALLY_FILLED");
+
+    status = "FILLED";
+    executedQuantity = 1;
+    const terminal = await service.checkSlot(0, "BUY");
+
+    // `filledQty` is the whole order, `delta` is what this row still owed —
+    // the grid books the delta, so no segment is ever counted twice.
+    expect(terminal).toMatchObject({
+      kind: "FILLED",
+      filledQty: 1,
+      delta: 0.6,
+    });
+    expect(levels[0].heldQty).toBeCloseTo(1, 8);
+    expect(levels[0].filled).toBe(true);
+    expect(levels[0].buyOrderId).toBeUndefined();
+  });
+
+  it("books the fill that landed before a cancel, then spends the id (A3/B1)", async () => {
+    let status = "OPEN";
+    let executedQuantity: number | undefined = 0.5;
+    const { service, levels } = setup({
+      query: async () => notFound(),
+      getOrder: async orderId => ({
+        orderId,
+        status,
+        executedQuantity,
+        executedPrice: 101.5,
+      }),
+    });
+    await service.ensureSlotOrder(0, "BUY", 100, 1);
+    const handle = levels[0].buyOrderId;
+    await service.checkSlot(0, "BUY");
+
+    status = "CANCELLED";
+    executedQuantity = 0.75; // 0.25 filled between the last poll and the cancel
+    const outcome = await service.checkSlot(0, "BUY");
+
+    expect(outcome).toEqual({
+      kind: "SAFE_TO_RECREATE",
+      pendingFill: {
+        cumQty: 0.75,
+        delta: 0.25,
+        executedPrice: 101.5,
+        clientOrderId: ids.generate(0, "BUY", 0),
+        orderId: handle,
+      },
+    });
+    expect(levels[0].heldQty).toBeCloseTo(0.75, 8);
+    expect(levels[0].buyOrderId).toBeUndefined();
+    // The instance booked fills, so its id is spent: a re-placed instance can
+    // never mint the same segment bounds under the same client id (B1).
+    expect(levels[0].buyGen).toBe(1);
+  });
+
+  it("books nothing and keeps the id when a canceled row reports no cumulative (D1)", async () => {
+    const { service, levels } = setup({
+      query: async () => notFound(),
+      getOrder: async orderId => ({ orderId, status: "CANCELLED" }),
+    });
+    await service.ensureSlotOrder(0, "BUY", 100, 1);
+
+    const outcome = await service.checkSlot(0, "BUY");
+
+    // Exactly the pre-Phase-4 shape: absent `pendingFill`, gen-0 reuse intact
+    // (Gate 1-C is byte-identical), no projection written.
+    expect(outcome).toEqual({ kind: "SAFE_TO_RECREATE" });
+    expect(levels[0].buyGen).toBeUndefined();
+    expect(levels[0].heldQty).toBeUndefined();
+  });
+
+  it("carries the queried handle, not the venue's mutated order id (B2)", async () => {
+    const { service, levels } = setup({
+      query: async () => notFound(),
+      // Lighter's own `order_id` moves as the order fills (…900 → …973).
+      getOrder: async () => ({
+        orderId: "562949945880973",
+        status: "OPEN",
+        executedQuantity: 0.4,
+      }),
+    });
+    await service.ensureSlotOrder(0, "BUY", 100, 1);
+    const handle = levels[0].buyOrderId as string;
+
+    const outcome = await service.checkSlot(0, "BUY");
+
+    expect(outcome).toMatchObject({
+      kind: "PARTIALLY_FILLED",
+      orderId: handle,
+    });
+    expect(levels[0].buyOrderId).toBe(handle);
+  });
+
+  it("adopts a partially filled live order found by the pre-submit lookup", async () => {
+    const { service, levels, exchange } = setup({
+      query: async () => ({
+        kind: "FOUND_OPEN" as const,
+        order: {
+          orderId: "live-1",
+          symbol: SYMBOL,
+          status: "OPEN",
+          price: 99.5,
+          quantity: 1,
+          executedQuantity: 0.25,
+        },
+      }),
+    });
+
+    const outcome = await service.ensureSlotOrder(0, "BUY", 100, 1);
+
+    expect(outcome).toEqual({
+      kind: "PARTIALLY_FILLED",
+      orderId: "live-1",
+      cumQty: 0.25,
+      delta: 0.25,
+      executedPrice: 99.5,
+      clientOrderId: ids.generate(0, "BUY", 0),
+    });
+    expect(exchange.created).toHaveLength(0);
+    expect(levels[0].buyOrderId).toBe("live-1");
+    expect(levels[0].heldQty).toBeCloseTo(0.25, 8);
+  });
+
+  it("prefers the venue cumulative over the row size on FOUND_FILLED (A2)", async () => {
+    const { service, levels } = setup({
+      query: async () => ({
+        kind: "FOUND_FILLED" as const,
+        order: {
+          orderId: "hist-1",
+          symbol: SYMBOL,
+          status: "FILLED",
+          price: 100,
+          quantity: 1,
+          executedQuantity: 0.4,
+        },
+      }),
+    });
+
+    const outcome = await service.ensureSlotOrder(0, "BUY", 100, 1);
+
+    expect(outcome).toMatchObject({
+      kind: "FILLED",
+      orderId: "hist-1",
+      filledQty: 0.4,
+      delta: 0.4,
+    });
+    expect(levels[0].heldQty).toBeCloseTo(0.4, 8);
+  });
+
+  it("books a canceled lookup's remainder and defers placement (A3/B1)", async () => {
+    const { service, levels, exchange } = setup({
+      query: async () => ({
+        kind: "FOUND_CANCELED" as const,
+        order: {
+          orderId: "dead-1",
+          symbol: SYMBOL,
+          status: "CANCELLED",
+          price: 100,
+          quantity: 1,
+          executedQuantity: 0.3,
+        },
+      }),
+    });
+
+    const outcome = await service.ensureSlotOrder(0, "BUY", 100, 1);
+
+    expect(outcome).toEqual({
+      kind: "SAFE_TO_RECREATE",
+      pendingFill: {
+        cumQty: 0.3,
+        delta: 0.3,
+        executedPrice: 100,
+        clientOrderId: ids.generate(0, "BUY", 0),
+        orderId: "dead-1",
+      },
+    });
+    expect(levels[0].heldQty).toBeCloseTo(0.3, 8);
+    // The booking proves the dead instance carried fills, so its id is spent.
+    expect(levels[0].buyGen).toBe(1);
+    // Nothing is placed over a dying row's remainder in the same tick: the row
+    // is handed back and the (now fresh-id) slot re-arms on the next one.
+    expect(levels[0].buyOrderId).toBeUndefined();
+    expect(exchange.created).toHaveLength(0);
+  });
+
+  it("does not freeze the slot when a lost create response adopts a partial", async () => {
+    let lookups = 0;
+    const { service, levels, manager } = setup({
+      query: async () => {
+        lookups += 1;
+        return lookups === 1
+          ? notFound()
+          : {
+              kind: "FOUND_OPEN" as const,
+              order: {
+                orderId: "recovered-1",
+                symbol: SYMBOL,
+                status: "OPEN",
+                price: 100,
+                executedQuantity: 0.5,
+              },
+            };
+      },
+      createOrder: async () => {
+        throw new Error("connection reset after accept");
+      },
+    });
+
+    const outcome = await service.ensureSlotOrder(0, "BUY", 100, 1);
+
+    // A live, partially filled order is a successful placement — freezing it
+    // would strand a handle the next tick would try to place over.
+    expect(outcome.kind).toBe("PARTIALLY_FILLED");
+    expect(levels[0].buyOrderId).toBe("recovered-1");
+    expect(levels[0].heldQty).toBeCloseTo(0.5, 8);
+    expect(manager.getBySlot(0, "BUY")?.state).toBe("OPEN");
+  });
+
+  it("counts a partially filled slot as adopted, not filled", async () => {
+    const levels: GridLevel[] = [
+      { price: 100, filled: false, buyOrderId: "restored-1" },
+    ];
+    const manager = new OrderManager(levels, ids, 1);
+    const exchange = fakeExchange({
+      getOrder: async orderId => ({
+        orderId,
+        status: "OPEN",
+        executedQuantity: 0.5,
+      }),
+      listOpenOrders: async () => [
+        { orderId: "restored-1", symbol: SYMBOL, status: "OPEN" },
+      ],
+    });
+    const service = new OrderReconciliationService(
+      "bot-x",
+      exchange,
+      SYMBOL,
+      manager
+    );
+
+    const report = await service.reconcileSymbol();
+
+    expect(report.adopted).toBe(1);
+    expect(report.filled).toBe(0);
+    expect(report.orphans).toHaveLength(0);
+    expect(levels[0].heldQty).toBeCloseTo(0.5, 8);
   });
 });
