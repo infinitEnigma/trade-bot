@@ -79,7 +79,9 @@ describe("OrderManager — seeding from restored levels", () => {
     expect(levels[0].filled).toBe(false);
     expect(levels[0].heldQty).toBe(0.4);
 
-    const { levels: full } = setup([{ price: 100, filled: false, heldQty: QTY }]);
+    const { levels: full } = setup([
+      { price: 100, filled: false, heldQty: QTY },
+    ]);
     expect(full[0].filled).toBe(true);
   });
 
@@ -105,7 +107,6 @@ describe("OrderManager — beginSubmit resets the instance cumulative", () => {
     expect(levels[0].buyFilledQty).toBe(0);
   });
 });
-
 
 describe("OrderManager — markBooked delta accounting", () => {
   it("books only the delta and projects the held quantity", () => {
@@ -166,7 +167,6 @@ describe("OrderManager — markBooked delta accounting", () => {
     expect(levels[0].heldQty).toBe(0);
   });
 });
-
 
 describe("OrderManager — markFilled terminal remainder", () => {
   it("books only the remainder after a partial already booked (A2)", () => {

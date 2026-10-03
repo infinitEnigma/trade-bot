@@ -112,9 +112,7 @@ describe("synthesizeFillId — cumulative-qty segments (Phase 4)", () => {
 
   it("isWholeOrderSegment accepts only from≈0 && to≥full", () => {
     expect(isWholeOrderSegment({ from: 0, to: 1, full: 1 })).toBe(true);
-    expect(
-      isWholeOrderSegment({ from: 0, to: 1 - 1e-9, full: 1 })
-    ).toBe(true);
+    expect(isWholeOrderSegment({ from: 0, to: 1 - 1e-9, full: 1 })).toBe(true);
     expect(isWholeOrderSegment({ from: 0, to: 0.4, full: 1 })).toBe(false);
     expect(isWholeOrderSegment({ from: 0.4, to: 1, full: 1 })).toBe(false);
     expect(isWholeOrderSegment({ from: 0, to: 1, full: 0 })).toBe(false);
