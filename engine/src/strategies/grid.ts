@@ -150,8 +150,14 @@ export class GridTradingStrategy {
       });
     }
 
-    // Wire order bookkeeping onto the (restored or fresh) levels.
-    this.manager = new OrderManager(this.levels, this.clientOrderIdGenerator);
+    // Wire order bookkeeping onto the (restored or fresh) levels. The
+    // configured slot size is what the manager's `filled` projection and
+    // the arming rules compare quantities against (Phase 4).
+    this.manager = new OrderManager(
+      this.levels,
+      this.clientOrderIdGenerator,
+      this.config.orderQuantity
+    );
     this.reconcile = new OrderReconciliationService(
       this.botId,
       this.exchange,

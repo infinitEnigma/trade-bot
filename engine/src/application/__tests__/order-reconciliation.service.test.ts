@@ -56,7 +56,7 @@ function setup(script: Script) {
     { price: 110, filled: false },
   ];
   const ids = new ClientOrderIdGenerator("bot-x");
-  const manager = new OrderManager(levels, ids);
+  const manager = new OrderManager(levels, ids, 1);
   const exchange = fakeExchange(script);
   const service = new OrderReconciliationService(
     "bot-x",
@@ -226,7 +226,7 @@ describe("OrderReconciliationService — reconcileSymbol", () => {
       { price: 100, filled: false, buyOrderId: "restored-1" },
     ];
     const ids = new ClientOrderIdGenerator("bot-x");
-    const manager = new OrderManager(levels, ids);
+    const manager = new OrderManager(levels, ids, 1);
     const exchange = fakeExchange({
       listOpenOrders: async () => [
         { orderId: "restored-1", symbol: SYMBOL, status: "OPEN" },
@@ -280,7 +280,7 @@ describe("OrderReconciliationService — G1 (stale history never books a phantom
     // A spent cycle left its id at generation 0; the slot is armed for a new
     // cycle at generation 1 (legacy seed-bump or a booked fill).
     const levels: GridLevel[] = [{ price: 100, filled: false, buyGen: 1 }];
-    const manager = new OrderManager(levels, ids);
+    const manager = new OrderManager(levels, ids, 1);
     const queried: string[] = [];
     const exchange = fakeExchange({
       query: async id => {
