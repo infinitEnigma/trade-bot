@@ -34,6 +34,24 @@ export interface GridLevel {
    */
   buyGen?: number;
   sellGen?: number;
+  /**
+   * Long quantity this level holds (Phase 4): the sum of booked BUY segments
+   * minus booked SELL segments, written only by `OrderManager`. The arming
+   * rules read this instead of the boolean `filled`: buy while
+   * `heldQty < orderQuantity − ε`, sell once `heldQty ≥ orderQuantity − ε`.
+   * Absent = 0 (fresh levels, legacy snapshots — restore derives
+   * `filled ? orderQuantity : 0`).
+   */
+  heldQty?: number;
+  /**
+   * Booked cumulative of the resting BUY order instance (Phase 4), persisted
+   * so a restart seeds `OrderManager.adopt` and cannot double-apply a
+   * re-observed cumulative to `heldQty` (risk A4). Reset when a new instance
+   * is submitted; ignored when `buyOrderId` is absent.
+   */
+  buyFilledQty?: number;
+  /** Booked cumulative of the resting SELL instance — see `buyFilledQty`. */
+  sellFilledQty?: number;
 }
 
 export interface BotStatus {

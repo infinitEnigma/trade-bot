@@ -35,6 +35,14 @@ export interface OrderRecord {
   side: "BUY" | "SELL";
   price: number;
   quantity: number;
+  /**
+   * Cumulative quantity **booked** for this order instance (Phase 4; risk
+   * B3): the venue cumulative the ledger has already been told about. The
+   * next observation books only `venueCum − filledQty` — never the whole
+   * order again. Reset to 0 by `beginSubmit` (a new instance) and seeded
+   * from the snapshot's `buyFilledQty`/`sellFilledQty` by `adopt` so a
+   * restart re-observes the same cumulative without re-booking (risk A4).
+   */
   filledQty: number;
   /** Adapter handle (round-trips into cancelOrder/getOrder); set once OPEN. */
   orderId?: string;
@@ -69,7 +77,51 @@ export type SlotOutcome =
        */
       clientOrderId: string;
     }
-  | { kind: "SAFE_TO_RECREATE" }
+  | {
+      /**
+       * The venue still holds the order, but with cumulative executions the
+       * engine has not booked yet (Phase 4; Gate 4's trigger: status `open`
+       * with `filled_base_amount > 0`). `OrderManager.markBooked` has
+       * already applied `delta` to the level's held quantity — the grid
+       * books exactly `delta` into the ledger, never the whole order (a
+       * prior segment already booked its share, risk A2).
+       */
+      kind: "PARTIALLY_FILLED";
+      /**
+       * The handle the observation came from. Stable across fills even on
+       * Lighter, where the venue's own `order_id` mutates (Gate 4) — the
+       * ledger's `exchange_order_id` must always be this handle (risk B2).
+       */
+      orderId: string;
+      /** The venue's cumulative executed quantity for the order. */
+      cumQty: number;
+      /** Newly-booked delta: `cumQty − previously booked`, always > 0. */
+      delta: number;
+      /** Executed price of the segment — same rules as `FILLED`. */
+      executedPrice?: number;
+      clientOrderId: string;
+    }
+  | {
+      kind: "SAFE_TO_RECREATE";
+      /**
+       * A terminal order (canceled/rejected/expired) whose final executions
+       * are being booked only now (Phase 4, risk A3): the fill that landed
+       * between the last poll and the cancel. `OrderManager` has already
+       * applied `delta` to the level; the grid books it as a
+       * `PARTIALLY_FILLED` row *before* the slot re-arms, so a fill just
+       * before a cancel is never dropped from the ledger or the position.
+       * Absent when the venue reported no unbooked remainder — the plain
+       * vanish path, byte-identical to pre-Phase-4 behavior.
+       */
+      pendingFill?: {
+        cumQty: number;
+        delta: number;
+        executedPrice?: number;
+        clientOrderId: string;
+        /** Handle of the dead order, when the observation had one. */
+        orderId?: string;
+      };
+    }
   | { kind: "UNAVAILABLE"; reason: string };
 
 /** Result of a startup reconciliation pass over the bot's symbol. */

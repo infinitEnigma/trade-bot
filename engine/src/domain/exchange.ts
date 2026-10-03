@@ -130,6 +130,19 @@ export interface ExchangeOpenOrder {
   side?: "BUY" | "SELL";
   price?: number;
   quantity?: number;
+  /**
+   * Cumulative quantity executed on this order as of the listing row
+   * (Phase 4 partial-fill detection). Distinct from `quantity`, which is the
+   * **order's size** (`initial_base_amount` on Lighter): a partially-filled
+   * row reads `quantity` = full size while `executedQuantity` = the filled
+   * part. Optional — an adapter or tape that carries no such field omits it,
+   * and the observation path then books nothing (risk D1: never guess);
+   * the `getOrder` path, which does carry it, catches the fill within one
+   * slot-check interval. A terminal-cancel observation must read *this*
+   * field, never `quantity`: a canceled remainder's `quantity` is the
+   * original size, not what actually filled before the cancel.
+   */
+  executedQuantity?: number;
   [key: string]: unknown;
 }
 

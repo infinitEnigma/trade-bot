@@ -30,6 +30,24 @@ export interface GridSnapshotLevel {
    */
   buyGen?: number;
   sellGen?: number;
+  /**
+   * Long quantity this level holds (Phase 4 quantity accounting): booked BUY
+   * segments minus booked SELL segments. Written only by `OrderManager`.
+   * Absent on legacy snapshots, where restore derives it from `filled`
+   * (`orderQuantity` when set, else 0). `filled` itself is the projection
+   * `heldQty ≥ orderQuantity − ε` — the arming rules read `heldQty`.
+   */
+  heldQty?: number;
+  /**
+   * Booked cumulative of the *resting BUY instance* (Phase 4, risk A4).
+   * Seeded into `OrderManager.adopt` after a restart so re-observing the
+   * same venue cumulative books only the delta — without it the level's
+   * `heldQty` would double while the ledger correctly deduped. Reset to 0
+   * when a new instance is submitted. Ignored when `buyOrderId` is absent.
+   */
+  buyFilledQty?: number;
+  /** Booked cumulative of the resting SELL instance — see `buyFilledQty`. */
+  sellFilledQty?: number;
 }
 
 /** Persisted snapshot for one bot's grid. */
