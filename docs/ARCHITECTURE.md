@@ -211,8 +211,11 @@ lifecycle is reconciled against the exchange (`OrderManager` +
 exits now price above the executed entry with fee-inclusive realised PnL (N6).
 Exit legs are `reduce_only`, so a stale sell can no longer open a short, and the
 grid cross-checks its position against `exchange.getPositions()`, reporting
-venue truth on drift. Still open: per-fill `PARTIALLY_FILLED` accounting
-(deferred pending a venue observation).
+venue truth on drift. Still open: per-fill `PARTIALLY_FILLED` accounting —
+**unblocked by Gate 4 (2026-10-03)**, which observed a genuine partial
+(partially-filled resting orders report status `open` with a cumulative,
+monotonic `filled_base_amount` and no per-trade id, so the fill identity is a
+cumulative-qty segment on `client_order_index`); implementation is Phase 4.
 
 Model note: order identity, slot state and the snapshot are **bot-scoped** today
 (`<botId>.json`, one `GridTradingStrategy` per `BotRuntime`). Under the planned
