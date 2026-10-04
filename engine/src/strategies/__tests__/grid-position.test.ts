@@ -20,6 +20,7 @@ import * as fs from "fs";
 import { GridTradingStrategy } from "../grid";
 import { ExchangeClient } from "../../domain/exchange";
 import { GridStrategyConfig } from "../../types/strategy";
+import { saveGridSnapshot } from "../../infrastructure/state/grid-state";
 import {
   PositionReport,
   TradeReporter,
@@ -236,5 +237,72 @@ describe("GridTradingStrategy venue position reconciliation (N6)", () => {
 
     await s.tick();
     expect(exchange.getPositions.mock.calls.length).toBe(afterForced);
+  });
+});
+
+describe("GridTradingStrategy position report (Phase 4, C4)", () => {
+  /** The grid around 100 at 5% / 2: 97.5 | 100 | 102.5. */
+  const seedReportLevels = () =>
+    saveGridSnapshot({
+      version: 1,
+      botId: "bot-report",
+      symbol: CONFIG.symbol,
+      gridSize: CONFIG.gridSize,
+      gridRangePercent: CONFIG.gridRangePercent,
+      baselinePrice: 100,
+      levels: [
+        // A partial long: 0.4 booked at an executed 97.4…
+        {
+          price: LEVEL_0,
+          filled: false,
+          heldQty: 0.4,
+          buyFilledQty: 0.4,
+          entryPrice: LEVEL_0 - 0.1,
+        },
+        // …and a full one at 100.
+        {
+          price: 100,
+          filled: true,
+          heldQty: 1,
+          buyFilledQty: 1,
+          entryPrice: 100,
+        },
+        { price: 102.5, filled: false },
+      ],
+      savedAt: new Date().toISOString(),
+    });
+
+  function reportOf(s: GridTradingStrategy): PositionReport {
+    return (
+      s as unknown as { buildPositionReport(): PositionReport }
+    ).buildPositionReport();
+  }
+
+  it("sums held quantities with a quantity-weighted entry and mark", async () => {
+    await seedReportLevels();
+    const exchange = makeExchange();
+    const s = makeStrategy("bot-report", exchange);
+    await s.initialize(100); // mark price = 100
+
+    const report = reportOf(s);
+    // Neither a level count nor one configured size describes a partial grid.
+    expect(report.side).toBe("LONG");
+    expect(report.quantity).toBeCloseTo(1.4, 8);
+    // (97.4 × 0.4 + 100 × 1.0) / 1.4 — the partial contributes by size.
+    expect(report.entryPrice).toBeCloseTo(99.25714286, 8);
+    expect(report.unrealizedPnl).toBeCloseTo((100 - 97.4) * 0.4, 8);
+    expect(report.markPrice).toBe(100);
+  });
+
+  it("reports FLAT with no entry when nothing is held", async () => {
+    const exchange = makeExchange();
+    const s = makeStrategy("bot-report-flat", exchange);
+    await s.initialize(100);
+
+    const report = reportOf(s);
+    expect(report.side).toBe("FLAT");
+    expect(report.quantity).toBe(0);
+    expect(report.entryPrice).toBe(0);
+    expect(report.unrealizedPnl).toBe(0);
   });
 });

@@ -236,3 +236,39 @@ describe("OrderManager — markNotFound id spending (B1)", () => {
     expect(levels[0].buyGen ?? 0).toBe(0);
   });
 });
+
+describe("OrderManager — snapFullyLong declares a level without booking (C2)", () => {
+  it("sets the held quantity to the slot size and flags the level long", () => {
+    const { manager, levels } = setup();
+    const id = openBuy(manager);
+    manager.markBooked(id, 0.96);
+    expect(levels[0].heldQty).toBeCloseTo(0.96, 8);
+    expect(levels[0].filled).toBe(false);
+
+    manager.snapFullyLong(0);
+
+    expect(levels[0].heldQty).toBe(1);
+    expect(levels[0].filled).toBe(true);
+  });
+
+  it("books nothing: the instance cumulative still says what the venue filled", () => {
+    const { manager, levels } = setup();
+    const id = openBuy(manager);
+    manager.markBooked(id, 0.96);
+
+    manager.snapFullyLong(0);
+
+    // A snap is a model decision, never a fill: the record is untouched, so
+    // the next real execution still deltas against the venue's 0.96.
+    expect(manager.markBooked(id, 0.96)).toBeNull();
+    expect(manager.markBooked(id, 0.97)).toBeCloseTo(0.01, 8);
+    expect(levels[0].buyFilledQty).toBeCloseTo(0.97, 8);
+    // …and the declared long never slips past the slot size (C5 clamps it).
+    expect(levels[0].heldQty).toBe(1);
+  });
+
+  it("is a no-op for an out-of-range level", () => {
+    const { manager } = setup();
+    expect(() => manager.snapFullyLong(9)).not.toThrow();
+  });
+});

@@ -211,14 +211,16 @@ lifecycle is reconciled against the exchange (`OrderManager` +
 exits now price above the executed entry with fee-inclusive realised PnL (N6).
 Exit legs are `reduce_only`, so a stale sell can no longer open a short, and the
 grid cross-checks its position against `exchange.getPositions()`, reporting
-venue truth on drift. Still open: per-fill `PARTIALLY_FILLED` accounting —
-**unblocked by Gate 4 (2026-10-03)**, which observed a genuine partial
-(partially-filled resting orders report status `open` with a cumulative,
-monotonic `filled_base_amount` and no per-trade id, so the fill identity is a
-cumulative-qty segment on `client_order_index`). Implementation is in
-progress (Phase 4): the identity/domain layer and the `OrderManager`
-delta/generation accounting landed 2026-10-03 (`6381110`, `efa6c5c`); the
-observation paths, grid wiring and tests remain.
+venue truth on drift. Per-fill `PARTIALLY_FILLED` accounting **landed
+2026-10-04** (Gate 4, 2026-10-03, established that a partial resting order
+reports status `open` with a cumulative, monotonic `filled_base_amount` and no
+per-trade id — the fill identity is therefore a cumulative-qty segment on
+`client_order_index`): fill identity, `OrderManager` delta accounting, the
+observation paths, grid wiring and the arming/lifecycle suites all shipped
+(`6381110`, `efa6c5c`, `65911f3`, `3859f34` + Phase-5 tests/docs). **Still
+open:** the live Gate-4 §9 *run 2* proof — an engine-path partial redelivered
+and restarted must collapse to one ledger row per segment — which no unit test
+can grant, plus live confirmation of the below-minimum-remainder refusal text.
 
 Model note: order identity, slot state and the snapshot are **bot-scoped** today
 (`<botId>.json`, one `GridTradingStrategy` per `BotRuntime`). Under the planned
