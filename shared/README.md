@@ -123,16 +123,25 @@ interface OrderIntentEventPayload {
   price: number; quantity: number; clientOrderId: string;
 }
 
-// one per detected fill; backend dedups on
+// one per detected fill *segment*; backend dedups on
 // (bot_id, client_order_id, exchange_order_id, fill_id)
 interface TradeExecutedEventPayload {
   botId: string; engineId: string; engineEpoch: number;
   symbol: string; side: "BUY" | "SELL";
   price: number; quantity: number; fee?: number; pnl?: number;
+  // Whole-order fills report "FILLED"; segment rows report
+  // "PARTIALLY_FILLED" (including terminal-cancel remainders).
   status: "FILLED" | "PARTIALLY_FILLED";
   clientOrderId: string; exchangeOrderId: string; fillId: string;
   executedAt: string; // ISO-8601
 }
+
+// `fillId` is `sha256(bot:client:exchange)` for a whole-order fill (the
+// pre-Phase-4 identity, so old rows keep deduping) and
+// `sha256(bot:client:exchange:from8dp->to8dp)` for a partial segment, where
+// the bounds are cumulative executed quantities — segments of one order can
+// never collapse onto one row (8-dp quantization; live Gate-4 proof run 2
+// still pending, see the gap doc §4 row 5).
 ```
 
 Also `POSITION_UPDATED` (`side: "LONG" | "SHORT" | "FLAT"`) and

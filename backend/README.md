@@ -57,10 +57,34 @@ core/
 ├── bots/          # Bot lifecycle + engine protocol (see above)
 ├── logging/       # Structured logging with correlation IDs
 ├── market/        # Market data services
-├── strategies/    # Strategy management + engine process supervision
+├── strategies/    # Strategy management + engine process supervision + trade ledger
 ├── user/          # User profiles, Kodiak credentials
 └── wallet/        # Balance management, qualification checks
 ```
+
+### Durable Trade Ledger (Phase 4 / N7)
+
+`TradeLedgerService` (`src/core/strategies/trade-ledger.service.ts`) ingests the
+engine's ledger events (already engine-authority checked by
+`BotEventProcessor`) into `bot_trade_fills`:
+
+- `ORDER_INTENT` — persisted before the venue can accept anything
+  (intent-before-create: no durable intent, no submission).
+- `TRADE_EXECUTED` — **one row per fill segment**, not per order. The engine
+  keys identity as `sha256(bot:client:exchange)` for whole-order fills and
+  `sha256(bot:client:exchange:from→to)` for partial segments, so two segments
+  of one order can never collapse onto one row; record is idempotent on the
+  `(bot_id, client_order_id, exchange_order_id, fill_id)` unique key, so
+  redeliveries and restarts are free. `PARTIALLY_FILLED` narrows to `PARTIAL`
+  for the `trades.status` CHECK.
+- `POSITION_UPDATED` / `PERFORMANCE_SNAPSHOT` — engine-side aggregates
+  (telemetry); `bot_instances` totals still derive exclusively from the fill
+  ledger.
+
+Error policy: malformed payloads are logged and ACKed (a broken event must
+not redeliver forever); persistence failures throw so the message redelivers
+and the unique key absorbs the duplicate. An unknown `botId` is a warning +
+swallow — identity resolves server-side, so a spoofed bot id can never write.
 
 ### User Access Tiers
 
@@ -277,4 +301,4 @@ Notable backend behaviours worth knowing before changing lifecycle code:
 
 ---
 
-**Backend Status**: Functional | **Architecture**: Chain & Exchange Agnostic | **Version**: 1.0.0 | **Updated**: September 20, 2026
+**Backend Status**: Functional | **Architecture**: Chain & Exchange Agnostic | **Version**: 1.0.0 | **Updated**: October 4, 2026

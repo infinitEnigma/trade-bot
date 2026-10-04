@@ -12,24 +12,31 @@
 
 Trade Bot is a **full-stack, chain-agnostic automated trading platform** for executing desired trading strategies. It uses a distributed architecture with a React frontend, Node.js Express backend, and an independent trading engine coordinated via Redis Streams.
 
-| Component            | Technology                            | Status            | Documentation                          |
-| -------------------- | ------------------------------------- | ----------------- | -------------------------------------- |
-| **Network**          | Multi-chain (EVM, Solana)             | ✅ Extensible     | -                                      |
-| **Exchange**         | Multi-exchange (Kodiak, + extensible) | ✅ Extensible     | -                                      |
-| **Frontend**         | React 19 + Vite + Tailwind CSS        | ✅ Functional     | [📖 Frontend Docs](frontend/README.md) |
-| **Backend**          | Express.js + PostgreSQL + Redis       | ✅ Functional     | [📖 Backend Docs](backend/README.md)   |
-| **Trading Engine**   | TypeScript (Node.js)                  | ⚠️ In Development | [📖 Engine Docs](engine/README.md)     |
-| **Shared Contracts** | TypeScript types                      | ✅ Functional     | -                                      |
+| Component            | Technology                               | Status         | Documentation                          |
+| -------------------- | ---------------------------------------- | -------------- | -------------------------------------- |
+| **Network**          | Multi-chain (EVM, Solana)                | ✅ Extensible  | -                                      |
+| **Exchange**         | Multi-exchange (Kodiak/Orderly, Lighter) | ✅ Extensible  | -                                      |
+| **Frontend**         | React 19 + Vite + Tailwind CSS           | ✅ Functional  | [📖 Frontend Docs](frontend/README.md) |
+| **Backend**          | Express.js + PostgreSQL + Redis          | ✅ Functional  | [📖 Backend Docs](backend/README.md)   |
+| **Trading Engine**   | TypeScript (Node.js)                     | ✅ Functional¹ | [📖 Engine Docs](engine/README.md)     |
+| **Shared Contracts** | TypeScript types                         | ✅ Functional  | -                                      |
 
-> **Maturity Assessment (2026-09-20)**: The architecture is a chain- and
+¹ Engine: the full grid trading path — slot reconciliation → delta-only fill
+booking → durable ledger rows, per-fill partial accounting (`PARTIALLY_FILLED`
+segments), restart-safe quantity snapshots — is implemented and unit-tested.
+The only remaining gate is the live Gate-4 run-2 _venue_ proof.
+
+> **Maturity Assessment (2026-10-04)**: The architecture is a chain- and
 > exchange-agnostic distributed platform with a working control plane. The
 > Backend ↔ Engine protocol (Redis Streams, separated desired/actual lifecycle
 > state, manual ACK, correlation IDs, engine epochs, heartbeats, poison-message
-> detection) is the most mature subsystem. The toolchain is clean: `npm audit`
-> reports **0 vulnerabilities**, lint is **0 errors / 0 warnings**, and the
-> suites report **2,567 passing tests**. Remaining work is trading-system
-> hardening — exchange↔local order reconciliation, durable trading state, and
-> atomic snapshot persistence — not architecture remediation. Track it in the
+> detection) and the durable fill ledger (`ORDER_INTENT` + `TRADE_EXECUTED`
+> events → idempotent `bot_trade_fills` rows) are the most mature subsystems.
+> The toolchain is clean: `npm audit` reports **0 vulnerabilities**, lint is
+> **0 errors / 0 warnings**, and the suites report **~3,000 passing tests**
+> (backend ~2,540, engine ~285, frontend ~206) — a live-gated Lighter smoke
+> test excluded, which requires the signing sidecar — see the ¹ note above.
+> Details and the one remaining live-test gate are tracked in the
 > [Project Review & Gap Analysis](docs/PROJECT_REVIEW_GAP_ANALYSIS.md).
 
 ---
@@ -104,7 +111,7 @@ npm run prod           # Start the production backend (serves the built frontend
 
 ### Distributed System Design
 
-The platform uses a distributed architecture where the Backend and Engine are independent processes coordinated via Redis Streams:
+The platform uses a distributed architecture where the Backend and Engine are independent processes coordinated via Redis Streams. Bots bind to a single `exchange_accounts` row (C3a); the engine fetches that account's credentials out-of-band and trades only that venue account (Kodiak/Orderly, Lighter) — never shared keys:
 
 ```
                     ┌───────────────┐
@@ -128,7 +135,7 @@ The platform uses a distributed architecture where the Backend and Engine are in
                     │    Engine     │
                     │ BotManager    │
                     │ Strategy      │
-                    │ Orderly/Kodiak│
+                    │ Lighter     │  Orderly/Kodiak                  │
                     └───────────────┘
 ```
 
@@ -187,7 +194,7 @@ trade-bot/
 │       │   ├── bots/          # Bot lifecycle management + engine protocol
 │       │   ├── logging/       # Structured logging with correlation IDs
 │       │   ├── market/        # Market data services
-│       │   ├── strategies/    # Strategy management + engine process supervision
+│       │   ├── strategies/    # Strategy management + engine process supervision + trade ledger (`bot_trade_fills`)
 │       │   ├── user/          # User profiles & Kodiak credentials
 │       │   └── wallet/        # Balance management
 │       ├── interfaces/        # HTTP routes, middleware, WebSocket
@@ -196,12 +203,13 @@ trade-bot/
 ├── engine/                    # Exchange-agnostic trading engine
 │   └── src/
 │       ├── index.ts           # Entry point (bootstrap only)
-│       ├── application/       # BotManager, StrategyRunner (tick loop), lifecycle coordinator
+│       ├── application/       # BotManager, StrategyRunner (tick loop), lifecycle coordinator + order manager/reconciliation, ledger reports
 │       ├── protocol/          # Command consumer, event publisher, credential fetcher
 │       ├── domain/            # Bot runtime, engine identity, exchange interface, grid snapshot
 │       ├── exchanges/         # Exchange integrations (pluggable)
 │       │   └── kodiak/        # Kodiak/Orderly (first exchange)
-│       ├── strategies/        # Grid trading strategy
+│       │   └── lighter/       # Lighter (signing via the sidecar signer)
+│       ├── strategies/        # Grid trading strategy (per-fill partial accounting, quantity snapshots)
 │       ├── infrastructure/    # Redis Streams client + grid snapshot persistence
 │       ├── types/             # Strategy type definitions
 │       └── utils/             # Logging utility
@@ -210,7 +218,7 @@ trade-bot/
 │       ├── protocol/          # Bot lifecycle protocol types
 │       │   ├── bot-state.ts   # State machine & transitions
 │       │   ├── bot-command.ts # Command types & envelope
-│       │   ├── bot-event.ts   # Event types
+│       │   ├── bot-event.ts   # Event types + ledger payloads (fill_id, segments)
 │       │   └── engine-lifecycle.ts # Engine registration & heartbeat
 │       └── types/             # Domain models, infrastructure contracts
 ├── database/                  # PostgreSQL migrations
@@ -281,7 +289,12 @@ npm run format:check    # Verify formatting without writing
 
 ## Test Coverage
 
-Fresh report (2026-09, full-suite runs):
+Fresh totals (2026-10-04, full-suite runs): **backend ~2,540 tests**
+(excluding DB-gated suites), **engine 285 tests**, **frontend 206 tests** —
+a live-gated Lighter smoke test that needs the signing sidecar is excluded
+from the engine count for local runs. The coverage snapshot below is from
+2026-09 and is kept for shape comparison only; percentages are stale and will
+be refreshed with the next coverage pass (see Roadmap):
 
 | Workspace         | Suites | Tests | Statements | Branch | Functions | Lines |
 | ----------------- | ------ | ----- | ---------- | ------ | --------- | ----- |
@@ -297,8 +310,12 @@ cd engine   && npx jest --coverage        # report in engine/coverage/
 cd frontend && npx vitest run --coverage   # report in frontend/coverage/
 ```
 
-Weakest areas are the frontend components/hooks layer (61.6%) — expanding
-component and hook tests is the top coverage priority (see Roadmap).
+Weakest areas in the 2026-09 snapshot were the frontend components/hooks
+layer (61.6%) — expanding component and hook tests is the top coverage
+priority (see Roadmap). A coverage _percentage_ refresh is also due: the
+totals above grew substantially since September (engine grid/reconciliation
+suites, backend ledger suites), so the next coverage pass should regenerate
+the table rather than reuse it.
 
 ---
 
@@ -306,9 +323,16 @@ component and hook tests is the top coverage priority (see Roadmap).
 
 ### Near-Term
 
-- [ ] Harden the engine trading path — exchange↔local order reconciliation, atomic
-      snapshot persistence, durable trade ledger (see
+- [x] Harden the engine trading path — exchange↔local order reconciliation
+      (`OrderReconciliationService` + `OrderManager`), atomic checksummed
+      snapshot persistence with quantity fields, durable trade ledger
+      (`ORDER_INTENT` → `TRADE_EXECUTED` → `bot_trade_fills`), per-fill
+      partial accounting (see
       [Project Review & Gap Analysis](docs/PROJECT_REVIEW_GAP_ANALYSIS.md))
+- [ ] Live venue proof (Gate-4 run 2): engine-path partial fills on Lighter
+      testnet through the grid, incl. redelivery + restart row-collapse —
+      code is ready, the gate needs a live run
+- [ ] Refresh the coverage table above (percentages are from 2026-09)
 
 ### Medium-Term
 
