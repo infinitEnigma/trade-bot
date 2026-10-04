@@ -17,13 +17,62 @@ in the archived copy
 [`docs/archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md`](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md).
 Historical review material stays untracked under `docs/archived/`.
 
-**Current focus: engine trading-path hardening** (Phases 0/2/3 in section 4) —
-the control plane is strong; exchange↔local reconciliation and durable
-financial state are the remaining gaps.
+**Current focus: adversarial validation of the trading path** (Phase 6 in
+section 4) — the control plane, exchange reconciliation, durable snapshots,
+durable ledger and per-fill partial accounting have all landed; what remains is
+proving the hard restart/redelivery cases live, plus a small set of structural
+gaps (account-scoped domain APIs, failure injection, a second reviewer).
 
 ---
 
-## 1. Latest review — 2026-10-01 (independent reviewer)
+## 1. Latest review — 2026-10-04 (two independent reviewers)
+
+Two independent reviewers re-checked `main` at `f2e08ef` (2026-10-04) in the
+same window; both conclude the **trading path has effectively closed**. Full
+texts: [`…_review_A_raw.md`](archived/reviews/2026-10-04_external_review_A_raw.md),
+[`…_review_B_raw.md`](archived/reviews/2026-10-04_external_review_B_raw.md).
+
+**Reviewer A (execution-model focus)** — *"Very good delivery … the developers
+are no longer just fixing obvious architectural deficiencies. They're now
+dealing with second-order exchange semantics and race conditions."* Overall
+**~8.5/10**; recommends **"stop touching this layering unless a concrete defect
+appears"** and that the next milestone be **failure-oriented validation**, not
+another feature PR.
+
+**Reviewer B (control-plane / accounting focus)** — *"This isn't just 'more
+fixes' … all closing within days of being named, each backed by a live testnet
+run with logged evidence."* Confirms the two prior P0s were closed with real
+mechanisms, calls the G1 fix *"genuinely clever"*, and flags the same single
+residual (Gate-4 §9 run 2) and the same next milestone.
+
+### Scores (Reviewer A)
+
+| Area | Score | Area | Score |
+| --- | --- | --- | --- |
+| Control plane | 9 | Durable ledger | 8.5 |
+| Lifecycle | 9 | Accounting | 8 |
+| Exchange abstraction | 8.5 | Partial fills | 8 — *impl done, live proof pending* |
+| Order reconciliation | 8.5 | Failure recovery | 7 — *architecture exists, adversarial validation pending* |
+| Snapshot / restart | 8.5 | Multi-account / Frontend | 7.5 / 7 |
+
+### Corrections to the reviews (re-checked against the code — §2b)
+
+| Claim | Verdict |
+| --- | --- |
+| A: "the repository is now at **347** commits" | ⚠️ **Stale** — `git rev-list --count HEAD` = **361** at `f2e08ef`. |
+| A §12 lists only P1 position API / P2 frontend / P2 harness as open | ⚠️ **Incomplete** — §4 also keeps bot account sessions (§D), agent participation (§E), the `shared` split and the `21104` transient-signer item (the engine jest open handle, also omitted, has since been confirmed closed — 31 suites / 297 tests, clean exit). |
+| B: "check `bot-management.service.ts` — is the dead code still there?" | ✅ **Answered** — the dead `getBotStatus` was swept out in `ed019c7` ("stub-hygiene pass … dead getBotStatus removed"); only `getBotStatusInfo` (live) remains. |
+| Both: partial-fill implementation landed, live proof pending | ✅ **Confirmed — and run-2 evidence now recorded** (§2b row 21, §5). |
+| Both label the next work "Phase 6" | ⚠️ **Naming clash** — §4's Phase 6 (failure injection) is unrelated to the `phase4-partial-fills-plan.md` internal "Phase 5". |
+
+**New process finding (both reviewers, independently):** every change is still a
+**single-author, unreviewed merge with no CI gate**. Neither review questions the
+code quality; both call the *absent second set of eyes* the remaining structural
+risk. Tracked as **R3** (§3) and in §4.
+
+---
+
+## 1b. Previous review — 2026-10-01 (independent reviewer)
 
 **Repository state reviewed:** the `main` revision of this document at
 `624e599` (2026-09-30); verified below against `cc8da7c` (2026-10-01).
@@ -111,6 +160,19 @@ the review and this incorporation.
 | 14 | Trade idempotency + bot-scoped statistics still missing | ✅ **Resolved 2026-10-02** | Phase 4: idempotent `bot_trade_fills(…)` unique key + `bot_instances` totals keyed by `bot_id` — N7 record below |
 | 15 | `position-repository` userId-only interface answers with the most recently updated row | ✅ Confirmed open | `position-repository.adapter.ts:60` documents the heuristic — section 4 (account-scoped domain APIs) |
 | 16 | Frontend still carries `bot.id === botId` \|\| `bot.strategy_id === botId` compatibility logic (residue: `strategy ≈ bot`) | ✅ Confirmed | `useBotLifecycle.ts:187,253` — section 3 residue |
+
+### 2b. Verification of the 2026-10-04 reviews against the code
+
+Every claim re-checked at `f2e08ef` (2026-10-04).
+
+| # | Review claim | Verdict | Evidence |
+| --- | --- | --- | --- |
+| 17 | Both: credential idempotency closed with a real DB constraint (not papered over) | ✅ Confirmed | `database/migrations/015_credentials_issued_unique.sql` present |
+| 18 | Both: dead `engine.ts` HTTP writers removed | ✅ Confirmed | `132fbd1` (heartbeat/report-trade/bot-error/bot-recovery) + `cc8da7c` (`/engine-status`) |
+| 19 | B: is the `bot-management.service.ts` dead code still there? | ✅ **Answered** | dead `getBotStatus` removed in `ed019c7`; only `getBotStatusInfo` (`bot-status.service.pure.ts`) remains |
+| 20 | A: "the repository is now at 347 commits" | ⚠️ **Stale** | `git rev-list --count HEAD` = **361** at `f2e08ef` |
+| 21 | Both: partial-fill accounting landed, live proof the only residual | ✅ Confirmed + **run-2 evidence recorded** | engine-path partials booked one row per segment, delta-only (`.git/gatelogs/live/gate4-run2-report.md`) — §5 Gate-4 run-2 row |
+| 22 | Both: every change is a single-author, unreviewed merge (no CI) | ✅ Confirmed (process) | new finding **R3**, §3/§4 |
 
 ---
 ## 3. Findings (open only)
@@ -260,10 +322,19 @@ dedup). Every observation path — the manager, `checkSlot`, the pre-submit
 lookup, the stop path and the startup pass — books only the **venue delta**
 into `heldQty` and hands the same segment to the ledger, and the snapshot
 carries the per-side cumulatives so a restart resumes instead of re-applying.
-**Residual open:** live Gate-4 §9 **run 2** (an engine-path partial that is
-redelivered and restarted must collapse to one ledger row per segment), plus
-live confirmation of the C2 below-minimum-remainder refusal text — unit tests
-cannot grant a live gate (plan E2).
+**Residual — core invariant proven live, restart half open.** Live Gate-4 §9
+**run 2** was executed 2026-10-04 (`f2e08ef`; `.git/gatelogs/live/gate4-run2-report.md`):
+three genuine engine-path partials booked **one ledger row per cumulative-qty
+segment, delta-only** — e.g. a resting SELL produced rows `0.0204` then `0.0184`
+(cumulative `0.0204 → 0.0388`) under one `client_order_index` with distinct
+`fill_id`s and proportional realised PnL, and a BUY produced `0.0100` then
+`0.0100` (cumulative `0.01 → 0.02`); `SUM(bot_trade_fills.pnl) ==
+bot_positions.pnl`. The **restart/redelivery** half of the criterion was **not**
+exercised live (the engine did not restart in the window, which was then cut
+short by a host network outage) and is now covered **deterministically** by the
+Phase-6 fault-injection harness (§4 Phase 6); a dedicated live restart run and
+live confirmation of the C2 below-minimum-remainder refusal text remain open
+(plan E2) — unit tests cannot grant a live gate.
 
 **Phase-5 prerequisite — fee sourcing (N6a, settled 2026-10-02).** PnL "from
 executed price with fees" needs a fee number, and the venue exposes no per-fill
@@ -324,6 +395,16 @@ same symbol. Account-scoped portfolio reads (`?exchangeAccountId=`) bypass this,
 but the interface must not be used for trading/risk decisions until it becomes
 `getPosition(accountId, symbol)` with user-level aggregation separate.
 
+### R3 — 🟡 P2: single-author merges, no CI gate (both 2026-10-04 reviewers)
+
+Independent of any code finding, both reviewers' only *structural* concern is
+that **every change is a single-author, unreviewed merge** and nothing mechanical
+enforces the test suite on a push. The quality of the work is not in question —
+the request is a second set of eyes *before* it ships. Concretely: a CI gate
+running `tsc --noEmit` / eslint / prettier plus the engine, backend and frontend
+suites on every push, and a protected `main` requiring at least one approval.
+Not a trading-path defect; tracked as P2.
+
 ---
 
 ## 4. Remediation ledger (open items only)
@@ -343,8 +424,8 @@ below.
 | 2b | 🟠 P1 | **G1 — stale deterministic-id history books phantom fills** (Gate 1 report §3.1, Phase 2 residual). The pre-submit lookup for a spent slot id found the venue's terminal history row → `FOUND_FILLED` → phantom `markFilled` + `recordTrade` (bogus PnL, flipped `filled` flags) and blocked re-placement while history persisted. Fix: slot id **generations** — `markFilled` spends the slot's id (gen bump), legacy snapshots seed handle-less sides at generation 1, generation-0 ids stay byte-identical so live handles keep resolving. | ✅ Done 2026-10-02 — `client-order-id.ts` (`generation` suffix, legacy-exact gen 0) + `OrderManager.idFor`/`markFilled` bump + `GridLevel`/`GridSnapshotLevel` `buyGen`/`sellGen` + `SlotOutcome.FILLED.clientOrderId`; regression suite `grid-g1.test.ts` |
 | 3 | 🔴 P0 | **Snapshot durability** (reviewer's PR 1/2). Temp file → `fsync` → atomic rename; keep the previous snapshot; checksum + schema validation of level entries; distinguish "no snapshot" from "corrupt snapshot"; `snapshot ≠ exchange truth` stays explicit — reconciliation (Phase 2) is what makes the snapshot safe. | ✅ Done `d5aa842` — `durable-write.ts` (tmp → fsync → rename, keep `.prev`) + checksum + level-entry validation |
 | 4 | 🟠 P1 | **Durable trading ledger** (reviewer's PR 2). Persist order/fill intent before create; wire `TRADE_EXECUTED` events to an idempotent DB write (unique `(bot_id, client_order_id, exchange_order_id, fill_id)`); fix the `trades.status` vocabulary; filter `bot_instances` updates by `bot_id`, not `strategy_id` (N7). | ✅ Done `5d1cef9` (2026-10-02) — migration `016_durable_trading_ledger.sql` (`bot_trade_fills` + `bot_order_intents` + `bot_positions` + `bot_performance_snapshots`); `shared/src/protocol/engine-ledger.ts` event family; engine `LedgerTradeReporter` (intent-before-create, fail-closed); backend `TradeLedgerService`/`TradeLedgerRepository` ingested via `BotEventProcessor` behind the authority check; legacy `engine:events` listener removed |
-| 5 | 🟠 P1 | **Accounting correctness** (reviewer's PR 3; N6). Sell at the next level / take-profit, PnL from executed price with fees, `reduce_only` exits, position reconciliation from exchange positions, explicit `PARTIALLY_FILLED`. | 🔶 **N6 core done 2026-10-02** (`8495254`). Fee sourcing (N6a): rate from the venue-reported account tier, `notional × rate` per fill (`ExchangeClient.getFeeRates?()` + `LighterClient.getFeeRates()` + `fees.ts`). Executed-price accounting: exits price one grid step above the level (or `takeProfitPercent` above the **executed** entry) and are never armed at/below it; a BUY books `0 - fee` while the closing SELL books `(sellExec − entryExec) × qty − fee`, so `SUM(bot_trade_fills.pnl)` stays exact; `PositionReport.pnl` is realised and `unrealizedPnl` marks the open inventory (`bot_positions.unrealized_pnl`, migration `017`). `reduce_only` exits landed 2026-10-02 (`b303fe6`: `ExchangeOrderRequest.reduceOnly` + `OrderRequest.reduceOnly`; Orderly `reduce_only` mapped in `payload.ts`, Lighter forwarded through the sidecar; grid sets it on SELL); position reconciliation landed 2026-10-02 (`938e230`: throttled `exchange.getPositions()` cross-check, venue truth reported on drift). **Live Gate 3 PASS 2026-10-03** (Lighter testnet, `.git/gatelogs/live/gate3-report.md`): BUY 2670.82 → SELL 2673.49 round trip with `realizedPnl 0.0267` exact, sourced-zero fee, `SUM(bot_trade_fills.pnl) == bot_instances.total_pnl`, `reduce_only` visible on the venue order, Phase-5 drift check fired. **Gate 4 PASS 2026-10-03** (`.git/gatelogs/live/gate4-report.md`): genuine partial observed — status `open` + cumulative monotonic `filled_base_amount`, no trade id → identity = cumulative-qty segment. **Per-fill `PARTIALLY_FILLED` landed 2026-10-04:** all five plan phases — segment-aware fill ids + domain types (`6381110`), OrderManager delta accounting (`efa6c5c`), observation paths (`65911f3`), grid wiring (`3859f34`), tests and docs |
-| 6 | 🟡 P2 | **Failure-injection harness** (reviewer's PR 4). Fake exchange with scripted failures (accept-then-drop, timeout, 500, `NOT_FOUND`, duplicate-key rejection, partial fill) and a test matrix: crash at each step of create, Redis down/restart, restart with/without/corrupt snapshot, exchange-side orphans. | ⬜ open — only after Phases 2–4 exist |
+| 5 | 🟠 P1 | **Accounting correctness** (reviewer's PR 3; N6). Sell at the next level / take-profit, PnL from executed price with fees, `reduce_only` exits, position reconciliation from exchange positions, explicit `PARTIALLY_FILLED`. | 🔶 **N6 core done 2026-10-02** (`8495254`). Fee sourcing (N6a): rate from the venue-reported account tier, `notional × rate` per fill (`ExchangeClient.getFeeRates?()` + `LighterClient.getFeeRates()` + `fees.ts`). Executed-price accounting: exits price one grid step above the level (or `takeProfitPercent` above the **executed** entry) and are never armed at/below it; a BUY books `0 - fee` while the closing SELL books `(sellExec − entryExec) × qty − fee`, so `SUM(bot_trade_fills.pnl)` stays exact; `PositionReport.pnl` is realised and `unrealizedPnl` marks the open inventory (`bot_positions.unrealized_pnl`, migration `017`). `reduce_only` exits landed 2026-10-02 (`b303fe6`: `ExchangeOrderRequest.reduceOnly` + `OrderRequest.reduceOnly`; Orderly `reduce_only` mapped in `payload.ts`, Lighter forwarded through the sidecar; grid sets it on SELL); position reconciliation landed 2026-10-02 (`938e230`: throttled `exchange.getPositions()` cross-check, venue truth reported on drift). **Live Gate 3 PASS 2026-10-03** (Lighter testnet, `.git/gatelogs/live/gate3-report.md`): BUY 2670.82 → SELL 2673.49 round trip with `realizedPnl 0.0267` exact, sourced-zero fee, `SUM(bot_trade_fills.pnl) == bot_instances.total_pnl`, `reduce_only` visible on the venue order, Phase-5 drift check fired. **Gate 4 PASS 2026-10-03** (`.git/gatelogs/live/gate4-report.md`): genuine partial observed — status `open` + cumulative monotonic `filled_base_amount`, no trade id → identity = cumulative-qty segment. **Per-fill `PARTIALLY_FILLED` landed 2026-10-04:** all five plan phases — segment-aware fill ids + domain types (`6381110`), OrderManager delta accounting (`efa6c5c`), observation paths (`65911f3`), grid wiring (`3859f34`), tests and docs. **Live Gate-4 §9 run 2 2026-10-04** (`.git/gatelogs/live/gate4-run2-report.md`): engine-path partials booked one ledger row per segment, delta-only (a resting SELL gave rows `0.0204` then `0.0184` under one `client_order_index`; a BUY gave `0.01` then `0.01`), `SUM(bot_trade_fills.pnl) == bot_positions.pnl`; the restart/redelivery half of the criterion is covered by the Phase-6 harness, and a live restart run stays open. |
+| 6 | 🟡 P2 | **Failure-injection harness** (reviewer's PR 4). Fake exchange with scripted failures (accept-then-drop, timeout, 500, `NOT_FOUND`, duplicate-key rejection, partial fill) and a test matrix: crash at each step of create, Redis down/restart, restart with/without/corrupt snapshot, exchange-side orphans. | 🔶 **Started 2026-10-04** — a shared scripted fault-injecting fake exchange (`engine/src/application/__tests__/helpers/fake-exchange.ts`: call journal + `on`/`fail` scripting + happy-path defaults, replacing the two duplicated `fakeExchange` helpers) and a service-level matrix (`failure-injection-matrix.test.ts`, 12 cases): accept-then-drop, create timeout, pre-submit `UNREACHABLE` freeze, progressive partials + redelivery, partial + restart re-hydration, cancel/fill race, lost cancel (404 re-arms / 500 freezes), stale historical id (G1), unreachable startup listing, startup fill segment. Plan `docs/instructions/phase6-failure-injection-plan.md`. **Inherently live (never unit-testable):** real `SIGKILL` (Gate 2 ✅), Redis restart, orphan-at-venue. |
 | – | 🟠 P1 | **Account-scoped position/balance domain APIs.** Retire the userId-only most-recent-row heuristic (R2); `getPosition(accountId, symbol)` with user-level aggregation separate. (P2: drop the unconsumed `kodiak_status` column from `user_trading_summary`.) | ⬜ partially done — portfolio reads are account-scoped; the domain interface is not |
 | – | 🟡 P2 | **Frontend identity residue.** Remove the `bot.strategy_id === botId` compatibility fallback once no caller passes a strategy id (R1). | ⬜ open |
 | D | 🟠 P1 | **Bot account sessions.** The unit of execution becomes `(user, exchange_accounts)` with `strategy_runs` inside it: one credential fetch, one exchange connection and one reconciler per account — also the shape N3/N4 reconciliation needs. Designed, not implemented — [DATA_MODEL.md](DATA_MODEL.md) §4.4, [plan §D](EXCHANGE_INTEGRATION_PLAN.md). | ⬜ open |
@@ -373,7 +454,10 @@ below.
 | 2026-10-03 (live Gate 1-C vanish → re-place) | Lighter testnet @ `a843c95` — evidence `.git/gatelogs/live/gate1c-report.md` | **PASS (§5 / N3)**: venue cancel of `client 4254758849` → slot cleared (lookup `FOUND_CANCELED` → `SAFE_TO_RECREATE`) → re-placed at the first armed tick (`13:23:57`, same gen-0 id; §5.3's "next generation" expectation corrected — only `markFilled` bumps generations), venue count `1 → 0 → 1`. Transient `21104` did not freeze the slot (8 s retry). Bonuses: G1 live proof on a CANCELED history row (no phantom fill), and a ~3 h `ENETUNREACH` outage logged as a tick error without stopping the loop. |
 | 2026-10-03 (live Gate 1-D clean stop) | Lighter testnet @ `a843c95` — evidence `.git/gatelogs/live/gate1d-report.md` | **PASS (§6 / N5)**: `POST /stop` with 1 resting order + `+0.05` long → `Grid strategy bot stopped {unresolved: 0}`, venue `activeOrders 1 → 0`, `force_stop_reason: null`, bot `STOPPED/STOPPED` in ~3 s, ledger ↔ venue agree (`bot_positions 0.05 == venue +0.05`; 5 fills / `sum(pnl) 0 == total_pnl`). With this the planned live gates are complete: **Gate 0 ✅ (2026-10-01), 1-B ✅, 1-C ✅, 1-D ✅, 2 ✅, 3 ✅, 4 ✅ (all 2026-10-03)**. |
 | 2026-10-03 (Phase 4 parts 1–2) | `main` @ `efa6c5c` | Phase 4 implementation started: segment-aware fill ids + partial-fill domain types (`6381110`), then `OrderManager` delta/generation accounting with its own suite (`efa6c5c`). Whole-order fills keep the byte-identical legacy fill hash (A6); an id is spent only when the instance booked something (B1). Phases 3–5 (observation paths, grid, tests/docs) pending — `docs/instructions/phase4-partial-fills-plan.md`. |
-| 2026-10-04 (Phase 4 parts 3–5) | `main` @ `3859f34` | Phases 3–5 landed: observation paths book only venue deltas (`65911f3` — `checkSlot`/lookups/`pendingFill`, Lighter + Kodiak `executedQuantity`, defer-not-overplace), the grid books segments and wires arming/snapshot (`3859f34` — delta-only `bookSegment` with quantized segment bounds, quantity-based C1 arming, C2 below-minimum snap, C3 weighted entry, E3 snapshot fields, stop + startup fills), and Phase 5 adds the arming state table, held-based position report and lifecycle suites. **Residual:** live Gate-4 §9 run 2 and C2 refusal-text confirmation (plan E2). |
+| 2026-10-04 (Phase 4 parts 3–5) | `main` @ `3859f34` | Phases 3–5 landed: observation paths book only venue deltas (`65911f3` — `checkSlot`/lookups/`pendingFill`, Lighter + Kodiak `executedQuantity`, defer-not-overplace), the grid books segments and wires arming/snapshot (`3859f34` — delta-only `bookSegment` with quantized segment bounds, quantity-based C1 arming, C2 below-minimum snap, C3 weighted entry, E3 snapshot fields, stop + startup fills), and Phase 5 adds the arming state table, held-based position report and lifecycle suites. **Residual (after 2026-10-04):** the live **restart** half of Gate-4 §9 run 2 and the C2 refusal-text confirmation (plan E2) — the delta-only half is now proven live (row below). |
+| 2026-10-04 (live Gate-4 §9 run 2) | Lighter testnet @ `f2e08ef` — evidence `.git/gatelogs/live/gate4-run2-report.md` | **PASS (core invariant)**: three engine-path partials booked **one ledger row per cumulative segment, delta-only** — a resting SELL gave rows `0.0204` then `0.0184` (cumulative `0.0204 → 0.0388`) under one `client_order_index` with distinct `fill_id`s and proportional realised PnL, and a BUY gave `0.01` then `0.01` (cumulative `0.01 → 0.02`); `SUM(bot_trade_fills.pnl) == bot_positions.pnl`. **Not run live:** the restart/redelivery half (no engine restart in the window; a host network outage then cut the run short) — now covered deterministically by the Phase-6 harness; a dedicated live restart run stays open. |
+| 2026-10-04 (dual external review) | `main` @ `f2e08ef` | Two independent reviewers, both concluding the **trading path has effectively closed** (A ~8.5/10, "stop touching this layering"; next milestone = failure injection). Cross-checked in §1/§2b: A's "347 commits" is stale (**361**), A's open list omits several §4 items, B's `bot-management.service.ts` question answered (`ed019c7`). New process finding **R3**: single-author merges, no CI gate. |
+| 2026-10-04 (Phase 6 start) | `main` @ `f2e08ef` | Failure-injection harness started: a shared scripted fault-injecting fake exchange (`engine/src/application/__tests__/helpers/fake-exchange.ts`) + a 12-case service-level matrix (`failure-injection-matrix.test.ts`); plan `docs/instructions/phase6-failure-injection-plan.md`. Inherently-live cases (real `SIGKILL`, Redis restart, orphan-at-venue) stay in the gate runbooks. |
 
 Earlier passes (2026-01 … 2026-09-14 ratings, the first gap-analysis rounds)
 are in `docs/archived/` (`PROJECT_REVIEW.md`, the original
@@ -385,8 +469,8 @@ are in `docs/archived/` (`PROJECT_REVIEW.md`, the original
 
 | Priority | Item | Where |
 | -------- | ---- | ----- |
-| 🟠 P1 | **PR-1 (engine trading-path P0s) fully closed** — Phase 0 live proof ✅ 2026-10-01, Phase 2 ✅ `d746c4c`, Phase 3 ✅ `d5aa842`. Durable order/fill ledger (Phase 4) ✅ 2026-10-02. G1 (stale-id phantom fills, Gate 1 §3.1) ✅ 2026-10-02 (§4 row 2b). Next: accounting correctness (Phase 5), bot account sessions (plan §D), account-scoped position domain APIs | §4 |
-| 🟡 P2 | Failure-injection harness (Phase 6), agent participation (plan §E), frontend identity residue (R1), `shared` split (defer) | §4, §3 |
+| 🟠 P1 | **PR-1 (engine trading-path P0s) fully closed** — Phase 0 ✅ 2026-10-01, Phase 2 ✅ `d746c4c`, Phase 3 ✅ `d5aa842`; **PR-2 durable ledger ✅** `5d1cef9`; **PR-3 accounting ✅ core + partial-fill accounting landed 2026-10-04**, with Gate-4 §9 run 2 proven live for the delta-only invariant (the restart half + C2 refusal text remain). G1 ✅ 2026-10-02 (§4 row 2b). **Remaining P1:** bot account sessions (plan §D), account-scoped position domain APIs (R2). | §4 |
+| 🟡 P2 | **Failure-injection harness (Phase 6) started 2026-10-04** (shared scripted fake + 12-case matrix; plan in `docs/instructions/`). Also open: agent participation (plan §E), frontend identity residue (R1), `shared` split (defer), transient signer `21104`, **R3 (single-author merges / no CI gate)**. | §4, §3 |
 
 ### How to keep this document honest
 

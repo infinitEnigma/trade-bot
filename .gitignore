@@ -53,6 +53,8 @@ pg_hba.conf
 
 # Engine runtime grid-snapshots (per-bot slot state, regenerated on start)
 **/.grid-snapshots/
+# Live-gate variant (GRID_SNAPSHOT_DIR=.grid-snapshots-live)
+.grid-snapshots-live/
 
 # Python (probe scripts + lighter signer sidecar)
 __pycache__/

@@ -218,9 +218,16 @@ per-trade id — the fill identity is therefore a cumulative-qty segment on
 `client_order_index`): fill identity, `OrderManager` delta accounting, the
 observation paths, grid wiring and the arming/lifecycle suites all shipped
 (`6381110`, `efa6c5c`, `65911f3`, `3859f34` + Phase-5 tests/docs). **Still
-open:** the live Gate-4 §9 *run 2* proof — an engine-path partial redelivered
-and restarted must collapse to one ledger row per segment — which no unit test
-can grant, plus live confirmation of the below-minimum-remainder refusal text.
+open:** the live **restart** half of Gate-4 §9 *run 2* — an engine-path partial
+redelivered *and restarted* must collapse to one ledger row per segment — plus
+live confirmation of the below-minimum-remainder refusal text; neither is
+granted by unit tests. The **delta-only** half is now proven live (2026-10-04,
+`.git/gatelogs/live/gate4-run2-report.md`: engine-path partials booked one
+ledger row per cumulative segment, distinct ids, proportional PnL, ledger ↔
+position exact), and the restart/redelivery case is covered deterministically by
+the new Phase-6 fault-injection harness
+(`engine/src/application/__tests__/helpers/fake-exchange.ts` +
+`failure-injection-matrix.test.ts`).
 
 Model note: order identity, slot state and the snapshot are **bot-scoped** today
 (`<botId>.json`, one `GridTradingStrategy` per `BotRuntime`). Under the planned
