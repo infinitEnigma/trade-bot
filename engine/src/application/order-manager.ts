@@ -424,6 +424,29 @@ export class OrderManager {
   }
 
   /**
+   * Declare a level fully long **without booking a fill** (Phase 4, risk C2).
+   *
+   * A venue can refuse a remainder BUY outright when what is left to buy is
+   * below its minimum size (Lighter: under 0.01 → `21706`). Retrying that
+   * refusal every tick wedges the level: it holds inventory it can never
+   * complete and never arms the exit that would close it. This declares the
+   * level long instead, so the `reduce_only` SELL arms and the venue caps it to
+   * the true position (proven live in Gate 4).
+   *
+   * Deliberately **not** a booking: nothing executed at the venue, so nothing
+   * reaches the ledger and no instance cumulative moves — the next observation
+   * still deltas against what really filled. The projection is optimistic by
+   * the un-filled remainder, which is exactly the drift the N6 venue
+   * cross-check exists to report.
+   */
+  snapFullyLong(levelIndex: number): void {
+    const level = this.levels[levelIndex];
+    if (!level) return;
+    level.heldQty = this.orderQuantity;
+    level.filled = this.isFullyLong(level.heldQty);
+  }
+
+  /**
    * Could not reach the exchange: freeze. The handle is left untouched so a
    * later pass can resolve it — we must never treat "unknown" as "absent".
    */

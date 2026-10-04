@@ -783,4 +783,68 @@ describe("OrderReconciliationService — partial-fill observation (Phase 4)", ()
     expect(report.orphans).toHaveLength(0);
     expect(levels[0].heldQty).toBeCloseTo(0.5, 8);
   });
+
+  it("hands every executed segment to the caller (Phase 4: startup fills reach the ledger)", async () => {
+    const levels: GridLevel[] = [
+      { price: 100, filled: false, buyOrderId: "restored-1" },
+    ];
+    const manager = new OrderManager(levels, ids, 1);
+    const exchange = fakeExchange({
+      // The order completed while the engine was down.
+      getOrder: async orderId => ({
+        orderId,
+        status: "FILLED",
+        executedQuantity: 1,
+      }),
+      listOpenOrders: async () => [],
+    });
+    const service = new OrderReconciliationService(
+      "bot-x",
+      exchange,
+      SYMBOL,
+      manager
+    );
+
+    const report = await service.reconcileSymbol();
+
+    expect(report.adopted).toBe(0);
+    expect(report.filled).toBe(1);
+    // The projection moved, so the caller owes the ledger the same segment.
+    expect(report.fills).toHaveLength(1);
+    expect(report.fills[0]).toMatchObject({
+      levelIndex: 0,
+      side: "BUY",
+      outcome: {
+        kind: "FILLED",
+        orderId: "restored-1",
+        filledQty: 1,
+        delta: 1,
+        clientOrderId: ids.generate(0, "BUY", 0),
+      },
+    });
+    expect(levels[0].filled).toBe(true);
+  });
+
+  it("reports no fills when nothing executed during the pass", async () => {
+    const levels: GridLevel[] = [
+      { price: 100, filled: false, buyOrderId: "restored-1" },
+    ];
+    const manager = new OrderManager(levels, ids, 1);
+    const exchange = fakeExchange({
+      getOrder: async orderId => ({ orderId, status: "OPEN" }),
+      listOpenOrders: async () => [
+        { orderId: "restored-1", symbol: SYMBOL, status: "OPEN" },
+      ],
+    });
+    const service = new OrderReconciliationService(
+      "bot-x",
+      exchange,
+      SYMBOL,
+      manager
+    );
+
+    const report = await service.reconcileSymbol();
+
+    expect(report.fills).toEqual([]);
+  });
 });

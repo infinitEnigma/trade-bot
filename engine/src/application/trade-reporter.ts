@@ -27,7 +27,7 @@ import {
   publishPositionUpdated,
   publishTradeExecuted,
 } from "../protocol/event-publisher";
-import { synthesizeFillId } from "../utils/fill-id";
+import { synthesizeFillId, FillSegment } from "../utils/fill-id";
 import { logger } from "../utils/logger";
 
 export interface OrderIntentReport {
@@ -61,6 +61,16 @@ export interface FillReport {
   exchangeOrderId: string;
   /** ISO-8601 execution time as observed by the engine. */
   executedAt: string;
+  /**
+   * Cumulative-qty segment this row books (Phase 4, risk A1): `from` =
+   * cumulative already booked for this order, `to` = cumulative after it,
+   * `full` = the slot's configured `orderQuantity`. The reporter hashes it
+   * into `fillId` so two segments of one order can never collapse onto a
+   * single ledger row; `A1`'s whole-order exception keeps pre-Phase-4 ids
+   * byte-identical. It is **not** part of the published payload (the event
+   * contract carries only the resulting `fillId`).
+   */
+  segment?: FillSegment;
 }
 
 export interface PositionReport {
@@ -121,15 +131,19 @@ export class LedgerTradeReporter implements TradeReporter {
   }
 
   async reportFill(fill: FillReport): Promise<void> {
+    // The segment is identity input only: it shapes the fill id (A1) and never
+    // travels in the payload, whose contract is fixed by `@trade-bot/shared`.
+    const { segment, ...payload } = fill;
     const fillId = synthesizeFillId(
       fill.botId,
       fill.clientOrderId,
-      fill.exchangeOrderId
+      fill.exchangeOrderId,
+      segment
     );
     const result = await publishTradeExecuted(
       this.streamOps,
       {
-        ...fill,
+        ...payload,
         fillId,
         engineId: this.engineId,
         engineEpoch: this.engineEpoch,

@@ -168,4 +168,23 @@ export interface StartupReconcileReport {
   filled: number;
   /** Live orders at the exchange that no grid slot owns (reported, not cancelled). */
   orphans: ExchangeOpenOrder[];
+  /**
+   * Fill-bearing outcomes this pass resolved, in slot order (Phase 4) — an
+   * adopted handle whose order had already executed while the engine was down.
+   *
+   * Collected rather than dropped: the pass books the executions into the
+   * level's quantity projection, and the caller must book the same segment into
+   * the ledger, or a fill that happened during downtime would move the model
+   * while silently missing from the money trail (the A2/A3 class). The service
+   * never emits ledger rows itself — the grid owns that.
+   */
+  fills: StartupReconcileFill[];
+}
+
+/** One fill-bearing observation from the startup pass (Phase 4). */
+export interface StartupReconcileFill {
+  levelIndex: number;
+  side: "BUY" | "SELL";
+  /** `FILLED` or `PARTIALLY_FILLED` — see `SlotOutcome`. */
+  outcome: SlotOutcome;
 }

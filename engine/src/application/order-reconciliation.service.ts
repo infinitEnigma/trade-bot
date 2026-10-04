@@ -43,6 +43,7 @@ import {
   SlotOutcome,
   PendingFill,
   StartupReconcileReport,
+  StartupReconcileFill,
 } from "../domain/order-state";
 import { CommandError } from "./command-error";
 import { TradeReporter } from "./trade-reporter";
@@ -294,11 +295,13 @@ export class OrderReconciliationService {
         adopted: 0,
         filled: 0,
         orphans: [],
+        fills: [],
       };
     }
 
     let adopted = 0;
     let filled = 0;
+    const fills: StartupReconcileFill[] = [];
     for (const record of this.manager.all()) {
       if (!record.orderId) continue;
       const outcome = await this.checkSlot(record.levelIndex, record.side);
@@ -308,6 +311,16 @@ export class OrderReconciliationService {
       if (outcome.kind === "OPEN" || outcome.kind === "PARTIALLY_FILLED") {
         adopted += 1;
       } else if (outcome.kind === "FILLED") filled += 1;
+      // Hand the caller every executed segment (Phase 4): the projection moved,
+      // and the ledger owes the same row or the fill is lost from the money
+      // trail (the A2/A3 class).
+      if (outcome.kind === "FILLED" || outcome.kind === "PARTIALLY_FILLED") {
+        fills.push({
+          levelIndex: record.levelIndex,
+          side: record.side,
+          outcome,
+        });
+      }
     }
 
     const known = new Set(
@@ -317,7 +330,7 @@ export class OrderReconciliationService {
         .filter((id): id is string => Boolean(id))
     );
     const orphans = open.filter(order => !known.has(order.orderId));
-    return { reachable: true, adopted, filled, orphans };
+    return { reachable: true, adopted, filled, orphans, fills };
   }
 
   /**

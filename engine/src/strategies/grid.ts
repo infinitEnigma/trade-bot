@@ -26,9 +26,10 @@ import {
   saveGridSnapshot,
 } from "../infrastructure/state/grid-state";
 import { CommandError } from "../application/command-error";
-import { OrderManager } from "../application/order-manager";
+import { OrderManager, QTY_EPSILON } from "../application/order-manager";
 import { OrderReconciliationService } from "../application/order-reconciliation.service";
 import { PositionReport, TradeReporter } from "../application/trade-reporter";
+import { FillSegment } from "../utils/fill-id";
 
 /**
  * How often a single slot's order is re-checked against the exchange (ms).
@@ -52,6 +53,27 @@ const POSITION_RECONCILE_INTERVAL_MS = 60000;
  * slot checks (order-check cadence is 5s). Anything larger is real drift.
  */
 const POSITION_DRIFT_TOLERANCE_FRACTION = 0.5;
+
+/**
+ * Does a submission refusal read as a **size** refusal (Phase 4, risk C2)?
+ *
+ * The engine has no typed venue-rejection vocabulary: a refused create reaches
+ * the grid as an `UNAVAILABLE` string reason, so this is a deliberately narrow
+ * text classifier rather than an invented contract. It matches the Lighter
+ * minimum-size code pinned live in Gate 4 (`21706`, venue minimum 0.01) plus
+ * the wording venues use for the same refusal; an unreachable/transport reason
+ * (`lighter unreachable …`, timeouts) can never match, which keeps a freeze
+ * from being mistaken for a size refusal. A miss degrades to exactly the
+ * pre-Phase-4 behaviour — the remainder is retried and logged — so the cost of
+ * being too narrow is a wedged level an operator sees, never a wrong snap.
+ */
+const SIZE_REFUSAL_PATTERN =
+  /21706|minimum (order )?(size|amount|qty|quantity)|min(imum)? size|size (is )?(too )?(small|low|tiny)|below (the )?min(imum)?|less than (the )?min(imum)?/i;
+
+/** See `SIZE_REFUSAL_PATTERN`. */
+export function isSizeRefusal(reason: string): boolean {
+  return SIZE_REFUSAL_PATTERN.test(reason);
+}
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -190,6 +212,18 @@ export class GridTradingStrategy {
           }
         );
       }
+      // Executions the pass resolved (an order that filled or partly filled
+      // while the engine was down) moved the quantity projection; the ledger
+      // owes the same segments, or the fill exists in the position and nowhere
+      // in the money trail (A2/A3).
+      for (const resolved of report.fills) {
+        await this.bookOutcome(
+          resolved.levelIndex,
+          this.levels[resolved.levelIndex],
+          resolved.side,
+          resolved.outcome
+        );
+      }
     }
 
     await this.persistSnapshot();
@@ -268,7 +302,7 @@ export class GridTradingStrategy {
           // The adapter polls to confirmation; a thrown error means the cancel
           // is NOT confirmed, so the slot is reported rather than assumed clean.
           await this.exchange.cancelOrder(handle, this.config.symbol);
-          this.manager?.markNotFound(this.generateClientOrderId(i, side));
+          await this.reconcileCancelledSlot(i, side);
         } catch (error) {
           problems.push(
             `${side}@${this.levels[i].price} not cancelled: ${messageOf(error)}`
@@ -277,6 +311,51 @@ export class GridTradingStrategy {
       }
     }
     return problems;
+  }
+
+  /**
+   * Close out a slot whose cancel the venue confirmed (Phase 4, risk A3).
+   *
+   * A cancel is a terminal state too: a fill can land between the last poll and
+   * the cancel, and those executions must reach the ledger and the position
+   * before the slot clears — the same rule `checkSlot`'s DEAD branch and
+   * `FOUND_CANCELED` follow for a venue-side cancel. The order is terminal by
+   * now (the adapter waited for confirmation), so one read resolves it.
+   *
+   * A venue that disagrees with its own confirmation (still live, or
+   * unreachable so nothing can be resolved) frees the slot anyway: the
+   * confirmation is the authority here, and a leftover handle would otherwise
+   * wedge the level across a restart. Without a reconciler (strategy unit
+   * tests) the slot is simply cleared, exactly as before.
+   */
+  private async reconcileCancelledSlot(
+    levelIndex: number,
+    side: "BUY" | "SELL"
+  ): Promise<void> {
+    const clientOrderId = this.generateClientOrderId(levelIndex, side);
+    if (!this.reconcile) {
+      this.manager?.markNotFound(clientOrderId);
+      return;
+    }
+    const outcome = await this.reconcile.checkSlot(levelIndex, side);
+    // Books the remainder of a dead row (A3) or the terminal segment, exactly
+    // as the tick would; a no-op for a live/frozen outcome.
+    await this.bookOutcome(levelIndex, this.levels[levelIndex], side, outcome);
+    // FILLED and SAFE_TO_RECREATE both left the slot free already (the manager
+    // cleared the handle on the way through).
+    if (outcome.kind === "FILLED" || outcome.kind === "SAFE_TO_RECREATE") {
+      return;
+    }
+    // Venue still reports it live, or could not be read: trust the confirmed
+    // cancel and free the slot (the confirmation is the authority).
+    logger.warn("Cancel confirmed but the venue still reports the order", {
+      botId: this.botId,
+      symbol: this.config.symbol,
+      side,
+      levelPrice: this.levels[levelIndex]?.price,
+      outcome: outcome.kind,
+    });
+    this.manager?.markNotFound(clientOrderId);
   }
 
   async tick(): Promise<void> {
@@ -291,20 +370,48 @@ export class GridTradingStrategy {
       for (let i = 0; i < this.levels.length; i++) {
         const level = this.levels[i];
 
-        // Buy order: place if price is at or below level and no order exists
+        // Buy order: place if price is at or below level and no order exists.
+        // Arming (C1) is explicit about quantity, not the derived `filled`
+        // flag: buy while the level still holds less than a full slot, but
+        // never while either side has an order live — a resting exit means the
+        // level already holds what it can, and arming an entry beside it would
+        // open a second long.
         if (
           this.currentPrice <= level.price &&
           !level.buyOrderId &&
-          !level.filled
+          !level.sellOrderId &&
+          !this.isFullyLong(level)
         ) {
+          // Only the shortfall is bought: a level that already booked a partial
+          // segment tops up to one slot instead of buying a second (C2).
+          const quantity = this.buyRemainder(level);
           const outcome = await this.reconcile.ensureSlotOrder(
             i,
             "BUY",
             level.price,
-            this.config.orderQuantity
+            quantity
           );
-          if (outcome.kind === "FILLED") {
-            await this.recordTrade(i, level, "BUY", outcome);
+          if (
+            outcome.kind === "UNAVAILABLE" &&
+            quantity < this.config.orderQuantity - QTY_EPSILON &&
+            isSizeRefusal(outcome.reason)
+          ) {
+            // The venue can never fill this remainder (C2): declare the level
+            // long so the reduce-only exit arms and closes the real position.
+            logger.warn(
+              "Remainder BUY refused on size - declaring the level long (C2)",
+              {
+                botId: this.botId,
+                symbol: this.config.symbol,
+                levelPrice: level.price,
+                remainder: quantity,
+                orderQuantity: this.config.orderQuantity,
+                reason: outcome.reason,
+              }
+            );
+            this.manager?.snapFullyLong(i);
+          } else {
+            await this.bookOutcome(i, level, "BUY", outcome);
           }
         }
 
@@ -315,7 +422,7 @@ export class GridTradingStrategy {
         if (
           this.currentPrice >= level.price &&
           !level.sellOrderId &&
-          level.filled
+          this.isFullyLong(level)
         ) {
           const sellPrice = this.sellTargetPrice(i, level);
           if (sellPrice === undefined) {
@@ -329,6 +436,8 @@ export class GridTradingStrategy {
               }
             );
           } else {
+            // One slot's worth: the level is fully long (held ≥ qty − ε), and a
+            // reduce-only exit is capped by the venue to the true position.
             const outcome = await this.reconcile.ensureSlotOrder(
               i,
               "SELL",
@@ -338,9 +447,7 @@ export class GridTradingStrategy {
               // long, so a stale sell must never open a short.
               true
             );
-            if (outcome.kind === "FILLED") {
-              await this.recordTrade(i, level, "SELL", outcome);
-            }
+            await this.bookOutcome(i, level, "SELL", outcome);
           }
         }
       }
@@ -385,50 +492,167 @@ export class GridTradingStrategy {
         }
 
         const outcome = await this.reconcile.checkSlot(i, side);
-        if (outcome.kind === "FILLED") {
-          await this.recordTrade(i, level, side, outcome);
-        }
+        await this.bookOutcome(i, level, side, outcome);
         this.lastOrderCheck.set(clientOrderId, new Date());
       }
     }
   }
 
   /**
-   * Record a fill and its executed-price accounting (N6), then emit the
-   * durable ledger events (TRADE_EXECUTED + POSITION_UPDATED +
+   * Book every observation that carries executions (Phase 4).
+   *
+   * `FILLED`, a still-live `PARTIALLY_FILLED` and a dead row's `pendingFill`
+   * (risk A3: the fill that landed between the last poll and the cancel) are
+   * one thing to the ledger — "the venue admitted to N more quantity under this
+   * handle" — so all three collapse onto `bookSegment`. Everything else
+   * (`OPEN`, `UNAVAILABLE`, a plain vanish) carries no execution: no-op.
+   */
+  private async bookOutcome(
+    levelIndex: number,
+    level: GridLevel,
+    side: "BUY" | "SELL",
+    outcome: SlotOutcome
+  ): Promise<void> {
+    if (outcome.kind === "FILLED") {
+      await this.bookSegment(levelIndex, level, side, {
+        delta: outcome.delta,
+        cumQty: outcome.filledQty,
+        status: "FILLED",
+        executedPrice: outcome.executedPrice,
+        clientOrderId: outcome.clientOrderId,
+        orderId: outcome.orderId,
+      });
+      return;
+    }
+    if (outcome.kind === "PARTIALLY_FILLED") {
+      await this.bookSegment(levelIndex, level, side, {
+        delta: outcome.delta,
+        cumQty: outcome.cumQty,
+        status: "PARTIALLY_FILLED",
+        executedPrice: outcome.executedPrice,
+        clientOrderId: outcome.clientOrderId,
+        orderId: outcome.orderId,
+      });
+      return;
+    }
+    if (outcome.kind === "SAFE_TO_RECREATE" && outcome.pendingFill) {
+      const pending = outcome.pendingFill;
+      await this.bookSegment(levelIndex, level, side, {
+        delta: pending.delta,
+        cumQty: pending.cumQty,
+        status: "PARTIALLY_FILLED",
+        executedPrice: pending.executedPrice,
+        clientOrderId: pending.clientOrderId,
+        orderId: pending.orderId,
+      });
+    }
+  }
+
+  /**
+   * Book one fill **segment** and its executed-price accounting (N6), then emit
+   * the durable ledger events (TRADE_EXECUTED + POSITION_UPDATED +
    * PERFORMANCE_SNAPSHOT). Reporting never throws — a tick must not die on a
    * publish failure (the reporter logs the payload for replay).
+   *
+   * Phase 4: the ledger books `delta` only — the quantity *this* observation
+   * added — never the order and never the venue's cumulative (risk A2: a prior
+   * `PARTIALLY_FILLED` row already booked its share of the same order). The
+   * manager applied exactly that delta to the level before this call, so the
+   * level's held quantity here is already post-fill.
    *
    * Money rules, locked against the ledger invariant
    * (`bot_instances.total_pnl == SUM(bot_trade_fills.pnl)`):
    * - A BUY opens a long. Its spread is *unrealised* until the paired exit, so
-   *   only the fee it incurred is booked (`0 - fee`).
-   * - A SELL closes the level's long: `(sellExec - entryExec) × qty - fee` is
-   *   realised and booked. The BUY leg's fee is already on its own row, so the
-   *   sum over the round trip is `gross - both fees` exactly once.
+   *   only the fee it incurred is booked (`0 - fee`). Segments of one order
+   *   weighted-average the level's executed entry (risk C3), so the exit prices
+   *   itself from what the long was really acquired at.
+   * - A SELL closes (part of) the level's long: `(sellExec - entryExec) × qty -
+   *   fee` is realised and booked. The BUY leg's fee is already on its own row,
+   *   so the sum over the round trip is `gross - both fees` exactly once.
    * - When the venue's fee rate cannot be sourced, the fee *and* the PnL are
    *   omitted (never `0`): booking an unknown fee as fee-free would silently
    *   overstate profit, so the row declares the money unknown and logs it.
    */
-  private async recordTrade(
+  private async bookSegment(
     levelIndex: number,
     level: GridLevel,
     side: "BUY" | "SELL",
-    outcome: Extract<SlotOutcome, { kind: "FILLED" }>
+    segment: {
+      /** Quantity this observation newly booked. */
+      delta: number;
+      /** Venue cumulative as observed; absent when the venue reported none. */
+      cumQty?: number;
+      status: "FILLED" | "PARTIALLY_FILLED";
+      executedPrice?: number;
+      clientOrderId: string;
+      orderId?: string;
+    }
   ): Promise<void> {
-    const quantity = outcome.filledQty || this.config.orderQuantity;
+    // The venue's cumulative arithmetic is float subtraction (`0.6 − 0.4` is
+    // `0.19999999999999996`), so the booked quantity is quantized to the 8 dp
+    // quantities are modeled at — the same quantization the fill-id bounds use
+    // (risk A5), which keeps one segment's quantity identical however the venue
+    // reports its cumulative and keeps the ledger free of float dust.
+    const quantity = Number(segment.delta.toFixed(8));
+    if (!(quantity > QTY_EPSILON)) {
+      // Nothing new: a re-detection of an already-booked fill (a redelivery, a
+      // history lookup after a restart, G1's stale-id row). The venue row is
+      // real but the ledger already holds it and the level must not move — the
+      // pre-Phase-4 code booked the whole slot again here (A2).
+      logger.debug("Fill observation booked nothing - already in the ledger", {
+        botId: this.botId,
+        symbol: this.config.symbol,
+        side,
+        clientOrderId: segment.clientOrderId,
+        cumQty: segment.cumQty,
+      });
+      return;
+    }
     // Executed price: what the venue reported for this fill; else the limit
     // price this slot actually submitted (a resting maker fill executes at its
     // own price); else the level line as a last resort.
     const submitted = this.manager?.getBySlot(levelIndex, side);
     const executedPrice =
-      outcome.executedPrice ?? submitted?.price ?? level.price;
+      segment.executedPrice ?? submitted?.price ?? level.price;
     const fee = await this.resolveFee(executedPrice, quantity);
+
+    // Segment bounds (A1): the cumulative before this fill is the cumulative
+    // after it minus what it booked. When a venue reports no cumulative at all
+    // (legacy adapter, risk D1) the manager's record carries the cumulative it
+    // assumed, so the identity stays deterministic. These bounds key the
+    // ledger's `fill_id`, so two segments of one order can never collapse onto
+    // one row; a segment spanning the whole order keeps the pre-Phase-4 id (A6).
+    const to = segment.cumQty ?? submitted?.filledQty ?? quantity;
+    const fillSegment: FillSegment = {
+      // Bounds are quantized here as well as inside `synthesizeFillId` (A5):
+      // `0.6 − 0.2` must read as the `0.4` the ledger already booked, not as
+      // `0.39999999999999997`, whichever way the observation was produced.
+      from: Number(Math.max(0, to - quantity).toFixed(8)),
+      to: Number(to.toFixed(8)),
+      full: this.config.orderQuantity,
+    };
+
+    const heldAfter = this.heldQtyOf(level);
+    const heldBefore =
+      side === "BUY"
+        ? Math.max(0, heldAfter - quantity)
+        : Math.max(0, heldAfter + quantity);
 
     let entryExec: number | undefined;
     let tradePnl: number | undefined;
     if (side === "BUY") {
-      level.entryPrice = executedPrice;
+      // Weighted average (C3): a level assembled from several segments must
+      // exit at the price its long was really acquired at, not the last one's.
+      const prior = level.entryPrice;
+      level.entryPrice =
+        prior !== undefined && heldBefore > QTY_EPSILON
+          ? Number(
+              (
+                (prior * heldBefore + executedPrice * quantity) /
+                (heldBefore + quantity)
+              ).toFixed(8)
+            )
+          : executedPrice;
       tradePnl = fee === undefined ? undefined : 0 - fee;
     } else {
       // The price this long was opened at — a level whose long predates
@@ -438,15 +662,17 @@ export class GridTradingStrategy {
         fee === undefined
           ? undefined
           : (executedPrice - entryExec) * quantity - fee;
-      level.entryPrice = undefined;
+      // Only clear the entry once the long is really gone: a partial exit
+      // leaves the remaining inventory priced from the same entry.
+      if (heldAfter <= QTY_EPSILON) level.entryPrice = undefined;
     }
 
     this.totalTrades += 1;
     if (tradePnl !== undefined) this.totalPnl += tradePnl;
     // The id the fill actually happened under — NOT a fresh generation (the
-    // slot's gen already bumped inside markFilled; deriving a new id here
+    // slot's gen already bumped inside the manager; deriving a new id here
     // would book a ledger identity the venue has never seen).
-    const clientOrderId = outcome.clientOrderId;
+    const clientOrderId = segment.clientOrderId;
     this.trades.push({
       orderId: clientOrderId,
       symbol: this.config.symbol,
@@ -457,14 +683,25 @@ export class GridTradingStrategy {
       pnl: tradePnl,
     });
 
-    logger.info(side === "BUY" ? "Buy order filled" : "Sell order filled", {
-      executedPrice,
-      entryPrice: entryExec,
-      fee,
-      realizedPnl: tradePnl,
-      botId: this.botId,
-      symbol: this.config.symbol,
-    });
+    logger.info(
+      side === "BUY"
+        ? segment.status === "FILLED"
+          ? "Buy order filled"
+          : "Buy order partially filled"
+        : segment.status === "FILLED"
+          ? "Sell order filled"
+          : "Sell order partially filled",
+      {
+        executedPrice,
+        entryPrice: entryExec,
+        quantity,
+        cumulative: to,
+        fee,
+        realizedPnl: tradePnl,
+        botId: this.botId,
+        symbol: this.config.symbol,
+      }
+    );
 
     if (!this.reporter) return;
     const executedAt = new Date().toISOString();
@@ -477,10 +714,11 @@ export class GridTradingStrategy {
         quantity,
         fee,
         pnl: tradePnl,
-        status: "FILLED",
+        status: segment.status,
         clientOrderId,
-        exchangeOrderId: outcome.orderId ?? clientOrderId,
+        exchangeOrderId: segment.orderId ?? clientOrderId,
         executedAt,
+        segment: fillSegment,
       });
       await this.reporter.reportPosition(this.buildPositionReport());
       await this.reporter.reportPerformance({
@@ -499,10 +737,38 @@ export class GridTradingStrategy {
   }
 
   /**
-   * The engine's aggregate position over the grid: every level with a filled
-   * BUY holds `orderQuantity` long (a filled SELL clears the flag again via
-   * `OrderManager.markFilled`). FLAT is reported explicitly so the backend
-   * never has to guess what "absent" means.
+   * Long quantity a level currently holds (Phase 4). `heldQty` is the
+   * authoritative projection written by `OrderManager`; a level that has never
+   * been booked (and a legacy snapshot, which `OrderManager` seeds) falls back
+   * to the boolean `filled` meaning one full slot.
+   */
+  private heldQtyOf(level: GridLevel): number {
+    if (level.heldQty !== undefined) return level.heldQty;
+    return level.filled ? this.config.orderQuantity : 0;
+  }
+
+  /** Level holds a full slot (the projection behind the boolean `filled`). */
+  private isFullyLong(level: GridLevel): boolean {
+    return this.heldQtyOf(level) >= this.config.orderQuantity - QTY_EPSILON;
+  }
+
+  /**
+   * Size of the BUY that would complete this level: `orderQuantity − held`
+   * (Phase 4). A level that already booked a partial segment tops up instead of
+   * buying a second slot, and every quantity the venue sees is a plain 8-dp
+   * value it can echo back as a cumulative.
+   */
+  private buyRemainder(level: GridLevel): number {
+    const remainder = this.config.orderQuantity - this.heldQtyOf(level);
+    return Math.max(0, Number(remainder.toFixed(8)));
+  }
+
+  /**
+   * The engine's aggregate position over the grid: `Σ heldQty` long, weighted
+   * by each level's held quantity (Phase 4 — a level can hold a partial slot,
+   * so neither the count of levels nor one configured size describes it).
+   * FLAT is reported explicitly so the backend never has to guess what
+   * "absent" means.
    *
    * N6 split: `pnl` is *realised* PnL net of fees — the number the fill ledger
    * sums to — while open inventory is marked to the last ticker price into
@@ -510,27 +776,25 @@ export class GridTradingStrategy {
    * the level's limit line.
    */
   private buildPositionReport(): PositionReport {
-    const openLevels = this.levels.filter(l => l.filled);
-    const quantity = openLevels.length
-      ? Number((openLevels.length * this.config.orderQuantity).toFixed(8))
-      : 0;
-    const entryPrice = openLevels.length
-      ? openLevels.reduce((sum, l) => sum + (l.entryPrice ?? l.price), 0) /
-        openLevels.length
-      : 0;
-    const unrealizedPnl = openLevels.reduce(
-      (sum, l) =>
-        sum +
-        (this.currentPrice - (l.entryPrice ?? l.price)) *
-          this.config.orderQuantity,
-      0
-    );
+    let quantity = 0;
+    let weightedEntry = 0;
+    let unrealizedPnl = 0;
+    for (const level of this.levels) {
+      const held = this.heldQtyOf(level);
+      if (held <= 0) continue;
+      const entry = level.entryPrice ?? level.price;
+      quantity += held;
+      weightedEntry += entry * held;
+      unrealizedPnl += (this.currentPrice - entry) * held;
+    }
+    quantity = Number(quantity.toFixed(8));
     return {
       botId: this.botId,
       symbol: this.config.symbol,
       side: quantity > 0 ? "LONG" : "FLAT",
       quantity,
-      entryPrice: Number(entryPrice.toFixed(8)),
+      entryPrice:
+        quantity > 0 ? Number((weightedEntry / quantity).toFixed(8)) : 0,
       markPrice: this.currentPrice,
       pnl: this.totalPnl,
       unrealizedPnl: Number(unrealizedPnl.toFixed(8)),
@@ -779,13 +1043,26 @@ export class GridTradingStrategy {
           if (currentGen) return 0;
           return handle ? 0 : 1;
         };
+        const stillLong =
+          savedLevel.heldQty !== undefined
+            ? savedLevel.heldQty > 0
+            : savedLevel.filled;
         return {
           price: level.price,
           buyOrderId: savedLevel.buyOrderId,
           sellOrderId: savedLevel.sellOrderId,
           filled: savedLevel.filled,
-          // Executed entry is only meaningful while the long is open.
-          entryPrice: savedLevel.filled ? savedLevel.entryPrice : undefined,
+          // Phase 4 quantity state: restored verbatim so the manager can seed
+          // its instance cumulatives from it (risk A4) instead of re-booking a
+          // cumulative it already booked before the restart. `undefined` on a
+          // legacy snapshot, where the manager derives `heldQty` from `filled`.
+          heldQty: savedLevel.heldQty,
+          buyFilledQty: savedLevel.buyFilledQty,
+          sellFilledQty: savedLevel.sellFilledQty,
+          // The executed entry still matters while the level holds *any*
+          // quantity (risk C3): a partial long whose entry was dropped would
+          // re-price its exit from the level line and can force a loss.
+          entryPrice: stillLong ? savedLevel.entryPrice : undefined,
           buyGen: genFor(savedLevel.buyGen, savedLevel.buyOrderId),
           sellGen: genFor(savedLevel.sellGen, savedLevel.sellOrderId),
         };
@@ -810,6 +1087,14 @@ export class GridTradingStrategy {
         entryPrice: l.entryPrice,
         buyGen: l.buyGen ?? 0,
         sellGen: l.sellGen ?? 0,
+        // Phase 4 quantity state (E3, additive — no version bump): the level's
+        // held quantity and each resting instance's booked cumulative, so a
+        // restart resumes deltas exactly where this process left them (A4).
+        // Left `undefined` (and so absent from the JSON) on a level the manager
+        // never touched, which keeps a never-booked snapshot byte-identical.
+        heldQty: l.heldQty,
+        buyFilledQty: l.buyFilledQty,
+        sellFilledQty: l.sellFilledQty,
       })),
       savedAt: new Date().toISOString(),
     };
