@@ -16,33 +16,33 @@ import {
 
 describe("computeUserLevel", () => {
   it("should return BASIC with no wallet and no account", () => {
-    expect(
-      computeUserLevel({ verifiedWallets: 0, activeAccounts: 0 })
-    ).toBe(UserLevel.BASIC);
+    expect(computeUserLevel({ verifiedWallets: 0, activeAccounts: 0 })).toBe(
+      UserLevel.BASIC
+    );
   });
 
   it("should return REGISTERED with a verified wallet only", () => {
-    expect(
-      computeUserLevel({ verifiedWallets: 1, activeAccounts: 0 })
-    ).toBe(UserLevel.REGISTERED);
+    expect(computeUserLevel({ verifiedWallets: 1, activeAccounts: 0 })).toBe(
+      UserLevel.REGISTERED
+    );
   });
 
   it("should return VERIFIED with any ACTIVE exchange account", () => {
-    expect(
-      computeUserLevel({ verifiedWallets: 0, activeAccounts: 1 })
-    ).toBe(UserLevel.VERIFIED);
+    expect(computeUserLevel({ verifiedWallets: 0, activeAccounts: 1 })).toBe(
+      UserLevel.VERIFIED
+    );
   });
 
   it("should stay VERIFIED when both wallets and accounts exist", () => {
-    expect(
-      computeUserLevel({ verifiedWallets: 3, activeAccounts: 2 })
-    ).toBe(UserLevel.VERIFIED);
+    expect(computeUserLevel({ verifiedWallets: 3, activeAccounts: 2 })).toBe(
+      UserLevel.VERIFIED
+    );
   });
 
   it("should treat a single verified wallet among many as REGISTERED", () => {
-    expect(
-      computeUserLevel({ verifiedWallets: 5, activeAccounts: 0 })
-    ).toBe(UserLevel.REGISTERED);
+    expect(computeUserLevel({ verifiedWallets: 5, activeAccounts: 0 })).toBe(
+      UserLevel.REGISTERED
+    );
   });
 });
 
@@ -67,7 +67,9 @@ describe("UserLevelService.recompute", () => {
     const deps = createDeps({
       walletRepository: { countVerified: jest.fn().mockResolvedValue(1) },
       userRepository: {
-        findById: jest.fn().mockResolvedValue({ userLevel: UserLevel.REGISTERED }),
+        findById: jest
+          .fn()
+          .mockResolvedValue({ userLevel: UserLevel.REGISTERED }),
         updateUserLevel: jest.fn().mockResolvedValue(true),
       },
     });
@@ -86,7 +88,9 @@ describe("UserLevelService.recompute", () => {
         countActive: jest.fn().mockResolvedValue(1),
       },
       userRepository: {
-        findById: jest.fn().mockResolvedValue({ userLevel: UserLevel.REGISTERED }),
+        findById: jest
+          .fn()
+          .mockResolvedValue({ userLevel: UserLevel.REGISTERED }),
         updateUserLevel: jest.fn().mockResolvedValue(true),
       },
     });
@@ -107,7 +111,9 @@ describe("UserLevelService.recompute", () => {
   it("should persist a downgrade to BASIC after the last wallet is unlinked", async () => {
     const deps = createDeps({
       userRepository: {
-        findById: jest.fn().mockResolvedValue({ userLevel: UserLevel.VERIFIED }),
+        findById: jest
+          .fn()
+          .mockResolvedValue({ userLevel: UserLevel.VERIFIED }),
         updateUserLevel: jest.fn().mockResolvedValue(true),
       },
     });

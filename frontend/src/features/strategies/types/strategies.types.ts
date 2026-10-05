@@ -44,6 +44,14 @@ export interface BotInstance {
   total_pnl: number;
   last_updated: string;
   config: StrategyConfig;
+  /**
+   * P0-3: the backend found an unresolved `RECONCILE_NEEDS_USER_ACTION` for
+   * this bot — the engine was lost while the user still wants it running, and
+   * the system deliberately will NOT auto-start it. Drives the "action
+   * required" affordance next to the Resume button.
+   */
+  needsUserAction?: boolean;
+  needsUserActionReason?: string | null;
 }
 
 export interface TradingBalance {

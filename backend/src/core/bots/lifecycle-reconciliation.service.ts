@@ -180,22 +180,30 @@ export class LifecycleReconciliationService {
       }
 
       // 3. desired=RUNNING but unconfirmed -> audit-only (no auto-start).
+      // P0-3: the marker is written ONCE per episode, so count and log only
+      // when the service actually recorded a new row. Previously this fired
+      // every cycle, logging the same warning ~60 s forever and burying the
+      // audit trail under duplicate markers.
       const unconfirmed =
         await this.repository.findDesiredRunningUnconfirmedBots();
       for (const bot of unconfirmed) {
         try {
-          await botLifecycleService.recordReconcileNeedsUserAction(
-            bot.id,
-            "desired-running-unconfirmed"
-          );
-          result.needsUserAction++;
-          logger.warn(
-            "Reconciled desired-RUNNING bot with unconfirmed engine state (user action required)",
-            {
-              botId: bot.id,
-              actualState: bot.actual_state,
-            }
-          );
+          const recorded =
+            await botLifecycleService.recordReconcileNeedsUserAction(
+              bot.id,
+              "desired-running-unconfirmed"
+            );
+          if (recorded) {
+            result.needsUserAction++;
+            logger.warn(
+              "Reconciled desired-RUNNING bot with unconfirmed engine state (user action required)",
+              {
+                botId: bot.id,
+                actualState: bot.actual_state,
+                resumeVia: "POST /api/bot/management/resume",
+              }
+            );
+          }
         } catch (error) {
           result.failures++;
           logger.error("Reconcile needs-user-action marker failed", undefined, {

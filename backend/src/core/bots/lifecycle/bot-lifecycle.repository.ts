@@ -16,6 +16,7 @@ import {
   BOT_COMMAND_TIMEOUT_MS,
   BotRow,
   LifecycleEventInput,
+  LifecycleEventRow,
   PersistTransitionInput,
   TrackedCommandRow,
 } from "./types";
@@ -159,6 +160,34 @@ export class BotLifecycleRepository {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  /**
+   * The most recent lifecycle event for a bot, or null when it has none.
+   *
+   * P0-3: used to keep an unresolved `RECONCILE_NEEDS_USER_ACTION` marker to ONE
+   * row per episode. The reconciler runs every ~60 s; recording unconditionally
+   * produced 794 identical marker rows against 24 real `STATE_CHANGED` events
+   * in this database (one bot alone had 725).
+   *
+   * "Latest" is what makes this work: any real transition (or command) becomes
+   * the new tail, so the marker is legitimately re-recorded if the bot parks
+   * again later. `bot_lifecycle_events.id` is a UUID and carries no ordering, so
+   * `created_at` is the only ordering available; a sub-microsecond tie can at
+   * worst skip one redundant write, never loop.
+   */
+  async findLatestLifecycleEvent(
+    botId: string
+  ): Promise<LifecycleEventRow | null> {
+    const result = await query<LifecycleEventRow>(
+      `SELECT event_type, from_state, metadata
+         FROM bot_lifecycle_events
+        WHERE bot_id = $1
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [botId]
+    );
+    return result.rows[0] ?? null;
   }
 
   // ===========================================

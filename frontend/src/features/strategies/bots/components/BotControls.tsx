@@ -628,9 +628,11 @@ export const BotControls: React.FC<BotControlsProps> = ({
       <div className="text-xs text-amber-400 text-center flex items-center justify-center gap-1">
         <AlertTriangle className="w-3 h-3" />
         <span>
-          {currentState === "UNKNOWN"
-            ? "Connection lost • Resume restarts this bot without duplicating it"
-            : "Bot in error state • Check logs for details"}
+          {bot?.needsUserAction
+            ? "Action required: the trading engine was lost and this bot was NOT restarted automatically. Resume it when you are ready."
+            : currentState === "UNKNOWN"
+              ? "Connection lost • Resume restarts this bot without duplicating it"
+              : "Bot in error state • Check logs for details"}
         </span>
       </div>
     </div>

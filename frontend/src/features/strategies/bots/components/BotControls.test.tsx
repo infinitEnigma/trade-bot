@@ -216,6 +216,41 @@ describe("BotControls stop payload (L19)", () => {
     expect(tradingApi.startBot).not.toHaveBeenCalled();
   });
 
+  // P0-3: when the backend reports an unresolved needs-action marker the UI must
+  // say the engine was lost and the bot was NOT auto-restarted, next to Resume.
+  it("surfaces the action-required notice when the backend flags the bot", async () => {
+    vi.mocked(useBotState).mockReturnValue(botState("UNKNOWN"));
+
+    renderWithClient(
+      <BotControls
+        strategyId="strategy-1"
+        bot={{ ...botRow, needsUserAction: true }}
+        onStatusChange={() => {}}
+      />
+    );
+
+    expect(
+      await screen.findByText(/Action required: the trading engine was lost/i)
+    ).toBeInTheDocument();
+    // The recovery affordance is still offered alongside it.
+    expect(screen.getByText("Resume Bot")).toBeInTheDocument();
+  });
+
+  it("does not claim action is required when the backend flags nothing", async () => {
+    vi.mocked(useBotState).mockReturnValue(botState("UNKNOWN"));
+
+    renderWithClient(
+      <BotControls
+        strategyId="strategy-1"
+        bot={botRow}
+        onStatusChange={() => {}}
+      />
+    );
+
+    await screen.findByText("Resume Bot");
+    expect(screen.queryByText(/Action required/i)).not.toBeInTheDocument();
+  });
+
   it("sends the bot id to stop and emergency-stop while RUNNING", async () => {
     vi.mocked(tradingApi.stopBot).mockResolvedValue({ success: true });
     vi.mocked(tradingApi.emergencyStop).mockResolvedValue({ success: true });

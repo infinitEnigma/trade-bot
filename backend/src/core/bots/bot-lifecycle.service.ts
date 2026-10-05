@@ -784,15 +784,37 @@ export class BotLifecycleService {
     return persisted;
   }
 
-  /** Audit-only marker: desired RUNNING but engine state is unconfirmed. No auto-start is performed. */
+  /**
+   * Audit-only marker: desired RUNNING but engine state is unconfirmed. No
+   * auto-start is performed — recovery is the operator's explicit call
+   * (`POST /management/resume`).
+   *
+   * P0-3: returns `true` only when a NEW marker row was written. The
+   * reconciler runs every ~60 s, and recording unconditionally buried the audit
+   * trail under duplicates: 794 `RECONCILE_NEEDS_USER_ACTION` rows against 24
+   * `STATE_CHANGED` in this database, 725 of them for a single bot. An identical
+   * marker already sitting at the tail of the trail means the episode is already
+   * recorded, so we skip. Any real transition becomes the new tail, so a bot that
+   * parks again later is still marked.
+   */
   async recordReconcileNeedsUserAction(
     botId: string,
     reason: string
-  ): Promise<void> {
+  ): Promise<boolean> {
     const bot = await this.repository.findBot(botId);
     if (!bot) {
-      return;
+      return false;
     }
+
+    const latest = await this.repository.findLatestLifecycleEvent(botId);
+    if (
+      latest?.event_type === "RECONCILE_NEEDS_USER_ACTION" &&
+      latest.from_state === bot.actual_state &&
+      latest.metadata?.reason === reason
+    ) {
+      return false;
+    }
+
     await this.repository.recordLifecycleEvent(botId, {
       eventType: "RECONCILE_NEEDS_USER_ACTION",
       fromState: bot.actual_state,
@@ -801,6 +823,7 @@ export class BotLifecycleService {
       messageId: null,
       metadata: { reason, desiredState: bot.desired_state },
     });
+    return true;
   }
 
   // ===========================================

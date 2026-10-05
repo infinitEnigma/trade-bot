@@ -254,7 +254,9 @@ describe("Service Factory Interface", () => {
       // L4: the factory must wire the logger (the DI container already does)
       // or connect/verify/revoke stay invisible in the logs.
       (
-        ExchangeAccountService as jest.MockedClass<typeof ExchangeAccountService>
+        ExchangeAccountService as jest.MockedClass<
+          typeof ExchangeAccountService
+        >
       ).mockImplementation(deps => {
         expect(Object.keys(deps)).toEqual([
           "exchangeAccountRepository",
@@ -523,7 +525,9 @@ describe("Service Factory Interface", () => {
 
       // Mock the ExchangeAccountService constructor to throw an error
       (
-        ExchangeAccountService as jest.MockedClass<typeof ExchangeAccountService>
+        ExchangeAccountService as jest.MockedClass<
+          typeof ExchangeAccountService
+        >
       ).mockImplementation(() => {
         throw error;
       });
@@ -814,7 +818,9 @@ describe("Service Factory Interface", () => {
         UserProfileService as jest.MockedClass<typeof UserProfileService>
       ).mockImplementation(() => mockUserProfileService as any);
       (
-        ExchangeAccountService as jest.MockedClass<typeof ExchangeAccountService>
+        ExchangeAccountService as jest.MockedClass<
+          typeof ExchangeAccountService
+        >
       ).mockImplementation(() => mockExchangeAccountService as any);
 
       const health = await factory.healthCheck();

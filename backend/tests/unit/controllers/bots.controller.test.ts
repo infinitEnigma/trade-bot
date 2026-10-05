@@ -669,9 +669,7 @@ describe("Bots Controller", () => {
         }
       ) => {
         const query = require("../../../src/database/pool").query;
-        const {
-          getBotBoundAccountSecrets,
-        } = jest.requireMock(
+        const { getBotBoundAccountSecrets } = jest.requireMock(
           "../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter"
         );
         query

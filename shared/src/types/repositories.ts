@@ -364,6 +364,16 @@ export interface BotInstanceRecord {
    * NULL when the owner had none; code always writes it on create.
    */
   exchange_account_id?: string | null;
+  /**
+   * P0-3: the bot's newest lifecycle event is an unresolved
+   * `RECONCILE_NEEDS_USER_ACTION` — the engine was lost while the user still
+   * wants this bot running, and the system will NOT auto-start it. Derived from
+   * the audit-trail tail in the list query (see `bot-instance-repository.adapter`
+   * `getBotInstances`), so no new table and no per-row follow-up query.
+   */
+  needs_user_action?: boolean;
+  /** Why action is needed, e.g. `desired-running-unconfirmed`. */
+  needs_user_action_reason?: string | null;
 }
 
 export interface IBotInstanceRepository {

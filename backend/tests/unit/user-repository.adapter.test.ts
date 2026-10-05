@@ -656,9 +656,7 @@ describe("UserRepositoryAdapter", () => {
       const walletAddress = await userRepository.getWalletAddress(mockUserId);
 
       expect(query).toHaveBeenCalledTimes(1);
-      expect(walletAddress).toBe(
-        "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
-      );
+      expect(walletAddress).toBe("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd");
     });
 
     it("should return null when no wallet address found", async () => {

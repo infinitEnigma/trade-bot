@@ -61,6 +61,17 @@ export const BOT_COMMAND_TIMEOUT_MS = Number(
 );
 
 /**
+ * The tail of a bot's lifecycle audit trail — enough to tell whether an
+ * unresolved `RECONCILE_NEEDS_USER_ACTION` marker is already the latest row
+ * (P0-3). `metadata` is the jsonb column, returned already parsed.
+ */
+export interface LifecycleEventRow {
+  event_type: string;
+  from_state: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+/**
  * Max automatic BOT_STOP re-issues per bot per hour before repair attempts are
  * deferred. Shared by the lifecycle reconciler and the terminal-state stop
  * repair (L24) so both bound themselves identically against a dead engine.

@@ -26,9 +26,23 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
     try {
       const result = await query<BotInstanceRecord>(
         `
-                SELECT bi.*, s.name as strategy_name, s.type as strategy_type, s.config as strategy_config
+                SELECT bi.*, s.name as strategy_name, s.type as strategy_type, s.config as strategy_config,
+                       (tail.event_type = 'RECONCILE_NEEDS_USER_ACTION') AS needs_user_action,
+                       tail.metadata->>'reason' AS needs_user_action_reason
                 FROM bot_instances bi
                 JOIN strategies s ON bi.strategy_id = s.id
+                LEFT JOIN LATERAL (
+                    -- P0-3: the newest lifecycle event decides whether an
+                    -- unresolved needs-action marker is still outstanding. Any
+                    -- real transition (STATE_CHANGED, a command) becomes the
+                    -- tail and clears the flag automatically, so it stays
+                    -- correct without an extra table or a follow-up query.
+                    SELECT e.event_type, e.metadata
+                    FROM bot_lifecycle_events e
+                    WHERE e.bot_id = bi.id
+                    ORDER BY e.created_at DESC
+                    LIMIT 1
+                ) tail ON TRUE
                 WHERE bi.user_id = $1
                 ORDER BY bi.created_at DESC
             `,

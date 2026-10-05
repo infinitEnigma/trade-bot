@@ -226,8 +226,9 @@ describe("DatabaseSecurityService", () => {
         })
         .mockRejectedValueOnce(new Error("Update failed"));
 
-      (encryptionService.encryptWithVersion as jest.Mock)
-        .mockResolvedValue("encrypted-envelope");
+      (encryptionService.encryptWithVersion as jest.Mock).mockResolvedValue(
+        "encrypted-envelope"
+      );
 
       const result = await databaseSecurityService.migrateTableEncryption(
         "exchange_accounts",

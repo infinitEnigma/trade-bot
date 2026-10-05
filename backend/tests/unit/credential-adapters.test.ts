@@ -71,7 +71,10 @@ describe("lighterCredentialAdapter", () => {
   it("accepts indices and an 80-hex key, with or without 0x", () => {
     expect(lighterCredentialAdapter.validate(LIGHTER)).toEqual({ valid: true });
     expect(
-      lighterCredentialAdapter.validate({ ...LIGHTER, privateKey: `0x${"b".repeat(80)}` })
+      lighterCredentialAdapter.validate({
+        ...LIGHTER,
+        privateKey: `0x${"b".repeat(80)}`,
+      })
     ).toEqual({ valid: true });
     expect(isValidLighterPrivateKey("a".repeat(80))).toBe(true);
     expect(isValidLighterPrivateKey(`0x${"A".repeat(80)}`)).toBe(true);
@@ -115,8 +118,10 @@ describe("lighterCredentialAdapter", () => {
       "Invalid private key: expected 80 hex characters (40 bytes)"
     );
     expect(
-      lighterCredentialAdapter.validate({ ...LIGHTER, privateKey: "zz".repeat(40) })
-        .valid
+      lighterCredentialAdapter.validate({
+        ...LIGHTER,
+        privateKey: "zz".repeat(40),
+      }).valid
     ).toBe(false);
   });
 

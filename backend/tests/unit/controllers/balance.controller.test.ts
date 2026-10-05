@@ -20,19 +20,16 @@ jest.mock("../../../src/infrastructure/external/blockchain.service", () => {
 // rate-limiter module (same convention as every other route file), so the
 // direct path is what must be stubbed; the infrastructure barrel export is
 // stubbed as well in case another module in this graph pulls it from there.
-jest.mock(
-  "../../../src/infrastructure/security/rate-limiter.service",
-  () => ({
-    ...jest.requireActual(
-      "../../../src/infrastructure/security/rate-limiter.service"
-    ),
-    RateLimiters: {
-      balance: jest
-        .fn()
-        .mockImplementation((req: any, res: any, next: any) => next()),
-    },
-  })
-);
+jest.mock("../../../src/infrastructure/security/rate-limiter.service", () => ({
+  ...jest.requireActual(
+    "../../../src/infrastructure/security/rate-limiter.service"
+  ),
+  RateLimiters: {
+    balance: jest
+      .fn()
+      .mockImplementation((req: any, res: any, next: any) => next()),
+  },
+}));
 jest.mock("../../../src/infrastructure", () => ({
   RateLimiters: {
     balance: jest

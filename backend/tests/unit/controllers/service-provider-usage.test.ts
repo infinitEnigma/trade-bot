@@ -103,7 +103,9 @@ describe("Controller Service Provider Usage", () => {
         .fn()
         .mockReturnValue(mockWalletQualificationService),
       getUserProfileService: jest.fn().mockReturnValue(mockUserProfileService),
-      getExchangeAccountService: jest.fn().mockReturnValue(mockExchangeAccountService),
+      getExchangeAccountService: jest
+        .fn()
+        .mockReturnValue(mockExchangeAccountService),
     } as any;
 
     // Mock the serviceProvider import

@@ -158,7 +158,11 @@ The registry marks the engine `OFFLINE` after the heartbeat timeout and moves
 1. Restart the engine. It re-registers with a new epoch; events from the old
    epoch are ignored.
 2. Bots reporting `ERROR`/`UNKNOWN` while `desired=RUNNING` are audited as
-   `RECONCILE_NEEDS_USER_ACTION` — the system **never auto-starts** them.
+   `RECONCILE_NEEDS_USER_ACTION` — the system **never auto-starts** them. The
+   marker is written **once per episode** (any real transition supersedes it), so
+   it does not repeat every sweep; `GET /api/bot/management/instances` returns
+   `needs_user_action` + `needs_user_action_reason` on the affected row and the
+   UI shows an explicit "action required" notice.
 3. Recover each one explicitly with `POST /api/bot/management/resume { botId }`
    (or the **Resume Bot** button in the UI). The bot re-enters `STARTING` and
    the engine rehydrates it from its own snapshot; the engine still has to
@@ -266,7 +270,7 @@ Routes the frontend actually calls (all under `/management`):
 
 | Action | Route                                     | Body / notes                                                                                                                                                                                                                                                                                                                                                                                  |
 | ------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| List   | `GET /api/bot/management/instances`       | one row per bot, carrying its `exchangeAccountId`                                                                                                                                                                                                                                                                                                                                             |
+| List   | `GET /api/bot/management/instances`       | one row per bot, carrying its `exchangeAccountId`; also `needs_user_action` + `needs_user_action_reason` when an unresolved needs-action marker is outstanding                                                                                                                                                                                                                                |
 | Start  | `POST /api/bot/management/start`          | `{ strategyId, exchangeAccountId, notionalAmount }` → **202**; account must be owned + `ACTIVE` (else 400/404) and the user VERIFIED (else 403)                                                                                                                                                                                                                                               |
 | Stop   | `POST /api/bot/management/stop`           | `{ botId }`                                                                                                                                                                                                                                                                                                                                                                                   |
 | Resume | `POST /api/bot/management/resume`         | `{ botId }` → **202**. Re-drives an **existing** bot left in `UNKNOWN`/`ERROR` by a lost engine through `STARTING` so it rehydrates from its own snapshot. Use this — **not** `/start` — to recover a crashed bot: `/start` takes no `botId` and always INSERTS a new instance, which would leave two live bots on one venue account. 409 if the bot cannot be resumed from its current state |

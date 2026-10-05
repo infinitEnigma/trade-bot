@@ -353,6 +353,100 @@ describe("BotLifecycleService", () => {
     });
   });
 
+  // P0-3: the needs-action marker must be written ONCE per episode. The
+  // reconciler runs every ~60 s; recording unconditionally produced 794
+  // identical rows against 24 real STATE_CHANGED events here.
+  describe("recordReconcileNeedsUserAction", () => {
+    const parked = {
+      ...botRow,
+      desired_state: "RUNNING",
+      actual_state: "UNKNOWN",
+    };
+    const markerTail = {
+      event_type: "RECONCILE_NEEDS_USER_ACTION",
+      from_state: "UNKNOWN",
+      metadata: { reason: "desired-running-unconfirmed" },
+    };
+
+    it("records a marker the first time and reports it", async () => {
+      mockQuery.mockImplementation((sql: string) => {
+        const text = String(sql);
+        if (text.startsWith("SELECT id, user_id")) {
+          return Promise.resolve({ rows: [parked] });
+        }
+        if (text.includes("FROM bot_lifecycle_events")) {
+          return Promise.resolve({ rows: [] }); // no prior event
+        }
+        return okResult();
+      });
+
+      await expect(
+        service.recordReconcileNeedsUserAction(
+          "bot-1",
+          "desired-running-unconfirmed"
+        )
+      ).resolves.toBe(true);
+    });
+
+    it("skips the duplicate when the identical marker is already the tail", async () => {
+      mockQuery.mockImplementation((sql: string) => {
+        const text = String(sql);
+        if (text.startsWith("SELECT id, user_id")) {
+          return Promise.resolve({ rows: [parked] });
+        }
+        if (text.includes("FROM bot_lifecycle_events")) {
+          return Promise.resolve({ rows: [markerTail] });
+        }
+        return okResult();
+      });
+
+      await expect(
+        service.recordReconcileNeedsUserAction(
+          "bot-1",
+          "desired-running-unconfirmed"
+        )
+      ).resolves.toBe(false);
+
+      // The decisive assertion: no second INSERT for the same episode.
+      expect(mockQuery).not.toHaveBeenCalledWith(
+        expect.stringContaining("INSERT INTO bot_lifecycle_events"),
+        expect.anything()
+      );
+    });
+
+    it("records again once a real transition has superseded the marker", async () => {
+      mockQuery.mockImplementation((sql: string) => {
+        const text = String(sql);
+        if (text.startsWith("SELECT id, user_id")) {
+          return Promise.resolve({ rows: [parked] });
+        }
+        if (text.includes("FROM bot_lifecycle_events")) {
+          return Promise.resolve({
+            rows: [
+              {
+                event_type: "STATE_CHANGED",
+                from_state: "STARTING",
+                metadata: { reason: "normal_start" },
+              },
+            ],
+          });
+        }
+        return okResult();
+      });
+
+      await expect(
+        service.recordReconcileNeedsUserAction(
+          "bot-1",
+          "desired-running-unconfirmed"
+        )
+      ).resolves.toBe(true);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining("INSERT INTO bot_lifecycle_events"),
+        expect.anything()
+      );
+    });
+  });
+
   describe("stop", () => {
     it("transitions RUNNING -> STOPPING and sends BOT_STOP", async () => {
       mockQuery.mockImplementation((sql: string) => {
@@ -1226,10 +1320,10 @@ describe("bot → account binding", () => {
   });
 
   // P0 (2026-10-05): the crash case that slipped through the old predicate.
-// A bot parked UNKNOWN/ERROR with desired_state=RUNNING still wants to run and
-// may still hold venue orders, so it must block a duplicate. Reproduced live in
-// Gate-4 run 3, where POST /start created a SECOND bot on the same account.
-it("409s when the existing bot is PARKED (desired RUNNING), not merely running", async () => {
+  // A bot parked UNKNOWN/ERROR with desired_state=RUNNING still wants to run and
+  // may still hold venue orders, so it must block a duplicate. Reproduced live in
+  // Gate-4 run 3, where POST /start created a SECOND bot on the same account.
+  it("409s when the existing bot is PARKED (desired RUNNING), not merely running", async () => {
     mockQuery.mockImplementation((sql: string) => {
       const text = String(sql);
       if (text.startsWith("SELECT id FROM strategies")) {

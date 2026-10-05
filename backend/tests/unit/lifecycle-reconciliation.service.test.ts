@@ -152,7 +152,7 @@ describe("LifecycleReconciliationService", () => {
       unconfirmed: [unconfirmedBot],
     });
     mockedLifecycle.reconcileStuckTransitionToUnknown.mockResolvedValue(true);
-    mockedLifecycle.recordReconcileNeedsUserAction.mockResolvedValue(undefined);
+    mockedLifecycle.recordReconcileNeedsUserAction.mockResolvedValue(true);
 
     const result = await service.runOnce();
 
@@ -161,6 +161,28 @@ describe("LifecycleReconciliationService", () => {
     expect(
       mockedLifecycle.reconcileStuckTransitionToUnknown
     ).toHaveBeenCalledWith(stuckBot.id, "stuck-beyond-grace");
+    expect(mockedLifecycle.recordReconcileNeedsUserAction).toHaveBeenCalledWith(
+      unconfirmedBot.id,
+      "desired-running-unconfirmed"
+    );
+  });
+
+  // P0-3: the service reports whether it actually WROTE a marker. When the
+  // episode is already recorded the reconciler must stay silent — previously it
+  // counted and logged the same bot every ~60 s forever (794 duplicate rows in
+  // this database, 725 for a single bot).
+  it("does not re-count or re-warn when the marker was already recorded", async () => {
+    mockQueryRouting({ drift: [], stuck: [], unconfirmed: [unconfirmedBot] });
+    mockedLifecycle.recordReconcileNeedsUserAction.mockResolvedValue(false);
+
+    const result = await service.runOnce();
+
+    expect(result.needsUserAction).toBe(0);
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining("user action required"),
+      expect.anything()
+    );
+    // Still called — the decision to skip lives in the service, not here.
     expect(mockedLifecycle.recordReconcileNeedsUserAction).toHaveBeenCalledWith(
       unconfirmedBot.id,
       "desired-running-unconfirmed"

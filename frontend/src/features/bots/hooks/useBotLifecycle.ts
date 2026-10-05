@@ -122,6 +122,8 @@ export function useBotLifecycle(botId?: string) {
           total_pnl: number;
           last_updated: string;
           config?: unknown;
+          needs_user_action?: boolean;
+          needs_user_action_reason?: string | null;
         }) => ({
           // L19: `id` is the bot-instance id, never the strategy id — stop,
           // emergency-stop and the `bot.stateChanged` cache patch are all
@@ -134,6 +136,11 @@ export function useBotLifecycle(botId?: string) {
           total_trades: bot.total_trades,
           total_pnl: bot.total_pnl,
           last_updated: bot.last_updated,
+          // P0-3: carry the backend's "needs action" verdict through so the UI
+          // can say so explicitly instead of leaving a dead bot looking merely
+          // connection-lost.
+          needsUserAction: bot.needs_user_action === true,
+          needsUserActionReason: bot.needs_user_action_reason ?? null,
           config: bot.config || {
             type: "GRID" as const,
             config: {
