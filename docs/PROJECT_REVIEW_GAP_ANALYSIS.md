@@ -339,6 +339,19 @@ Phase-6 fault-injection harness (§4 Phase 6); a dedicated live restart run and
 live confirmation of the C2 below-minimum-remainder refusal text remain open
 (plan E2) — unit tests cannot grant a live gate.
 
+> **Both closed 2026-10-05.** The restart half is proven live (Gate-4 §9 run 3,
+> `.git/gatelogs/live/gate4-run3-report.md`). The **C2 detector is confirmed
+> live**: the venue's real sub-minimum rejection is
+> `code=21706 message='invalid order base or quote amount'` and the exported
+> `isSizeRefusal()` matches it while all negative controls (`unreachable`,
+> `21733`, `insufficient margin`, `21104`) stay `false`
+> (`.git/gatelogs/live/c2-probe.json`, `c2-threshold.json`). Measured the real
+> minimum too: **`min_base_amount` is 0.005, not the 0.01 this plan assumed**
+> (base minimum binds — `0.0049` refused at a $13.33 quote). What remains
+> unproven is only the **end-to-end trigger** (`snapFullyLong` firing live),
+> which needs `depth < orderQuantity < depth + 0.005` — a sub-0.005 window a
+> grid level rarely lands in; 0.01 and 0.008 lots both filled whole.
+
 **Phase-5 prerequisite — fee sourcing (N6a, settled 2026-10-02).** PnL "from
 executed price with fees" needs a fee number, and the venue exposes no per-fill
 fee: `/api/v1/trades` returns the same key set publicly and authenticated
