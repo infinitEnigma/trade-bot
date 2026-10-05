@@ -192,18 +192,18 @@ loop; `stop()` clears the timer and prevents re-arming.
 
 The only strategy implemented today is the grid (`strategies/grid.ts`):
 
-| Concern            | Behaviour                                                                                                                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Config             | `symbol`, `gridSize`, `gridRangePercent`, `orderQuantity`, optional `takeProfitPercent` (resolved by `BotManager` from the strategy config)                                                          |
-| Level construction | `gridSize + 1` prices evenly spaced across `±gridRangePercent/2` around a baseline price                                                                                                               |
-| Baseline           | Restored from the snapshot when present, otherwise the current mark price                                                                                                                              |
-| Slot state         | Per level: `price`, `buyOrderId`, `sellOrderId`, `filled`, `entryPrice` (executed entry of the open long)                                                                                              |
+| Concern            | Behaviour                                                                                                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Config             | `symbol`, `gridSize`, `gridRangePercent`, `orderQuantity`, optional `takeProfitPercent` (resolved by `BotManager` from the strategy config)                                                             |
+| Level construction | `gridSize + 1` prices evenly spaced across `±gridRangePercent/2` around a baseline price                                                                                                                |
+| Baseline           | Restored from the snapshot when present, otherwise the current mark price                                                                                                                               |
+| Slot state         | Per level: `price`, `buyOrderId`, `sellOrderId`, `filled`, `entryPrice` (executed entry of the open long)                                                                                               |
 | Tick               | Fetch mark price → place buys below / an exit above the executed entry where no order exists → poll order status (5s per order) → persist the snapshot                                                  |
 | Exit pricing       | A filled level's sell sits one grid step above its line (or `takeProfitPercent` above the executed entry); an exit that would price at or below the entry is never armed (N6)                           |
 | PnL / fees         | Realised PnL = `(sellExec − entryExec) × qty − fee`, booked on the closing leg (the entry leg books its own fee); `unrealizedPnl` marks open inventory. Unknown venue rate ⇒ fee/PnL omitted, never `0` |
-| Order identity     | Deterministic `clientOrderId` = `<botKey>-<level(base36)>-<B\|S>` (`utils/client-order-id.ts`), within the exchange's 36-char contract, so a redelivered command or a restart regenerates the same key |
-| Duplicate defence  | Get-before-create: list open orders for the symbol and adopt one matching the `clientOrderId`; on a create error, re-query before giving up                                                            |
-| Wire payload       | `exchanges/kodiak/payload.ts` maps the camelCase request to the documented snake_case body before signing; the signed string is the exact body sent                                                    |
+| Order identity     | Deterministic `clientOrderId` = `<botKey>-<level(base36)>-<B\|S>` (`utils/client-order-id.ts`), within the exchange's 36-char contract, so a redelivered command or a restart regenerates the same key  |
+| Duplicate defence  | Get-before-create: list open orders for the symbol and adopt one matching the `clientOrderId`; on a create error, re-query before giving up                                                             |
+| Wire payload       | `exchanges/kodiak/payload.ts` maps the camelCase request to the documented snake_case body before signing; the signed string is the exact body sent                                                     |
 
 **Remediation status** (see `PROJECT_REVIEW_GAP_ANALYSIS.md` §3-4): the order
 lifecycle is reconciled against the exchange (`OrderManager` +
@@ -218,8 +218,8 @@ per-trade id — the fill identity is therefore a cumulative-qty segment on
 `client_order_index`): fill identity, `OrderManager` delta accounting, the
 observation paths, grid wiring and the arming/lifecycle suites all shipped
 (`6381110`, `efa6c5c`, `65911f3`, `3859f34` + Phase-5 tests/docs). **Still
-open:** the live **restart** half of Gate-4 §9 *run 2* — an engine-path partial
-redelivered *and restarted* must collapse to one ledger row per segment — plus
+open:** the live **restart** half of Gate-4 §9 _run 2_ — an engine-path partial
+redelivered _and restarted_ must collapse to one ledger row per segment — plus
 live confirmation of the below-minimum-remainder refusal text; neither is
 granted by unit tests. The **delta-only** half is now proven live (2026-10-04,
 `.git/gatelogs/live/gate4-run2-report.md`: engine-path partials booked one
@@ -228,6 +228,16 @@ position exact), and the restart/redelivery case is covered deterministically by
 the new Phase-6 fault-injection harness
 (`engine/src/application/__tests__/helpers/fake-exchange.ts` +
 `failure-injection-matrix.test.ts`).
+
+> **Update 2026-10-05 — the restart half is now proven live too** (Gate-4 §9
+> run 3, `.git/gatelogs/live/gate4-run3-report.md`): the engine was SIGKILLed
+> while holding a booked partial (`0.0052`), the venue completed the order
+> _while the engine was down_, and after the restart the engine rehydrated from
+> the snapshot and booked **only the `0.9948` delta** — two rows with distinct
+> `fill_id`s summing to exactly 1.0, with no re-application of the `0.0052`
+> segment. Remaining partial-fill item: the C2 refusal text. Operator note: a
+> crashed bot is deliberately **not** auto-resumed (the lifecycle reconciler is
+> "audit-only"); resume it by botId via the Gate-1 restart harness.
 
 Model note: order identity, slot state and the snapshot are **bot-scoped** today
 (`<botId>.json`, one `GridTradingStrategy` per `BotRuntime`). Under the planned
