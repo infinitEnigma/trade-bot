@@ -28,7 +28,12 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
         `
                 SELECT bi.*, s.name as strategy_name, s.type as strategy_type, s.config as strategy_config,
                        (tail.event_type = 'RECONCILE_NEEDS_USER_ACTION') AS needs_user_action,
-                       tail.metadata->>'reason' AS needs_user_action_reason
+                       -- Only meaningful when the flag is true: the tail event's
+                       -- own reason (e.g. normal_stop) is noise otherwise and
+                       -- reads as "action needed because it stopped normally".
+                       CASE WHEN tail.event_type = 'RECONCILE_NEEDS_USER_ACTION'
+                            THEN tail.metadata->>'reason'
+                       END AS needs_user_action_reason
                 FROM bot_instances bi
                 JOIN strategies s ON bi.strategy_id = s.id
                 LEFT JOIN LATERAL (
