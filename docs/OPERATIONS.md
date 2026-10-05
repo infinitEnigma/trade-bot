@@ -159,7 +159,19 @@ The registry marks the engine `OFFLINE` after the heartbeat timeout and moves
    epoch are ignored.
 2. Bots reporting `ERROR`/`UNKNOWN` while `desired=RUNNING` are audited as
    `RECONCILE_NEEDS_USER_ACTION` — the system **never auto-starts** them.
-   Restarting a bot is an explicit user/operator action.
+3. Recover each one explicitly with `POST /api/bot/management/resume { botId }`
+   (or the **Resume Bot** button in the UI). The bot re-enters `STARTING` and
+   the engine rehydrates it from its own snapshot; the engine still has to
+   confirm `RUNNING` before the backend claims it.
+
+> **Do not use `POST /start` to recover a crashed bot.** `/start` takes
+> `{ strategyId, exchangeAccountId, notionalAmount }` and no `botId`, so it
+> always **inserts a new instance** — you would end up with two live bots on one
+> venue account. The backend refuses this at two levels: the one-live-bot-per-
+> strategy guard (now counting parked `UNKNOWN`/`ERROR` bots, not just
+> `RUNNING`/`STARTING`) and the `bot_instances_one_live_per_strategy` partial
+> unique index (migration 018). A 409 from `/start` means "resume this bot
+> instead".
 
 ### 5.3 Bot stuck in `STARTING` or `STOPPING`
 
@@ -252,12 +264,13 @@ disagrees with it.
 
 Routes the frontend actually calls (all under `/management`):
 
-| Action | Route                                     | Body / notes                                                                                                                                    |
-| ------ | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| List   | `GET /api/bot/management/instances`       | one row per bot, carrying its `exchangeAccountId`                                                                                               |
-| Start  | `POST /api/bot/management/start`          | `{ strategyId, exchangeAccountId, notionalAmount }` → **202**; account must be owned + `ACTIVE` (else 400/404) and the user VERIFIED (else 403) |
-| Stop   | `POST /api/bot/management/stop`           | `{ botId }`                                                                                                                                     |
-| Panic  | `POST /api/bot/management/emergency-stop` | `{ botId, action? }` → **202**; (M1) real `EMERGENCY_STOP` command — engine stops the runner, cancels the bot’s orders and (unless `action: CANCEL_ALL_ORDERS`) flattens its position; default `FULL_SHUTDOWN`, flatten skipped while another engine bot trades the symbol |
+| Action | Route                                     | Body / notes                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| List   | `GET /api/bot/management/instances`       | one row per bot, carrying its `exchangeAccountId`                                                                                                                                                                                                                                                                                                                                             |
+| Start  | `POST /api/bot/management/start`          | `{ strategyId, exchangeAccountId, notionalAmount }` → **202**; account must be owned + `ACTIVE` (else 400/404) and the user VERIFIED (else 403)                                                                                                                                                                                                                                               |
+| Stop   | `POST /api/bot/management/stop`           | `{ botId }`                                                                                                                                                                                                                                                                                                                                                                                   |
+| Resume | `POST /api/bot/management/resume`         | `{ botId }` → **202**. Re-drives an **existing** bot left in `UNKNOWN`/`ERROR` by a lost engine through `STARTING` so it rehydrates from its own snapshot. Use this — **not** `/start` — to recover a crashed bot: `/start` takes no `botId` and always INSERTS a new instance, which would leave two live bots on one venue account. 409 if the bot cannot be resumed from its current state |
+| Panic  | `POST /api/bot/management/emergency-stop` | `{ botId, action? }` → **202**; (M1) real `EMERGENCY_STOP` command — engine stops the runner, cancels the bot’s orders and (unless `action: CANCEL_ALL_ORDERS`) flattens its position; default `FULL_SHUTDOWN`, flatten skipped while another engine bot trades the symbol                                                                                                                    |
 
 Checklist when something is missing:
 
@@ -274,7 +287,7 @@ Checklist when something is missing:
    `globalBalanceManager` → `useBalance` → UI), never $0/stale; positions
    and trades carry their own error state.
 4. A bot cannot exist without an ACTIVE account: `exchange_account_id` has been
-   `NOT NULL` since migration `014`, and an account with *live* bots bound
+   `NOT NULL` since migration `014`, and an account with _live_ bots bound
    (`actual_state` STARTING/RUNNING/STOPPING) cannot be revoked —
    `DELETE /api/accounts/:id` answers **409** with `boundBots`. Terminal
    history (STOPPED/ERROR/UNKNOWN) is cleared as part of the revoke and

@@ -333,6 +333,27 @@ export const BotControls: React.FC<BotControlsProps> = ({
     },
   });
 
+  // Resume bot mutation (P0, 2026-10-05). `startBot` INSERTS a new instance, so
+  // it must never be used to recover a bot that already exists — that is how a
+  // crashed bot used to gain a SECOND live sibling on the same venue account.
+  const resumeMutation = useMutation({
+    mutationFn: () => tradingApi.resumeBot(bot!.id),
+    onSuccess: () => {
+      OperationToasts.botStarted("Strategy");
+      invalidateCache();
+    },
+    onError: (error: unknown) => {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object" && error !== null && "response" in error
+            ? (error as { response: { data: { error: string } } }).response.data
+                .error
+            : "Unknown error";
+      OperationToasts.botError("resume", errorMessage);
+    },
+  });
+
   // Stop bot mutation
   const stopMutation = useMutation({
     mutationFn: () => tradingApi.stopBot(bot!.id),
@@ -373,7 +394,10 @@ export const BotControls: React.FC<BotControlsProps> = ({
 
   // Determine loading state from server state (not local assumptions)
   const isLoading =
-    isTransitional || startMutation.isPending || stopMutation.isPending;
+    isTransitional ||
+    startMutation.isPending ||
+    stopMutation.isPending ||
+    resumeMutation.isPending;
 
   // Below VERIFIED the user cannot trade yet: point them at the upgrade path
   // (wallet → REGISTERED, exchange account → VERIFIED) instead of an alpha
@@ -587,20 +611,25 @@ export const BotControls: React.FC<BotControlsProps> = ({
           loading={isLoading}
           onClick={() => stopMutation.mutate()}
         />
+        {/* P0: with an existing bot this must RESUME it, never create a second
+            one. `bot` is absent only before the first bot ever existed, in which
+            case a plain start is correct. */}
         <ActionButton
           icon={<Play className="w-4 h-4" />}
-          label="Restart Bot"
+          label={bot ? "Resume Bot" : "Start Bot"}
           variant="success"
           loading={isLoading}
-          disabled={!canStart}
-          onClick={() => startMutation.mutate()}
+          disabled={bot ? false : !canStart}
+          onClick={() =>
+            bot ? resumeMutation.mutate() : startMutation.mutate()
+          }
         />
       </div>
       <div className="text-xs text-amber-400 text-center flex items-center justify-center gap-1">
         <AlertTriangle className="w-3 h-3" />
         <span>
           {currentState === "UNKNOWN"
-            ? "Connection lost • Bot state unknown"
+            ? "Connection lost • Resume restarts this bot without duplicating it"
             : "Bot in error state • Check logs for details"}
         </span>
       </div>

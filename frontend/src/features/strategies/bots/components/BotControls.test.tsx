@@ -35,6 +35,7 @@ vi.mock("../../../../infrastructure/api", () => ({
     getEngineStatus: vi.fn(),
     startBot: vi.fn(),
     stopBot: vi.fn(),
+    resumeBot: vi.fn(),
     emergencyStop: vi.fn(),
   },
   authApi: {
@@ -190,6 +191,29 @@ describe("BotControls stop payload (L19)", () => {
       expect(tradingApi.stopBot).toHaveBeenCalledWith("bot-1")
     );
     expect(tradingApi.stopBot).not.toHaveBeenCalledWith("strategy-1");
+  });
+
+  // P0 (2026-10-05): the UNKNOWN branch used to offer a button labelled
+  // "Restart Bot" that called startBot — which INSERTS a new bot, giving a
+  // crashed bot a second live sibling on the same venue account. It must
+  // resume the SAME bot id instead.
+  it("resumes the existing bot instead of starting a new one when UNKNOWN", async () => {
+    vi.mocked(tradingApi.resumeBot).mockResolvedValue({ success: true });
+
+    renderWithClient(
+      <BotControls
+        strategyId="strategy-1"
+        bot={botRow}
+        onStatusChange={() => {}}
+      />
+    );
+
+    fireEvent.click(await screen.findByText("Resume Bot"));
+
+    await waitFor(() =>
+      expect(tradingApi.resumeBot).toHaveBeenCalledWith("bot-1")
+    );
+    expect(tradingApi.startBot).not.toHaveBeenCalled();
   });
 
   it("sends the bot id to stop and emergency-stop while RUNNING", async () => {

@@ -129,6 +129,11 @@ actual_state:  what the engine reports (STOPPED | STARTING | RUNNING | STOPPING 
 ```
 POST /api/bot/management/start { strategyId, exchangeAccountId, notionalAmount }
   → 202 Accepted { botId, desiredState: RUNNING, actualState: STARTING }
+  (ALWAYS INSERTS a new bot — never use it to recover a crashed one)
+
+POST /api/bot/management/resume { botId }
+  → 202 Accepted { botId, desiredState: RUNNING, actualState: STARTING }
+  (by-botId recovery for a bot a lost engine parked in UNKNOWN/ERROR)
 
 Backend                          Engine
    │                               │
@@ -245,6 +250,7 @@ npm run build && npm start
 - `GET /api/bot/management/instances` - List the caller's bot instances
 - `POST /api/bot/management/start` - Start a bot on an explicit account (returns 202 Accepted). Body: `{ strategyId, exchangeAccountId, notionalAmount }` — the account must be owned and `ACTIVE` (400/404 otherwise); the bot binds to it
 - `POST /api/bot/management/stop` - Stop a bot (returns 202 Accepted)
+- `POST /api/bot/management/resume` - **Re-drive an EXISTING bot** parked in `UNKNOWN`/`ERROR` by a lost engine (returns 202 Accepted). Body `{ botId }`. Use this, never `/start`, to recover a crashed bot — `/start` takes no `botId` and always inserts a NEW instance, which would leave two live bots on one venue account (the one-live-bot-per-strategy guard + `bot_instances_one_live_per_strategy` index refuse that with 409).
 - `GET /api/bot/management/status/:botId` - Get bot status
 
 ### User Profile & Access Tiers

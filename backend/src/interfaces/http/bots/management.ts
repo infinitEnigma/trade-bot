@@ -541,6 +541,107 @@ router.post(
   }
 );
 
+// POST /api/bot/management/resume
+//
+// P0 (2026-10-05): recover a bot that a crashed engine parked in UNKNOWN.
+//
+// `POST /start` CANNOT do this — it takes { strategyId, exchangeAccountId,
+// notionalAmount } and no botId, so it always INSERTS a new instance. After a
+// crash that silently doubles the exposure on the same venue account. This
+// route is the supported by-botId path: it re-drives the SAME bot through
+// STARTING so the engine rehydrates from its bot-scoped snapshot, and the
+// engine still has to confirm RUNNING before we claim it.
+//
+// Deliberately delegates to the existing BotLifecycleService.start(), which
+// already owns idempotency, the compare-and-set, the audit trail and the
+// rollback-on-dispatch-failure. No lifecycle state is written from the router.
+router.post(
+  "/resume",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    // Only VERIFIED users may drive bots, same as start/stop.
+    const userLevel = req.user?.userLevel;
+    if (userLevel !== "VERIFIED") {
+      return res.status(403).json({
+        success: false,
+        error:
+          "Bot functions require VERIFIED user level. Please complete wallet verification.",
+      });
+    }
+    next();
+  },
+  validators.resumeBot,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { botId } = req.body;
+
+      // Control-plane health: the resume is delivered as a Redis Stream command,
+      // exactly like start/stop. Publishing into a dead Redis would leave the bot
+      // STARTING with nothing in flight.
+      const controlPlaneHealthy = await redisService.isHealthy();
+      if (!controlPlaneHealthy) {
+        logger.warn(
+          "Bot resume rejected: control plane (Redis) not operational",
+          {
+            userId,
+            botId,
+          }
+        );
+        return res.status(503).json({
+          success: false,
+          error:
+            "Trading control plane is not operational. Please try again later.",
+          retryAfter: 30,
+          timestamp: Date.now(),
+        });
+      }
+
+      // Resume is a re-start of an EXISTING bot: same service, same CAS, same
+      // audit trail. The P0 `UNKNOWN -> STARTING` edge is what makes a
+      // crashed bot resumable; an illegal move (e.g. a bot mid-STOPPING) throws
+      // InvalidStateTransitionError, which the service tags 409.
+      const lifecycle = await botLifecycleService.start(botId, userId);
+
+      logger.info("Bot resume accepted", {
+        botId,
+        userId,
+        actualState: lifecycle.actualState,
+      });
+
+      // 202 Accepted: STARTING until the engine confirms via STATE_CHANGED.
+      res.status(202).json({
+        success: true,
+        data: {
+          botId: lifecycle.botId,
+          desiredState: lifecycle.desiredState,
+          actualState: lifecycle.actualState,
+          correlationId: lifecycle.correlationId,
+        },
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      const statusCode =
+        (err as Error & { statusCode?: number }).statusCode ?? 500;
+      logger.error("Resume bot error", err as Error, {
+        userId: req.user?.userId,
+      });
+      res.status(statusCode).json({
+        success: false,
+        error:
+          statusCode === 404
+            ? "Bot not found"
+            : statusCode === 409
+              ? "Bot cannot be resumed from its current state"
+              : statusCode === 503
+                ? "Engine communication unavailable"
+                : "Failed to resume bot",
+        timestamp: Date.now(),
+      });
+    }
+  }
+);
+
 // GET /api/bot/management/status/:botId
 router.get(
   "/status/:botId",

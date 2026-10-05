@@ -235,6 +235,39 @@ describe("tradingApi", () => {
       });
     });
 
+    // P0 (2026-10-05): resume must hit its own by-botId route. Falling back to
+    // /start would INSERT a second bot on the same venue account.
+    describe("resumeBot", () => {
+      it("should call the resume endpoint with the existing bot id", async () => {
+        const botId = "bot-1";
+        const mockResponse = {
+          success: true,
+          data: { botId, desiredState: "RUNNING", actualState: "STARTING" },
+        };
+
+        mockPost.mockResolvedValue({ data: mockResponse });
+
+        const result = await tradingApi.resumeBot(botId);
+
+        expect(httpClient.getClient).toHaveBeenCalled();
+        expect(mockPost).toHaveBeenCalledWith("/api/bot/management/resume", {
+          botId,
+        });
+        expect(result).toEqual(mockResponse);
+      });
+
+      it("never routes resume through /start (which would create a new bot)", async () => {
+        mockPost.mockResolvedValue({ data: { success: true } });
+
+        await tradingApi.resumeBot("bot-1");
+
+        expect(mockPost).not.toHaveBeenCalledWith(
+          "/api/bot/management/start",
+          expect.anything()
+        );
+      });
+    });
+
     describe("emergencyStop", () => {
       it("should call emergency stop endpoint", async () => {
         const botId = "1";

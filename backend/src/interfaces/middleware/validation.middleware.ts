@@ -290,6 +290,18 @@ export const validators = {
     { errorPrefix: "Bot stop validation failed" }
   ),
 
+  // P0 resume: re-drive an EXISTING bot through STARTING after a lost engine.
+  // Same body shape as stop — resume is deliberately botId-keyed and never
+  // takes a strategy/account, so it cannot create a second bot.
+  resumeBot: validateRequest(
+    Joi.object({
+      botId: commonSchemas.uuid.messages({
+        "any.required": "Bot ID is required",
+      }),
+    }),
+    { errorPrefix: "Bot resume validation failed" }
+  ),
+
   // Generic ID parameter validator
   idParam: validateRequest(
     Joi.object({

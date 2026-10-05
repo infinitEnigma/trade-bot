@@ -105,6 +105,23 @@ describe("bot lifecycle state machine (shared)", () => {
     expect(assertTransition("STOPPED", "STARTING")).toBe("STARTING");
   });
 
+  // P0 (2026-10-05): the resume path. A crashed engine parks a bot in UNKNOWN;
+  // without this edge BotLifecycleService.start() threw and a crashed bot could
+  // only be recovered by the Gate-1 test harness.
+  it("allows UNKNOWN -> STARTING so a crashed bot can be resumed", () => {
+    expect(canTransition("UNKNOWN", "STARTING")).toBe(true);
+    expect(assertTransition("UNKNOWN", "STARTING")).toBe("STARTING");
+  });
+
+  it("still refuses UNKNOWN -> RUNNING-as-a-declared-state only via confirm", () => {
+    // UNKNOWN -> RUNNING stays legal for the engine-confirmed path; the resume
+    // path deliberately goes through STARTING so we never declare RUNNING
+    // before the engine confirms it.
+    expect(canTransition("UNKNOWN", "RUNNING")).toBe(true);
+    expect(canTransition("UNKNOWN", "STOPPED")).toBe(true);
+    expect(canTransition("UNKNOWN", "ERROR")).toBe(true);
+  });
+
   it("validates state type guards", () => {
     expect(isBotActualState("RUNNING")).toBe(true);
     expect(isBotActualState("running")).toBe(false);
@@ -254,6 +271,51 @@ describe("BotLifecycleService", () => {
         InvalidStateTransitionError
       );
       expect(engineProtocol.sendCommand).not.toHaveBeenCalled();
+    });
+
+    // P0 resume: a bot parked UNKNOWN by a lost engine must re-drive through
+    // STARTING for the SAME bot id (never a new instance).
+    it("resumes an UNKNOWN bot through STARTING for the same bot id", async () => {
+      mockQuery.mockImplementation((sql: string) => {
+        if (String(sql).startsWith("SELECT id, user_id")) {
+          return Promise.resolve({
+            rows: [
+              {
+                ...botRow,
+                desired_state: "RUNNING",
+                actual_state: "UNKNOWN",
+              },
+            ],
+          });
+        }
+        return okResult();
+      });
+
+      const result = await service.start("bot-1", "user-1");
+
+      expect(result).toMatchObject({
+        botId: "bot-1",
+        desiredState: "RUNNING",
+        actualState: "STARTING",
+      });
+      // Same bot id — resume must never mint a second instance.
+      expect(engineProtocol.sendCommand).toHaveBeenCalledWith(
+        "BOT_START",
+        expect.objectContaining({ botId: "bot-1" }),
+        expect.any(String)
+      );
+    });
+
+    it("tags an illegal resume transition with 409 (not 500)", async () => {
+      mockQuery.mockResolvedValue({
+        rows: [
+          { ...botRow, desired_state: "STOPPED", actual_state: "STOPPING" },
+        ],
+      });
+
+      await expect(service.start("bot-1", "user-1")).rejects.toMatchObject({
+        statusCode: 409,
+      });
     });
 
     it("rolls back to STOPPED when the command cannot be delivered", async () => {
@@ -1146,8 +1208,37 @@ describe("bot → account binding", () => {
       if (text.startsWith("SELECT id FROM strategies")) {
         return Promise.resolve({ rows: [{ id: "strat-1" }] });
       }
-      if (text.includes("FROM bot_instances WHERE strategy_id")) {
+      if (text.includes("FROM bot_instances")) {
         return Promise.resolve({ rows: [{ id: "bot-existing" }] });
+      }
+      return okResult();
+    });
+    mockAccountAdapter.getAccountWithSecret.mockResolvedValue(activeAccount);
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 1000, "acc-2")
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO bot_instances"),
+      expect.anything()
+    );
+  });
+
+  // P0 (2026-10-05): the crash case that slipped through the old predicate.
+// A bot parked UNKNOWN/ERROR with desired_state=RUNNING still wants to run and
+// may still hold venue orders, so it must block a duplicate. Reproduced live in
+// Gate-4 run 3, where POST /start created a SECOND bot on the same account.
+it("409s when the existing bot is PARKED (desired RUNNING), not merely running", async () => {
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-1" }] });
+      }
+      if (text.includes("FROM bot_instances")) {
+        // The widened predicate must select UNKNOWN/ERROR-desired-RUNNING too.
+        expect(text).toContain("desired_state = 'RUNNING'");
+        return Promise.resolve({ rows: [{ id: "bot-parked" }] });
       }
       return okResult();
     });

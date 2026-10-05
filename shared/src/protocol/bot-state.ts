@@ -54,6 +54,10 @@ export const BOT_DESIRED_STATES: readonly BotDesiredState[] = [
  *   RUNNING  ──failure──▶ ERROR | UNKNOWN
  *   STOPPING ──failure──▶ ERROR
  *   UNKNOWN  ──reconnect──▶ RUNNING | STOPPED | ERROR
+ *   UNKNOWN  ──resume────▶ STARTING   (P0: operator resumes a crashed bot; the
+ *                                      engine still has to confirm RUNNING, so
+ *                                      the "never RUNNING before confirm"
+ *                                      invariant holds)
  *   ERROR    ──retry──▶ STARTING | STOPPED
  */
 export const VALID_TRANSITIONS: Record<
@@ -64,7 +68,11 @@ export const VALID_TRANSITIONS: Record<
   STARTING: ["RUNNING", "STOPPED", "ERROR"],
   RUNNING: ["STOPPING", "ERROR", "UNKNOWN"],
   STOPPING: ["STOPPED", "ERROR"],
-  UNKNOWN: ["RUNNING", "STOPPED", "ERROR"],
+  // "STARTING" is the resume path: a bot parked UNKNOWN by a lost engine is
+  // re-driven through the normal STARTING -> RUNNING confirmation instead of
+  // being declared RUNNING outright. `BotLifecycleService.start()` CAS-guards
+  // the write, so this edge cannot race a concurrent transition.
+  UNKNOWN: ["RUNNING", "STARTING", "STOPPED", "ERROR"],
   ERROR: ["STARTING", "STOPPED"],
 };
 

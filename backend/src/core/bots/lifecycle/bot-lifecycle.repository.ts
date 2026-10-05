@@ -312,12 +312,37 @@ export class BotLifecycleRepository {
     return result.rows.length > 0;
   }
 
-  /** The active (STARTING/RUNNING) bot for a strategy, if any - one active bot per strategy. */
+  /**
+   * The bot that already occupies a strategy, if any - "one live bot per
+   * strategy".
+   *
+   * P0 (2026-10-05): the predicate used to be `actual_state IN ('STARTING',
+   * 'RUNNING')` only, so a bot that a crashed engine had parked in UNKNOWN (or
+   * ERROR) with `desired_state = 'RUNNING'` did NOT count as occupying the
+   * strategy. `POST /start` therefore created a SECOND live bot on the same venue
+   * account — reproduced live during Gate-4 run 3. A parked bot still wants to
+   * run and may still hold venue orders, so it must block a duplicate.
+   *
+   * STOPPING is deliberately excluded: it is on its way out (orders being
+   * cancelled) and blocking on it would break the ordinary stop-then-start flow.
+   *
+   * Keyed on `strategy_id` today. The account-session model (plan §D) makes the
+   * invariant "one live session per exchange account" instead — see
+   * DATA_MODEL.md §4.4 and migration 018, which enforces this predicate as a
+   * partial unique index.
+   */
   async findActiveBotForStrategy(
     strategyId: string
   ): Promise<{ id: string } | null> {
     const result = await query<{ id: string }>(
-      "SELECT id FROM bot_instances WHERE strategy_id = $1 AND actual_state IN ('STARTING', 'RUNNING')",
+      `SELECT id FROM bot_instances
+        WHERE strategy_id = $1
+          AND (
+            actual_state IN ('STARTING', 'RUNNING')
+            OR (desired_state = 'RUNNING' AND actual_state IN ('UNKNOWN', 'ERROR'))
+          )
+        ORDER BY created_at DESC
+        LIMIT 1`,
       [strategyId]
     );
     return result.rows[0] ?? null;

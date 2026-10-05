@@ -23,8 +23,10 @@
 
 import {
   assertTransition,
+  BotActualState,
   BotEvent,
   EmergencyStopAction,
+  InvalidStateTransitionError,
 } from "@trade-bot/shared";
 import { contextLogger as logger } from "../logging";
 import {
@@ -128,8 +130,18 @@ export class BotLifecycleService {
     }
 
     // Validate the transition (throws InvalidStateTransitionError on illegal
-    // moves, e.g. STOPPING -> STARTING).
-    const nextState = assertTransition(bot.actual_state, "STARTING");
+    // moves, e.g. STOPPING -> STARTING). The error carries no statusCode, so
+    // tag it 409 here — otherwise every HTTP caller would surface an illegal
+    // transition as a 500. Same convention as the CAS conflict below.
+    let nextState: BotActualState;
+    try {
+      nextState = assertTransition(bot.actual_state, "STARTING");
+    } catch (err) {
+      if (err instanceof InvalidStateTransitionError) {
+        (err as Error & { statusCode?: number }).statusCode = 409;
+      }
+      throw err;
+    }
 
     // Compare-and-set: only persist if actual_state is still what we read.
     const persisted = await this.repository.persistTransition(

@@ -117,6 +117,21 @@ export const tradingApi = {
   },
 
   /**
+   * Resume a bot that a lost engine parked in UNKNOWN/ERROR (P0, 2026-10-05).
+   *
+   * NOT the same as `startBot`: that endpoint takes a strategy + account and
+   * always INSERTS a new bot, so calling it on a crashed bot would quietly
+   * create a SECOND live bot on the same venue account. Resume re-drives the
+   * existing botId so the engine rehydrates from its own snapshot.
+   */
+  async resumeBot(botId: string) {
+    const response = await httpClient
+      .getClient()
+      .post("/api/bot/management/resume", { botId });
+    return response.data;
+  },
+
+  /**
    * Emergency stop (M1). `action` selects the venue-side cleanup scope; the
    * panic button omits it and the backend applies FULL_SHUTDOWN (cancel every
    * order + flatten the position).

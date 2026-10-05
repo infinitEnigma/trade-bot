@@ -38,6 +38,9 @@ jest.mock("../../../src/interfaces/middleware/validation.middleware", () => ({
     stopBot: jest
       .fn()
       .mockImplementation((req: any, res: any, next: any) => next()),
+    resumeBot: jest
+      .fn()
+      .mockImplementation((req: any, res: any, next: any) => next()),
   },
 }));
 
@@ -463,6 +466,57 @@ describe("Bots Controller", () => {
     });
 
     describe("POST /api/bot/management/stop", () => {
+      // P0 (2026-10-05): /resume is the only by-botId recovery path. /start always
+      // INSERTS a new bot, so a crashed bot must be recovered through the
+      // existing service instance rather than a second one being created.
+      it("should resume a parked bot for the SAME bot id and return 202", async () => {
+        const testBotId = "c1d2e3f4-9f41-4b1d-8b62-b3b42b7a5f8d";
+        const mockLifecycleResult = {
+          botId: testBotId,
+          desiredState: "RUNNING",
+          actualState: "STARTING",
+          correlationId: "resume-correlation-id",
+        };
+
+        const {
+          botLifecycleService,
+        } = require("../../../src/core/bots/bot-lifecycle.service");
+        botLifecycleService.start.mockResolvedValue(mockLifecycleResult);
+
+        const response = await request(app)
+          .post("/api/bot/management/resume")
+          .send({ botId: testBotId })
+          .expect(202);
+
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.botId).toEqual(testBotId);
+        expect(response.body.data.actualState).toEqual("STARTING");
+        expect(botLifecycleService.start).toHaveBeenCalledWith(
+          testBotId,
+          "user-123"
+        );
+        // The whole point: no second instance was created.
+        expect(botLifecycleService.createAndStart).not.toHaveBeenCalled();
+      });
+
+      it("should surface 409 when the bot cannot be resumed", async () => {
+        const testBotId = "d1e2f3a4-9f41-4b1d-8b62-b3b42b7a5f8d";
+        const {
+          botLifecycleService,
+        } = require("../../../src/core/bots/bot-lifecycle.service");
+        const conflict = Object.assign(new Error("illegal transition"), {
+          statusCode: 409,
+        });
+        botLifecycleService.start.mockRejectedValue(conflict);
+
+        const response = await request(app)
+          .post("/api/bot/management/resume")
+          .send({ botId: testBotId })
+          .expect(409);
+
+        expect(response.body.success).toBe(false);
+      });
+
       it("should stop a running bot instance", async () => {
         const testBotId = "b0b1e9d6-9f41-4b1d-8b62-b3b42b7a5f8d";
         const mockLifecycleResult = {
