@@ -32,11 +32,16 @@ The only remaining gate is the live Gate-4 run-2 _venue_ proof.
 > state, manual ACK, correlation IDs, engine epochs, heartbeats, poison-message
 > detection) and the durable fill ledger (`ORDER_INTENT` + `TRADE_EXECUTED`
 > events → idempotent `bot_trade_fills` rows) are the most mature subsystems.
-> The toolchain is clean: `npm audit` reports **0 vulnerabilities**, lint is
-> **0 errors / 0 warnings**, and the suites report **~3,000 passing tests**
-> (backend ~2,540, engine ~285, frontend ~206) — a live-gated Lighter smoke
-> test excluded, which requires the signing sidecar — see the ¹ note above.
-> Details and the one remaining live-test gate are tracked in the
+> The toolchain is clean: `npm audit --omit=dev` reports **0 vulnerabilities**
+> in the production tree (the `moment` path-traversal advisory was cleared on
+> 2026-10-05; the remaining advisories are dev-only and have no upstream patch
+> yet — see [Test and gate commands](docs/OPERATIONS.md#6-test-and-gate-commands)),
+> lint is **0 errors / 0 warnings**, and the suites report **~3,000 passing tests**
+> (backend ~2,540, engine ~285, frontend ~206). The Lighter smoke test is
+> **env-gated**: it skips without credentials, but wherever `.env` is populated
+> it runs as a *live testnet* test — it needs the signing sidecar and is
+> load-sensitive, so re-run it in isolation before treating a failure as a
+> regression. Details and the one remaining live-test gate are tracked in the
 > [Project Review & Gap Analysis](docs/PROJECT_REVIEW_GAP_ANALYSIS.md).
 
 ---
@@ -246,7 +251,7 @@ npm run db:status       # Compare migration ledger vs. files
 npm run db:seed         # Seed baseline data
 
 # Testing
-npm run test            # Run full test suite (use CI=true in a TTY)
+npm run test            # Full test suite (use CI=true in a TTY) — run when IDLE
 
 # Linting & Formatting
 npm run lint            # Lint all packages (0 errors, 0 warnings)
@@ -254,6 +259,30 @@ npm run lint:fix        # Fix lint issues
 npm run format          # Format all packages
 npm run format:check    # Verify formatting without writing
 ```
+
+> **Run the suite on an idle machine.** `npm test` runs three suites
+> back-to-back and Jest fans out one worker per core, so the run competes with
+> any running stack for CPU, memory and the shared PostgreSQL/Redis. On an
+> otherwise idle host it is clean; on a loaded one — **especially older or
+> low-core hardware** — you can see suites that *fail to run* (worker OOM,
+> "Jest did not exit cleanly", TS/import errors) or timeouts on tests that
+> normally finish in milliseconds. Those are load artifacts, not regressions:
+> let the machine settle and re-run, or re-run a single workspace
+> (`cd backend && npx jest <path>`).
+>
+> **The Lighter smoke test is a live testnet test.**
+> `engine/src/exchanges/lighter/__tests__/smoke.test.ts` is **env-gated** — it
+> skips when `LIGHTER_ACCOUNT_INDEX` / `LIGHTER_API_KEY_INDEX` /
+> `LIGHTER_PRIVATE_KEY` / `LIGHTER_SIDECAR_URL` are unset, but wherever `.env`
+> is populated it **runs for real**: places a resting order, queries it by
+> client index, then cancels it through the signing sidecar (120 s timeout).
+> It is the suite most sensitive to load, network latency, sidecar reachability
+> and testnet rate limits, so a single red run — particularly during a full
+> suite run — is most often a flake. Re-run it alone before treating it as a
+> regression: `cd engine && npx jest src/exchanges/lighter/__tests__/smoke.test.ts`.
+>
+> Full detail in
+> [docs/OPERATIONS.md §6 — Test and gate commands](docs/OPERATIONS.md#6-test-and-gate-commands).
 
 ---
 

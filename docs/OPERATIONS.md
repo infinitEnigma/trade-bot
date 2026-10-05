@@ -333,6 +333,51 @@ The backend integration suite needs PostgreSQL and Redis reachable via `.env`.
 `CI=true` (or a non-TTY shell) is required so Vitest does not start in watch
 mode.
 
+### Run the full suite on an idle machine
+
+`npm test` runs the three workspaces back-to-back and Jest defaults to one
+worker per core. That competes for CPU, memory and the shared PostgreSQL/Redis
+with anything else running, so results depend on machine load:
+
+- **Idle host** → all four gates are deterministic and green.
+- **Loaded host — especially older / low-core hardware** → typical symptoms are
+  suites that *fail to run* rather than fail an assertion (worker OOM,
+  `Call retries were exceeded`, `Jest did not exit cleanly`, spurious TS/import
+  errors) and timeouts on tests that normally finish in milliseconds.
+
+Those symptoms are **load artifacts, not regressions**. Let the machine settle
+and re-run, or narrow the blast radius to one workspace or one suite:
+
+```bash
+cd backend && npx jest <path/to/suite>
+cd engine  && npx jest <path/to/suite>
+```
+
+### The Lighter smoke test is a live testnet test
+
+`engine/src/exchanges/lighter/__tests__/smoke.test.ts` is **env-gated**, not
+`it.skip`ped by default:
+
+- **No credentials** (`LIGHTER_ACCOUNT_INDEX`, `LIGHTER_API_KEY_INDEX`,
+  `LIGHTER_PRIVATE_KEY` or `LIGHTER_SIDECAR_URL` unset) → the block is
+  `describe.skip` and contributes nothing to the count.
+- **Credentials present** (a populated `.env`, i.e. any configured dev box or CI)
+  → it **runs for real**: places a resting limit order on the Lighter testnet,
+  queries it by client index, then cancels it through the signing sidecar —
+  with a 120 s timeout and a `finally` that always cancels.
+
+Because it depends on the network, sidecar reachability and testnet rate limits
+in addition to CPU load, it is the suite most likely to flake. A single red run
+— particularly as part of a full-suite run — is most often a flake rather than a
+regression. Re-run it in isolation before debugging it:
+
+```bash
+cd engine && npx jest src/exchanges/lighter/__tests__/smoke.test.ts
+```
+
+A persistent failure across repeated isolated runs *is* a real defect: start
+with sidecar reachability (`LIGHTER_SIDECAR_URL`), then the testnet API.
+
 ---
 
 ## 7. Deployment
