@@ -1,0 +1,133 @@
+# CI — the four mandatory gates from CONTRIBUTING.md, run mechanically.
+#
+# Tracked as R3 in docs/PROJECT_REVIEW_GAP_ANALYSIS.md (§3). The remaining
+# half of R3 — branch protection + a required second reviewer — is a GitHub
+# settings change, not code.
+#
+# Design notes (validated locally 2026-10-05 against a fresh trade_bot_test):
+#   * postgres:14-alpine — README declares "PostgreSQL 14+".
+#   * The test step's env mirrors .env for public testnet config and uses the
+#     same test-only secret literals as backend/tests/setup.ts. Real
+#     credentials are never needed: tests mock vendor APIs.
+#   * LIGHTER_ACCOUNT_INDEX / LIGHTER_API_KEY_INDEX / LIGHTER_PRIVATE_KEY /
+#     LIGHTER_SIDECAR_URL are DELIBERATELY OMITTED — the engine's B5 live
+#     smoke (engine/src/exchanges/lighter/__tests__/smoke.test.ts) gates on
+#     their presence and must self-skip in CI.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: format · lint · build · test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:14-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: trade_bot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node (version from .nvmrc, npm cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install (npm workspaces)
+        run: npm ci
+
+      - name: "Gate 1 — format"
+        run: npm run format:check
+
+      - name: "Gate 2 — lint"
+        run: npm run lint
+
+      - name: "Gate 3 — build"
+        run: npm run build
+
+      - name: Migrate the (fresh) test database
+        env:
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_NAME: trade_bot_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+        run: npm run db:migrate
+
+      # GH sets CI=true automatically; it is repeated here so the command is
+      # identical to the documented local gate: `CI=true npm test`.
+      - name: "Gate 4 — tests"
+        env:
+          CI: "true"
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_NAME: trade_bot_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+          PORT: "4000"
+          FRONTEND_URL: http://localhost:3000
+          CORS_ORIGIN: http://localhost:3000
+          # Test-only secrets — same literals as backend/tests/setup.ts.
+          JWT_SECRET: test-jwt-secret-for-testing-purposes-only-should-be-32-chars-minimum
+          JWT_REFRESH_SECRET: test-refresh-secret-for-testing-should-be-32-chars-minimum
+          ENCRYPTION_MASTER_KEY: test-encryption-key-for-testing-should-be-32-chars-minimum
+          ENCRYPTION_KEY_SALT: test-encryption-key-salt-for-ci-only-000000000000000
+          BOT_ENGINE_API_KEY: test-bot-engine-api-key-for-ci-00000000000000000000
+          SIDECAR_AUTH_TOKEN: test-sidecar-auth-token-for-ci-00000000000000000
+          ETHERSCAN_API_KEY: test-etherscan-key-for-ci
+          # Public testnet config (mirrors .env — endpoints/ids, no secrets).
+          KODIAK_API_URL: https://api.orderly.org
+          KODIAK_WS_URL: wss://ws-evm.orderly.org/ws/stream
+          ORDERLY_API_URL: https://api.orderly.org
+          ORDERLY_TESTNET_URL: https://testnet-api.orderly.org
+          LIGHTER_ENV: testnet
+          LIGHTER_CHAIN_ID: "300"
+          LIGHTER_MARKET_SYMBOL: ETH
+          LIGHTER_PROBE_OFFSET_PCT: "25"
+          LIGHTER_PROBE_TIMEOUT_S: "15"
+          LIGHTER_PROBE_BURST: "30"
+          ADMIN_CHAIN_ID: "80094"
+          ADMIN_TOKEN_ID: "1695"
+          ADMIN_WALLET_ADDRESS: 0x959e2a4db1fa5d56b810759f2e6d80a01eb9e892
+          ADMIN_CONTRACT_ADDRESS: 0x5a30c392714a9a9a8177c7998d9d59c3dd120917
+          # LIGHTER_{ACCOUNT_INDEX,API_KEY_INDEX,PRIVATE_KEY,SIDECAR_URL}
+          # intentionally absent — see header note on the B5 smoke test.
+        run: npm test

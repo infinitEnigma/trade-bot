@@ -222,8 +222,13 @@ describe("Controller Service Provider Usage", () => {
       const endTime = performance.now();
       const duration = endTime - startTime;
 
-      // Should be very fast (less than 15ms for 4000 accesses)
-      expect(duration).toBeLessThan(15);
+      // Intent: catch per-access real work (I/O, lazy init, network) — that
+      // would cost milliseconds PER ACCESS and push 4000 accesses into
+      // seconds. The original <15ms budget was a micro-benchmark: it flaked
+      // under load (17.1ms on an idle-ish dev box, 2026-10-05) and GitHub
+      // runners are slower still, so the bound is now a generous sanity
+      // ceiling that still fails on order-of-magnitude regressions.
+      expect(duration).toBeLessThan(250);
     });
   });
 });

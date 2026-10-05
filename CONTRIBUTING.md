@@ -13,10 +13,12 @@
 
 If a gate fails, fix it before committing — **never commit red**.
 
-The gates are enforced locally and in review: there is no CI workflow yet, so
-run all four before every push. Run the test gate as `CI=true npm test` (or from
-a non-interactive shell) — Vitest starts in watch mode on a TTY. The backend
-integration suite needs PostgreSQL and Redis reachable via `.env`.
+The gates are enforced locally **and mechanically**: `.github/workflows/ci.yml`
+runs all four on every push to `main` and every PR (R3). Still run them locally
+before every commit — never commit red. Run the test gate as `CI=true npm test`
+(or from a non-interactive shell) — Vitest starts in watch mode on a TTY. The
+backend integration suite needs PostgreSQL and Redis reachable via `.env`
+(CI provides them as service containers and migrates a fresh `trade_bot_test`).
 
 ### `any` Is Banned (`no-explicit-any: error`)
 
