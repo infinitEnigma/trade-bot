@@ -319,7 +319,8 @@ npm run format:check    # Verify formatting without writing
 ## Test Coverage
 
 Fresh totals (2026-10-04, full-suite runs): **backend ~2,540 tests**
-(excluding DB-gated suites), **engine 285 tests**, **frontend 206 tests** —
+(excluding DB-gated suites), **engine 285 tests**, **frontend 211 tests**
+(frontend re-run 2026-10-05: 21 files / 211 passing) —
 a live-gated Lighter smoke test that needs the signing sidecar is excluded
 from the engine count for local runs. The coverage snapshot below is from
 2026-09 and is kept for shape comparison only; percentages are stale and will
