@@ -302,6 +302,37 @@ export const validators = {
     { errorPrefix: "Bot resume validation failed" }
   ),
 
+  // D2 sessions: attach a strategy to a live session as a new run.
+  attachRun: validateRequest(
+    Joi.object({
+      botId: commonSchemas.uuid.messages({
+        "any.required": "Bot ID is required",
+      }),
+      strategyId: commonSchemas.uuid.messages({
+        "any.required": "Strategy ID is required",
+      }),
+      notionalAmount: Joi.number().positive().precision(8).required().messages({
+        "number.base": "Notional amount must be a number",
+        "number.positive": "Notional amount must be positive",
+        "any.required": "Notional amount is required",
+      }),
+    }),
+    { errorPrefix: "Run attach validation failed" }
+  ),
+
+  // D2 sessions: detach a STOPPED run from its session.
+  detachRun: validateRequest(
+    Joi.object({
+      botId: commonSchemas.uuid.messages({
+        "any.required": "Bot ID is required",
+      }),
+      runId: commonSchemas.uuid.messages({
+        "any.required": "Run ID is required",
+      }),
+    }),
+    { errorPrefix: "Run detach validation failed" }
+  ),
+
   // Generic ID parameter validator
   idParam: validateRequest(
     Joi.object({

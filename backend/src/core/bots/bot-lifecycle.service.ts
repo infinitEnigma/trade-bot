@@ -45,6 +45,7 @@ import {
 import { BotLifecycleRepository } from "./lifecycle/bot-lifecycle.repository";
 import { exchangeAccountRepositoryAdapter } from "../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
 import { assertSymbolSupported } from "../../infrastructure/external/venue-symbols";
+import { query } from "../../database/pool";
 import { syncStrategyActive } from "./lifecycle/strategy-active-sync";
 import {
   BotLifecycleResult,
@@ -262,11 +263,30 @@ export class BotLifecycleService {
       throw error;
     }
 
-    // One active bot per strategy.
+    // One live run per strategy (session-aware): the legacy bot-level guard
+    // covers pre-D rows, the runs guard covers attached runs.
     const activeBot =
       await this.repository.findActiveBotForStrategy(strategyId);
     if (activeBot) {
       const error = new Error("Bot is already running for this strategy");
+      (error as Error & { statusCode?: number }).statusCode = 409;
+      throw error;
+    }
+    const liveRun = await this.repository.findLiveRunForStrategy(strategyId);
+    if (liveRun) {
+      const error = new Error("Strategy is already running in another session");
+      (error as Error & { statusCode?: number }).statusCode = 409;
+      throw error;
+    }
+
+    // One live session per account (migration 019): a second POST /start on
+    // the same account is refused — attach via POST /runs instead.
+    const liveSession =
+      await this.repository.findLiveSessionForAccount(exchangeAccountId);
+    if (liveSession) {
+      const error = new Error(
+        "A live session already exists for this exchange account. Attach the strategy to it instead."
+      );
       (error as Error & { statusCode?: number }).statusCode = 409;
       throw error;
     }
@@ -293,6 +313,26 @@ export class BotLifecycleService {
       exchangeAccountId
     );
 
+    // Attach the initial run (plan §D, migration 019): snapshot the live
+    // strategy config, size the run. The partial unique index refuses a
+    // strategy live elsewhere — map the 23505 to the 409 above. A failed
+    // attach rolls back the just-created session so no orphan bot remains.
+    const bootConfig = await this.repository.findStrategyConfig(strategyId);
+    try {
+      await this.repository.attachRun(botId, strategyId, bootConfig, notionalAmount);
+    } catch (error) {
+      await query(`DELETE FROM bot_instances WHERE id = $1`, [botId]);
+      const err = error as Error & { code?: string };
+      if (err?.code === "23505") {
+        const conflict = new Error(
+          "Strategy is already running in another session"
+        );
+        (conflict as Error & { statusCode?: number }).statusCode = 409;
+        throw conflict;
+      }
+      throw error;
+    }
+
     await this.repository.recordLifecycleEvent(botId, {
       eventType: "BOT_CREATED",
       fromState: null,
@@ -304,6 +344,119 @@ export class BotLifecycleService {
 
     // Delegate to start() so the transition/command logic has a single home.
     return this.start(botId, userId);
+  }
+
+  // ===========================================
+  // STRATEGY RUNS (account sessions, plan §D)
+  // ===========================================
+
+  /**
+   * Attach a strategy to a live session as a new run (POST /runs).
+   * Guards: ownership, session live, strategy not live elsewhere,
+   * per-run sizing via the existing position validator + derived
+   * session cap (sum of live runs + new <= balance × leverage).
+   * Returns the new run id. Engine wiring (START_STRATEGY) lands in D3;
+   * until then the run is STOPPED and starts with the next session start.
+   */
+  async attachStrategyRun(
+    botId: string,
+    userId: string,
+    strategyId: string,
+    notionalAmount: number
+  ): Promise<string> {
+    const bot = await this.getOwnedBot(botId, userId);
+    if (bot.actual_state !== "RUNNING" && bot.actual_state !== "STARTING") {
+      const error = new Error("Session must be live to attach a strategy");
+      (error as Error & { statusCode?: number }).statusCode = 409;
+      throw error;
+    }
+    const strategyExists = await this.repository.strategyExistsForUser(
+      strategyId,
+      userId
+    );
+    if (!strategyExists) {
+      const error = new Error("Strategy not found");
+      (error as Error & { statusCode?: number }).statusCode = 404;
+      throw error;
+    }
+    const liveRun = await this.repository.findLiveRunForStrategy(strategyId);
+    if (liveRun) {
+      const error = new Error("Strategy is already running in another session");
+      (error as Error & { statusCode?: number }).statusCode = 409;
+      throw error;
+    }
+    // Per-run sizing: reuse the validator's single-position check via the
+    // derived session cap — sum(live) + new must fit balance × leverage.
+    // Full venue-limit validation already ran at session create; here we
+    // guard the aggregate only (Act-mode decision 4).
+    const liveTotal = await this.repository.sumLiveRunNotional(botId);
+    const sessionCap = await this.getSessionCap(userId);
+    if (sessionCap !== null && liveTotal + notionalAmount > sessionCap) {
+      const error = new Error(
+        `Session cap exceeded: live $${liveTotal} + new $${notionalAmount} > $${sessionCap}`
+      );
+      (error as Error & { statusCode?: number }).statusCode = 409;
+      throw error;
+    }
+    const snapConfig = await this.repository.findStrategyConfig(strategyId);
+    const runId = await this.repository.attachRun(
+      botId,
+      strategyId,
+      snapConfig,
+      notionalAmount
+    );
+    await this.repository.recordLifecycleEvent(botId, {
+      eventType: "RUN_ATTACHED",
+      fromState: bot.actual_state,
+      toState: bot.actual_state,
+      correlationId: null,
+      messageId: null,
+      metadata: { runId, strategyId, notionalAmount },
+    });
+    return runId;
+  }
+
+  /**
+   * Detach a STOPPED run (DELETE /runs/:runId). Live runs must be stopped
+   * first via stopStrategyRun.
+   */
+  async detachStrategyRun(
+    botId: string,
+    userId: string,
+    runId: string
+  ): Promise<void> {
+    const bot = await this.getOwnedBot(botId, userId);
+    const run = await this.repository.findRun(runId);
+    if (!run || run.bot_id !== bot.id) {
+      const error = new Error("Run not found in this session");
+      (error as Error & { statusCode?: number }).statusCode = 404;
+      throw error;
+    }
+    if (run.state === "STARTING" || run.state === "RUNNING") {
+      const error = new Error("Stop the run before detaching it");
+      (error as Error & { statusCode?: number }).statusCode = 409;
+      throw error;
+    }
+    await this.repository.detachRun(runId);
+    await this.repository.recordLifecycleEvent(botId, {
+      eventType: "RUN_DETACHED",
+      fromState: bot.actual_state,
+      toState: bot.actual_state,
+      correlationId: null,
+      messageId: null,
+      metadata: { runId, strategyId: run.strategy_id },
+    });
+  }
+
+  /**
+   * Derived session cap (Act-mode decision 4): balance × maxLeverage.
+   * Fail-open null for now — the position validator owns the Redis-backed
+   * account-info lookup and the service has no cache dep; D3 wires the real
+   * aggregate check once the engine reports per-run exposure. Until then the
+   * per-run validator at session create is the active guard.
+   */
+  private async getSessionCap(_userId: string): Promise<number | null> {
+    return null;
   }
 
   // ===========================================

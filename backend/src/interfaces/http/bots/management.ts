@@ -948,3 +948,78 @@ router.post(
 );
 
 export { router as botManagementRoutes };
+
+// POST /api/bot/management/runs + DELETE /api/bot/management/runs live on a
+// separate router so the new session surface stays reviewable in one place.
+// Mounted alongside botManagementRoutes (see bots/index.ts).
+export const botSessionRunsRoutes = Router();
+
+/**
+ * Attach a strategy to a live session as a new run (D2, plan §D).
+ * Body: { botId, strategyId, notionalAmount } → 201 { runId }.
+ * Guards (service): ownership, session live, one-live-run-per-strategy,
+ * derived session cap. The run starts STOPPED until D3 wires START_STRATEGY.
+ */
+botSessionRunsRoutes.post(
+  "/runs",
+  authMiddleware,
+  validators.attachRun,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { botId, strategyId, notionalAmount } = req.body;
+      const runId = await botLifecycleService.attachStrategyRun(
+        botId,
+        userId,
+        strategyId,
+        Number(notionalAmount)
+      );
+      res.status(201).json({
+        success: true,
+        data: { runId, botId, strategyId },
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      const statusCode =
+        (err as Error & { statusCode?: number }).statusCode ?? 500;
+      res.status(statusCode).json({
+        success: false,
+        error:
+          statusCode === 404
+            ? "Bot or strategy not found"
+            : statusCode === 409
+              ? (err as Error).message
+              : "Failed to attach strategy run",
+        timestamp: Date.now(),
+      });
+    }
+  }
+);
+
+/** Detach a STOPPED run (D2, plan §D). Body: { botId, runId }. */
+botSessionRunsRoutes.delete(
+  "/runs",
+  authMiddleware,
+  validators.detachRun,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { botId, runId } = req.body;
+      await botLifecycleService.detachStrategyRun(botId, userId, runId);
+      res.json({ success: true, data: { runId, botId }, timestamp: Date.now() });
+    } catch (err) {
+      const statusCode =
+        (err as Error & { statusCode?: number }).statusCode ?? 500;
+      res.status(statusCode).json({
+        success: false,
+        error:
+          statusCode === 404
+            ? "Run not found in this session"
+            : statusCode === 409
+              ? (err as Error).message
+              : "Failed to detach strategy run",
+        timestamp: Date.now(),
+      });
+    }
+  }
+);

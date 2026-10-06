@@ -18,6 +18,7 @@ import {
   LifecycleEventInput,
   LifecycleEventRow,
   PersistTransitionInput,
+  StrategyRunRow,
   TrackedCommandRow,
 } from "./types";
 
@@ -391,6 +392,149 @@ export class BotLifecycleRepository {
       [strategyId, userId, exchangeAccountId]
     );
     return insertResult.rows[0].id;
+  }
+
+  // ===========================================
+  // STRATEGY RUNS (account sessions, plan §D / migration 019)
+  // ===========================================
+
+  /** All runs attached to a session, oldest first. */
+  async getRunsForBot(botId: string): Promise<StrategyRunRow[]> {
+    const result = await query<StrategyRunRow>(
+      `SELECT id, bot_id, strategy_id, config_version, config, notional_amount,
+              state, last_error_code, created_at, updated_at
+         FROM strategy_runs
+        WHERE bot_id = $1
+        ORDER BY created_at ASC, id ASC`,
+      [botId]
+    );
+    return result.rows;
+  }
+
+  /** Single run by id (ownership checked by the caller via bot_id). */
+  async findRun(runId: string): Promise<StrategyRunRow | null> {
+    const result = await query<StrategyRunRow>(
+      `SELECT id, bot_id, strategy_id, config_version, config, notional_amount,
+              state, last_error_code, created_at, updated_at
+         FROM strategy_runs
+        WHERE id = $1`,
+      [runId]
+    );
+    return result.rows[0] ?? null;
+  }
+
+  /**
+   * The live run occupying a strategy, if any — "one live run per strategy".
+   * Session-aware successor of findActiveBotForStrategy during the shim: the
+   * old bot-level query stays authoritative for bots with no runs row yet,
+   * this one covers attached runs.
+   */
+  async findLiveRunForStrategy(
+    strategyId: string
+  ): Promise<StrategyRunRow | null> {
+    const result = await query<StrategyRunRow>(
+      `SELECT id, bot_id, strategy_id, config_version, config, notional_amount,
+              state, last_error_code, created_at, updated_at
+         FROM strategy_runs
+        WHERE strategy_id = $1
+          AND state IN ('STARTING', 'RUNNING')
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [strategyId]
+    );
+    return result.rows[0] ?? null;
+  }
+
+  /**
+   * The live-or-parked session occupying an account, if any — "one live
+   * session per exchange account" (migration 019 index
+   * bot_instances_one_live_per_account). STOPPING excluded so the ordinary
+   * stop-then-start flow keeps working, mirroring findActiveBotForStrategy.
+   */
+  async findLiveSessionForAccount(
+    exchangeAccountId: string
+  ): Promise<{ id: string } | null> {
+    const result = await query<{ id: string }>(
+      `SELECT id FROM bot_instances
+        WHERE exchange_account_id = $1
+          AND (
+            actual_state IN ('STARTING', 'RUNNING')
+            OR (desired_state = 'RUNNING' AND actual_state IN ('UNKNOWN', 'ERROR'))
+          )
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [exchangeAccountId]
+    );
+    return result.rows[0] ?? null;
+  }
+
+  /**
+   * Attach a strategy to a session: snapshot its live config, size the run.
+   * The partial unique index refuses a strategy that is live elsewhere (409
+   * at the service layer maps the 23505).
+   */
+  async attachRun(
+    botId: string,
+    strategyId: string,
+    config: Record<string, unknown>,
+    notionalAmount: number
+  ): Promise<string> {
+    const insertResult = await query<{ id: string }>(
+      `INSERT INTO strategy_runs
+              (bot_id, strategy_id, config_version, config, notional_amount, state)
+           VALUES ($1, $2, 1, $3, $4, 'STOPPED')
+           RETURNING id`,
+      [botId, strategyId, JSON.stringify(config), notionalAmount]
+    );
+    return insertResult.rows[0].id;
+  }
+
+  /** CAS a run's state; returns false when the row moved underneath. */
+  async setRunState(
+    runId: string,
+    to: string,
+    expectedFrom?: string,
+    errorCode?: string | null
+  ): Promise<boolean> {
+    const result = expectedFrom
+      ? await query(
+          `UPDATE strategy_runs
+              SET state = $2,
+                  last_error_code = COALESCE($3, last_error_code),
+                  updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1 AND state = $4`,
+          [runId, to, errorCode ?? null, expectedFrom]
+        )
+      : await query(
+          `UPDATE strategy_runs
+              SET state = $2,
+                  last_error_code = COALESCE($3, last_error_code),
+                  updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1`,
+          [runId, to, errorCode ?? null]
+        );
+    return (result.rowCount ?? 0) === 1;
+  }
+
+  /** Sum of live (STARTING/RUNNING) run notionals inside a session. */
+  async sumLiveRunNotional(botId: string): Promise<number> {
+    const result = await query<{ total: string | null }>(
+      `SELECT COALESCE(SUM(notional_amount), 0) AS total
+         FROM strategy_runs
+        WHERE bot_id = $1
+          AND state IN ('STARTING', 'RUNNING')`,
+      [botId]
+    );
+    return Number(result.rows[0]?.total ?? 0);
+  }
+
+  /** Detach a STOPPED run (history of live runs stays for audit). */
+  async detachRun(runId: string): Promise<boolean> {
+    const result = await query(
+      `DELETE FROM strategy_runs WHERE id = $1 AND state = 'STOPPED'`,
+      [runId]
+    );
+    return (result.rowCount ?? 0) === 1;
   }
 
   // ===========================================

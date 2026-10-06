@@ -384,6 +384,20 @@ export interface BotInstanceRecord {
   needs_user_action?: boolean;
   /** Why action is needed, e.g. `desired-running-unconfirmed`. */
   needs_user_action_reason?: string | null;
+  /**
+   * D2 sessions (plan §D): runs attached to this session, oldest first.
+   * Present on the list query only; the `strategy_*` join columns above
+   * carry the legacy single-strategy view until D4.
+   */
+  runs?: Array<{
+    id: string;
+    strategy_id: string;
+    config_version: number;
+    config: Record<string, unknown>;
+    notional_amount: string;
+    state: string;
+    last_error_code: string | null;
+  }>;
 }
 
 export interface IBotInstanceRepository {

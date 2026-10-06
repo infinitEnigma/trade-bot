@@ -26,6 +26,26 @@ export interface BotRow {
   exchange_account_id: string | null;
 }
 
+/**
+ * One strategy execution inside a session (migration 019, plan §D).
+ * `config` is the snapshot copied at attach time; `state` tracks the run.
+ */
+export interface StrategyRunRow {
+  id: string;
+  bot_id: string;
+  strategy_id: string;
+  config_version: number;
+  config: Record<string, unknown>;
+  notional_amount: string;
+  state: string;
+  last_error_code: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Run states that occupy a strategy or count toward the session cap. */
+export const LIVE_RUN_STATES = ["STARTING", "RUNNING"] as const;
+
 /** Map actual_state to the legacy single `status` column. */
 export const STATUS_BY_ACTUAL: Record<BotActualState, string> = {
   STOPPED: "STOPPED",

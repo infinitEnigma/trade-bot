@@ -1,13 +1,15 @@
 /** @format */
 
 import { Router } from "express";
-import { botManagementRoutes } from "./management";
+import { botManagementRoutes, botSessionRunsRoutes } from "./management";
 import { botEngineRoutes } from "./engine";
 
 const router = Router();
 
 // Mount modular routes
 router.use("/management", botManagementRoutes);
+// D2 sessions: POST/DELETE /management/runs share the management prefix.
+router.use("/management", botSessionRunsRoutes);
 router.use("/engine", botEngineRoutes);
 
 // NOTE: Background workers (reconciliation) must NOT start as a route-module
@@ -17,7 +19,7 @@ router.use("/engine", botEngineRoutes);
 // even though main declared it disabled.
 
 // Re-export individual route modules for domain access
-export { botManagementRoutes } from "./management";
+export { botManagementRoutes, botSessionRunsRoutes } from "./management";
 export { botEngineRoutes } from "./engine";
 
 export { router as botRoutes };

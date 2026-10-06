@@ -1417,6 +1417,9 @@ describe("createAndStart venue symbol gate (L20)", () => {
       if (text.startsWith("INSERT INTO bot_instances")) {
         return Promise.resolve({ rows: [{ id: "bot-1" }], rowCount: 1 });
       }
+      if (text.startsWith("INSERT INTO strategy_runs")) {
+        return Promise.resolve({ rows: [{ id: "run-1" }], rowCount: 1 });
+      }
       if (text.startsWith("SELECT id, user_id")) {
         return Promise.resolve({ rows: [botRow] });
       }
@@ -1504,5 +1507,73 @@ describe("createAndStart venue symbol gate (L20)", () => {
     );
 
     expect(result.botId).toBe("bot-1");
+  });
+
+  // D2 sessions: the initial run is attached inside createAndStart.
+  it("attaches the initial run and fans it into the BOT_START command", async () => {
+    mockFlow("BTC");
+    global.fetch = jest.fn(() => lighterCatalog()) as unknown as typeof fetch;
+
+    await service.createAndStart("user-1", "strat-1", 1000, "acc-1");
+
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO strategy_runs"),
+      expect.arrayContaining(["bot-1", "strat-1"])
+    );
+  });
+
+  it("409s when the strategy is already live as a run in another session", async () => {
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-1" }] });
+      }
+      if (text.includes("FROM bot_instances WHERE strategy_id")) {
+        return Promise.resolve({ rows: [] });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({
+          rows: [{ id: "run-other", bot_id: "bot-other" }],
+        });
+      }
+      return okResult();
+    });
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 1000, "acc-1")
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO bot_instances"),
+      expect.anything()
+    );
+  });
+
+  it("409s when the account already hosts a live session (attach instead)", async () => {
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-1" }] });
+      }
+      if (text.includes("FROM bot_instances WHERE strategy_id")) {
+        return Promise.resolve({ rows: [] });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [] });
+      }
+      if (text.includes("exchange_account_id = $1")) {
+        return Promise.resolve({ rows: [{ id: "bot-existing" }] });
+      }
+      return okResult();
+    });
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 1000, "acc-1")
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO bot_instances"),
+      expect.anything()
+    );
   });
 });

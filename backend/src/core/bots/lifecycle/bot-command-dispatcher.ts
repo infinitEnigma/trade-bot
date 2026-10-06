@@ -37,12 +37,23 @@ export class BotCommandDispatcher {
     strategyId: string
   ): Promise<SendCommandResult> {
     const config = await this.repository.findStrategyConfig(strategyId);
+    const runs = await this.repository.getRunsForBot(botId);
     return this.publishTrackedCommand("BOT_START", {
       botId,
       userId,
       strategyId,
       configVersion: 1,
       config,
+      // Session runs (plan §D): the engine fans one session out to N
+      // runners. Single-run sessions carry exactly one entry — the
+      // single-run shim path.
+      runs: runs.map(run => ({
+        runId: run.id,
+        strategyId: run.strategy_id,
+        configVersion: run.config_version,
+        config: run.config,
+        notionalAmount: Number(run.notional_amount),
+      })),
     });
   }
 

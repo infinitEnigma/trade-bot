@@ -33,7 +33,29 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
                        -- reads as "action needed because it stopped normally".
                        CASE WHEN tail.event_type = 'RECONCILE_NEEDS_USER_ACTION'
                             THEN tail.metadata->>'reason'
-                       END AS needs_user_action_reason
+                       END AS needs_user_action_reason,
+                       -- D2 sessions: runs attached to this session, oldest
+                       -- first (empty array for pre-D bots whose runs row
+                       -- has not been attached yet).
+                       COALESCE(
+                         (
+                           SELECT json_agg(
+                             json_build_object(
+                               'id', r.id,
+                               'strategy_id', r.strategy_id,
+                               'config_version', r.config_version,
+                               'config', r.config,
+                               'notional_amount', r.notional_amount,
+                               'state', r.state,
+                               'last_error_code', r.last_error_code
+                             )
+                             ORDER BY r.created_at ASC, r.id ASC
+                           )
+                           FROM strategy_runs r
+                           WHERE r.bot_id = bi.id
+                         ),
+                         '[]'::json
+                       ) AS runs
                 FROM bot_instances bi
                 JOIN strategies s ON bi.strategy_id = s.id
                 LEFT JOIN LATERAL (
