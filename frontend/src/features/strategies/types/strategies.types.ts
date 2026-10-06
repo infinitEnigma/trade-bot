@@ -89,10 +89,9 @@ export function getRunForStrategy(
  * D4 sessions: the session (bot row) that hosts a strategy — via its run
  * first, falling back to the legacy `strategy_id` column for pre-D rows.
  */
-export function getSessionForStrategy<T extends { runs?: StrategyRun[]; strategy_id: string }>(
-  bots: T[],
-  strategyId: string
-): T | undefined {
+export function getSessionForStrategy<
+  T extends { runs?: StrategyRun[]; strategy_id: string },
+>(bots: T[], strategyId: string): T | undefined {
   return (
     bots.find(b => b.runs?.some(r => r.strategy_id === strategyId)) ??
     bots.find(b => b.strategy_id === strategyId)

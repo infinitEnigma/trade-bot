@@ -319,7 +319,12 @@ export class BotLifecycleService {
     // attach rolls back the just-created session so no orphan bot remains.
     const bootConfig = await this.repository.findStrategyConfig(strategyId);
     try {
-      await this.repository.attachRun(botId, strategyId, bootConfig, notionalAmount);
+      await this.repository.attachRun(
+        botId,
+        strategyId,
+        bootConfig,
+        notionalAmount
+      );
     } catch (error) {
       await query(`DELETE FROM bot_instances WHERE id = $1`, [botId]);
       const err = error as Error & { code?: string };

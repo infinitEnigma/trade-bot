@@ -203,10 +203,11 @@ export function loadGridSnapshotResult(
   if (legacy.status === "CORRUPT") {
     const legacyPrev = readSnapshotFile(`${snapshotFile(botId)}.prev`, botId);
     if (legacyPrev.status === "OK") {
-      logger.warn(
-        "Recovered legacy grid snapshot from the previous version",
-        { botId, runId, detail: legacy.detail }
-      );
+      logger.warn("Recovered legacy grid snapshot from the previous version", {
+        botId,
+        runId,
+        detail: legacy.detail,
+      });
       return { ...legacyPrev, migratedFromLegacy: true };
     }
   }
@@ -240,7 +241,9 @@ export async function saveGridSnapshot(snapshot: GridSnapshot): Promise<void> {
       checksum: computeSnapshotChecksum(payload),
     };
     durableWriteSync(
-      snapshot.runId ? path.join(getSnapshotDir(), snapshot.botId) : getSnapshotDir(),
+      snapshot.runId
+        ? path.join(getSnapshotDir(), snapshot.botId)
+        : getSnapshotDir(),
       snapshot.runId ? `${snapshot.runId}.json` : `${snapshot.botId}.json`,
       JSON.stringify(stamped, null, 2)
     );

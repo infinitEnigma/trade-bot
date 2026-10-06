@@ -7,7 +7,7 @@ import { authService } from "../services/authService";
 import { AuthUser, AuthState, AuthActions } from "../types/auth.types";
 import { toast } from "sonner";
 import { httpClient } from "../../../infrastructure/api/client";
-import { clearQueryCache } from "../../../shared/components/WalletProvider";
+import { clearQueryCache } from "../../../shared/query-client";
 
 /**
  * Fix A: drop every trace of the previous session before a new identity

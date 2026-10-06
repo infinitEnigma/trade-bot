@@ -81,10 +81,18 @@ describe("BotManager.handleStart credential-contract slice (workstream A)", () =
     // A successful handleStart arms a StrategyRunner: a self-rescheduling
     // setTimeout loop (TICK_INTERVAL_MS) that re-arms after every tick. If the
     // suite doesn't stop it, the timer keeps the event loop alive forever and
-    // Jest never exits. Stop every runtime any test in this file created.
+    // Jest never exits. Stop every runtime any test in this file created —
+    // including each session run's own runner (D3 fans one session out to N
+    // runs, each with a separate stopTick; the primary stopTick does NOT stop
+    // them — bot-manager's own stop paths stop both, see handleStop/handleError).
     for (const manager of managers) {
       for (const runtime of manager.getBotRuntimes().values()) {
         runtime.stopTick();
+        if (runtime.runs) {
+          for (const [, run] of runtime.runs) {
+            if (run.stopTick !== runtime.stopTick) run.stopTick();
+          }
+        }
       }
       manager.getBotRuntimes().clear();
     }

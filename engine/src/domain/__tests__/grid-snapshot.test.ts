@@ -197,9 +197,9 @@ describe("grid-snapshot state persistence", () => {
       useTempDir();
       await saveGridSnapshot({ ...validSnapshot(), runId: "run-1" });
 
-      expect(
-        fs.existsSync(path.join(tmpDir, "bot-1", "run-1.json"))
-      ).toBe(true);
+      expect(fs.existsSync(path.join(tmpDir, "bot-1", "run-1.json"))).toBe(
+        true
+      );
       const loaded = loadGridSnapshot("bot-1", "run-1");
       expect(loaded?.runId).toBe("run-1");
       expect(loaded?.baselinePrice).toBe(100);

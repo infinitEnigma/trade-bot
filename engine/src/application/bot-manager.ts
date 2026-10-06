@@ -13,7 +13,11 @@ import { createExchangeClient } from "../exchanges/factory";
 import { isEngineCredentials } from "@trade-bot/shared";
 import { RedisStreamOperations } from "../infrastructure/redis/streams";
 import { logger } from "../utils/logger";
-import { BotRuntime, EngineIdentity, StrategyRunState } from "../domain/bot-runtime";
+import {
+  BotRuntime,
+  EngineIdentity,
+  StrategyRunState,
+} from "../domain/bot-runtime";
 import { ExchangeOpenOrder, ExchangePosition } from "../domain/exchange";
 import {
   publishEvent,

@@ -78,11 +78,10 @@ export class ClientOrderIdGenerator {
     if (this.compact.length <= width) return this.compact;
     // Hash the full scope (bot + run namespace), not just the bot id, so
     // two runs in one session hash to different keys.
-    const scope = this.namespace ? `${this.botId}/${this.namespace}` : this.botId;
-    return createHash("sha256")
-      .update(scope)
-      .digest("hex")
-      .slice(0, width);
+    const scope = this.namespace
+      ? `${this.botId}/${this.namespace}`
+      : this.botId;
+    return createHash("sha256").update(scope).digest("hex").slice(0, width);
   }
 
   generate(levelIndex: number, side: "BUY" | "SELL", generation = 0): string {

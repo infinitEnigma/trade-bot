@@ -1006,7 +1006,11 @@ botSessionRunsRoutes.delete(
       const userId = getUserId(req);
       const { botId, runId } = req.body;
       await botLifecycleService.detachStrategyRun(botId, userId, runId);
-      res.json({ success: true, data: { runId, botId }, timestamp: Date.now() });
+      res.json({
+        success: true,
+        data: { runId, botId },
+        timestamp: Date.now(),
+      });
     } catch (err) {
       const statusCode =
         (err as Error & { statusCode?: number }).statusCode ?? 500;

@@ -41,6 +41,15 @@ jest.mock("../../../src/interfaces/middleware/validation.middleware", () => ({
     resumeBot: jest
       .fn()
       .mockImplementation((req: any, res: any, next: any) => next()),
+    // D2 sessions: run attach/detach routes (management.ts) register these;
+    // without them router.post receives undefined and every route in the
+    // suite dies with "argument handler must be a function".
+    attachRun: jest
+      .fn()
+      .mockImplementation((req: any, res: any, next: any) => next()),
+    detachRun: jest
+      .fn()
+      .mockImplementation((req: any, res: any, next: any) => next()),
   },
 }));
 
