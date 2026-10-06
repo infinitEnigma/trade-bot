@@ -108,4 +108,33 @@ describe("useBotLifecycle bot-instances mapping (L19)", () => {
     // notification, so give it a tick).
     await waitFor(() => expect(result.current.bots[0].status).toBe("STOPPED"));
   });
+
+  it("resolves a strategy to its hosting session via runs (D4)", async () => {
+    vi.mocked(tradingApi.getBotInstances).mockResolvedValue({
+      success: true,
+      data: [
+        {
+          ...API_ROW,
+          id: "session-1",
+          strategy_id: "legacy-strategy",
+          runs: [
+            {
+              id: "run-1",
+              strategy_id: "strategy-9",
+              config_version: 1,
+              config: {},
+              notional_amount: "100",
+              state: "RUNNING",
+              last_error_code: null,
+            },
+          ],
+        },
+      ],
+    });
+    const { result } = renderHook(() => useBotLifecycle("strategy-9"), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(result.current.bot?.id).toBe("session-1"));
+  });
 });

@@ -29,6 +29,7 @@ const BotControls = lazy(() =>
 import { useBalance } from "../../../shared/hooks";
 import { useAuth } from "../../auth";
 import { useBotsList } from "../../bots/hooks";
+import { getSessionForStrategy } from "../types/strategies.types";
 import { PageLayout, Container } from "../../../shared/components/layout";
 
 const Strategies: React.FC = React.memo(() => {
@@ -139,9 +140,8 @@ const Strategies: React.FC = React.memo(() => {
   };
 
   const getBotForStrategy = (strategyId: string) => {
-    return bots.find(
-      (bot: { strategy_id: string }) => bot.strategy_id === strategyId
-    );
+    // D4 sessions: resolve through the session's runs first.
+    return getSessionForStrategy(bots, strategyId);
   };
 
   // ✅ Fetch real balance data (WebSocket for verified users)

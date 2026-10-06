@@ -36,6 +36,16 @@ export type StrategyConfig =
   | { type: StrategyType.TREND_FOLLOWING; config: TrendFollowingStrategyConfig }
   | { type: StrategyType.ARBITRAGE; config: ArbitrageStrategyConfig };
 
+export interface StrategyRun {
+  id: string;
+  strategy_id: string;
+  config_version: number;
+  config: Record<string, unknown>;
+  notional_amount: string;
+  state: string;
+  last_error_code: string | null;
+}
+
 export interface BotInstance {
   id: string;
   strategy_id: string;
@@ -52,6 +62,41 @@ export interface BotInstance {
    */
   needsUserAction?: boolean;
   needsUserActionReason?: string | null;
+  /**
+   * D4 sessions: runs attached to this session (backend list query). Absent
+   * on older payloads; the legacy `strategy_id` lookup covers those.
+   */
+  runs?: StrategyRun[];
+}
+
+/**
+ * D4 sessions: the run inside a session that executes a strategy, if any.
+ * Prefers an attached run over the legacy `strategy_id` column, so a
+ * strategy moved between sessions resolves to the live one.
+ */
+export function getRunForStrategy(
+  bots: Array<Pick<BotInstance, "runs" | "strategy_id">>,
+  strategyId: string
+): StrategyRun | undefined {
+  for (const bot of bots) {
+    const run = bot.runs?.find(r => r.strategy_id === strategyId);
+    if (run) return run;
+  }
+  return undefined;
+}
+
+/**
+ * D4 sessions: the session (bot row) that hosts a strategy — via its run
+ * first, falling back to the legacy `strategy_id` column for pre-D rows.
+ */
+export function getSessionForStrategy<T extends { runs?: StrategyRun[]; strategy_id: string }>(
+  bots: T[],
+  strategyId: string
+): T | undefined {
+  return (
+    bots.find(b => b.runs?.some(r => r.strategy_id === strategyId)) ??
+    bots.find(b => b.strategy_id === strategyId)
+  );
 }
 
 export interface TradingBalance {

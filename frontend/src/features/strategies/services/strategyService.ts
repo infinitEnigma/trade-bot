@@ -2,7 +2,12 @@
 
 import { Strategy, StrategyType } from "../../../shared/types";
 import { tradingApi } from "../../../infrastructure/api";
-import { StrategyFormData, BotInstance } from "../types/strategies.types";
+import {
+  StrategyFormData,
+  BotInstance,
+  StrategyRun,
+  getSessionForStrategy,
+} from "../types/strategies.types";
 
 /**
  * Strategy Service
@@ -110,15 +115,18 @@ export class StrategyService {
   }
 
   /**
-   * Get bot instance for a strategy
+   * Get bot instance for a strategy (D4 sessions: via the session's runs).
    */
   async getBotForStrategy(strategyId: string): Promise<BotInstance | null> {
     try {
       const response = await tradingApi.getBotInstances();
       if (response.success && response.data) {
-        const bot = response.data.find(
-          (bot: { strategy_id: string }) => bot.strategy_id === strategyId
-        );
+        const bot = getSessionForStrategy<
+          BotInstance & {
+            runs?: StrategyRun[];
+            config?: BotInstance["config"];
+          }
+        >(response.data, strategyId);
         if (bot) {
           return {
             id: bot.id,

@@ -36,6 +36,7 @@ import {
   ConnectionStatus,
   STATE_DISPLAY_INFO,
 } from "../types/bot-lifecycle.types";
+import { getSessionForStrategy } from "../../strategies/types/strategies.types";
 
 /**
  * Query key for bot instances cache.
@@ -124,6 +125,7 @@ export function useBotLifecycle(botId?: string) {
           config?: unknown;
           needs_user_action?: boolean;
           needs_user_action_reason?: string | null;
+          runs?: BotInstance["runs"];
         }) => ({
           // L19: `id` is the bot-instance id, never the strategy id — stop,
           // emergency-stop and the `bot.stateChanged` cache patch are all
@@ -141,6 +143,8 @@ export function useBotLifecycle(botId?: string) {
           // connection-lost.
           needsUserAction: bot.needs_user_action === true,
           needsUserActionReason: bot.needs_user_action_reason ?? null,
+          // D4 sessions: runs attached to this session (backend list query).
+          runs: bot.runs,
           config: bot.config || {
             type: "GRID" as const,
             config: {
@@ -191,7 +195,11 @@ export function useBotLifecycle(botId?: string) {
           if (!oldData) return oldData;
 
           return oldData.map(bot => {
-            if (bot.id === data.botId || bot.strategy_id === data.botId) {
+            // D4 sessions: identity is the bot id. The legacy strategy_id
+            // fallback stays only for callers that still pass a strategy id
+            // (P2 #5 residue); runs resolve through `runs[]` in the lookup
+            // below, never here.
+            if (bot.id === data.botId) {
               return {
                 ...bot,
                 status: data.to as BotInstance["status"],
@@ -256,8 +264,13 @@ export function useBotLifecycle(botId?: string) {
     };
   }, [handleBotStateChanged, handleStatusChange]);
 
+  // D4 sessions: a strategy resolves to its hosting session via `runs[]`
+  // first (legacy `strategy_id` column only for pre-D rows). `botId` here is
+  // always a bot id on the stop/emergency-stop path — the event carries the
+  // bot id, never a strategy id.
   const bot = botId
-    ? botsQuery.data?.find(b => b.id === botId || b.strategy_id === botId)
+    ? (botsQuery.data?.find(b => b.id === botId) ??
+      getSessionForStrategy(botsQuery.data ?? [], botId))
     : undefined;
   const actualState: BotActualState | undefined = bot?.status as
     BotActualState | undefined;
