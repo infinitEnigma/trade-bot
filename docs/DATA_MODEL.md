@@ -312,7 +312,8 @@ strategies ───────────────────────
 ```
 
 ```sql
--- 015_bot_account_sessions.sql (planned)
+-- Sessions landed in 019_bot_account_sessions.sql; the shim-drop below is
+-- the remaining staged step (single-run shim, grep-gated):
 ALTER TABLE bot_instances
   DROP COLUMN strategy_id;                       -- a session is not a strategy
 

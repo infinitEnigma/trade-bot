@@ -1,6 +1,6 @@
 # Exchange Integration & Data Model — Execution Plan
 
-**Status:** A, B and C executed — **C1 (identity), C2 (wallets + exchange accounts) and C3 (bot→account binding + per-account data tables) landed**; **D (bot account sessions) and E (agent participation) are designed and not implemented** (§D, §E).
+**Status:** A, B and C executed — **C1 (identity), C2 (wallets + exchange accounts) and C3 (bot→account binding + per-account data tables) landed**; **D (bot account sessions) landed D1–D4 (`6ce8c02`, `47f4cc6`, `6b91a63`; accepted 2026-10-06 after suite repair `9d0d26c` — the `strategy_id` shim-drop migration remains)**; **E (agent participation) is designed and not implemented** (§D, §E).
 **Companion docs:** [DATA_MODEL.md](DATA_MODEL.md) (target schema + why),
 [PROJECT_REVIEW_GAP_ANALYSIS.md](PROJECT_REVIEW_GAP_ANALYSIS.md) (ledger),
 [ARCHITECTURE.md](ARCHITECTURE.md) (current design),
@@ -19,7 +19,7 @@ C1. identity (username handle) (1 d)    ── DB Option B, PR 1 of 3  ✅ lande
 C2. wallets + exchange accounts(1.5 d)  ── PR 2 of 3  (adapter-based credentials) ✅ landed
 C3. bot→account + data tables  (1 d)    ── PR 3 of 3  (engine gets a real account) ✅ landed
         │
-D. bot account sessions        (2-3 d)  ── bot = one exchange account, N strategies  ⬜ designed
+D. bot account sessions        (2-3 d)  ── bot = one exchange account, N strategies  ✅ landed (D1–D4)
         │
 E. agent participation         (1.5-2 d)── advisor → coordinator → executor, engine stays the only executor  ⬜ designed
 ```
@@ -336,7 +336,7 @@ different revert costs, so each must be independently releasable and revertible.
 
 ---
 
-## D. Bot account sessions — bot = account, N strategies (design; not implemented)
+## D. Bot account sessions — bot = account, N strategies (landed D1–D4 2026-10-06; `strategy_id` shim-drop pending)
 
 **Goal:** the unit of execution becomes the **exchange account**, not the strategy:
 one bot per `(user, exchange_accounts)` row, running **N strategies** at once.
@@ -350,11 +350,11 @@ second strategy on the same account means a second bot, a second credential fetc
 and a second reconciler pointed at the same account. Collapsing that is cheaper,
 and it is also the shape agents need (§E).
 
-### D1 — schema (`015_bot_account_sessions.sql`)
+### D1 — schema (`019_bot_account_sessions.sql`)
 
 | Change                | Detail                                                                                                                                                                                                                          |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bot_instances`       | drop `strategy_id`; the session identity is `(user_id, exchange_account_id)`; partial unique index `bot_instances_one_live_per_account` on `exchange_account_id` `WHERE actual_state IN ('STARTING','RUNNING')`                 |
+| `bot_instances`       | session identity is `(user_id, exchange_account_id)`; partial unique index `bot_instances_one_live_per_account` on `exchange_account_id` `WHERE actual_state IN ('STARTING','RUNNING')`. **Staged:** `strategy_id` stays until a later migration drops it with the grep gate (019 header — the single-run shim) |
 | `strategy_runs` (new) | `(bot_id, strategy_id, config, config_version, notional_amount, state, last_error_code)` exactly as sketched in DATA_MODEL §4.4, with `UNIQUE(bot_id, strategy_id)` plus a partial unique index (`strategy_id` in one live run) |
 | Backfill              | one run per existing bot (1:1 today) carrying its `strategy_id` and notional; test users only, so a clean cut like C1-C3b                                                                                                       |
 | Guard                 | refuse the migration while any bot's `strategy_id` belongs to another user, mirroring the `014` guard style                                                                                                                     |
@@ -397,6 +397,11 @@ leaves the other running; the same strategy cannot be attached to two live sessi
 `strategies.active` reflects run state with no write path; two runs' grid snapshots
 stay independent across an engine restart.
 
+**Status 2026-10-06:** landed and accepted on suite evidence (all four gates
+green after the repair in `9d0d26c`: missing `attachRun`/`detachRun` validator
+mocks, per-run `stopTick` teardown, B5 smoke skip); the live two-strategy
+acceptance run above has **not** been re-executed since D4.
+
 **Estimate:** 2-3 days, staged D1 schema → D2 backend → D3 engine runtime → D4 UI,
 each independently releasable as C1-C3 were.
 
@@ -421,7 +426,7 @@ issue, gated by a grant and audited.
 | File                                    | Change                                                                                                                                                                                                                                                                                                                                          |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `shared/src/index.ts`                   | `UserRole` gains `AGENT_ADVISOR` / `AGENT_COORDINATOR`, ranked below `QUALIFIED_ALPHA`                                                                                                                                                                                                                                                          |
-| `016_agent_participation.sql` (planned) | `agents (id, owner_user_id, name, kind, status)`, `agent_grants (agent_id, user_id, exchange_account_id, capability, max_notional, expires_at, revoked_at)`, `agent_proposals (id, agent_id, bot_id, payload JSONB, status, decided_by, decided_at)`, `agent_actions (id, agent_id, grant_id, action, payload JSONB, result JSONB, created_at)` |
+| `agent_participation.sql` (planned; next free migration number) | `agents (id, owner_user_id, name, kind, status)`, `agent_grants (agent_id, user_id, exchange_account_id, capability, max_notional, expires_at, revoked_at)`, `agent_proposals (id, agent_id, bot_id, payload JSONB, status, decided_by, decided_at)`, `agent_actions (id, agent_id, grant_id, action, payload JSONB, result JSONB, created_at)` |
 | `interfaces/http/agents/*.ts` (new)     | service-token auth in the style of `botEngineAuth`; every route resolves a **grant** and refuses without one                                                                                                                                                                                                                                    |
 | audit                                   | every agent action is recorded like `bot_lifecycle_events`, carrying `agent_id` and the user it acted for                                                                                                                                                                                                                                       |
 

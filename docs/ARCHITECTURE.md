@@ -305,11 +305,15 @@ debt, deliberately deferred (P2).
 | `012_wallets_exchange_accounts.sql` | `wallets` (many chain-aware wallets per user) and `exchange_accounts` (many venue/environment accounts, sealed credential envelope); backfills `wallet_addresses` / `kodiak_credentials`                                                                                      |
 | `013_bot_account_binding.sql`       | `bot_instances.exchange_account_id` (nullable + backfill to the owner's earliest ACTIVE account, `ON DELETE RESTRICT`); creates the empty per-account `exchange_positions` / `exchange_balances` tables                                                                       |
 | `014_drop_legacy_kodiak.sql`        | Re-runs the backfill, makes `bot_instances.exchange_account_id` `NOT NULL` (guard refuses while any bot is unbound), drops `kodiak_accounts` / `kodiak_positions` / `kodiak_balances` / `kodiak_statistics` (all empty — the C3b venue sync repopulates `exchange_*` instead) |
+| `015_credentials_issued_unique.sql` | One-issuer guard for `GET /api/bot/engine/credentials/:botId` — closes the credential-issuance race (gap doc §2 / L27)                                                                                                                                            |
+| `016_durable_trading_ledger.sql`    | The durable order/fill ledger behind the engine credential envelope; supersedes the spoofable `POST /report-trade` path (N7, ledger Phase 4)                                                                                                                       |
+| `017_accounting_pnl_split.sql`      | Accounting correctness: executed-price PnL, fee booking, exit pricing (N6, ledger Phase 5)                                                                                                                                                                        |
+| `018_bot_one_live_per_strategy.sql` | DB-level create guard: one live bot per (user, strategy) — the crash-recovery P0                                                                                                                                                                                   |
+| `019_bot_account_sessions.sql`      | D1 sessions: `strategy_runs`, one live session per account (`bot_instances_one_live_per_account`), run backfill; `strategy_id` kept for the single-run shim until a later grep-gated drop                                                                            |
+| `020_rename_engine_identity.sql`    | Exchange-agnostic rebrand: renames `kodiak-engine-*` → `trading-engine-*` in `engine_registry` + `bot_instances.engine_id` and resets the registry epoch (pairs with the engine identity loader's in-place state-file migration)                                      |
 
-Planned (designed, not implemented): `015_bot_account_sessions.sql` — bot = one
-exchange account with `strategy_runs` per strategy (plan §D); and
-`016_agent_participation.sql` — agents, grants, proposals and the action audit trail
-(plan §E).
+Planned (designed, not implemented): `agent_participation.sql` (plan §E) —
+agents, grants, proposals and the action audit trail.
 
 ---
 
