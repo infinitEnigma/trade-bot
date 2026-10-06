@@ -36,6 +36,7 @@ export const setRefreshedSessionCookies = (
     httpOnly: true,
     secure: secureCookies(),
     sameSite: "strict",
+    path: "/",
     maxAge: ACCESS_COOKIE_MAX_AGE_MS,
   });
 
@@ -43,6 +44,7 @@ export const setRefreshedSessionCookies = (
     httpOnly: true,
     secure: secureCookies(),
     sameSite: "strict",
+    path: "/",
     maxAge: REFRESH_COOKIE_MAX_AGE_MS,
   });
 
@@ -54,6 +56,7 @@ export const setRefreshedSessionCookies = (
     httpOnly: true,
     secure: secureCookies(),
     sameSite: "strict",
+    path: "/",
     maxAge: CSRF_COOKIE_MAX_AGE_MS,
   });
 
@@ -61,6 +64,7 @@ export const setRefreshedSessionCookies = (
     httpOnly: false, // Client needs to read this
     secure: secureCookies(),
     sameSite: "strict",
+    path: "/",
     maxAge: CSRF_COOKIE_MAX_AGE_MS,
   });
 
@@ -83,6 +87,7 @@ export const clearSessionCookies = (res: Response): void => {
       httpOnly: name !== "csrfToken",
       secure: secureCookies(),
       sameSite: "strict",
+      path: "/",
     });
   }
 };

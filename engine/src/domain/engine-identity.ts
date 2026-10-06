@@ -33,7 +33,7 @@ export function loadOrCreateEngineIdentity(): EngineIdentity {
   const engineId =
     process.env.ENGINE_ID ||
     state.engineId ||
-    `kodiak-engine-${crypto.randomUUID().substring(0, 8)}`;
+    `trading-engine-${crypto.randomUUID().substring(0, 8)}`;
   const epoch = (state.engineId === engineId ? (state.epoch ?? 0) : 0) + 1;
 
   try {

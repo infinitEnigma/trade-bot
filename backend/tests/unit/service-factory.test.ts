@@ -264,6 +264,7 @@ describe("Service Factory Interface", () => {
           "verifyConnectivity",
           "userLevel",
           "auditLogRepository",
+          "onLevelChanged",
           "logger",
           "boundBots",
         ]);
@@ -286,6 +287,7 @@ describe("Service Factory Interface", () => {
             "verifyConnectivity",
             "userLevel",
             "auditLogRepository",
+            "onLevelChanged",
             "logger",
             "boundBots",
           ],

@@ -1,10 +1,10 @@
 /** @format */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import type { SpyInstance } from "vitest";
+import type { MockInstance } from "vitest";
 
 describe("session-events (L14: exactly one auth:session-expired)", () => {
-  let dispatchSpy: SpyInstance;
+  let dispatchSpy: MockInstance;
 
   beforeEach(() => {
     vi.resetModules();

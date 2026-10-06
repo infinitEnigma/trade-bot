@@ -383,6 +383,12 @@ export class ServiceFactory implements IServiceFactory {
         }),
         userLevel: this.createUserLevelService(),
         auditLogRepository: diContainer.auditLogRepository,
+        // Fix B: clear the cached profile (user:profile:{userId}) on every
+        // account transition so GET /profile reflects the recomputed level
+        // instead of serving a stale REGISTERED for up to 300s.
+        onLevelChanged: async (userId: string) => {
+          await this.getUserProfileService()?.invalidateUserProfileCache(userId);
+        },
         // L4: the DI container passes loggerService — the factory must too,
         // otherwise connect/verify/revoke log via `?.` into the void.
         logger: diContainer.loggerService,
@@ -414,6 +420,7 @@ export class ServiceFactory implements IServiceFactory {
           "verifyConnectivity",
           "userLevel",
           "auditLogRepository",
+          "onLevelChanged",
           "logger",
           "boundBots",
         ],

@@ -6,6 +6,33 @@ import { persist } from "zustand/middleware";
 import { authService } from "../services/authService";
 import { AuthUser, AuthState, AuthActions } from "../types/auth.types";
 import { toast } from "sonner";
+import { httpClient } from "../../../infrastructure/api/client";
+import { clearQueryCache } from "../../../shared/components/WalletProvider";
+
+/**
+ * Fix A: drop every trace of the previous session before a new identity
+ * takes over. Covers:
+ * - the persisted zustand `auth-storage` (rehydrates synchronously, so a
+ *   stale VERIFIED user renders until the new profile arrives);
+ * - the app-scoped React Query cache (`["user", oldId]`, …);
+ * - the wagmi browser-wallet session (per-browser, not per-app-user) via an
+ *   `auth:disconnect-wallet` event the wallet layer listens for.
+ */
+const clearPreviousSession = async (): Promise<void> => {
+  try {
+    localStorage.removeItem("auth-storage");
+  } catch {
+    // Storage may be unavailable (private mode) — state reset below still runs.
+  }
+  try {
+    await clearQueryCache();
+  } catch {
+    // Cache clear is best-effort; fresh fetches overwrite stale entries.
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("auth:disconnect-wallet"));
+  }
+};
 
 interface AuthStore extends AuthState, AuthActions {}
 
@@ -28,6 +55,11 @@ const useAuthStore = create<AuthStore>()(
           const response = await authService.login(email, password);
 
           if (response.success && response.data?.user) {
+            // Fix A: a new identity takes over — drop the previous session
+            // (auth-storage, query cache, wallet) BEFORE fetching the new
+            // profile so no stale VERIFIED user/wallet renders or caches.
+            await clearPreviousSession();
+
             // Login successful - now fetch complete user profile for accurate data
             const profileResponse = await authService.getProfile();
 
@@ -105,6 +137,10 @@ const useAuthStore = create<AuthStore>()(
           );
 
           if (response.success) {
+            // Fix A: same as login — purge the previous session before the
+            // freshly registered user is written to the store.
+            await clearPreviousSession();
+
             // Set user directly from register response
             if (response.data?.user) {
               set({
@@ -134,14 +170,15 @@ const useAuthStore = create<AuthStore>()(
 
       logout: async () => {
         try {
-          // Call logout endpoint to clear cookies
-          await fetch("/api/auth/logout", {
-            method: "POST",
-            credentials: "include",
-          });
+          // Fix A: use the shared HTTP client — the old relative-URL fetch
+          // never reached the API origin (VITE_API_URL) in dev, so the
+          // backend never cleared cookies/refresh-token server-side.
+          await httpClient.getClient().post("/api/auth/logout");
         } catch (error) {
           console.error("Logout request failed:", error);
         } finally {
+          // Fix A: drop persisted state, query cache and wallet session.
+          await clearPreviousSession();
           // Clear local state
           set({
             user: null,

@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi, Mock } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useAuth, updateAuthUser } from "../../../features/auth/hooks/useAuth";
 import { authService } from "../../../features/auth/services/authService";
+import { httpClient } from "../../../infrastructure/api/client";
 import { UserLevel } from "../../../shared/types";
 
 // Mock the auth service
@@ -317,8 +318,12 @@ describe("useAuth hook", () => {
 
   describe("logout functionality", () => {
     it("should handle logout when API call fails", async () => {
-      // Mock fetch to reject
-      global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
+      // Mock the shared HTTP client's POST to reject (Fix A: logout no
+      // longer uses a relative-URL fetch — it goes through httpClient so
+      // the request reaches the API origin).
+      const postSpy = vi
+        .spyOn(httpClient.getClient(), "post")
+        .mockRejectedValue(new Error("Network error"));
 
       const mockUser = {
         id: "1",
@@ -357,9 +362,10 @@ describe("useAuth hook", () => {
         await result.current.logout();
       });
 
-      expect(fetch).toHaveBeenCalledWith("/api/auth/logout", expect.anything());
+      expect(postSpy).toHaveBeenCalledWith("/api/auth/logout");
       expect(result.current.user).toBeNull();
       expect(result.current.isAuthenticated).toBe(false);
+      postSpy.mockRestore();
     });
   });
 

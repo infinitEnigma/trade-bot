@@ -91,6 +91,9 @@ export const ConnectExchangeAccount: React.FC<ConnectExchangeAccountProps> = ({
   // may hold several accounts (e.g. a replacement Lighter index after the
   // venue wiped the old one), so only the same account_ref blocks here.
   // Kodiak's ref is the account ID; Lighter's ref is the account index.
+  // Only ACTIVE blocks: INVALID/PENDING rows are dead (the backend replaces
+  // them on retry), REVOKED is intentionally released — matching
+  // ExchangeAccountService.replaceDeadDuplicate.
   const pendingRef = isKodiak
     ? form.accountId.trim()
     : /^\d+$/.test(form.accountIndex.trim())
@@ -104,7 +107,7 @@ export const ConnectExchangeAccount: React.FC<ConnectExchangeAccountProps> = ({
         account.exchange === form.exchange &&
         account.environment === form.environment &&
         account.accountRef === pendingRef &&
-        account.status !== "REVOKED"
+        account.status === "ACTIVE"
     );
 
   const duplicateVenueNotice =

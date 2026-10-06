@@ -62,6 +62,14 @@ export interface ExchangeAccountServiceDeps {
   ) => Promise<{ verified: boolean; error?: string }>;
   userLevel: { recompute(userId: string): Promise<unknown> };
   /**
+   * Profile-cache invalidation hook (Fix B). The user profile
+   * (`user:profile:{userId}`, TTL 300s) caches `userLevel`; every account
+   * transition that recomputes the level must also clear it, otherwise
+   * `GET /api/user/profile` serves a stale REGISTERED until TTL expiry.
+   * Optional so unit tests can omit it; routes wire the real service.
+   */
+  onLevelChanged?: (userId: string) => Promise<unknown>;
+  /**
    * C3a: bots bound to the account. `countBoundBots` returns how many
    * *live* `bot_instances` rows reference it (`actual_state` in
    * STARTING/RUNNING/STOPPING — the only states that may still trade on the
@@ -159,6 +167,18 @@ export class ExchangeAccountService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/duplicate key|unique constraint/i.test(message)) {
+        // Fix B: a stranded INVALID/PENDING row for the same
+        // (user, exchange, environment, account_ref) must not block a retry
+        // with corrected credentials — Lighter rotations reuse the account
+        // index, so the unique key is identical. An ACTIVE row stays blocked
+        // (genuine duplicate); a dead row is replaced with the new envelope.
+        const replaced = await this.replaceDeadDuplicate(
+          userId,
+          request,
+          credentialsEncrypted,
+          encryptionVersion
+        );
+        if (replaced) return replaced;
         return {
           success: false,
           message: "This account is already connected",
@@ -193,6 +213,7 @@ export class ExchangeAccountService {
         false
       );
       await this.deps.userLevel.recompute(userId);
+      await this.notifyLevelChanged(userId);
       return {
         success: false,
         message: live.error ?? "Credential verification failed",
@@ -215,6 +236,7 @@ export class ExchangeAccountService {
       true
     );
     const level = await this.deps.userLevel.recompute(userId);
+    await this.notifyLevelChanged(userId);
     try {
       await this.deps.auditLogRepository?.logEvent({
         userId,
@@ -274,6 +296,7 @@ export class ExchangeAccountService {
         false
       );
       await this.deps.userLevel.recompute(userId);
+      await this.notifyLevelChanged(userId);
       return {
         success: false,
         message: "Stored credentials are unreadable",
@@ -305,6 +328,7 @@ export class ExchangeAccountService {
         false
       );
       await this.deps.userLevel.recompute(userId);
+      await this.notifyLevelChanged(userId);
       return {
         success: false,
         message: live.error ?? "Verification failed",
@@ -324,6 +348,7 @@ export class ExchangeAccountService {
       true
     );
     await this.deps.userLevel.recompute(userId);
+    await this.notifyLevelChanged(userId);
     const accounts =
       await this.deps.exchangeAccountRepository.listAccounts(userId);
     const verified = accounts.find(a => a.id === accountId) ?? {
@@ -376,6 +401,7 @@ export class ExchangeAccountService {
     );
     if (!deleted) return { success: false, message: "Account not found" };
     await this.deps.userLevel.recompute(userId);
+    await this.notifyLevelChanged(userId);
     try {
       await this.deps.auditLogRepository?.logEvent({
         userId,
@@ -393,6 +419,65 @@ export class ExchangeAccountService {
           : "Exchange account disconnected",
       clearedBots,
     };
+  }
+
+  /**
+   * Replace a dead duplicate row (INVALID/PENDING) with fresh credentials.
+   *
+   * Returns the full connect result when a dead row was found and replaced,
+   * or null when the duplicate is a live row that must stay blocked. The
+   * replacement deletes the dead row and re-runs the normal connect path so
+   * verification + level recompute stay in one place.
+   */
+  private async replaceDeadDuplicate(
+    userId: string,
+    request: ConnectExchangeAccountRequest,
+    credentialsEncrypted: string,
+    encryptionVersion: number | null
+  ): Promise<ConnectResult | null> {
+    const adapter = getCredentialAdapter(request.exchange);
+    const accountRef = adapter ? adapter.accountRef(request) : null;
+    if (!accountRef) return null;
+    const accounts =
+      await this.deps.exchangeAccountRepository.listAccounts(userId);
+    const dead = accounts.find(
+      a =>
+        a.exchange === request.exchange &&
+        a.environment === request.environment &&
+        a.accountRef === accountRef &&
+        (a.status === "INVALID" || a.status === "PENDING")
+    );
+    if (!dead) return null;
+    this.deps.logger?.info("Replacing dead duplicate account on retry", {
+      userId,
+      accountId: dead.id,
+      exchange: request.exchange,
+      environment: request.environment,
+      previousStatus: dead.status,
+    });
+    await this.deps.exchangeAccountRepository.deleteAccount(userId, dead.id);
+    // Re-run the normal path with the fresh envelope (recursion depth 1:
+    // the dead row is gone, so a second duplicate means a live row won the
+    // race and the recursive call returns the blocked-duplicate result).
+    void credentialsEncrypted;
+    void encryptionVersion;
+    return this.connectAccount(userId, request);
+  }
+
+  /**
+   * Best-effort profile-cache invalidation after any level recompute.
+   * Failures only warn — the level write already landed; the cache TTL
+   * (300s) bounds the staleness.
+   */
+  private async notifyLevelChanged(userId: string): Promise<void> {
+    try {
+      await this.deps.onLevelChanged?.(userId);
+    } catch (error) {
+      this.deps.logger?.warn("Profile cache invalidation failed", {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /**

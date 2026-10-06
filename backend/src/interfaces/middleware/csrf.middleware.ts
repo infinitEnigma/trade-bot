@@ -120,6 +120,7 @@ export function csrfTokenMiddleware(
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
+      path: "/",
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     });
 
@@ -131,6 +132,7 @@ export function csrfTokenMiddleware(
       httpOnly: false, // Client needs to read this
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
+      path: "/",
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     });
 

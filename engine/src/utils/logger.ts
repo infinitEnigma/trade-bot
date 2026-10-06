@@ -21,7 +21,7 @@ const logger = winston.createLogger({
       return `${timestamp} [ENGINE] ${level.toUpperCase()}: ${message}${metaStr}`;
     })
   ),
-  defaultMeta: { service: "kodiak-engine" },
+  defaultMeta: { service: "trading-engine" },
   transports: [
     // Console transport for development
     new winston.transports.Console({

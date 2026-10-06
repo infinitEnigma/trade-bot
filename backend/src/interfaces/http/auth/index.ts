@@ -66,6 +66,7 @@ router.post(
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
+        path: "/",
         maxAge: 4 * 60 * 60 * 1000, // 4 hours
       });
 
@@ -73,6 +74,7 @@ router.post(
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
+        path: "/",
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       });
 
@@ -187,6 +189,7 @@ router.post("/login", validators.login, async (req: Request, res: Response) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
+      path: "/",
       maxAge: 4 * 60 * 60 * 1000, // 4 hours
     });
 
@@ -194,6 +197,7 @@ router.post("/login", validators.login, async (req: Request, res: Response) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
+      path: "/",
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     });
 
@@ -244,6 +248,7 @@ router.post(
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
+        path: "/",
         maxAge: 4 * 60 * 60 * 1000, // 4 hours
       });
 
@@ -251,6 +256,7 @@ router.post(
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
+        path: "/",
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       });
 
@@ -300,12 +306,14 @@ router.post("/logout", async (req: Request, res: Response) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
+      path: "/",
     });
 
     res.clearCookie("refreshToken", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
+      path: "/",
     });
 
     // Clear CSRF tokens as well for complete session cleanup
@@ -313,12 +321,14 @@ router.post("/logout", async (req: Request, res: Response) => {
       httpOnly: false,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
+      path: "/",
     });
 
     res.clearCookie("csrfSecret", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
+      path: "/",
     });
 
     authLogger.info("User logged out successfully", {
@@ -657,6 +667,7 @@ router.get("/csrf-token", async (req: Request, res: Response) => {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
           sameSite: "strict",
+          path: "/",
           maxAge: 24 * 60 * 60 * 1000, // 24 hours
         });
 
@@ -664,6 +675,7 @@ router.get("/csrf-token", async (req: Request, res: Response) => {
           httpOnly: false, // Client needs to read this
           secure: process.env.NODE_ENV === "production",
           sameSite: "strict",
+          path: "/",
           maxAge: 24 * 60 * 60 * 1000, // 24 hours
         });
 
@@ -681,6 +693,7 @@ router.get("/csrf-token", async (req: Request, res: Response) => {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
+        path: "/",
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
       });
 
@@ -688,6 +701,7 @@ router.get("/csrf-token", async (req: Request, res: Response) => {
         httpOnly: false, // Client needs to read this
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
+        path: "/",
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
       });
 
