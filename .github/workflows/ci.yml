@@ -126,8 +126,10 @@ jobs:
           LIGHTER_PROBE_BURST: "30"
           ADMIN_CHAIN_ID: "80094"
           ADMIN_TOKEN_ID: "1695"
-          ADMIN_WALLET_ADDRESS: 0x959e2a4db1fa5d56b810759f2e6d80a01eb9e892
-          ADMIN_CONTRACT_ADDRESS: 0x5a30c392714a9a9a8177c7998d9d59c3dd120917
+          # Quoted: unquoted 0x… scalars are tagged as YAML ints (160-bit →
+          # invalid), which fails the whole workflow before any job starts.
+          ADMIN_WALLET_ADDRESS: "0x959e2a4db1fa5d56b810759f2e6d80a01eb9e892"
+          ADMIN_CONTRACT_ADDRESS: "0x5a30c392714a9a9a8177c7998d9d59c3dd120917"
           # LIGHTER_{ACCOUNT_INDEX,API_KEY_INDEX,PRIVATE_KEY,SIDECAR_URL}
           # intentionally absent — see header note on the B5 smoke test.
         run: npm test
