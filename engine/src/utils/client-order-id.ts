@@ -50,8 +50,14 @@ export const CLIENT_ORDER_ID_MAX_GENERATION = 36 ** 3 - 1;
 export class ClientOrderIdGenerator {
   private readonly botId: string;
   private readonly compact: string;
+  /**
+   * D3 sessions: per-run namespace so two runs in one session can never
+   * derive the same id. `null` = legacy bot-namespaced ids (pre-D snapshots
+   * keep resolving; the snapshot's migration-on-read covers the state).
+   */
+  private readonly namespace: string | null;
 
-  constructor(botId: string) {
+  constructor(botId: string, runId?: string) {
     if (!botId) {
       throw new Error("ClientOrderIdGenerator requires a non-empty botId");
     }
@@ -59,15 +65,22 @@ export class ClientOrderIdGenerator {
     // The UUID's hyphens carry no information; strip them so the remaining
     // 32 hex chars fit the exchange's 36-char budget with room for the
     // level and side segments. Any other id keeps the same rule.
-    this.compact = botId.replace(/-/g, "");
+    // A run namespace hashes in alongside the bot id — deterministic, so
+    // ids stay restart-stable within the run.
+    const scope = runId ? `${botId}/${runId}` : botId;
+    this.compact = scope.replace(/-/g, "").replace(/\//g, "");
+    this.namespace = runId ?? null;
   }
 
   /** Bot-key segment of the requested width: short ids pass through, long
    * ones collapse to a deterministic sha256 prefix (stable across restarts). */
   private botKeyFor(width: number): string {
     if (this.compact.length <= width) return this.compact;
+    // Hash the full scope (bot + run namespace), not just the bot id, so
+    // two runs in one session hash to different keys.
+    const scope = this.namespace ? `${this.botId}/${this.namespace}` : this.botId;
     return createHash("sha256")
-      .update(this.botId)
+      .update(scope)
       .digest("hex")
       .slice(0, width);
   }
@@ -119,7 +132,8 @@ export interface GridClientOrderIds {
 }
 
 export function createClientOrderIdGenerator(
-  botId: string
+  botId: string,
+  runId?: string
 ): GridClientOrderIds {
-  return new ClientOrderIdGenerator(botId);
+  return new ClientOrderIdGenerator(botId, runId);
 }

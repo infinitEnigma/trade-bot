@@ -89,7 +89,27 @@ export async function stopAll(
         error: error instanceof Error ? error.message : String(error),
       });
     }
+    // D3 sessions: stop every run's strategy too (primary already stopped).
+    if (runtime.runs) {
+      for (const [, run] of runtime.runs) {
+        if (run.strategy === runtime.strategy) continue;
+        try {
+          await run.strategy.stop();
+        } catch (error) {
+          logger.error("Error stopping run during shutdown", {
+            botId: runtime.botId,
+            runId: run.runId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
     runtime.stopTick();
+    if (runtime.runs) {
+      for (const [, run] of runtime.runs) {
+        if (run.stopTick !== runtime.stopTick) run.stopTick();
+      }
+    }
     try {
       await publishEvent(
         streamOps,

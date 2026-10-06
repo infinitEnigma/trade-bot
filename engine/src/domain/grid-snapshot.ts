@@ -55,6 +55,11 @@ export interface GridSnapshot {
   /** Format version - reject/ignore unknown versions on load. */
   version: 1;
   botId: string;
+  /**
+   * D3 sessions: the run this snapshot belongs to. Optional so pre-D
+   * `<botId>.json` files still load (migration-on-read); always written now.
+   */
+  runId?: string;
   symbol: string;
   gridSize: number;
   gridRangePercent: number;

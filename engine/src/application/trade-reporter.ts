@@ -32,6 +32,8 @@ import { logger } from "../utils/logger";
 
 export interface OrderIntentReport {
   botId: string;
+  /** D3 sessions: the run that placed the order (ledger `run_id`). */
+  runId?: string;
   symbol: string;
   side: "BUY" | "SELL";
   price: number;
@@ -41,6 +43,8 @@ export interface OrderIntentReport {
 
 export interface FillReport {
   botId: string;
+  /** D3 sessions: the run that booked the fill (ledger `run_id`). */
+  runId?: string;
   symbol: string;
   side: "BUY" | "SELL";
   /** Executed price of the fill (venue-reported, else the submitted limit). */
@@ -116,9 +120,12 @@ export class LedgerTradeReporter implements TradeReporter {
   ) {}
 
   async reportOrderIntent(intent: OrderIntentReport): Promise<boolean> {
+    // D3: `runId` is identity input only (backend resolves `run_id`) and
+    // never travels in the payload, whose contract is fixed by shared.
+    const { runId: _runId, ...payload } = intent;
     const result = await publishOrderIntent(
       this.streamOps,
-      { ...intent, engineId: this.engineId, engineEpoch: this.engineEpoch },
+      { ...payload, engineId: this.engineId, engineEpoch: this.engineEpoch },
       randomUUID()
     );
     if (!result.success) {
@@ -133,7 +140,8 @@ export class LedgerTradeReporter implements TradeReporter {
   async reportFill(fill: FillReport): Promise<void> {
     // The segment is identity input only: it shapes the fill id (A1) and never
     // travels in the payload, whose contract is fixed by `@trade-bot/shared`.
-    const { segment, ...payload } = fill;
+    // D3: `runId` likewise stays engine-side (backend resolves `run_id`).
+    const { segment, runId: _runId, ...payload } = fill;
     const fillId = synthesizeFillId(
       fill.botId,
       fill.clientOrderId,

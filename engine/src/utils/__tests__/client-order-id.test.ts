@@ -108,4 +108,36 @@ describe("ClientOrderIdGenerator", () => {
       ).not.toThrow();
     });
   });
+
+  // D3 sessions: per-run namespace.
+  describe("run namespace (D3)", () => {
+    const runGen = (botId: string, runId: string) =>
+      new ClientOrderIdGenerator(botId, runId);
+
+    it("keeps legacy ids byte-identical without a run", () => {
+      expect(runGen("bot-1", "").generate(0, "BUY")).toBe("bot1-00-B");
+      expect(gen(UUID).generate(0, "BUY")).toBe(
+        new ClientOrderIdGenerator(UUID).generate(0, "BUY")
+      );
+    });
+
+    it("isolates two runs in one session", () => {
+      const a = runGen(UUID, "run-a").generate(0, "BUY");
+      const b = runGen(UUID, "run-b").generate(0, "BUY");
+      expect(a).not.toBe(b);
+      // Restart-stable within the run.
+      expect(runGen(UUID, "run-a").generate(0, "BUY")).toBe(a);
+    });
+
+    it("keeps run ids inside the 36-char exchange contract", () => {
+      const generator = runGen(UUID, "run-1");
+      for (let level = 0; level < 40; level++) {
+        for (const side of ["BUY", "SELL"] as const) {
+          const id = generator.generate(level, side);
+          expect(id.length).toBeLessThanOrEqual(36);
+          expect(id).toMatch(/^[A-Za-z0-9][A-Za-z0-9-]*$/);
+        }
+      }
+    });
+  });
 });

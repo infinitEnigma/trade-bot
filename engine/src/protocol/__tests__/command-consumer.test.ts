@@ -106,10 +106,49 @@ describe("command-consumer processMessage", () => {
       "user-1",
       "strategy-1",
       { symbol: "BTC-USD" },
-      "corr-1"
+      "corr-1",
+      undefined
     );
     expect(handleStop).not.toHaveBeenCalled();
     expect(acks).toEqual(["1-0"]);
+  });
+
+  it("forwards session runs into handleStart (D3)", async () => {
+    const { ops } = makeStreamOps();
+    const { manager, handleStart } = makeManager();
+    const runs = [
+      {
+        runId: "run-1",
+        strategyId: "strategy-1",
+        configVersion: 1,
+        config: { symbol: "BTC-USD" },
+        notionalAmount: 1000,
+      },
+    ];
+    const command = createBotCommand(
+      "BOT_START",
+      {
+        botId: "bot-1",
+        userId: "user-1",
+        strategyId: "strategy-1",
+        configVersion: 1,
+        config: { symbol: "BTC-USD" },
+        runs,
+      },
+      "corr-runs"
+    );
+
+    await processMessage(ops, manager, msg("1-r", command), new Set());
+
+    expect(handleStart).toHaveBeenCalledWith(
+      ops,
+      "bot-1",
+      "user-1",
+      "strategy-1",
+      { symbol: "BTC-USD" },
+      "corr-runs",
+      runs
+    );
   });
 
   it("dispatches a protocol EMERGENCY_STOP envelope (accept + handleEmergencyStop) and ACKs", async () => {

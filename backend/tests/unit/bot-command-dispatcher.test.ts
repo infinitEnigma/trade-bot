@@ -38,6 +38,7 @@ describe("BotCommandDispatcher (record-before-publish)", () => {
       findStrategyConfig: jest
         .fn()
         .mockResolvedValue({ symbol: "PERP_BTC_USDC", gridSize: 10 }),
+      getRunsForBot: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<BotLifecycleRepository>;
 
     engineProtocol = {
@@ -54,6 +55,8 @@ describe("BotCommandDispatcher (record-before-publish)", () => {
     repository.findStrategyConfig = jest
       .fn()
       .mockResolvedValue({ symbol: "PERP_BTC_USDC", gridSize: 10 });
+    // D3 sessions: no attached runs by default (legacy single-run path).
+    repository.getRunsForBot = jest.fn().mockResolvedValue([]);
     // The dispatcher passes a generated correlationId; echo it back so the
     // returned SendCommandResult shares the correlation that was tracked.
     engineProtocol.sendCommand = jest
@@ -119,6 +122,34 @@ describe("BotCommandDispatcher (record-before-publish)", () => {
       expect(state).toBe("FAILED");
       expect(errorCode).toBe("DISPATCH_FAILED");
       expect(correlationId).toBe(result.correlationId);
+    });
+
+    it("fans attached runs into the BOT_START payload (D3 sessions)", async () => {
+      repository.getRunsForBot = jest.fn().mockResolvedValue([
+        {
+          id: "run-1",
+          bot_id: "bot-1",
+          strategy_id: "strat-1",
+          config_version: 1,
+          config: { symbol: "PERP_BTC_USDC" },
+          notional_amount: "1000",
+          state: "STOPPED",
+          last_error_code: null,
+          created_at: "",
+          updated_at: "",
+        },
+      ]);
+
+      await dispatcher.sendStartCommand("bot-1", "user-1", "strat-1");
+
+      const payload = engineProtocol.sendCommand.mock.calls[0][1] as {
+        runs: Array<{ runId: string; strategyId: string }>;
+      };
+      expect(payload.runs).toHaveLength(1);
+      expect(payload.runs[0]).toMatchObject({
+        runId: "run-1",
+        strategyId: "strat-1",
+      });
     });
   });
 

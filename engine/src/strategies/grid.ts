@@ -93,6 +93,12 @@ export class GridTradingStrategy {
   private exchange: ExchangeClient;
   private levels: GridLevel[] = [];
   private botId: string;
+  /**
+   * D3 sessions: the run this strategy instance belongs to. Namespaces the
+   * client-order ids and the snapshot path; undefined = legacy bot-scoped
+   * behaviour (unit tests, pre-D call sites).
+   */
+  private runId?: string;
   private running: boolean = false;
   private currentPrice: number = 0;
   private baselinePrice: number = 0;
@@ -119,19 +125,21 @@ export class GridTradingStrategy {
     botId: string,
     config: GridStrategyConfig,
     exchange: ExchangeClient,
-    reporter?: TradeReporter
+    reporter?: TradeReporter,
+    runId?: string
   ) {
     this.botId = botId;
     this.config = config;
     this.exchange = exchange;
     this.reporter = reporter ?? null;
-    this.clientOrderIdGenerator = new ClientOrderIdGenerator(botId);
+    this.runId = runId;
+    this.clientOrderIdGenerator = new ClientOrderIdGenerator(botId, runId);
   }
 
   async initialize(currentPrice: number): Promise<void> {
     this.currentPrice = currentPrice;
 
-    const snapResult = loadGridSnapshotResult(this.botId);
+    const snapResult = loadGridSnapshotResult(this.botId, this.runId);
     const snapshot = snapResult.status === "OK" ? snapResult.snapshot : null;
     const canRestore =
       snapshot !== null &&
@@ -1075,6 +1083,9 @@ export class GridTradingStrategy {
     return {
       version: GRID_SNAPSHOT_VERSION,
       botId: this.botId,
+      // D3: stamp the run so the per-run path validates ownership. Undefined
+      // keeps legacy unit-test snapshots byte-identical.
+      ...(this.runId ? { runId: this.runId } : {}),
       symbol: this.config.symbol,
       gridSize: this.config.gridSize,
       gridRangePercent: this.config.gridRangePercent,

@@ -36,13 +36,17 @@ export function getSnapshotDir(): string {
   );
 }
 
-function snapshotFile(botId: string): string {
-  return path.join(getSnapshotDir(), `${botId}.json`);
+function snapshotFile(botId: string, runId?: string): string {
+  // D3 sessions: per-run layout `<botId>/<runId>.json`. Without a runId the
+  // legacy flat `<botId>.json` path is used (read fallback only — D3 always
+  // writes with a runId).
+  if (!runId) return path.join(getSnapshotDir(), `${botId}.json`);
+  return path.join(getSnapshotDir(), botId, `${runId}.json`);
 }
 
 /** Outcome of reading one snapshot file, distinguishing absent from invalid. */
 export type SnapshotLoadResult =
-  | { status: "OK"; snapshot: GridSnapshot }
+  | { status: "OK"; snapshot: GridSnapshot; migratedFromLegacy?: boolean }
   | { status: "MISSING" }
   | { status: "CORRUPT"; detail: string };
 
@@ -159,35 +163,72 @@ function validateLevel(level: unknown, index: number): Validation {
 }
 
 /**
- * Load a bot's grid snapshot, recovering the previous version on corruption.
- * Returns a typed result so callers can tell "no snapshot" from "corrupt".
+ * Load a bot run's grid snapshot, recovering the previous version on
+ * corruption. D3 sessions: tries `<botId>/<runId>.json` first, then falls
+ * back ONCE to the legacy flat `<botId>.json` (migration-on-read, Act-mode
+ * decision 3) — flagged via `migratedFromLegacy` so the caller can persist
+ * to the new path immediately. Returns a typed result so callers can tell
+ * "no snapshot" from "corrupt".
  */
-export function loadGridSnapshotResult(botId: string): SnapshotLoadResult {
-  const file = snapshotFile(botId);
+export function loadGridSnapshotResult(
+  botId: string,
+  runId?: string
+): SnapshotLoadResult {
+  const file = snapshotFile(botId, runId);
   const primary = readSnapshotFile(file, botId);
-  if (primary.status !== "CORRUPT") return primary;
+  if (primary.status !== "MISSING" || !runId) {
+    if (primary.status !== "CORRUPT") return primary;
 
-  const previous = readSnapshotFile(`${file}.prev`, botId);
-  if (previous.status === "OK") {
-    logger.warn("Recovered grid snapshot from the previous version", {
+    const previous = readSnapshotFile(`${file}.prev`, botId);
+    if (previous.status === "OK") {
+      logger.warn("Recovered grid snapshot from the previous version", {
+        botId,
+        runId,
+        detail: primary.detail,
+      });
+      return previous;
+    }
+    return primary;
+  }
+
+  // New path missing but a run was requested: try the legacy flat file once.
+  const legacy = readSnapshotFile(snapshotFile(botId), botId);
+  if (legacy.status === "OK") {
+    logger.warn("Loaded legacy grid snapshot (migration-on-read)", {
       botId,
-      detail: primary.detail,
+      runId,
     });
-    return previous;
+    return { ...legacy, migratedFromLegacy: true };
+  }
+  if (legacy.status === "CORRUPT") {
+    const legacyPrev = readSnapshotFile(`${snapshotFile(botId)}.prev`, botId);
+    if (legacyPrev.status === "OK") {
+      logger.warn(
+        "Recovered legacy grid snapshot from the previous version",
+        { botId, runId, detail: legacy.detail }
+      );
+      return { ...legacyPrev, migratedFromLegacy: true };
+    }
   }
   return primary;
 }
 
 /**
- * Load a bot's grid snapshot, or null if none exists / is unreadable / invalid.
+ * Load a bot run's grid snapshot, or null if none exists / is unreadable /
+ * invalid.
  */
-export function loadGridSnapshot(botId: string): GridSnapshot | null {
-  const result = loadGridSnapshotResult(botId);
+export function loadGridSnapshot(
+  botId: string,
+  runId?: string
+): GridSnapshot | null {
+  const result = loadGridSnapshotResult(botId, runId);
   return result.status === "OK" ? result.snapshot : null;
 }
 
 /**
- * Persist a bot's grid snapshot. Never throws - failures are logged only.
+ * Persist a bot run's grid snapshot. Never throws - failures are logged only.
+ * D3 always writes the per-run path (creating `<botId>/` as needed); the
+ * snapshot stamps `runId` so a future load validates ownership.
  */
 export async function saveGridSnapshot(snapshot: GridSnapshot): Promise<void> {
   try {
@@ -199,13 +240,14 @@ export async function saveGridSnapshot(snapshot: GridSnapshot): Promise<void> {
       checksum: computeSnapshotChecksum(payload),
     };
     durableWriteSync(
-      getSnapshotDir(),
-      `${snapshot.botId}.json`,
+      snapshot.runId ? path.join(getSnapshotDir(), snapshot.botId) : getSnapshotDir(),
+      snapshot.runId ? `${snapshot.runId}.json` : `${snapshot.botId}.json`,
       JSON.stringify(stamped, null, 2)
     );
   } catch (error) {
     logger.error("Failed to persist grid snapshot", {
       botId: snapshot.botId,
+      runId: snapshot.runId,
       error: messageOf(error),
     });
   }

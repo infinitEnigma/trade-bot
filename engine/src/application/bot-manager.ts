@@ -13,7 +13,7 @@ import { createExchangeClient } from "../exchanges/factory";
 import { isEngineCredentials } from "@trade-bot/shared";
 import { RedisStreamOperations } from "../infrastructure/redis/streams";
 import { logger } from "../utils/logger";
-import { BotRuntime, EngineIdentity } from "../domain/bot-runtime";
+import { BotRuntime, EngineIdentity, StrategyRunState } from "../domain/bot-runtime";
 import { ExchangeOpenOrder, ExchangePosition } from "../domain/exchange";
 import {
   publishEvent,
@@ -161,7 +161,10 @@ export class BotManager {
   }
 
   /**
-   * Handle BOT_START command.
+   * Handle BOT_START command. D3 sessions: the payload carries `runs[]`
+   * (backend dispatcher); one credential fetch + one exchange client serve
+   * all runs. Legacy single-strategy payloads (no `runs`) start exactly one
+   * run mirroring the old behaviour.
    */
   async handleStart(
     streamOps: RedisStreamOperations,
@@ -169,7 +172,14 @@ export class BotManager {
     userId: string,
     strategyId: string,
     config: Record<string, unknown>,
-    correlationId: string
+    correlationId: string,
+    runs?: Array<{
+      runId: string;
+      strategyId: string;
+      configVersion: number;
+      config: Record<string, unknown>;
+      notionalAmount: number;
+    }>
   ): Promise<void> {
     // Race guard
     if (this.initializing.has(botId) || this.bots.has(botId)) {
@@ -186,13 +196,27 @@ export class BotManager {
     }
     this.initializing.add(botId);
     try {
-      await this.doStartBot(
+      // Session fan-out: one entry per run, else the legacy single run.
+      const runSpecs =
+        runs && runs.length > 0
+          ? runs
+          : [
+              {
+                runId: undefined as unknown as string,
+                strategyId,
+                configVersion: 1,
+                config,
+                notionalAmount: 0,
+              },
+            ];
+      await this.doStartSession(
         streamOps,
         botId,
         userId,
         strategyId,
         config,
-        correlationId
+        correlationId,
+        runSpecs
       );
     } finally {
       this.initializing.delete(botId);
@@ -231,6 +255,22 @@ export class BotManager {
     try {
       const stopProblems = await existing.strategy.stop();
       existing.stopTick();
+      // D3 sessions: stop every run's strategy + runner, not just the
+      // primary. Legacy single-run sessions carry one entry, so this is a
+      // no-op for them.
+      if (existing.runs) {
+        for (const [, run] of existing.runs) {
+          if (run.strategy !== existing.strategy) {
+            try {
+              const extra = await run.strategy.stop();
+              stopProblems.push(...extra);
+            } catch (error) {
+              stopProblems.push(messageOf(error));
+            }
+          }
+          if (run.stopTick !== existing.stopTick) run.stopTick();
+        }
+      }
       this.bots.delete(botId);
 
       // A clean STOPPED must never hide orders a cancel could not confirm (N5):
@@ -254,6 +294,11 @@ export class BotManager {
       );
     } catch (error) {
       existing.stopTick();
+      if (existing.runs) {
+        for (const [, run] of existing.runs) {
+          if (run.stopTick !== existing.stopTick) run.stopTick();
+        }
+      }
       this.bots.delete(botId);
       logger.error("Strategy stop error", {
         botId,
@@ -317,7 +362,8 @@ export class BotManager {
       reason
     );
 
-    // 1. Kill trading first (strategy.stop cancels the orders it tracks).
+    // 1. Kill trading first (every run's strategy.stop cancels the orders it
+    // tracks).
     let problems: string[] = [];
     try {
       problems = await existing.strategy.stop();
@@ -328,7 +374,27 @@ export class BotManager {
         error: messageOf(error),
       });
     }
+    if (existing.runs) {
+      for (const [, run] of existing.runs) {
+        if (run.strategy === existing.strategy) continue;
+        try {
+          problems.push(...(await run.strategy.stop()));
+        } catch (error) {
+          problems.push(messageOf(error));
+          logger.error("Emergency stop: run strategy stop error", {
+            botId,
+            runId: run.runId,
+            error: messageOf(error),
+          });
+        }
+      }
+    }
     existing.stopTick();
+    if (existing.runs) {
+      for (const [, run] of existing.runs) {
+        if (run.stopTick !== existing.stopTick) run.stopTick();
+      }
+    }
     this.bots.delete(botId);
 
     // 2. Venue-side cleanup (best-effort, never blocks the STOPPED report).
@@ -508,18 +574,28 @@ export class BotManager {
   }
 
   /**
-   * Core bot initialization.
+   * Core session initialization: ONE credential fetch + ONE exchange client,
+   * then one strategy + tick runner per run (D3, plan §D).
    */
-  private async doStartBot(
+  private async doStartSession(
     streamOps: RedisStreamOperations,
     botId: string,
     userId: string,
     strategyId: string,
     config: Record<string, unknown>,
-    correlationId: string
+    correlationId: string,
+    runSpecs: Array<{
+      runId?: string;
+      strategyId: string;
+      configVersion: number;
+      config: Record<string, unknown>;
+      notionalAmount: number;
+    }>
   ): Promise<void> {
-    let runner: StrategyRunner | null = null;
-    const stopRunner = (): void => runner?.stop();
+    const startedRunners: StrategyRunner[] = [];
+    const stopAllRunners = (): void => {
+      for (const r of startedRunners) r.stop();
+    };
 
     try {
       await this.publishStateChanged(
@@ -531,16 +607,11 @@ export class BotManager {
       );
       this.throwIfCancelled(botId);
 
-      // 1. Fetch credentials
+      // 1. Fetch credentials (once per session, not per strategy).
       const credentials = await fetchCredentials(botId, correlationId);
       this.throwIfCancelled(botId);
 
-      // 2. Connect exchange client. The credential fetcher already validated
-      // the envelope against the shared contract; the factory maps the
-      // `exchange` discriminator onto the concrete client (`kodiak` →
-      // Orderly-backed, `lighter` → REST + signer sidecar). An exchange
-      // outside the union fails here with a non-retryable
-      // UNSUPPORTED_EXCHANGE.
+      // 2. Connect exchange client (once per session).
       if (!isEngineCredentials(credentials)) {
         throw new CommandError(
           false,
@@ -548,82 +619,108 @@ export class BotManager {
         );
       }
       const exchangeClient = createExchangeClient(credentials);
-
-      // 3. Get market price
-      const symbol = String(config.symbol || "");
-      if (!symbol) {
-        throw new CommandError(false, "Strategy config is missing symbol");
-      }
       this.throwIfCancelled(botId);
-      const ticker = await exchangeClient.getTicker(symbol);
-      this.throwIfCancelled(botId);
-      const currentPrice = Number(ticker.mark_price || ticker.price);
-      if (!currentPrice) {
-        throw new CommandError(
-          false,
-          `Could not resolve current price for ${symbol}`
-        );
-      }
 
-      // 4. Create and start strategy. The ledger reporter closes over this
-      // engine's identity (engineId + epoch — the backend's authority check
-      // rejects payloads without them) and the events stream, so fills,
-      // positions and order intents reach the durable ledger (Phase 4).
+      // 3. One strategy + runner per run, sharing the session client.
       const tradeReporter = new LedgerTradeReporter(
         streamOps,
         this.engineId,
         this.epoch
       );
-      const gridStrategy = new GridTradingStrategy(
-        botId,
-        {
-          symbol,
-          gridSize: Number(config.gridSize) || 10,
-          gridRangePercent: Number(config.gridRange) || 5,
-          orderQuantity: Number(config.orderQuantity) || 1,
-          // Optional take profit (the API validates it as `takeProfit`). When
-          // set, exits price `takeProfitPercent` above the executed entry
-          // instead of at the next grid line (N6).
-          takeProfitPercent:
-            Number(config.takeProfit) > 0
-              ? Number(config.takeProfit)
-              : undefined,
-        },
-        exchangeClient,
-        tradeReporter
-      );
-      await gridStrategy.initialize(currentPrice);
-      this.throwIfCancelled(botId);
-      await gridStrategy.start();
-      this.throwIfCancelled(botId);
+      const runs = new Map<string, StrategyRunState>();
+      let primarySymbol = "";
+      let primaryStrategy: GridTradingStrategy | null = null;
+      let primaryStop: () => void = stopAllRunners;
 
-      // 5. Non-overlapping strategy tick loop (single-flight guard inside StrategyRunner)
-      runner = new StrategyRunner(
-        botId,
-        TICK_INTERVAL_MS,
-        () => gridStrategy.tick(),
-        {
-          onError: error =>
-            logger.error("Strategy tick error", {
-              botId,
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          onSkip: () =>
-            logger.warn("Previous tick still running, skipping", { botId }),
+      for (const spec of runSpecs) {
+        const runConfig = spec.config ?? config;
+        const symbol = String(runConfig.symbol || "");
+        if (!symbol) {
+          throw new CommandError(false, "Strategy config is missing symbol");
         }
-      );
-      runner.start();
+        this.throwIfCancelled(botId);
+        const ticker = await exchangeClient.getTicker(symbol);
+        this.throwIfCancelled(botId);
+        const currentPrice = Number(ticker.mark_price || ticker.price);
+        if (!currentPrice) {
+          throw new CommandError(
+            false,
+            `Could not resolve current price for ${symbol}`
+          );
+        }
 
-      // Register bot
+        const gridStrategy = new GridTradingStrategy(
+          botId,
+          {
+            symbol,
+            gridSize: Number(runConfig.gridSize) || 10,
+            gridRangePercent: Number(runConfig.gridRange) || 5,
+            orderQuantity: Number(runConfig.orderQuantity) || 1,
+            takeProfitPercent:
+              Number(runConfig.takeProfit) > 0
+                ? Number(runConfig.takeProfit)
+                : undefined,
+          },
+          exchangeClient,
+          tradeReporter,
+          spec.runId
+        );
+        await gridStrategy.initialize(currentPrice);
+        this.throwIfCancelled(botId);
+        await gridStrategy.start();
+        this.throwIfCancelled(botId);
+
+        const runKey = spec.runId ?? strategyId;
+        const runner = new StrategyRunner(
+          runKey,
+          TICK_INTERVAL_MS,
+          () => gridStrategy.tick(),
+          {
+            onError: error =>
+              logger.error("Strategy tick error", {
+                botId,
+                runId: spec.runId,
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            onSkip: () =>
+              logger.warn("Previous tick still running, skipping", {
+                botId,
+                runId: spec.runId,
+              }),
+          }
+        );
+        runner.start();
+        startedRunners.push(runner);
+        const stopRunner = (): void => runner.stop();
+        runs.set(runKey, {
+          runId: runKey,
+          strategyId: spec.strategyId,
+          strategy: gridStrategy,
+          stopTick: stopRunner,
+        });
+        if (!primaryStrategy) {
+          primaryStrategy = gridStrategy;
+          primarySymbol = symbol;
+          primaryStop = stopRunner;
+        }
+      }
+
+      if (!primaryStrategy) {
+        throw new CommandError(false, "Session has no runs to start");
+      }
+
+      // Register session (legacy single-strategy fields mirror the primary
+      // run so old readers keep working during the shim).
       this.bots.set(botId, {
         botId,
         strategyId,
         userId,
-        symbol,
+        symbol: primarySymbol,
         state: "RUNNING",
-        strategy: gridStrategy,
-        stopTick: stopRunner,
+        strategy: primaryStrategy,
+        stopTick: primaryStop,
         exchangeClient,
+        runs,
       });
 
       await this.publishStateChanged(
@@ -632,10 +729,10 @@ export class BotManager {
         "STARTING",
         "RUNNING",
         correlationId,
-        "started"
+        `started (${runs.size} run${runs.size === 1 ? "" : "s"})`
       );
     } catch (error) {
-      stopRunner();
+      stopAllRunners();
       this.bots.delete(botId);
       const err = error instanceof Error ? error : new Error(String(error));
       await this.publishFailed(
@@ -654,13 +751,6 @@ export class BotManager {
         correlationId,
         err.message
       );
-      // L22: the outcome is already authoritative on the wire (COMMAND_FAILED
-      // + STATE_CHANGED ERROR), so retrying this command can only re-run a
-      // start the backend has failed. Rethrowing the original error left
-      // plain errors (axios 4xx, unknown market, ...) classified as
-      // retryable, and the consumer redelivered the same command forever
-      // (42 deliveries in 3.2 h in the live log). Surface every post-report
-      // failure as a non-retryable CommandError so the consumer ACKs it.
       const reported = new CommandError(false, err.message);
       reported.stack = err.stack ?? reported.stack;
       throw reported;

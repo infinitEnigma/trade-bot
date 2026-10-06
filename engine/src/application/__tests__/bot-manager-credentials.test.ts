@@ -219,4 +219,62 @@ describe("BotManager.handleStart credential-contract slice (workstream A)", () =
     ).toHaveLength(1);
     expect(manager.hasBot("bot-1")).toBe(false);
   });
+
+  // D3 sessions: one fetch + one client, one strategy/runner per run.
+  it("fans a session out to N runs over one exchange client", async () => {
+    fetchCredentialsMock.mockResolvedValue({
+      exchange: "kodiak",
+      environment: "testnet",
+      accountRef: "0xabc",
+      credentials: {
+        accountId: "0xabc",
+        accessKey: "key",
+        secretKey: "secret",
+      },
+    });
+    const client = {
+      getTicker: jest.fn(async (symbol: string) => ({
+        symbol,
+        price: 100,
+        mark_price: 100,
+      })),
+    };
+    createExchangeClientMock.mockReturnValue(client);
+
+    const manager = makeManager();
+    const { ops } = makeStreamOps();
+    await manager.handleStart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "user-1",
+      "strategy-1",
+      { symbol: "S" },
+      "corr-session",
+      [
+        {
+          runId: "run-1",
+          strategyId: "strategy-1",
+          configVersion: 1,
+          config: { symbol: "S" },
+          notionalAmount: 100,
+        },
+        {
+          runId: "run-2",
+          strategyId: "strategy-2",
+          configVersion: 1,
+          config: { symbol: "S" },
+          notionalAmount: 200,
+        },
+      ]
+    );
+
+    // One credential fetch + one client for the whole session.
+    expect(fetchCredentialsMock).toHaveBeenCalledTimes(1);
+    expect(createExchangeClientMock).toHaveBeenCalledTimes(1);
+    const runtime = manager.getBotRuntimes().get("bot-1");
+    expect(runtime?.runs?.size).toBe(2);
+    expect(runtime?.exchangeClient).toBe(client);
+    expect(client.getTicker).toHaveBeenCalledTimes(2);
+  });
 });

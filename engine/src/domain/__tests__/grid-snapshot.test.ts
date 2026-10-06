@@ -190,4 +190,55 @@ describe("grid-snapshot state persistence", () => {
       expect(loadGridSnapshotResult("bot-1").status).toBe("CORRUPT");
     });
   });
+
+  // D3 sessions: per-run layout + legacy migration-on-read.
+  describe("sessions (D3)", () => {
+    it("round-trips a run snapshot through the per-run path", async () => {
+      useTempDir();
+      await saveGridSnapshot({ ...validSnapshot(), runId: "run-1" });
+
+      expect(
+        fs.existsSync(path.join(tmpDir, "bot-1", "run-1.json"))
+      ).toBe(true);
+      const loaded = loadGridSnapshot("bot-1", "run-1");
+      expect(loaded?.runId).toBe("run-1");
+      expect(loaded?.baselinePrice).toBe(100);
+    });
+
+    it("keeps two runs' snapshots independent", async () => {
+      useTempDir();
+      await saveGridSnapshot({
+        ...validSnapshot(),
+        runId: "run-1",
+        baselinePrice: 100,
+      });
+      await saveGridSnapshot({
+        ...validSnapshot(),
+        runId: "run-2",
+        baselinePrice: 200,
+      });
+
+      expect(loadGridSnapshot("bot-1", "run-1")?.baselinePrice).toBe(100);
+      expect(loadGridSnapshot("bot-1", "run-2")?.baselinePrice).toBe(200);
+    });
+
+    it("migrates a legacy flat snapshot on read (migration-on-read)", async () => {
+      useTempDir();
+      await saveGridSnapshot(validSnapshot());
+
+      const result = loadGridSnapshotResult("bot-1", "run-1");
+      expect(result.status).toBe("OK");
+      if (result.status === "OK") {
+        expect(result.migratedFromLegacy).toBe(true);
+        expect(result.snapshot.baselinePrice).toBe(100);
+      }
+    });
+
+    it("reports MISSING for a run with no snapshot anywhere", () => {
+      useTempDir();
+      expect(loadGridSnapshotResult("bot-1", "run-9")).toEqual({
+        status: "MISSING",
+      });
+    });
+  });
 });

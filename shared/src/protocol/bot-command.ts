@@ -66,7 +66,21 @@ export const DEFAULT_EMERGENCY_STOP_ACTION: EmergencyStopAction =
 /**
  * Start a bot. `config` carries non-secret strategy configuration only.
  * The engine fetches credentials out-of-band after COMMAND_ACCEPTED.
+ *
+ * D3 sessions: `runs` carries the session fan-out (one entry per run).
+ * Present on backend-issued commands; absent on legacy payloads, which the
+ * engine treats as a single run mirroring the old behaviour.
  */
+export interface SessionRunSpec {
+  runId: string;
+  strategyId: string;
+  /** Version of the strategy config, for cache invalidation / audit. */
+  configVersion: number;
+  /** Non-secret strategy configuration snapshot (symbol, grid params, ...). */
+  config: Record<string, unknown>;
+  notionalAmount: number;
+}
+
 export interface StartBotCommandPayload {
   botId: string;
   userId: string;
@@ -75,6 +89,7 @@ export interface StartBotCommandPayload {
   configVersion: number;
   /** Non-secret strategy configuration (symbol, grid params, ...). */
   config: Record<string, unknown>;
+  runs?: SessionRunSpec[];
 }
 
 export interface StopBotCommandPayload {

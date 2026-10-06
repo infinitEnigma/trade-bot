@@ -248,7 +248,8 @@ async function handleCommand(
       payload.userId,
       payload.strategyId,
       payload.config,
-      command.correlationId
+      command.correlationId,
+      payload.runs
     );
   } else if (isBotStopCommand(command)) {
     // Parity with BOT_START: the engine must ACK every command it consumes.
