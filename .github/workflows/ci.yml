@@ -32,7 +32,9 @@ permissions:
 jobs:
   gates:
     name: format · lint · build · test
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest migrates to Ubuntu 26 from 2026-10-19; pinning
+    # keeps the runner surprise-free (prod boxes run Ubuntu 22).
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     services:
@@ -61,10 +63,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        # v5: Node 24 runtime — v4 targets the deprecated Node 20.
+        uses: actions/checkout@v5
 
       - name: Setup Node (version from .nvmrc, npm cache)
-        uses: actions/setup-node@v4
+        # v5: Node 24 runtime — v4 targets the deprecated Node 20.
+        uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: npm

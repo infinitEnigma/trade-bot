@@ -785,8 +785,12 @@ describe("KodiakClient", () => {
       const start = Date.now();
       await (client as any).delay(100);
       const end = Date.now();
-      console.log("last one - delay execution", end - start);
-      expect(end - start).toBeGreaterThanOrEqual(100);
+      const elapsed = end - start;
+      console.log("last one - delay execution", elapsed);
+      // 5ms slack: libuv timer granularity + Date.now() truncation can report
+      // setTimeout(100) as 99ms (CI run 37532180933 failed on exactly that).
+      // The bound still fails a missing or short-circuited delay.
+      expect(elapsed).toBeGreaterThanOrEqual(95);
     });
   });
 });
