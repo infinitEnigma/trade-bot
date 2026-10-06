@@ -161,13 +161,33 @@ describe("PositionRepositoryAdapter", () => {
   });
 
   describe("getPosition", () => {
+    // R2: the lookup must be keyed by exchange_account_id — with several
+    // accounts holding the same symbol, a userId-only query answered "most
+    // recently updated row wins", which can be the WRONG account's position.
+    it("keys the query by exchange_account_id, not by user (R2)", async () => {
+      (query as jest.Mock).mockResolvedValue({ rows: [] });
+      const adapter = new PositionRepositoryAdapter();
+      const accountId = "test-exchange-account-id";
+      const symbol = "BTC-USD";
+
+      await adapter.getPosition(accountId, symbol);
+
+      const [sql, params] = (query as jest.Mock).mock.calls[0];
+      expect(sql).toContain("ep.exchange_account_id = $1");
+      expect(sql).toContain("ep.symbol = $2");
+      // The old userId-only heuristic must not come back:
+      expect(sql).not.toContain("ORDER BY ep.updated_at DESC");
+      expect(sql).not.toContain("ea.user_id = $1");
+      expect(params).toEqual([accountId, symbol]);
+    });
+
     it("should return null when position not found", async () => {
       (query as jest.Mock).mockResolvedValue({ rows: [] });
       const adapter = new PositionRepositoryAdapter();
-      const userId = "test-user-id";
+      const accountId = "test-exchange-account-id";
       const symbol = "BTC-USD";
 
-      const position = await adapter.getPosition(userId, symbol);
+      const position = await adapter.getPosition(accountId, symbol);
 
       expect(position).toBeNull();
       expect(query).toHaveBeenCalled();
@@ -185,10 +205,10 @@ describe("PositionRepositoryAdapter", () => {
       };
       (query as jest.Mock).mockResolvedValue({ rows: [mockPositionRow] });
       const adapter = new PositionRepositoryAdapter();
-      const userId = "test-user-id";
+      const accountId = "test-exchange-account-id";
       const symbol = "BTC-USD";
 
-      const position = await adapter.getPosition(userId, symbol);
+      const position = await adapter.getPosition(accountId, symbol);
 
       expect(position).toBeInstanceOf(Position);
       expect(position!.symbol).toBe("BTC-USD");
@@ -207,10 +227,10 @@ describe("PositionRepositoryAdapter", () => {
       };
       (query as jest.Mock).mockResolvedValue({ rows: [mockPositionRow] });
       const adapter = new PositionRepositoryAdapter();
-      const userId = "test-user-id";
+      const accountId = "test-exchange-account-id";
       const symbol = "BTC-USD";
 
-      const position = await adapter.getPosition(userId, symbol);
+      const position = await adapter.getPosition(accountId, symbol);
 
       expect(position).toBeNull();
       // We don't expect a warn log here because the invalid position is handled gracefully without exception
@@ -228,10 +248,10 @@ describe("PositionRepositoryAdapter", () => {
       };
       (query as jest.Mock).mockResolvedValue({ rows: [mockPositionRow] });
       const adapter = new PositionRepositoryAdapter();
-      const userId = "test-user-id";
+      const accountId = "test-exchange-account-id";
       const symbol = "BTC-USD";
 
-      const position = await adapter.getPosition(userId, symbol);
+      const position = await adapter.getPosition(accountId, symbol);
 
       expect(position).toBeNull();
       expect(logger.error).toHaveBeenCalled();
@@ -240,10 +260,10 @@ describe("PositionRepositoryAdapter", () => {
     it("should throw error when query fails", async () => {
       (query as jest.Mock).mockRejectedValue(new Error("Query failed"));
       const adapter = new PositionRepositoryAdapter();
-      const userId = "test-user-id";
+      const accountId = "test-exchange-account-id";
       const symbol = "BTC-USD";
 
-      await expect(adapter.getPosition(userId, symbol)).rejects.toThrow(
+      await expect(adapter.getPosition(accountId, symbol)).rejects.toThrow(
         "Failed to get position"
       );
     });

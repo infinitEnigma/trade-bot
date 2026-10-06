@@ -154,15 +154,19 @@ describe("PositionService", () => {
   });
 
   describe("getPosition", () => {
-    it("should return single position by symbol", async () => {
+    // R2: the domain read is account-scoped — a userId-only lookup cannot
+    // say which of several accounts' same-symbol rows answers.
+    const mockAccountId = "test-exchange-account-id";
+
+    it("should return the account's position by symbol", async () => {
       (mockPositionRepository.getPosition as jest.Mock).mockResolvedValue(
         mockPositions[0]
       );
 
-      const result = await service.getPosition(mockUserId, mockSymbol);
+      const result = await service.getPosition(mockAccountId, mockSymbol);
 
       expect(mockPositionRepository.getPosition).toHaveBeenCalledWith(
-        mockUserId,
+        mockAccountId,
         mockSymbol
       );
       expect(result).toEqual(mockPositions[0]);
@@ -171,7 +175,7 @@ describe("PositionService", () => {
     it("should return null when position not found", async () => {
       (mockPositionRepository.getPosition as jest.Mock).mockResolvedValue(null);
 
-      const result = await service.getPosition(mockUserId, "INVALID/SYMBOL");
+      const result = await service.getPosition(mockAccountId, "INVALID/SYMBOL");
 
       expect(result).toBeNull();
       expect(mockLogger.debug).toHaveBeenCalledWith(
@@ -186,7 +190,7 @@ describe("PositionService", () => {
         testError
       );
 
-      const result = await service.getPosition(mockUserId, mockSymbol);
+      const result = await service.getPosition(mockAccountId, mockSymbol);
 
       expect(result).toBeNull();
       expect(mockLogger.error).toHaveBeenCalled();

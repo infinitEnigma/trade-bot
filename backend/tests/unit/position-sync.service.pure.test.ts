@@ -113,7 +113,6 @@ describe("PositionSyncService", () => {
         success: true,
         data: { totalBalance: 10000 },
       });
-      (mockPositionRepository.getPosition as jest.Mock).mockResolvedValue(null);
       (mockPositionRepository.updatePosition as jest.Mock).mockResolvedValue(
         true
       );
@@ -157,7 +156,6 @@ describe("PositionSyncService", () => {
         success: true,
         data: { totalBalance: 10000 },
       });
-      (mockPositionRepository.getPosition as jest.Mock).mockResolvedValue(null);
       (mockPositionRepository.updatePosition as jest.Mock).mockRejectedValue(
         new Error("Database connection error")
       );
@@ -180,9 +178,6 @@ describe("PositionSyncService", () => {
         success: true,
         data: { totalBalance: 10000 },
       });
-      (mockPositionRepository.getPosition as jest.Mock)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
       (mockPositionRepository.updatePosition as jest.Mock)
         .mockRejectedValueOnce(new Error("Failed to store BTC position"))
         .mockResolvedValueOnce(true);
@@ -205,7 +200,6 @@ describe("PositionSyncService", () => {
         success: false,
         error: "Account info not available",
       });
-      (mockPositionRepository.getPosition as jest.Mock).mockResolvedValue(null);
       (mockPositionRepository.updatePosition as jest.Mock).mockResolvedValue(
         true
       );
@@ -385,20 +379,11 @@ describe("PositionSyncService", () => {
   });
 
   describe("storePositionInDatabase", () => {
-    it("should update existing positions in database", async () => {
-      const existingPosition = new Position(
-        mockSymbol,
-        "LONG",
-        0.1,
-        50000,
-        51000,
-        10,
-        0.01,
-        45000
-      );
-      (mockPositionRepository.getPosition as jest.Mock).mockResolvedValue(
-        existingPosition
-      );
+    // R2: no userId-only existence check runs here anymore — it could not
+    // address one account of many, and both of its branches called the same
+    // (no-op) writer. Every synced position is routed straight through
+    // updatePosition, which logs the observation.
+    it("routes each synced position through updatePosition without an existence check", async () => {
       (mockPositionRepository.updatePosition as jest.Mock).mockResolvedValue(
         true
       );
@@ -415,10 +400,7 @@ describe("PositionSyncService", () => {
 
       await service.syncPositionsFromExternalAPI(mockUserId);
 
-      expect(mockPositionRepository.getPosition).toHaveBeenCalledWith(
-        mockUserId,
-        mockSymbol
-      );
+      expect(mockPositionRepository.getPosition).not.toHaveBeenCalled();
       expect(mockPositionRepository.updatePosition).toHaveBeenCalled();
     });
   });
@@ -433,7 +415,6 @@ describe("PositionSyncService", () => {
         success: true,
         data: { totalBalance: 10000 },
       });
-      (mockPositionRepository.getPosition as jest.Mock).mockResolvedValue(null);
       (mockPositionRepository.updatePosition as jest.Mock).mockResolvedValue(
         true
       );

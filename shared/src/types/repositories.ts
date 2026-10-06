@@ -245,9 +245,19 @@ export interface IPositionRepository {
   getPositions(userId: string): Promise<Position[]>;
 
   /**
-   * Get position by symbol for a user
+   * Get the position a single exchange account holds for a symbol.
+   *
+   * Account-scoped deliberately (R2): with several accounts the same symbol
+   * can exist on more than one row, and a userId-only lookup cannot say which
+   * one answers. `UNIQUE(exchange_account_id, symbol)` (migration 013) makes
+   * this exactly one row — no ordering heuristic. The accountId's ownership is
+   * the caller's contract (routes validate it against `exchange_accounts`);
+   * for a user-level view use `getPositions(userId)` and aggregate explicitly.
    */
-  getPosition(userId: string, symbol: string): Promise<Position | null>;
+  getPosition(
+    exchangeAccountId: string,
+    symbol: string
+  ): Promise<Position | null>;
 
   /**
    * Update position data

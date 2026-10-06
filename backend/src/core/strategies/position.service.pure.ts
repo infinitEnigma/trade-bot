@@ -123,28 +123,36 @@ export class PositionService {
   }
 
   /**
-   * Get specific position by symbol
+   * Get the position a single exchange account holds for a symbol
    *
    * Business Logic:
-   * - Retrieve single position for detailed analysis
-   * - Useful for position-specific operations
+   * - Retrieve one account's position for detailed analysis
+   * - R2: account-scoped — with several accounts holding the same symbol a
+   *   userId-only lookup cannot say which row answers. User-level views go
+   *   through `getPositions(userId)` + explicit aggregation.
    */
-  async getPosition(userId: string, symbol: string): Promise<Position | null> {
+  async getPosition(
+    exchangeAccountId: string,
+    symbol: string
+  ): Promise<Position | null> {
     try {
       const position = await this.deps.positionRepository.getPosition(
-        userId,
+        exchangeAccountId,
         symbol
       );
 
       if (!position) {
-        this.deps.logger.debug("Position not found", { userId, symbol });
+        this.deps.logger.debug("Position not found", {
+          exchangeAccountId,
+          symbol,
+        });
         return null;
       }
 
       return this.validateAndConvertPosition(position);
     } catch (error) {
       this.deps.logger.error("Failed to get position", {
-        userId,
+        exchangeAccountId,
         symbol,
         error: error instanceof Error ? error.message : String(error),
       });

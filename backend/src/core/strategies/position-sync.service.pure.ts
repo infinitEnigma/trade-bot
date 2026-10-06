@@ -227,18 +227,13 @@ export class PositionSyncService {
       0 // Default liquidation price
     );
 
-    // Update or create position in database using repository
-    const existingPosition = await this.deps.positionRepository.getPosition(
-      userId,
-      position.symbol
-    );
-    if (existingPosition) {
-      await this.deps.positionRepository.updatePosition(userId, position);
-    } else {
-      // We'll need to implement a createPosition method in the repository
-      // For now, we'll just update the existing position or skip if not found
-      await this.deps.positionRepository.updatePosition(userId, position);
-    }
+    // R2: the userId-only existence check is gone — it could not address one
+    // account of many, and both of its branches called this same writer
+    // anyway (`updatePosition` is a deliberate no-op; the account-keyed
+    // writer is `exchange-snapshot.adapter.replacePositions`, fed by the
+    // venue sync). The call is kept only to log that the sync observed this
+    // position.
+    await this.deps.positionRepository.updatePosition(userId, position);
   }
 
   /**

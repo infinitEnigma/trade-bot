@@ -54,14 +54,18 @@ export class PositionRepositoryAdapter implements IPositionRepository {
   }
 
   /**
-   * Get position by symbol for a user.
+   * Get the position one exchange account holds for a symbol.
    *
-   * C3b: with several accounts the same symbol may exist more than once —
-   * the most recently updated row answers (the userId-only interface cannot
-   * address one account of many; account-keyed readers go through
-   * `exchange-snapshot.adapter` / the portfolio routes).
+   * R2: keyed by `exchange_account_id` — `UNIQUE(exchange_account_id, symbol)`
+   * (migration 013) makes the answer exactly one row, so the old userId-only
+   * "most recently updated row wins" heuristic is gone. Ownership of the
+   * accountId is the caller's contract; user-level reads go through
+   * `getPositions(userId)` + explicit aggregation.
    */
-  async getPosition(userId: string, symbol: string): Promise<Position | null> {
+  async getPosition(
+    exchangeAccountId: string,
+    symbol: string
+  ): Promise<Position | null> {
     try {
       const result = await query<PositionRow>(
         `SELECT
@@ -74,11 +78,8 @@ export class PositionRepositoryAdapter implements IPositionRepository {
                     ep.mmr,
                     ep.est_liq_price as liquidationPrice
                 FROM exchange_positions ep
-                JOIN exchange_accounts ea ON ea.id = ep.exchange_account_id
-                WHERE ea.user_id = $1 AND ep.symbol = $2
-                ORDER BY ep.updated_at DESC
-                LIMIT 1`,
-        [userId, symbol]
+                WHERE ep.exchange_account_id = $1 AND ep.symbol = $2`,
+        [exchangeAccountId, symbol]
       );
 
       if (result.rows.length === 0) {
