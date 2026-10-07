@@ -20,9 +20,9 @@ updates:
       # a major line are auto-merged. Semver-major bumps land as review-only
       # PRs so contracts/migrations get human sign-off.
       - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
+        update-types: ["major"]
     groups:
       minor-and-patch:
         update-types:
-          - "version-update:semver-minor"
-          - "version-update:semver-patch"
+          - "minor"
+          - "patch"
