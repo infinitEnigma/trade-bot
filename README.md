@@ -1,48 +1,46 @@
 # Trade Bot
 
-**Automated Trading Platform**
+**Automated Trading Platform** — connect a wallet, link exchange API keys, configure a grid strategy, and let a durable, reconciled engine trade it while you watch (and intervene) from the browser.
 
+[![CI](https://github.com/infinitEnigma/trade-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/infinitEnigma/trade-bot/actions/workflows/ci.yml)
 [![License: Apache](https://img.shields.io/badge/License-Apache-yellow.svg)](LICENSE)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D24.15.0-brightgreen)](package.json)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](tsconfig.json)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](backend/tsconfig.json)
 
 ---
 
-## Overview
+## What it does
 
-Trade Bot is a **full-stack, chain-agnostic automated trading platform** for executing desired trading strategies. It uses a distributed architecture with a React frontend, Node.js Express backend, and an independent trading engine coordinated via Redis Streams.
+Trade Bot is a **full-stack, chain- and exchange-agnostic automated trading platform**. A user signs up, verifies an exchange account, and configures a strategy (today: grid trading with per-fill partial-fill accounting). From then on the system runs the loop autonomously — with the safety rails a real trading system needs:
 
-| Component            | Technology                               | Status         | Documentation                          |
-| -------------------- | ---------------------------------------- | -------------- | -------------------------------------- |
-| **Network**          | Multi-chain (EVM, Solana)                | ✅ Extensible  | -                                      |
-| **Exchange**         | Multi-exchange (Kodiak/Orderly, Lighter) | ✅ Extensible  | -                                      |
-| **Frontend**         | React 19 + Vite + Tailwind CSS           | ✅ Functional  | [📖 Frontend Docs](frontend/README.md) |
-| **Backend**          | Express.js + PostgreSQL + Redis          | ✅ Functional  | [📖 Backend Docs](backend/README.md)   |
-| **Trading Engine**   | TypeScript (Node.js)                     | ✅ Functional¹ | [📖 Engine Docs](engine/README.md)     |
-| **Shared Contracts** | TypeScript types                         | ✅ Functional  | -                                      |
+- **Desired vs. actual state, kept honest.** You say *start* or *stop*; the backend and an independent trading engine negotiate over Redis Streams (ACKs, correlation IDs, heartbeats, poison-message detection) until reality matches intent — or the system fails loudly and recovers.
+- **Crash recovery without duplicates.** If the engine dies, bots park in `UNKNOWN` and surface as *"Action required"* in the UI. **Resume** re-drives the **same** bot from its durable snapshot — no duplicate bots, no re-applied trades. A DB-level unique index enforces one live bot per strategy.
+- **A durable financial ledger.** Order intent and fills are persisted before/while they happen (`bot_trade_fills`, idempotent, reconciled against the venue), so PnL, fees, and positions survive restarts and reconcile to the row.
+- **Reconciliation over trust.** On every restart the engine cross-checks the exchange for orphans, partial fills, and drift instead of assuming its snapshot is truth.
 
-¹ Engine: the full grid trading path — slot reconciliation → delta-only fill
-booking → durable ledger rows, per-fill partial accounting (`PARTIALLY_FILLED`
-segments), restart-safe quantity snapshots — is implemented and unit-tested.
-The only remaining gate is the live Gate-4 run-2 _venue_ proof.
+### Architecture at a glance
 
-> **Maturity Assessment (2026-10-04)**: The architecture is a chain- and
-> exchange-agnostic distributed platform with a working control plane. The
-> Backend ↔ Engine protocol (Redis Streams, separated desired/actual lifecycle
-> state, manual ACK, correlation IDs, engine epochs, heartbeats, poison-message
-> detection) and the durable fill ledger (`ORDER_INTENT` + `TRADE_EXECUTED`
-> events → idempotent `bot_trade_fills` rows) are the most mature subsystems.
-> The toolchain is clean: `npm audit --omit=dev` reports **0 vulnerabilities**
-> in the production tree (the `moment` path-traversal advisory was cleared on
-> 2026-10-05; the remaining advisories are dev-only and have no upstream patch
-> yet — see [Test and gate commands](docs/OPERATIONS.md#6-test-and-gate-commands)),
-> lint is **0 errors / 0 warnings**, and the suites report **~3,000 passing tests**
-> (backend ~2,540, engine ~285, frontend ~206). The Lighter smoke test is
-> **env-gated**: it skips without credentials, but wherever `.env` is populated
-> it runs as a *live testnet* test — it needs the signing sidecar and is
-> load-sensitive, so re-run it in isolation before treating a failure as a
-> regression. Details and the one remaining live-test gate are tracked in the
-> [Project Review & Gap Analysis](docs/PROJECT_REVIEW_GAP_ANALYSIS.md).
+| Component            | Technology                               | Status        | Documentation                          |
+| -------------------- | ---------------------------------------- | ------------- | -------------------------------------- |
+| **Network**          | Multi-chain (EVM, Solana)                | ✅ Extensible | -                                      |
+| **Exchange**         | Multi-exchange (Kodiak/Orderly, Lighter) | ✅ Extensible | -                                      |
+| **Frontend**         | React 19 + Vite + Tailwind CSS           | ✅ Functional | [📖 Frontend Docs](frontend/README.md) |
+| **Backend**          | Express.js + PostgreSQL + Redis          | ✅ Functional | [📖 Backend Docs](backend/README.md)   |
+| **Trading Engine**   | TypeScript (Node.js)                     | ✅ Functional | [📖 Engine Docs](engine/README.md)     |
+| **Shared Contracts** | TypeScript types                         | ✅ Functional | -                                      |
+
+The Backend ↔ Engine protocol (Redis Streams, separated desired/actual
+lifecycle state, manual ACK, correlation IDs, engine epochs, heartbeats,
+poison-message detection) and the durable fill ledger (`ORDER_INTENT` +
+`TRADE_EXECUTED` events → idempotent `bot_trade_fills` rows) are the most
+mature subsystems. The toolchain is clean: `npm audit --omit=dev` reports
+**0 vulnerabilities** in the production tree, lint is **0 errors / 0
+warnings**, and the suites report **~3,100 passing tests** (backend 2,559,
+engine 310, frontend 223 — see [Test Coverage](#test-coverage)). Open
+engineering items are tracked in the
+[Project Review & Gap Analysis](docs/PROJECT_REVIEW_GAP_ANALYSIS.md); the one
+env-gated caveat (the live Lighter smoke test) is documented in
+[Test and gate commands](docs/OPERATIONS.md#6-test-and-gate-commands).
 
 ---
 
@@ -260,29 +258,13 @@ npm run format          # Format all packages
 npm run format:check    # Verify formatting without writing
 ```
 
-> **Run the suite on an idle machine.** `npm test` runs three suites
-> back-to-back and Jest fans out one worker per core, so the run competes with
-> any running stack for CPU, memory and the shared PostgreSQL/Redis. On an
-> otherwise idle host it is clean; on a loaded one — **especially older or
-> low-core hardware** — you can see suites that *fail to run* (worker OOM,
-> "Jest did not exit cleanly", TS/import errors) or timeouts on tests that
-> normally finish in milliseconds. Those are load artifacts, not regressions:
-> let the machine settle and re-run, or re-run a single workspace
-> (`cd backend && npx jest <path>`).
->
-> **The Lighter smoke test is a live testnet test.**
-> `engine/src/exchanges/lighter/__tests__/smoke.test.ts` is **env-gated** — it
-> skips when `LIGHTER_ACCOUNT_INDEX` / `LIGHTER_API_KEY_INDEX` /
-> `LIGHTER_PRIVATE_KEY` / `LIGHTER_SIDECAR_URL` are unset, but wherever `.env`
-> is populated it **runs for real**: places a resting order, queries it by
-> client index, then cancels it through the signing sidecar (120 s timeout).
-> It is the suite most sensitive to load, network latency, sidecar reachability
-> and testnet rate limits, so a single red run — particularly during a full
-> suite run — is most often a flake. Re-run it alone before treating it as a
-> regression: `cd engine && npx jest src/exchanges/lighter/__tests__/smoke.test.ts`.
->
-> Full detail in
-> [docs/OPERATIONS.md §6 — Test and gate commands](docs/OPERATIONS.md#6-test-and-gate-commands).
+> **Two caveats when running tests** (full detail in
+> [docs/OPERATIONS.md §6 — Test and gate commands](docs/OPERATIONS.md#6-test-and-gate-commands)):
+> run the suite on an **idle machine** (loaded hosts produce load artifacts,
+> not regressions), and treat the **env-gated Lighter smoke** — a live
+> testnet test — as a flake candidate: re-run it alone
+> (`cd engine && npx jest src/exchanges/lighter/__tests__/smoke.test.ts`)
+> before calling it a regression.
 
 ---
 
@@ -318,22 +300,27 @@ npm run format:check    # Verify formatting without writing
 
 ## Test Coverage
 
-Fresh totals: **backend 2,559 tests** (2026-10-06 run), **engine 310 tests**
-(2026-10-06 run; 32 suites, clean exit; the env-gated Lighter live smoke
-self-skips without credentials or a reachable signing sidecar),
-**frontend 223 tests** (30 files, 2026-10-07 run — includes the 9-file
-`src/test/integration/` execution-integrity matrix, §2c scenarios 1–9) —
-the coverage snapshot below is from
-2026-09 and is kept for shape comparison only; percentages are stale and will
-be refreshed with the next coverage pass (see Roadmap):
+Current totals: **backend 2,559 tests** (2026-10-06), **engine 310 tests**
+(2026-10-06, 32 suites, clean exit), **frontend 223 tests** (30 files,
+2026-10-07) — **~3,100 tests**, all green under the
+[CI gate](.github/workflows/ci.yml) (format → lint → build → test, with
+Postgres 14 + Redis service containers).
 
-| Workspace         | Suites | Tests | Statements | Branch | Functions | Lines |
-| ----------------- | ------ | ----- | ---------- | ------ | --------- | ----- |
-| Backend (Jest)    | 120    | 2,371 | 85.0%      | 67.3%  | 86.8%     | 85.2% |
-| Engine (Jest)     | 3      | 19    | 74.4%      | 59.8%  | 84.8%     | 75.8% |
-| Frontend (Vitest) | 16     | 177   | 61.6%      | 50.7%  | 60.9%     | 62.0% |
+Notes:
 
-Regenerate locally:
+- The frontend total includes the 9-file `src/test/integration/`
+  execution-integrity matrix (WS reconnect, login/logout cleanup, WS-vs-REST
+  ordering, shared Query cache, `strategy_id` collision, account downgrade,
+  delete-during-transition, 401-during-mutation, refresh-during-transition).
+- The env-gated Lighter live smoke **self-skips** without credentials or a
+  reachable signing sidecar; wherever `.env` is populated it is a *live
+  testnet* test — re-run it in isolation before treating a failure as a
+  regression (see
+  [Test and gate commands](docs/OPERATIONS.md#6-test-and-gate-commands)).
+
+Coverage **percentages** are deliberately not published — the last snapshot
+(2026-09) went stale while the suites roughly doubled. Regenerate locally
+when a coverage number is needed:
 
 ```sh
 cd backend  && npx jest --coverage        # report in backend/coverage/
@@ -341,39 +328,51 @@ cd engine   && npx jest --coverage        # report in engine/coverage/
 cd frontend && npx vitest run --coverage   # report in frontend/coverage/
 ```
 
-Weakest areas in the 2026-09 snapshot were the frontend components/hooks
-layer (61.6%) — expanding component and hook tests is the top coverage
-priority (see Roadmap). A coverage _percentage_ refresh is also due: the
-totals above grew substantially since September (engine grid/reconciliation
-suites, backend ledger suites), so the next coverage pass should regenerate
-the table rather than reuse it.
-
 ---
 
 ## Roadmap
 
 ### Near-Term
 
-- [x] Harden the engine trading path — exchange↔local order reconciliation
-      (`OrderReconciliationService` + `OrderManager`), atomic checksummed
-      snapshot persistence with quantity fields, durable trade ledger
-      (`ORDER_INTENT` → `TRADE_EXECUTED` → `bot_trade_fills`), per-fill
-      partial accounting (see
-      [Project Review & Gap Analysis](docs/PROJECT_REVIEW_GAP_ANALYSIS.md))
-- [ ] Live venue proof (Gate-4 run 2): engine-path partial fills on Lighter
-      testnet through the grid, incl. redelivery + restart row-collapse —
-      code is ready, the gate needs a live run
-- [ ] Refresh the coverage table above (percentages are from 2026-09)
+The authoritative near-term list is the remediation ledger in
+[Project Review & Gap Analysis §4/§6](docs/PROJECT_REVIEW_GAP_ANALYSIS.md).
+In short:
+
+- [ ] **Failure-injection completion** — the five live gates (Redis restart,
+      exchange orphans, crash at more exact points, corrupted/missing
+      snapshot, venue unavailable during startup reconciliation) on top of
+      the landed deterministic matrix
+- [ ] **Browser smoke tests** around `App` wiring (2–4 E2E scenarios)
+- [ ] **Residue cleanup** — `strategy_id` shim-drop, `kodiak_status` column,
+      transient signer `21104`
+- [ ] End-to-end `snapFullyLong` live trigger (the last unproven accounting
+      condition)
+- [ ] Refresh coverage numbers (regenerate the table above, not percentages
+      from memory)
+
+Done: engine trading path hardening (reconciliation, snapshots, durable
+ledger, per-fill partial accounting), P0 crash-recovery with live Resume,
+CI gate + protected `main`, frontend execution-integrity audit (9
+integration tests) — see the gap-analysis archives for the full history.
 
 ### Medium-Term
 
 - [ ] Additional exchange integrations (Uniswap, PancakeSwap, Raydium)
 - [ ] Additional chain support (Solana, Arbitrum, Base)
 - [ ] Additional trading strategies (Trend Following, Arbitrage)
+- [ ] Agent participation (read-only per-account keys, approved proposals —
+      plan §E)
 - [ ] Backtesting framework
 - [ ] Analytics dashboard
 
 ### Long-Term
 
+- [ ] Price-oracle / public market-data integrations (research in progress)
+- [ ] Balance-management model upgrade (wallet vs exchange-account vs
+      platform balances; research in progress)
+- [ ] UI/UX revisit (pages predate the sessions/resume/per-account work;
+      research in progress)
+- [ ] Split `@trade-bot/shared`
 - [ ] Horizontal scaling support
 - [ ] Advanced risk management features
+

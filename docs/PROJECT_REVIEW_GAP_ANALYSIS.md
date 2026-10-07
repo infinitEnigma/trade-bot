@@ -11,625 +11,194 @@
 
 This document tracks external reviews of the repository, verifies each claim
 against the code (not against the READMEs), and maintains the remediation
-ledger for **what is still open**. Closed findings (the N-series, L1-L30, the
-M1 emergency-stop row, and the full 2026-09-20 / 2026-09-27 review cycles) live
-in the archived copy
-[`docs/archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md`](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md).
+ledger for **what is still open**. Closed findings and superseded review
+cycles live in the archived copies
+[`docs/archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md`](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md)
+(N-series, L1–L30, M1) and
+[`docs/archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-10-07_cycle.md`](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-10-07_cycle.md)
+(the 2026-10-01 / 10-04 / 10-05 review sections, §2 verification matrices,
+resolved G1/N3/N4/N5/N7/R2/R3 narratives and the completed ledger rows).
 Historical review material stays untracked under `docs/archived/`.
 
-**Current focus: adversarial validation of the trading path** (Phase 6 in
-section 4) **plus, since 2026-10-05, a frontend execution-integrity audit**
-(§1 / §2c) **— proven 2026-10-07** with 9 focused integration tests (30/223
-green) — the control plane, exchange reconciliation, durable snapshots,
-durable ledger, per-fill partial accounting and the hard restart/redelivery
-cases have all landed and been proven live (Gate-4 runs 2–3, Gate 5). What
-remains: the failure-injection harness, the rare end-to-end `snapFullyLong`
-trigger, a small set of structural gaps (account-scoped domain APIs, bot
-account sessions — R3 closed 2026-10-05: CI gate + protected `main`), and
-adversarial *integration*
-testing of the frontend's state-convergence boundaries.
+**Current focus: prove the whole system under hostile timing and failure.**
+The architecture phase is effectively over — control plane, exchange
+reconciliation, durable snapshots, durable ledger, per-fill partial
+accounting, hard restart/redelivery, P0 crash-recovery (Gate 5) and the
+frontend execution-integrity audit (9 integration tests, proven 2026-10-07)
+have all landed and been proven live or deterministically (§1/§2). What
+remains is **P1: finish Phase 6 failure injection + the live Redis-restart /
+orphan / snapshot-corruption / startup-reconciliation gates, and the rare
+end-to-end `snapFullyLong` trigger**; **P2: a handful of browser-level smoke
+tests around `App` wiring, the `strategy_id` shim-drop, the
+bot-account-session migration cleanup, `kodiak_status` residue, transient
+signer `21104`, agent participation**; **deferred: `shared` split, general
+frontend refactoring (incl. provider topology)**. See §4/§6.
 
 ---
 
-## 1. Latest review — 2026-10-05 (frontend focus; two passes)
+## 1. Latest review — 2026-10-07 (execution integrity & crash-recovery)
 
-Two passes landed the same day. **Pass 1** asserted a set of frontend defects
-(`AuthContext` bootstrap, localStorage tokens, missing route splitting, dual
-auth state models) — every one refuted against the source; the reviewer then
-re-checked `main` at **369 commits** and **withdrew them all** in **pass 2**
-(the correction), which instead confirms the frontend was recently hardened
-and reframes the next work as an integration-behavior audit, not an
-architecture rewrite. Both texts are archived
-([pass 1 — superseded](archived/reviews/2026-10-05_external_review_raw.md),
-[pass 2 — current](archived/reviews/2026-10-05_external_review_correction_raw.md));
-claim-by-claim verification is in **§2c** (rows 25–35).
+Full text: [`docs/archived/reviews/2026-10-07_external_review_raw.md`](archived/reviews/2026-10-07_external_review_raw.md).
+Verified claim-by-claim in **§2** below (rows 36–47).
 
-**What the correction stands behind** (all re-verified against the code):
-route-level `React.lazy` for all nine pages, the authoritative `useBotLifecycle`
-sync model (WS event → Query cache, 3s transitional polling, reconnect
-invalidation, `bot.id` as primary identity), deliberately documented
-query-cache ownership, and the Gate-4 run-3 restart proof. **New scope
-adopted:** the §4 *frontend execution-integrity audit* row — ten
-reviewer-ordered targets where design mitigations exist; **proven 2026-10-07**
-with 9 focused integration tests (`frontend/src/test/integration/`, 30/223
-green) — see the §2c matrix.
+**What the reviewer confirms (and we re-verified):** the 9-test frontend
+execution-integrity matrix closed the previously open integration-behavior
+concerns (§2c in the [archived cycle](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-10-07_cycle.md));
+the P0 crash path is now productised end-to-end (`UNKNOWN` →
+`needs_user_action` → Resume Bot → `POST /resume` → same botId →
+`RUNNING/RUNNING`, proven live by Gate 5) with the
+`desired_state='RUNNING'` + `UNKNOWN/ERROR` creation guard plus a DB-level
+partial unique index backstop; the account-scoped position read (R2) and the
+CI/process gap (R3) are closed; and the `strategy_id` collision test proves
+the shim is **residue, not a defect**.
 
----
+**The reviewer's open list** (adopted as §4/§6 scope):
 
-## 1a. Review — 2026-10-04 (two independent reviewers)
+| Priority | Item                                                                      |
+| -------- | ------------------------------------------------------------------------- |
+| 🟠 P1    | Finish Phase 6 failure-injection coverage                                 |
+| 🟠 P1    | Live gates: Redis restart, exchange orphan, crash at more exact points, corrupted/missing snapshot, exchange unavailable during startup reconciliation |
+| 🟠 P1    | Verify the remaining rare end-to-end `snapFullyLong` condition            |
+| 🟡 P2    | 2–4 browser-level smoke tests around `App` wiring (login → start → RUNNING; crash → resume; refresh during transition; access-level drop) |
+| 🟡 P2    | Remove the `strategy_id` compatibility shim once no caller passes strategy ids |
+| 🟡 P2    | Finish bot-account-session migration/shim cleanup                         |
+| 🟡 P2    | Clean the remaining `kodiak_status` residue                               |
+| ⏸ Defer  | Split `@trade-bot/shared`; general frontend provider-topology refactoring |
 
-Two independent reviewers re-checked `main` at `f2e08ef` (2026-10-04) in the
-same window; both conclude the **trading path has effectively closed**. Full
-texts: [`…_review_A_raw.md`](archived/reviews/2026-10-04_external_review_A_raw.md),
-[`…_review_B_raw.md`](archived/reviews/2026-10-04_external_review_B_raw.md).
-
-**Reviewer A (execution-model focus)** — _"Very good delivery … the developers
-are no longer just fixing obvious architectural deficiencies. They're now
-dealing with second-order exchange semantics and race conditions."_ Overall
-**~8.5/10**; recommends **"stop touching this layering unless a concrete defect
-appears"** and that the next milestone be **failure-oriented validation**, not
-another feature PR.
-
-**Reviewer B (control-plane / accounting focus)** — _"This isn't just 'more
-fixes' … all closing within days of being named, each backed by a live testnet
-run with logged evidence."_ Confirms the two prior P0s were closed with real
-mechanisms, calls the G1 fix _"genuinely clever"_, and flags the same single
-residual (Gate-4 §9 run 2) and the same next milestone.
-
-### Scores (Reviewer A)
-
-| Area                 | Score | Area                     | Score                                                     |
-| -------------------- | ----- | ------------------------ | --------------------------------------------------------- |
-| Control plane        | 9     | Durable ledger           | 8.5                                                       |
-| Lifecycle            | 9     | Accounting               | 8                                                         |
-| Exchange abstraction | 8.5   | Partial fills            | 8 — _impl done, live proof pending_                       |
-| Order reconciliation | 8.5   | Failure recovery         | 7 — _architecture exists, adversarial validation pending_ |
-| Snapshot / restart   | 8.5   | Multi-account / Frontend | 7.5 / 7                                                   |
-
-### Corrections to the reviews (re-checked against the code — §2b)
-
-| Claim                                                                  | Verdict                                                                                                                                                                                                                                                           |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A: "the repository is now at **347** commits"                          | ⚠️ **Stale** — `git rev-list --count HEAD` = **361** at `f2e08ef`.                                                                                                                                                                                                |
-| A §12 lists only P1 position API / P2 frontend / P2 harness as open    | ⚠️ **Incomplete** — §4 also keeps bot account sessions (§D), agent participation (§E), the `shared` split and the `21104` transient-signer item (the engine jest open handle, also omitted, has since been confirmed closed — 31 suites / 297 tests, clean exit). |
-| B: "check `bot-management.service.ts` — is the dead code still there?" | ✅ **Answered** — the dead `getBotStatus` was swept out in `ed019c7` ("stub-hygiene pass … dead getBotStatus removed"); only `getBotStatusInfo` (live) remains.                                                                                                   |
-| Both: partial-fill implementation landed, live proof pending           | ✅ **Confirmed — and now fully proven live**: run 2 (delta-only, §5) **+ run 3 (crash + restart, delta-only, §2b row 23, §5)**.                                                                                                                                   |
-| Both label the next work "Phase 6"                                     | ⚠️ **Naming clash** — §4's Phase 6 (failure injection) is unrelated to the `phase4-partial-fills-plan.md` internal "Phase 5".                                                                                                                                     |
-
-**New process finding (both reviewers, independently):** every change is still a
-**single-author, unreviewed merge with no CI gate**. Neither review questions the
-code quality; both call the _absent second set of eyes_ the remaining structural
-risk. Tracked as **R3** (§3) and in §4.
+The reviewer's area scores (overall **~8.7–9/10**) are recorded in the raw
+text; the standing note is that **frontend is no longer a weak spot in known
+correctness defects** — it was weak because it had not been adversarially
+tested, and now it has been.
 
 ---
+## 2. Verification of the 2026-10-07 review against the code
 
-## 1b. Previous review — 2026-10-01 (independent reviewer)
+Every claim re-checked at `daf661f` (2026-10-07). Rows 1–35 (the 2026-10-01 /
+10-04 / 10-05 verifications) moved to the
+[archived cycle document](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-10-07_cycle.md)
+with the material they verified.
 
-**Repository state reviewed:** the `main` revision of this document at
-`624e599` (2026-09-30); verified below against `cc8da7c` (2026-10-01).
+| #   | Review claim                                                                                                            | Verdict                   | Evidence                                                                                                                                                                       |
+| --- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 36  | 9 focused integration tests cover the 10 audit targets; suite at 30 files / 223 tests, all green                        | ✅ Confirmed              | `frontend/src/test/integration/` = exactly 9 files (reconnect, logout, ordering, shared-cache, strategy-id, downgrade, delete-transition, session-expiry, refresh-remount); README records 223/30 (2026-10-07 run) |
+| 37  | Tests use real lifecycle hooks + real `WebSocketClient` singleton + fake socket + mocked REST, without rendering `App`   | ✅ Confirmed              | Integration files import `useBotLifecycle`/`useBotState`/`useAuth` and the singleton client directly; no `render(<App>)` anywhere in the suite                                 |
+| 38  | WS reconnect test proves convergence (refetch heals, invalidation keeps RUNNING), not just "socket reconnects"          | ✅ Confirmed              | `ws-reconnect.test.tsx`; scenario record in the archived §2c matrix                                                                                                            |
+| 39  | REST wins over stale WS while a fresher WS event still applies; unknown bot ids never leak into tracked rows            | ✅ Confirmed              | `ws-ordering.test.tsx` (archived §2c scenario 3)                                                                                                                               |
+| 40  | Shared Query cache: one network fetch, all observers updated, one `bot.stateChanged` propagates                         | ✅ Confirmed              | `ws-shared-cache.test.tsx` (archived §2c scenario 4)                                                                                                                           |
+| 41  | `VERIFIED → REGISTERED` downgrade runs both cleanup paths, socket → `null`, no reconnect loop                            | ✅ Confirmed              | `ws-downgrade.test.tsx` (archived §2c scenario 6)                                                                                                                              |
+| 42  | P0 crash path productised: `UNKNOWN` → `needs_user_action` → `POST /resume` → same botId → `RUNNING`; Gate 5 proved it live | ✅ Confirmed              | `backend/src/interfaces/http/bots/management.ts` (resume route); `OPERATIONS.md` §5 runbook table; gate-5 record in §5 history (report `.git/gatelogs/live/gate5-resume-report.md`) |
+| 43  | Creation guard covers `desired_state='RUNNING'` + `UNKNOWN/ERROR`, with a DB partial unique index backstop               | ✅ Confirmed              | `lifecycle-reconciliation.service.ts:11` (desired=RUNNING + ERROR/UNKNOWN → audit marker, no auto-start); migration `018_bot_one_live_per_strategy.sql`                        |
+| 44  | `getPosition(exchangeAccountId, symbol)` + `UNIQUE(exchange_account_id, symbol)`; old `ORDER BY updated_at DESC` heuristic gone | ✅ Confirmed (closed 2026-10-05, re-verified) | R2 record (archived cycle); `IPositionRepository` in `shared/src/types/repositories.ts`; regression test pins `not.toContain("ORDER BY ep.updated_at DESC")`           |
+| 45  | CI: format → lint → build → `CI=true npm test` on push/PR with Postgres 14 + Redis; `main` has required PR/review        | ✅ Confirmed (closed 2026-10-05, re-verified) | `.github/workflows/ci.yml` (four gates, service containers); R3 record (archived cycle)                                                                                   |
+| 46  | Phase 6: shared scripted fake + 12-case matrix exist, but the *program* is not closed — deterministic injection ≠ real process/Redis/venue failure | ✅ Confirmed              | `engine/src/application/__tests__/helpers/fake-exchange.ts` + `failure-injection-matrix.test.ts` exist; §4 Phase 6 row below is the open program                                |
+| 47  | `strategy_id` collision is tested and therefore residue, not a bug; `kodiak_status` residue remains                      | ✅ Confirmed              | `ws-strategy-id.test.tsx` proves session-resolve + bot-id WS patch; R1 open in §3; `kodiak_status` still emitted by views in migrations `002`, `012` (§4 row)                |
 
-**Reviewer's summary:** the project is now _"a fairly mature distributed
-trading control plane with increasingly credible live execution, but still
-missing the durable exchange/local reconciliation and financial-ledger layer
-required for a robust trading system."_ Architecture is no longer the main
-concern; remaining risk concentrates in **trading-state authority,
-reconciliation, accounting, and a few legacy HTTP paths** (the latter have
-since been removed — see section 2).
-
-The reviewer explicitly recommends **stopping architectural expansion** and
-making the next milestone:
-
-```text
-Strategy intent → OrderManager → Order Reconciliation → Exchange
-                        ↓
-              orders + fills → PostgreSQL ledger → positions / PnL
-```
-
-### Maturity by layer (as reviewed)
-
-| Layer              | Assessment                                                                                     |
-| ------------------ | ---------------------------------------------------------------------------------------------- |
-| 🟢 Control plane   | Strong — Redis Streams, ACK, epochs, CAS lifecycle, emergency stop, timeout supervision        |
-| 🟡 Execution plane | Functional but incomplete — real Lighter testnet fills, no formal reconciliation state machine |
-| 🔴 Financial state | Immature — fills, PnL, fees, positions, restart recovery                                       |
-
-### Reviewer's priority list (reconciled with the code in section 2)
-
-| Priority | Work                                          | Status @ `cc8da7c`                                                                                                                                                           |
-| -------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🔴 P0    | `OrderManager` + `OrderReconciliationService` | **Open** (section 4, Phase 2)                                                                                                                                                |
-| 🔴 P0    | Snapshot atomicity/corruption handling        | **Open** (section 4, Phase 3)                                                                                                                                                |
-| 🔴 P0    | Live testnet duplicate-order proof            | **Open** (section 4, Phase 0, code-side done)                                                                                                                                |
-| 🟠 P1    | Durable order/fill ledger                     | ✅ **Done** `5d1cef9` (section 4, Phase 4)                                                                                                                                   |
-| 🟠 P1    | Credential issuance DB idempotency            | ✅ **Done post-review** (`77506bf`) — see section 2                                                                                                                          |
-| 🟠 P1    | Correct trade reporting / bot-scoped stats    | ✅ **Done** `5d1cef9` (section 4, Phase 4, N7)                                                                                                                               |
-| 🟠 P1    | Account-scoped position/balance domain APIs   | **Partially done** (section 4)                                                                                                                                               |
-| 🟠 P1    | Accounting/PnL correctness                    | **Core done + `reduce_only` + position reconciliation** (section 4, Phase 5, N6) — partial fills **in progress**: Phase 4 parts 1–2 landed 2026-10-03 (`6381110`, `efa6c5c`) |
-| 🟡 P2    | Failure-injection harness                     | **Open** (section 4, Phase 6)                                                                                                                                                |
-| 🟡 P2    | Remove legacy engine HTTP writers             | ✅ **Done post-review** (`132fbd1`, `cc8da7c`) — see section 2                                                                                                               |
-| 🟡 P2    | Split `shared` package                        | **Defer** (section 4)                                                                                                                                                        |
-
-### Reviewer's recommended PR sequencing
-
-1. **PR 1 — Exchange reconciliation:** `OrderManager` +
-   `OrderReconciliationService` + grid integration + startup reconciliation +
-   `NOT_FOUND` vs `UNREACHABLE` + confirmed cancellation.
-2. **PR 2 — Durable order/fill state:** orders, fills, execution identity,
-   idempotent persistence, trade projections.
-3. **PR 3 — Accounting:** partial fills, fees, realized PnL, `reduce_only`,
-   position reconciliation.
-4. **PR 4 — Failure injection:** only after the above abstractions exist
-   (accept→network loss, timeout, 500/404, duplicate, partial fill, cancel
-   ambiguity, engine crash, Redis restart, snapshot corruption).
-
-The full review text as received is archived at
-[`docs/archived/reviews/2026-10-01_external_review_raw.md`](archived/reviews/2026-10-01_external_review_raw.md).
-
----
-
-## 2. Verification of the 2026-10-01 review against the code
-
-Every claim re-checked at `cc8da7c`. Rows 9-11 are claims the review itself
-flagged as possibly stale ("last ~24h not included") — they were fixed between
-the review and this incorporation.
-
-| #   | Review claim                                                                                                                                                                      | Verdict                          | Evidence                                                                                                                                    |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Engine could not boot under documented Node config; fixed to CommonJS/node resolution, `prod:engine` verified live                                                                | ✅ Confirmed                     | L17 — ledger ✅ Done; Redis consumption + heartbeats observed live                                                                          |
-| 2   | Redis command protocol substantially healthier (`BOT_START`/`BOT_STOP`/`BOT_EMERGENCY_STOP` guards, dedicated consumer tests, `BOT_STOP` emits `COMMAND_ACCEPTED`), live-verified | ✅ Confirmed                     | L18 ✅ Done 2026-09-28; `command-consumer.test.ts`; epoch fix below                                                                         |
-| 3   | Epoch mismatch (`“19” !== 19`) rejected every runtime event; now `normalizeEpoch()`/`epochsMatch()`, fail-closed                                                                  | ✅ Confirmed                     | `engine-registry.service.ts`; live run showed 0 `ENGINE_NO_RESPONSE`, 0 epoch errors                                                        |
-| 4   | Lighter adapter progressed (market resolution, placement, client-index, retrieval, cancel confirm, testnet fills, real fill round-trip)                                           | ✅ Confirmed                     | L20/L23 ✅ Done; live 4 orders placed + filled, 0 frozen slots, `0.004 BTC` in portfolio                                                    |
-| 5   | Frontend bot-ID bug fixed (`id: bot.id`, `strategy_id` kept separately); compat fallback remains                                                                                  | ✅ Confirmed                     | L19 ✅ Done 2026-09-29; fallback still at `useBotLifecycle.ts:194,260` (section 3 residue)                                                  |
-| 6   | Emergency stop is a real control-plane operation (CAS → command → strategy stop → cancel → flatten → STOPPED), live 20/20 with venue-verified flat                                | ✅ Confirmed                     | M1 ✅ Done (archived cycle doc); venue rules `client_order_index ≤ 2^48−1` and IOC `order_expiry: 0` pinned live                            |
-| 7   | Poison/retry handling better: retryable `CommandError`s, capped deliveries, ACK-and-drop, PEL cleared live                                                                        | ✅ Confirmed                     | L22 ✅ Done; L28 durable Redis dedup ✅ Done (`53105ef`)                                                                                    |
-| 8   | Logging/context work improved (HTTP response ids in closure, background `ALS.run()` scopes, account-verification logs without secrets)                                            | ✅ Confirmed                     | L7/L8/L5 ✅ Done                                                                                                                            |
-| 9   | `report-trade` endpoint still accepts `userId`/`strategyId` and updates all bots sharing the strategy                                                                             | ❌ **Stale — fixed post-review** | Route deleted in `132fbd1` (zero engine callers; durable path = Phase 4 `TRADE_EXECUTED` event ingest)                                      |
-| 10  | Credential issuance not DB-safe (check-then-insert race)                                                                                                                          | ❌ **Stale — fixed post-review** | `77506bf`: partial unique index `015_credentials_issued_unique.sql` + `ON CONFLICT DO NOTHING` → 409                                        |
-| 11  | Legacy HTTP writers (`/heartbeat`, `/report-trade`, `/bot-error`, `/bot-recovery`, `/engine-status`) still present                                                                | ❌ **Stale — fixed post-review** | Deleted in `132fbd1` + `cc8da7c`; liveness now comes from `EngineRegistryService.getEngineLiveness()`                                       |
-| 12  | `OrderReconciliationService` still the most important missing abstraction (state machine `INTENDED → … → SAFE_TO_RECREATE`)                                                       | ✅ **Resolved post-review**      | Implemented 2026-10-01 (`d746c4c`): `OrderManager` + `OrderReconciliationService` + `domain/order-state.ts` — section 4, Phase 2            |
-| 13  | Snapshot durability insufficient (no tmp+fsync+rename, no checksum; snapshot ≠ exchange truth)                                                                                    | ✅ **Resolved post-review**      | Implemented 2026-10-01 (`d5aa842`): `durable-write.ts` + checksum + level validation; missing vs corrupt distinguished — section 4, Phase 3 |
-| 14  | Trade idempotency + bot-scoped statistics still missing                                                                                                                           | ✅ **Resolved 2026-10-02**       | Phase 4: idempotent `bot_trade_fills(…)` unique key + `bot_instances` totals keyed by `bot_id` — N7 record below                            |
-| 15  | `position-repository` userId-only interface answers with the most recently updated row                                                                                            | ✅ Confirmed open                | `position-repository.adapter.ts:60` documents the heuristic — section 4 (account-scoped domain APIs)                                        |
-| 16  | Frontend still carries `bot.id === botId` \|\| `bot.strategy_id === botId` compatibility logic (residue: `strategy ≈ bot`)                                                        | ✅ Confirmed                     | `useBotLifecycle.ts:194,260` — section 3 residue                                                                                            |
-
-### 2b. Verification of the 2026-10-04 reviews against the code
-
-Every claim re-checked at `f2e08ef` (2026-10-04).
-
-| #   | Review claim                                                                     | Verdict                                                | Evidence                                                                                                                                                                                                       |
-| --- | -------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 17  | Both: credential idempotency closed with a real DB constraint (not papered over) | ✅ Confirmed                                           | `database/migrations/015_credentials_issued_unique.sql` present                                                                                                                                                |
-| 18  | Both: dead `engine.ts` HTTP writers removed                                      | ✅ Confirmed                                           | `132fbd1` (heartbeat/report-trade/bot-error/bot-recovery) + `cc8da7c` (`/engine-status`)                                                                                                                       |
-| 19  | B: is the `bot-management.service.ts` dead code still there?                     | ✅ **Answered**                                        | dead `getBotStatus` removed in `ed019c7`; only `getBotStatusInfo` (`bot-status.service.pure.ts`) remains                                                                                                       |
-| 20  | A: "the repository is now at 347 commits"                                        | ⚠️ **Stale**                                           | `git rev-list --count HEAD` = **361** at `f2e08ef`                                                                                                                                                             |
-| 21  | Both: partial-fill accounting landed, live proof the only residual               | ✅ Confirmed + **run-2 evidence recorded**             | engine-path partials booked one row per segment, delta-only (`.git/gatelogs/live/gate4-run2-report.md`) — §5 Gate-4 run-2 row                                                                                  |
-| 22  | Both: every change is a single-author, unreviewed merge (no CI)                  | ✅ Confirmed (process)                                 | new finding **R3**, §3/§4                                                                                                                                                                                      |
-| 23  | Both: the one live residual is Gate-4 §9 run 2 (restart/redelivery)              | ✅ **Now proven live**                                 | run 3 (2026-10-05): crash mid-partial → restart → only the `0.9948` delta booked, distinct `fill_id`s, no re-apply (`.git/gatelogs/live/gate4-run3-report.md`)                                                 |
-| 24  | Restart recovery: does a crashed engine's bot resume?                            | ⚠️ **Deliberate no-auto-start** — new operational note | `LifecycleReconciliationService` step 3 is "audit-only (no auto-start)"; a crashed bot parks `RUNNING / UNKNOWN` until a same-botId resume (Gate-1 harness). Full-stack restart does **not** resume it either. |
-
-
-### 2c. Verification of the 2026-10-05 reviews against the code
-
-Two passes landed on 2026-10-05. The **first** was contaminated by stale
-review/README material and asserted frontend defects the code does not have
-(`AuthContext` + localStorage tokens, missing route splitting, dual auth state
-models); the reviewer **withdrew all of them** in a same-day **correction** after
-re-checking `main` at **369 commits**. Full texts:
-[`…_2026-10-05_external_review_raw.md`](archived/reviews/2026-10-05_external_review_raw.md)
-(superseded), [`…_2026-10-05_external_review_correction_raw.md`](archived/reviews/2026-10-05_external_review_correction_raw.md)
-(current). Process lesson recorded honestly: the first pass reviewed *README and
-archived material* as if it were source; every claim below was re-checked
-against the code.
-
-| # | Claim (correction pass unless noted) | Verdict | Evidence |
-|---|--------------------------------------|---------|----------|
-| 25 | Repo at **369 commits** | ✅ Confirmed | `git rev-list --count HEAD` = 369 (first pass's "361" stale, corrected) |
-| 26 | Route-level `React.lazy()` for all 9 pages (withdrawal of the first pass's "no code splitting") | ✅ Confirmed **withdrawal correct** | `App.tsx:26-44` — Landing, Login, Register, Dashboard, Strategies, Settings, Analytics, Profile, AdminDashboard all `React.lazy` inside `<Suspense>`; first pass quoted `./pages/*` static imports that do not exist in the tree |
-| 27 | `useBotLifecycle` implements the authoritative model: WS `bot.stateChanged` → Query cache, "never assume immediate transitions", 3s transitional polling, reconnect invalidation, `bot.id` primary key | ✅ Confirmed | `useBotLifecycle.ts:186-207` (`setQueryData`), `:7` (header invariant), `:177-183` (`refetchInterval: 3_000` while transitional), `:222-227` (`CONNECTED` → `invalidateQueries`), `:194,260` (identity) |
-| 28 | Query-cache ownership is a deliberate, documented fix (unconditional query, single writer) | ✅ Confirmed | `useBotLifecycle.ts:161-167` — "single owner … second writer with a different shape is what blanked the page … must stay enabled unconditionally" |
-| 29 | Gate-4 run 3 (2026-10-05) proved the crash/restart partial-fill case (withdrawal of "still pending") | ✅ Confirmed **withdrawal correct** | `ARCHITECTURE.md` update 2026-10-05, §5 rows below, `.git/gatelogs/live/gate4-run3-report.md` |
-| 30 | Conditional provider topology; `ThemeProvider` duplicated (outside + inside both branches); login/logout swaps the provider tree → subtree unmount/remount | ✅ Confirmed as an **audit target** (P2), not a defect | `App.tsx:84-97, 345, 359, 384` — both branches build their own `Router` + providers |
-| 31 | Reconnect + subscription + invalidation could miss/duplicate lifecycle state | ⚠️ **Plausible; needs an integration test** — highest-value target | Design mitigations exist (single-flight `connect()` at `client.ts:118-120`; module-scope singletons; reconnect invalidate) but **no test drives the full event-missed-during-outage sequence** |
-| 32 | `strategy_id` fallback can collide when `bot.id != strategy_id` | ⚠️ **Real path, tiny risk, open as R1** — not a current bug | `useBotLifecycle.ts:194,260`; primary key is `bot.id`; both IDs are UUIDs (collision-resistant). Line refs in §2 rows 5/16, §3 R1 and `current_issues.md` updated 187,253 → **194,260** |
-| 33 | UI might make `UNKNOWN` look like `RUNNING` (crash-recovery test case) | ❌ **Refuted at source level; E2E trace still open** | `STATE_DISPLAY_INFO.UNKNOWN` → "Connection Lost" / `text-danger` (`bot-lifecycle.types.ts:67`); P0-3 banner "engine was lost and this bot was NOT restarted automatically" (`BotControls.tsx:631`); tests `BotControls.test.tsx:200,221,239` |
-| 34 | Frontend ≈206 tests | ⚠️ **Stale** | full suite run 2026-10-05: **211 tests / 21 files, all passing** (README totals updated) |
-| 35 | First-pass claims: `AuthContext` bootstrap, tokens in localStorage, "Production Ready" README, `authStore.ts` duplication | ❌ **All refuted / withdrawn** — no `AuthContext` (Zustand `useAuth` since PHASE_2); tokens are httpOnly cookies (`client.ts:50` `withCredentials`, WS reads cookie); README says "Functional"; no `authStore.ts` | see withdrawn first pass; `scripts/security-test.sh:80` asserts "no localStorage" |
-
-### Audit scope — frontend execution-integrity (the correction's 10 targets)
-
-Adopted as the **next review scope** (not new defects). Ordered as the reviewer
-ordered them; "covered" = source-level design exists. **Proven 2026-10-07:**
-scenarios 1–9 now have focused integration tests under
-`frontend/src/test/integration/` (9 files, no App render — real
-`useBotLifecycle`/`useBotState`/`useAuth` + real `WebSocketClient` singleton +
-fake socket.io socket + mocked REST); scenario 10 is this matrix. Full suite:
-**30 files / 223 tests, all green** (baseline 21/212).
-
-1. WS reconnect → lifecycle convergence ✅ `ws-reconnect.test.tsx` — STARTING patch → disconnect → offline refetch heals to RUNNING → reconnect invalidation still RUNNING.
-2. Login/logout → provider remount → WS/query cleanup ✅ `auth-logout-cleanup.test.tsx` — logout purges Query cache + store, fires `auth:disconnect-wallet`, hits `POST /api/auth/logout`. Finding: zustand persist re-writes `auth-storage` with the logged-out state after removal — harmless; contract pinned as "no stale identity" (`not.toContain("u1")`) rather than key absence.
-3. Socket event vs REST refetch ordering ✅ `ws-ordering.test.tsx` — stale WS STARTING overwritten by authoritative REST STOPPED; fresher WS event after refetch still applies; unknown bot ids never leak into tracked rows.
-4. Multiple bot cards observing the shared Query cache ✅ `ws-shared-cache.test.tsx` — two `useBotState` cards + `useBotsList` share the single-owner `["bot-instances"]` query (exactly one network fetch); one `bot.stateChanged` lands on every observer.
-5. `strategy_id` compatibility collision (R1) ✅ `ws-strategy-id.test.tsx` — `bot.id` is primary; legacy strategy id resolves to the hosting session via `runs[]`; WS patch by bot id hits the right row.
-6. VERIFIED → REGISTERED downgrade mid-socket ✅ `ws-downgrade.test.tsx` — host replicates the initializer's exact VERIFIED-gate branch structure; downgrade runs both cleanups, socket goes null, no reconnect loop. (Dead helper removed after the green run; no production code touched.)
-7. Bot deleted/disabled while a transition is pending ✅ `ws-delete-transition.test.tsx` — delete of a transitional bot is refused 409 (row stays, transition still converges STARTING → RUNNING); terminal delete drops the row and stray events are no-ops. Note: `useBotLifecycle()` without an id never sets `isTransitional` — hook semantics; the test tracks the bot id explicitly.
-8. 401/session expiry with a lifecycle mutation in flight ✅ `ws-session-expiry.test.tsx` — rejected `stopBot` (401/-1002) leaves cache at RUNNING, fires exactly one `auth:session-expired` per episode, episode resets for the next one.
-9. Browser refresh during STARTING/STOPPING ✅ `ws-refresh-remount.test.tsx` — remount with a fresh cache still shows STARTING + transitional, then converges to RUNNING via refetch.
-10. Tests for all of the above ✅ this matrix — 9/9 scenarios, 30/223 green.
-
+**Notes on staleness (as always):** the review's suite numbers
+(backend 2,554 / frontend 211 / engine 297) were the *CI-validation* point of
+2026-10-05; current recorded totals are backend **2,559**, frontend **223**,
+engine **310** (README). The area-score table is opinion, kept in the raw
+text only.
 
 ---
 
 ## 3. Findings (open only)
 
-Closed findings — the N-series resolution notes and every `#### L…` narrative
-(L1–L30), plus the M1 emergency-stop record and the 2026-09-26/27 flow-audit
-evidence — are preserved verbatim in
-[`docs/archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md`](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md).
-Only findings that applied to the code at `cc8da7c` are listed here. N3/N4/N5
-were resolved 2026-10-01 (Phase 2, `d746c4c`) and are kept as short records;
-N7 resolved 2026-10-02 (Phase 4); G1 (Gate 1) resolved 2026-10-02 (§4 row
-2b); **N6's core settled 2026-10-02** (executed-price PnL, fee booking, exit
-pricing) and **`reduce_only` exits landed 2026-10-02** (§4 row 5), leaving
-per-fill `PARTIALLY_FILLED` and venue position reconciliation open — the
-reconciliation landed 2026-10-02 (`938e230`), and the partial-fill deferral
-**ended 2026-10-03 with Gate 4** (`.git/gatelogs/live/gate4-report.md`): a
-genuine partial was observed — partially-filled resting orders report status
-`open` with `filled_base_amount > 0`, the cumulative quantity is monotonic,
-and the order rows carry **no per-trade id**, so the Phase-4 fill identity is
-a cumulative-qty segment keyed on `client_order_index`. R1/R2 remain open.
+Closed findings — the N-series resolution notes, G1/N3/N4/N5/N7, R2, R3, and
+every `#### L…` narrative (L1–L30) plus the M1 emergency-stop record — live in
+the [2026-09-20 cycle](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md)
+and [2026-10-07 cycle](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-10-07_cycle.md)
+archives. Only findings with an open remainder are listed here.
 
-### G1 — ✅ Resolved (2026-10-02): stale deterministic-id history books phantom fills
+### N6 — 🟠 P1 (residual): `snapFullyLong` end-to-end trigger unproven
 
-Gate 1 report §3.1: cycle N+1's `ensureSlotOrder` pre-submit lookup
-(`queryOrderByClientOrderId`) found the **terminal history row of cycle N's**
-spent `(bot, level, side)` id — `active: NOT_FOUND → history: FOUND_FILLED` —
-and booked a fill without any submission: bogus mark-to-market PnL, flipped
-`filled` flags, and no way to place a real order for that slot while the
-history row persisted (all five clean sells that window were first-time ids;
-level 5, whose id had history, never submitted).
+The accounting finding itself is **settled**: executed-price exit pricing,
+fee-inclusive realised PnL (`8495254`, 2026-10-02), `reduce_only` exits and
+venue position reconciliation (2026-10-02), per-fill `PARTIALLY_FILLED`
+accounting (2026-10-04), fee sourcing from the venue-reported tier
+(`ExchangeClient.getFeeRates?()`), live Gate 3 (round trip exact) and Gate 4
+runs 2 + 3 (delta-only booking, restart/redelivery) all **PASS**, C2
+below-minimum detector confirmed live (`21706`, `min_base_amount` 0.005).
+Full narrative in the archived cycle documents.
 
-**Fix (§4 row 2b):** slot id generations. `OrderManager.markFilled` spends
-the slot's id (side generation bump), the next cycle derives a fresh id whose
-venue history cannot contain the spent row; generation 0 renders byte-identical
-to the legacy format so live handles keep resolving, and legacy (pre-generation)
-snapshots seed handle-less sides at generation 1 on restore.
-
-### N3 — ✅ Resolved (`d746c4c`): a missing exchange order permanently blocks a grid slot
-
-`grid.ts` polls each live order and swallows every failure:
-
-```ts
-} catch {
-  // Order may not exist anymore
-}
-```
-
-The slot's `buyOrderId` / `sellOrderId` is **never cleared**, so the level can
-never be re-armed. A 404 (order gone/cancelled externally) is indistinguishable
-from a transient network error — exactly the reviewer's "local order exists but
-exchange order doesn't" case. **Owned by Phase 2** (`OrderManager` state machine
-with `NOT_FOUND → SAFE_TO_RECREATE`).
-
-### N4 — ✅ Resolved (`d746c4c`): restart has no exchange cross-check (orphan/duplicate blind spot)
-
-`initialize()` trusts the snapshot, and otherwise silently rebuilds the grid
-from the current price. Nothing lists the symbol's open orders and compares
-them with the restored levels. After a missing/corrupt snapshot, a config
-change, or fills that happened while the engine was down, previously live
-orders become **orphans** that nothing adopts, cancels, or reports.
-
-Compounding detail: slot identity is **index-keyed** while prices are
-**baseline-derived**. After a restart with a new baseline, `bot-1:0:BUY` — an
-order live at the _old_ index-0 price — is adopted into the _new_ level 0 at a
-_different_ price, so local state attributes an order to the wrong price level.
-**Owned by Phase 2 (startup reconciliation) + Phase 3 (snapshot durability).**
-
-### N5 — ✅ Resolved (`d746c4c`): cancellation ambiguity was reported as `STOPPED`
-
-`GridTradingStrategy.stop()` swallows every `cancelOrder` failure, and the
-lifecycle coordinator then publishes `STATE_CHANGED → STOPPED`. The backend
-shows `actual_state = STOPPED` while live orders may still rest on the
-exchange. **Owned by Phase 2** (confirmed cancellation).
-
-### N6 — 🟠 P1: the grid's profit logic is not meaningful
-
-Original findings (repository state `cc8da7c`, 2026-10-01):
-
-- Sell legs were placed at **`level.price`** — the same price as the buy that
-  filled — so there was zero spread before fees and rebates.
-- PnL was derived from the **mark price at check time**, not the executed price,
-  and ignored fees: `(this.currentPrice - level.price) * orderQuantity`.
-- Sell legs are never marked `reduce_only` (the domain model has the field and
-  the exchange supports it), so a stale sell can open a short instead of
-  closing the grid leg.
-- Fill handling is the boolean `filled` flag on a level: no position/quantity
-  accounting and no `PARTIALLY_FILLED` branch.
-
-**Owned by Phase 5 (accounting correctness).**
-
-**N6 core settled 2026-10-02** (`8495254`; executed-price accounting, fees,
-exit pricing):
-
-- **Exit pricing.** A filled level's sell is priced one grid step above its
-  line (`levels[i+1].price`, or one spacing above the top line at the top
-  level), or `takeProfitPercent` above the **executed** entry when the bot
-  configures a take profit (`config.takeProfit` → `takeProfitPercent`) — never
-  at `level.price`. If neither geometry can price strictly above the entry (a
-  degenerate grid whose spacing rounds to zero at the symbol's price scale) the
-  level is left **unarmed** with a logged reason, rather than placing a
-  guaranteed-loss exit.
-- **Executed prices.** `SlotOutcome.FILLED` carries `executedPrice`
-  (`getOrder` → Orderly's `average_executed_price`, Lighter's order price;
-  `queryOrderByClientOrderId` → the listed row's price), and the grid persists
-  the executed entry per level (`GridLevel.entryPrice` /
-  `GridSnapshotLevel.entryPrice`, so a restart re-derives the exit from the
-  real entry).
-- **Realised PnL + fees.** A BUY books `0 - fee` (its spread stays unrealised
-  until the paired exit); the closing SELL books
-  `(sellExec − entryExec) × quantity − fee`. That keeps the Phase-4 invariant
-  `SUM(bot_trade_fills.pnl) == bot_instances.total_pnl` exact while counting
-  each leg's fee exactly once. The venue never says whether a fill was maker or
-  taker, so the **taker** rate (the upper bound) prices the fee; an
-  unsourceable rate omits `fee` _and_ `pnl` — never a made-up `0`.
-- **Position split.** `PositionReport.pnl` is realised PnL net of fees and
-  `unrealizedPnl` marks the open inventory at the ticker price; the backend
-  stores both (`bot_positions.unrealized_pnl`, migration
-  `017_accounting_pnl_split.sql`).
-
-**`reduce_only` exits landed 2026-10-02.** `ExchangeOrderRequest.reduceOnly`
-(and the adapter-side `OrderRequest.reduceOnly`) is forwarded by both adapters —
-Orderly emits the documented `reduce_only` key (`POST /v1/order`, default false;
-nothing is added for ordinary orders) and Lighter passes it through the signing
-sidecar, which already accepted it — and the grid sets it `true` on every exit
-leg (`OrderReconciliationService.ensureSlotOrder(..., reduceOnly)`), so a stale
-sell can no longer open a short.
-
-**Position reconciliation landed 2026-10-02.** The grid periodically
-cross-checks its own position (`buildPositionReport`) against the venue's
-`exchange.getPositions()` — throttled, and seeded at `start()` so the first read
-is one interval after start, never on the first tick. Drift beyond half an order
-is logged and the `POSITION_UPDATED` then reports the **venue** quantity/entry
-(realised `pnl` stays the ledger-derived local number); the local levels are
-deliberately not rewritten by a single read. A failed read is logged and
-skipped, never failing a tick.
-
-**Per-fill `PARTIALLY_FILLED` accounting — ✅ landed 2026-10-04** (Phases 1–5
-of `docs/instructions/phase4-partial-fills-plan.md`; code `6381110`, `efa6c5c`,
-`65911f3`, `3859f34`, with the Phase-5 tests and this record landing
-together). Gate 4's observation fixed the design: a partial
-resting order reports status `open` with a cumulative, monotonic
-`filled_base_amount` (`[0.0074, 0.0074, 0.0374]`), no per-trade id field
-exists, and `order_id` mutates — so the fill identity is a **cumulative-qty
-segment keyed on `client_order_index`**, hashed at fixed 8 dp with a
-byte-identical legacy hash for whole-order fills (so pre-upgrade rows still
-dedup). Every observation path — the manager, `checkSlot`, the pre-submit
-lookup, the stop path and the startup pass — books only the **venue delta**
-into `heldQty` and hands the same segment to the ledger, and the snapshot
-carries the per-side cumulatives so a restart resumes instead of re-applying.
-**Residual — core invariant proven live, restart half open.** Live Gate-4 §9
-**run 2** was executed 2026-10-04 (`f2e08ef`; `.git/gatelogs/live/gate4-run2-report.md`):
-three genuine engine-path partials booked **one ledger row per cumulative-qty
-segment, delta-only** — e.g. a resting SELL produced rows `0.0204` then `0.0184`
-(cumulative `0.0204 → 0.0388`) under one `client_order_index` with distinct
-`fill_id`s and proportional realised PnL, and a BUY produced `0.0100` then
-`0.0100` (cumulative `0.01 → 0.02`); `SUM(bot_trade_fills.pnl) ==
-bot_positions.pnl`. The **restart/redelivery** half of the criterion was **not**
-exercised live (the engine did not restart in the window, which was then cut
-short by a host network outage) and is now covered **deterministically** by the
-Phase-6 fault-injection harness (§4 Phase 6); a dedicated live restart run and
-live confirmation of the C2 below-minimum-remainder refusal text remain open
-(plan E2) — unit tests cannot grant a live gate.
-
-> **Both closed 2026-10-05.** The restart half is proven live (Gate-4 §9 run 3,
-> `.git/gatelogs/live/gate4-run3-report.md`). The **C2 detector is confirmed
-> live**: the venue's real sub-minimum rejection is
-> `code=21706 message='invalid order base or quote amount'` and the exported
-> `isSizeRefusal()` matches it while all negative controls (`unreachable`,
-> `21733`, `insufficient margin`, `21104`) stay `false`
-> (`.git/gatelogs/live/c2-probe.json`, `c2-threshold.json`). Measured the real
-> minimum too: **`min_base_amount` is 0.005, not the 0.01 this plan assumed**
-> (base minimum binds — `0.0049` refused at a $13.33 quote). What remains
-> unproven is only the **end-to-end trigger** (`snapFullyLong` firing live),
-> which needs `depth < orderQuantity < depth + 0.005` — a sub-0.005 window a
-> grid level rarely lands in; 0.01 and 0.008 lots both filled whole.
-
-**Phase-5 prerequisite — fee sourcing (N6a, settled 2026-10-02).** PnL "from
-executed price with fees" needs a fee number, and the venue exposes no per-fill
-fee: `/api/v1/trades` returns the same key set publicly and authenticated
-(`account_index`, `order_index`, `client_id` filters all 200) with **no**
-`maker_fee`/`taker_fee`, even though the L1 `Trade` event carries `tf`/`mf`;
-`orderBookDetails.maker_fee`/`taker_fee` read `0.0000` for all 237 mainnet
-markets (a placeholder). The only account-scoped fee signal is the
-authenticated `GET /api/v1/accountLimits`: `user_tier`/`user_tier_name`
-(`"standard"` for the testnet account), `current_{maker,taker}_fee_tick`
-(`0` there — the tick→rate scale is undocumented and uncalibratable while no
-fee is charged) and `effective_lit_stakes`. **Decision:** source the _rate_
-from the venue-reported tier through the published schedule (Standard 0/0,
-Plus 0.005% both sides, Premium 0.0040%/0.0280% undiscounted) and let the
-engine book `notional × rate` per fill — even though the venue is zero-fee
-today, so a tier change (or a non-zero-fee venue) books correctly without new
-plumbing. Landed as Phase-1 code: `ExchangeFeeRates` +
-`ExchangeClient.getFeeRates?()` in `engine/src/domain/exchange.ts` and
-`LighterClient.getFeeRates()` (TTL-cached, fails loudly, never defaults a
-rate) over the pure mapper `engine/src/exchanges/lighter/fees.ts`. Provenance
-(`tier`, `venueReported`, `exact`, `basis`) rides on the returned rates so the
-ledger can record where a number came from; an unmapped tier falls back to the
-**worst** published rate with `venueReported: false` rather than inventing a
-zero. The grid consumes it as `notional × takerRate` per fill (N6 core above):
-the taker rate is the upper bound because the venue never reports the fill's
-role, and a rate that cannot be sourced leaves the row's `fee`/`pnl` absent
-instead of asserting a zero.
-
-### N7 — ✅ Resolved (`5d1cef9`, 2026-10-02): the durable trade ledger is now reachable
-
-Phase 4 landed: the engine publishes the ledger event family
-(`ORDER_INTENT` / `TRADE_EXECUTED` / `POSITION_UPDATED` /
-`PERFORMANCE_SNAPSHOT`, `shared/src/protocol/engine-ledger.ts`), the backend
-ingests it fail-closed through `TradeLedgerService` into an idempotent
-`bot_trade_fills` ledger (unique `(bot_id, client_order_id,
-exchange_order_id, fill_id)`, migration `016_durable_trading_ledger.sql`),
-`trades.status` is narrowed on ingest (`FULLY_FILLED → FILLED`,
-`PARTIALLY_FILLED → PARTIAL`), and `bot_instances` totals increment by
-`bot_id` only when a ledger row was actually inserted — so `total_pnl`
-reconciles with `SUM(bot_trade_fills.pnl)`. Intent-before-create is enforced
-(a slot whose intent cannot be persisted does not place). Original narrative
-preserved in the
-[archived cycle document](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md).
+**What remains:** the **end-to-end `snapFullyLong` firing live** — it needs
+`depth < orderQuantity < depth + 0.005`, a sub-0.005 window a grid level
+rarely lands in (0.01 and 0.008 lots both filled whole). Carried in §4 row 5.
 
 ### R1 — 🟡 P2: frontend bot/strategy identity residue
 
-The bot-ID mapping is fixed (`id: bot.id`), but the compatibility fallback
-`bot.id === botId || bot.strategy_id === botId` is still live at
-`useBotLifecycle.ts:194,260`. It preserves the old `strategy ≈ bot` mental
-model (new architecture: one strategy → N bot instances). Not a bug today;
-remove once no caller passes a strategy id. The 2026-10-05 correction (§2c
-row 32) re-graded this: primary identity is correct, both IDs are UUIDs, so
-the collision risk is tiny — a targeted test plus eventual removal at the API
-boundary, not a defect. **Targeted test landed 2026-10-07**
-(`frontend/src/test/integration/ws-strategy-id.test.tsx`, §2c scenario 5):
-`bot.id` is the primary cache key, a legacy strategy id resolves to the
-hosting session via `runs[]`, and a WS event carrying the bot id patches the
-right row. The shim itself stays until no caller passes a strategy id.
-
-### R2 — ✅ Closed (2026-10-05): account-scoped position read
-
-`getPosition(userId, symbol)` used to answer with **the most recently updated
-row** when several accounts held the same symbol — an interface that could hand
-a trading/risk decision the wrong account's position. Closed by making the read
-account-scoped end to end:
-
-- **`IPositionRepository.getPosition(exchangeAccountId, symbol)`**
-  (`shared/src/types/repositories.ts`) — `UNIQUE(exchange_account_id, symbol)`
-  (migration 013) makes the answer exactly one row; user-level views go through
-  `getPositions(userId)` + explicit aggregation, the pattern `getBalance`
-  already uses (per-asset sum across accounts).
-- **Adapter SQL** keyed on `ep.exchange_account_id`; the
-  `ORDER BY ep.updated_at DESC LIMIT 1` heuristic is gone.
-- **`PositionService.getPosition`** follows the account-scoped signature. The
-  `position-sync` existence check was removed with it: it could not be
-  account-scoped at that layer and was dead anyway — both branches called the
-  same (deliberately no-op) writer.
-- **Regression test** pins the contract: query keyed by `exchange_account_id`,
-  `not.toContain("ORDER BY ep.updated_at DESC")`, params `[accountId, symbol]`.
-
-Note: the interface had **no production consumer** of the single-row read
-(`positionService.getPosition` was unconsumed outside tests; the sync read was
-dead) — the hazard was latent, and it is closed *before* a trading path could
-pick it up, which is what both reviewers demanded. Graded 🟡 here / 🟠 in the
-§4 ledger; the balance half of the ledger row was already done by C3b.
-
-### R3 — ✅ Closed (2026-10-05): CI gate + protected `main`
-
-Both 2026-10-04 reviewers' only _structural_ concern was that **every change was
-a single-author, unreviewed merge** with nothing mechanical enforcing the test
-suite. The quality of the work was never in question — the request was a second
-set of eyes _before_ it ships. Closed the same day the 2026-10-05 correction
-re-graded it 🟠 (its reviewer: _"regression risk is now greater than
-architectural risk"_), in two steps:
-
-1. **Mechanical half — CI ✅.** `.github/workflows/ci.yml` runs the four
-   CONTRIBUTING gates (format → lint → build → `CI=true npm test`) on every push
-   to `main` and every PR: Postgres 14 + Redis as service containers, a freshly
-   migrated `trade_bot_test`, engine B5 live smoke self-skips by design (Lighter
-   credential vars intentionally absent). Validated locally under the workflow's
-   exact env before landing — backend 2,554 (incl. integration) / frontend 211 /
-   engine 297, all green — and a load-flaky `<15ms` mock micro-benchmark got a
-   250ms ceiling so the gate starts green (a known-flaky gate is a red gate).
-2. **Human half — branch protection ✅.** `main` protected (required PR +
-   required review) via GitHub Settings, 2026-10-05.
-
-Standing note: everything before `9420a05` predates the gate and remains a
-single-author merge by construction; the protection is forward-looking.
+The bot-ID mapping is fixed (`id: bot.id`), and the targeted test proves the
+important case: a legacy strategy id resolves to its hosting session via
+`runs[]`, and a WS event carrying the bot id patches the right row
+(`frontend/src/test/integration/ws-strategy-id.test.tsx`, archived §2c
+scenario 5). Not a bug today — the 2026-10-07 review re-confirms this as
+**residue, not a defect**. The compatibility fallback
+(`getSessionForStrategy` in `useBotLifecycle.ts`, comments at the `bot.id ?`
+lookup) stays until no caller passes a strategy id; then the shim drops at
+the API boundary.
 
 ---
 
 ## 4. Remediation ledger (open items only)
 
-Sequencing rationale: Phase 1 must precede Phase 2 (building reconciliation on
-top of a request that never carries `client_order_id` would be built on sand);
-Phase 3 protects the state Phase 2 depends on; Phases 4–5 make the outputs
-trustworthy; Phase 6 locks it in. Closed rows (phases 1, 8, 9; ledger L1–L30;
-M1) are in the archived cycle document. **Phase 2 (`d746c4c`) and Phase 3
-(`d5aa842`) closed 2026-10-01; Phase 4 closed 2026-10-02** — see the rows
-below.
+Sequencing rationale and all **closed** rows (phases 0–5, the account-scoped
+API row, row D's landing, the frontend execution-integrity audit, ledger
+L1–L30, M1) are in the archived cycle documents. What remains:
 
-| Phase | Priority | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ----- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 0     | 🔴 P0    | **Prove the P0s before changing code.** Verify N1/N2 against the Orderly testnet (place a LIMIT with a `client_order_id`, then resubmit the same key and record the rejection); add a zero-client-id Orderly smoke test to the suite that runs on every PR.                                                                                                                                                                                                                                                                                   | 🔶 code-side done (`client.wire.test.ts`); **live proof done 2026-10-01 on Lighter testnet** (`.git/gatelogs/live/gate0.log`): probe 12/12 (1 note), engine smoke pass, venue left clean. Live finding: Lighter **accepts** a reused `client_order_index` silently (`ACCEPTED_NO_VISIBLE_CHANGE` — no second order), so idempotency there is venue **dedup**, not a rejection; Orderly's rejection stays wire-test only (mainnet connectivity-only).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 2     | 🔴 P0    | **`OrderManager` + `OrderReconciliationService`** (reviewer's PR 1 — next milestone). Explicit order state machine (`INTENDED → SUBMITTING → UNKNOWN → OPEN / FILLED / NOT_FOUND(SAFE_TO_RECREATE) / EXCHANGE_UNAVAILABLE`); startup reconciliation (list venue orders, adopt/cancel/report orphans — N4); `NOT_FOUND` vs `UNREACHABLE` distinguished (N3); confirmed cancellation instead of swallowed errors (N5).                                                                                                                          | ✅ Done `d746c4c` — `order-manager.ts` + `order-reconciliation.service.ts` + `domain/order-state.ts`; the grid routes every slot write through the manager                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| 2b    | 🟠 P1    | **G1 — stale deterministic-id history books phantom fills** (Gate 1 report §3.1, Phase 2 residual). The pre-submit lookup for a spent slot id found the venue's terminal history row → `FOUND_FILLED` → phantom `markFilled` + `recordTrade` (bogus PnL, flipped `filled` flags) and blocked re-placement while history persisted. Fix: slot id **generations** — `markFilled` spends the slot's id (gen bump), legacy snapshots seed handle-less sides at generation 1, generation-0 ids stay byte-identical so live handles keep resolving. | ✅ Done 2026-10-02 — `client-order-id.ts` (`generation` suffix, legacy-exact gen 0) + `OrderManager.idFor`/`markFilled` bump + `GridLevel`/`GridSnapshotLevel` `buyGen`/`sellGen` + `SlotOutcome.FILLED.clientOrderId`; regression suite `grid-g1.test.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| 3     | 🔴 P0    | **Snapshot durability** (reviewer's PR 1/2). Temp file → `fsync` → atomic rename; keep the previous snapshot; checksum + schema validation of level entries; distinguish "no snapshot" from "corrupt snapshot"; `snapshot ≠ exchange truth` stays explicit — reconciliation (Phase 2) is what makes the snapshot safe.                                                                                                                                                                                                                        | ✅ Done `d5aa842` — `durable-write.ts` (tmp → fsync → rename, keep `.prev`) + checksum + level-entry validation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| 2026-10-05 (CI gate added — R3 half)           | `main` @ this change                                                                               | **R3's mechanical half closed.** `.github/workflows/ci.yml` runs the four CONTRIBUTING gates (format → lint → build → `CI=true npm test`) on every push to `main` and every PR, against Postgres 14 + Redis service containers with a freshly migrated `trade_bot_test`; the engine's B5 live smoke self-skips by design (Lighter credential vars intentionally absent). Validated locally before landing: format/lint/build green, full suite under the workflow's exact env (2,554 backend incl. integration, 211 frontend, engine). Fixed a pre-existing load-flaky timing assertion in the same change (`service-provider-usage.test.ts`: <15ms wall-clock on mocked calls → <250ms sanity ceiling — a known-flaky gate is a red gate). **Remaining R3 half → enabled same day:** `main` protected (required PR + required review, GitHub Settings) — **R3 fully closed 2026-10-05**.                         |
+| Phase | Priority | Item | Status |
+| ----- | -------- | ---- | ------ |
+| 6     | 🟠 P1    | **Failure-injection harness** (reviewer's PR 4). The deterministic half: a shared scripted fake exchange with a service-level fault matrix (accept-then-drop, timeout, unreachable, progressive partials + redelivery, partial + restart, cancel/fill race, lost cancel, stale historical id, unreachable startup, startup fill segment). The **live half** (the 2026-10-07 review's emphasis — deterministic injection ≠ real process/Redis/venue failure): **1)** Redis restart under load, **2)** exchange-side orphan orders, **3)** engine crash at additional exact points (beyond Gate 2/5's SIGKILL), **4)** restart with corrupted/missing snapshot, **5)** exchange unavailable during startup reconciliation. Plan: `docs/instructions/phase6-failure-injection-plan.md`. | 🔶 **Started 2026-10-04** — `engine/src/application/__tests__/helpers/fake-exchange.ts` + `failure-injection-matrix.test.ts` (12 cases green); real `SIGKILL` proven live (Gate 2 ✅, Gate 5 ✅). **The five live gates above remain open.** |
+| 5 remainder | 🟠 P1 | **End-to-end `snapFullyLong` trigger** (N6's last unproven condition): needs `depth < orderQuantity < depth + 0.005` live. Everything else in Phase 5 is done and proven (Gate 3, Gate 4 runs 2–3, C2 detector). | ⬜ open — rare window; needs a live run where a grid level lands in the sub-0.005 remainder gap |
+| 6b    | 🟡 P2    | **Browser-level smoke tests around `App` wiring** (2026-10-07 review). The hook-level suite deliberately never renders `App` (provider topology, `ProtectedRoute`, `FullProviders`, `ConditionalWebSocketInitializer`, `AnimatedRoutes`); 2–4 browser E2E tests would prove the wiring connects the proven mechanisms: **(1)** login → dashboard → socket connect → start bot → RUNNING; **(2)** RUNNING → engine gone → UNKNOWN → "Action required" → Resume → RUNNING; **(3)** STARTING → refresh → converges; **(4)** access-level drop → socket disconnect → protected-route behavior. | ⬜ open (new 2026-10-07) |
+| –     | 🟡 P2    | **Frontend identity residue (R1).** Remove the `bot.id === id \|\| strategy_id === id` compatibility fallback once no caller passes a strategy id (§3 R1; `ws-strategy-id.test.tsx` pins the behavior meanwhile). | ⬜ open |
+| D remainder | 🟡 P2 | **Bot-account-session migration/shim cleanup.** D1–D4 landed (`6ce8c02`..`6b91a63`, accepted 2026-10-06); the `strategy_id` shim-drop migration documented in the `019_bot_account_sessions.sql` header remains, plus any leftover pre-D row cleanup. | ⬜ open |
+| –     | 🟡 P2    | **`kodiak_status` residue.** Drop the unconsumed `kodiak_status` column from the `user_trading_summary` view (migrations `002`/`012` still emit it; no code consumer). | ⬜ open |
+| –     | 🟡 P2    | **Transient signer `21104`.** A nonce-drift refusal from the Lighter sidecar is currently treated as fatal instead of retryable (observed live 2026-10-01). | ⬜ open |
+| E     | 🟡 P2    | **Agent participation.** Read-only API keys per exchange account, grants scoped to one account, proposals inert until approved, engine as the only executor. Described in the exchange plan §E. | ⬜ open |
+| –     | 🟡 P2 (defer) | **Split `shared` package.** `@trade-bot/shared` is a god package (protocol types, domain models, API contracts, error classes, logging types). Split by domain once the trading-path work is fully closed. | ⬜ deliberately deferred |
+| F     | ⏸ Defer  | **Provider topology** (frontend). `App.tsx` still branches on `isAuthenticated` with separate `MinimalProviders`/`FullProviders` trees. Audit target, not a defect: the lifecycle cleanup is tested. Target shape (later): `Router → ThemeProvider → QueryClientProvider → auth state → WS lifecycle → Routes`. | ⬜ deferred |
 
-| 4     | 🟠 P1    | **Durable trading ledger** (reviewer's PR 2). Persist order/fill intent before create; wire `TRADE_EXECUTED` events to an idempotent DB write (unique `(bot_id, client_order_id, exchange_order_id, fill_id)`); fix the `trades.status` vocabulary; filter `bot_instances` updates by `bot_id`, not `strategy_id` (N7).                                                                                                                                                                                                                       | ✅ Done `5d1cef9` (2026-10-02) — migration `016_durable_trading_ledger.sql` (`bot_trade_fills` + `bot_order_intents` + `bot_positions` + `bot_performance_snapshots`); `shared/src/protocol/engine-ledger.ts` event family; engine `LedgerTradeReporter` (intent-before-create, fail-closed); backend `TradeLedgerService`/`TradeLedgerRepository` ingested via `BotEventProcessor` behind the authority check; legacy `engine:events` listener removed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| 5     | 🟠 P1    | **Accounting correctness** (reviewer's PR 3; N6). Sell at the next level / take-profit, PnL from executed price with fees, `reduce_only` exits, position reconciliation from exchange positions, explicit `PARTIALLY_FILLED`.                                                                                                                                                                                                                                                                                                                 | 🔶 **N6 core done 2026-10-02** (`8495254`). Fee sourcing (N6a): rate from the venue-reported account tier, `notional × rate` per fill (`ExchangeClient.getFeeRates?()` + `LighterClient.getFeeRates()` + `fees.ts`). Executed-price accounting: exits price one grid step above the level (or `takeProfitPercent` above the **executed** entry) and are never armed at/below it; a BUY books `0 - fee` while the closing SELL books `(sellExec − entryExec) × qty − fee`, so `SUM(bot_trade_fills.pnl)` stays exact; `PositionReport.pnl` is realised and `unrealizedPnl` marks the open inventory (`bot_positions.unrealized_pnl`, migration `017`). `reduce_only` exits landed 2026-10-02 (`b303fe6`: `ExchangeOrderRequest.reduceOnly` + `OrderRequest.reduceOnly`; Orderly `reduce_only` mapped in `payload.ts`, Lighter forwarded through the sidecar; grid sets it on SELL); position reconciliation landed 2026-10-02 (`938e230`: throttled `exchange.getPositions()` cross-check, venue truth reported on drift). **Live Gate 3 PASS 2026-10-03** (Lighter testnet, `.git/gatelogs/live/gate3-report.md`): BUY 2670.82 → SELL 2673.49 round trip with `realizedPnl 0.0267` exact, sourced-zero fee, `SUM(bot_trade_fills.pnl) == bot_instances.total_pnl`, `reduce_only` visible on the venue order, Phase-5 drift check fired. **Gate 4 PASS 2026-10-03** (`.git/gatelogs/live/gate4-report.md`): genuine partial observed — status `open` + cumulative monotonic `filled_base_amount`, no trade id → identity = cumulative-qty segment. **Per-fill `PARTIALLY_FILLED` landed 2026-10-04:** all five plan phases — segment-aware fill ids + domain types (`6381110`), OrderManager delta accounting (`efa6c5c`), observation paths (`65911f3`), grid wiring (`3859f34`), tests and docs. **Live Gate-4 §9 run 2 2026-10-04** (`.git/gatelogs/live/gate4-run2-report.md`): engine-path partials booked one ledger row per segment, delta-only (a resting SELL gave rows `0.0204` then `0.0184` under one `client_order_index`; a BUY gave `0.01` then `0.01`), `SUM(bot_trade_fills.pnl) == bot_positions.pnl`; the restart/redelivery half of the criterion is covered by the Phase-6 harness, and a live restart run stays open. |
-| 6     | 🟡 P2    | **Failure-injection harness** (reviewer's PR 4). Fake exchange with scripted failures (accept-then-drop, timeout, 500, `NOT_FOUND`, duplicate-key rejection, partial fill) and a test matrix: crash at each step of create, Redis down/restart, restart with/without/corrupt snapshot, exchange-side orphans.                                                                                                                                                                                                                                 | 🔶 **Started 2026-10-04** — a shared scripted fault-injecting fake exchange (`engine/src/application/__tests__/helpers/fake-exchange.ts`: call journal + `on`/`fail` scripting + happy-path defaults, replacing the two duplicated `fakeExchange` helpers) and a service-level matrix (`failure-injection-matrix.test.ts`, 12 cases): accept-then-drop, create timeout, pre-submit `UNREACHABLE` freeze, progressive partials + redelivery, partial + restart re-hydration, cancel/fill race, lost cancel (404 re-arms / 500 freezes), stale historical id (G1), unreachable startup listing, startup fill segment. Plan `docs/instructions/phase6-failure-injection-plan.md`. **Inherently live (never unit-testable):** real `SIGKILL` (Gate 2 ✅), Redis restart, orphan-at-venue.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| –     | 🟡 P2 (residue) | **Account-scoped position/balance domain APIs.** Retire the userId-only most-recent-row heuristic (R2); `getPosition(accountId, symbol)` with user-level aggregation separate. (P2: drop the unconsumed `kodiak_status` column from `user_trading_summary`.) | ✅ **Core closed 2026-10-05** — `getPosition(exchangeAccountId, symbol)` landed (interface + adapter + domain service); the userId-only heuristic is gone (R2 §3). Balances already aggregate per-asset across accounts (C3b). **Remaining:** only the P2 `kodiak_status` column note. |
-| –     | 🟡 P2    | **Frontend identity residue.** Remove the `bot.strategy_id === botId` compatibility fallback once no caller passes a strategy id (R1).                                                                                                                                                                                                                                                                                                                                                                                                        | ⬜ open                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| D     | 🟠 P1    | **Bot account sessions.** The unit of execution becomes `(user, exchange_accounts)` with `strategy_runs` inside it: one credential fetch, one exchange connection and one reconciler per account — also the shape N3/N4 reconciliation needs. Landed D1–D4 (`6ce8c02`..`6b91a63`), accepted 2026-10-06; `strategy_id` shim-drop pending — [DATA_MODEL.md](DATA_MODEL.md) §4.4, [plan §D](EXCHANGE_INTEGRATION_PLAN.md).                                                                                                                                                                                       | ✅ landed 2026-10-06 (`6ce8c02`..`6b91a63`; `strategy_id` shim-drop pending)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| E     | 🟡 P2    | **Agent participation.** Read-only API keys per exchange account, grants scoped to one account, proposals inert until approved, engine as the only executor. Designed, not implemented — [plan §E](EXCHANGE_INTEGRATION_PLAN.md).                                                                                                                                                                                                                                                                                                             | ⬜ open                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| –     | 🟡 P2    | **Split `shared` package.** `@trade-bot/shared` is a god package (protocol types, domain models, API contracts, error classes, logging types). Split by domain once the trading-path hardening above has landed.                                                                                                                                                                                                                                                                                                                              | ⬜ deliberately deferred                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| –     | 🟡 P2    | **Frontend execution-integrity audit** (2026-10-05 correction, §2c). Ten targets, reviewer-ordered: WS reconnect → lifecycle convergence, login/logout provider remount, socket-vs-REST ordering, shared-cache observers, `strategy_id` collision (R1), level downgrade mid-socket, delete-during-transition, 401 mid-mutation, refresh during STARTING/STOPPING, tests for all. Design mitigations exist for most; **proven 2026-10-07** — 9 focused integration tests under `frontend/src/test/integration/` (no App render; real hooks + real `WebSocketClient` + fake socket + mocked REST), 30/223 green — see the §2c matrix for per-scenario findings. |
-
-| 2026-10-05 (R2 closed — account-scoped positions)   | `main` @ this change                                                                               | **The userId-only most-recent-row heuristic is gone.** `IPositionRepository.getPosition(exchangeAccountId, symbol)` — `UNIQUE(exchange_account_id, symbol)` (migration 013) makes it exactly one row; adapter SQL keyed on `exchange_account_id`, no `ORDER BY updated_at DESC`; `PositionService.getPosition` follows; the dead `position-sync` existence check removed. Regression test pins the contract. The read had no production consumer — closed before a trading path could pick it up.                         |
 ---
 
-## 5. History — previous review passes
+## 5. History — recent passes (full table in the archived cycle)
 
-| Pass                                         | Repository state                                                                                   | Outcome                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-09-20 (independent reviewer)            | `main` @ `c149711`                                                                                 | Ratings ~8/10; P0 = exchange↔local reconciliation; produced N1–N9 and Phases 0–7. **Full text + verification + all L/M findings:** [archived cycle document](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| 2026-09-27 (independent reviewer)            | `f40f02a`                                                                                          | "Execution-integrity hardening" batch (dead `engine.ts` writers, credential idempotency, trade path) — all items ✅ Done 2026-09-30/10-01, see §2 rows 9–11.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| 2026-09-26/27 flow audits                    | live runs                                                                                          | L1–L24 narratives — all ✅ Done; archived with the cycle document.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 2026-09-30 (M1 live gate)                    | `.git/gatelogs/prod/`                                                                              | Emergency stop end-to-end, 20/20 live; two venue rules pinned. Ledger row M1 ✅ — archived.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 2026-10-01 (engine hardening)                | `main` @ `d746c4c`                                                                                 | Reviewer's PR 1 landed: Phase 3 durable snapshots (`d5aa842`) + Phase 2 `OrderManager`/`OrderReconciliationService` (N3/N4/N5 closed). Live Lighter duplicate-order proof still deferred.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 2026-10-01 (live Gate 0)                     | `.git/gatelogs/live/`                                                                              | Lighter testnet Phase-0 proof **green**: duplicate `client_order_index` accepted-silently (no second order), lost-response recovery PASS, engine smoke PASS, venue clean. Probe `cancel-order` step fixed — it had leaked the lost-response order (left the venue dirty).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 2026-10-01 (independent reviewer)            | `624e599` → verified @ `cc8da7c`                                                                   | **This document.** Architecture no longer the concern; focus = reconciliation + durable financial state.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 2026-10-02 (accounting core)                 | `main` @ `8495254`                                                                                 | N6 core landed: fee sourcing from the venue-reported tier (`af3da2c`), then executed-price exit pricing, fee-inclusive realised PnL with an unrealised split, and a persisted executed entry. `reduce_only` / per-fill `PARTIALLY_FILLED` / `getPositions()` reconciliation remain.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| 2026-10-02 (accounting remainder)            | `main` @ `938e230`                                                                                 | N6 remainder part 1: grid exits are `reduce_only` (`b303fe6`) and the grid cross-checks its position against `exchange.getPositions()` (`938e230`). Per-fill `PARTIALLY_FILLED` deferred pending a Lighter testnet observation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| 2026-10-03 (live Gate 3 accounting)          | Lighter testnet @ `a843c95` — evidence `.git/gatelogs/live/gate3-report.md`                        | **Round trip PASS**: BUY 2670.82 → SELL 2673.49 (exit strictly above the executed entry), `realizedPnl 0.0267` exact, sourced-zero fee, `SUM(bot_trade_fills.pnl) == bot_instances.total_pnl` exact (7 rows / 7 fills), `reduce_only: true` seen on the resting SELL at the venue, Phase-5 drift check fired live, G1 recovery held (no phantom fills). §4 row 5 keeps only per-fill `PARTIALLY_FILLED` open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| 2026-10-03 (live Gate 4 partial-fill probe)  | Lighter testnet @ `a843c95` — evidence `.git/gatelogs/live/gate4-report.md` + `gate4-partial.json` | **PASS — Phase 4 unblocked**: genuine partial observed (`filled 0.0074 / remaining 0.0300` resting ≥2.3 s, then `0.0374` filled); `filled_base_amount` cumulative and monotonic; raw status of a partial is **`open`** (not `partially_filled`); no per-trade id on order rows (`order_id` even mutates) → fill identity = **cumulative-qty segment keyed on `client_order_index`**. Venue rules pinned along the way (min size 0.01, `21733` accidental-price guard, STP-only self-trade, MM ladder re-quotes, `21104` nonce drift). Probe residue flattened with a `reduce_only` buy — venue ends flat, 0 orders.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| 2026-10-03 (live Gate 2 snapshot durability) | Lighter testnet @ `a843c95` — evidence `.git/gatelogs/live/gate2-report.md`                        | **PASS (§7)**: SIGKILL → main snapshot corrupted → restart recovered via `.prev` (`Recovered grid snapshot from the previous version` + `initialized (restored from snapshot) restoredCount=6`), restored levels byte-equal the pre-kill `.prev`, venue `activeOrders` 1 → 1 with the same `client_order_id` (no duplicate placement). Ops findings: engine stream lives in **Redis DB 1**; manual `STARTING` is re-marked `UNKNOWN` by the reconcile in ~2.5 min, so the §3.5 CAS + XADD must be atomic; no boot-time bot adoption.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 2026-10-03 (live Gate 1-B order adoption)    | Lighter testnet @ `a843c95` — evidence `.git/gatelogs/live/gate1b-report.md`                       | **PASS (§4)**: SIGKILL with a resting BUY (`client 4254758849`) → restart (epoch 44) → atomic §3.5 resume → `initialized (restored from snapshot) restoredCount=6`, **zero** submissions after restart, venue `activeOrders` 1 → 1 same `client_order_id` — clean adoption (silent by design; count equality is the evidence). Stale bot `4ba68e7b` stopped → `STOPPED/STOPPED`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 2026-10-03 (live Gate 1-C vanish → re-place) | Lighter testnet @ `a843c95` — evidence `.git/gatelogs/live/gate1c-report.md`                       | **PASS (§5 / N3)**: venue cancel of `client 4254758849` → slot cleared (lookup `FOUND_CANCELED` → `SAFE_TO_RECREATE`) → re-placed at the first armed tick (`13:23:57`, same gen-0 id; §5.3's "next generation" expectation corrected — only `markFilled` bumps generations), venue count `1 → 0 → 1`. Transient `21104` did not freeze the slot (8 s retry). Bonuses: G1 live proof on a CANCELED history row (no phantom fill), and a ~3 h `ENETUNREACH` outage logged as a tick error without stopping the loop.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 2026-10-03 (live Gate 1-D clean stop)        | Lighter testnet @ `a843c95` — evidence `.git/gatelogs/live/gate1d-report.md`                       | **PASS (§6 / N5)**: `POST /stop` with 1 resting order + `+0.05` long → `Grid strategy bot stopped {unresolved: 0}`, venue `activeOrders 1 → 0`, `force_stop_reason: null`, bot `STOPPED/STOPPED` in ~3 s, ledger ↔ venue agree (`bot_positions 0.05 == venue +0.05`; 5 fills / `sum(pnl) 0 == total_pnl`). With this the planned live gates are complete: **Gate 0 ✅ (2026-10-01), 1-B ✅, 1-C ✅, 1-D ✅, 2 ✅, 3 ✅, 4 ✅ (all 2026-10-03)**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 2026-10-03 (Phase 4 parts 1–2)               | `main` @ `efa6c5c`                                                                                 | Phase 4 implementation started: segment-aware fill ids + partial-fill domain types (`6381110`), then `OrderManager` delta/generation accounting with its own suite (`efa6c5c`). Whole-order fills keep the byte-identical legacy fill hash (A6); an id is spent only when the instance booked something (B1). Phases 3–5 (observation paths, grid, tests/docs) pending — `docs/instructions/phase4-partial-fills-plan.md`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 2026-10-04 (Phase 4 parts 3–5)               | `main` @ `3859f34`                                                                                 | Phases 3–5 landed: observation paths book only venue deltas (`65911f3` — `checkSlot`/lookups/`pendingFill`, Lighter + Kodiak `executedQuantity`, defer-not-overplace), the grid books segments and wires arming/snapshot (`3859f34` — delta-only `bookSegment` with quantized segment bounds, quantity-based C1 arming, C2 below-minimum snap, C3 weighted entry, E3 snapshot fields, stop + startup fills), and Phase 5 adds the arming state table, held-based position report and lifecycle suites. **Residual (after 2026-10-04):** the live **restart** half of Gate-4 §9 run 2 and the C2 refusal-text confirmation (plan E2) — the delta-only half is now proven live (row below).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 2026-10-05 (live Gate 5 — P0 resume)         | Lighter testnet @ `83d4f87` — evidence `.git/gatelogs/live/gate5-resume-report.md`                 | **PASS — the P0 crash-recovery path works end-to-end through the product API.** Engine SIGKILLed at 14:26:22 with the bot `RUNNING` and **1 live venue order**; `ENGINE_HEARTBEAT_LOST` at 14:26:58; parked `RUNNING / UNKNOWN` with a single `RECONCILE_NEEDS_USER_ACTION` **51 s** later. Engine restarted (epoch 52), then `POST /resume {botId}` → **202 with the SAME botId** → `restored from snapshot (levels 13, restoredCount 10)` → `STATE_CHANGED` → `RUNNING/RUNNING`. Assertions: **no duplicate bot** (`bot_instances` unchanged, 1 for the strategy), **marker once per episode** (1, re-verified after several sweeps), **park surfaced then self-cleared** (`needs_user_action` true→false with no reset logic), **no financial re-application** (13 rows / 13 unique `fill_id`s / 0 duplicates; post-resume rows at the lowest client-order generations). No partial occurred this window, so this validates the **lifecycle** path; partial delta accounting was proven separately in run 3. Residue: ~13.28 ETH testnet long + 1 resting flatten order.                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 2026-10-05 (P0-3 surface the park)           | `main` (this change)                                                                               | **P0-3 landed — a dead bot is no longer invisible.** Measured the problem first: `bot_lifecycle_events` held **794** `RECONCILE_NEEDS_USER_ACTION` rows against **24** real `STATE_CHANGED` (one bot alone: **725**), because the ~60 s reconciler recorded the marker unconditionally and re-logged the same warning every sweep. Now: (1) `recordReconcileNeedsUserAction` returns whether it **actually wrote** a row and skips when an identical marker is already the tail of the trail — any real transition supersedes it, so a bot that parks again is still marked (once per _episode_, not per sweep); (2) the reconciler counts and warns only on a new row; (3) `GET /instances` derives `needs_user_action` + `needs_user_action_reason` from the audit-trail tail via a `LEFT JOIN LATERAL` — **no new table, no N+1** — verified live against Postgres (marker at tail ⇒ `true`; a subsequent real transition ⇒ `false`; rollback leaves data untouched); (4) the UI shows an explicit "Action required: the trading engine was lost and this bot was NOT restarted automatically" notice beside the Resume button. **Remaining for the P0:** the live crash → resume gate.                                                                                                                                                                                                                                                                                        |
-| 2026-10-05 (P0 crash-recovery implemented)   | `main` (this change)                                                                               | **P0-1 + P0-2 landed.** (1) `VALID_TRANSITIONS.UNKNOWN` gains `"STARTING"` — the one missing edge that made a crashed bot unresumable — and `POST /api/bot/management/resume { botId }` delegates to the pre-existing `BotLifecycleService.start(botId, userId)` (idempotent, CAS, audited, rollback), so the engine still must confirm `RUNNING`. `InvalidStateTransitionError` is now tagged **409** instead of surfacing as 500. UI: the UNKNOWN/ERROR branch's button was labelled **"Restart Bot" while calling `startBot`**, i.e. it created a second bot; it is now **"Resume Bot"** → `resumeBot(bot.id)`. (2) The one-live-bot-per-strategy guard already existed but only counted `actual_state IN ('STARTING','RUNNING')`, so a bot **parked in UNKNOWN did not block a duplicate** — exactly how run 3 grew a stray second bot. Predicate widened to also count `desired_state='RUNNING' AND actual_state IN ('UNKNOWN','ERROR')` (STOPPING deliberately excluded to preserve stop→start), plus DB backstop `bot_instances_one_live_per_strategy` partial unique index (migration 018, `CONCURRENTLY`, refuse-on-duplicates guard — the `77506bf` precedent). Verified live against Postgres: duplicate blocked, terminal history still accumulates, stop→start still allowed. Docs: `OPERATIONS.md` §5.2 recovery + route table, backend README. **Both follow-ups now closed:** P0-3 landed (row above) and Gate 5 proved the live crash → resume path (row above). |
-| 2026-10-05 (live Gate-4 §9 run 3)            |
-| 2026-10-05 (live Gate-4 §9 run 3)            | Lighter testnet @ `f2e08ef` — evidence `.git/gatelogs/live/gate4-run3-report.md`                   | **PASS — closes the restart half.** A clipped resting order (`2652834945`, initial 1.0 → filled 0.0052) was SIGKILLed at the instant the engine had booked the partial; the venue then completed it **while the engine was down**. After the same-botId restart the engine rehydrated (`restored from snapshot, restoredCount 7`) and booked **only the 0.9948 delta**: `PARTIAL 0.0052` (pre-crash) + `FILLED 0.9948` (post-restart), one `client_order_index`, **distinct `fill_id`s**, sum exactly 1.0, **no duplicate 0.0052 / no wholesale 1.0 re-apply**, `SUM(pnl) == bot_positions.pnl`. Method finding: an **engine-only** restart is not enough — the backend deliberately never auto-starts (`LifecycleReconciliationService` step 3 "audit-only (no auto-start)"), so a crashed bot is parked `RUNNING / UNKNOWN` until a same-botId resume via the Gate-1 harness. Residue: ~11.87 ETH testnet long + 1 resting order (tidy-up outstanding).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 2026-10-04 (live Gate-4 §9 run 2)            | Lighter testnet @ `f2e08ef` — evidence `.git/gatelogs/live/gate4-run2-report.md`                   | **PASS (core invariant)**: three engine-path partials booked **one ledger row per cumulative segment, delta-only** — a resting SELL gave rows `0.0204` then `0.0184` (cumulative `0.0204 → 0.0388`) under one `client_order_index` with distinct `fill_id`s and proportional realised PnL, and a BUY gave `0.01` then `0.01` (cumulative `0.01 → 0.02`); `SUM(bot_trade_fills.pnl) == bot_positions.pnl`. **Not run live:** the restart/redelivery half (no engine restart in the window; a host network outage then cut the run short) — now covered deterministically by the Phase-6 harness; a dedicated live restart run stays open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 2026-10-04 (dual external review)            | `main` @ `f2e08ef`                                                                                 | Two independent reviewers, both concluding the **trading path has effectively closed** (A ~8.5/10, "stop touching this layering"; next milestone = failure injection). Cross-checked in §1a/§2b: A's "347 commits" is stale (**361**), A's open list omits several §4 items, B's `bot-management.service.ts` question answered (`ed019c7`). New process finding **R3**: single-author merges, no CI gate.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 2026-10-04 (Phase 6 start)                   | `main` @ `f2e08ef`                                                                                 | Failure-injection harness started: a shared scripted fault-injecting fake exchange (`engine/src/application/__tests__/helpers/fake-exchange.ts`) + a 12-case service-level matrix (`failure-injection-matrix.test.ts`); plan `docs/instructions/phase6-failure-injection-plan.md`. Inherently-live cases (real `SIGKILL`, Redis restart, orphan-at-venue) stay in the gate runbooks.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 2026-10-05 (external review, two passes)      | `main` @ 369 commits                                                                               | **Pass 1 contaminated, pass 2 self-corrected.** The first 2026-10-05 pass asserted frontend defects the code does not have (AuthContext bootstrap, localStorage tokens, no route splitting, dual auth models) by reviewing README/archived material as source; the reviewer re-checked `main` and **withdrew all of them** the same day. Correction confirms the frontend was recently hardened (lazy routes, authoritative lifecycle sync, documented query ownership) and reframes the next work as an **integration-behavior audit**, not an architecture rewrite — adopted as the §4 "frontend execution-integrity audit" row. Verified claim-by-claim in §2c (rows 25–35); raw texts in `docs/archived/reviews/2026-10-05_external_review{,_correction}_raw.md`. Housekeeping from this pass: stale `useBotLifecycle.ts:187,253` refs → **194,260**, frontend test count 206 → **211** (run 2026-10-05, all passing).                         |
-| 2026-10-06 (live-testing pass + D1–D4 acceptance) | `main` @ `f0c3728`..`d10d91d` | **Ghost session closed** (clearPreviousSession on login/register/logout, httpClient logout, wallet-disconnect event, cookie `path:"/"`), **Lighter level-stall closed** (`onLevelChanged` profile-cache invalidation + dead-duplicate replace), **engine de-brand** (`trading-engine` service meta + identity prefix; loader + migration 020 applied to the dev DB), **D1–D4 accepted with suites repaired** (validators mock, per-run stopTick teardown, B5 skip-on-sidecar-down). Gates green: format, lint, build, backend 2,559 / frontend 212 / engine 310 (clean exit). |
+| Pass                                         | Repository state                                    |
+| -------------------------------------------- | --------------------------------------------------- |
+| 2026-10-05 (live Gate 5 — P0 resume)         | Lighter testnet @ `83d4f87` — `.git/gatelogs/live/gate5-resume-report.md` |
+| 2026-10-05 (live Gate-4 §9 run 3)            | Lighter testnet @ `f2e08ef` — `.git/gatelogs/live/gate4-run3-report.md` |
+| 2026-10-05 (external review, two passes)     | `main` @ 369 commits — pass 1 contaminated/withdrawn, pass 2 correction adopted |
+| 2026-10-06 (live-testing pass + D1–D4 acceptance) | `main` @ `f0c3728`..`d10d91d` — ghost session closed, Lighter level-stall closed, engine de-brand, sessions accepted, suites green (2,559 / 212 / 310) |
+| 2026-10-07 (frontend execution-integrity proven) | `main` @ `daf661f` — 9 integration tests, 30 files / 223 tests green |
+| 2026-10-07 (external review + doc rotation)  | `main` @ `daf661f` — this rotation: review verified (§2 rows 36–47), closed cycles moved to `docs/archived/` |
 
-
-Earlier passes (2026-01 … 2026-09-14 ratings, the first gap-analysis rounds)
-are in `docs/archived/` (`PROJECT_REVIEW.md`, the original
-`PROJECT_REVIEW_GAP_ANALYSIS.md`).
+Earlier passes (2026-09-20 … 2026-10-04 reviews, live Gates 0–4, phases 0–5)
+are in `docs/archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md` and
+`docs/archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-10-07_cycle.md`; the oldest
+rounds (2026-01 … 2026-09-14 ratings) in `docs/archived/PROJECT_REVIEW.md`.
 
 ---
 
 ## 6. Still open
 
-> **P0 crash-recovery closed 2026-10-05** — P0-1/P0-2/P0-3 shipped and Gate 5
-> proved the live crash → park → resume path (`gate5-resume-report.md`); recorded
-> in the history table (§5) above.
+| Priority | Item | Where |
+| -------- | ---- | ----- |
+| 🟠 P1    | **Phase 6 completion** — the five live failure gates (Redis restart, exchange orphan, crash at more exact points, corrupted/missing snapshot, exchange unavailable during startup reconciliation) on top of the landed deterministic matrix. | §4 |
+| 🟠 P1    | **`snapFullyLong` end-to-end trigger** — the only unproven part of an otherwise fully landed and live-proven accounting stack. | §3 N6, §4 |
+| 🟡 P2    | **2–4 browser smoke tests around `App` wiring** (new 2026-10-07 — the one layer the hook-level suite deliberately skips). | §4 |
+| 🟡 P2    | **Residue cleanup**: `strategy_id` shim-drop (R1 + D-remainder migration), `kodiak_status` view column, transient signer `21104`. | §3, §4 |
+| 🟡 P2    | **Agent participation** (plan §E). | §4 |
+| ⏸ Defer  | **`shared` split; provider topology / general frontend refactoring.** | §4 |
 
-| Priority | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Where  |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| 🟠 P1    | **PR-1 (engine trading-path P0s) fully closed** — Phase 0 ✅ 2026-10-01, Phase 2 ✅ `d746c4c`, Phase 3 ✅ `d5aa842`; **PR-2 durable ledger ✅** `5d1cef9`; **PR-3 accounting ✅ core + partial-fill accounting landed 2026-10-04**, with Gate-4 §9 run 2 (delta-only) proven live 2026-10-04 **and run 3 (restart/redelivery) proven live 2026-10-05** — only the rare end-to-end `snapFullyLong` trigger remains. G1 ✅ 2026-10-02 (§4 row 2b). **Remaining P1:** bot account sessions — landed D1–D4 (`6ce8c02`..`6b91a63`), accepted 2026-10-06 with suites repaired (`9d0d26c`); only the `strategy_id` shim-drop migration remains. R2 ✅ and R3 ✅ closed 2026-10-05 (account-scoped position read; CI gate + protected `main`). | §4, §3 |
-| 🟡 P2    | **Failure-injection harness (Phase 6) started 2026-10-04** (shared scripted fake + 12-case matrix; plan in `docs/instructions/`). **Frontend execution-integrity audit adopted 2026-10-05** (§2c/§4) **and proven 2026-10-07** (9 focused integration tests, 30/223 green). Also open: agent participation (plan §E), frontend identity residue (R1 — targeted `ws-strategy-id` test landed, shim-drop migration remains), `shared` split (defer), transient signer `21104`.                                                                                                                                                                | §4, §3 |
+> **Closed since the last rotation** (details in the archived cycle): P0
+> crash-recovery (Gate 5), R2 account-scoped position read, R3 CI gate +
+> protected `main`, the frontend execution-integrity audit (9 tests), the
+> 2026-10-01/04/05 review cycles and all their verified claims.
 
 ### Security advisories
 
-| Advisory                                                                                                                                                                                        | Severity | Status                             | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`GHSA-4p3w-j4w9-5jqw`](https://github.com/advisories/GHSA-4p3w-j4w9-5jqw) — *moment path traversal via crafted non-string locale name* ([Dependabot #97](https://github.com/infinitEnigma/trade-bot/security/dependabot/97)) | Moderate | ✅ **Closed 2026-10-05**          | Transitive via `backend → winston-daily-rotate-file → file-stream-rotator → moment`. `file-stream-rotator@0.6.1` declares `moment: ^2.29.1`, so a plain `npm audit fix` moved it to the patched **2.31.0** — no `overrides` needed, lockfile-only diff (3 lines). `npm audit` moderate count is now **0**.                                                                                                                                                                                                           |
-| [`GHSA-vfj7-8cjw-p6xm`](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) — *braces stack exhaustion via deeply nested patterns* (CVE-2026-93687)                                                 | High     | ⚠️ **Open — no upstream fix exists** | The advisory reports **"Patched versions: None"** (`<=3.0.3` affected, and `3.0.3` is the newest release). Reachable only through `ts-node-dev → chokidar → braces` — the `npm run dev` hot-reload tool. `npm ls braces --omit=dev` is empty, so it is **absent from the production tree** and `npm audit --omit=dev` reports **0**. Two attempts to override `chokidar ^4` (which drops `braces` entirely) were abandoned: npm 12 silently refused to apply them, and forcing an out-of-range transitive dep onto the unmaintained `ts-node-dev@2.0.0` would risk the dev workflow for zero production gain. Revisit when `ts-node-dev` is replaced or `braces` ships a patch. |
+| Advisory | Severity | Status | Notes |
+| -------- | -------- | ------ | ----- |
+| [`GHSA-4p3w-j4w9-5jqw`](https://github.com/advisories/GHSA-4p3w-j4w9-5jqw) — *moment path traversal via crafted non-string locale name* ([Dependabot #97](https://github.com/infinitEnigma/trade-bot/security/dependabot/97)) | Moderate | ✅ **Closed 2026-10-05** | Transitive via `backend → winston-daily-rotate-file → file-stream-rotator → moment`. `file-stream-rotator@0.6.1` declares `moment: ^2.29.1`, so a plain `npm audit fix` moved it to the patched **2.31.0** — no `overrides` needed, lockfile-only diff (3 lines). `npm audit` moderate count is now **0**. |
+| [`GHSA-vfj7-8cjw-p6xm`](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) — *braces stack exhaustion via deeply nested patterns* (CVE-2026-93687) | High | ⚠️ **Open — no upstream fix exists** | The advisory reports **"Patched versions: None"** (`<=3.0.3` affected, and `3.0.3` is the newest release). Reachable only through `ts-node-dev → chokidar → braces` — the `npm run dev` hot-reload tool. `npm ls braces --omit=dev` is empty, so it is **absent from the production tree** and `npm audit --omit=dev` reports **0**. Two attempts to override `chokidar ^4` (which drops `braces` entirely) were abandoned: npm 12 silently refused to apply them, and forcing an out-of-range transitive dep onto the unmaintained `ts-node-dev@2.0.0` would risk the dev workflow for zero production gain. Revisit when `ts-node-dev` is replaced or `braces` ships a patch. |
 
 ### How to keep this document honest
 
@@ -637,7 +206,16 @@ are in `docs/archived/` (`PROJECT_REVIEW.md`, the original
    stale docs are treated as bugs (`CONTRIBUTING.md`).
 2. Add the verification row to §2 when a review claim is re-checked, and record
    the result even when it contradicts the review.
-3. When a finding closes, move its narrative to the archived cycle document
-   instead of deleting it, and leave only a one-line pointer here.
+3. When a finding closes, move its narrative to the newest archived cycle
+   document instead of deleting it, and leave only a one-line pointer here. The
+   archives now are
+   [`…_2026-09-20_cycle.md`](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-09-20_cycle.md)
+   and
+   [`…_2026-10-07_cycle.md`](archived/PROJECT_REVIEW_GAP_ANALYSIS_2026-10-07_cycle.md).
 4. Keep the README free of review history: it answers "what is the system
    today", this document answers "how did we get here / what remains".
+5. When this document grows past ~300 lines of mostly-closed material again,
+   rotate: copy it to `docs/archived/…_cycle.md` and rebuild from the open
+   items (this is the 2026-10-07 rotation; the previous one produced the
+   2026-09-20 cycle).
+
