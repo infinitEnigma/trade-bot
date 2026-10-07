@@ -75,6 +75,7 @@
     "unrs-resolver@1.12.2": true
   },
   "overrides": {
-    "@types/node": "~24.13.5"
+    "@types/node": "~24.13.5",
+    "shell-quote": "1.11.0"
   }
 }
