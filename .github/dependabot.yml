@@ -1,0 +1,28 @@
+# Dependabot configuration — keeps npm dependencies up to date for the
+# monorepo (root package.json + workspace packages: frontend, backend,
+# engine, shared).
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "fix(deps)"
+      include: "scope"
+    reviewers:
+      - "infinitEnigma"
+    labels:
+      - "dependencies"
+    ignore:
+      # Keep the trading platform surgical: only minor/patch upgrades inside
+      # a major line are auto-merged. Semver-major bumps land as review-only
+      # PRs so contracts/migrations get human sign-off.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      minor-and-patch:
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
