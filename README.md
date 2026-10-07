@@ -318,10 +318,11 @@ npm run format:check    # Verify formatting without writing
 
 ## Test Coverage
 
-Fresh totals (2026-10-06, full-suite runs): **backend 2,559 tests**,
-**engine 310 tests** (32 suites, clean exit; the env-gated Lighter live smoke
+Fresh totals: **backend 2,559 tests** (2026-10-06 run), **engine 310 tests**
+(2026-10-06 run; 32 suites, clean exit; the env-gated Lighter live smoke
 self-skips without credentials or a reachable signing sidecar),
-**frontend 212 tests** (21 files) —
+**frontend 223 tests** (30 files, 2026-10-07 run — includes the 9-file
+`src/test/integration/` execution-integrity matrix, §2c scenarios 1–9) —
 the coverage snapshot below is from
 2026-09 and is kept for shape comparison only; percentages are stale and will
 be refreshed with the next coverage pass (see Roadmap):
