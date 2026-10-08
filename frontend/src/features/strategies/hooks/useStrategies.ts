@@ -3,7 +3,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 //import { Strategy } from "@trade-bot/shared";
 import { strategyService } from "../services/strategyService";
-import { BotInstance, StrategyFormData } from "../types/strategies.types";
+import {
+  BotInstance,
+  StrategyFormData,
+  getSessionForStrategy,
+} from "../types/strategies.types";
 import { toast } from "sonner";
 
 /**
@@ -90,12 +94,12 @@ export const useStrategies = () => {
     },
   });
 
-  // Helper function to get bot for strategy
+  // Helper function to get bot for strategy (D4 sessions: runs-only).
   const getBotForStrategy = (strategyId: string): BotInstance | undefined => {
     if (!Array.isArray(bots)) {
       return undefined;
     }
-    return bots.find(bot => bot.strategy_id === strategyId);
+    return getSessionForStrategy(bots, strategyId);
   };
 
   // Helper function to format currency

@@ -20,11 +20,11 @@ import {
   CacheResult,
 } from "@trade-bot/shared";
 
-// Bot interface for repository operations
+// Bot interface for repository operations (022 shim-drop: session row,
+// strategy attribution lives on `strategy_runs`, not here).
 export interface Bot {
   id: string;
   user_id: string;
-  strategy_id: string;
   status: string;
   last_heartbeat: string | null;
   last_error: string | null;
@@ -83,11 +83,11 @@ export interface BotStatusServiceDependencies {
 
 /**
  * Legacy Bot Status Response - For API compatibility during migration
+ * (022 shim-drop: no strategy_id — sessions resolve strategies via runs).
  */
 export interface LegacyBotStatusInfo {
   id: string;
   user_id: string;
-  strategy_id: string;
   status: string;
   last_heartbeat: string | null;
   last_error: string | null;
@@ -530,7 +530,6 @@ export class BotStatusService {
     return {
       id: statusInfo.id,
       user_id: statusInfo.user_id,
-      strategy_id: statusInfo.strategy_id,
       status: statusInfo.status,
       last_heartbeat: statusInfo.last_heartbeat,
       last_error: statusInfo.last_error,

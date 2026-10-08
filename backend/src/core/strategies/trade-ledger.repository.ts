@@ -17,8 +17,10 @@
  * - The `trades` display row is written in the same transaction, so there is
  *   never a display row without a ledger row (or a double display row from a
  *   replay).
- * - Ownership (`user_id`, `strategy_id`) is resolved from `bot_instances`
- *   inside the transaction — never from the event payload.
+ * - Ownership (`user_id`, plus the run-derived `strategy_id` attribution)
+ *   is resolved server-side inside the transaction — never from the event
+ *   payload. `strategy_id` comes from the session's oldest run (022
+ *   shim-drop), NULL when the session has no runs yet.
  *
  * Persistence failures throw so the event stays unacked and is redelivered;
  * the DB unique key makes that redelivery safe.
@@ -91,16 +93,26 @@ export class TradeLedgerRepository {
    */
   async recordFill(fill: LedgerFill): Promise<RecordFillResult> {
     const result = await transaction(async client => {
+      // Ownership + attribution (022 shim-drop): `user_id` from the session
+      // row, `strategy_id` from its oldest run (NULL when the session has
+      // no runs yet). Never from the event payload.
       const bot = await client.query<{
         user_id: string | null;
-        strategy_id: string | null;
-      }>("SELECT user_id, strategy_id FROM bot_instances WHERE id = $1", [
-        fill.botId,
-      ]);
+      }>("SELECT user_id FROM bot_instances WHERE id = $1", [fill.botId]);
       if (bot.rows.length === 0) {
         return "UNKNOWN_BOT" as const;
       }
-      const { user_id, strategy_id } = bot.rows[0];
+      const { user_id } = bot.rows[0];
+      const run = await client.query<{
+        strategy_id: string | null;
+      }>(
+        `SELECT strategy_id FROM strategy_runs
+          WHERE bot_id = $1
+          ORDER BY created_at ASC, id ASC
+          LIMIT 1`,
+        [fill.botId]
+      );
+      const strategy_id = run.rows[0]?.strategy_id ?? null;
 
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO bot_trade_fills (

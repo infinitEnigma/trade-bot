@@ -343,8 +343,9 @@ In short:
       snapshot, venue unavailable during startup reconciliation) on top of
       the landed deterministic matrix
 - [ ] **Browser smoke tests** around `App` wiring (2–4 E2E scenarios)
-- [ ] **Residue cleanup** — `strategy_id` shim-drop, `kodiak_status` column,
-      transient signer `21104`
+- [ ] **Residue cleanup** — transient signer `21104` (`strategy_id`
+      shim-drop and `kodiak_status` column landed 2026-10-08 via
+      migrations `021`/`022`)
 - [ ] End-to-end `snapFullyLong` live trigger (the last unproven accounting
       condition)
 - [ ] Refresh coverage numbers (regenerate the table above, not percentages

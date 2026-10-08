@@ -117,7 +117,7 @@ export function useBotLifecycle(botId?: string) {
       return rows.map(
         (bot: {
           id: string;
-          strategy_id: string;
+          strategy_id?: string;
           status: string;
           total_trades: number;
           total_pnl: number;
@@ -127,13 +127,10 @@ export function useBotLifecycle(botId?: string) {
           needs_user_action_reason?: string | null;
           runs?: BotInstance["runs"];
         }) => ({
-          // L19: `id` is the bot-instance id, never the strategy id — stop,
+          // L19: `id` is the session id, never a strategy id — stop,
           // emergency-stop and the `bot.stateChanged` cache patch are all
-          // keyed on it. Mapping it to `strategy_id` (the legacy "one strategy
-          // ⇒ one bot" convention) sent the strategy UUID to
-          // `/api/bot/management/stop`, which 404s.
+          // keyed on it. Strategy resolution uses `runs` (022 shim-drop).
           id: bot.id,
-          strategy_id: bot.strategy_id,
           status: bot.status as BotInstance["status"],
           total_trades: bot.total_trades,
           total_pnl: bot.total_pnl,
@@ -264,10 +261,9 @@ export function useBotLifecycle(botId?: string) {
     };
   }, [handleBotStateChanged, handleStatusChange]);
 
-  // D4 sessions: a strategy resolves to its hosting session via `runs[]`
-  // first (legacy `strategy_id` column only for pre-D rows). `botId` here is
-  // always a bot id on the stop/emergency-stop path — the event carries the
-  // bot id, never a strategy id.
+  // D4 sessions: `botId` is always a bot id on this path — the event
+  // carries the bot id, never a strategy id. Runs-only resolution for the
+  // strategy-keyed lookup (strategy cards); bot-id lookup stays primary.
   const bot = botId
     ? (botsQuery.data?.find(b => b.id === botId) ??
       getSessionForStrategy(botsQuery.data ?? [], botId))

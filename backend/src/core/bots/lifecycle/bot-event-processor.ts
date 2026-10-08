@@ -23,7 +23,7 @@ import {
 import { contextLogger as logger } from "../../logging";
 import { BotLifecycleRepository } from "./bot-lifecycle.repository";
 import { BotLifecycleNotifier } from "./bot-lifecycle-notifier";
-import { syncStrategyActive } from "./strategy-active-sync";
+import { syncSessionStrategiesActive } from "./strategy-active-sync";
 import {
   BOT_COMMAND_TIMEOUT_MS,
   CLEANUP_INCOMPLETE_MARKER,
@@ -429,8 +429,10 @@ export class BotEventProcessor {
       ? "ERROR"
       : bot.actual_state;
 
-    // Strategy badge (Phase 2): a failed command lands the bot in ERROR.
-    await syncStrategyActive(bot.strategy_id, false);
+    // Strategy badge (Phase 2, 022 shim-drop): a failed command lands the
+    // bot in ERROR — the session's runs follow, via the runs not the
+    // retired `bot_instances.strategy_id` column.
+    await syncSessionStrategiesActive(this.repository, bot.id, false);
 
     await this.repository.resolveCommand(
       event.correlationId,
@@ -560,12 +562,13 @@ export class BotEventProcessor {
       return;
     }
 
-    // Strategy badge (Phase 2): keep strategies.active mirroring the bot —
-    // RUNNING proves the strategy is executing, STOPPED/ERROR ends it.
+    // Strategy badge (Phase 2, 022 shim-drop): keep strategies.active
+    // mirroring the bot — RUNNING proves the runs are executing,
+    // STOPPED/ERROR ends them. Badge follows the runs.
     if (payload.to === "RUNNING") {
-      await syncStrategyActive(bot.strategy_id, true);
+      await syncSessionStrategiesActive(this.repository, bot.id, true);
     } else if (payload.to === "STOPPED" || payload.to === "ERROR") {
-      await syncStrategyActive(bot.strategy_id, false);
+      await syncSessionStrategiesActive(this.repository, bot.id, false);
     }
 
     await this.repository.recordLifecycleEvent(bot.id, {
@@ -837,10 +840,11 @@ export class BotEventProcessor {
             bot.actual_state
           );
           if (persisted) {
-            // Strategy badge (Phase 2): a timed-out command that lands the
-            // bot terminal ends the strategy; UNKNOWN keeps the badge.
+            // Strategy badge (Phase 2, 022 shim-drop): a timed-out command
+            // that lands the bot terminal ends the session's runs; UNKNOWN
+            // keeps the badge.
             if (targetState === "STOPPED" || targetState === "ERROR") {
-              await syncStrategyActive(bot.strategy_id, false);
+              await syncSessionStrategiesActive(this.repository, bot.id, false);
             }
             this.notifier.emitStateChanged(
               bot.id,

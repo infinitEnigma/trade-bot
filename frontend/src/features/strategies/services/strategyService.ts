@@ -130,7 +130,6 @@ export class StrategyService {
         if (bot) {
           return {
             id: bot.id,
-            strategy_id: bot.strategy_id,
             status: bot.status,
             total_trades: bot.total_trades,
             total_pnl: bot.total_pnl,
@@ -165,17 +164,16 @@ export class StrategyService {
         return response.data.map(
           (bot: {
             id: string;
-            strategy_id: string;
+            strategy_id?: string;
             status: string;
             total_trades: number;
             total_pnl: number;
             last_updated: string;
             config?: unknown;
           }) => ({
-            // L19: the bot-instance id (what /management/stop expects), not
-            // the strategy id.
+            // L19: the session id (what /management/stop expects), never a
+            // strategy id (022 shim-drop).
             id: bot.id,
-            strategy_id: bot.strategy_id,
             status: bot.status as
               "RUNNING" | "STOPPED" | "ERROR" | "STARTING" | "STOPPING",
             total_trades: bot.total_trades,

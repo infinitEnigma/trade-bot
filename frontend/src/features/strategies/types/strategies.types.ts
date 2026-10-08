@@ -48,7 +48,12 @@ export interface StrategyRun {
 
 export interface BotInstance {
   id: string;
-  strategy_id: string;
+  /**
+   * @deprecated Retired by the 022 shim-drop — sessions carry no
+   * per-strategy column. Kept optional so already-shaped rows still
+   * typecheck; strategy resolution must use `runs`.
+   */
+  strategy_id?: string;
   status: "RUNNING" | "STOPPED" | "ERROR" | "STARTING" | "STOPPING";
   total_trades: number;
   total_pnl: number;
@@ -63,19 +68,17 @@ export interface BotInstance {
   needsUserAction?: boolean;
   needsUserActionReason?: string | null;
   /**
-   * D4 sessions: runs attached to this session (backend list query). Absent
-   * on older payloads; the legacy `strategy_id` lookup covers those.
+   * D4 sessions: runs attached to this session (backend list query).
    */
   runs?: StrategyRun[];
 }
 
 /**
  * D4 sessions: the run inside a session that executes a strategy, if any.
- * Prefers an attached run over the legacy `strategy_id` column, so a
- * strategy moved between sessions resolves to the live one.
+ * A strategy moved between sessions resolves to the live one.
  */
 export function getRunForStrategy(
-  bots: Array<Pick<BotInstance, "runs" | "strategy_id">>,
+  bots: Array<Pick<BotInstance, "runs"> & { strategy_id?: string }>,
   strategyId: string
 ): StrategyRun | undefined {
   for (const bot of bots) {
@@ -86,16 +89,13 @@ export function getRunForStrategy(
 }
 
 /**
- * D4 sessions: the session (bot row) that hosts a strategy — via its run
- * first, falling back to the legacy `strategy_id` column for pre-D rows.
+ * D4 sessions: the session (bot row) that hosts a strategy — via its run.
+ * Runs-only: a strategy with no attached run has no hosting session.
  */
 export function getSessionForStrategy<
-  T extends { runs?: StrategyRun[]; strategy_id: string },
+  T extends { runs?: StrategyRun[]; strategy_id?: string },
 >(bots: T[], strategyId: string): T | undefined {
-  return (
-    bots.find(b => b.runs?.some(r => r.strategy_id === strategyId)) ??
-    bots.find(b => b.strategy_id === strategyId)
-  );
+  return bots.find(b => b.runs?.some(r => r.strategy_id === strategyId));
 }
 
 export interface TradingBalance {

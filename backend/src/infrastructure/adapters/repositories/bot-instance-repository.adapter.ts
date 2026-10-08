@@ -20,13 +20,20 @@ import { tradingLogger as logger } from "../../../core/logging/context-aware-log
  */
 export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
   /**
-   * Get all bot instances for a user
+   * Get all bot instances for a user.
+   *
+   * Sessions carry no per-strategy columns (022 shim-drop): the `strategy_*`
+   * display fields resolve from the session's oldest run, NULL when the
+   * session has no runs yet.
    */
   async getBotInstances(userId: string): Promise<BotInstanceRecord[]> {
     try {
       const result = await query<BotInstanceRecord>(
         `
-                SELECT bi.*, s.name as strategy_name, s.type as strategy_type, s.config as strategy_config,
+                SELECT bi.*,
+                       first_run.strategy_name as strategy_name,
+                       first_run.strategy_type as strategy_type,
+                       first_run.strategy_config as strategy_config,
                        (tail.event_type = 'RECONCILE_NEEDS_USER_ACTION') AS needs_user_action,
                        -- Only meaningful when the flag is true: the tail event's
                        -- own reason (e.g. normal_stop) is noise otherwise and
@@ -57,7 +64,17 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
                          '[]'::json
                        ) AS runs
                 FROM bot_instances bi
-                JOIN strategies s ON bi.strategy_id = s.id
+                LEFT JOIN LATERAL (
+                    -- 022 shim-drop: oldest run's strategy projection (NULL
+                    -- when the session has no runs yet).
+                    SELECT s.name as strategy_name, s.type as strategy_type,
+                           s.config as strategy_config
+                    FROM strategy_runs r
+                    JOIN strategies s ON s.id = r.strategy_id
+                    WHERE r.bot_id = bi.id
+                    ORDER BY r.created_at ASC, r.id ASC
+                    LIMIT 1
+                ) first_run ON TRUE
                 LEFT JOIN LATERAL (
                     -- P0-3: the newest lifecycle event decides whether an
                     -- unresolved needs-action marker is still outstanding. Any
@@ -86,15 +103,27 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
   }
 
   /**
-   * Get bot instance by ID
+   * Get bot instance by ID. Same oldest-run strategy projection as the
+   * list query (022 shim-drop).
    */
   async getBotInstance(id: string): Promise<BotInstanceRecord | null> {
     try {
       const result = await query<BotInstanceRecord>(
         `
-                SELECT bi.*, s.name as strategy_name, s.type as strategy_type, s.config as strategy_config
+                SELECT bi.*,
+                       first_run.strategy_name as strategy_name,
+                       first_run.strategy_type as strategy_type,
+                       first_run.strategy_config as strategy_config
                 FROM bot_instances bi
-                JOIN strategies s ON bi.strategy_id = s.id
+                LEFT JOIN LATERAL (
+                    SELECT s.name as strategy_name, s.type as strategy_type,
+                           s.config as strategy_config
+                    FROM strategy_runs r
+                    JOIN strategies s ON s.id = r.strategy_id
+                    WHERE r.bot_id = bi.id
+                    ORDER BY r.created_at ASC, r.id ASC
+                    LIMIT 1
+                ) first_run ON TRUE
                 WHERE bi.id = $1
             `,
         [id]
@@ -114,40 +143,20 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
   }
 
   /**
-   * Create a new bot instance
+   * Create a new bot instance.
+   *
+   * Retired path (022 shim-drop): session creation goes through
+   * `BotLifecycleRepository.insertBotInstance` (no `strategy_id` column).
+   * This adapter keeps the interface shape but fails closed — sessions
+   * must not be created with a per-strategy column that no longer exists.
    */
   async createBotInstance(
-    bot: Omit<BotInstanceRecord, "created_at" | "updated_at">
+    _bot: Omit<BotInstanceRecord, "created_at" | "updated_at">
   ): Promise<BotInstanceRecord> {
-    try {
-      const result = await query<BotInstanceRecord>(
-        `
-                INSERT INTO bot_instances (id, strategy_id, user_id, status, running_time, total_trades, total_pnl)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                RETURNING *
-            `,
-        [
-          bot.id,
-          bot.strategy_id,
-          bot.user_id,
-          bot.status || "RUNNING",
-          bot.running_time || 0,
-          bot.total_trades || 0,
-          bot.total_pnl || 0,
-        ]
-      );
-
-      if (result.rows.length === 0) {
-        throw new Error("Bot instance creation failed - no rows returned");
-      }
-
-      return result.rows[0];
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      logger.error("Failed to create bot instance", error as Error);
-      throw new Error(`Failed to create bot instance: ${errorMessage}`);
-    }
+    throw new Error(
+      "Bot instance creation moved to BotLifecycleRepository.insertBotInstance " +
+        "(022 shim-drop: sessions carry no strategy_id column)"
+    );
   }
 
   /**
@@ -251,14 +260,18 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
   }
 
   /**
-   * Every bot instance bound to one strategy (any lifecycle state).
+   * Sessions hosting one strategy (any lifecycle state), resolved via
+   * `strategy_runs` (022 shim-drop): a session hosts the strategy iff it
+   * has a run row for it.
    */
   async getBotInstancesByStrategy(
     strategyId: string
   ): Promise<BotInstanceRecord[]> {
     try {
       const result = await query<BotInstanceRecord>(
-        `SELECT * FROM bot_instances WHERE strategy_id = $1 ORDER BY created_at DESC`,
+        `SELECT bi.* FROM bot_instances bi
+           JOIN strategy_runs r ON r.bot_id = bi.id AND r.strategy_id = $1
+          ORDER BY bi.created_at DESC`,
         [strategyId]
       );
       return result.rows;

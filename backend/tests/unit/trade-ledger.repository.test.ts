@@ -75,8 +75,11 @@ describe("TradeLedgerRepository", () => {
     it("on a fresh ledger insert: display row + intent close + totals by bot id", async () => {
       clientQuery
         .mockResolvedValueOnce({
-          rows: [{ user_id: "user-1", strategy_id: "strat-1" }],
-        }) // identity lookup
+          rows: [{ user_id: "user-1" }],
+        }) // session ownership lookup
+        .mockResolvedValueOnce({
+          rows: [{ strategy_id: "strat-1" }],
+        }) // oldest-run attribution lookup (022)
         .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: "fill-row" }] }) // ledger
         .mockResolvedValueOnce({ rowCount: 1 }) // trades display row
         .mockResolvedValueOnce({ rowCount: 1 }) // intent state
@@ -85,15 +88,24 @@ describe("TradeLedgerRepository", () => {
       const result = await repo.recordFill(FILL);
 
       expect(result).toBe("INSERTED");
-      expect(clientQuery).toHaveBeenCalledTimes(5);
+      expect(clientQuery).toHaveBeenCalledTimes(6);
 
-      const [ledgerSql, ledgerParams] = clientQuery.mock.calls[1];
+      // Identity comes from the session row + its oldest run, not the event.
+      const [ownerSql, ownerParams] = clientQuery.mock.calls[0];
+      expect(ownerSql).toContain("SELECT user_id FROM bot_instances");
+      expect(ownerSql).not.toContain("strategy_id");
+      expect(ownerParams).toEqual([BOT_ID]);
+      const [runSql, runParams] = clientQuery.mock.calls[1];
+      expect(runSql).toContain("FROM strategy_runs");
+      expect(runParams).toEqual([BOT_ID]);
+
+      const [ledgerSql, ledgerParams] = clientQuery.mock.calls[2];
       expect(ledgerSql).toContain("INSERT INTO bot_trade_fills");
       expect(ledgerSql).toContain(
         "ON CONFLICT (bot_id, client_order_id, exchange_order_id, fill_id)"
       );
       expect(ledgerSql).toContain("DO NOTHING");
-      // Identity comes from the bot lookup, not the event.
+      // Attribution comes from the session row + its oldest run, not the event.
       expect(ledgerParams.slice(0, 4)).toEqual([
         BOT_ID,
         "user-1",
@@ -101,7 +113,7 @@ describe("TradeLedgerRepository", () => {
         "bot1-00-B",
       ]);
 
-      const [tradesSql, tradesParams] = clientQuery.mock.calls[2];
+      const [tradesSql, tradesParams] = clientQuery.mock.calls[3];
       expect(tradesSql).toContain("INSERT INTO trades");
       expect(tradesParams).toEqual([
         "user-1",
@@ -118,7 +130,7 @@ describe("TradeLedgerRepository", () => {
         "2026-10-02T10:00:00.000Z",
       ]);
 
-      const [totalsSql, totalsParams] = clientQuery.mock.calls[4];
+      const [totalsSql, totalsParams] = clientQuery.mock.calls[5];
       expect(totalsSql).toContain("UPDATE bot_instances");
       expect(totalsSql).toContain("total_trades = total_trades + 1");
       expect(totalsSql).toContain("total_pnl = total_pnl + $2");
@@ -130,21 +142,27 @@ describe("TradeLedgerRepository", () => {
     it("on a duplicate: short-circuits — no display row, no totals increment", async () => {
       clientQuery
         .mockResolvedValueOnce({
-          rows: [{ user_id: "user-1", strategy_id: "strat-1" }],
+          rows: [{ user_id: "user-1" }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ strategy_id: "strat-1" }],
         })
         .mockResolvedValueOnce({ rowCount: 0, rows: [] }); // conflict → DO NOTHING
 
       const result = await repo.recordFill(FILL);
 
       expect(result).toBe("DUPLICATE");
-      expect(clientQuery).toHaveBeenCalledTimes(2);
+      expect(clientQuery).toHaveBeenCalledTimes(3);
     });
 
     it("a replay after INSERTED behaves exactly like the first delivery", async () => {
       // First delivery.
       clientQuery
         .mockResolvedValueOnce({
-          rows: [{ user_id: "user-1", strategy_id: "strat-1" }],
+          rows: [{ user_id: "user-1" }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ strategy_id: "strat-1" }],
         })
         .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: "fill-row" }] })
         .mockResolvedValueOnce({ rowCount: 1 })
@@ -155,7 +173,10 @@ describe("TradeLedgerRepository", () => {
       // Replay of the same logical event (redelivery / live-gate replay).
       clientQuery
         .mockResolvedValueOnce({
-          rows: [{ user_id: "user-1", strategy_id: "strat-1" }],
+          rows: [{ user_id: "user-1" }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ strategy_id: "strat-1" }],
         })
         .mockResolvedValueOnce({ rowCount: 0, rows: [] });
       expect(await repo.recordFill(FILL)).toBe("DUPLICATE");

@@ -27,7 +27,6 @@ describe("BotStatusService", () => {
   const mockBot: Bot = {
     id: mockBotId,
     user_id: mockUserId,
-    strategy_id: "test-strategy-id",
     status: "STOPPED",
     last_heartbeat: new Date().toISOString(),
     last_error: null,

@@ -179,11 +179,39 @@ describe("BotLifecycleService", () => {
   const botRow = {
     id: "bot-1",
     user_id: "user-1",
-    strategy_id: "strat-1",
     status: "STOPPED",
     desired_state: "STOPPED",
     actual_state: "STOPPED",
   };
+
+  /** 022 shim-drop: the session's attached runs (badge + dispatch read these). */
+  const bootRuns = [
+    {
+      id: "run-1",
+      bot_id: "bot-1",
+      strategy_id: "strat-1",
+      config_version: 1,
+      config: {},
+      notional_amount: "1000",
+      state: "STOPPED",
+      last_error_code: null,
+      created_at: "",
+      updated_at: "",
+    },
+  ];
+
+  /** Route the start() reads: session row + its runs, everything else ok. */
+  const mockStartFlow = (row: typeof botRow = botRow) =>
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id, user_id")) {
+        return Promise.resolve({ rows: [row] });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: bootRuns });
+      }
+      return okResult();
+    });
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -203,12 +231,7 @@ describe("BotLifecycleService", () => {
 
   describe("start", () => {
     it("transitions STOPPED -> STARTING, sets desired RUNNING and sends the command", async () => {
-      mockQuery.mockImplementation((sql: string) => {
-        if (String(sql).startsWith("SELECT id, user_id")) {
-          return Promise.resolve({ rows: [botRow] });
-        }
-        return okResult();
-      });
+      mockStartFlow();
 
       const result = await service.start("bot-1", "user-1");
 
@@ -230,13 +253,8 @@ describe("BotLifecycleService", () => {
       );
     });
 
-    it("flips the strategy badge on when the start command is dispatched (L12)", async () => {
-      mockQuery.mockImplementation((sql: string) => {
-        if (String(sql).startsWith("SELECT id, user_id")) {
-          return Promise.resolve({ rows: [botRow] });
-        }
-        return okResult();
-      });
+    it("flips the session's run badges on when the start command is dispatched (L12, 022)", async () => {
+      mockStartFlow();
       const toggle = jest
         .spyOn(strategyRepositoryAdapter, "toggleStrategy")
         .mockResolvedValue(undefined);
@@ -276,19 +294,10 @@ describe("BotLifecycleService", () => {
     // P0 resume: a bot parked UNKNOWN by a lost engine must re-drive through
     // STARTING for the SAME bot id (never a new instance).
     it("resumes an UNKNOWN bot through STARTING for the same bot id", async () => {
-      mockQuery.mockImplementation((sql: string) => {
-        if (String(sql).startsWith("SELECT id, user_id")) {
-          return Promise.resolve({
-            rows: [
-              {
-                ...botRow,
-                desired_state: "RUNNING",
-                actual_state: "UNKNOWN",
-              },
-            ],
-          });
-        }
-        return okResult();
+      mockStartFlow({
+        ...botRow,
+        desired_state: "RUNNING",
+        actual_state: "UNKNOWN",
       });
 
       const result = await service.start("bot-1", "user-1");
@@ -319,12 +328,7 @@ describe("BotLifecycleService", () => {
     });
 
     it("rolls back to STOPPED when the command cannot be delivered", async () => {
-      mockQuery.mockImplementation((sql: string) => {
-        if (String(sql).startsWith("SELECT id, user_id")) {
-          return Promise.resolve({ rows: [botRow] });
-        }
-        return okResult();
-      });
+      mockStartFlow();
       engineProtocol.sendCommand.mockResolvedValue({
         success: false,
         error: "redis down",
@@ -474,12 +478,31 @@ describe("BotLifecycleService", () => {
       );
     });
 
-    it("flips the strategy badge off when the stop command is dispatched (L12)", async () => {
+    it("flips the session's run badges off when the stop command is dispatched (L12, 022)", async () => {
       mockQuery.mockImplementation((sql: string) => {
-        if (String(sql).startsWith("SELECT id, user_id")) {
+        const text = String(sql);
+        if (text.startsWith("SELECT id, user_id")) {
           return Promise.resolve({
             rows: [
               { ...botRow, desired_state: "RUNNING", actual_state: "RUNNING" },
+            ],
+          });
+        }
+        if (text.includes("FROM strategy_runs")) {
+          return Promise.resolve({
+            rows: [
+              {
+                id: "run-1",
+                bot_id: "bot-1",
+                strategy_id: "strat-1",
+                config_version: 1,
+                config: {},
+                notional_amount: "1000",
+                state: "RUNNING",
+                last_error_code: null,
+                created_at: "",
+                updated_at: "",
+              },
             ],
           });
         }
@@ -977,8 +1000,12 @@ describe("BotLifecycleService", () => {
   describe("concurrency (compare-and-set transitions)", () => {
     it("start rejects with 409 when the guarded UPDATE does not match", async () => {
       mockQuery.mockImplementation((sql: string) => {
-        if (String(sql).startsWith("SELECT id, user_id")) {
+        const text = String(sql);
+        if (text.startsWith("SELECT id, user_id")) {
           return Promise.resolve({ rows: [botRow] });
+        }
+        if (text.includes("FROM strategy_runs")) {
+          return Promise.resolve({ rows: bootRuns });
         }
         return Promise.resolve({ rows: [], rowCount: 0 });
       });
@@ -990,12 +1017,7 @@ describe("BotLifecycleService", () => {
     });
 
     it("sends the guarded UPDATE with the expected actual_state", async () => {
-      mockQuery.mockImplementation((sql: string) => {
-        if (String(sql).startsWith("SELECT id, user_id")) {
-          return Promise.resolve({ rows: [botRow] });
-        }
-        return okResult();
-      });
+      mockStartFlow();
 
       await service.start("bot-1", "user-1");
 
@@ -1010,12 +1032,7 @@ describe("BotLifecycleService", () => {
 
   describe("command tracking & timeout sweep", () => {
     it("records a PENDING command before publishing and reuses the correlationId", async () => {
-      mockQuery.mockImplementation((sql: string) => {
-        if (String(sql).startsWith("SELECT id, user_id")) {
-          return Promise.resolve({ rows: [botRow] });
-        }
-        return okResult();
-      });
+      mockStartFlow();
 
       await service.start("bot-1", "user-1");
 
@@ -1291,19 +1308,16 @@ describe("bot → account binding", () => {
     ).rejects.toMatchObject({ statusCode: 400 });
   });
 
-  it("409s when the strategy already has an active bot (current one-bot-per-strategy axis)", async () => {
-    // Current axis (migration 013 era): a bot IS a running strategy, so a
-    // strategy cannot be traded on two accounts concurrently — the caller must
-    // stop the first bot before starting the second. Superseded by the
-    // account-session model (plan §D), where the session is the unit and the
-    // invariant becomes one active session per exchange account.
+  it("409s when the strategy is already live as a run in another session (022 runs-only axis)", async () => {
+    // Retired one-bot-per-strategy axis: a strategy lives in exactly one
+    // session's runs — the runs guard is the authority, not bot history.
     mockQuery.mockImplementation((sql: string) => {
       const text = String(sql);
       if (text.startsWith("SELECT id FROM strategies")) {
         return Promise.resolve({ rows: [{ id: "strat-1" }] });
       }
-      if (text.includes("FROM bot_instances")) {
-        return Promise.resolve({ rows: [{ id: "bot-existing" }] });
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [{ id: "run-other" }] });
       }
       return okResult();
     });
@@ -1319,20 +1333,18 @@ describe("bot → account binding", () => {
     );
   });
 
-  // P0 (2026-10-05): the crash case that slipped through the old predicate.
-  // A bot parked UNKNOWN/ERROR with desired_state=RUNNING still wants to run and
-  // may still hold venue orders, so it must block a duplicate. Reproduced live in
-  // Gate-4 run 3, where POST /start created a SECOND bot on the same account.
-  it("409s when the existing bot is PARKED (desired RUNNING), not merely running", async () => {
+  // P0 history (2026-10-05): the retired bot-level predicate once missed a
+  // bot parked UNKNOWN/ERROR with desired_state=RUNNING — Gate-4 run 3
+  // created a SECOND bot on the same account. The 022 runs guard covers
+  // parked runs the same way: any live run blocks a duplicate.
+  it("409s when the strategy is PARKED as a live run elsewhere, not merely running", async () => {
     mockQuery.mockImplementation((sql: string) => {
       const text = String(sql);
       if (text.startsWith("SELECT id FROM strategies")) {
         return Promise.resolve({ rows: [{ id: "strat-1" }] });
       }
-      if (text.includes("FROM bot_instances")) {
-        // The widened predicate must select UNKNOWN/ERROR-desired-RUNNING too.
-        expect(text).toContain("desired_state = 'RUNNING'");
-        return Promise.resolve({ rows: [{ id: "bot-parked" }] });
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [{ id: "run-parked" }] });
       }
       return okResult();
     });
@@ -1361,7 +1373,7 @@ describe("bot → account binding", () => {
     expect(botId).toBe("bot-1");
     expect(mockQuery).toHaveBeenCalledWith(
       expect.stringContaining("exchange_account_id"),
-      ["strat-1", "user-1", "acc-1"]
+      ["user-1", "acc-1"]
     );
   });
 });
@@ -1377,7 +1389,6 @@ describe("createAndStart venue symbol gate (L20)", () => {
   const botRow = {
     id: "bot-1",
     user_id: "user-1",
-    strategy_id: "strat-1",
     status: "STOPPED",
     desired_state: "STOPPED",
     actual_state: "STOPPED",
@@ -1411,7 +1422,7 @@ describe("createAndStart venue symbol gate (L20)", () => {
           rows: [{ config: symbol ? { symbol } : {} }],
         });
       }
-      if (text.includes("FROM bot_instances WHERE strategy_id")) {
+      if (text.includes("FROM strategy_runs")) {
         return Promise.resolve({ rows: [] });
       }
       if (text.startsWith("INSERT INTO bot_instances")) {
@@ -1528,9 +1539,6 @@ describe("createAndStart venue symbol gate (L20)", () => {
       if (text.startsWith("SELECT id FROM strategies")) {
         return Promise.resolve({ rows: [{ id: "strat-1" }] });
       }
-      if (text.includes("FROM bot_instances WHERE strategy_id")) {
-        return Promise.resolve({ rows: [] });
-      }
       if (text.includes("FROM strategy_runs")) {
         return Promise.resolve({
           rows: [{ id: "run-other", bot_id: "bot-other" }],
@@ -1554,9 +1562,6 @@ describe("createAndStart venue symbol gate (L20)", () => {
       const text = String(sql);
       if (text.startsWith("SELECT id FROM strategies")) {
         return Promise.resolve({ rows: [{ id: "strat-1" }] });
-      }
-      if (text.includes("FROM bot_instances WHERE strategy_id")) {
-        return Promise.resolve({ rows: [] });
       }
       if (text.includes("FROM strategy_runs")) {
         return Promise.resolve({ rows: [] });

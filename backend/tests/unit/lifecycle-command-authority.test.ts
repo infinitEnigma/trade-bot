@@ -59,11 +59,10 @@ interface FakeCommand {
   expires_at: number;
 }
 
-/** A row of the fake `bot_instances` table (single bot per test). */
+/** A row of the fake `bot_instances` table (single bot per test, 022: no strategy_id). */
 interface FakeBot {
   id: string;
   user_id: string;
-  strategy_id: string;
   status: string;
   desired_state: string;
   actual_state: string;
@@ -94,7 +93,6 @@ describe("lifecycle command authority (L21) & terminal stop repair (L24)", () =>
     bot = {
       id: BOT_ID,
       user_id: "user-1",
-      strategy_id: "strat-1",
       status: "STOPPED",
       desired_state: "STOPPED",
       actual_state: "STOPPED",
@@ -158,8 +156,9 @@ describe("lifecycle command authority (L21) & terminal stop repair (L24)", () =>
 
   /**
    * In-memory fake of the lifecycle persistence this flow touches: command
-   * tracking (INSERT / PENDING-guarded UPDATE / CAS claim) plus the
-   * `bot_instances` compare-and-set transition.
+   * tracking (INSERT / PENDING-guarded UPDATE / CAS claim), the
+   * `bot_instances` compare-and-set transition, and the session runs
+   * lookup (022: badge + dispatch read the runs).
    */
   function installFakeDb(): void {
     mockQuery.mockImplementation((sql: string, params: unknown[] = []) => {
@@ -260,6 +259,26 @@ describe("lifecycle command authority (L21) & terminal stop repair (L24)", () =>
           });
         }
         return Promise.resolve({ rows: [{ ...bot }] });
+      }
+
+      // 022 shim-drop: session runs (start dispatch + badge sync).
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({
+          rows: [
+            {
+              id: "run-1",
+              bot_id: BOT_ID,
+              strategy_id: "strat-1",
+              config_version: 1,
+              config: {},
+              notional_amount: "1000",
+              state: bot.actual_state,
+              last_error_code: null,
+              created_at: "",
+              updated_at: "",
+            },
+          ],
+        });
       }
 
       return Promise.resolve({ rows: [], rowCount: 1 });

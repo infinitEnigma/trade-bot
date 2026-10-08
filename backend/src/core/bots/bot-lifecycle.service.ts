@@ -46,7 +46,7 @@ import { BotLifecycleRepository } from "./lifecycle/bot-lifecycle.repository";
 import { exchangeAccountRepositoryAdapter } from "../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
 import { assertSymbolSupported } from "../../infrastructure/external/venue-symbols";
 import { query } from "../../database/pool";
-import { syncStrategyActive } from "./lifecycle/strategy-active-sync";
+import { syncSessionStrategiesActive } from "./lifecycle/strategy-active-sync";
 import {
   BotLifecycleResult,
   BotRow,
@@ -166,10 +166,16 @@ export class BotLifecycleService {
       metadata: { userId },
     });
 
+    // Session start (022 shim-drop): the dispatch payload fans the session's
+    // attached runs out to N engine runners. The legacy top-level
+    // strategyId predates sessions — derive it from the oldest run so the
+    // engine's legacy single-run path keeps working; a session with no
+    // runs yet carries the empty string and runs `[]`.
+    const bootRuns = await this.repository.getRunsForBot(botId);
     const sendResult = await this.dispatcher.sendStartCommand(
       bot.id,
       userId,
-      bot.strategy_id
+      bootRuns[0]?.strategy_id ?? ""
     );
     if (!sendResult.success) {
       // Roll back to STOPPED so the bot is not stuck in STARTING with no command in flight.
@@ -202,8 +208,10 @@ export class BotLifecycleService {
       metadata: {},
     });
 
-    // Strategy badge (Phase 2): the strategy is starting with this bot.
-    await syncStrategyActive(bot.strategy_id, true);
+    // Strategy badge (Phase 2, 022 shim-drop): the session's runs are
+    // starting with this bot — badge follows the runs, not the retired
+    // `bot_instances.strategy_id` column.
+    await syncSessionStrategiesActive(this.repository, botId, true);
 
     return {
       botId,
@@ -263,15 +271,9 @@ export class BotLifecycleService {
       throw error;
     }
 
-    // One live run per strategy (session-aware): the legacy bot-level guard
-    // covers pre-D rows, the runs guard covers attached runs.
-    const activeBot =
-      await this.repository.findActiveBotForStrategy(strategyId);
-    if (activeBot) {
-      const error = new Error("Bot is already running for this strategy");
-      (error as Error & { statusCode?: number }).statusCode = 409;
-      throw error;
-    }
+    // One live run per strategy (022 shim-drop, runs-only): the retired
+    // bot-level `strategy_id` guard is gone — `findLiveRunForStrategy` is
+    // the authority.
     const liveRun = await this.repository.findLiveRunForStrategy(strategyId);
     if (liveRun) {
       const error = new Error("Strategy is already running in another session");
@@ -546,8 +548,9 @@ export class BotLifecycleService {
       metadata: {},
     });
 
-    // Strategy badge (Phase 2): the strategy is being stopped with this bot.
-    await syncStrategyActive(bot.strategy_id, false);
+    // Strategy badge (Phase 2, 022 shim-drop): the session's runs stop with
+    // this bot — badge follows the runs.
+    await syncSessionStrategiesActive(this.repository, botId, false);
 
     return {
       botId,
@@ -650,8 +653,9 @@ export class BotLifecycleService {
       metadata: { action },
     });
 
-    // Strategy badge (Phase 2): the strategy is being stopped with this bot.
-    await syncStrategyActive(bot.strategy_id, false);
+    // Strategy badge (Phase 2, 022 shim-drop): the session's runs stop with
+    // this bot — badge follows the runs.
+    await syncSessionStrategiesActive(this.repository, botId, false);
 
     logger.warn("Emergency stop dispatched", {
       botId,

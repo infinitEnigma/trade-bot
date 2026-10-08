@@ -147,11 +147,10 @@ describe("BotControls stop payload (L19)", () => {
     updatedAt: new Date(),
   };
 
-  // The row as the shared ["bot-instances"] cache holds it after the L19 fix:
-  // `id` is the bot id, `strategy_id` the strategy it belongs to.
+  // The row as the shared ["bot-instances"] cache holds it (022 shim-drop):
+  // `id` is the session id; strategy resolution uses `runs`.
   const botRow: BotInstance = {
     id: "bot-1",
-    strategy_id: "strategy-1",
     status: "RUNNING" as const,
     total_trades: 0,
     total_pnl: 0,

@@ -37,7 +37,6 @@ const mockedLifecycle = botLifecycleService as jest.Mocked<
 const driftBot = {
   id: "bot-1",
   user_id: "user-1",
-  strategy_id: "strat-1",
   status: "RUNNING",
   desired_state: "STOPPED",
   actual_state: "RUNNING",
@@ -46,7 +45,6 @@ const driftBot = {
 const stuckBot = {
   id: "bot-2",
   user_id: "user-2",
-  strategy_id: "strat-2",
   status: "STARTING",
   desired_state: "RUNNING",
   actual_state: "STARTING",
@@ -55,7 +53,6 @@ const stuckBot = {
 const unconfirmedBot = {
   id: "bot-3",
   user_id: "user-3",
-  strategy_id: "strat-3",
   status: "ERROR",
   desired_state: "RUNNING",
   actual_state: "ERROR",

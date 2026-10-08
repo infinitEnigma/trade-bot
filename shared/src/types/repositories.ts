@@ -344,12 +344,19 @@ export interface IStrategyRepository {
 
 /**
  * Raw `bot_instances` row (snake_case DB columns) as returned by the
- * repository layer. The `strategy_*` fields are populated by the list/detail
- * queries, which join the `strategies` table.
+ * repository layer. Sessions carry no per-strategy columns: strategy
+ * attribution lives on `strategy_runs` (022 shim-drop), and the
+ * `strategy_*` display fields below resolve from the session's oldest
+ * run (list/detail queries only).
  */
 export interface BotInstanceRecord {
   id: string;
-  strategy_id: string;
+  /**
+   * @deprecated Retired by the 022 shim-drop (`bot_instances.strategy_id`
+   * column dropped). Kept optional so already-shaped rows still typecheck;
+   * readers must resolve strategies via `runs`.
+   */
+  strategy_id?: string;
   user_id: string;
   status: string;
   running_time: number;
@@ -362,11 +369,11 @@ export interface BotInstanceRecord {
   actual_state?: string;
   /** Id of the engine currently owning the instance (may be null). */
   engine_id?: string | null;
-  /** Joined from `strategies.name` (list/detail queries only). */
+  /** Oldest run's strategy name (list/detail queries only, 022). */
   strategy_name?: string;
-  /** Joined from `strategies.type` (list/detail queries only). */
+  /** Oldest run's strategy type (list/detail queries only, 022). */
   strategy_type?: string;
-  /** Joined from `strategies.config` (list/detail queries only). */
+  /** Oldest run's strategy config (list/detail queries only, 022). */
   strategy_config?: Record<string, unknown>;
   /**
    * Bound venue account (C3a bot→account binding, migration 013).
@@ -385,9 +392,9 @@ export interface BotInstanceRecord {
   /** Why action is needed, e.g. `desired-running-unconfirmed`. */
   needs_user_action_reason?: string | null;
   /**
-   * D2 sessions (plan §D): runs attached to this session, oldest first.
-   * Present on the list query only; the `strategy_*` join columns above
-   * carry the legacy single-strategy view until D4.
+   * Runs attached to this session, oldest first (plan §D, 022 shim-drop).
+   * Present on the list query; THE strategy resolution path — the
+   * `strategy_*` columns above are the oldest run's display projection.
    */
   runs?: Array<{
     id: string;
@@ -437,9 +444,9 @@ export interface IBotInstanceRepository {
   deleteBotInstance(id: string): Promise<void>;
 
   /**
-   * Every bot instance bound to one strategy (any lifecycle state).
-   * Strategy delete must clear terminal history too — `getActiveBotInstances`
-   * only covers live rows.
+   * Sessions hosting one strategy (any lifecycle state), resolved via
+   * `strategy_runs` (022 shim-drop). Strategy delete must clear terminal
+   * history too — `getActiveBotInstances` only covers live rows.
    */
   getBotInstancesByStrategy(strategyId: string): Promise<BotInstanceRecord[]>;
 

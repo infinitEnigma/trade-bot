@@ -20,6 +20,7 @@
 
 import { contextLogger as logger } from "../../logging";
 import { strategyRepositoryAdapter } from "../../../infrastructure/adapters/repositories/strategy-repository.adapter";
+import { BotLifecycleRepository } from "./bot-lifecycle.repository";
 
 export async function syncStrategyActive(
   strategyId: string | null | undefined,
@@ -35,4 +36,32 @@ export async function syncStrategyActive(
       error: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+/**
+ * Badge sync for a whole session (022 shim-drop): flip every strategy with
+ * a run attached to this bot. A session hosts N runs, so the badge follows
+ * the runs — not the retired `bot_instances.strategy_id` column.
+ * Best-effort like the single flip: never fails the lifecycle operation.
+ */
+export async function syncSessionStrategiesActive(
+  repository: Pick<BotLifecycleRepository, "getRunsForBot">,
+  botId: string,
+  active: boolean
+): Promise<void> {
+  let runs: Array<{ strategy_id: string }>;
+  try {
+    runs = await repository.getRunsForBot(botId);
+  } catch (error) {
+    logger.warn("Failed to load session runs for badge sync", {
+      botId,
+      active,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
+  const strategyIds = [...new Set(runs.map(run => run.strategy_id))];
+  await Promise.all(
+    strategyIds.map(strategyId => syncStrategyActive(strategyId, active))
+  );
 }

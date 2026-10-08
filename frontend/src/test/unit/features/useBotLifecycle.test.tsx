@@ -38,10 +38,9 @@ import { tradingApi } from "../../../infrastructure/api";
 import { websocketClient } from "../../../infrastructure/websocket/client";
 import { useBotLifecycle } from "../../../features/bots/hooks/useBotLifecycle";
 
-/** One row exactly as `GET /api/bot/management/instances` returns it. */
+/** One row exactly as `GET /api/bot/management/instances` returns it (022: session row, no strategy_id). */
 const API_ROW = {
   id: "bot-1",
-  strategy_id: "strategy-1",
   status: "RUNNING",
   total_trades: 4,
   total_pnl: 12.5,
@@ -72,7 +71,7 @@ describe("useBotLifecycle bot-instances mapping (L19)", () => {
     await waitFor(() => expect(result.current.bots).toHaveLength(1));
 
     expect(result.current.bots[0].id).toBe("bot-1");
-    expect(result.current.bots[0].strategy_id).toBe("strategy-1");
+    expect(result.current.bots[0].strategy_id).toBeUndefined();
   });
 
   it("resolves a single bot by the bot id (what stop/emergency-stop send)", async () => {
@@ -116,7 +115,6 @@ describe("useBotLifecycle bot-instances mapping (L19)", () => {
         {
           ...API_ROW,
           id: "session-1",
-          strategy_id: "legacy-strategy",
           runs: [
             {
               id: "run-1",

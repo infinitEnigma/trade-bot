@@ -1,9 +1,10 @@
 /** @format */
 
 /**
- * strategy_id compatibility collision (§3 #5 / R1): `bot.id` is the primary
- * cache key; a legacy strategy id still resolves to the hosting session
- * via `runs[]`; a WS event carrying the bot id patches the right row.
+ * strategy_id runs-only resolution (R1 shim-drop): `bot.id` is the primary
+ * cache key; a strategy id resolves to the hosting session via `runs[]`
+ * only — the legacy `strategy_id`-column fallback is gone. A WS event
+ * carrying the bot id patches the right row.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -69,8 +70,8 @@ import {
   BOT_INSTANCES_QUERY_KEY,
 } from "../../features/bots/hooks/useBotLifecycle";
 
-// D4 session row: the session id differs from the legacy strategy column,
-// and the strategy is reachable through the attached run.
+// D4 session row: the session id differs from the retired strategy column,
+// and the strategy is reachable through the attached run only.
 const SESSION_ROW = {
   id: "session-1",
   strategy_id: "legacy-strategy",
@@ -98,7 +99,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 );
 
-describe("strategy_id compatibility collision (§3 #5 / R1)", () => {
+describe("strategy_id runs-only resolution (R1 shim-drop)", () => {
   beforeEach(() => {
     socketInstances.length = 0;
     vi.mocked(io).mockClear();
@@ -128,7 +129,8 @@ describe("strategy_id compatibility collision (§3 #5 / R1)", () => {
     await waitFor(() =>
       expect(byBotId.result.current.bot?.id).toBe("session-1")
     );
-    // Legacy strategy id resolves to the hosting session, not a ghost row.
+    // Strategy id resolves to the hosting session via runs[] — never a
+    // ghost row, and never via the retired `strategy_id` column.
     await waitFor(() =>
       expect(byStrategyId.result.current.bot?.id).toBe("session-1")
     );
@@ -164,6 +166,34 @@ describe("strategy_id compatibility collision (§3 #5 / R1)", () => {
     );
 
     byBotId.unmount();
+    byStrategyId.unmount();
+  });
+
+  it("does NOT resolve via the retired strategy_id column (no runs = no session)", async () => {
+    vi.mocked(tradingApi.getBotInstances).mockResolvedValue({
+      success: true,
+      data: [
+        {
+          ...SESSION_ROW,
+          runs: [],
+        },
+      ],
+    });
+    const byStrategyId = renderHook(() => useBotLifecycle("strategy-9"), {
+      wrapper,
+    });
+
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData([BOT_INSTANCES_QUERY_KEY])
+      ).toBeDefined()
+    );
+    // Give the query a tick to settle, then assert: the strategy id matches
+    // nothing — no runs row, no column fallback.
+    await waitFor(() =>
+      expect(byStrategyId.result.current.bot).toBeUndefined()
+    );
+
     byStrategyId.unmount();
   });
 });

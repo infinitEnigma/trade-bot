@@ -28,7 +28,10 @@ jest.mock(
   })
 );
 
-import { syncStrategyActive } from "../../src/core/bots/lifecycle/strategy-active-sync";
+import {
+  syncStrategyActive,
+  syncSessionStrategiesActive,
+} from "../../src/core/bots/lifecycle/strategy-active-sync";
 import { strategyRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/strategy-repository.adapter";
 import { contextLogger } from "../../src/core/logging";
 
@@ -96,6 +99,46 @@ describe("syncStrategyActive", () => {
         active: false,
         error: "boom",
       })
+    );
+  });
+});
+
+describe("syncSessionStrategiesActive (022 shim-drop)", () => {
+  const runs = [
+    { strategy_id: "strat-1" },
+    { strategy_id: "strat-2" },
+    { strategy_id: "strat-1" },
+  ];
+  const repository = {
+    getRunsForBot: jest.fn(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    toggleStrategy.mockResolvedValue(undefined);
+    repository.getRunsForBot.mockResolvedValue(runs);
+  });
+
+  it("fans the badge to every distinct run strategy", async () => {
+    await syncSessionStrategiesActive(repository, "bot-1", true);
+
+    expect(repository.getRunsForBot).toHaveBeenCalledWith("bot-1");
+    expect(toggleStrategy).toHaveBeenCalledTimes(2);
+    expect(toggleStrategy).toHaveBeenCalledWith("strat-1", true);
+    expect(toggleStrategy).toHaveBeenCalledWith("strat-2", true);
+  });
+
+  it("warns and skips the badge when the runs lookup fails (never throws)", async () => {
+    repository.getRunsForBot.mockRejectedValue(new Error("db down"));
+
+    await expect(
+      syncSessionStrategiesActive(repository, "bot-1", false)
+    ).resolves.toBeUndefined();
+
+    expect(toggleStrategy).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      "Failed to load session runs for badge sync",
+      expect.objectContaining({ botId: "bot-1", active: false })
     );
   });
 });

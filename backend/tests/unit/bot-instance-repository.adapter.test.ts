@@ -138,84 +138,20 @@ describe("BotInstanceRepositoryAdapter", () => {
   });
 
   describe("createBotInstance", () => {
-    it("should create a new bot instance with default values", async () => {
-      const mockBotData = {
-        id: "new-bot",
-        strategy_id: "strategy-1",
-        user_id: "test-user-id",
-        status: "RUNNING",
-        running_time: 0,
-        total_trades: 0,
-        total_pnl: 0,
-      };
-      const createdBot = {
-        ...mockBotData,
-        created_at: "2026-02-04T11:00:00Z",
-        updated_at: "2026-02-04T11:00:00Z",
-      };
-      (query as jest.Mock).mockResolvedValue({ rows: [createdBot] });
+    it("fails closed: session creation lives in the lifecycle repository (022)", async () => {
       const adapter = new BotInstanceRepositoryAdapter();
 
-      const result = await adapter.createBotInstance(mockBotData);
-
-      expect(result).toEqual(createdBot);
-      expect(query).toHaveBeenCalled();
-    });
-
-    it("should create a new bot instance with provided values", async () => {
-      const mockBotData = {
-        id: "new-bot",
-        strategy_id: "strategy-1",
-        user_id: "test-user-id",
-        status: "PAUSED",
-        running_time: 1800,
-        total_trades: 5,
-        total_pnl: 50.25,
-      };
-      (query as jest.Mock).mockResolvedValue({ rows: [mockBotData] });
-      const adapter = new BotInstanceRepositoryAdapter();
-
-      const result = await adapter.createBotInstance(mockBotData);
-
-      expect(result).toEqual(mockBotData);
-      expect(result.status).toBe("PAUSED");
-      expect(result.running_time).toBe(1800);
-    });
-
-    it("should throw error when creation fails", async () => {
-      (query as jest.Mock).mockResolvedValue({ rows: [] });
-      const adapter = new BotInstanceRepositoryAdapter();
-      const mockBotData = {
-        id: "new-bot",
-        strategy_id: "strategy-1",
-        user_id: "test-user-id",
-        status: "RUNNING",
-        running_time: 0,
-        total_trades: 0,
-        total_pnl: 0,
-      };
-
-      await expect(adapter.createBotInstance(mockBotData)).rejects.toThrow(
-        "Bot instance creation failed"
-      );
-    });
-
-    it("should throw error when query fails", async () => {
-      (query as jest.Mock).mockRejectedValue(new Error("Creation failed"));
-      const adapter = new BotInstanceRepositoryAdapter();
-      const mockBotData = {
-        id: "new-bot",
-        strategy_id: "strategy-1",
-        user_id: "test-user-id",
-        status: "RUNNING",
-        running_time: 0,
-        total_trades: 0,
-        total_pnl: 0,
-      };
-
-      await expect(adapter.createBotInstance(mockBotData)).rejects.toThrow(
-        "Failed to create bot instance"
-      );
+      await expect(
+        adapter.createBotInstance({
+          id: "new-bot",
+          user_id: "test-user-id",
+          status: "RUNNING",
+          running_time: 0,
+          total_trades: 0,
+          total_pnl: 0,
+        })
+      ).rejects.toThrow("022 shim-drop");
+      expect(query).not.toHaveBeenCalled();
     });
   });
 
@@ -378,7 +314,7 @@ describe("BotInstanceRepositoryAdapter", () => {
   });
 
   describe("getBotInstancesByStrategy", () => {
-    it("should return every bot bound to the strategy", async () => {
+    it("should return every session hosting the strategy via its runs", async () => {
       const rows = [{ id: "bot-1" }, { id: "bot-2" }];
       (query as jest.Mock).mockResolvedValue({ rows });
       const adapter = new BotInstanceRepositoryAdapter();
@@ -387,7 +323,7 @@ describe("BotInstanceRepositoryAdapter", () => {
 
       expect(bots).toEqual(rows);
       expect(query).toHaveBeenCalledWith(
-        expect.stringContaining("WHERE strategy_id = $1"),
+        expect.stringContaining("JOIN strategy_runs r"),
         ["strategy-1"]
       );
     });

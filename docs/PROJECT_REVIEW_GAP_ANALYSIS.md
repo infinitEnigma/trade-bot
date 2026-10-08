@@ -91,7 +91,7 @@ with the material they verified.
 | 44  | `getPosition(exchangeAccountId, symbol)` + `UNIQUE(exchange_account_id, symbol)`; old `ORDER BY updated_at DESC` heuristic gone | ✅ Confirmed (closed 2026-10-05, re-verified) | R2 record (archived cycle); `IPositionRepository` in `shared/src/types/repositories.ts`; regression test pins `not.toContain("ORDER BY ep.updated_at DESC")`           |
 | 45  | CI: format → lint → build → `CI=true npm test` on push/PR with Postgres 14 + Redis; `main` has required PR/review        | ✅ Confirmed (closed 2026-10-05, re-verified) | `.github/workflows/ci.yml` (four gates, service containers); R3 record (archived cycle)                                                                                   |
 | 46  | Phase 6: shared scripted fake + 12-case matrix exist, but the *program* is not closed — deterministic injection ≠ real process/Redis/venue failure | ✅ Confirmed              | `engine/src/application/__tests__/helpers/fake-exchange.ts` + `failure-injection-matrix.test.ts` exist; §4 Phase 6 row below is the open program                                |
-| 47  | `strategy_id` collision is tested and therefore residue, not a bug; `kodiak_status` residue remains                      | ✅ Confirmed              | `ws-strategy-id.test.tsx` proves session-resolve + bot-id WS patch; R1 open in §3; `kodiak_status` still emitted by views in migrations `002`, `012` (§4 row)                |
+| 47  | `strategy_id` collision is tested and therefore residue, not a bug; `kodiak_status` dropped from the live view by `021` (history in `002`/`012`) | ✅ Confirmed              | `ws-strategy-id.test.tsx` proves session-resolve + bot-id WS patch; R1 closed in §3 (2026-10-08); `021_drop_kodiak_status.sql` (§4 row)                |
 
 **Notes on staleness (as always):** the review's suite numbers
 (backend 2,554 / frontend 211 / engine 297) were the *CI-validation* point of
@@ -131,10 +131,12 @@ important case: a legacy strategy id resolves to its hosting session via
 `runs[]`, and a WS event carrying the bot id patches the right row
 (`frontend/src/test/integration/ws-strategy-id.test.tsx`, archived §2c
 scenario 5). Not a bug today — the 2026-10-07 review re-confirms this as
-**residue, not a defect**. The compatibility fallback
-(`getSessionForStrategy` in `useBotLifecycle.ts`, comments at the `bot.id ?`
-lookup) stays until no caller passes a strategy id; then the shim drops at
-the API boundary.
+**residue, not a defect**. ✅ closed 2026-10-08: the `strategy_id === id`
+comparison is gone everywhere; the strategy-keyed lookup
+(`getSessionForStrategy` in `useBotLifecycle.ts`) is runs-only
+(`runs[].strategy_id`), the deprecated optional `strategy_id?` fields are
+type-level tombstones (@deprecated, never read), and the API boundary
+sends only the session id.
 
 ---
 
@@ -149,9 +151,9 @@ L1–L30, M1) are in the archived cycle documents. What remains:
 | 6     | 🟠 P1    | **Failure-injection harness** (reviewer's PR 4). The deterministic half: a shared scripted fake exchange with a service-level fault matrix (accept-then-drop, timeout, unreachable, progressive partials + redelivery, partial + restart, cancel/fill race, lost cancel, stale historical id, unreachable startup, startup fill segment). The **live half** (the 2026-10-07 review's emphasis — deterministic injection ≠ real process/Redis/venue failure): **1)** Redis restart under load, **2)** exchange-side orphan orders, **3)** engine crash at additional exact points (beyond Gate 2/5's SIGKILL), **4)** restart with corrupted/missing snapshot, **5)** exchange unavailable during startup reconciliation. Plan: `docs/instructions/phase6-failure-injection-plan.md`. | ✅ **Live half COMPLETE 2026-10-08** — all five gates PASS on Lighter testnet: **A** Redis restart (`ga-report.md`, streams 77=77 / 31777→31790 heartbeats, reconnect DB 1); **B** orphan (`gb-report.md`, reconcile reports, no double-placement); **C** crash-at-point c1/c2/c3 (`gc1/2/3-report.md` + genuine-C2 rerun `g6c2-rerun-report.md`: 6 rows / 6 unique `fill_id`s, `g6c2b-fill.log` + `g6c2b-ledger.txt`); **D** corrupt+missing snapshot (`gd-report.md`, recovery path); **E** unreachable-at-startup rerun (`g6e-rerun-report.md`: exact `Lighter sidecar unreachable` + `Failed to process command` 12:28:42Z, `g6e-unreachable.log`; first `ge` attempt superseded). Follow-ups closed: heartbeat-converge after stack kill (`g6hb-heartbeat-report.md`, residual in `ga-report.md` closed), filename off-by-one headers on `gc1/2/3`. Residuals: `snapFullyLong` watcher armed (10 h, re-armed 12:0x after stack restart); `/tmp` per-run evidence migrated into `phase6/`. |
 | 5 remainder | 🟠 P1 | **End-to-end `snapFullyLong` trigger** (N6's last unproven condition): needs `depth < orderQuantity < depth + 0.005` live. Everything else in Phase 5 is done and proven (Gate 3, Gate 4 runs 2–3, C2 detector). | ⬜ open — rare window; needs a live run where a grid level lands in the sub-0.005 remainder gap |
 | 6b    | 🟡 P2    | **Browser-level smoke tests around `App` wiring** (2026-10-07 review). The hook-level suite deliberately never renders `App` (provider topology, `ProtectedRoute`, `FullProviders`, `ConditionalWebSocketInitializer`, `AnimatedRoutes`); 2–4 browser E2E tests would prove the wiring connects the proven mechanisms: **(1)** login → dashboard → socket connect → start bot → RUNNING; **(2)** RUNNING → engine gone → UNKNOWN → "Action required" → Resume → RUNNING; **(3)** STARTING → refresh → converges; **(4)** access-level drop → socket disconnect → protected-route behavior. | ⬜ open (new 2026-10-07) |
-| –     | 🟡 P2    | **Frontend identity residue (R1).** Remove the `bot.id === id \|\| strategy_id === id` compatibility fallback once no caller passes a strategy id (§3 R1; `ws-strategy-id.test.tsx` pins the behavior meanwhile). | ⬜ open |
-| D remainder | 🟡 P2 | **Bot-account-session migration/shim cleanup.** D1–D4 landed (`6ce8c02`..`6b91a63`, accepted 2026-10-06); the `strategy_id` shim-drop migration documented in the `019_bot_account_sessions.sql` header remains, plus any leftover pre-D row cleanup. | ⬜ open |
-| –     | 🟡 P2    | **`kodiak_status` residue.** Drop the unconsumed `kodiak_status` column from the `user_trading_summary` view (migrations `002`/`012` still emit it; no code consumer). | ⬜ open |
+| –     | 🟡 P2    | **Frontend identity residue (R1).** Remove the `bot.id === id \|\| strategy_id === id` compatibility fallback once no caller passes a strategy id (§3 R1; `ws-strategy-id.test.tsx` pins the behavior meanwhile). | ✅ done 2026-10-08 — no `strategy_id === id` comparison remains; the strategy-keyed lookup is runs-only (`getSessionForStrategy` resolves via `runs[].strategy_id`), `ws-strategy-id.test.tsx` updated to the runs-only contract |
+| D remainder | 🟡 P2 | **Bot-account-session migration/shim cleanup.** D1–D4 landed (`6ce8c02`..`6b91a63`, accepted 2026-10-06); the `strategy_id` shim-drop migration documented in the `019_bot_account_sessions.sql` header remains, plus any leftover pre-D row cleanup. | ✅ done 2026-10-08 (`022_drop_bot_strategy_id_shim.sql` applied — its pre-D guard counted 0 offending rows, then dropped the column + `002` indexes; `BotRow`/fixtures cleaned) |
+| –     | 🟡 P2    | **`kodiak_status` residue.** Drop the unconsumed `kodiak_status` column from the `user_trading_summary` view (migrations `002`/`012` still emit it; no code consumer). | ✅ done 2026-10-08 (`021_drop_kodiak_status.sql` redefines the view without the column; `002`/`012` kept as history) |
 | –     | 🟡 P2    | **Transient signer `21104`.** A nonce-drift refusal from the Lighter sidecar is currently treated as fatal instead of retryable (observed live 2026-10-01). | ⬜ open |
 | E     | 🟡 P2    | **Agent participation.** Read-only API keys per exchange account, grants scoped to one account, proposals inert until approved, engine as the only executor. Described in the exchange plan §E. | ⬜ open |
 | –     | 🟡 P2 (defer) | **Split `shared` package.** `@trade-bot/shared` is a god package (protocol types, domain models, API contracts, error classes, logging types). Split by domain once the trading-path work is fully closed. | ⬜ deliberately deferred |
@@ -184,7 +186,7 @@ rounds (2026-01 … 2026-09-14 ratings) in `docs/archived/PROJECT_REVIEW.md`.
 | -------- | ---- | ----- |
 | 🟠 P1    | **`snapFullyLong` end-to-end trigger** — the only unproven part of an otherwise fully landed and live-proven accounting stack. | §3 N6, §4 |
 | 🟡 P2    | **2–4 browser smoke tests around `App` wiring** (new 2026-10-07 — the one layer the hook-level suite deliberately skips). | §4 |
-| 🟡 P2    | **Residue cleanup**: `strategy_id` shim-drop (R1 + D-remainder migration), `kodiak_status` view column, transient signer `21104`. | §3, §4 |
+| 🟡 P2    | **Residue cleanup**: `strategy_id` shim-drop (R1 + D-remainder migration), `kodiak_status` view column ✅ done 2026-10-08 (`021`), transient signer `21104`. | §3, §4 |
 | 🟡 P2    | **Agent participation** (plan §E). | §4 |
 | ⏸ Defer  | **`shared` split; provider topology / general frontend refactoring.** | §4 |
 

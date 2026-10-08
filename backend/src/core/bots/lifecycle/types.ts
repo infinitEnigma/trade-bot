@@ -17,7 +17,6 @@ export interface BotLifecycleResult {
 export interface BotRow {
   id: string;
   user_id: string;
-  strategy_id: string;
   status: string;
   desired_state: BotDesiredState;
   actual_state: BotActualState;

@@ -23,9 +23,16 @@ import {
 } from "./types";
 
 export class BotLifecycleRepository {
+  /**
+   * Session columns (022 shim-drop): `strategy_id` is gone — strategy
+   * attribution resolves via `strategy_runs`.
+   */
+  private static readonly BOT_COLUMNS =
+    "id, user_id, status, desired_state, actual_state, engine_id, exchange_account_id";
+
   async findBot(botId: string): Promise<BotRow | null> {
     const result = await query<BotRow>(
-      "SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id, exchange_account_id FROM bot_instances WHERE id = $1",
+      `SELECT ${BotLifecycleRepository.BOT_COLUMNS} FROM bot_instances WHERE id = $1`,
       [botId]
     );
     return result.rows[0] ?? null;
@@ -296,7 +303,7 @@ export class BotLifecycleRepository {
   /** All RUNNING bots assigned to an engine (heartbeat-loss supervision). */
   async findRunningBotsForEngine(engineId: string): Promise<BotRow[]> {
     const result = await query<BotRow>(
-      `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id, exchange_account_id
+      `SELECT ${BotLifecycleRepository.BOT_COLUMNS}
              FROM bot_instances
              WHERE engine_id = $1 AND actual_state = 'RUNNING'`,
       [engineId]
@@ -311,7 +318,7 @@ export class BotLifecycleRepository {
     }
     const placeholders = botIds.map((_, i) => `$${i + 1}`).join(", ");
     const result = await query<BotRow>(
-      `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id, exchange_account_id
+      `SELECT ${BotLifecycleRepository.BOT_COLUMNS}
              FROM bot_instances
              WHERE id IN (${placeholders})`,
       botIds
@@ -343,53 +350,32 @@ export class BotLifecycleRepository {
   }
 
   /**
-   * The bot that already occupies a strategy, if any - "one live bot per
-   * strategy".
-   *
-   * P0 (2026-10-05): the predicate used to be `actual_state IN ('STARTING',
-   * 'RUNNING')` only, so a bot that a crashed engine had parked in UNKNOWN (or
-   * ERROR) with `desired_state = 'RUNNING'` did NOT count as occupying the
-   * strategy. `POST /start` therefore created a SECOND live bot on the same venue
-   * account — reproduced live during Gate-4 run 3. A parked bot still wants to
-   * run and may still hold venue orders, so it must block a duplicate.
-   *
-   * STOPPING is deliberately excluded: it is on its way out (orders being
-   * cancelled) and blocking on it would break the ordinary stop-then-start flow.
-   *
-   * Keyed on `strategy_id` today. The account-session model (plan §D) makes the
-   * invariant "one live session per exchange account" instead — see
-   * DATA_MODEL.md §4.4 and migration 018, which enforces this predicate as a
-   * partial unique index.
+   * Retired bot-level guard (022 shim-drop): the column it read
+   * (`bot_instances.strategy_id`) no longer exists. Kept as a throwing stub
+   * so any missed caller fails loudly instead of querying a dropped column;
+   * `findLiveRunForStrategy` is the authority. Remove entirely once the
+   * migration is proven in production.
    */
   async findActiveBotForStrategy(
-    strategyId: string
+    _strategyId: string
   ): Promise<{ id: string } | null> {
-    const result = await query<{ id: string }>(
-      `SELECT id FROM bot_instances
-        WHERE strategy_id = $1
-          AND (
-            actual_state IN ('STARTING', 'RUNNING')
-            OR (desired_state = 'RUNNING' AND actual_state IN ('UNKNOWN', 'ERROR'))
-          )
-        ORDER BY created_at DESC
-        LIMIT 1`,
-      [strategyId]
+    throw new Error(
+      "findActiveBotForStrategy retired by the 022 shim-drop — use findLiveRunForStrategy"
     );
-    return result.rows[0] ?? null;
   }
 
-  /** Insert a bot instance in the deterministic initial STOPPED state; returns its id. */
+  /** Insert a session in the deterministic initial STOPPED state; returns its id. */
   async insertBotInstance(
-    strategyId: string,
+    _strategyId: string,
     userId: string,
     exchangeAccountId: string
   ): Promise<string> {
     const insertResult = await query<{ id: string }>(
       `INSERT INTO bot_instances
-                (strategy_id, user_id, exchange_account_id, status, running_time, total_trades, total_pnl, desired_state, actual_state)
-             VALUES ($1, $2, $3, 'STOPPED', 0, 0, 0, 'STOPPED', 'STOPPED')
+                (user_id, exchange_account_id, status, running_time, total_trades, total_pnl, desired_state, actual_state)
+             VALUES ($1, $2, 'STOPPED', 0, 0, 0, 'STOPPED', 'STOPPED')
              RETURNING id`,
-      [strategyId, userId, exchangeAccountId]
+      [userId, exchangeAccountId]
     );
     return insertResult.rows[0].id;
   }
@@ -424,10 +410,10 @@ export class BotLifecycleRepository {
   }
 
   /**
-   * The live run occupying a strategy, if any — "one live run per strategy".
-   * Session-aware successor of findActiveBotForStrategy during the shim: the
-   * old bot-level query stays authoritative for bots with no runs row yet,
-   * this one covers attached runs.
+   * Session-aware strategy guard (022 shim-drop): the live run occupying a
+   * strategy, if any — "one live run per strategy". Replaces the retired
+   * bot-level `strategy_id` query; pre-D rows with no runs row simply have
+   * no live run.
    */
   async findLiveRunForStrategy(
     strategyId: string
@@ -449,7 +435,7 @@ export class BotLifecycleRepository {
    * The live-or-parked session occupying an account, if any — "one live
    * session per exchange account" (migration 019 index
    * bot_instances_one_live_per_account). STOPPING excluded so the ordinary
-   * stop-then-start flow keeps working, mirroring findActiveBotForStrategy.
+   * stop-then-start flow keeps working.
    */
   async findLiveSessionForAccount(
     exchangeAccountId: string
@@ -544,7 +530,7 @@ export class BotLifecycleRepository {
   /** Bots the user wants stopped but the engine still reports as active. */
   async findDesiredStoppedButActiveBots(): Promise<BotRow[]> {
     const result = await query<BotRow>(
-      `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id, exchange_account_id
+      `SELECT ${BotLifecycleRepository.BOT_COLUMNS}
              FROM bot_instances
              WHERE desired_state = 'STOPPED'
                AND actual_state IN ('STARTING', 'RUNNING', 'STOPPING')`
@@ -559,7 +545,7 @@ export class BotLifecycleRepository {
    */
   async findStuckTransitionalBots(graceSeconds: number): Promise<BotRow[]> {
     const result = await query<BotRow>(
-      `SELECT b.id, b.user_id, b.strategy_id, b.status, b.desired_state, b.actual_state, b.engine_id, b.exchange_account_id
+      `SELECT b.id, b.user_id, b.status, b.desired_state, b.actual_state, b.engine_id, b.exchange_account_id
              FROM bot_instances b
              WHERE b.actual_state IN ('STARTING', 'STOPPING')
                AND b.state_changed_at < NOW() - make_interval(secs => $1)
@@ -575,7 +561,7 @@ export class BotLifecycleRepository {
   /** Bots the user wants running but whose actual state is unconfirmed (ERROR/UNKNOWN). */
   async findDesiredRunningUnconfirmedBots(): Promise<BotRow[]> {
     const result = await query<BotRow>(
-      `SELECT id, user_id, strategy_id, status, desired_state, actual_state, engine_id, exchange_account_id
+      `SELECT ${BotLifecycleRepository.BOT_COLUMNS}
              FROM bot_instances
              WHERE desired_state = 'RUNNING'
                AND actual_state IN ('ERROR', 'UNKNOWN')`

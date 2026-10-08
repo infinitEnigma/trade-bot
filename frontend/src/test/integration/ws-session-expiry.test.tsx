@@ -31,7 +31,6 @@ import {
 
 const API_ROW = {
   id: "bot-1",
-  strategy_id: "strategy-1",
   status: "RUNNING",
   total_trades: 4,
   total_pnl: 12.5,

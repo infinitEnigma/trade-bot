@@ -281,10 +281,7 @@ describe("StrategyService", () => {
       const strategyService = new StrategyService(deps);
 
       const testStrategyId = "strategy-123";
-      const mockBotInstances = [
-        { id: "bot-1", strategy_id: testStrategyId },
-        { id: "bot-2", strategy_id: testStrategyId },
-      ];
+      const mockBotInstances = [{ id: "bot-1" }, { id: "bot-2" }];
       (
         deps.botInstanceRepository.getBotInstancesByStrategy as jest.Mock
       ).mockResolvedValue(mockBotInstances);
