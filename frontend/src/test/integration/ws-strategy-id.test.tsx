@@ -184,9 +184,7 @@ describe("strategy_id runs-only resolution (R1 shim-drop)", () => {
     });
 
     await waitFor(() =>
-      expect(
-        queryClient.getQueryData([BOT_INSTANCES_QUERY_KEY])
-      ).toBeDefined()
+      expect(queryClient.getQueryData([BOT_INSTANCES_QUERY_KEY])).toBeDefined()
     );
     // Give the query a tick to settle, then assert: the strategy id matches
     // nothing — no runs row, no column fallback.
