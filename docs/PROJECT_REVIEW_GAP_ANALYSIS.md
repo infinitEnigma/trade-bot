@@ -182,7 +182,6 @@ rounds (2026-01 … 2026-09-14 ratings) in `docs/archived/PROJECT_REVIEW.md`.
 
 | Priority | Item | Where |
 | -------- | ---- | ----- |
-| 🟠 P1    | **Phase 6 completion** — the five live failure gates (Redis restart, exchange orphan, crash at more exact points, corrupted/missing snapshot, exchange unavailable during startup reconciliation) on top of the landed deterministic matrix. | §4 |
 | 🟠 P1    | **`snapFullyLong` end-to-end trigger** — the only unproven part of an otherwise fully landed and live-proven accounting stack. | §3 N6, §4 |
 | 🟡 P2    | **2–4 browser smoke tests around `App` wiring** (new 2026-10-07 — the one layer the hook-level suite deliberately skips). | §4 |
 | 🟡 P2    | **Residue cleanup**: `strategy_id` shim-drop (R1 + D-remainder migration), `kodiak_status` view column, transient signer `21104`. | §3, §4 |
@@ -193,6 +192,8 @@ rounds (2026-01 … 2026-09-14 ratings) in `docs/archived/PROJECT_REVIEW.md`.
 > crash-recovery (Gate 5), R2 account-scoped position read, R3 CI gate +
 > protected `main`, the frontend execution-integrity audit (9 tests), the
 > 2026-10-01/04/05 review cycles and all their verified claims.
+> **Phase 6 live half closed 2026-10-08** (§4 row 6 — all five gates PASS;
+> reports in `.git/gatelogs/live/phase6/`).
 
 ### Security advisories
 
