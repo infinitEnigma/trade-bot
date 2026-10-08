@@ -210,6 +210,85 @@ describe("LighterClient", () => {
     expect((error as CommandError).retryable).toBe(true);
   });
 
+  it("maps a 21104 nonce-drift refusal to retryable (never fatal)", async () => {
+    const client = clientWith(
+      BASE_HANDLERS,
+      signerStub({
+        createOrder: async () => {
+          throw new SignerError("code=21104 invalid nonce");
+        },
+      })
+    );
+    const error: unknown = await client
+      .createOrder({
+        symbol: "ETH",
+        side: "BUY",
+        orderType: "LIMIT",
+        orderPrice: 2400,
+        orderQuantity: 0.01,
+      })
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(CommandError);
+    expect((error as CommandError).retryable).toBe(true);
+    expect((error as CommandError).message).toContain("nonce drift");
+  });
+
+  it("keeps a non-drift refusal fatal (21733 accidental price)", async () => {
+    const client = clientWith(
+      BASE_HANDLERS,
+      signerStub({
+        createOrder: async () => {
+          throw new SignerError("21733 accidental price");
+        },
+      })
+    );
+    const error: unknown = await client
+      .createOrder({
+        symbol: "ETH",
+        side: "BUY",
+        orderType: "LIMIT",
+        orderPrice: 2400,
+        orderQuantity: 0.01,
+      })
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(CommandError);
+    expect((error as CommandError).retryable).toBe(false);
+  });
+
+  it("maps a 21104 nonce-drift cancel refusal to retryable (never fatal)", async () => {
+    const client = clientWith(
+      BASE_HANDLERS,
+      signerStub({
+        cancelOrder: async () => {
+          throw new SignerError("code=21104 invalid nonce");
+        },
+      })
+    );
+    const error: unknown = await client
+      .cancelOrder("7", "ETH")
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(CommandError);
+    expect((error as CommandError).retryable).toBe(true);
+    expect((error as CommandError).message).toContain("cancel nonce drift");
+  });
+
+  it("keeps a non-drift cancel refusal fatal", async () => {
+    const client = clientWith(
+      BASE_HANDLERS,
+      signerStub({
+        cancelOrder: async () => {
+          throw new SignerError("21733 accidental price");
+        },
+      })
+    );
+    const error: unknown = await client
+      .cancelOrder("7", "ETH")
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(CommandError);
+    expect((error as CommandError).retryable).toBe(false);
+    expect((error as CommandError).message).toContain("cancel refused");
+  });
+
   it("confirms cancel only when the query settles on canceled", async () => {
     let polls = 0;
     const client = clientWith(

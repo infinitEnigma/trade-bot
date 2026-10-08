@@ -29,9 +29,7 @@ have all landed and been proven live or deterministically (§1/§2). What
 remains is **P1: finish Phase 6 failure injection + the live Redis-restart /
 orphan / snapshot-corruption / startup-reconciliation gates, and the rare
 end-to-end `snapFullyLong` trigger**; **P2: a handful of browser-level smoke
-tests around `App` wiring, the `strategy_id` shim-drop, the
-bot-account-session migration cleanup, `kodiak_status` residue, transient
-signer `21104`, agent participation**; **deferred: `shared` split, general
+tests around `App` wiring, agent participation**; **deferred: `shared` split, general
 frontend refactoring (incl. provider topology)**. See §4/§6.
 
 ---
@@ -154,7 +152,7 @@ L1–L30, M1) are in the archived cycle documents. What remains:
 | –     | 🟡 P2    | **Frontend identity residue (R1).** Remove the `bot.id === id \|\| strategy_id === id` compatibility fallback once no caller passes a strategy id (§3 R1; `ws-strategy-id.test.tsx` pins the behavior meanwhile). | ✅ done 2026-10-08 — no `strategy_id === id` comparison remains; the strategy-keyed lookup is runs-only (`getSessionForStrategy` resolves via `runs[].strategy_id`), `ws-strategy-id.test.tsx` updated to the runs-only contract |
 | D remainder | 🟡 P2 | **Bot-account-session migration/shim cleanup.** D1–D4 landed (`6ce8c02`..`6b91a63`, accepted 2026-10-06); the `strategy_id` shim-drop migration documented in the `019_bot_account_sessions.sql` header remains, plus any leftover pre-D row cleanup. | ✅ done 2026-10-08 (`022_drop_bot_strategy_id_shim.sql` applied — its pre-D guard counted 0 offending rows, then dropped the column + `002` indexes; `BotRow`/fixtures cleaned) |
 | –     | 🟡 P2    | **`kodiak_status` residue.** Drop the unconsumed `kodiak_status` column from the `user_trading_summary` view (migrations `002`/`012` still emit it; no code consumer). | ✅ done 2026-10-08 (`021_drop_kodiak_status.sql` redefines the view without the column; `002`/`012` kept as history) |
-| –     | 🟡 P2    | **Transient signer `21104`.** A nonce-drift refusal from the Lighter sidecar is currently treated as fatal instead of retryable (observed live 2026-10-01). | ⬜ open |
+| –     | 🟡 P2    | **Transient signer `21104`.** A nonce-drift refusal from the Lighter sidecar was treated as fatal instead of retryable (observed live 2026-10-01). | ✅ done 2026-10-08 — the narrow `isNonceDrift()` classifier (`exchanges/lighter/refusals.ts`, code `21104` + `invalid nonce` wording) maps a nonce-drift refusal to `CommandError(retryable: true)` on **create and cancel**: never fatal, never UNREACHABLE (the reconciler must not freeze on a reached sidecar), never a size refusal (`21706` stays with `isSizeRefusal`); the slot re-arms on the next tick and a refused command stays pending for redelivery; negatives (`21706`/`21733`/unreachable/margin) pinned; engine 316/316, `tsc` + eslint clean |
 | E     | 🟡 P2    | **Agent participation.** Read-only API keys per exchange account, grants scoped to one account, proposals inert until approved, engine as the only executor. Described in the exchange plan §E. | ⬜ open |
 | –     | 🟡 P2 (defer) | **Split `shared` package.** `@trade-bot/shared` is a god package (protocol types, domain models, API contracts, error classes, logging types). Split by domain once the trading-path work is fully closed. | ⬜ deliberately deferred |
 | F     | ⏸ Defer  | **Provider topology** (frontend). `App.tsx` still branches on `isAuthenticated` with separate `MinimalProviders`/`FullProviders` trees. Audit target, not a defect: the lifecycle cleanup is tested. Target shape (later): `Router → ThemeProvider → QueryClientProvider → auth state → WS lifecycle → Routes`. | ⬜ deferred |
@@ -186,7 +184,6 @@ rounds (2026-01 … 2026-09-14 ratings) in `docs/archived/PROJECT_REVIEW.md`.
 | -------- | ---- | ----- |
 | 🟠 P1    | **`snapFullyLong` end-to-end trigger** — the only unproven part of an otherwise fully landed and live-proven accounting stack. | §3 N6, §4 |
 | 🟡 P2    | **2–4 browser smoke tests around `App` wiring** (new 2026-10-07 — the one layer the hook-level suite deliberately skips). | §4 |
-| 🟡 P2    | **Residue cleanup**: `strategy_id` shim-drop (R1 + D-remainder migration), `kodiak_status` view column ✅ done 2026-10-08 (`021`), transient signer `21104`. | §3, §4 |
 | 🟡 P2    | **Agent participation** (plan §E). | §4 |
 | ⏸ Defer  | **`shared` split; provider topology / general frontend refactoring.** | §4 |
 

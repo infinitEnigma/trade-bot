@@ -682,5 +682,9 @@ describe("isSizeRefusal (C2 classifier)", () => {
       isSizeRefusal("lighter create refused: 21733 accidental price")
     ).toBe(false);
     expect(isSizeRefusal("insufficient margin")).toBe(false);
+    // Nonce drift is explicitly NOT a size refusal — it has its own retryable path.
+    expect(isSizeRefusal("lighter nonce drift: 21104 invalid nonce")).toBe(
+      false
+    );
   });
 });

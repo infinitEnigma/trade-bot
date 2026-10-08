@@ -11,6 +11,7 @@ import {
   LIGHTER_CLIENT_ORDER_INDEX_MOD,
   deriveLighterClientOrderIndex,
 } from "../client-order-id";
+import { isNonceDrift } from "../refusals";
 
 describe("status-map (Phase-0 vocabulary)", () => {
   it.each([
@@ -109,5 +110,20 @@ describe("LighterMarketDirectory", () => {
   it("throws UnknownMarketError (never a guess) for unknown symbols", async () => {
     const dir = new LighterMarketDirectory(reader(), 60_000);
     await expect(dir.get("NOPE")).rejects.toBeInstanceOf(UnknownMarketError);
+  });
+});
+
+describe("isNonceDrift (21104 refusal classifier)", () => {
+  it("recognizes a nonce-drift refusal", () => {
+    expect(isNonceDrift("21104 invalid nonce")).toBe(true);
+    expect(isNonceDrift("lighter create refused: code=21104")).toBe(true);
+    expect(isNonceDrift("Invalid Nonce")).toBe(true);
+  });
+
+  it("never mistakes size, price, transport, or margin failures for one", () => {
+    expect(isNonceDrift("21706 below the minimum size")).toBe(false);
+    expect(isNonceDrift("21733 accidental price")).toBe(false);
+    expect(isNonceDrift("lighter unreachable (create timed out)")).toBe(false);
+    expect(isNonceDrift("insufficient margin")).toBe(false);
   });
 });

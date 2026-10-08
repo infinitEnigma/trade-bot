@@ -16,7 +16,8 @@
  *   returns, never double-place.
  * - unknown symbols ⇒ `CommandError`, never a guessed market.
  * - sidecar down ⇒ `UNREACHABLE` (slots freeze); signer refusals ⇒
- *   `CommandError` (business outcome).
+ *   `CommandError` (business outcome), except transient nonce drift
+ *   (`21104` ⇒ retryable: the sidecar's SDK self-heals on the next attempt).
  *
  * Live testnet facts recorded while driving this client end-to-end (B5):
  * - REST order rows carry **human-unit** strings (`price` "2745.14",
@@ -50,6 +51,7 @@ import {
   TransactionSigner,
 } from "../../domain/signer";
 import { CommandError } from "../../application/command-error";
+import { isNonceDrift } from "./refusals";
 import { logger } from "../../utils/logger";
 import { resolveLighterStatus, LighterResolution } from "./status-map";
 import {
@@ -554,6 +556,21 @@ export class LighterClient implements ExchangeClient {
         `lighter unreachable after refusal: create refused (${cause.message}); lookup: ${lookup.reason}`
       );
     }
+    // Transient nonce drift (21104): the sidecar WAS reached and its SDK
+    // self-heals on the next attempt (its `process_api_key_and_nonce` owns
+    // the nonce), so hand it back retryable — the slot re-arms on the next
+    // tick and a refused command stays pending for redelivery — never fatal
+    // and never UNREACHABLE (the reconciler freezes on unreachable; a
+    // reached sidecar must not lie to it). Must stay out of the size-refusal
+    // path: 21104 is not 21706.
+    if (isNonceDrift(cause.message)) {
+      logger.warn("lighter nonce drift, retrying", {
+        symbol,
+        clientOrderIndex: index,
+        refusal: cause.message,
+      });
+      throw new CommandError(true, `lighter nonce drift: ${cause.message}`);
+    }
     throw new CommandError(false, `lighter create refused: ${cause.message}`);
   }
 
@@ -588,6 +605,21 @@ export class LighterClient implements ExchangeClient {
         throw new CommandError(
           true,
           `lighter unreachable (cancel): ${error.message}`
+        );
+      }
+      // Same transient nonce drift as create (21104): an invalid-nonce tx is
+      // rejected by the venue outright (no state change), so the cancel never
+      // applied and the sidecar's SDK heals on the next attempt — retryable,
+      // never a fatal refusal.
+      if (error instanceof SignerError && isNonceDrift(error.message)) {
+        logger.warn("lighter cancel nonce drift, retrying", {
+          symbol,
+          orderId,
+          refusal: error.message,
+        });
+        throw new CommandError(
+          true,
+          `lighter cancel nonce drift: ${error.message}`
         );
       }
       throw new CommandError(

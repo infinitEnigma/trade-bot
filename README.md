@@ -343,9 +343,6 @@ In short:
       snapshot, venue unavailable during startup reconciliation) on top of
       the landed deterministic matrix
 - [ ] **Browser smoke tests** around `App` wiring (2–4 E2E scenarios)
-- [ ] **Residue cleanup** — transient signer `21104` (`strategy_id`
-      shim-drop and `kodiak_status` column landed 2026-10-08 via
-      migrations `021`/`022`)
 - [ ] End-to-end `snapFullyLong` live trigger (the last unproven accounting
       condition)
 - [ ] Refresh coverage numbers (regenerate the table above, not percentages
@@ -354,7 +351,9 @@ In short:
 Done: engine trading path hardening (reconciliation, snapshots, durable
 ledger, per-fill partial accounting), P0 crash-recovery with live Resume,
 CI gate + protected `main`, frontend execution-integrity audit (9
-integration tests) — see the gap-analysis archives for the full history.
+integration tests), residue cleanup (`strategy_id`/`kodiak_status` dropped
+via migrations `021`/`022`, transient signer `21104` retryable) — see the
+gap-analysis archives for the full history.
 
 ### Medium-Term
 
