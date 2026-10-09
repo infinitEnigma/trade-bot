@@ -135,4 +135,30 @@ describe("useBotLifecycle bot-instances mapping (L19)", () => {
 
     await waitFor(() => expect(result.current.bot?.id).toBe("session-1"));
   });
+
+  it("coerces stringified DECIMAL total_pnl/total_trades to numbers", async () => {
+    // Postgres DECIMAL(20,8) columns come back from node-postgres as strings.
+    // A string sneaking into `total_pnl` made BotControls' RUNNING branch throw
+    // `("12.50").toFixed is not a function` and blank the Strategies route.
+    // The mapping boundary must coerce them so consumers get real numbers.
+    vi.mocked(tradingApi.getBotInstances).mockResolvedValue({
+      success: true,
+      data: [
+        {
+          ...API_ROW,
+          total_trades: "4" as unknown as number,
+          total_pnl: "12.50000000" as unknown as number,
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useBotLifecycle("bot-1"), { wrapper });
+
+    await waitFor(() => expect(result.current.bot?.id).toBe("bot-1"));
+    expect(result.current.bot?.total_trades).toBe(4);
+    expect(result.current.bot?.total_pnl).toBe(12.5);
+    expect(typeof result.current.bot?.total_pnl).toBe("number");
+    // The exact expression BotControls renders must not throw on a string row.
+    expect(Number(result.current.bot?.total_pnl || 0).toFixed(2)).toBe("12.50");
+  });
 });

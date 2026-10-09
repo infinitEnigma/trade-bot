@@ -587,7 +587,7 @@ export const BotControls: React.FC<BotControlsProps> = ({
           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
           <span>
             Trading Active • {bot.total_trades} trades • $
-            {(bot.total_pnl || 0).toFixed(2)} P&L
+            {Number(bot.total_pnl || 0).toFixed(2)} P&L
           </span>
         </div>
       </div>

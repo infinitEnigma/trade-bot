@@ -2,12 +2,11 @@
 
 import React, { useState, useEffect, Suspense, lazy } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { tradingApi } from "../../../infrastructure/api";
 import { strategyService } from "../services/strategyService";
 import { Strategy } from "../../../shared/types";
-import { Plus, BarChart3, AlertTriangle, Settings } from "lucide-react";
+import { Plus, BarChart3, AlertTriangle } from "lucide-react";
 
 // Lazy load heavy components for better performance
 const CandlestickChart = lazy(
@@ -26,16 +25,17 @@ const StrategyForm = lazy(() =>
 const BotControls = lazy(() =>
   import("../bots/components").then(module => ({ default: module.BotControls }))
 );
-import { useBalance } from "../../../shared/hooks";
+import { usePortfolioSummary } from "../../../shared/hooks";
 import { useAuth } from "../../auth";
 import { useBotsList } from "../../bots/hooks";
-import { getSessionForStrategy } from "../types/strategies.types";
+import {
+  getSessionForStrategy,
+  getStrategyConfig,
+} from "../types/strategies.types";
 import { PageLayout, Container } from "../../../shared/components/layout";
 
 const Strategies: React.FC = React.memo(() => {
   const { user } = useAuth();
-  //const [_kodiakCheckComplete, setKodiakCheckComplete] = useState(false);
-  const [kodiakError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
   // Phase 2: after create, offer "start it now" — a strategy is created
@@ -45,34 +45,32 @@ const Strategies: React.FC = React.memo(() => {
   const [_selectedSymbol] = useState("PERP_BTC_USDC");
   const queryClient = useQueryClient();
 
-  // Note: Kodiak connectivity check removed for simplicity
+  // Note: exchange connectivity check removed for simplicity
   // Individual components handle their own error states
 
-  // Memory cleanup effect
+  // Memory cleanup effect.
+  //
+  // Single-owner cache (see useBotLifecycle.ts / commit 448712c): the
+  // ["bot-instances"] key is owned exclusively by useBotLifecycle — this page
+  // must NOT removeQueries/cancelQueries it. Doing so (the old behaviour, also
+  // finding G1) tore the data out from under the mounted per-card useBotState
+  // observers, flipping the shared observer to `data: undefined` and blanking
+  // the route behind AnimatePresence. Only the page-owned ["strategies"] key is
+  // touched here.
   useEffect(() => {
     const cleanup = () => {
-      // Clear React Query cache for strategies page
       queryClient.removeQueries({ queryKey: ["strategies"] });
-      queryClient.removeQueries({ queryKey: ["bot-instances"] });
-
-      // Force garbage collection if available
-      if (window.gc && typeof window.gc === "function") {
-        window.gc();
-      }
     };
 
-    // Cleanup on page hide/unmount
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        // Page is hidden, reduce memory usage
         queryClient.cancelQueries({ queryKey: ["strategies"] });
-        queryClient.cancelQueries({ queryKey: ["bot-instances"] });
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
-    // Periodic cleanup every 5 minutes
+    // Periodic cleanup every 5 minutes (strategies key only)
     const cleanupInterval = setInterval(cleanup, 5 * 60 * 1000);
 
     return () => {
@@ -144,13 +142,11 @@ const Strategies: React.FC = React.memo(() => {
     return getSessionForStrategy(bots, strategyId);
   };
 
-  // ✅ Fetch real balance data (WebSocket for verified users)
-  // L15: `balanceError` renders "unavailable" — never $0/stale on failure.
-  const {
-    balance: realBalance,
-    loading: realBalanceLoading,
-    error: realBalanceError,
-  } = useBalance();
+  // B1/B6: the four portfolio figures — on-chain wallet, selected exchange
+  // balance, realized PnL from closed trades, total across all ACTIVE
+  // accounts. Each reads its own real source (replaces the old useBalance
+  // strip where all four cards showed the same venue total).
+  const portfolioSummary = usePortfolioSummary();
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -163,40 +159,6 @@ const Strategies: React.FC = React.memo(() => {
     strategyService.formatStrategyType(type);
   const getStrategyTypeColor = (type: Strategy["type"]) =>
     strategyService.getStrategyTypeColor(type);
-
-  // Show Kodiak connectivity error if check failed
-  if (kodiakError) {
-    return (
-      <PageLayout className="flex items-center justify-center">
-        <Container size="sm" className="text-center">
-          <div className="glass-card p-8">
-            <div className="w-12 h-12 mx-auto mb-6 bg-red-500/10 rounded-full flex items-center justify-center">
-              <AlertTriangle className="w-6 h-6 text-red-500" />
-            </div>
-            <h1 className="text-2xl font-bold text-text mb-4">
-              Trading Features Unavailable
-            </h1>
-            <p className="text-textMuted mb-6">{kodiakError}</p>
-            <div className="space-y-3">
-              <Link
-                to="/settings"
-                className="btn-primary w-full inline-flex items-center justify-center gap-2"
-              >
-                <Settings className="w-4 h-4" />
-                Connect Kodiak Account
-              </Link>
-              <Link
-                to="/dashboard"
-                className="btn-secondary w-full inline-flex items-center justify-center gap-2"
-              >
-                Return to Dashboard
-              </Link>
-            </div>
-          </div>
-        </Container>
-      </PageLayout>
-    );
-  }
 
   return (
     <PageLayout
@@ -262,13 +224,13 @@ const Strategies: React.FC = React.memo(() => {
           </Suspense>
         </div>
 
-        {/* Account Balance Overview - Show for users with Kodiak access */}
+        {/* Account Balance Overview - real venue balances (VERIFIED users) */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-text">Account Balance</h2>
+            <h2 className="text-lg font-semibold text-text">Portfolio</h2>
           </div>
 
-          {realBalanceLoading ? (
+          {portfolioSummary.initialLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {[1, 2, 3, 4].map(i => (
                 <div key={i} className="glass-card p-6">
@@ -285,19 +247,20 @@ const Strategies: React.FC = React.memo(() => {
                 </div>
               ))}
             </div>
-          ) : realBalanceError ? (
+          ) : portfolioSummary.error ? (
             <div className="glass-card p-8 text-center">
               <div className="w-12 h-12 mx-auto mb-4 bg-warning/10 rounded-full flex items-center justify-center">
                 <div className="w-6 h-6 bg-warning rounded"></div>
               </div>
               <h3 className="text-lg font-semibold text-text mb-2">
-                Balance unavailable
+                Portfolio figures unavailable
               </h3>
-              <p className="text-textMuted mb-4">{realBalanceError}</p>
+              <p className="text-textMuted mb-4">{portfolioSummary.error}</p>
             </div>
-          ) : realBalance ||
-            user?.userLevel === "VERIFIED" ||
-            user?.userLevel === "REGISTERED" ? (
+          ) : user?.userLevel === "VERIFIED" ? (
+            /* Four distinct, real figures (B1/B6) — same sources as the
+               Dashboard strip: on-chain wallet, selected exchange balance,
+               realized PnL from closed trades, total across all accounts. */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="glass-card p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -307,9 +270,9 @@ const Strategies: React.FC = React.memo(() => {
                   <span className="text-sm text-textMuted">Wallet</span>
                 </div>
                 <div className="text-2xl font-bold text-text mb-1">
-                  ${(realBalance?.walletBalance || 0).toLocaleString()}
+                  ${portfolioSummary.walletBalance.toLocaleString()}
                 </div>
-                <p className="text-xs text-textMuted">Available funds</p>
+                <p className="text-xs text-textMuted">On-chain balance</p>
               </div>
 
               <div className="glass-card p-6">
@@ -317,12 +280,12 @@ const Strategies: React.FC = React.memo(() => {
                   <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
                     <div className="w-5 h-5 bg-green-500 rounded"></div>
                   </div>
-                  <span className="text-sm text-textMuted">Account</span>
+                  <span className="text-sm text-textMuted">Exchange</span>
                 </div>
                 <div className="text-2xl font-bold text-text mb-1">
-                  ${(realBalance?.accountBalance || 0).toLocaleString()}
+                  ${portfolioSummary.exchangeBalance.toLocaleString()}
                 </div>
-                <p className="text-xs text-textMuted">Trading account</p>
+                <p className="text-xs text-textMuted">Selected account</p>
               </div>
 
               <div className="glass-card p-6">
@@ -330,12 +293,19 @@ const Strategies: React.FC = React.memo(() => {
                   <div className="w-10 h-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
                     <div className="w-5 h-5 bg-orange-500 rounded"></div>
                   </div>
-                  <span className="text-sm text-textMuted">Available</span>
+                  <span className="text-sm text-textMuted">Realized PnL</span>
                 </div>
-                <div className="text-2xl font-bold text-text mb-1">
-                  ${(realBalance?.availableBalance || 0).toLocaleString()}
+                <div
+                  className={`text-2xl font-bold mb-1 ${
+                    portfolioSummary.realizedPnl >= 0
+                      ? "text-success"
+                      : "text-danger"
+                  }`}
+                >
+                  {portfolioSummary.realizedPnl >= 0 ? "+" : "-"}$
+                  {Math.abs(portfolioSummary.realizedPnl).toLocaleString()}
                 </div>
-                <p className="text-xs text-textMuted">For trading</p>
+                <p className="text-xs text-textMuted">Closed trades</p>
               </div>
 
               <div className="glass-card p-6">
@@ -343,47 +313,29 @@ const Strategies: React.FC = React.memo(() => {
                   <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
                     <div className="w-5 h-5 bg-purple-500 rounded"></div>
                   </div>
-                  <span className="text-sm text-textMuted">Total Assets</span>
+                  <span className="text-sm text-textMuted">Total</span>
                 </div>
                 <div className="text-2xl font-bold text-text mb-1">
-                  ${(realBalance?.totalAssets || 0).toLocaleString()}
+                  ${portfolioSummary.totalAcrossExchanges.toLocaleString()}
                 </div>
-                <p className="text-xs text-textMuted">Portfolio value</p>
+                <p className="text-xs text-textMuted">
+                  Across {portfolioSummary.activeAccountCount || 0} account
+                  {portfolioSummary.activeAccountCount === 1 ? "" : "s"}
+                </p>
               </div>
             </div>
-          ) : (
-            <div className="glass-card p-8 text-center">
-              <div className="w-12 h-12 mx-auto mb-4 bg-red-500/10 rounded-full flex items-center justify-center">
-                <div className="w-6 h-6 bg-red-500 rounded"></div>
-              </div>
-              <h3 className="text-lg font-semibold text-text mb-2">
-                Kodiak Account Required
-              </h3>
-              <p className="text-textMuted mb-4">
-                Connect your Kodiak trading account in Settings to view your
-                balance and trading data.
-              </p>
-              <Link
-                to="/settings"
-                className="btn-primary inline-flex items-center gap-2"
-              >
-                Connect Account
-              </Link>
-            </div>
-          )}
+          ) : null}
         </div>
 
         {/* Engine offline banner: informational only — bot instances are still
-            fetched. Start fails fast with a 503 until the engine runs
-            (npm run prod:all / prod:engine); the backend never spawns it. */}
+            fetched. Start fails fast with a 503 until the engine runs; the
+            backend never spawns it. Operator docs: docs/OPERATIONS.md. */}
         {engineStatus && engineStatus?.data?.running === false && (
           <div className="glass-card p-4 flex items-center gap-3 border-warning/20 bg-warning/5">
             <AlertTriangle className="w-5 h-5 text-warning shrink-0" />
             <p className="text-sm text-textMuted">
-              Trading engine is not running. Existing bots are still listed
-              below, but starting a bot requires the engine first — run{" "}
-              <code className="text-xs">npm run prod:all</code> (or{" "}
-              <code className="text-xs">npm run prod:engine</code>).
+              The trading engine isn't running — starting a bot will fail until
+              it is. Existing bots are still listed below.
             </p>
           </div>
         )}
@@ -516,6 +468,9 @@ const Strategies: React.FC = React.memo(() => {
               >
                 <BotControls
                   strategyId={startPromptStrategy.id}
+                  strategySymbol={
+                    getStrategyConfig(startPromptStrategy)?.config.symbol
+                  }
                   onStatusChange={() => {
                     queryClient.invalidateQueries({
                       queryKey: ["bot-instances"],

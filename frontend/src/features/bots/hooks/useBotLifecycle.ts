@@ -132,8 +132,14 @@ export function useBotLifecycle(botId?: string) {
           // keyed on it. Strategy resolution uses `runs` (022 shim-drop).
           id: bot.id,
           status: bot.status as BotInstance["status"],
-          total_trades: bot.total_trades,
-          total_pnl: bot.total_pnl,
+          // Postgres DECIMAL/NUMERIC columns come back from node-postgres as
+          // strings (`total_pnl DECIMAL(20,8)`), so `total_pnl`/`total_trades`
+          // are stringified on the wire. Coerce to real numbers here — the
+          // single mapping boundary — so consumers can do numeric math
+          // (`.toFixed`, `+`, comparisons) without a string sneaking through
+          // and throwing (e.g. `("12.5").toFixed is not a function`).
+          total_trades: Number(bot.total_trades) || 0,
+          total_pnl: Number(bot.total_pnl) || 0,
           last_updated: bot.last_updated,
           // P0-3: carry the backend's "needs action" verdict through so the UI
           // can say so explicitly instead of leaving a dead bot looking merely

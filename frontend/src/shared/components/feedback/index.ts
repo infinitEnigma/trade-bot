@@ -15,6 +15,5 @@ export {
   ContentSkeleton,
 } from "./EnhancedLoading";
 
-export { LoadingStates } from "./loading-config";
-
 export { default as AnalyticsLoading } from "./AnalyticsLoading";
+export { ErrorBoundary } from "./ErrorBoundary";
