@@ -42,7 +42,11 @@ const Strategies: React.FC = React.memo(() => {
   // inactive; starting a bot on it (C3a account pick + size) is the start.
   const [startPromptStrategy, setStartPromptStrategy] =
     useState<Strategy | null>(null);
-  const [_selectedSymbol] = useState("PERP_BTC_USDC");
+  // P1: chart symbol follows the user's strategies (dropdown override below),
+  // not a pinned BTC. Falls back to the stored BTC default when no strategy
+  // exists yet. Stored form (PERP_ETH_USDC) passes through unchanged —
+  // CandlestickChart/useChartData already handles it.
+  const [chartSymbolOverride, setChartSymbolOverride] = useState("");
   const queryClient = useQueryClient();
 
   // Note: exchange connectivity check removed for simplicity
@@ -118,6 +122,18 @@ const Strategies: React.FC = React.memo(() => {
 
   const strategies = strategiesData?.success ? strategiesData.data : [];
 
+  // P1: all strategy symbols for the chart dropdown (locked decision: every
+  // strategy, not just RUNNING). Default = first strategy's symbol.
+  const strategySymbols: string[] = [];
+  for (const s of strategies as Strategy[]) {
+    const sym = getStrategyConfig(s)?.config.symbol;
+    if (typeof sym === "string" && sym && !strategySymbols.includes(sym)) {
+      strategySymbols.push(sym);
+    }
+  }
+  const chartSymbol =
+    chartSymbolOverride || strategySymbols[0] || "PERP_BTC_USDC";
+
   // Delete strategy mutation
   const deleteMutation = useMutation({
     mutationFn: (strategyId: string) => tradingApi.deleteStrategy(strategyId),
@@ -142,8 +158,9 @@ const Strategies: React.FC = React.memo(() => {
     return getSessionForStrategy(bots, strategyId);
   };
 
-  // B1/B6: the four portfolio figures — on-chain wallet, selected exchange
-  // balance, realized PnL from closed trades, total across all ACTIVE
+  // B1/B6: the five portfolio figures — on-chain wallet, selected exchange
+  // balance, venue-exact unrealized PnL, venue-computed realized PnL, total
+  // across all ACTIVE
   // accounts. Each reads its own real source (replaces the old useBalance
   // strip where all four cards showed the same venue total).
   const portfolioSummary = usePortfolioSummary();
@@ -207,7 +224,31 @@ const Strategies: React.FC = React.memo(() => {
         className="py-2 space-y-4"
       >
         {/* Candlestick Chart - Advanced trading data for verified users */}
+        {/* P1: symbol follows the strategies (dropdown), not pinned BTC. */}
         <div className="mb-8">
+          {strategySymbols.length > 1 && (
+            <div className="flex items-center gap-2 mb-3">
+              <label
+                htmlFor="strategies-chart-symbol"
+                className="text-sm text-textMuted"
+              >
+                Chart symbol
+              </label>
+              <select
+                id="strategies-chart-symbol"
+                value={chartSymbol}
+                onChange={event => setChartSymbolOverride(event.target.value)}
+                aria-label="Chart symbol"
+                className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-text focus:border-primary/50 focus:outline-none"
+              >
+                {strategySymbols.map(sym => (
+                  <option key={sym} value={sym}>
+                    {sym.replace("PERP_", "").replace("_USDC", "")}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <Suspense
             fallback={
               <div className="glass-card p-6 animate-pulse">
@@ -216,11 +257,7 @@ const Strategies: React.FC = React.memo(() => {
               </div>
             }
           >
-            <CandlestickChart
-              symbol={_selectedSymbol}
-              interval="1h"
-              height={450}
-            />
+            <CandlestickChart symbol={chartSymbol} interval="1h" height={450} />
           </Suspense>
         </div>
 
@@ -258,10 +295,11 @@ const Strategies: React.FC = React.memo(() => {
               <p className="text-textMuted mb-4">{portfolioSummary.error}</p>
             </div>
           ) : user?.userLevel === "VERIFIED" ? (
-            /* Four distinct, real figures (B1/B6) — same sources as the
-               Dashboard strip: on-chain wallet, selected exchange balance,
-               realized PnL from closed trades, total across all accounts. */
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            /* Five distinct, real figures (B1/B6; 2026-10-09 PnL fix) — same
+               sources as the Dashboard strip: on-chain wallet, selected
+               exchange balance, venue-exact unrealized PnL, venue-computed
+               realized PnL, total across all accounts. */
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
               <div className="glass-card p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
@@ -293,6 +331,26 @@ const Strategies: React.FC = React.memo(() => {
                   <div className="w-10 h-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
                     <div className="w-5 h-5 bg-orange-500 rounded"></div>
                   </div>
+                  <span className="text-sm text-textMuted">Unrealized PnL</span>
+                </div>
+                <div
+                  className={`text-2xl font-bold mb-1 ${
+                    portfolioSummary.unrealizedPnl >= 0
+                      ? "text-success"
+                      : "text-danger"
+                  }`}
+                >
+                  {portfolioSummary.unrealizedPnl >= 0 ? "+" : "-"}$
+                  {Math.abs(portfolioSummary.unrealizedPnl).toLocaleString()}
+                </div>
+                <p className="text-xs text-textMuted">Open positions</p>
+              </div>
+
+              <div className="glass-card p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-10 h-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
+                    <div className="w-5 h-5 bg-orange-500 rounded"></div>
+                  </div>
                   <span className="text-sm text-textMuted">Realized PnL</span>
                 </div>
                 <div
@@ -305,7 +363,7 @@ const Strategies: React.FC = React.memo(() => {
                   {portfolioSummary.realizedPnl >= 0 ? "+" : "-"}$
                   {Math.abs(portfolioSummary.realizedPnl).toLocaleString()}
                 </div>
-                <p className="text-xs text-textMuted">Closed trades</p>
+                <p className="text-xs text-textMuted">Venue 7d window</p>
               </div>
 
               <div className="glass-card p-6">

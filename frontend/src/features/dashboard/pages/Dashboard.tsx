@@ -12,7 +12,6 @@ import {
 } from "recharts";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../auth";
-import { kodiakApi } from "../../../infrastructure/api";
 import {
   accountsApi,
   ExchangeAccountDto,
@@ -31,12 +30,6 @@ import {
   X,
 } from "lucide-react";
 
-interface ApiError extends Error {
-  response?: {
-    status?: number;
-  };
-}
-
 import { Link } from "react-router-dom";
 import { Card } from "../../../shared/components/ui/Card";
 import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
@@ -45,7 +38,8 @@ import { websocketClient } from "../../../infrastructure/websocket/client";
 
 import { UserProgressCard } from "../../../shared/components/user/UserProgressCard";
 import { LoadingSpinner } from "../../../shared/components/ui";
-import { useBalance, usePortfolioSummary } from "../../../shared/hooks";
+import { usePortfolioSummary } from "../../../shared/hooks";
+import type { VenuePnlPoint } from "../../../shared/hooks/usePortfolioSummary";
 import { globalBalanceManager } from "../../../shared/services/balance-manager";
 import {
   Container,
@@ -66,26 +60,6 @@ interface PortfolioChartProps {
   data: PerformanceData[];
   selectedSymbol?: string;
   onSymbolChange?: (symbol: string) => void;
-}
-
-interface Position {
-  symbol: string;
-  position_qty: string;
-  average_open_price: string;
-  mark_price: string;
-  unsettled_pnl: string;
-  side?: string;
-}
-
-interface Trade {
-  symbol: string;
-  side: string;
-  closed_position_qty: string;
-  avg_close_price: string;
-  avg_open_price: string;
-  realized_pnl: string;
-  close_timestamp?: number;
-  open_timestamp?: number;
 }
 
 interface PerformanceData {
@@ -130,11 +104,13 @@ const StatsCard = ({ title, value, icon: Icon, format }: StatsCardProps) => (
 );
 
 /**
- * Portfolio equity curve built from realized trade PnL.
+ * Portfolio equity curve.
  *
- * The dashboard feeds this the output of `calculatePortfolioPerformance()`
- * (Start + one point per closed trade). Drawn with recharts like PriceChart;
- * empty and single-point series get explicit states instead of a fake line.
+ * P0: fed by the venue's own trade_pnl LEVEL series (hourly buckets) via
+ * `portfolio-venue-pnl` — the same source as the realized card. The old
+ * per-trade accumulation from fill rows was flat on Lighter (every row
+ * carries realized_pnl "0" by construction); Kodiak keeps that path via
+ * `calculatePortfolioPerformance` on real rows.
  */
 const PortfolioChart = ({ data }: PortfolioChartProps) => {
   const points = data ?? [];
@@ -258,8 +234,13 @@ const formatRelativeTime = (timestampMs: number): string => {
 };
 
 // Calculate real portfolio performance from trades data
+// (Kodiak fallback path — Lighter plots the venue series instead.)
 const calculatePortfolioPerformance = (
-  trades: Trade[],
+  trades: {
+    realized_pnl?: string | number;
+    close_timestamp?: number;
+    open_timestamp?: number;
+  }[],
   initialBalance: number,
   currentTime = Date.now()
 ) => {
@@ -277,7 +258,7 @@ const calculatePortfolioPerformance = (
   let currentBalance = initialBalance;
 
   sortedTrades.forEach(trade => {
-    const pnl = parseFloat(trade.realized_pnl || "0");
+    const pnl = parseFloat(String(trade.realized_pnl ?? "0"));
     currentBalance += pnl;
 
     const timestamp = new Date(
@@ -300,18 +281,6 @@ const calculatePortfolioPerformance = (
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const [selectedSymbol, setSelectedSymbol] = useState("PERP_BTC_USDC");
-  //const [showWalletDialog, setShowWalletDialog] = useState(false);
-  const [currentTime] = useState(() => Date.now());
-
-  // ✅ Fetch real balance data - moved to top
-  // L15: `balanceError` is a first-class state — a failed venue read renders
-  // "unavailable" with the server's reason, never $0/stale.
-  const {
-    balance: realBalance,
-    loading: realBalanceLoading,
-    error: realBalanceError,
-    refresh: refreshBalance,
-  } = useBalance();
 
   // F3: real WS status — synchronous getter + change listener (kickoff check 3).
   const [wsStatus, setWsStatus] = useState<string>(websocketClient.getStatus());
@@ -344,8 +313,6 @@ const Dashboard: React.FC = () => {
       : null;
 
   // Fetch portfolio data - optimized with proper deduplication
-  const hasPortfolioAccess =
-    user?.userLevel === "REGISTERED" || user?.userLevel === "VERIFIED";
 
   // L2: venue-agnostic portfolio selection. Every ACTIVE account is listed
   // with an explicit switcher (previously the first ACTIVE kodiak account
@@ -370,8 +337,9 @@ const Dashboard: React.FC = () => {
     portfolioAccountId || portfolioAccounts[0]?.id || "";
 
   // B1/B6: the four portfolio figures — each from a real, distinct source
-  // (on-chain wallet, selected exchange balance, realized PnL from closed
-  // trades, total across all ACTIVE accounts). Scoped to the selected account.
+  // (on-chain wallet, selected exchange balance, venue-exact unrealized PnL,
+  // venue-computed realized PnL, total across all ACTIVE accounts). Scoped
+  // to the selected account.
   const portfolioSummary = usePortfolioSummary(activePortfolioAccountId);
   // Positions/trades/balance are venue-dispatched server-side (kodiak rows
   // → kodiak-integration, lighter rows → the Lighter portfolio reader), so
@@ -384,102 +352,74 @@ const Dashboard: React.FC = () => {
     );
   }, [activePortfolioAccountId]);
 
-  const {
-    data: positionsData,
-    isLoading: positionsLoading,
-    refetch: refetchPositions,
-    dataUpdatedAt: positionsUpdatedAt,
-  } = useQuery({
-    queryKey: [
-      "kodiak-positions",
-      user?.id,
-      activePortfolioAccountId || "default",
-    ],
-    queryFn: () =>
-      kodiakApi.getKodiakPositions(activePortfolioAccountId || undefined),
-    enabled: hasPortfolioAccess && !!user?.id,
-    staleTime: 30000, // 30 seconds
-    gcTime: 300000, // 5 minutes
-    retry: (failureCount, error: Error) => {
-      const apiError = error as ApiError;
-      if (apiError?.response?.status === 400) return false;
-      return failureCount < 2;
-    },
-  });
+  // P0 single-source: positions/trades/venue-PnL come from the hook's
+  // portfolio-* keys only (tables + curve read the hook below).
 
+  // P0 single-source (continued): the kodiak-trades twin is gone too.
+  // Tables + curve read the hook's rows/series below — one query per
+  // endpoint, one refresh timer each.
+
+  // Process positions data — single-source from the hook.
+  const positions = portfolioSummary.positions;
+  const positionsLoading = portfolioSummary.positionsLoading;
+  const positionsUpdatedAt = portfolioSummary.positionsUpdatedAt;
   // F3: "Last Sync" reflects the most recent successful positions read.
   const lastSyncLabel = positionsUpdatedAt
     ? formatRelativeTime(positionsUpdatedAt)
     : "Never";
-
-  const {
-    data: tradesData,
-    isLoading: tradesLoading,
-    error: tradesError,
-    refetch: refetchTrades,
-  } = useQuery({
-    queryKey: [
-      "kodiak-trades",
-      user?.id,
-      activePortfolioAccountId || "default",
-    ],
-    queryFn: () =>
-      kodiakApi.getKodiakTrades(50, activePortfolioAccountId || undefined),
-    enabled: hasPortfolioAccess && !!user?.id,
-    staleTime: 30000,
-    gcTime: 300000,
-    retry: (failureCount, error: Error) => {
-      const apiError = error as ApiError;
-      if (apiError?.response?.status === 400) return false;
-      return failureCount < 2;
-    },
-  });
-
-  // Remove duplicate balance query - use only useBalance hook
-
-  // Process positions data
-  const positions = positionsData?.success
-    ? positionsData.data?.rows || []
-    : [];
   const profitablePositions = positions.filter(
-    (p: Position) => parseFloat(p.unsettled_pnl || "0") >= 0
+    p => parseFloat(String(p.unsettled_pnl ?? "0")) >= 0
   ).length;
 
-  // Process balance data from useBalance hook
-  const totalBalance = realBalance?.accountBalance || 0;
-  const pnl = 0; // TODO: Add PNL calculation from trading data
-  const pnlPercent = 0; // TODO: Calculate percentage
-  const dailyVolume = 0; // TODO: Add volume tracking
+  // Trades table — single-source from the hook (Kodiak native rows).
+  const trades = portfolioSummary.trades;
+  const tradesLoading = portfolioSummary.tradesLoading;
+  const tradesError = portfolioSummary.tradesError;
+
+  // P0: the D1 dead trio (pnl/pnlPercent/dailyVolume = 0) is gone. The
+  // portfolio gate reads the hook's exchange balance, not useBalance.
+  const totalBalance = portfolioSummary.exchangeBalance;
+  // Stable render-time fallback for rows missing both timestamps
+  // (react-hooks/purity: no Date.now() inside render).
+  const [renderTime] = useState(() => Date.now());
 
   // For VERIFIED users, always show portfolio (even with zero balances)
   // For REGISTERED users, show if balance data exists
   const shouldShowPortfolio =
     user?.userLevel === "VERIFIED" ||
-    (user?.userLevel === "REGISTERED" && realBalance);
+    (user?.userLevel === "REGISTERED" && totalBalance > 0);
 
   const portfolio = shouldShowPortfolio
     ? {
-        totalBalance: realBalance?.accountBalance || 0,
-        pnl,
-        pnlPercent,
-        dailyVolume,
-        totalTrades: tradesData?.success
-          ? tradesData.data?.rows?.length || 0
-          : 0,
+        totalBalance,
+        totalTrades: trades.length,
       }
     : null;
 
-  // Calculate real portfolio performance chart data
-  // F2/D2: no fabricated fallback point — without real trade rows the chart
-  // renders its own empty state instead of inventing a balance.
-  const portfolioData =
-    tradesData?.success && tradesData.data?.rows
-      ? calculatePortfolioPerformance(
-          tradesData.data.rows,
-          totalBalance,
-          currentTime
-        )
-      : [];
+  // P0: the equity curve plots the venue's own trade_pnl LEVEL series
+  // (hourly buckets), not per-trade accumulation — Lighter fill rows carry
+  // realized_pnl "0" by construction, which is why the old curve was flat.
+  // Kodiak (no venue series) keeps the trade-derived curve from real rows.
+  const toSeriesTime = (timestampMs: number): string =>
+    new Date(timestampMs).toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  const portfolioData: PerformanceData[] =
+    portfolioSummary.venuePnlPoints.length > 1
+      ? [...portfolioSummary.venuePnlPoints]
+          .map((p: VenuePnlPoint) => ({
+            t: parseFloat(String(p.timestamp ?? "0")),
+            v: parseFloat(String(p.tradePnl ?? p.trade_pnl ?? "0")),
+          }))
+          .filter(p => Number.isFinite(p.t) && Number.isFinite(p.v))
+          .sort((a, b) => a.t - b.t)
+          .map(p => ({ time: toSeriesTime(p.t), value: p.v }))
+      : trades.length > 0
+        ? calculatePortfolioPerformance(trades, totalBalance)
+        : [];
 
   return (
     <Container
@@ -511,8 +451,9 @@ const Dashboard: React.FC = () => {
             <PriceChart />
           </Suspense>
         </div>
-        {/* Portfolio Overview */}
-        {realBalanceLoading ? (
+        {/* Portfolio Overview — P0 single-source: the loading/error gate
+            reads the hook (one balance system), not useBalance. */}
+        {portfolioSummary.initialLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {[1, 2, 3, 4].map(i => (
               <Card key={i} className="p-6 flex items-center justify-center">
@@ -520,21 +461,20 @@ const Dashboard: React.FC = () => {
               </Card>
             ))}
           </div>
-        ) : realBalanceError ? (
+        ) : portfolioSummary.error ? (
           <Card className="mb-8 border-warning/20 bg-warning/5">
             <div className="flex items-start gap-3 p-6">
               <Activity className="w-5 h-5 text-warning shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <h3 className="text-base font-semibold text-text">
-                  Balance unavailable
+                  Portfolio figures unavailable
                 </h3>
                 <p className="text-sm text-textMuted mt-1 break-words">
-                  {realBalanceError}
+                  {portfolioSummary.error}
                 </p>
                 <p className="text-xs text-textMuted mt-2">
                   Positions and trades below carry their own error state — this
-                  card only reflects the failed balance read, not a zero
-                  balance.
+                  card only reflects the failed figure read, not a zero balance.
                 </p>
               </div>
             </div>
@@ -548,9 +488,7 @@ const Dashboard: React.FC = () => {
                 <>
                   <button
                     onClick={() => {
-                      void refreshBalance();
-                      void refetchPositions();
-                      void refetchTrades();
+                      void portfolioSummary.refresh();
                     }}
                     className="btn-secondary flex items-center gap-2"
                   >
@@ -572,11 +510,12 @@ const Dashboard: React.FC = () => {
               }
             />
 
-            {/* Four distinct, real figures (B1/B6): on-chain wallet,
-                selected exchange balance, realized PnL from closed trades,
-                and the total across every ACTIVE exchange account. Each reads
-                its own source — no card is a duplicate of another. */}
-            <Grid cols={{ default: 1, md: 2, lg: 4 }} gap={6}>
+            {/* Five distinct, real figures (B1/B6; 2026-10-09 PnL fix):
+                on-chain wallet, selected exchange balance, venue-exact
+                unrealized PnL, venue-computed realized PnL, and the total
+                across every ACTIVE exchange account. Each reads its own
+                source — no card is a duplicate of another. */}
+            <Grid cols={{ default: 1, md: 2, lg: 3, xl: 5 }} gap={6}>
               <StatsCard
                 title="Wallet (on-chain)"
                 value={portfolioSummary.walletBalance}
@@ -590,7 +529,13 @@ const Dashboard: React.FC = () => {
                 format="currency"
               />
               <StatsCard
-                title="Realized PnL (closed trades)"
+                title="Unrealized PnL (open positions)"
+                value={portfolioSummary.unrealizedPnl}
+                icon={Activity}
+                format="pnl"
+              />
+              <StatsCard
+                title="Realized PnL (7d, venue)"
                 value={portfolioSummary.realizedPnl}
                 icon={Activity}
                 format="pnl"
@@ -660,7 +605,9 @@ const Dashboard: React.FC = () => {
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Chart Section */}
+          {/* Chart Section — realized-only equity curve (unrealized overlay
+              stays an Analytics-boundary item). Caption keeps a flat 0
+              readable as information, not breakage. */}
           <Card className="lg:col-span-2">
             <Suspense
               fallback={
@@ -675,6 +622,11 @@ const Dashboard: React.FC = () => {
                 onSymbolChange={setSelectedSymbol}
               />
             </Suspense>
+            <p className="text-xs text-textMuted mt-2">
+              Realized PnL from the venue (trade_pnl level, last-minus-first
+              over 7d, transfers excluded) — a flat 0 means no closed PnL in the
+              window yet. Unrealized (open positions) is on the cards above.
+            </p>
           </Card>
 
           {/* Quick Actions */}
@@ -868,12 +820,18 @@ const Dashboard: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    positions.map((position: Position, index: number) => {
-                      const pnl = parseFloat(position.unsettled_pnl || "0");
-                      const size = parseFloat(position.position_qty || "0");
-                      const markPrice = parseFloat(position.mark_price || "0");
+                    positions.map((position, index: number) => {
+                      const pnl = parseFloat(
+                        String(position.unsettled_pnl ?? "0")
+                      );
+                      const size = parseFloat(
+                        String(position.position_qty ?? "0")
+                      );
+                      const markPrice = parseFloat(
+                        String(position.mark_price ?? "0")
+                      );
                       const entryPrice = parseFloat(
-                        position.average_open_price || "0"
+                        String(position.average_open_price ?? "0")
                       );
                       const pnlPercent =
                         entryPrice > 0
@@ -1011,9 +969,7 @@ const Dashboard: React.FC = () => {
                         </p>
                       </td>
                     </tr>
-                  ) : !tradesData?.success ||
-                    !tradesData.data?.rows ||
-                    tradesData.data.rows.length === 0 ? (
+                  ) : trades.length === 0 ? (
                     // Show "No recent trades" for all cases (success with empty data, or API error for VERIFIED users)
                     <tr>
                       <td colSpan={5} className="py-8 text-center">
@@ -1023,11 +979,11 @@ const Dashboard: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    tradesData.data.rows.map((trade: Trade, index: number) => {
+                    trades.map((trade, index: number) => {
                       const timestamp = new Date(
                         trade.close_timestamp ||
                           trade.open_timestamp ||
-                          currentTime
+                          renderTime
                       );
                       const dateString = timestamp.toLocaleDateString([], {
                         month: "short",
@@ -1067,13 +1023,17 @@ const Dashboard: React.FC = () => {
                           <td className="py-3 text-sm text-text">
                             $
                             {parseFloat(
-                              trade.avg_close_price ||
-                                trade.avg_open_price ||
-                                "0"
+                              String(
+                                trade.avg_close_price ??
+                                  trade.avg_open_price ??
+                                  "0"
+                              )
                             ).toLocaleString()}
                           </td>
                           <td className="py-3 text-sm text-text text-right">
-                            {parseFloat(trade.closed_position_qty || "0")}
+                            {parseFloat(
+                              String(trade.closed_position_qty ?? "0")
+                            )}
                           </td>
                         </tr>
                       );

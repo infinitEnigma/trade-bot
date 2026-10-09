@@ -133,7 +133,10 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
               <span className="text-text">{bot.total_trades || 0}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-textMuted">PnL:</span>
+              {/* P1: ledger total_pnl is realized only — labeled as such so
+                  the card never implies total PnL. Venue-exact unrealized
+                  lives on the portfolio strip (per-bot thread is future). */}
+              <span className="text-textMuted">Realized PnL:</span>
               <span
                 className={`font-medium ${
                   (bot.total_pnl || 0) >= 0 ? "text-success" : "text-danger"
