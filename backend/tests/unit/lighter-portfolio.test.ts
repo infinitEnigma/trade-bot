@@ -422,4 +422,92 @@ describe("lighter portfolio reader", () => {
       expect(venueGet.mock.calls[0][1].params.limit).toBe(100);
     });
   });
+
+  describe("getLighterPnl", () => {
+    const PNL_PAYLOAD = {
+      code: 200,
+      resolution: "1h",
+      pnl: [
+        {
+          timestamp: 1791462000,
+          trade_pnl: 112.5,
+          inflow: 0,
+          outflow: 0,
+          pool_pnl: 0,
+          pool_inflow: 0,
+          pool_outflow: 0,
+          pool_total_shares: 0,
+          spot_inflow: 0,
+          spot_outflow: 0,
+          staked_lit: 0,
+          staking_inflow: 0,
+          staking_outflow: 0,
+          staking_pnl: 0,
+          trade_spot_pnl: 0,
+          volume: 540.25,
+        },
+        {
+          timestamp: 1791465600,
+          trade_pnl: "14.75",
+          inflow: 0,
+          outflow: 0,
+          pool_pnl: 0,
+          pool_inflow: 0,
+          pool_outflow: 0,
+          pool_total_shares: 0,
+          spot_inflow: 0,
+          spot_outflow: 0,
+          staked_lit: 0,
+          staking_inflow: 0,
+          staking_outflow: 0,
+          staking_pnl: 0,
+          trade_spot_pnl: 0,
+          volume: "108.26",
+        },
+      ],
+    };
+
+    it("maps the venue trade_pnl series to points (string-safe)", async () => {
+      venueGet.mockImplementation((path: string) => {
+        if (path === "/api/v1/pnl") return { data: PNL_PAYLOAD };
+        throw new Error(`unexpected path ${path}`);
+      });
+
+      const result = await portfolio.getLighterPnl("u1", 168, "acc-lighter-1");
+
+      expect(result.success).toBe(true);
+      expect(result.data?.points).toEqual([
+        { timestamp: 1791462000, tradePnl: 112.5, volume: 540.25 },
+        { timestamp: 1791465600, tradePnl: 14.75, volume: 108.26 },
+      ]);
+
+      // Venue contract: by/index/value scoping, hourly resolution,
+      // transfers excluded so deposits never read as profit.
+      const [path, options] = venueGet.mock.calls[0];
+      expect(path).toBe("/api/v1/pnl");
+      expect(options.params).toEqual({
+        by: "index",
+        value: "404",
+        resolution: "1h",
+        start_timestamp: expect.any(Number),
+        end_timestamp: expect.any(Number),
+        count_back: 168,
+        ignore_transfers: true,
+      });
+    });
+
+    it("answers no-credentials closed (never throws the read)", async () => {
+      resolveAccount.mockResolvedValueOnce({
+        ...ACCOUNT_ROW,
+        status: "REVOKED",
+      });
+
+      const result = await portfolio.getLighterPnl("u1", 168, "acc-lighter-1");
+
+      expect(result).toEqual({
+        success: false,
+        error: "No verified Lighter credentials found",
+      });
+    });
+  });
 });

@@ -291,6 +291,49 @@ class KodiakApi {
   }
 
   /**
+   * Venue-computed realized PnL series (`GET /api/market/pnl`). Lighter-only:
+   * its `/api/v1/trades` fill rows carry no per-fill PnL, so the venue's own
+   * `trade_pnl` series is the authoritative realized figure. Kodiak accounts
+   * answer 404 here (their native per-trade `realizedPnl` rows flow through
+   * `getKodiakTrades`) — the caller treats 404 as "no venue series", never
+   * as an error. Same dedup + soft-fail shape as the sibling reads.
+   */
+  async getVenuePnl(countBack = 168, exchangeAccountId?: string) {
+    return globalRequestManager.deduplicateRequest(
+      `kodiak:pnl:${countBack}${exchangeAccountId ? `:${exchangeAccountId}` : ""}`,
+      async () => {
+        try {
+          const response = await httpClient
+            .getClient()
+            .get(
+              `/api/market/pnl?countBack=${countBack}${
+                exchangeAccountId
+                  ? `&exchangeAccountId=${exchangeAccountId}`
+                  : ""
+              }`
+            );
+          return response.data;
+        } catch (error: unknown) {
+          const apiError = error as ApiError;
+          if (
+            apiError.response?.status === 403 ||
+            apiError.response?.status === 400 ||
+            apiError.response?.status === 404
+          ) {
+            return {
+              success: true,
+              data: { points: [] },
+              message: "Venue PnL series not available",
+            };
+          }
+          throw error;
+        }
+      },
+      "tradingApi"
+    );
+  }
+
+  /**
    * Validate Kodiak credentials format
    */
   validateCredentialsFormat(credentials: KodiakCredentials): {

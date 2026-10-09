@@ -3,6 +3,7 @@ import { Router, Response } from "express";
 import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
 import {
   getLighterBalance,
+  getLighterPnl,
   getLighterPositions,
   getLighterTrades,
 } from "../../../infrastructure/external/lighter/portfolio";
@@ -210,6 +211,117 @@ portfolioRoutes.get(
       ok(res, tradesResponse.data);
     } catch (err: unknown) {
       fail(res, "trades_endpoint", "Failed to fetch trades", {
+        userId: req.user?.userId,
+        exchangeAccountId: req.query.exchangeAccountId,
+        error: errMessage(err),
+      });
+    }
+  }
+);
+portfolioRoutes.get(
+  "/pnl",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: "Authentication required",
+        });
+      }
+      const scope = await resolveAccountScope(
+        userId,
+        req.query.exchangeAccountId
+      );
+      if (!scope.ok) {
+        return res
+          .status(scope.status)
+          .json({ success: false, error: scope.error });
+      }
+      // Lighter has no per-fill realized PnL on `/api/v1/trades` rows
+      // (verified live 2026-10-09) — its authoritative realized figure is
+      // the venue-computed `trade_pnl` series from `/api/v1/pnl`. Kodiak
+      // keeps its native per-trade `realizedPnl` rows via `/trades`, so a
+      // non-Lighter account answers 404 (unknown source, not an error).
+      if (scope.exchange !== "lighter") {
+        return res
+          .status(404)
+          .json({ success: false, error: "Venue PnL series not available" });
+      }
+      const countBack = req.query.countBack
+        ? parseInt(req.query.countBack as string, 10)
+        : 168;
+      const pnlResponse = await getLighterPnl(
+        userId,
+        Number.isFinite(countBack) && countBack > 0 ? countBack : 168,
+        scope.exchangeAccountId as string
+      );
+      if (!pnlResponse.success) {
+        return res.status(400).json({
+          success: false,
+          error: pnlResponse.error || "Failed to fetch venue PnL",
+        });
+      }
+      ok(res, pnlResponse.data);
+    } catch (err: unknown) {
+      fail(res, "pnl_endpoint", "Failed to fetch venue PnL", {
+        userId: req.user?.userId,
+        exchangeAccountId: req.query.exchangeAccountId,
+        error: errMessage(err),
+      });
+    }
+  }
+);
+
+portfolioRoutes.get(
+  "/pnl",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: "Authentication required",
+        });
+      }
+      const scope = await resolveAccountScope(
+        userId,
+        req.query.exchangeAccountId
+      );
+      if (!scope.ok) {
+        return res
+          .status(scope.status)
+          .json({ success: false, error: scope.error });
+      }
+      // Lighter has no per-fill realized PnL on `/api/v1/trades` rows
+      // (verified live 2026-10-09) — its authoritative realized figure is
+      // the venue-computed `trade_pnl` series from `/api/v1/pnl`. Kodiak
+      // keeps its native per-trade `realizedPnl` rows via `/trades`, so a
+      // non-Lighter account answers 404 (unknown source, not an error).
+      if (scope.exchange !== "lighter") {
+        return res
+          .status(404)
+          .json({ success: false, error: "Venue PnL series not available" });
+      }
+      const countBack = req.query.countBack
+        ? parseInt(req.query.countBack as string, 10)
+        : 168;
+      const pnlResponse = await getLighterPnl(
+        userId,
+        Number.isFinite(countBack) && countBack > 0 ? countBack : 168,
+        scope.exchangeAccountId as string
+      );
+      if (!pnlResponse.success) {
+        return res.status(400).json({
+          success: false,
+          error: pnlResponse.error || "Failed to fetch venue PnL",
+        });
+      }
+      ok(res, pnlResponse.data);
+    } catch (err: unknown) {
+      fail(res, "pnl_endpoint", "Failed to fetch venue PnL", {
         userId: req.user?.userId,
         exchangeAccountId: req.query.exchangeAccountId,
         error: errMessage(err),

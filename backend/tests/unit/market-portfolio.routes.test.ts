@@ -41,6 +41,7 @@ jest.mock("../../src/infrastructure/external/lighter/portfolio", () => ({
   getLighterPositions: jest.fn(),
   getLighterBalance: jest.fn(),
   getLighterTrades: jest.fn(),
+  getLighterPnl: jest.fn(),
 }));
 
 jest.mock(
@@ -59,6 +60,7 @@ import {
 import { kodiakIntegrationService } from "../../src/infrastructure/external/kodiak-integration.service";
 import {
   getLighterBalance,
+  getLighterPnl,
   getLighterPositions,
   getLighterTrades,
 } from "../../src/infrastructure/external/lighter/portfolio";
@@ -72,6 +74,7 @@ const kodiakTrades = kodiakIntegrationService.getTrades as jest.Mock;
 const lighterBalance = getLighterBalance as jest.Mock;
 const lighterPositions = getLighterPositions as jest.Mock;
 const lighterTrades = getLighterTrades as jest.Mock;
+const lighterPnl = getLighterPnl as jest.Mock;
 
 function createApp(): Express {
   const app = express();
@@ -112,6 +115,7 @@ describe("market portfolio routes", () => {
     });
     lighterPositions.mockResolvedValue({ success: true, data: { rows: [] } });
     lighterTrades.mockResolvedValue({ success: true, data: { rows: [] } });
+    lighterPnl.mockResolvedValue({ success: true, data: { points: [] } });
   });
 
   describe("resolveAccountScope", () => {
@@ -223,6 +227,21 @@ describe("market portfolio routes", () => {
       );
       expect(kodiak.status).toBe(200);
       expect(kodiakTrades).toHaveBeenCalledWith("u1", 50, KODIAK_ID);
+    });
+
+    it("dispatches venue PnL to Lighter and 404s Kodiak (native rows stay on /trades)", async () => {
+      const app = createApp();
+      const lighter = await request(app).get(
+        `/api/market/pnl?exchangeAccountId=${LIGHTER_ID}&countBack=48`
+      );
+      expect(lighter.status).toBe(200);
+      expect(lighterPnl).toHaveBeenCalledWith("u1", 48, LIGHTER_ID);
+
+      const kodiak = await request(app).get(
+        `/api/market/pnl?exchangeAccountId=${KODIAK_ID}`
+      );
+      expect(kodiak.status).toBe(404);
+      expect(lighterPnl).toHaveBeenCalledTimes(1);
     });
 
     it("keeps the legacy kodiak default when no id is supplied", async () => {

@@ -333,6 +333,97 @@ async function authorizedGet(
   }
 }
 
+export interface LighterPnlPoint {
+  timestamp: number;
+  tradePnl: number;
+  volume: number;
+}
+
+/**
+ * `GET /api/v1/pnl` — the venue's own realized-PnL series ("Get account PnL
+ * chart"). Per-fill realized PnL does NOT exist on `/api/v1/trades` rows
+ * (verified live 2026-10-09, account 123: fill rows carry size/price plus
+ * taker/maker position-before fields, no pnl field), so the venue-computed
+ * `trade_pnl` series is the authoritative realized figure for Lighter —
+ * the same number behind the venue portfolio page.
+ *
+ * `resolution=1h` keeps the payload small; `ignore_transfers=true` so
+ * deposits/withdrawals never masquerade as trading profit. `count_back`
+ * caps the window (venue default otherwise). Kodiak accounts are untouched
+ * (their native per-trade `realizedPnl` rows keep flowing through
+ * `getTrades`); callers stay venue-blind via the `/pnl` portfolio route.
+ */
+export async function getLighterPnl(
+  userId: string,
+  countBack: number,
+  exchangeAccountId: string
+): Promise<KodiakApiResponse<{ points: LighterPnlPoint[] }>> {
+  const bounded = Math.min(Math.max(Math.trunc(countBack) || 168, 1), 1000);
+  const cacheKey = `lighter:pnl:${userId}:${bounded}:${exchangeAccountId}`;
+  try {
+    const cached = kodiakCache.get(cacheKey);
+    if (cached && typeof cached === "object" && "success" in cached) {
+      logger.debug("Returning cached Lighter pnl", {
+        userId,
+        exchangeAccountId,
+      });
+      return cached as KodiakApiResponse<{ points: LighterPnlPoint[] }>;
+    }
+
+    const resolved = await resolveLighterAccount(userId, exchangeAccountId);
+    if (!resolved) {
+      return { success: false, error: "No verified Lighter credentials found" };
+    }
+
+    const now = Date.now();
+    const body = await authorizedGet(resolved.credentials, "/api/v1/pnl", {
+      by: "index",
+      value: String(resolved.credentials.accountIndex),
+      resolution: "1h",
+      start_timestamp: now - bounded * 3600 * 1000,
+      end_timestamp: now,
+      count_back: bounded,
+      ignore_transfers: true,
+    });
+    const entries = Array.isArray(body.pnl) ? body.pnl : [];
+    const points: LighterPnlPoint[] = [];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object") continue;
+      const raw = entry as Record<string, unknown>;
+      points.push({
+        timestamp: num(raw.timestamp),
+        tradePnl: num(raw.trade_pnl),
+        volume: num(raw.volume),
+      });
+    }
+
+    const result: KodiakApiResponse<{ points: LighterPnlPoint[] }> = {
+      success: true,
+      data: { points },
+    };
+    kodiakCache.set(cacheKey, result, ROWS_TTL_MS);
+    logger.debug("Lighter pnl retrieved and cached", {
+      userId,
+      exchangeAccountId: resolved.id,
+      pointsCount: points.length,
+    });
+    return result;
+  } catch (error) {
+    logger.error("Get Lighter pnl error", error as Error, {
+      userId,
+      exchangeAccountId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {
+      success: false,
+      error:
+        error instanceof LighterPortfolioSourceError
+          ? error.message
+          : "Failed to get Lighter pnl",
+    };
+  }
+}
+
 /** `accounts[0]` of `GET /api/v1/account` (collateral + assets + positions). */
 async function fetchAccount(
   credentials: LighterCredentials
