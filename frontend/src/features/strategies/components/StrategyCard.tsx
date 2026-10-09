@@ -156,6 +156,7 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
           >
             <BotControls
               strategyId={strategy.id}
+              strategySymbol={strategyConfig?.config.symbol}
               bot={bot}
               onStatusChange={onBotStatusChange}
             />
@@ -168,6 +169,7 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
           >
             <BotControls
               strategyId={strategy.id}
+              strategySymbol={strategyConfig?.config.symbol}
               onStatusChange={onBotStatusChange}
             />
           </Suspense>

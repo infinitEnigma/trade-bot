@@ -30,7 +30,7 @@ import {
   WifiOff,
 } from "lucide-react";
 
-import { tradingApi, authApi } from "../../../../infrastructure/api";
+import { tradingApi, authApi, marketApi } from "../../../../infrastructure/api";
 import {
   accountsApi,
   ExchangeAccountDto,
@@ -45,6 +45,13 @@ import { BotInstance } from "../../../strategies/types/strategies.types";
 
 interface BotControlsProps {
   strategyId: string;
+  /**
+   * The strategy's configured symbol (X2). Passed down from the card/modal
+   * (which hold the full strategy) so the start flow can check it against the
+   * selected account's venue before dispatching — turning the backend's
+   * start-time `VenueSymbolError` reject into proactive UI guidance.
+   */
+  strategySymbol?: string;
   bot?: BotInstance;
   onStatusChange: () => void;
 }
@@ -183,6 +190,10 @@ const AccountSizePicker: React.FC<{
   onSelectAccount: (accountId: string) => void;
   notionalAmount: string;
   onNotionalChange: (value: string) => void;
+  /** X2: the strategy's symbol is not listed on the selected venue. */
+  symbolMismatch?: boolean;
+  /** X2: true while the venue catalog is being checked (suppresses the warning). */
+  symbolCheckPending?: boolean;
 }> = ({
   accounts,
   isLoading,
@@ -190,6 +201,8 @@ const AccountSizePicker: React.FC<{
   onSelectAccount,
   notionalAmount,
   onNotionalChange,
+  symbolMismatch,
+  symbolCheckPending,
 }) => {
   if (isLoading) {
     return (
@@ -250,6 +263,23 @@ const AccountSizePicker: React.FC<{
           Enter a size of at least ${MIN_NOTIONAL_AMOUNT}.
         </p>
       )}
+
+      {/* X2: proactive venue-symbol guidance. Shown only when the venue
+          catalog is known and the strategy's symbol isn't on it — the start
+          would otherwise fail with the backend's `VenueSymbolError`. */}
+      {symbolMismatch && (
+        <div className="flex items-start gap-2 p-2 rounded-lg bg-warning/10 border border-warning/20">
+          <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+          <p className="text-xs text-warning">
+            This strategy's symbol isn't listed on the selected account's venue,
+            so it can't start there. Pick an account on a venue that lists it,
+            or edit the strategy's symbol.
+          </p>
+        </div>
+      )}
+      {symbolCheckPending && !symbolMismatch && (
+        <p className="text-xs text-textMuted">Checking venue symbols…</p>
+      )}
     </div>
   );
 };
@@ -262,6 +292,7 @@ const AccountSizePicker: React.FC<{
  */
 export const BotControls: React.FC<BotControlsProps> = ({
   strategyId,
+  strategySymbol,
   bot,
   onStatusChange,
 }) => {
@@ -301,11 +332,49 @@ export const BotControls: React.FC<BotControlsProps> = ({
     selectedAccountId ||
     (activeAccounts.length === 1 ? activeAccounts[0].id : "");
 
+  const selectedAccount = activeAccounts.find(
+    account => account.id === effectiveAccountId
+  );
+
+  // X2: venue-aware symbol guidance. Once an account is chosen, ask the backend
+  // what that venue lists and compare against the strategy's symbol — so the
+  // user sees a warning BEFORE start instead of the backend's start-time 400.
+  // Fail-open: an unfetchable catalog answers `available: false`, so we stay
+  // silent and the authoritative start gate (`assertSymbolSupported`) decides.
+  const venueSymbolsQuery = useQuery({
+    queryKey: [
+      "venue-symbols",
+      selectedAccount?.exchange,
+      selectedAccount?.environment,
+    ],
+    queryFn: () =>
+      marketApi.getVenueSymbols({
+        exchange: selectedAccount!.exchange,
+        environment: selectedAccount!.environment,
+      }),
+    enabled: !!selectedAccount && !!strategySymbol,
+    staleTime: 5 * 60 * 1000, // catalogs change rarely; 5 min is plenty
+  });
+
+  const venueCatalog = venueSymbolsQuery.data?.data;
+  const symbolCheckPending =
+    !!selectedAccount &&
+    !!strategySymbol &&
+    (venueSymbolsQuery.isLoading || venueSymbolsQuery.isFetching);
+  const symbolMismatch =
+    !!strategySymbol &&
+    venueCatalog?.available === true &&
+    Array.isArray(venueCatalog.symbols) &&
+    !venueCatalog.symbols.some(
+      (listed: string) => listed.toUpperCase() === strategySymbol.toUpperCase()
+    );
+
   const parsedAmount = Number(notionalAmount);
   const canStart =
     !!effectiveAccountId &&
     Number.isFinite(parsedAmount) &&
-    parsedAmount >= MIN_NOTIONAL_AMOUNT;
+    parsedAmount >= MIN_NOTIONAL_AMOUNT &&
+    !symbolMismatch;
 
   // Invalidate query cache when mutations succeed
   const invalidateCache = () => {
@@ -461,6 +530,8 @@ export const BotControls: React.FC<BotControlsProps> = ({
           onSelectAccount={setSelectedAccountId}
           notionalAmount={notionalAmount}
           onNotionalChange={setNotionalAmount}
+          symbolMismatch={symbolMismatch}
+          symbolCheckPending={symbolCheckPending}
         />
         <ActionButton
           icon={<Play className="w-4 h-4" />}

@@ -14,6 +14,8 @@
  * - market-ws-url.routes.ts        -> /ws-url (auth + verified creds)
  * - market-tv.routes.ts            -> /tv/config, /tv/symbols, /tv/history
  * - market-kline-history.routes.ts -> /kline-history (auth + verified creds)
+ * - market-venue-symbols.routes.ts -> /venue-symbols (auth; venue catalog for
+ *   the venue-aware symbol picker, X2)
  *
  * Shared boilerplate lives in market-helpers.ts and market-cache.ts.
  */
@@ -28,6 +30,7 @@ import { portfolioRoutes } from "./market-portfolio.routes";
 import { wsUrlRoutes } from "./market-ws-url.routes";
 import { tvRoutes } from "./market-tv.routes";
 import { klineHistoryRoutes } from "./market-kline-history.routes";
+import { venueSymbolsRoutes } from "./market-venue-symbols.routes";
 
 const router = Router();
 
@@ -38,5 +41,6 @@ router.use(portfolioRoutes);
 router.use(wsUrlRoutes);
 router.use(tvRoutes);
 router.use(klineHistoryRoutes);
+router.use(venueSymbolsRoutes);
 
 export { router as marketRoutes };

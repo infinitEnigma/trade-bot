@@ -223,6 +223,39 @@ describe("marketApi", () => {
         expect(result).toEqual(mockResponse);
       });
     });
+
+    describe("getVenueSymbols", () => {
+      it("should call the venue-symbols endpoint with exchange + environment", async () => {
+        const mockResponse = {
+          success: true,
+          data: {
+            exchange: "lighter",
+            environment: "testnet",
+            available: true,
+            symbols: ["BTC", "ETH", "ETH/USDC"],
+          },
+        };
+        mockGet.mockResolvedValue({ data: mockResponse });
+        (globalRequestManager.deduplicateRequest as Mock).mockImplementation(
+          (_key: string, fn: () => unknown) => fn()
+        );
+
+        const result = await marketApi.getVenueSymbols({
+          exchange: "lighter",
+          environment: "testnet",
+        });
+
+        expect(globalRequestManager.deduplicateRequest).toHaveBeenCalledWith(
+          "market:venue-symbols:lighter:testnet",
+          expect.any(Function),
+          "marketApi"
+        );
+        expect(mockGet).toHaveBeenCalledWith("/api/market/venue-symbols", {
+          params: { exchange: "lighter", environment: "testnet" },
+        });
+        expect(result).toEqual(mockResponse);
+      });
+    });
   });
 
   describe("TradingView endpoints", () => {

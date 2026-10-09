@@ -42,22 +42,31 @@ interface StrategyFormProps {
   onSuccess: (created?: Strategy | null) => void;
 }
 
-// Union of the venues the platform trades: Kodiak/Orderly perps plus the
-// markets Lighter lists. Strategy creation is venue-agnostic (the account is
-// only bound at start) — the start gate (L20, `assertSymbolSupported`)
-// validates the chosen symbol against the bound account's venue.
-const AVAILABLE_SYMBOLS = [
-  "PERP_BTC_USDC",
-  "PERP_ETH_USDC",
-  "PERP_SOL_USDC",
-  "PERP_AVAX_USDC",
-  "PERP_MATIC_USDC",
-  "PERP_LINK_USDC",
-  "BTC",
-  "SOL",
-  "ETH",
-  "ETH/USDC",
-  "LIT/USDC",
+// Symbols grouped by the venue that lists them. The two venues use different
+// symbol conventions — Kodiak/Orderly perps are `PERP_<X>_USDC`; Lighter lists
+// bare markets (`ETH`, `ETH/USDC`). Strategy creation stays venue-agnostic (the
+// account is only bound at start), but the picker must not let a user silently
+// pick a symbol that only exists on the *other* venue: without grouping, both
+// venues expose an "ETH" and the label `.replace()` collapses them to one
+// identical option — the exact confusion that fails at start with a Lighter
+// account (L20). Grouping + venue labels keep each venue's "ETH" distinct. The
+// start gate (`assertSymbolSupported`) remains the authoritative backstop.
+const SYMBOL_GROUPS: { venue: string; symbols: string[] }[] = [
+  {
+    venue: "Kodiak / Orderly",
+    symbols: [
+      "PERP_BTC_USDC",
+      "PERP_ETH_USDC",
+      "PERP_SOL_USDC",
+      "PERP_AVAX_USDC",
+      "PERP_MATIC_USDC",
+      "PERP_LINK_USDC",
+    ],
+  },
+  {
+    venue: "Lighter",
+    symbols: ["BTC", "SOL", "ETH", "ETH/USDC", "LIT/USDC"],
+  },
 ];
 
 export const StrategyForm: React.FC<StrategyFormProps> = ({
@@ -298,18 +307,27 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
             </div>
           </div>
 
-          {/* Trading Symbol */}
+          {/* Trading Symbol — grouped by venue so a symbol like "ETH" is
+              unambiguous (Lighter's bare ETH vs Kodiak's PERP_ETH_USDC). */}
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-2">
               Trading Symbol
             </label>
             <select {...register("symbol")} className="input w-full">
-              {AVAILABLE_SYMBOLS.map(symbol => (
-                <option key={symbol} value={symbol}>
-                  {symbol.replace("PERP_", "").replace("_USDC", "")}
-                </option>
+              {SYMBOL_GROUPS.map(group => (
+                <optgroup key={group.venue} label={group.venue}>
+                  {group.symbols.map(symbol => (
+                    <option key={symbol} value={symbol}>
+                      {symbol.replace("PERP_", "").replace("_USDC", "")}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
+            <p className="text-xs text-text-tertiary mt-1">
+              Pick the symbol from the venue your exchange account uses — the
+              strategy can only start on an account that lists it.
+            </p>
             {errors.symbol && (
               <p className="text-danger text-sm mt-1">
                 {errors.symbol.message}

@@ -2,6 +2,7 @@
 
 import { httpClient } from "./client";
 import { globalRequestManager } from "../request-manager";
+import type { AccountExchange, AccountEnvironment } from "./accounts";
 
 /**
  * Market data API endpoints
@@ -137,6 +138,29 @@ export const marketApi = {
         httpClient
           .getClient()
           .get("/api/market/tv/history", { params })
+          .then(r => r.data),
+      "marketApi"
+    );
+  },
+
+  /**
+   * Venue symbol catalog (X2) — the symbols a given exchange/environment
+   * lists. Powers the venue-aware start check: when a user picks an account,
+   * the UI compares the strategy's symbol against this list and warns on a
+   * mismatch before dispatching start. `available: false` (catalog unfetchable)
+   * means "unknown" — the UI stays silent and the backend start gate decides.
+   */
+  async getVenueSymbols(params: {
+    exchange: AccountExchange;
+    environment: AccountEnvironment;
+  }) {
+    const key = `market:venue-symbols:${params.exchange}:${params.environment}`;
+    return globalRequestManager.deduplicateRequest(
+      key,
+      () =>
+        httpClient
+          .getClient()
+          .get("/api/market/venue-symbols", { params })
           .then(r => r.data),
       "marketApi"
     );
