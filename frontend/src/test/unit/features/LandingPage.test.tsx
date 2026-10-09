@@ -71,7 +71,7 @@ describe("LandingPage", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/login");
   });
 
-  it('should have a working "Get Started" button', async () => {
+  it('should have a working "Get Started" button (register path)', async () => {
     render(<LandingPage />);
 
     const getStartedButton = screen.getByRole("button", {
@@ -79,7 +79,18 @@ describe("LandingPage", () => {
     });
     fireEvent.click(getStartedButton);
 
-    expect(mockNavigate).toHaveBeenCalledWith("/login");
+    expect(mockNavigate).toHaveBeenCalledWith("/register");
+  });
+
+  it('should have a "Create account" path in the navigation', async () => {
+    render(<LandingPage />);
+
+    const createAccountButton = screen.getByRole("button", {
+      name: "Create account",
+    });
+    fireEvent.click(createAccountButton);
+
+    expect(mockNavigate).toHaveBeenCalledWith("/register");
   });
 
   it('should have a working "Start Trading Today" button', async () => {
@@ -93,14 +104,13 @@ describe("LandingPage", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/login");
   });
 
-  it("should display all 6 features", async () => {
+  it("should display all 5 features with honest copy", async () => {
     render(<LandingPage />);
 
     const features = [
       "Automated Trading",
       "Smart Analytics",
-      "AI-Powered Strategies",
-      "Educational Resources",
+      "Automated Execution",
       "Secure Platform",
       "Global Markets",
     ];
@@ -108,20 +118,30 @@ describe("LandingPage", () => {
     features.forEach(feature => {
       expect(screen.getByText(feature)).toBeInTheDocument();
     });
+
+    // HD4/E5: no AI/ML claims, no non-existent resources
+    expect(screen.queryByText("AI-Powered Strategies")).not.toBeInTheDocument();
+    expect(screen.queryByText("Educational Resources")).not.toBeInTheDocument();
   });
 
-  it("should display statistics section", async () => {
+  it("shows honest verifiable stats and no fabricated claims", async () => {
     render(<LandingPage />);
 
-    expect(screen.getByText("99.9%")).toBeInTheDocument();
-    expect(screen.getByText("Uptime Guarantee")).toBeInTheDocument();
+    // The banned, unverifiable social-proof claims stay gone (HD4/E5).
+    expect(screen.queryByText("99.9%")).not.toBeInTheDocument();
+    expect(screen.queryByText("10K+")).not.toBeInTheDocument();
+    expect(screen.queryByText("Active Traders")).not.toBeInTheDocument();
+    expect(screen.queryByText("Uptime Guarantee")).not.toBeInTheDocument();
+
+    // The stats bar is restored with figures verifiable from the platform:
+    // always-on execution, 2 connected exchanges, 3 strategy types.
     expect(screen.getByText("24/7")).toBeInTheDocument();
-    expect(screen.getAllByText("Support")).toHaveLength(2);
-    expect(screen.getByText("10K+")).toBeInTheDocument();
-    expect(screen.getByText("Active Traders")).toBeInTheDocument();
+    expect(screen.getByText("Automated execution")).toBeInTheDocument();
+    expect(screen.getByText("Connected exchanges")).toBeInTheDocument();
+    expect(screen.getByText("Strategy types")).toBeInTheDocument();
   });
 
-  it("should render the footer with links", async () => {
+  it("should render the footer with plain-text items and dynamic year", async () => {
     render(<LandingPage />);
 
     expect(
@@ -130,7 +150,10 @@ describe("LandingPage", () => {
     expect(screen.getByText("Terms")).toBeInTheDocument();
     expect(screen.getByText("Privacy")).toBeInTheDocument();
     expect(screen.getByText("Contact")).toBeInTheDocument();
-    // Check for footer links specifically
-    expect(screen.getByRole("link", { name: "Support" })).toBeInTheDocument();
+    // HD4: footer items are plain text, not dead href="#" links
+    expect(
+      screen.queryByRole("link", { name: "Support" })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Support")).toBeInTheDocument();
   });
 });

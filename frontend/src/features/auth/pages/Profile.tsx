@@ -7,8 +7,10 @@ import { Card } from "../../../shared/components/ui/Card";
 import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
 import { ValidatedInput } from "../../../shared/components/forms";
 import { Container } from "../../../shared/components/layout";
-// Note: Profile validation functions not yet migrated to shared/validation
-// Using simple validation for now
+import { validateEmail } from "../../../shared/validation";
+import { authApi } from "../../../infrastructure/api";
+
+// Simple validation types (derived during render, like Login/Register)
 interface SimpleValidation {
   isValid: boolean;
   message: string;
@@ -17,9 +19,6 @@ interface SimpleValidation {
 
 interface SimpleValidationState {
   email: SimpleValidation;
-  currentPassword: SimpleValidation;
-  newPassword: SimpleValidation;
-  confirmPassword: SimpleValidation;
   form: {
     isValid: boolean;
   };
@@ -36,58 +35,72 @@ import {
 } from "lucide-react";
 
 const Profile: React.FC = () => {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [validation] = useState<SimpleValidationState>({
-    email: { isValid: true, message: "", touched: false },
-    currentPassword: { isValid: true, message: "", touched: false },
-    newPassword: { isValid: true, message: "", touched: false },
-    confirmPassword: { isValid: true, message: "", touched: false },
-    form: { isValid: true },
-  });
 
   const [formData, setFormData] = useState({
     email: user?.email || "",
-    currentPassword: "",
-    newPassword: "",
-    confirmPassword: "",
   });
+
+  // Validation is derived directly from the field during render (no
+  // stale state — mirrors the Login/Register pattern).
+  const emailCheck = validateEmail(formData.email.trim());
+  const validation: SimpleValidationState = {
+    email: {
+      isValid: emailCheck.isValid,
+      message: formData.email && !emailCheck.isValid ? emailCheck.message : "",
+      touched: formData.email.length > 0,
+    },
+    form: {
+      isValid: emailCheck.isValid,
+    },
+  };
 
   // Reset form when canceling edit
   const handleCancelEdit = () => {
     setFormData({
       email: user?.email || "",
-      currentPassword: "",
-      newPassword: "",
-      confirmPassword: "",
     });
     setIsEditing(false);
   };
 
   const handleSave = async () => {
-    // Simple validation
-    if (isEditing && (!formData.email || !formData.email.includes("@"))) {
-      SmartToast.error("Please enter a valid email address");
-      return;
-    }
-
-    if (
-      formData.newPassword &&
-      formData.newPassword !== formData.confirmPassword
-    ) {
-      SmartToast.error("Passwords do not match");
+    if (isEditing && !validation.email.isValid) {
+      SmartToast.error(
+        validation.email.message || "Please enter a valid email address"
+      );
       return;
     }
 
     try {
       setIsSaving(true);
 
-      // Simple update logic - just show success for now
-      SmartToast.success("Profile updated successfully!");
-      setIsEditing(false);
-    } catch {
-      SmartToast.error("Failed to update profile. Please try again.");
+      const response = await authApi.updateProfile({
+        email: formData.email.trim(),
+      });
+
+      if (response.success) {
+        SmartToast.success(response.message || "Profile updated successfully!");
+        setIsEditing(false);
+        // Pull the fresh profile so the header and page show the new email.
+        await refreshUser();
+      } else {
+        // Real server errors: "Email address is already in use",
+        // "No changes detected", …
+        SmartToast.error(
+          response.error || response.message || "Failed to update profile"
+        );
+      }
+    } catch (error) {
+      const apiError = error as {
+        response?: { data?: { error?: string; message?: string } };
+      };
+      SmartToast.error(
+        apiError.response?.data?.error ||
+          apiError.response?.data?.message ||
+          "Failed to update profile. Please try again."
+      );
     } finally {
       setIsSaving(false);
     }
@@ -205,47 +218,9 @@ const Profile: React.FC = () => {
 
             {isEditing && (
               <div className="pt-6 border-t border-white/5">
-                <h3 className="text-lg font-semibold text-text mb-4">
-                  Change Password
-                </h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <ValidatedInput
-                    label="Current Password"
-                    type="password"
-                    value={formData.currentPassword}
-                    onChange={value =>
-                      setFormData({ ...formData, currentPassword: value })
-                    }
-                    validation={validation.currentPassword}
-                    placeholder="Enter current password"
-                    required
-                  />
-
-                  <ValidatedInput
-                    label="New Password"
-                    type="password"
-                    value={formData.newPassword}
-                    onChange={value =>
-                      setFormData({ ...formData, newPassword: value })
-                    }
-                    validation={validation.newPassword}
-                    placeholder="Enter new password"
-                    required
-                  />
-
-                  <ValidatedInput
-                    label="Confirm Password"
-                    type="password"
-                    value={formData.confirmPassword}
-                    onChange={value =>
-                      setFormData({ ...formData, confirmPassword: value })
-                    }
-                    validation={validation.confirmPassword}
-                    placeholder="Confirm new password"
-                    required
-                  />
-                </div>
+                <p className="text-sm text-textMuted">
+                  Password changes aren't supported yet.
+                </p>
               </div>
             )}
 

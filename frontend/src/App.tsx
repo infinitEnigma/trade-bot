@@ -47,12 +47,10 @@ const AdminDashboard = React.lazy(
 const ProtectedRoute = ({
   children,
   requireVerified = false,
-  requireRegistered = false,
   requireRole,
 }: {
   children: React.ReactNode;
   requireVerified?: boolean;
-  requireRegistered?: boolean;
   requireRole?: UserRole;
 }) => {
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -66,10 +64,6 @@ const ProtectedRoute = ({
   }
 
   if (requireVerified && user?.userLevel !== "VERIFIED") {
-    return <Navigate to="/dashboard" replace />;
-  }
-
-  if (requireRegistered && user?.userLevel === "BASIC") {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -201,7 +195,7 @@ const AnimatedRoutes = () => {
             <Route
               path="/strategies"
               element={
-                <ProtectedRoute requireRegistered={true}>
+                <ProtectedRoute requireVerified={true}>
                   <motion.div
                     initial="initial"
                     animate="in"

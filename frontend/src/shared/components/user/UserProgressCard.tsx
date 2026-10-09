@@ -1,6 +1,7 @@
 /** @format */
 
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../features/auth";
 import { User, UserLevel, UserRole } from "../../types";
 import {
@@ -51,7 +52,7 @@ export const UserProgressCard: React.FC = () => {
     {
       id: "verified",
       label: "Trading Verified",
-      description: "Kodiak trading account connected and verified",
+      description: "Trading account connected and verified",
       completed: user.userLevel === UserLevel.VERIFIED,
       current: user.userLevel === UserLevel.REGISTERED,
       icon: <CheckCircle className="w-4 h-4" />,
@@ -193,6 +194,8 @@ const ProgressStepItem: React.FC<{
 );
 
 const NextActionPrompt: React.FC<{ user: User }> = ({ user }) => {
+  const navigate = useNavigate();
+
   if (user.roles && user.roles.includes(UserRole.QUALIFIED_ALPHA)) {
     return (
       <div className="mt-6 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
@@ -223,7 +226,10 @@ const NextActionPrompt: React.FC<{ user: User }> = ({ user }) => {
             <p className="text-sm text-textMuted mb-2">
               Check your wallet qualification to unlock advanced bot controls.
             </p>
-            <button className="text-sm bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 px-3 py-1 rounded transition-colors">
+            <button
+              onClick={() => navigate("/profile")}
+              className="text-sm bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 px-3 py-1 rounded transition-colors"
+            >
               Check Qualification →
             </button>
           </div>
@@ -242,10 +248,13 @@ const NextActionPrompt: React.FC<{ user: User }> = ({ user }) => {
               Next: Connect Trading Account
             </h4>
             <p className="text-sm text-textMuted mb-2">
-              Add your Kodiak API credentials in Settings to reach VERIFIED
-              status and unlock trading.
+              Connect your exchange account in Settings to reach VERIFIED status
+              and unlock trading.
             </p>
-            <button className="text-sm bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-3 py-1 rounded transition-colors">
+            <button
+              onClick={() => navigate("/settings")}
+              className="text-sm bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-3 py-1 rounded transition-colors"
+            >
               Go to Settings →
             </button>
           </div>
@@ -267,8 +276,17 @@ const NextActionPrompt: React.FC<{ user: User }> = ({ user }) => {
               Connect your wallet on the Dashboard and sign the welcome message
               to reach REGISTERED status.
             </p>
-            <button className="text-sm bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-3 py-1 rounded transition-colors">
-              Go to Dashboard →
+            <button
+              onClick={() => {
+                // The card only renders on the Dashboard, where the wallet
+                // widget lives — scroll the user to the actual next step.
+                document
+                  .getElementById("wallet-widget")
+                  ?.scrollIntoView({ behavior: "smooth", block: "center" });
+              }}
+              className="text-sm bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-3 py-1 rounded transition-colors"
+            >
+              Go to Wallet →
             </button>
           </div>
         </div>
@@ -287,7 +305,7 @@ const getNextStepLabel = (user: User): string => {
     return "Alpha Access";
   }
   if (user.userLevel === UserLevel.REGISTERED) {
-    return "Wallet Verification";
+    return "Trading Account Setup";
   }
   if (user.userLevel === UserLevel.BASIC) {
     return "Wallet Setup";

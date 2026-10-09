@@ -121,6 +121,24 @@ export const authApi = {
   },
 
   /**
+   * Update the user's email (the backend profile service is email-only —
+   * `user-profile.service.ts` rejects anything without an `email` field).
+   * Non-2xx responses reject via axios; business errors ("already in use",
+   * "no changes detected") arrive as `success: false` with an `error` message.
+   */
+  async updateProfile(payload: { email: string }): Promise<{
+    success: boolean;
+    message?: string;
+    error?: string;
+    data?: { email: string; updatedAt: string };
+  }> {
+    const response = await httpClient
+      .getClient()
+      .post("/api/user/profile/update", payload);
+    return response.data;
+  },
+
+  /**
    * Check admin qualification
    */
   async checkAdminQualification(): Promise<ApiResponse<QualificationPayload>> {

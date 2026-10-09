@@ -12,6 +12,16 @@ export const LandingPage: React.FC = () => {
     navigate("/login");
   };
 
+  const handleRegister = () => {
+    navigate("/register");
+  };
+
+  const handleLearnMore = () => {
+    document
+      .getElementById("landing-features")
+      ?.scrollIntoView({ behavior: "smooth" });
+  };
+
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
@@ -49,15 +59,9 @@ export const LandingPage: React.FC = () => {
     },
     {
       icon: "🤖",
-      title: "AI-Powered Strategies",
+      title: "Automated Execution",
       description:
-        "Leverage machine learning models to optimize your trading decisions and maximize returns.",
-    },
-    {
-      icon: "💡",
-      title: "Educational Resources",
-      description:
-        "Rewire your financial knowledge with comprehensive tutorials and market analysis.",
+        "Execute your predefined trading rules automatically — no manual order placement, no machine-learning claims, just reliable automation.",
     },
     {
       icon: "🔒",
@@ -94,8 +98,14 @@ export const LandingPage: React.FC = () => {
         </div>
         <div className="flex items-center space-x-6">
           <button
-            onClick={handleLogin}
+            onClick={handleRegister}
             className="px-6 py-2.5 bg-gradient-to-r from-primary to-accent text-white rounded-lg font-medium hover:shadow-lg hover:shadow-primary/20 transition-all duration-300 transform hover:-translate-y-0.5"
+          >
+            Create account
+          </button>
+          <button
+            onClick={handleLogin}
+            className="px-6 py-2.5 bg-white/10 backdrop-blur-sm text-white rounded-lg font-medium hover:bg-white/20 transition-all duration-300 border border-white/20"
           >
             Login
           </button>
@@ -141,12 +151,15 @@ export const LandingPage: React.FC = () => {
             className="flex flex-col sm:flex-row gap-4 justify-center mb-16"
           >
             <button
-              onClick={handleLogin}
+              onClick={handleRegister}
               className="px-8 py-4 bg-gradient-to-r from-primary to-accent text-white rounded-xl font-semibold text-lg hover:shadow-xl hover:shadow-primary/30 transition-all duration-300 transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
             >
               Get Started <span className="text-lg">→</span>
             </button>
-            <button className="px-8 py-4 bg-white/10 backdrop-blur-sm text-white rounded-xl font-semibold text-lg hover:bg-white/20 transition-all duration-300 border border-white/20">
+            <button
+              onClick={handleLearnMore}
+              className="px-8 py-4 bg-white/10 backdrop-blur-sm text-white rounded-xl font-semibold text-lg hover:bg-white/20 transition-all duration-300 border border-white/20"
+            >
               Learn More
             </button>
           </motion.div>
@@ -154,6 +167,7 @@ export const LandingPage: React.FC = () => {
 
         {/* Features grid */}
         <motion.div
+          id="landing-features"
           variants={containerVariants}
           initial="hidden"
           animate="visible"
@@ -202,23 +216,28 @@ export const LandingPage: React.FC = () => {
             platform is designed to be both powerful and accessible, whether
             you're a seasoned trader or just getting started.
           </motion.p>
+          {/* Honest stats — every figure below is verifiable from the platform
+              itself (venue union, strategy enum, always-on engine). We state
+              only what the product actually does. */}
           <motion.div
             variants={itemVariants}
             className="flex flex-wrap justify-center gap-4"
           >
             <div className="px-6 py-3 bg-white/5 rounded-lg">
-              <div className="text-3xl font-bold text-primary">99.9%</div>
+              <div className="text-3xl font-bold text-primary">24/7</div>
               <div className="text-sm text-text-secondary">
-                Uptime Guarantee
+                Automated execution
               </div>
             </div>
             <div className="px-6 py-3 bg-white/5 rounded-lg">
-              <div className="text-3xl font-bold text-accent">24/7</div>
-              <div className="text-sm text-text-secondary">Support</div>
+              <div className="text-3xl font-bold text-accent">2</div>
+              <div className="text-sm text-text-secondary">
+                Connected exchanges
+              </div>
             </div>
             <div className="px-6 py-3 bg-white/5 rounded-lg">
-              <div className="text-3xl font-bold text-pink-500">10K+</div>
-              <div className="text-sm text-text-secondary">Active Traders</div>
+              <div className="text-3xl font-bold text-pink-500">3</div>
+              <div className="text-sm text-text-secondary">Strategy types</div>
             </div>
           </motion.div>
         </motion.div>
@@ -236,8 +255,8 @@ export const LandingPage: React.FC = () => {
               Ready to Rewire Your Trading?
             </h2>
             <p className="text-lg text-text-secondary mb-8 max-w-2xl mx-auto">
-              Join thousands of traders who have transformed their approach with
-              our automated platform.
+              Join traders who are transforming their approach with our
+              automated platform.
             </p>
             <button
               onClick={handleLogin}
@@ -262,23 +281,15 @@ export const LandingPage: React.FC = () => {
               </span>
             </div>
             <div className="flex space-x-6 text-text-secondary">
-              <a href="#" className="hover:text-primary transition-colors">
-                Terms
-              </a>
-              <a href="#" className="hover:text-primary transition-colors">
-                Privacy
-              </a>
-              <a href="#" className="hover:text-primary transition-colors">
-                Contact
-              </a>
-              <a href="#" className="hover:text-primary transition-colors">
-                Support
-              </a>
+              <span>Terms</span>
+              <span>Privacy</span>
+              <span>Contact</span>
+              <span>Support</span>
             </div>
           </div>
           <div className="mt-8 text-center text-text-tertiary text-sm">
-            © 2024 Rewire. All rights reserved. Trading involves risk. Please
-            invest responsibly.
+            © {new Date().getFullYear()} Rewire. All rights reserved. Trading
+            involves risk. Please invest responsibly.
           </div>
         </div>
       </footer>

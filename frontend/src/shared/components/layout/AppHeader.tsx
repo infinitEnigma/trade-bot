@@ -4,7 +4,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../../features/auth";
 import { SmartNavigation } from "./SmartNavigation";
-import { LogOut, User, CreditCard, Zap, ChevronDown } from "lucide-react";
+import { LogOut, User, Zap, ChevronDown } from "lucide-react";
 import { ThemeToggle } from "../ui/ThemeToggle";
 
 interface AppHeaderProps {
@@ -29,7 +29,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               <div className="w-12 h-12 rounded-xl bg-linear-to-br from-primary to-accent flex items-center justify-center shadow-lg">
                 <Zap className="w-6 h-6 text-white" />
               </div>
-              <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-green-500 border-2 border-bg-surface animate-pulse"></div>
             </div>
             <div>
               <h1 className="text-2xl font-bold bg-linear-to-r from-primary via-accent to-purple-500 bg-clip-text text-transparent">
@@ -60,7 +59,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                         "U"}
                     </span>
                   </div>
-                  <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-bg-surface bg-green-500"></div>
                 </div>
                 <div className="hidden md:block">
                   <div className="flex items-center gap-2">
@@ -77,9 +75,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                       {user?.userLevel || "BASIC"}
                     </span>
                   </div>
-                  <p className="text-xs text-text-tertiary mt-0.5">
-                    Last login: Just now
-                  </p>
                 </div>
                 <ChevronDown className="w-4 h-4 text-text-tertiary" />
               </div>
@@ -103,13 +98,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                   >
                     <User className="w-4 h-4" />
                     <span className="text-sm">Profile Settings</span>
-                  </Link>
-                  <Link
-                    to="/billing"
-                    className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors"
-                  >
-                    <CreditCard className="w-4 h-4" />
-                    <span className="text-sm">Billing</span>
                   </Link>
                   <button
                     onClick={logout}

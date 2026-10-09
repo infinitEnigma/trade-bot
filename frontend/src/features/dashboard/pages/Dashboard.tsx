@@ -1,7 +1,6 @@
 /** @format */
 
 import React, { useState, useEffect, Suspense } from "react";
-import { motion } from "framer-motion";
 import {
   Area,
   AreaChart,
@@ -41,10 +40,12 @@ interface ApiError extends Error {
 import { Link } from "react-router-dom";
 import { Card } from "../../../shared/components/ui/Card";
 import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
+import { tradingApi } from "../../../infrastructure/api";
+import { websocketClient } from "../../../infrastructure/websocket/client";
 
 import { UserProgressCard } from "../../../shared/components/user/UserProgressCard";
 import { LoadingSpinner } from "../../../shared/components/ui";
-import { useBalance } from "../../../shared/hooks";
+import { useBalance, usePortfolioSummary } from "../../../shared/hooks";
 import { globalBalanceManager } from "../../../shared/services/balance-manager";
 import {
   Container,
@@ -58,7 +59,7 @@ interface StatsCardProps {
   title: string;
   value: number;
   icon: React.ComponentType<{ className?: string }>;
-  format?: "currency" | "number";
+  format?: "currency" | "number" | "pnl";
 }
 
 interface PortfolioChartProps {
@@ -109,8 +110,20 @@ const StatsCard = ({ title, value, icon: Icon, format }: StatsCardProps) => (
         <Icon className="w-5 h-5 text-primary" />
       </div>
     </div>
-    <h3 className="text-lg font-bold text-text mb-1">
-      {format === "currency" ? `$${value.toLocaleString()}` : value}
+    <h3
+      className={`text-lg font-bold mb-1 ${
+        format === "pnl"
+          ? value >= 0
+            ? "text-success"
+            : "text-danger"
+          : "text-text"
+      }`}
+    >
+      {format === "currency"
+        ? `$${value.toLocaleString()}`
+        : format === "pnl"
+          ? `${value >= 0 ? "+" : "-"}$${Math.abs(value).toLocaleString()}`
+          : value}
     </h3>
     <p className="text-xs text-textMuted">{title}</p>
   </div>
@@ -232,14 +245,27 @@ const PortfolioChart = ({ data }: PortfolioChartProps) => {
   );
 };
 
+// F3: honest relative time for the "Last Sync" row (from query dataUpdatedAt).
+const formatRelativeTime = (timestampMs: number): string => {
+  if (!timestampMs) return "Never";
+  const seconds = Math.floor((Date.now() - timestampMs) / 1000);
+  if (seconds < 60) return "Just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+};
+
 // Calculate real portfolio performance from trades data
 const calculatePortfolioPerformance = (
   trades: Trade[],
-  initialBalance = 10000, // TODO: find first balance, replace arbitrary 10000
+  initialBalance: number,
   currentTime = Date.now()
 ) => {
   if (!trades || trades.length === 0) {
-    return [{ time: "No data", value: initialBalance }];
+    // D2: no fabricated point — the chart renders its own empty state.
+    return [];
   }
 
   // Sort trades by close timestamp
@@ -284,7 +310,38 @@ const Dashboard: React.FC = () => {
     balance: realBalance,
     loading: realBalanceLoading,
     error: realBalanceError,
+    refresh: refreshBalance,
   } = useBalance();
+
+  // F3: real WS status — synchronous getter + change listener (kickoff check 3).
+  const [wsStatus, setWsStatus] = useState<string>(websocketClient.getStatus());
+  useEffect(() => {
+    const handleStatus = (status: string) => setWsStatus(status);
+    websocketClient.onStatusChange(handleStatus);
+    return () => websocketClient.offStatusChange(handleStatus);
+  }, []);
+
+  // F3: Bot Engine row from the same engine-status query Strategies uses.
+  const { data: engineStatus } = useQuery({
+    queryKey: ["engine-status"],
+    queryFn: () => tradingApi.getEngineStatus(),
+    staleTime: 120000,
+    gcTime: 300000,
+    refetchInterval: 300000,
+    refetchOnWindowFocus: false,
+    refetchIntervalInBackground: false,
+    enabled: !!user,
+    retry: (failureCount, error: unknown) => {
+      const err = error as { response?: { status?: number } };
+      if (err.response?.status === 429) return false;
+      if (err.response?.status === 403) return false;
+      return failureCount < 1;
+    },
+  });
+  const engineRunning: boolean | null =
+    typeof engineStatus?.data?.running === "boolean"
+      ? engineStatus.data.running
+      : null;
 
   // Fetch portfolio data - optimized with proper deduplication
   const hasPortfolioAccess =
@@ -311,6 +368,11 @@ const Dashboard: React.FC = () => {
     );
   const activePortfolioAccountId =
     portfolioAccountId || portfolioAccounts[0]?.id || "";
+
+  // B1/B6: the four portfolio figures — each from a real, distinct source
+  // (on-chain wallet, selected exchange balance, realized PnL from closed
+  // trades, total across all ACTIVE accounts). Scoped to the selected account.
+  const portfolioSummary = usePortfolioSummary(activePortfolioAccountId);
   // Positions/trades/balance are venue-dispatched server-side (kodiak rows
   // → kodiak-integration, lighter rows → the Lighter portfolio reader), so
   // every ACTIVE selection is queried — no venue gate here anymore.
@@ -322,7 +384,12 @@ const Dashboard: React.FC = () => {
     );
   }, [activePortfolioAccountId]);
 
-  const { data: positionsData, isLoading: positionsLoading } = useQuery({
+  const {
+    data: positionsData,
+    isLoading: positionsLoading,
+    refetch: refetchPositions,
+    dataUpdatedAt: positionsUpdatedAt,
+  } = useQuery({
     queryKey: [
       "kodiak-positions",
       user?.id,
@@ -340,10 +407,16 @@ const Dashboard: React.FC = () => {
     },
   });
 
+  // F3: "Last Sync" reflects the most recent successful positions read.
+  const lastSyncLabel = positionsUpdatedAt
+    ? formatRelativeTime(positionsUpdatedAt)
+    : "Never";
+
   const {
     data: tradesData,
     isLoading: tradesLoading,
     error: tradesError,
+    refetch: refetchTrades,
   } = useQuery({
     queryKey: [
       "kodiak-trades",
@@ -397,6 +470,8 @@ const Dashboard: React.FC = () => {
     : null;
 
   // Calculate real portfolio performance chart data
+  // F2/D2: no fabricated fallback point — without real trade rows the chart
+  // renders its own empty state instead of inventing a balance.
   const portfolioData =
     tradesData?.success && tradesData.data?.rows
       ? calculatePortfolioPerformance(
@@ -404,7 +479,7 @@ const Dashboard: React.FC = () => {
           totalBalance,
           currentTime
         )
-      : [{ time: "No data", value: totalBalance || 10000 }];
+      : [];
 
   return (
     <Container
@@ -471,84 +546,107 @@ const Dashboard: React.FC = () => {
               subtitle="Real-time performance and analytics"
               actions={
                 <>
-                  <button className="btn-secondary flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      void refreshBalance();
+                      void refetchPositions();
+                      void refetchTrades();
+                    }}
+                    className="btn-secondary flex items-center gap-2"
+                  >
                     <RefreshCw className="w-4 h-4" />
                     Refresh
                   </button>
-                  <button className="btn-primary flex items-center gap-2">
-                    <Target className="w-4 h-4" />
-                    New Strategy
-                  </button>
+                  {/* HD1: /strategies requires VERIFIED — a REGISTERED
+                      landing spot must not offer a button that bounces. */}
+                  {user?.userLevel === "VERIFIED" && (
+                    <Link
+                      to="/strategies"
+                      className="btn-primary flex items-center gap-2"
+                    >
+                      <Target className="w-4 h-4" />
+                      New Strategy
+                    </Link>
+                  )}
                 </>
               }
             />
 
+            {/* Four distinct, real figures (B1/B6): on-chain wallet,
+                selected exchange balance, realized PnL from closed trades,
+                and the total across every ACTIVE exchange account. Each reads
+                its own source — no card is a duplicate of another. */}
             <Grid cols={{ default: 1, md: 2, lg: 4 }} gap={6}>
-              {[0, 1, 2, 3].map(index => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{
-                    duration: 0.4,
-                    delay: index * 0.1,
-                    ease: "easeOut",
-                  }}
-                  className="gpu-accelerated will-change-transform"
-                >
-                  <Suspense
-                    fallback={
-                      <div className="glass-card p-6 flex items-center justify-center">
-                        <LoadingSpinner />
-                      </div>
-                    }
-                  >
-                    {index === 0 && (
-                      <StatsCard
-                        title="Wallet Balance"
-                        value={realBalance?.walletBalance || 0}
-                        icon={Wallet}
-                        format="currency"
-                      />
-                    )}
-                    {index === 1 && (
-                      <StatsCard
-                        title="Account Balance"
-                        value={realBalance?.accountBalance || 0}
-                        icon={DollarSign}
-                        format="currency"
-                      />
-                    )}
-                    {index === 2 && (
-                      <StatsCard
-                        title="Available Balance"
-                        value={realBalance?.availableBalance || 0}
-                        icon={Activity}
-                        format="currency"
-                      />
-                    )}
-                    {index === 3 && (
-                      <StatsCard
-                        title="Total Assets"
-                        value={realBalance?.totalAssets || 0}
-                        icon={TrendingUp}
-                        format="currency"
-                      />
-                    )}
-                  </Suspense>
-                </motion.div>
-              ))}
+              <StatsCard
+                title="Wallet (on-chain)"
+                value={portfolioSummary.walletBalance}
+                icon={Wallet}
+                format="currency"
+              />
+              <StatsCard
+                title="Exchange balance"
+                value={portfolioSummary.exchangeBalance}
+                icon={DollarSign}
+                format="currency"
+              />
+              <StatsCard
+                title="Realized PnL (closed trades)"
+                value={portfolioSummary.realizedPnl}
+                icon={Activity}
+                format="pnl"
+              />
+              <StatsCard
+                title={`Total across ${
+                  portfolioSummary.activeAccountCount || 0
+                } exchange account${
+                  portfolioSummary.activeAccountCount === 1 ? "" : "s"
+                }`}
+                value={portfolioSummary.totalAcrossExchanges}
+                icon={TrendingUp}
+                format="currency"
+              />
             </Grid>
           </div>
         ) : user?.userLevel === "BASIC" ? (
           <Card className="text-center mb-8">
             <Wallet className="w-12 h-12 text-textMuted mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-text mb-2">
-              Connect Your Exchange Account
+              Connect Your Wallet
             </h3>
             <p className="text-textMuted mb-4">
-              Connect your trading account to view your portfolio data and
-              trading performance.
+              Your next step is connecting your wallet — use the wallet widget
+              on this page to reach REGISTERED status. Exchange accounts come
+              after that.
+            </p>
+            <div className="flex items-center justify-center gap-4">
+              <button
+                onClick={() =>
+                  document
+                    .getElementById("wallet-widget")
+                    ?.scrollIntoView({ behavior: "smooth", block: "center" })
+                }
+                className="bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-500/20 active:scale-95 inline-flex items-center gap-2"
+              >
+                <Wallet className="w-5 h-5" />
+                Go to Wallet
+              </button>
+              <Link
+                to="/settings"
+                className="text-sm text-textMuted hover:text-text underline underline-offset-4"
+              >
+                Exchange account settings
+              </Link>
+            </div>
+          </Card>
+        ) : (
+          <Card className="text-center mb-8">
+            <Activity className="w-12 h-12 text-textMuted mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-text mb-2">
+              Connect Your Trading Account
+            </h3>
+            <p className="text-textMuted mb-4">
+              Connect your trading account in Settings to see your portfolio,
+              positions and recent trades here.
             </p>
             <Link
               to="/settings"
@@ -557,23 +655,6 @@ const Dashboard: React.FC = () => {
               <Key className="w-5 h-5" />
               Connect Account
             </Link>
-          </Card>
-        ) : (
-          <Card className="text-center mb-8">
-            <Activity className="w-12 h-12 text-textMuted mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-text mb-2">
-              No Portfolio Data Available
-            </h3>
-            <p className="text-textMuted mb-4">
-              Unable to fetch portfolio data at this time. Please try refreshing
-              the page or contact support if the issue persists.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-            >
-              Refresh Page
-            </button>
           </Card>
         )}
 
@@ -602,18 +683,25 @@ const Dashboard: React.FC = () => {
               Quick Actions
             </h2>
             <div className="space-y-3">
-              <Link
-                to="/strategies"
-                className="w-full bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-              >
-                <Activity className="w-4 h-4" />
-                Manage Strategies
-              </Link>
+              {/* HD1: /strategies requires VERIFIED — REGISTERED must not
+                  see a link that bounces them back here. */}
+              {user?.userLevel === "VERIFIED" && (
+                <Link
+                  to="/strategies"
+                  className="w-full bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                >
+                  <Activity className="w-4 h-4" />
+                  Manage Strategies
+                </Link>
+              )}
             </div>
 
             {/* Wallet Status Widget - visible for all authenticated users (BASIC and above).
                 BASIC users connect + sign here to upgrade to REGISTERED. */}
-            <div className="mt-6 pt-6 border-t border-white/5">
+            <div
+              id="wallet-widget"
+              className="mt-6 pt-6 border-t border-white/5"
+            >
               <Suspense
                 fallback={
                   <div className="flex items-center justify-center py-4">
@@ -632,21 +720,65 @@ const Dashboard: React.FC = () => {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-text">API Connection</span>
-                  <span className="flex items-center gap-2 text-sm text-success">
-                    <span className="w-2 h-2 rounded-full bg-success" />
-                    Connected
+                  <span
+                    className={`flex items-center gap-2 text-sm ${
+                      wsStatus === "connected"
+                        ? "text-success"
+                        : wsStatus === "connecting" ||
+                            wsStatus === "reconnecting"
+                          ? "text-warning"
+                          : "text-textMuted"
+                    }`}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        wsStatus === "connected"
+                          ? "bg-success"
+                          : wsStatus === "connecting" ||
+                              wsStatus === "reconnecting"
+                            ? "bg-warning"
+                            : "bg-textMuted"
+                      }`}
+                    />
+                    {wsStatus === "connected"
+                      ? "Connected"
+                      : wsStatus === "connecting" || wsStatus === "reconnecting"
+                        ? "Connecting…"
+                        : "Disconnected"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-text">Bot Engine</span>
-                  <span className="flex items-center gap-2 text-sm text-warning">
-                    <span className="w-2 h-2 rounded-full bg-warning" />
-                    Idle
+                  <span
+                    className={`flex items-center gap-2 text-sm ${
+                      engineRunning === null
+                        ? "text-textMuted"
+                        : engineRunning
+                          ? "text-success"
+                          : "text-warning"
+                    }`}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        engineRunning === null
+                          ? "bg-textMuted"
+                          : engineRunning
+                            ? "bg-success"
+                            : "bg-warning"
+                      }`}
+                    />
+                    {engineRunning === null
+                      ? "Unknown"
+                      : engineRunning
+                        ? "Running"
+                        : "Not running"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-text">Last Sync</span>
-                  <span className="text-sm text-textMuted">Just now</span>
+                  <span className="text-sm text-textMuted">
+                    {lastSyncLabel}
+                  </span>
                 </div>
               </div>
             </div>
@@ -679,12 +811,6 @@ const Dashboard: React.FC = () => {
                       ))}
                     </select>
                   )}
-                  <button className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-sm">
-                    Filter
-                  </button>
-                  <button className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-sm">
-                    Sort
-                  </button>
                 </>
               }
             />
@@ -728,13 +854,16 @@ const Dashboard: React.FC = () => {
                           </p>
                         </div>
                         <div className="space-y-3">
-                          <Link
-                            to="/strategies"
-                            className="w-full bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-                          >
-                            <Activity className="w-4 h-4" />
-                            Manage Strategies
-                          </Link>
+                          {/* HD1: only VERIFIED may enter /strategies. */}
+                          {user?.userLevel === "VERIFIED" && (
+                            <Link
+                              to="/strategies"
+                              className="w-full bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                            >
+                              <Activity className="w-4 h-4" />
+                              Manage Strategies
+                            </Link>
+                          )}
                         </div>
                       </td>
                     </tr>
