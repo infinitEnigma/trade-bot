@@ -11,7 +11,7 @@ import {
   HistogramSeries,
   Time,
 } from "lightweight-charts";
-import { useChartData } from "../../hooks/useChartData";
+import { useChartData, ChartVenue } from "../../hooks/useChartData";
 import { useVisibility } from "../../hooks/useVisibility";
 
 export interface CandleData {
@@ -27,12 +27,15 @@ interface CandlestickChartProps {
   symbol: string;
   interval: string;
   height?: number;
+  /** X3: venue whose candles to chart (absent → Kodiak/Orderly default). */
+  venue?: ChartVenue;
 }
 
 export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   symbol,
   interval,
   height = 400,
+  venue,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -53,6 +56,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   } = useChartData({
     symbol,
     interval,
+    venue,
   });
 
   // Debug logging for chart data

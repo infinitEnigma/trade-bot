@@ -25,18 +25,30 @@ export const WS_BASE =
 
 export const DEFAULT_SYMBOL = "PERP_BTC_USDC";
 
+/**
+ * The venue vocabulary shared by venue-aware market routes (X2 catalog +
+ * X3 tv-history dispatch) — same `ExchangeKind` values the account rows use.
+ */
+export const KNOWN_EXCHANGES = new Set(["kodiak", "lighter"]);
+export const KNOWN_ENVIRONMENTS = new Set(["testnet", "mainnet"]);
+
 /** Round a unix-seconds timestamp down to a 5-minute bucket (300 s). */
 export const roundTo5Minutes = (timestamp: number): number =>
   Math.floor(timestamp / 300) * 300;
 
-/** Canonical cache key for a TradingView history window. */
+/**
+ * Canonical cache key for a TradingView history window. `venue` (X3) is the
+ * dispatch prefix — e.g. `lighter:testnet` → `tv:history:lighter:testnet:…`;
+ * the Kodiak path passes none, keeping its key byte-identical to before.
+ */
 export const tvHistoryCacheKey = (
   symbol: string,
   resolution: string,
   from: number,
-  to: number
+  to: number,
+  venue?: string
 ): string =>
-  `tv:history:${symbol}:${resolution}:${roundTo5Minutes(from)}:${roundTo5Minutes(to)}`;
+  `tv:history:${venue ? `${venue}:` : ""}${symbol}:${resolution}:${roundTo5Minutes(from)}:${roundTo5Minutes(to)}`;
 
 /** Interval label (e.g. `1h`) → TradingView resolution (e.g. `60`). */
 export const RESOLUTION_MAP: Record<string, string> = {

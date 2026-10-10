@@ -24,14 +24,16 @@ import {
   authMiddleware,
   AuthenticatedRequest,
 } from "../../middleware/auth.middleware";
-import { errMessage, marketLogger, ok } from "./market-helpers";
+import {
+  errMessage,
+  KNOWN_ENVIRONMENTS,
+  KNOWN_EXCHANGES,
+  marketLogger,
+  ok,
+} from "./market-helpers";
 import { listVenueSymbols } from "../../../infrastructure/external/venue-symbols";
 
 export const venueSymbolsRoutes = Router();
-
-/** The venue vocabulary the catalog fetcher understands (ExchangeKind). */
-const KNOWN_EXCHANGES = new Set(["kodiak", "lighter"]);
-const KNOWN_ENVIRONMENTS = new Set(["testnet", "mainnet"]);
 
 venueSymbolsRoutes.get(
   "/venue-symbols",

@@ -130,8 +130,18 @@ export const marketApi = {
     resolution?: string;
     from?: number;
     to?: number;
+    /**
+     * X3 venue dispatch: pass both to read candles from that venue (only
+     * `lighter` differs server-side today; Kodiak is the default path). The
+     * dedupe key includes them so two venues never share one in-flight entry.
+     */
+    exchange?: AccountExchange;
+    environment?: AccountEnvironment;
   }) {
-    const key = `market:tv:history:${params.symbol || "all"}:${params.resolution || "1D"}:${params.from || 0}:${params.to || Date.now()}`;
+    const venue = params.exchange
+      ? `${params.exchange}:${params.environment}`
+      : "kodiak";
+    const key = `market:tv:history:${venue}:${params.symbol || "all"}:${params.resolution || "1D"}:${params.from || 0}:${params.to || Date.now()}`;
     return globalRequestManager.deduplicateRequest(
       key,
       () =>

@@ -347,6 +347,64 @@ describe("marketApi", () => {
 
         expect(result).toEqual(mockResponse);
       });
+
+      // X3: the venue travels with the request AND the dedupe key — two
+      // venues must never share one in-flight entry (or one cache slot).
+      it("should include exchange/environment in the key and params (X3)", async () => {
+        const params = {
+          symbol: "ETH",
+          resolution: "60",
+          from: 1791500000,
+          to: 1791503600,
+          exchange: "lighter" as const,
+          environment: "testnet" as const,
+        };
+        const mockResponse = { success: true, data: { t: [], o: [] } };
+        mockGet.mockResolvedValue({ data: mockResponse });
+        (globalRequestManager.deduplicateRequest as Mock).mockImplementation(
+          (_key: string, fn: () => unknown) => fn()
+        );
+
+        const result = await marketApi.getTvHistory(params);
+
+        expect(globalRequestManager.deduplicateRequest).toHaveBeenCalledWith(
+          "market:tv:history:lighter:testnet:ETH:60:1791500000:1791503600",
+          expect.any(Function),
+          "marketApi"
+        );
+        expect(mockGet).toHaveBeenCalledWith("/api/market/tv/history", {
+          params,
+        });
+        expect(result).toEqual(mockResponse);
+      });
+
+      it("should default the venue segment to kodiak without venue params", async () => {
+        mockGet.mockResolvedValue({ data: { success: true } });
+        (globalRequestManager.deduplicateRequest as Mock).mockImplementation(
+          (_key: string, fn: () => unknown) => fn()
+        );
+
+        await marketApi.getTvHistory({
+          symbol: "PERP_BTC_USDC",
+          resolution: "60",
+          from: 1791500000,
+          to: 1791503600,
+        });
+
+        expect(globalRequestManager.deduplicateRequest).toHaveBeenCalledWith(
+          "market:tv:history:kodiak:PERP_BTC_USDC:60:1791500000:1791503600",
+          expect.any(Function),
+          "marketApi"
+        );
+        expect(mockGet).toHaveBeenCalledWith("/api/market/tv/history", {
+          params: {
+            symbol: "PERP_BTC_USDC",
+            resolution: "60",
+            from: 1791500000,
+            to: 1791503600,
+          },
+        });
+      });
     });
   });
 });

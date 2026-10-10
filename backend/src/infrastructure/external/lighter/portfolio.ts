@@ -37,6 +37,8 @@
 import axios, { AxiosInstance, isAxiosError } from "axios";
 import { redisService } from "../../cache/redis.service";
 import { kodiakCache } from "../kodiak-cache";
+import { venueClient } from "./venue-client";
+import { marketDirectory } from "./market-directory";
 import { integrationLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import { exchangeSnapshotAdapter } from "../../adapters/repositories/exchange-snapshot.adapter";
 import type {
@@ -56,8 +58,7 @@ import {
   lighterVerifierConfigFromEnv,
 } from "../exchange-accounts/lighter-verifier";
 
-/** Live reads are dashboard traffic; keep the venue bound tight. */
-const VENUE_TIMEOUT_MS = 10000;
+/** Venue/sidecar timeouts (client construction lives in `./venue-client.ts`). */
 const SIDECAR_TIMEOUT_MS = 5000;
 /** Mirrors the engine: token valid 600 s, refreshed before the deadline. */
 const AUTH_TOKEN_DEADLINE_S = 600;
@@ -65,7 +66,6 @@ const AUTH_TOKEN_CACHE_MS = 9 * 60 * 1000;
 /** Redis balance TTL (seconds) — same as `KodiakIntegrationService.CACHE_TTL`. */
 const BALANCE_TTL_S = 300;
 const ROWS_TTL_MS = 30000;
-const MARKET_DIRECTORY_TTL_MS = 300000;
 /** Longest venue/sidecar reason kept (bounded logs + UI, never secrets). */
 const MAX_REASON_LENGTH = 300;
 
@@ -133,22 +133,8 @@ function displaySymbol(raw: unknown): string {
 }
 
 // ------------------------------------------------------------------ clients
-
-const venueClients = new Map<string, AxiosInstance>();
-
-function venueClient(baseUrl: string): AxiosInstance {
-  const url = baseUrl.trim().replace(/\/+$/, "");
-  let client = venueClients.get(url);
-  if (!client) {
-    client = axios.create({
-      baseURL: url,
-      timeout: VENUE_TIMEOUT_MS,
-      headers: { "Content-Type": "application/json" },
-    });
-    venueClients.set(url, client);
-  }
-  return client;
-}
+// (Public venue client extracted to `./venue-client.ts`; the market directory
+//  to `./market-directory.ts` — both shared with the X3 candles reader.)
 
 let sidecarClient: AxiosInstance | null | undefined;
 
@@ -691,42 +677,6 @@ export async function getLighterPositions(
 }
 
 // ------------------------------------------------------------------- trades
-
-/**
- * Public `GET /api/v1/orderBooks` → `market_id → symbol` directory (cached
- * 5 min per environment). A directory miss degrades symbols to the raw id —
- * it must never fail the trades read.
- */
-async function marketDirectory(
-  environment: string
-): Promise<Map<number, string>> {
-  const cacheKey = `lighter:markets:${environment}`;
-  const cached = kodiakCache.get(cacheKey);
-  if (cached instanceof Map) return cached;
-  const byId = new Map<number, string>();
-  try {
-    const response = await venueClient(lighterBaseUrl(environment)).get(
-      "/api/v1/orderBooks"
-    );
-    const data = response.data as { order_books?: unknown } | undefined;
-    const books = Array.isArray(data?.order_books) ? data.order_books : [];
-    for (const row of books) {
-      if (!row || typeof row !== "object") continue;
-      const record = row as Record<string, unknown>;
-      const marketId = num(record.market_id ?? record.market_index);
-      if (marketId && typeof record.symbol === "string") {
-        byId.set(marketId, record.symbol);
-      }
-    }
-  } catch (error) {
-    logger.warn("Failed to load Lighter market directory", {
-      environment,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-  kodiakCache.set(cacheKey, byId, MARKET_DIRECTORY_TTL_MS);
-  return byId;
-}
 
 /**
  * Map one `/api/v1/trades` fill to the dashboard `Trade` shape.

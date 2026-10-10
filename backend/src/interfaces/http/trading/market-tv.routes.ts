@@ -1,4 +1,11 @@
-/** GET /api/market/tv/* — public TradingView endpoints (no auth). */
+/**
+ * GET /api/market/tv/* — public TradingView endpoints (no auth).
+ *
+ * `/tv/history` is venue-dispatched (X3): no venue params → the Kodiak
+ * `/v1/tv/history` reader (unchanged default), `exchange=lighter` → the
+ * public Lighter candles reader (`lighter/market-data.ts`). Both sources are
+ * public market data; no user data or credentials are involved.
+ */
 import { Router, Request, Response } from "express";
 import { kodiakIntegrationService } from "../../../infrastructure/external/kodiak-integration.service";
 import { DataFreshnessUtils, FreshnessAwareResponse } from "@trade-bot/shared";
@@ -11,11 +18,14 @@ import {
   DEFAULT_SYMBOL,
   errMessage,
   fail,
+  KNOWN_ENVIRONMENTS,
+  KNOWN_EXCHANGES,
   marketLogger,
   ok,
   tvHistoryCacheKey,
 } from "./market-helpers";
 import { readCache, writeCache } from "./market-cache";
+import { getLighterCandles } from "../../../infrastructure/external/lighter/market-data";
 
 export const tvRoutes = Router();
 
@@ -93,12 +103,40 @@ tvRoutes.get(
       : Math.floor(Date.now() / 1000) - 86400;
     const toNum = to ? parseInt(to as string) : Math.floor(Date.now() / 1000);
 
+    // X3 venue dispatch: absent venue params → the Kodiak path exactly as
+    // before (PriceChart/Dashboard/analytics behaviour unchanged). A present
+    // venue is validated with the same vocabulary as `/venue-symbols`; only
+    // `lighter` flips the reader — `kodiak` is accepted explicitly and stays
+    // on this branch (its environment is informational: one Kodiak API).
+    const venueRequested =
+      req.query.exchange !== undefined || req.query.environment !== undefined;
+    const exchangeStr = venueRequested ? String(req.query.exchange ?? "") : "";
+    const environmentStr = venueRequested
+      ? String(req.query.environment ?? "")
+      : "";
+    if (
+      venueRequested &&
+      (!KNOWN_EXCHANGES.has(exchangeStr) ||
+        !KNOWN_ENVIRONMENTS.has(environmentStr))
+    ) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "exchange (kodiak|lighter) and environment (testnet|mainnet) are required",
+      });
+    }
+    const lighterVenue = venueRequested && exchangeStr === "lighter";
+    // Cache prefix: none for Kodiak (byte-identical to the pre-X3 key),
+    // `lighter:{env}` for Lighter — two venues never share a window entry.
+    const venueKey = lighterVenue ? `lighter:${environmentStr}` : undefined;
+
     try {
       const cacheKey = tvHistoryCacheKey(
         symbolStr,
         resolutionStr,
         fromNum,
-        toNum
+        toNum,
+        venueKey
       );
       const cacheConfig = getFullCacheConfig();
       const cached = await readCache<
@@ -112,13 +150,21 @@ tvRoutes.get(
         );
         return res.json(cached);
       }
-      // No cached data - use centralized service to get fresh chart data
-      const response = await kodiakIntegrationService.getTradingViewHistory(
-        symbolStr,
-        resolutionStr,
-        fromNum,
-        toNum
-      );
+      // No cached data — dispatch to the configured venue reader.
+      const response = lighterVenue
+        ? await getLighterCandles({
+            symbol: symbolStr,
+            resolution: resolutionStr,
+            from: fromNum,
+            to: toNum,
+            environment: environmentStr,
+          })
+        : await kodiakIntegrationService.getTradingViewHistory(
+            symbolStr,
+            resolutionStr,
+            fromNum,
+            toNum
+          );
       if (!response.success) {
         return res.status(400).json({
           success: false,

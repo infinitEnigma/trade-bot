@@ -3,10 +3,24 @@
 import React, { useState, useEffect, Suspense, lazy } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { tradingApi } from "../../../infrastructure/api";
+import {
+  marketApi,
+  tradingApi,
+  accountsApi,
+} from "../../../infrastructure/api";
 import { strategyService } from "../services/strategyService";
 import { Strategy } from "../../../shared/types";
 import { Plus, BarChart3, AlertTriangle } from "lucide-react";
+import {
+  buildChartSymbolGroups,
+  decodeChartOption,
+  encodeChartOption,
+  FALLBACK_CHART_SELECTION,
+  resolveChartSelection,
+  type ChartSelection,
+  type ChartVenueRef,
+  type VenueCatalog,
+} from "../utils/chartSymbolPicker";
 
 // Lazy load heavy components for better performance
 const CandlestickChart = lazy(
@@ -42,11 +56,13 @@ const Strategies: React.FC = React.memo(() => {
   // inactive; starting a bot on it (C3a account pick + size) is the start.
   const [startPromptStrategy, setStartPromptStrategy] =
     useState<Strategy | null>(null);
-  // P1: chart symbol follows the user's strategies (dropdown override below),
-  // not a pinned BTC. Falls back to the stored BTC default when no strategy
-  // exists yet. Stored form (PERP_ETH_USDC) passes through unchanged —
-  // CandlestickChart/useChartData already handles it.
-  const [chartSymbolOverride, setChartSymbolOverride] = useState("");
+  // P1/X3: chart symbol + venue follow the dropdown override below (default
+  // = first strategy's symbol, venue by catalog membership — see
+  // chartSymbolPicker.ts). Absent strategies/catalogs fall back to the
+  // historic BTC default. Stored Kodiak form (PERP_ETH_USDC) passes through
+  // unchanged — CandlestickChart/useChartData already handle it.
+  const [chartSelectionOverride, setChartSelectionOverride] =
+    useState<ChartSelection | null>(null);
   const queryClient = useQueryClient();
 
   // Note: exchange connectivity check removed for simplicity
@@ -122,8 +138,8 @@ const Strategies: React.FC = React.memo(() => {
 
   const strategies = strategiesData?.success ? strategiesData.data : [];
 
-  // P1: all strategy symbols for the chart dropdown (locked decision: every
-  // strategy, not just RUNNING). Default = first strategy's symbol.
+  // P1: all strategy symbols for the chart picker (locked decision: every
+  // strategy, not just RUNNING).
   const strategySymbols: string[] = [];
   for (const s of strategies as Strategy[]) {
     const sym = getStrategyConfig(s)?.config.symbol;
@@ -131,8 +147,76 @@ const Strategies: React.FC = React.memo(() => {
       strategySymbols.push(sym);
     }
   }
-  const chartSymbol =
-    chartSymbolOverride || strategySymbols[0] || "PERP_BTC_USDC";
+
+  // X3: the picker lists every symbol the user's ACTIVE venues list. One
+  // accounts query under the shared ["exchange-accounts", userId] key (the
+  // same source usePortfolioSummary/BotControls read — one cache, one
+  // truth), venue pairs deduped in ACTIVE-account order (the same order the
+  // portfolio strip uses), one catalog fetch per pair (fail-open, X2).
+  const accountsQuery = useQuery({
+    queryKey: ["exchange-accounts", user?.id],
+    queryFn: () => accountsApi.listAccounts(),
+    enabled: !!user,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const activeVenues: ChartVenueRef[] = [];
+  const seenVenues = new Set<string>();
+  for (const account of accountsQuery.data?.data?.accounts ?? []) {
+    if (account.status !== "ACTIVE") continue;
+    const key = `${account.exchange}:${account.environment}`;
+    if (seenVenues.has(key)) continue;
+    seenVenues.add(key);
+    activeVenues.push({
+      exchange: account.exchange,
+      environment: account.environment,
+    });
+  }
+
+  const catalogsQuery = useQuery({
+    queryKey: [
+      "chart-venue-catalogs",
+      activeVenues.map(v => `${v.exchange}:${v.environment}`),
+    ],
+    queryFn: async (): Promise<VenueCatalog[]> =>
+      Promise.all(
+        activeVenues.map(async venue => {
+          try {
+            const res = await marketApi.getVenueSymbols(venue);
+            return {
+              ...venue,
+              available: res?.data?.available === true,
+              symbols: Array.isArray(res?.data?.symbols)
+                ? (res.data.symbols as string[])
+                : [],
+            };
+          } catch {
+            // Fail-open (X2): an unfetchable catalog is "unknown", never an error.
+            return { ...venue, available: false, symbols: [] };
+          }
+        })
+      ),
+    enabled: activeVenues.length > 0,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const catalogs: VenueCatalog[] = catalogsQuery.data ?? [];
+
+  // Default = first strategy's symbol (venue by catalog membership); the
+  // operator's explicit pick always wins (derived during render, P1 pattern).
+  const chartSelection =
+    chartSelectionOverride ??
+    resolveChartSelection(catalogs, strategySymbols, activeVenues);
+  const chartSymbol = chartSelection.symbol;
+  const chartGroups = buildChartSymbolGroups(
+    catalogs,
+    strategySymbols,
+    activeVenues[0] ?? FALLBACK_CHART_SELECTION
+  );
+  const chartOptionCount = chartGroups.reduce(
+    (count, group) => count + group.symbols.length,
+    0
+  );
 
   // Delete strategy mutation
   const deleteMutation = useMutation({
@@ -224,9 +308,11 @@ const Strategies: React.FC = React.memo(() => {
         className="py-2 space-y-4"
       >
         {/* Candlestick Chart - Advanced trading data for verified users */}
-        {/* P1: symbol follows the strategies (dropdown), not pinned BTC. */}
+        {/* P1/X3: symbol AND venue follow the dropdown (all venue-listed
+            symbols, grouped by venue — X1 pattern); the venue drives the
+            backend's candle dispatch and the Orderly-WS skip. */}
         <div className="mb-8">
-          {strategySymbols.length > 1 && (
+          {chartOptionCount > 1 && (
             <div className="flex items-center gap-2 mb-3">
               <label
                 htmlFor="strategies-chart-symbol"
@@ -236,15 +322,29 @@ const Strategies: React.FC = React.memo(() => {
               </label>
               <select
                 id="strategies-chart-symbol"
-                value={chartSymbol}
-                onChange={event => setChartSymbolOverride(event.target.value)}
+                value={encodeChartOption(chartSelection)}
+                onChange={event => {
+                  const decoded = decodeChartOption(event.target.value);
+                  if (decoded) setChartSelectionOverride(decoded);
+                }}
                 aria-label="Chart symbol"
                 className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-text focus:border-primary/50 focus:outline-none"
               >
-                {strategySymbols.map(sym => (
-                  <option key={sym} value={sym}>
-                    {sym.replace("PERP_", "").replace("_USDC", "")}
-                  </option>
+                {chartGroups.map(group => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.symbols.map(sym => (
+                      <option
+                        key={sym}
+                        value={encodeChartOption({
+                          symbol: sym,
+                          exchange: group.exchange,
+                          environment: group.environment,
+                        })}
+                      >
+                        {sym.replace("PERP_", "").replace("_USDC", "")}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>
@@ -257,7 +357,15 @@ const Strategies: React.FC = React.memo(() => {
               </div>
             }
           >
-            <CandlestickChart symbol={chartSymbol} interval="1h" height={450} />
+            <CandlestickChart
+              symbol={chartSymbol}
+              interval="1h"
+              height={450}
+              venue={{
+                exchange: chartSelection.exchange,
+                environment: chartSelection.environment,
+              }}
+            />
           </Suspense>
         </div>
 

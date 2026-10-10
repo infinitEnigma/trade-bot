@@ -8,6 +8,10 @@ import { useAuth } from "../../features/auth";
 import React from "react";
 import { websocketClient } from "../../infrastructure/websocket/client";
 import type {
+  AccountExchange,
+  AccountEnvironment,
+} from "../../infrastructure/api/accounts";
+import type {
   TickData as WsTickData,
   MarkPriceData as WsMarkPriceData,
   KlineData as WsKlineData,
@@ -86,6 +90,20 @@ interface UseChartDataOptions {
   symbol: string;
   interval: string;
   limit?: number;
+  /**
+   * X3: which venue's candles to read. Absent → Kodiak/Orderly (the historic
+   * default — Dashboard/PriceChart/analytics stay on it). `lighter` reads the
+   * public Lighter candles API and **skips the Orderly WS** (that socket
+   * speaks Kodiak symbols only; bare Lighter symbols would never match a
+   * tick — the chart lives on the historical refetch instead).
+   */
+  venue?: ChartVenue;
+}
+
+/** Venue selector shared by the chart hooks, the chart component, the API. */
+export interface ChartVenue {
+  exchange: AccountExchange;
+  environment: AccountEnvironment;
 }
 
 // Transform TradingView separated arrays to candle objects
@@ -181,13 +199,21 @@ const mergeCandleData = (
 export const useChartHistorical = ({
   symbol,
   interval,
+  venue,
 }: UseChartDataOptions) => {
   const [freshnessData, setFreshnessData] =
     useState<DataFreshnessMetadata | null>(null);
   const [smartInterval, setSmartInterval] = useState<number>(60000); // Start with 1 minute
 
   return useQuery({
-    queryKey: ["chart-historical", symbol, interval],
+    // Venue in the key (X3): two venues = two cache entries for one symbol.
+    queryKey: [
+      "chart-historical",
+      symbol,
+      interval,
+      venue?.exchange ?? null,
+      venue?.environment ?? null,
+    ],
     queryFn: async (): Promise<{
       candles: CandleData[];
       freshness?: DataFreshnessMetadata;
@@ -251,6 +277,9 @@ export const useChartHistorical = ({
           resolution: getResolution(interval),
           from: fromTimestamp,
           to: toTimestamp,
+          ...(venue
+            ? { exchange: venue.exchange, environment: venue.environment }
+            : {}),
         });
 
       // Extract freshness metadata from response
@@ -469,6 +498,7 @@ export const useCurrentPrice = (symbol: string) => {
 export const useWebSocketPriceUpdates = ({
   symbol,
   interval,
+  venue,
 }: UseChartDataOptions) => {
   const [tickData, setTickData] = useState<WsTickData | null>(null);
   const [klineData, setKlineData] = useState<WsKlineData | null>(null);
@@ -481,6 +511,19 @@ export const useWebSocketPriceUpdates = ({
   const isAuthenticated = !!user; // Connect for any authenticated user (BASIC, REGISTERED, VERIFIED)
 
   useEffect(() => {
+    // X3: the Orderly WS speaks Kodiak symbols only — a bare Lighter symbol
+    // ("ETH") would never match a tick, so the subscription is skipped
+    // entirely; useChartHistorical's refetch keeps the series alive (~60 s).
+    // No cleanup needed — nothing was registered. Stale state from a
+    // previously watched Kodiak symbol is masked on return (below) instead of
+    // cleared here (setState-in-effect).
+    if (venue?.exchange === "lighter") {
+      console.log(
+        "📡 WebSocket: skipped for Lighter venue chart (poll-only, X3)"
+      );
+      return;
+    }
+
     // Only connect if user is authenticated
     if (!isAuthenticated) {
       console.log("📡 WebSocket: User not authenticated, skipping connection");
@@ -545,13 +588,17 @@ export const useWebSocketPriceUpdates = ({
       websocketClient.offStatusChange(handleStatusChange);
       websocketClient.unsubscribeFromSymbol(symbol);
     };
-  }, [symbol, interval, isAuthenticated]);
+  }, [symbol, interval, isAuthenticated, venue?.exchange]);
 
+  // X3: on a Lighter (poll-only) chart, mask whatever state was held from a
+  // previously watched Kodiak symbol — nothing new arrives to overwrite it,
+  // and stale ticks/mark prices must not bleed onto this chart.
+  const pollOnly = venue?.exchange === "lighter";
   return {
-    tickData,
-    klineData,
-    markPriceData,
-    connectionStatus,
+    tickData: pollOnly ? null : tickData,
+    klineData: pollOnly ? null : klineData,
+    markPriceData: pollOnly ? null : markPriceData,
+    connectionStatus: pollOnly ? "disconnected" : connectionStatus,
   };
 };
 
@@ -559,13 +606,17 @@ export const useWebSocketPriceUpdates = ({
  * Combined hook that merges historical and WebSocket real-time data
  * Maintains backward compatibility with existing CandlestickChart
  */
-export const useChartData = ({ symbol, interval }: UseChartDataOptions) => {
-  // Get historical data (1x/minute)
-  const historicalQuery = useChartHistorical({ symbol, interval });
+export const useChartData = ({
+  symbol,
+  interval,
+  venue,
+}: UseChartDataOptions) => {
+  // Get historical data (1x/minute) — venue-dispatched server-side (X3).
+  const historicalQuery = useChartHistorical({ symbol, interval, venue });
 
-  // Get WebSocket real-time updates
+  // Get WebSocket real-time updates (skipped for Lighter venues, X3).
   const { tickData, klineData, markPriceData, connectionStatus } =
-    useWebSocketPriceUpdates({ symbol, interval });
+    useWebSocketPriceUpdates({ symbol, interval, venue });
 
   // Extract data from queries with useMemo
   const historicalData = React.useMemo(() => {
