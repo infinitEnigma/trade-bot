@@ -45,6 +45,7 @@ and the engine both read it.
 | `PENDING_STUCK_ALERT_THRESHOLD_MS`                            | `30000`                                             | Pending entries idle this long count as "stuck"                                          |
 | `PENDING_ALERT_THRESHOLD`                                     | `5`                                                 | Stuck-entry count that triggers a backlog warning                                        |
 | `PENDING_POISON_MAX_DELIVERIES`                               | `10`                                                | Redeliveries after which a poison entry is alert-and-ACKed (dropped)                     |
+| `WALLET_PROOF_REQUIRED`                                       | `true` (on)                                         | X4 wallet-owner proof gate on bot `start`/`stop`/`resume`/`runs`; only explicit `false` disables (harness/e2e). Challenges in Redis (`wallet:challenge:{userId}:{nonce}`, TTL 300 s, single-use) — a Redis outage fails these routes closed with 503. `emergency-stop` is never gated. |
 
 ### Engine
 
