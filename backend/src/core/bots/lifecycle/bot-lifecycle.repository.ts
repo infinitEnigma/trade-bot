@@ -10,7 +10,7 @@
  */
 
 import { BotActualState } from "@trade-bot/shared";
-import { query } from "../../../database/pool";
+import { query, transaction } from "../../../database/pool";
 import { contextLogger as logger } from "../../logging";
 import {
   BOT_COMMAND_TIMEOUT_MS,
@@ -458,6 +458,13 @@ export class BotLifecycleRepository {
    * Attach a strategy to a session: snapshot its live config, size the run.
    * The partial unique index refuses a strategy that is live elsewhere (409
    * at the service layer maps the 23505).
+   *
+   * F1 (notional admission): the insert runs inside a transaction that first
+   * locks the session's `bot_instances` row (`FOR UPDATE`). Two concurrent
+   * `POST /runs` for the same session therefore serialize on that lock, so the
+   * service's aggregate-cap check (read just before this call) cannot be raced
+   * by a second attach that reads the same pre-insert sum. The boot attach in
+   * `createAndStart` predates the row, so the lock is a harmless no-op there.
    */
   async attachRun(
     botId: string,
@@ -465,14 +472,20 @@ export class BotLifecycleRepository {
     config: Record<string, unknown>,
     notionalAmount: number
   ): Promise<string> {
-    const insertResult = await query<{ id: string }>(
-      `INSERT INTO strategy_runs
-              (bot_id, strategy_id, config_version, config, notional_amount, state)
-           VALUES ($1, $2, 1, $3, $4, 'STOPPED')
-           RETURNING id`,
-      [botId, strategyId, JSON.stringify(config), notionalAmount]
-    );
-    return insertResult.rows[0].id;
+    return transaction(async client => {
+      await client.query(
+        `SELECT id FROM bot_instances WHERE id = $1 FOR UPDATE`,
+        [botId]
+      );
+      const insertResult = await client.query<{ id: string }>(
+        `INSERT INTO strategy_runs
+                (bot_id, strategy_id, config_version, config, notional_amount, state)
+             VALUES ($1, $2, 1, $3, $4, 'STOPPED')
+             RETURNING id`,
+        [botId, strategyId, JSON.stringify(config), notionalAmount]
+      );
+      return insertResult.rows[0].id;
+    });
   }
 
   /** CAS a run's state; returns false when the row moved underneath. */
@@ -502,13 +515,20 @@ export class BotLifecycleRepository {
     return (result.rowCount ?? 0) === 1;
   }
 
-  /** Sum of live (STARTING/RUNNING) run notionals inside a session. */
-  async sumLiveRunNotional(botId: string): Promise<number> {
+  /**
+   * Sum of attached run notionals inside a session — the grain the notional
+   * admission cap must use. Every attach inserts as STOPPED, and detachRun
+   * DELETES the row, so any surviving row will contribute to the next start's
+   * exposure. Counts all non-detached states (not just live) so STOPPED runs
+   * queued for the next session start accumulate against the cap instead of
+   * slipping through a STARTING/RUNNING-only sum.
+   */
+  async sumAttachedRunNotional(botId: string): Promise<number> {
     const result = await query<{ total: string | null }>(
       `SELECT COALESCE(SUM(notional_amount), 0) AS total
          FROM strategy_runs
         WHERE bot_id = $1
-          AND state IN ('STARTING', 'RUNNING')`,
+          AND state IN ('STARTING', 'RUNNING', 'STOPPED', 'STOPPING', 'ERROR')`,
       [botId]
     );
     return Number(result.rows[0]?.total ?? 0);

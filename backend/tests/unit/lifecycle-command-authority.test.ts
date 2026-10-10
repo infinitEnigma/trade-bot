@@ -34,9 +34,19 @@ import {
 } from "../../src/core/bots/lifecycle/types";
 import { strategyRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/strategy-repository.adapter";
 
-jest.mock("../../src/database/pool", () => ({
-  query: jest.fn(),
-}));
+jest.mock("../../src/database/pool", () => {
+  const actual = { query: jest.fn() };
+  return {
+    ...actual,
+    transaction: jest.fn(async (cb: (client: { query: unknown }) => unknown) => {
+      const client = {
+        query: (text: string, params?: unknown[]) => actual.query(text, params),
+      };
+      return cb(client);
+    }),
+    getClient: jest.fn(),
+  };
+});
 jest.mock("../../src/core/logging", () => ({
   contextLogger: {
     info: jest.fn(),
@@ -123,6 +133,10 @@ describe("lifecycle command authority (L21) & terminal stop repair (L24)", () =>
     // Permissive authority checker: authority itself is covered by the
     // engine-registry suite (including the BIGINT string epoch regression).
     service.setAuthorityChecker(async () => true);
+    // F1: permissive cap so the L21/L24 command flow is unaffected.
+    service.setSessionCapProvider({
+      getSessionCap: async () => Number.MAX_SAFE_INTEGER,
+    });
   });
 
   afterEach(() => {
@@ -259,6 +273,11 @@ describe("lifecycle command authority (L21) & terminal stop repair (L24)", () =>
           });
         }
         return Promise.resolve({ rows: [{ ...bot }] });
+      }
+
+      // F1 sum grain — match before the generic strategy_runs read.
+      if (text.includes("SUM(notional_amount)")) {
+        return Promise.resolve({ rows: [{ total: "0" }] });
       }
 
       // 022 shim-drop: session runs (start dispatch + badge sync).

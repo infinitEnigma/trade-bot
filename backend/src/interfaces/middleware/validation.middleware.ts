@@ -287,9 +287,10 @@ export const validators = {
         "any.required": "Exchange account is required",
         "string.uuid": "Invalid exchange account format",
       }),
-      notionalAmount: Joi.number().positive().precision(8).required().messages({
+      notionalAmount: Joi.number().positive().precision(8).max(parseFloat(process.env.MAX_RUN_NOTIONAL || "10000000")).required().messages({
         "number.base": "Notional amount must be a number",
         "number.positive": "Notional amount must be positive",
+        "number.max": "Notional amount exceeds the maximum allowed per run",
         "any.required": "Notional amount is required",
       }),
       // X4: wallet-owner proof (optional here — the gate lives in
@@ -332,9 +333,10 @@ export const validators = {
       strategyId: commonSchemas.uuid.messages({
         "any.required": "Strategy ID is required",
       }),
-      notionalAmount: Joi.number().positive().precision(8).required().messages({
+      notionalAmount: Joi.number().positive().precision(8).max(parseFloat(process.env.MAX_RUN_NOTIONAL || "10000000")).required().messages({
         "number.base": "Notional amount must be a number",
         "number.positive": "Notional amount must be positive",
+        "number.max": "Notional amount exceeds the maximum allowed per run",
         "any.required": "Notional amount is required",
       }),
       walletProof: commonSchemas.walletProof,

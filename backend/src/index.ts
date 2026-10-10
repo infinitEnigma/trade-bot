@@ -58,6 +58,7 @@ import { Server } from "socket.io";
 import { contextLogger as logger } from "./core/logging";
 import { engineProtocolService } from "./core/bots/engine-protocol.service";
 import { botLifecycleService } from "./core/bots/bot-lifecycle.service";
+import { createSessionCapProvider } from "./infrastructure/external/exchange-accounts/session-cap.provider";
 import { commandTimeoutSweeper } from "./core/bots/command-timeout.sweeper";
 import { engineRegistryService } from "./core/bots/engine-registry.service";
 import { tradeLedgerService } from "./core/strategies/trade-ledger.service";
@@ -475,6 +476,11 @@ export const startServer = (): Promise<typeof httpServer> => {
       botLifecycleService.setTradeLedgerHandler(event =>
         tradeLedgerService.handle(event)
       );
+      // F1 notional admission: wire the account-scoped, fail-closed session
+      // cap provider so create / attach / start bound every session's
+      // aggregate run notional against balance × leverage. Unwired → the gate
+      // fails closed (503), never admits an unbounded notional.
+      botLifecycleService.setSessionCapProvider(createSessionCapProvider());
       engineProtocolService
         .start(event => botLifecycleService.handleEngineEvent(event))
         .then(() => logger.info("🔌 Engine protocol listener started"))

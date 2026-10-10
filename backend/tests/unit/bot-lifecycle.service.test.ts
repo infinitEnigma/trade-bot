@@ -21,9 +21,22 @@ import { BotLifecycleService } from "../../src/core/bots/bot-lifecycle.service";
 import { EngineProtocolService } from "../../src/core/bots/engine-protocol.service";
 import { strategyRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/strategy-repository.adapter";
 
-jest.mock("../../src/database/pool", () => ({
-  query: jest.fn(),
-}));
+jest.mock("../../src/database/pool", () => {
+  const actual = { query: jest.fn() };
+  return {
+    ...actual,
+    // F1: attachRun runs its INSERT inside a transaction that first locks the
+    // session row. Route the transaction client's queries through the same
+    // mock so the existing per-SQL implementations cover both paths.
+    transaction: jest.fn(async (cb: (client: { query: unknown }) => unknown) => {
+      const client = {
+        query: (text: string, params?: unknown[]) => actual.query(text, params),
+      };
+      return cb(client);
+    }),
+    getClient: jest.fn(),
+  };
+});
 jest.mock("../../src/core/logging", () => ({
   contextLogger: {
     info: jest.fn(),
@@ -182,6 +195,7 @@ describe("BotLifecycleService", () => {
     status: "STOPPED",
     desired_state: "STOPPED",
     actual_state: "STOPPED",
+    exchange_account_id: "acc-1",
   };
 
   /** 022 shim-drop: the session's attached runs (badge + dispatch read these). */
@@ -207,6 +221,11 @@ describe("BotLifecycleService", () => {
       if (text.startsWith("SELECT id, user_id")) {
         return Promise.resolve({ rows: [row] });
       }
+      // F1 sum grain (SUM over non-detached states) — distinguish from the
+      // getRunsForBot row read.
+      if (text.includes("SUM(notional_amount)")) {
+        return Promise.resolve({ rows: [{ total: "0" }] });
+      }
       if (text.includes("FROM strategy_runs")) {
         return Promise.resolve({ rows: bootRuns });
       }
@@ -227,6 +246,11 @@ describe("BotLifecycleService", () => {
     );
     // Permissive authority checker by default; individual tests override it.
     service.setAuthorityChecker(async () => true);
+    // F1: permissive cap by default so existing start/attach/create tests are
+    // unaffected; the F1 admission suite overrides it with a tight cap.
+    service.setSessionCapProvider({
+      getSessionCap: async () => Number.MAX_SAFE_INTEGER,
+    });
   });
 
   describe("start", () => {
@@ -1260,6 +1284,9 @@ describe("bot → account binding", () => {
       }),
     } as unknown as EngineProtocolService);
     service.setAuthorityChecker(async () => true);
+    service.setSessionCapProvider({
+      getSessionCap: async () => Number.MAX_SAFE_INTEGER,
+    });
   });
 
   const mockStrategyExists = () =>
@@ -1392,6 +1419,7 @@ describe("createAndStart venue symbol gate (L20)", () => {
     status: "STOPPED",
     desired_state: "STOPPED",
     actual_state: "STOPPED",
+    exchange_account_id: "acc-1",
   };
 
   const lighterAccount = {
@@ -1457,6 +1485,9 @@ describe("createAndStart venue symbol gate (L20)", () => {
       }),
     } as unknown as EngineProtocolService);
     service.setAuthorityChecker(async () => true);
+    service.setSessionCapProvider({
+      getSessionCap: async () => Number.MAX_SAFE_INTEGER,
+    });
     mockAccountAdapter.getAccountWithSecret.mockResolvedValue(lighterAccount);
   });
 
@@ -1580,5 +1611,209 @@ describe("createAndStart venue symbol gate (L20)", () => {
       expect.stringContaining("INSERT INTO bot_instances"),
       expect.anything()
     );
+  });
+});
+
+// ===========================================
+// F1 NOTIONAL ADMISSION (session cap)
+// ===========================================
+
+describe("BotLifecycleService F1 notional admission", () => {
+  let service: BotLifecycleService;
+
+  const kodiakAccount = {
+    id: "acc-1",
+    userId: "user-1",
+    exchange: "kodiak",
+    environment: "testnet",
+    accountRef: "kodiak-account-id",
+    status: "ACTIVE",
+    verifiedAt: null,
+    lastVerifiedAt: null,
+    meta: {},
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    credentialsEncrypted: "sealed",
+    encryptionVersion: 3,
+  };
+
+  const runningBotRow = {
+    id: "bot-1",
+    user_id: "user-1",
+    status: "RUNNING",
+    desired_state: "RUNNING",
+    // UNKNOWN (parked) so start() runs the admission gate + transition rather
+    // than the idempotent already-RUNNING short-circuit — the resume path.
+    actual_state: "UNKNOWN",
+    exchange_account_id: "acc-1",
+  };
+
+  // attachStrategyRun() requires a live session (RUNNING/STARTING).
+  const attachBotRow = {
+    id: "bot-1",
+    user_id: "user-1",
+    status: "RUNNING",
+    desired_state: "RUNNING",
+    actual_state: "RUNNING",
+    exchange_account_id: "acc-1",
+  };
+
+  const routeStart = (total: string, row = runningBotRow) =>
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id, user_id")) {
+        return Promise.resolve({ rows: [row] });
+      }
+      if (text.includes("SUM(notional_amount)")) {
+        return Promise.resolve({ rows: [{ total }] });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [] });
+      }
+      return okResult();
+    });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new BotLifecycleService({
+      sendCommand: jest.fn().mockResolvedValue({
+        success: true,
+        messageId: "m1",
+        correlationId: "c1",
+      }),
+    } as unknown as EngineProtocolService);
+    service.setAuthorityChecker(async () => true);
+    mockAccountAdapter.getAccountWithSecret.mockResolvedValue(kodiakAccount);
+  });
+
+  it("start() 409s before any state change when the aggregate notional exceeds the cap", async () => {
+    service.setSessionCapProvider({ getSessionCap: async () => 500 });
+    routeStart("1000");
+
+    await expect(service.start("bot-1", "user-1")).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE bot_instances"),
+      expect.anything()
+    );
+  });
+
+  it("start() dispatches when the aggregate notional fits the cap", async () => {
+    service.setSessionCapProvider({ getSessionCap: async () => 5000 });
+    const toggle = jest
+      .spyOn(strategyRepositoryAdapter, "toggleStrategy")
+      .mockResolvedValue(undefined);
+    routeStart("1000");
+
+    const result = await service.start("bot-1", "user-1");
+    expect(result.botId).toBe("bot-1");
+    toggle.mockRestore();
+  });
+
+  it("start() 503s (fail-closed) when the cap provider throws", async () => {
+    service.setSessionCapProvider({
+      getSessionCap: async () => {
+        throw new Error("venue down");
+      },
+    });
+    routeStart("0");
+
+    await expect(service.start("bot-1", "user-1")).rejects.toMatchObject({
+      statusCode: 503,
+      code: "SESSION_CAP_UNAVAILABLE",
+    });
+  });
+
+  it("createAndStart() 409s before inserting the session when the notional exceeds the cap", async () => {
+    service.setSessionCapProvider({ getSessionCap: async () => 500 });
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-1" }] });
+      }
+      if (text.startsWith("SELECT config FROM strategies")) {
+        return Promise.resolve({ rows: [{ config: {} }] });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [] });
+      }
+      return okResult();
+    });
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 1000, "acc-1")
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO bot_instances"),
+      expect.anything()
+    );
+  });
+
+  it("attachStrategyRun() 409s when attached runs + new exceed the cap (bound-account scoped)", async () => {
+    const cap = jest.fn().mockResolvedValue(500);
+    service.setSessionCapProvider({ getSessionCap: cap });
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id, user_id")) {
+        return Promise.resolve({ rows: [attachBotRow] });
+      }
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-2" }] });
+      }
+      if (text.includes("SUM(notional_amount)")) {
+        return Promise.resolve({ rows: [{ total: "400" }] });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [] });
+      }
+      return okResult();
+    });
+
+    await expect(
+      service.attachStrategyRun("bot-1", "user-1", "strat-2", 200)
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    // Cap is scoped to the bot's bound account, never user-only.
+    expect(cap).toHaveBeenCalledWith("user-1", "acc-1");
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO strategy_runs"),
+      expect.anything()
+    );
+  });
+
+  it("attachStrategyRun() succeeds and inserts when the aggregate fits the cap", async () => {
+    service.setSessionCapProvider({ getSessionCap: async () => 5000 });
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id, user_id")) {
+        return Promise.resolve({ rows: [attachBotRow] });
+      }
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-2" }] });
+      }
+      if (text.startsWith("SELECT config FROM strategies")) {
+        return Promise.resolve({ rows: [{ config: {} }] });
+      }
+      if (text.includes("SUM(notional_amount)")) {
+        return Promise.resolve({ rows: [{ total: "400" }] });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [] });
+      }
+      if (text.startsWith("INSERT INTO strategy_runs")) {
+        return Promise.resolve({ rows: [{ id: "run-2" }], rowCount: 1 });
+      }
+      return okResult();
+    });
+
+    const runId = await service.attachStrategyRun(
+      "bot-1",
+      "user-1",
+      "strat-2",
+      200
+    );
+    expect(runId).toBe("run-2");
   });
 });

@@ -255,10 +255,10 @@ router.get(
  *
  * POSITION VALIDATION:
  * - Account balance and leverage limits
- * - Maximum single position size (25% of account)
- * - Orderly exchange-specific limits
- * - Total exposure limits (80% of account balance)
- * - Margin requirements verification
+ * - Notional admission: the aggregate run notional a session exposes is
+ *   capped at `balance × leverage` for the bound account (F1). Enforced
+ *   account-scoped and fail-closed at create, attach, and start. This is a
+ *   notional-INTENT gate — it does not subtract open venue positions.
  *
  * CREDENTIAL SECURITY:
  * ```typescript
@@ -987,8 +987,10 @@ export const botSessionRunsRoutes = Router();
 /**
  * Attach a strategy to a live session as a new run (D2, plan §D).
  * Body: { botId, strategyId, notionalAmount } → 201 { runId }.
- * Guards (service): ownership, session live, one-live-run-per-strategy,
- * derived session cap. The run starts STOPPED until D3 wires START_STRATEGY.
+ * Guards (service): ownership, session live, one-live-run-per-strategy, and
+ * the F1 aggregate notional cap — sum(attached runs) + new must fit the bound
+ * account's balance × leverage (account-scoped, fail-closed). The run starts
+ * STOPPED until D3 wires START_STRATEGY.
  */
 botSessionRunsRoutes.post(
   "/runs",
@@ -1026,7 +1028,7 @@ botSessionRunsRoutes.post(
         error:
           statusCode === 404
             ? "Bot or strategy not found"
-            : statusCode === 409
+            : statusCode === 409 || statusCode === 503
               ? (err as Error).message
               : "Failed to attach strategy run",
         timestamp: Date.now(),

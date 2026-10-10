@@ -58,11 +58,36 @@ import {
 export { BOT_COMMAND_TIMEOUT_MS };
 export type { BotLifecycleResult };
 
+/**
+ * F1 notional admission: the session cap = `totalBalance × leverage` for the
+ * bound exchange account, expressed as the maximum aggregate run notional a
+ * session may expose. Implementations are account-scoped and FAIL-CLOSED —
+ * they throw when the balance/leverage cannot be determined (venue down,
+ * unsupported venue), so the lifecycle service refuses the write (503) rather
+ * than silently admitting an unbounded notional.
+ *
+ * The cap is a notional-INTENT gate: it bounds the sum of requested run
+ * notionals against `balance × leverage`. It does NOT subtract open venue
+ * positions (true residual capacity) — that is the deferred PositionValidator
+ * work. `balance` is total equity (`totalBalance`); neither venue reader
+ * currently exposes free/available collateral.
+ */
+export interface SessionCapProvider {
+  getSessionCap(
+    userId: string,
+    exchangeAccountId: string
+  ): Promise<number>;
+}
+
 export class BotLifecycleService {
   private repository = new BotLifecycleRepository();
   private notifier = new BotLifecycleNotifier();
   private dispatcher: BotCommandDispatcher;
   private eventProcessor: BotEventProcessor;
+  // F1: injected so tests can supply a deterministic cap and production wires
+  // the venue-aware default (see dependency-injection.container). Optional —
+  // when unset the admission gate fails closed (503) rather than admit.
+  private sessionCapProvider?: SessionCapProvider;
 
   constructor(engineProtocol: EngineProtocolService) {
     this.dispatcher = new BotCommandDispatcher(engineProtocol, this.repository);
@@ -107,6 +132,15 @@ export class BotLifecycleService {
     this.eventProcessor.setAuthorityChecker(checker);
   }
 
+  /**
+   * F1: inject the account-scoped, fail-closed session-cap provider. Wired at
+   * startup to the venue-aware default; tests inject a deterministic cap. When
+   * unset, the notional admission gate fails closed (503).
+   */
+  setSessionCapProvider(provider: SessionCapProvider): void {
+    this.sessionCapProvider = provider;
+  }
+
   // ===========================================
   // START
   // ===========================================
@@ -143,6 +177,22 @@ export class BotLifecycleService {
       }
       throw err;
     }
+
+    // F1 aggregate notional admission (start-time gate): before we flip state
+    // or fan the session's runs out to the engine, the sum of attached run
+    // notionals must still fit the bound account's session cap. This is the
+    // single gate resume / restart / createAndStart all funnel through, so a
+    // balance that dropped since attach (or STOPPED runs that stacked up)
+    // cannot slip into a live dispatch. Rejects with 409 (over cap) / 503
+    // (cap unavailable) BEFORE any state change or audit write. incoming = 0:
+    // start adds no new notional, it only re-checks the existing set.
+    const attachedTotal = await this.repository.sumAttachedRunNotional(botId);
+    await this.assertSessionNotionalAllowed(
+      userId,
+      bot.exchange_account_id,
+      attachedTotal,
+      0
+    );
 
     // Compare-and-set: only persist if actual_state is still what we read.
     const persisted = await this.repository.persistTransition(
@@ -307,6 +357,18 @@ export class BotLifecycleService {
       );
     }
 
+    // F1 notional admission: the boot run's notional must fit the account's
+    // session cap BEFORE any session row is created, so an over-cap request
+    // leaves no orphan bot. existingSum is 0 (no runs yet). `start()` re-checks
+    // the aggregate once the run exists, so this only needs to screen the
+    // request's own notional here.
+    await this.assertSessionNotionalAllowed(
+      userId,
+      exchangeAccountId,
+      0,
+      notionalAmount
+    );
+
     // Create the instance in the deterministic initial state, bound to the
     // venue account (C3a, migration 013).
     const botId = await this.repository.insertBotInstance(
@@ -359,9 +421,10 @@ export class BotLifecycleService {
 
   /**
    * Attach a strategy to a live session as a new run (POST /runs).
-   * Guards: ownership, session live, strategy not live elsewhere,
-   * per-run sizing via the existing position validator + derived
-   * session cap (sum of live runs + new <= balance × leverage).
+   * Guards: ownership, session live, strategy not live elsewhere, and the F1
+   * aggregate notional cap — sum(attached run notionals) + new must fit the
+   * bound account's session cap (balance × leverage). Scoped to the bot's
+   * bound exchange account (never user-only) and fail-closed.
    * Returns the new run id. Engine wiring (START_STRATEGY) lands in D3;
    * until then the run is STOPPED and starts with the next session start.
    */
@@ -392,19 +455,15 @@ export class BotLifecycleService {
       (error as Error & { statusCode?: number }).statusCode = 409;
       throw error;
     }
-    // Per-run sizing: reuse the validator's single-position check via the
-    // derived session cap — sum(live) + new must fit balance × leverage.
-    // Full venue-limit validation already ran at session create; here we
-    // guard the aggregate only (Act-mode decision 4).
-    const liveTotal = await this.repository.sumLiveRunNotional(botId);
-    const sessionCap = await this.getSessionCap(userId);
-    if (sessionCap !== null && liveTotal + notionalAmount > sessionCap) {
-      const error = new Error(
-        `Session cap exceeded: live $${liveTotal} + new $${notionalAmount} > $${sessionCap}`
-      );
-      (error as Error & { statusCode?: number }).statusCode = 409;
-      throw error;
-    }
+    // F1 aggregate notional admission: every attached run (STOPPED included)
+    // plus the incoming notional must fit the bound account's session cap.
+    const attachedTotal = await this.repository.sumAttachedRunNotional(botId);
+    await this.assertSessionNotionalAllowed(
+      userId,
+      bot.exchange_account_id,
+      attachedTotal,
+      notionalAmount
+    );
     const snapConfig = await this.repository.findStrategyConfig(strategyId);
     const runId = await this.repository.attachRun(
       botId,
@@ -456,14 +515,68 @@ export class BotLifecycleService {
   }
 
   /**
-   * Derived session cap (Act-mode decision 4): balance × maxLeverage.
-   * Fail-open null for now — the position validator owns the Redis-backed
-   * account-info lookup and the service has no cache dep; D3 wires the real
-   * aggregate check once the engine reports per-run exposure. Until then the
-   * per-run validator at session create is the active guard.
+   * F1 notional admission: the single gate create / attach / start funnel
+   * through. Rejects when the aggregate run notional a session would expose
+   * exceeds the account's session cap.
+   *
+   * - `existingSum` = sum of the session's already-attached run notionals
+   *   (0 on the create path, before the first run exists).
+   * - `incoming` = the notional about to be added (the create/attach request;
+   *   0 when re-checking an unchanged set at start time).
+   * - Fail-CLOSED: an unwired provider or a bound account that cannot be
+   *   resolved throws 503 (`SESSION_CAP_UNAVAILABLE`) rather than admitting.
+   * - Over-cap throws 409 with the live sum and cap so the client can retry
+   *   smaller. Existing venue exposure is NOT subtracted — this bounds the sum
+   *   of REQUESTED run notionals against `balance × leverage` (notional-intent
+   *   gate); true residual capacity is deferred PositionValidator work.
    */
-  private async getSessionCap(_userId: string): Promise<number | null> {
-    return null;
+  private async assertSessionNotionalAllowed(
+    userId: string,
+    exchangeAccountId: string | null,
+    existingSum: number,
+    incoming: number
+  ): Promise<void> {
+    const provider = this.sessionCapProvider;
+    if (!provider) {
+      const error = new Error(
+        "Session cap unavailable: notional admission provider is not wired. Refusing to start or size a session."
+      );
+      (error as Error & { statusCode?: number; code?: string }).statusCode = 503;
+      (error as Error & { code?: string }).code = "SESSION_CAP_UNAVAILABLE";
+      throw error;
+    }
+    if (!exchangeAccountId) {
+      const error = new Error(
+        "Session has no bound exchange account; cannot determine the notional cap."
+      );
+      (error as Error & { statusCode?: number; code?: string }).statusCode = 503;
+      (error as Error & { code?: string }).code = "SESSION_CAP_UNAVAILABLE";
+      throw error;
+    }
+
+    let cap: number;
+    try {
+      cap = await provider.getSessionCap(userId, exchangeAccountId);
+    } catch (err) {
+      const error = new Error(
+        `Session cap could not be determined for account ${exchangeAccountId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+      (error as Error & { statusCode?: number; code?: string }).statusCode = 503;
+      (error as Error & { code?: string }).code = "SESSION_CAP_UNAVAILABLE";
+      throw error;
+    }
+
+    const total = existingSum + incoming;
+    if (total > cap) {
+      const error = new Error(
+        `Session cap exceeded: aggregate notional $${total} exceeds the account cap $${cap} ` +
+          `(balance × leverage; notional-intent gate — existing venue exposure is not subtracted).`
+      );
+      (error as Error & { statusCode?: number }).statusCode = 409;
+      throw error;
+    }
   }
 
   // ===========================================
