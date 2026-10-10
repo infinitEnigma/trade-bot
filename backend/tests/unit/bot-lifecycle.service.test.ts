@@ -61,7 +61,7 @@ jest.mock(
   })
 );
 
-import { query } from "../../src/database/pool";
+import { query, transaction } from "../../src/database/pool";
 import { BotLifecycleRepository } from "../../src/core/bots/lifecycle/bot-lifecycle.repository";
 import { exchangeAccountRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter";
 import {
@@ -70,6 +70,7 @@ import {
 } from "../../src/core/bots/lifecycle/types";
 
 const mockQuery = query as jest.Mock;
+const mockTransaction = transaction as jest.Mock;
 
 const mockAccountAdapter = exchangeAccountRepositoryAdapter as unknown as {
   getAccountWithSecret: jest.Mock;
@@ -1818,5 +1819,87 @@ describe("BotLifecycleService F1 notional admission", () => {
       200
     );
     expect(runId).toBe("run-2");
+  });
+
+  it("closes the concurrent-attach race: only one of two simultaneous attaches succeeds", async () => {
+    // Simulate two POST /runs firing together against a $1,000 cap with $600
+    // already attached. Each incoming run is $250, so both together ($1,100)
+    // exceed the cap — exactly one must be admitted. The `transaction` mock
+    // serializes on a lock chain (mimicking FOR UPDATE) and keeps shared
+    // `attachedTotal` state, so the second attach recalculates the sum AFTER
+    // the first has inserted and is rejected. Against the old pre-lock sum
+    // read, both would pass on the stale $600 and over-fill the session.
+    service.setSessionCapProvider({ getSessionCap: async () => 1000 });
+    let attachedTotal = 600;
+    let lockChain: Promise<unknown> = Promise.resolve();
+    mockTransaction.mockImplementation(
+      (
+        cb: (client: {
+          query: (t: string, p?: unknown[]) => unknown;
+        }) => unknown
+      ) => {
+        const run = lockChain.then(async () => {
+          const client = {
+            query: (text: string, params: unknown[] = []) => {
+              const t = String(text);
+              if (t.includes("SELECT id FROM bot_instances")) {
+                return Promise.resolve({ rows: [{ id: "bot-1" }] });
+              }
+              if (t.includes("SUM(notional_amount)")) {
+                return Promise.resolve({
+                  rows: [{ total: String(attachedTotal) }],
+                });
+              }
+              if (t.startsWith("INSERT INTO strategy_runs")) {
+                attachedTotal += Number(params[3]);
+                return Promise.resolve({
+                  rows: [{ id: "run-x" }],
+                  rowCount: 1,
+                });
+              }
+              return Promise.resolve({ rows: [], rowCount: 1 });
+            },
+          };
+          return cb(client);
+        });
+        lockChain = run.catch(() => undefined);
+        return run;
+      }
+    );
+
+    // Pre-transaction reads (bot row + strategy guards) go through mockQuery.
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id, user_id")) {
+        return Promise.resolve({ rows: [attachBotRow] });
+      }
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-2" }] });
+      }
+      return Promise.resolve({ rows: [], rowCount: 1 });
+    });
+
+    const results = await Promise.allSettled([
+      service.attachStrategyRun("bot-1", "user-1", "strat-2", 250),
+      service.attachStrategyRun("bot-1", "user-1", "strat-2", 250),
+    ]);
+
+    const fulfilled = results.filter(r => r.status === "fulfilled");
+    const rejected = results.filter(r => r.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+      statusCode: 409,
+    });
+    // Only one $250 run landed on top of the $600 base.
+    expect(attachedTotal).toBe(850);
+
+    // Restore the default routing transaction mock for any later test.
+    mockTransaction.mockImplementation(
+      async (cb: (client: { query: unknown }) => unknown) =>
+        cb({
+          query: (text: string, params?: unknown[]) => mockQuery(text, params),
+        })
+    );
   });
 });

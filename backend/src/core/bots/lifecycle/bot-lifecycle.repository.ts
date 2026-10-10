@@ -22,6 +22,29 @@ import {
   TrackedCommandRow,
 } from "./types";
 
+/**
+ * F1 notional admission: thrown by {@link BotLifecycleRepository.attachRunWithCapGuard}
+ * when the aggregate attached notional (recalculated under the session row
+ * lock) plus the incoming run would exceed the session cap. Carries the
+ * numbers so the service can build a 409 with the live sum and cap; the
+ * enclosing transaction has already rolled back, so no run row is written.
+ */
+export class RunNotionalCapExceededError extends Error {
+  constructor(
+    public readonly existingSum: number,
+    public readonly incoming: number,
+    public readonly cap: number
+  ) {
+    super(
+      `Session cap exceeded: aggregate notional $${
+        existingSum + incoming
+      } exceeds the account cap $${cap} ` +
+        `(balance × leverage; notional-intent gate — existing venue exposure is not subtracted).`
+    );
+    this.name = "RunNotionalCapExceededError";
+  }
+}
+
 export class BotLifecycleRepository {
   /**
    * Session columns (022 shim-drop): `strategy_id` is gone — strategy
@@ -477,6 +500,57 @@ export class BotLifecycleRepository {
         `SELECT id FROM bot_instances WHERE id = $1 FOR UPDATE`,
         [botId]
       );
+      const insertResult = await client.query<{ id: string }>(
+        `INSERT INTO strategy_runs
+                (bot_id, strategy_id, config_version, config, notional_amount, state)
+             VALUES ($1, $2, 1, $3, $4, 'STOPPED')
+             RETURNING id`,
+        [botId, strategyId, JSON.stringify(config), notionalAmount]
+      );
+      return insertResult.rows[0].id;
+    });
+  }
+
+  /**
+   * F1 notional admission — concurrency-safe attach (POST /runs).
+   *
+   * The whole admission is one transaction so the check cannot be raced:
+   *   1. lock the session's `bot_instances` row (`FOR UPDATE`) — concurrent
+   *      attaches to the same session serialize here;
+   *   2. RECALCULATE the attached-run sum while holding that lock (a sum read
+   *      before the lock can be stale by the time we insert);
+   *   3. enforce `sum + notionalAmount <= cap`, else throw
+   *      {@link RunNotionalCapExceededError} (the transaction rolls back — no
+   *      run row is written);
+   *   4. insert the STOPPED run.
+   *
+   * `cap` is resolved by the caller OUTSIDE this transaction (the venue balance
+   * API call must not hold a DB lock across network I/O). Re-checking the sum
+   * under the lock — not the lock alone — is what closes the attach race.
+   */
+  async attachRunWithCapGuard(
+    botId: string,
+    strategyId: string,
+    config: Record<string, unknown>,
+    notionalAmount: number,
+    cap: number
+  ): Promise<string> {
+    return transaction(async client => {
+      await client.query(
+        `SELECT id FROM bot_instances WHERE id = $1 FOR UPDATE`,
+        [botId]
+      );
+      const sumResult = await client.query<{ total: string | null }>(
+        `SELECT COALESCE(SUM(notional_amount), 0) AS total
+           FROM strategy_runs
+          WHERE bot_id = $1
+            AND state IN ('STARTING', 'RUNNING', 'STOPPED', 'STOPPING', 'ERROR')`,
+        [botId]
+      );
+      const existingSum = Number(sumResult.rows[0]?.total ?? 0);
+      if (existingSum + notionalAmount > cap) {
+        throw new RunNotionalCapExceededError(existingSum, notionalAmount, cap);
+      }
       const insertResult = await client.query<{ id: string }>(
         `INSERT INTO strategy_runs
                 (bot_id, strategy_id, config_version, config, notional_amount, state)

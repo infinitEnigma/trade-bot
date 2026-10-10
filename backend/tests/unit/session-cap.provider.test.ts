@@ -60,6 +60,26 @@ describe("SessionCapProvider (F1)", () => {
     expect(sessionCapLeverage()).toBe(5);
   });
 
+  it("throws (fail-closed) on an invalid SESSION_CAP_LEVERAGE", () => {
+    for (const bad of ["0", "-1", "abc", "1e999", "101"]) {
+      process.env.SESSION_CAP_LEVERAGE = bad;
+      expect(() => sessionCapLeverage()).toThrow(/SESSION_CAP_LEVERAGE/);
+    }
+  });
+
+  it("fails closed when the computed cap would overflow to Infinity", async () => {
+    process.env.SESSION_CAP_LEVERAGE = "100"; // max allowed
+    getAccountWithSecret.mockResolvedValue(kodiakAccount);
+    kodiakBalance.mockResolvedValue({
+      success: true,
+      data: { totalBalance: "1e308" }, // ×100 → Infinity
+    });
+
+    await expect(
+      createSessionCapProvider().getSessionCap("u1", "acc-1")
+    ).rejects.toThrow(/not a positive finite number/);
+  });
+
   it("kodiak: cap = totalBalance × leverage, account-scoped", async () => {
     getAccountWithSecret.mockResolvedValue(kodiakAccount);
     kodiakBalance.mockResolvedValue({

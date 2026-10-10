@@ -29,11 +29,32 @@ import { exchangeAccountRepositoryAdapter } from "../../adapters/repositories/ex
 import { kodiakIntegrationService } from "../kodiak-integration.service";
 import { getLighterBalance } from "../lighter/portfolio";
 
+/**
+ * Upper bound for the configured session-cap leverage. Prevents a large
+ * `SESSION_CAP_LEVERAGE` from multiplying a balance into `Infinity` (which
+ * would make the `total > cap` comparison false and silently disable the cap).
+ */
+export const SESSION_CAP_LEVERAGE_MAX = 100;
+
 /** Product leverage policy for the session cap (env-overridable). */
 export function sessionCapLeverage(): number {
   const raw = process.env.SESSION_CAP_LEVERAGE;
-  const parsed = raw !== undefined && raw !== "" ? Number(raw) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10;
+  // Unset/empty → the documented default. A *set but invalid* value throws
+  // (fail-closed) rather than silently reverting to the default, so a typo
+  // like "1e999" or "0" surfaces as an operational error, not a disabled cap.
+  if (raw === undefined || raw === "") return 10;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(
+      `Invalid SESSION_CAP_LEVERAGE "${raw}": must be a positive finite number`
+    );
+  }
+  if (parsed > SESSION_CAP_LEVERAGE_MAX) {
+    throw new Error(
+      `SESSION_CAP_LEVERAGE ${parsed} exceeds the maximum allowed ${SESSION_CAP_LEVERAGE_MAX}`
+    );
+  }
+  return parsed;
 }
 
 export function createSessionCapProvider(): SessionCapProvider {
@@ -89,13 +110,22 @@ export function createSessionCapProvider(): SessionCapProvider {
         );
       }
 
-      const cap = totalBalance * sessionCapLeverage();
+      const leverage = sessionCapLeverage();
+      const cap = totalBalance * leverage;
+      // Belt-and-suspenders: even with a bounded leverage, an extreme balance
+      // could overflow. A non-finite cap would make `total > cap` false and
+      // silently disable admission — refuse instead (fail-closed).
+      if (!Number.isFinite(cap) || cap <= 0) {
+        throw new Error(
+          `Computed session cap is not a positive finite number (balance=${totalBalance}, leverage=${leverage}) for account ${exchangeAccountId}`
+        );
+      }
       integrationLogger.debug("Session cap computed", {
         userId,
         exchangeAccountId,
         exchange: account.exchange,
         totalBalance,
-        leverage: sessionCapLeverage(),
+        leverage,
         cap,
       });
       return cap;
