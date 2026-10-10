@@ -253,7 +253,10 @@ describe("BotLifecycleService", () => {
     // F1: permissive cap by default so existing start/attach/create tests are
     // unaffected; the F1 admission suite overrides it with a tight cap.
     service.setSessionCapProvider({
-      getSessionCap: async () => Number.MAX_SAFE_INTEGER,
+      getAdmissionSnapshot: async () => ({
+        cap: Number.MAX_SAFE_INTEGER,
+        existingExposure: 0,
+      }),
     });
   });
 
@@ -1289,7 +1292,10 @@ describe("bot → account binding", () => {
     } as unknown as EngineProtocolService);
     service.setAuthorityChecker(async () => true);
     service.setSessionCapProvider({
-      getSessionCap: async () => Number.MAX_SAFE_INTEGER,
+      getAdmissionSnapshot: async () => ({
+        cap: Number.MAX_SAFE_INTEGER,
+        existingExposure: 0,
+      }),
     });
   });
 
@@ -1490,7 +1496,10 @@ describe("createAndStart venue symbol gate (L20)", () => {
     } as unknown as EngineProtocolService);
     service.setAuthorityChecker(async () => true);
     service.setSessionCapProvider({
-      getSessionCap: async () => Number.MAX_SAFE_INTEGER,
+      getAdmissionSnapshot: async () => ({
+        cap: Number.MAX_SAFE_INTEGER,
+        existingExposure: 0,
+      }),
     });
     mockAccountAdapter.getAccountWithSecret.mockResolvedValue(lighterAccount);
   });
@@ -1690,8 +1699,10 @@ describe("BotLifecycleService F1 notional admission", () => {
     mockAccountAdapter.getAccountWithSecret.mockResolvedValue(kodiakAccount);
   });
 
-  it("start() 409s before any state change when the aggregate notional exceeds the cap", async () => {
-    service.setSessionCapProvider({ getSessionCap: async () => 500 });
+  it("start() 409s before any state change when residual capacity is exceeded", async () => {
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({ cap: 500, existingExposure: 0 }),
+    });
     routeStart("1000");
 
     await expect(service.start("bot-1", "user-1")).rejects.toMatchObject({
@@ -1703,8 +1714,10 @@ describe("BotLifecycleService F1 notional admission", () => {
     );
   });
 
-  it("start() dispatches when the aggregate notional fits the cap", async () => {
-    service.setSessionCapProvider({ getSessionCap: async () => 5000 });
+  it("start() dispatches when the pending notional fits the residual cap", async () => {
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({ cap: 5000, existingExposure: 0 }),
+    });
     const toggle = jest
       .spyOn(strategyRepositoryAdapter, "toggleStrategy")
       .mockResolvedValue(undefined);
@@ -1715,9 +1728,9 @@ describe("BotLifecycleService F1 notional admission", () => {
     toggle.mockRestore();
   });
 
-  it("start() 503s (fail-closed) when the cap provider throws", async () => {
+  it("start() 503s (fail-closed) when the snapshot is unavailable (balance/positions down)", async () => {
     service.setSessionCapProvider({
-      getSessionCap: async () => {
+      getAdmissionSnapshot: async () => {
         throw new Error("venue down");
       },
     });
@@ -1729,8 +1742,10 @@ describe("BotLifecycleService F1 notional admission", () => {
     });
   });
 
-  it("createAndStart() 409s before inserting the session when the notional exceeds the cap", async () => {
-    service.setSessionCapProvider({ getSessionCap: async () => 500 });
+  it("createAndStart() 409s before inserting the session when the incoming notional exceeds the cap", async () => {
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({ cap: 500, existingExposure: 0 }),
+    });
     mockQuery.mockImplementation((sql: string) => {
       const text = String(sql);
       if (text.startsWith("SELECT id FROM strategies")) {
@@ -1756,8 +1771,11 @@ describe("BotLifecycleService F1 notional admission", () => {
   });
 
   it("attachStrategyRun() 409s when attached runs + new exceed the cap (bound-account scoped)", async () => {
-    const cap = jest.fn().mockResolvedValue(500);
-    service.setSessionCapProvider({ getSessionCap: cap });
+    const snapshot = jest.fn().mockResolvedValue({
+      cap: 500,
+      existingExposure: 0,
+    });
+    service.setSessionCapProvider({ getAdmissionSnapshot: snapshot });
     mockQuery.mockImplementation((sql: string) => {
       const text = String(sql);
       if (text.startsWith("SELECT id, user_id")) {
@@ -1780,15 +1798,144 @@ describe("BotLifecycleService F1 notional admission", () => {
     ).rejects.toMatchObject({ statusCode: 409 });
 
     // Cap is scoped to the bot's bound account, never user-only.
-    expect(cap).toHaveBeenCalledWith("user-1", "acc-1");
+    expect(snapshot).toHaveBeenCalledWith("user-1", "acc-1");
     expect(mockQuery).not.toHaveBeenCalledWith(
       expect.stringContaining("INSERT INTO strategy_runs"),
       expect.anything()
     );
   });
 
-  it("attachStrategyRun() succeeds and inserts when the aggregate fits the cap", async () => {
-    service.setSessionCapProvider({ getSessionCap: async () => 5000 });
+  it("attachStrategyRun() succeeds and inserts when the pending aggregate fits the cap", async () => {
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({ cap: 5000, existingExposure: 0 }),
+    });
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id, user_id")) {
+        return Promise.resolve({ rows: [attachBotRow] });
+      }
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-2" }] });
+      }
+      if (text.startsWith("SELECT config FROM strategies")) {
+        return Promise.resolve({ rows: [{ config: {} }] });
+      }
+      if (text.includes("SUM(notional_amount)")) {
+        return Promise.resolve({ rows: [{ total: "400" }] });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [] });
+      }
+      if (text.startsWith("INSERT INTO strategy_runs")) {
+        return Promise.resolve({ rows: [{ id: "run-2" }], rowCount: 1 });
+      }
+      return okResult();
+    });
+
+    const runId = await service.attachStrategyRun(
+      "bot-1",
+      "user-1",
+      "strat-2",
+      200
+    );
+    expect(runId).toBe("run-2");
+  });
+
+  it("start() 409s when an open venue position has already eaten the headroom", async () => {
+    // cap 1,000; live venue exposure 600; pending 500 → 1,100 > 1,000.
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({ cap: 1000, existingExposure: 600 }),
+    });
+    routeStart("500");
+
+    await expect(service.start("bot-1", "user-1")).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE bot_instances"),
+      expect.anything()
+    );
+  });
+
+  it("start() dispatches when exposure + pending exactly equals the cap", async () => {
+    // Boundary: `>` rejects, `==` admits (cap 1,000; exposure 400; pending 600).
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({ cap: 1000, existingExposure: 400 }),
+    });
+    const toggle = jest
+      .spyOn(strategyRepositoryAdapter, "toggleStrategy")
+      .mockResolvedValue(undefined);
+    routeStart("600");
+
+    const result = await service.start("bot-1", "user-1");
+    expect(result.botId).toBe("bot-1");
+    toggle.mockRestore();
+  });
+
+  it("createAndStart() 409s when existing exposure leaves less headroom than the incoming run", async () => {
+    // cap 1,000; venue exposure 700; incoming 400 → 1,100 > 1,000.
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({ cap: 1000, existingExposure: 700 }),
+    });
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-1" }] });
+      }
+      if (text.startsWith("SELECT config FROM strategies")) {
+        return Promise.resolve({ rows: [{ config: {} }] });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [] });
+      }
+      return okResult();
+    });
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 400, "acc-1")
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO bot_instances"),
+      expect.anything()
+    );
+  });
+
+  it("attachStrategyRun() 409s when exposure + pending + incoming exceeds the cap (guard re-check)", async () => {
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({ cap: 1000, existingExposure: 500 }),
+    });
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id, user_id")) {
+        return Promise.resolve({ rows: [attachBotRow] });
+      }
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-2" }] });
+      }
+      if (text.includes("SUM(notional_amount)")) {
+        return Promise.resolve({ rows: [{ total: "400" }] });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [] });
+      }
+      return okResult();
+    });
+
+    // 500 exposure + 400 pending + 200 incoming = 1,100 > 1,000.
+    await expect(
+      service.attachStrategyRun("bot-1", "user-1", "strat-2", 200)
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO strategy_runs"),
+      expect.anything()
+    );
+  });
+
+  it("attachStrategyRun() admits when exposure + pending + incoming exactly fits the cap", async () => {
+    // Boundary: 400 exposure + 400 pending + 200 incoming = 1,000 ≤ 1,000.
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({ cap: 1000, existingExposure: 400 }),
+    });
     mockQuery.mockImplementation((sql: string) => {
       const text = String(sql);
       if (text.startsWith("SELECT id, user_id")) {
@@ -1829,7 +1976,9 @@ describe("BotLifecycleService F1 notional admission", () => {
     // `attachedTotal` state, so the second attach recalculates the sum AFTER
     // the first has inserted and is rejected. Against the old pre-lock sum
     // read, both would pass on the stale $600 and over-fill the session.
-    service.setSessionCapProvider({ getSessionCap: async () => 1000 });
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({ cap: 1000, existingExposure: 0 }),
+    });
     let attachedTotal = 600;
     let lockChain: Promise<unknown> = Promise.resolve();
     mockTransaction.mockImplementation(

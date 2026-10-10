@@ -476,10 +476,10 @@ export const startServer = (): Promise<typeof httpServer> => {
       botLifecycleService.setTradeLedgerHandler(event =>
         tradeLedgerService.handle(event)
       );
-      // F1 notional admission: wire the account-scoped, fail-closed session
-      // cap provider so create / attach / start bound every session's
-      // aggregate run notional against balance × leverage. Unwired → the gate
-      // fails closed (503), never admits an unbounded notional.
+      // F1 notional admission: wire the account-scoped, fail-closed admission
+      // snapshot provider so create / attach / start bound residual capacity —
+      // `existingExposure + pendingRunNotional + incoming ≤ balance × leverage`.
+      // Unwired → the gate fails closed (503), never admits an unbounded notional.
       botLifecycleService.setSessionCapProvider(createSessionCapProvider());
       engineProtocolService
         .start(event => botLifecycleService.handleEngineEvent(event))

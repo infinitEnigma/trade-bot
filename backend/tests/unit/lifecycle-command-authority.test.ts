@@ -138,7 +138,10 @@ describe("lifecycle command authority (L21) & terminal stop repair (L24)", () =>
     service.setAuthorityChecker(async () => true);
     // F1: permissive cap so the L21/L24 command flow is unaffected.
     service.setSessionCapProvider({
-      getSessionCap: async () => Number.MAX_SAFE_INTEGER,
+      getAdmissionSnapshot: async () => ({
+        cap: Number.MAX_SAFE_INTEGER,
+        existingExposure: 0,
+      }),
     });
   });
 

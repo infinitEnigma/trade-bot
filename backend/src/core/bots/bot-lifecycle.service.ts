@@ -60,21 +60,38 @@ export { BOT_COMMAND_TIMEOUT_MS };
 export type { BotLifecycleResult };
 
 /**
- * F1 notional admission: the session cap = `totalBalance × leverage` for the
- * bound exchange account, expressed as the maximum aggregate run notional a
- * session may expose. Implementations are account-scoped and FAIL-CLOSED —
- * they throw when the balance/leverage cannot be determined (venue down,
- * unsupported venue), so the lifecycle service refuses the write (503) rather
- * than silently admitting an unbounded notional.
+ * F1 notional admission — residual-capacity snapshot for the bound exchange
+ * account, read in one account-scoped, fail-closed venue round-trip pair.
  *
- * The cap is a notional-INTENT gate: it bounds the sum of requested run
- * notionals against `balance × leverage`. It does NOT subtract open venue
- * positions (true residual capacity) — that is the deferred PositionValidator
- * work. `balance` is total equity (`totalBalance`); neither venue reader
- * currently exposes free/available collateral.
+ * - `cap` = `totalBalance × leverage` — the gross notional ceiling.
+ * - `existingExposure` = `Σ |qty × markPrice|` over the account's OPEN venue
+ *   positions (manual trades + other activity on the same account), so the
+ *   gate can bound *residual* capacity, not just requested size.
+ *
+ * The admission invariant is:
+ *   `existingExposure + Σ(pending run notionals) + incoming ≤ cap`
+ * where "pending" = STOPPED + STARTING runs (requested, not yet reflected in
+ * venue exposure). Live RUNNING runs are counted ONCE — via `existingExposure`
+ * (their actual filled notional) — never added again in the pending sum.
+ *
+ * Implementations are account-scoped and FAIL-CLOSED: they throw when balance
+ * OR positions cannot be read (venue down, unsupported venue), so the service
+ * refuses the write (503) rather than admitting against an unknown capacity.
+ *
+ * `balance` is total equity (`totalBalance`) — neither venue reader currently
+ * exposes free/available collateral — so residual capacity is approximate
+ * until a free-collateral reader lands (honest follow-up, documented).
  */
+export interface AdmissionSnapshot {
+  cap: number;
+  existingExposure: number;
+}
+
 export interface SessionCapProvider {
-  getSessionCap(userId: string, exchangeAccountId: string): Promise<number>;
+  getAdmissionSnapshot(
+    userId: string,
+    exchangeAccountId: string
+  ): Promise<AdmissionSnapshot>;
 }
 
 export class BotLifecycleService {
@@ -176,19 +193,20 @@ export class BotLifecycleService {
       throw err;
     }
 
-    // F1 aggregate notional admission (start-time gate): before we flip state
-    // or fan the session's runs out to the engine, the sum of attached run
-    // notionals must still fit the bound account's session cap. This is the
-    // single gate resume / restart / createAndStart all funnel through, so a
-    // balance that dropped since attach (or STOPPED runs that stacked up)
-    // cannot slip into a live dispatch. Rejects with 409 (over cap) / 503
-    // (cap unavailable) BEFORE any state change or audit write. incoming = 0:
-    // start adds no new notional, it only re-checks the existing set.
-    const attachedTotal = await this.repository.sumAttachedRunNotional(botId);
+    // F1 residual notional admission (start-time gate): before we flip state
+    // or fan the session's runs out to the engine, residual capacity must still
+    // hold — venue exposure + pending (STOPPED/STARTING) run notionals <= cap.
+    // This is the single gate resume / restart / createAndStart all funnel
+    // through, so a balance that dropped, an open position that ate headroom, or
+    // STOPPED runs that stacked up cannot slip into a live dispatch. Rejects with
+    // 409 (over cap) / 503 (snapshot unavailable) BEFORE any state change or
+    // audit write. incoming = 0: start adds no new notional, it re-checks the
+    // existing set. Live RUNNING runs are counted via venue exposure, not here.
+    const pendingTotal = await this.repository.sumPendingRunNotional(botId);
     await this.assertSessionNotionalAllowed(
       userId,
       bot.exchange_account_id,
-      attachedTotal,
+      pendingTotal,
       0
     );
 
@@ -355,11 +373,11 @@ export class BotLifecycleService {
       );
     }
 
-    // F1 notional admission: the boot run's notional must fit the account's
-    // session cap BEFORE any session row is created, so an over-cap request
-    // leaves no orphan bot. existingSum is 0 (no runs yet). `start()` re-checks
-    // the aggregate once the run exists, so this only needs to screen the
-    // request's own notional here.
+    // F1 residual notional admission: the boot run's notional must fit the
+    // account's residual capacity (venue exposure + new <= cap) BEFORE any
+    // session row is created, so an over-cap request leaves no orphan bot.
+    // pendingSum is 0 (no runs yet). `start()` re-checks the aggregate once the
+    // run exists, so this only needs to screen the request's own notional here.
     await this.assertSessionNotionalAllowed(
       userId,
       exchangeAccountId,
@@ -453,13 +471,17 @@ export class BotLifecycleService {
       (error as Error & { statusCode?: number }).statusCode = 409;
       throw error;
     }
-    // F1 aggregate notional admission (concurrency-safe): resolve the account
-    // cap OUTSIDE the transaction (no DB lock across the venue balance call),
-    // then let the repository re-check the aggregate UNDER the session row lock
-    // and insert atomically. The re-check-under-lock — not a pre-lock sum read
-    // — is what stops two concurrent POST /runs from both passing on a stale
-    // sum and over-filling the session.
-    const cap = await this.computeSessionCap(userId, bot.exchange_account_id);
+    // F1 residual notional admission (concurrency-safe): resolve the account
+    // cap + existing venue exposure OUTSIDE the transaction (no DB lock across
+    // the venue balance + positions calls), then let the repository re-check the
+    // PENDING sum UNDER the session row lock and insert atomically. The
+    // re-check-under-lock — not a pre-lock sum read — is what stops two
+    // concurrent POST /runs from both passing on a stale sum and over-filling
+    // the session. Invariant: existingExposure + pending + incoming <= cap.
+    const { cap, existingExposure } = await this.computeAdmission(
+      userId,
+      bot.exchange_account_id
+    );
     const snapConfig = await this.repository.findStrategyConfig(strategyId);
     let runId: string;
     try {
@@ -468,7 +490,8 @@ export class BotLifecycleService {
         strategyId,
         snapConfig,
         notionalAmount,
-        cap
+        cap,
+        existingExposure
       );
     } catch (err) {
       if (err instanceof RunNotionalCapExceededError) {
@@ -520,33 +543,37 @@ export class BotLifecycleService {
   }
 
   /**
-   * F1 notional admission: the single gate create / attach / start funnel
-   * through. Rejects when the aggregate run notional a session would expose
-   * exceeds the account's session cap.
+   * F1 notional admission: the single read-only gate create / start funnel
+   * through (attach uses the concurrency-safe `attachRunWithCapGuard` instead).
+   * Rejects when residual capacity is exceeded:
+   *   `existingExposure + pendingSum + incoming > cap`
    *
-   * - `existingSum` = sum of the session's already-attached run notionals
-   *   (0 on the create path, before the first run exists).
-   * - `incoming` = the notional about to be added (the create/attach request;
-   *   0 when re-checking an unchanged set at start time).
-   * - Fail-CLOSED: an unwired provider or a bound account that cannot be
-   *   resolved throws 503 (`SESSION_CAP_UNAVAILABLE`) rather than admitting.
-   * - Over-cap throws 409 with the live sum and cap so the client can retry
-   *   smaller. Existing venue exposure is NOT subtracted — this bounds the sum
-   *   of REQUESTED run notionals against `balance × leverage` (notional-intent
-   *   gate); true residual capacity is deferred PositionValidator work.
+   * - `pendingSum` = Σ STOPPED+STARTING run notionals on the session (0 on the
+   *   create path, before the first run exists).
+   * - `incoming` = the notional about to be added (the create request; 0 when
+   *   re-checking an unchanged set at start time).
+   * - Live RUNNING runs are NOT in `pendingSum` — their filled notional is
+   *   already inside `existingExposure` (venue positions), so counting both
+   *   would double-count.
+   * - Fail-CLOSED: an unwired provider or unresolvable snapshot throws 503
+   *   (`SESSION_CAP_UNAVAILABLE`) rather than admitting.
+   * - Over-cap throws 409 with the full breakdown so ops can tell a real size
+   *   reject from a flaky venue.
    */
   private async assertSessionNotionalAllowed(
     userId: string,
     exchangeAccountId: string | null,
-    existingSum: number,
+    pendingSum: number,
     incoming: number
   ): Promise<void> {
-    const cap = await this.computeSessionCap(userId, exchangeAccountId);
-    const total = existingSum + incoming;
+    const { cap, existingExposure } = await this.computeAdmission(
+      userId,
+      exchangeAccountId
+    );
+    const total = existingExposure + pendingSum + incoming;
     if (total > cap) {
       const error = new Error(
-        `Session cap exceeded: aggregate notional $${total} exceeds the account cap $${cap} ` +
-          `(balance × leverage; notional-intent gate — existing venue exposure is not subtracted).`
+        `Session cap exceeded: venue exposure $${existingExposure} + pending runs $${pendingSum} + new $${incoming} = $${total} exceeds the account cap $${cap} (balance × leverage).`
       );
       (error as Error & { statusCode?: number }).statusCode = 409;
       throw error;
@@ -554,19 +581,20 @@ export class BotLifecycleService {
   }
 
   /**
-   * F1: resolve the account-scoped session cap from the provider, fail-closed.
-   * Callers use this OUTSIDE any DB transaction so the venue balance API call
-   * never holds a lock across network I/O; the concurrency-safe attach then
-   * re-checks the aggregate under the lock in `attachRunWithCapGuard`.
+   * F1: resolve the account-scoped admission snapshot (cap + existing venue
+   * exposure) from the provider, fail-closed. Callers use this OUTSIDE any DB
+   * transaction so the venue balance + positions calls never hold a lock
+   * across network I/O; the concurrency-safe attach then re-checks the pending
+   * sum under the lock in `attachRunWithCapGuard`.
    *
    * Throws 503 (`SESSION_CAP_UNAVAILABLE`) when the provider is unwired, the
-   * session has no bound account, or the cap cannot be determined — never a
-   * sentinel that would admit an unbounded notional.
+   * session has no bound account, or the snapshot (balance OR positions) cannot
+   * be determined — never a sentinel that would admit an unbounded notional.
    */
-  private async computeSessionCap(
+  private async computeAdmission(
     userId: string,
     exchangeAccountId: string | null
-  ): Promise<number> {
+  ): Promise<AdmissionSnapshot> {
     const provider = this.sessionCapProvider;
     if (!provider) {
       const error = new Error(
@@ -588,7 +616,7 @@ export class BotLifecycleService {
     }
 
     try {
-      return await provider.getSessionCap(userId, exchangeAccountId);
+      return await provider.getAdmissionSnapshot(userId, exchangeAccountId);
     } catch (err) {
       const error = new Error(
         `Session cap could not be determined for account ${exchangeAccountId}: ${

@@ -24,22 +24,22 @@ import {
 
 /**
  * F1 notional admission: thrown by {@link BotLifecycleRepository.attachRunWithCapGuard}
- * when the aggregate attached notional (recalculated under the session row
- * lock) plus the incoming run would exceed the session cap. Carries the
- * numbers so the service can build a 409 with the live sum and cap; the
- * enclosing transaction has already rolled back, so no run row is written.
+ * when residual capacity is exceeded — `existingExposure + pendingSum + incoming`
+ * (recalculated under the session row lock) exceeds the cap. Carries the
+ * breakdown so the service can build a 409 ops can act on; the enclosing
+ * transaction has already rolled back, so no run row is written.
  */
 export class RunNotionalCapExceededError extends Error {
   constructor(
-    public readonly existingSum: number,
+    public readonly existingExposure: number,
+    public readonly pendingSum: number,
     public readonly incoming: number,
     public readonly cap: number
   ) {
     super(
-      `Session cap exceeded: aggregate notional $${
-        existingSum + incoming
-      } exceeds the account cap $${cap} ` +
-        `(balance × leverage; notional-intent gate — existing venue exposure is not subtracted).`
+      `Session cap exceeded: venue exposure $${existingExposure} + pending runs $${pendingSum} + new $${incoming} = $${
+        existingExposure + pendingSum + incoming
+      } exceeds the account cap $${cap} (balance × leverage).`
     );
     this.name = "RunNotionalCapExceededError";
   }
@@ -512,28 +512,31 @@ export class BotLifecycleRepository {
   }
 
   /**
-   * F1 notional admission — concurrency-safe attach (POST /runs).
+   * F1 notional admission — concurrency-safe attach (POST /runs), residual
+   * capacity (Model A).
    *
    * The whole admission is one transaction so the check cannot be raced:
    *   1. lock the session's `bot_instances` row (`FOR UPDATE`) — concurrent
    *      attaches to the same session serialize here;
-   *   2. RECALCULATE the attached-run sum while holding that lock (a sum read
-   *      before the lock can be stale by the time we insert);
-   *   3. enforce `sum + notionalAmount <= cap`, else throw
-   *      {@link RunNotionalCapExceededError} (the transaction rolls back — no
-   *      run row is written);
+   *   2. RECALCULATE the PENDING run sum (STOPPED + STARTING) while holding
+   *      that lock (a sum read before the lock can be stale by insert time);
+   *   3. enforce `existingExposure + pendingSum + notionalAmount <= cap`, else
+   *      throw {@link RunNotionalCapExceededError} (rolls back — no run row);
    *   4. insert the STOPPED run.
    *
-   * `cap` is resolved by the caller OUTSIDE this transaction (the venue balance
-   * API call must not hold a DB lock across network I/O). Re-checking the sum
-   * under the lock — not the lock alone — is what closes the attach race.
+   * Live RUNNING runs are NOT in the pending sum — their filled notional is
+   * already inside `existingExposure` (venue positions). `cap` and
+   * `existingExposure` are resolved by the caller OUTSIDE this transaction (the
+   * venue balance + positions calls must not hold a DB lock across network
+   * I/O); only the pending sum is re-read authoritatively under the lock.
    */
   async attachRunWithCapGuard(
     botId: string,
     strategyId: string,
     config: Record<string, unknown>,
     notionalAmount: number,
-    cap: number
+    cap: number,
+    existingExposure: number
   ): Promise<string> {
     return transaction(async client => {
       await client.query(
@@ -544,12 +547,17 @@ export class BotLifecycleRepository {
         `SELECT COALESCE(SUM(notional_amount), 0) AS total
            FROM strategy_runs
           WHERE bot_id = $1
-            AND state IN ('STARTING', 'RUNNING', 'STOPPED', 'STOPPING', 'ERROR')`,
+            AND state IN ('STOPPED', 'STARTING')`,
         [botId]
       );
-      const existingSum = Number(sumResult.rows[0]?.total ?? 0);
-      if (existingSum + notionalAmount > cap) {
-        throw new RunNotionalCapExceededError(existingSum, notionalAmount, cap);
+      const pendingSum = Number(sumResult.rows[0]?.total ?? 0);
+      if (existingExposure + pendingSum + notionalAmount > cap) {
+        throw new RunNotionalCapExceededError(
+          existingExposure,
+          pendingSum,
+          notionalAmount,
+          cap
+        );
       }
       const insertResult = await client.query<{ id: string }>(
         `INSERT INTO strategy_runs
@@ -590,19 +598,22 @@ export class BotLifecycleRepository {
   }
 
   /**
-   * Sum of attached run notionals inside a session — the grain the notional
-   * admission cap must use. Every attach inserts as STOPPED, and detachRun
-   * DELETES the row, so any surviving row will contribute to the next start's
-   * exposure. Counts all non-detached states (not just live) so STOPPED runs
-   * queued for the next session start accumulate against the cap instead of
-   * slipping through a STARTING/RUNNING-only sum.
+   * Sum of PENDING run notionals inside a session — the grain the residual
+   * notional admission gate adds on top of venue exposure. "Pending" = STOPPED
+   * + STARTING runs: requested notional not yet reflected as live venue
+   * positions. Every attach inserts as STOPPED and detachRun DELETES the row,
+   * so any surviving STOPPED/STARTING row counts. Live RUNNING runs are
+   * deliberately EXCLUDED — their filled notional is already inside the venue
+   * exposure read by the cap provider, so including them here would double
+   * count. STOPPING/ERROR runs are excluded too (their residual, if any, is
+   * venue exposure).
    */
-  async sumAttachedRunNotional(botId: string): Promise<number> {
+  async sumPendingRunNotional(botId: string): Promise<number> {
     const result = await query<{ total: string | null }>(
       `SELECT COALESCE(SUM(notional_amount), 0) AS total
          FROM strategy_runs
         WHERE bot_id = $1
-          AND state IN ('STARTING', 'RUNNING', 'STOPPED', 'STOPPING', 'ERROR')`,
+          AND state IN ('STOPPED', 'STARTING')`,
       [botId]
     );
     return Number(result.rows[0]?.total ?? 0);
