@@ -9,8 +9,13 @@
  * NOT-LINKED verdict. Wallet-membership is NOT enforced here — the start gate
  * does that; this script only records what the venue claims.
  *
+ * Standalone — no backend/engine/Redis needed. It talks to Postgres directly
+ * and to the venues' PUBLIC account endpoints.
+ *
  * Run once against the live DB before deploying the enforcement build:
  *   npx ts-node scripts/backfill-wallet-bindings.ts [--force]
+ * Preview what it would do without writing (safe):
+ *   npx ts-node scripts/backfill-wallet-bindings.ts --dry-run
  */
 
 import fs from "fs";
@@ -48,6 +53,10 @@ function short(address: string): string {
 
 async function main(): Promise<void> {
   const force = process.argv.includes("--force");
+  const dryRun = process.argv.includes("--dry-run");
+  if (dryRun) {
+    console.log("DRY RUN — no rows will be written.\n");
+  }
   const pool = new Pool({
     host: process.env.DB_HOST || "localhost",
     port: parseInt(process.env.DB_PORT || "5432", 10),
@@ -103,32 +112,34 @@ async function main(): Promise<void> {
     const verdict = linked ? "MATCH" : "NOT-LINKED";
     if (!linked) notLinked += 1;
 
-    await pool.query(
-      `UPDATE exchange_accounts
-       SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
-             'walletBinding', $2::jsonb
-           ),
-           updated_at = now()
-       WHERE id = $1`,
-      [
-        account.id,
-        JSON.stringify({
-          address: owner,
-          verifiedAt: new Date().toISOString(),
-          source: "venue",
-        }),
-      ]
-    );
+    if (!dryRun) {
+      await pool.query(
+        `UPDATE exchange_accounts
+         SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
+               'walletBinding', $2::jsonb
+             ),
+             updated_at = now()
+         WHERE id = $1`,
+        [
+          account.id,
+          JSON.stringify({
+            address: owner,
+            verifiedAt: new Date().toISOString(),
+            source: "venue",
+          }),
+        ]
+      );
+    }
     stored += 1;
     console.log(
       `${verdict.padEnd(9)} ${label} — owner ${short(owner)}, linked wallets: ${
         linkedList.length > 0 ? linkedList.map(short).join(", ") : "(none)"
-      }`
+      }${dryRun ? "  [dry-run, not written]" : ""}`
     );
   }
 
   console.log(
-    `\nDone. stored=${stored} skipped=${skipped} no-owner=${noOwner} not-linked=${notLinked}`
+    `\nDone. ${dryRun ? "(dry-run) would-store" : "stored"}=${stored} skipped=${skipped} no-owner=${noOwner} not-linked=${notLinked}`
   );
   await pool.end();
 }
