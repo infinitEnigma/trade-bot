@@ -72,6 +72,13 @@ vi.mock("../../../bots/hooks/useBotLifecycle", () => ({
   })),
 }));
 
+// X4: the wallet-proof hook. Default returns no proof (flag off); individual
+// tests override getWalletProof to assert the proof is threaded through.
+const mockGetWalletProof = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../../../shared/hooks/useWalletProof", () => ({
+  useWalletProof: () => ({ getWalletProof: mockGetWalletProof }),
+}));
+
 const renderWithClient = (ui: React.ReactElement) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -187,7 +194,7 @@ describe("BotControls stop payload (L19)", () => {
     fireEvent.click(await screen.findByText("Stop Bot"));
 
     await waitFor(() =>
-      expect(tradingApi.stopBot).toHaveBeenCalledWith("bot-1")
+      expect(tradingApi.stopBot).toHaveBeenCalledWith("bot-1", undefined)
     );
     expect(tradingApi.stopBot).not.toHaveBeenCalledWith("strategy-1");
   });
@@ -210,7 +217,7 @@ describe("BotControls stop payload (L19)", () => {
     fireEvent.click(await screen.findByText("Resume Bot"));
 
     await waitFor(() =>
-      expect(tradingApi.resumeBot).toHaveBeenCalledWith("bot-1")
+      expect(tradingApi.resumeBot).toHaveBeenCalledWith("bot-1", undefined)
     );
     expect(tradingApi.startBot).not.toHaveBeenCalled();
   });
@@ -266,7 +273,7 @@ describe("BotControls stop payload (L19)", () => {
 
     fireEvent.click(await screen.findByText("Stop Trading"));
     await waitFor(() =>
-      expect(tradingApi.stopBot).toHaveBeenCalledWith("bot-1")
+      expect(tradingApi.stopBot).toHaveBeenCalledWith("bot-1", undefined)
     );
 
     fireEvent.click(screen.getByText("Emergency Stop"));
@@ -276,5 +283,91 @@ describe("BotControls stop payload (L19)", () => {
 
     expect(tradingApi.stopBot).not.toHaveBeenCalledWith("strategy-1");
     expect(tradingApi.emergencyStop).not.toHaveBeenCalledWith("strategy-1");
+  });
+
+  // X4: start/stop/resume sign a wallet proof and thread it into the API call;
+  // emergency-stop never does.
+  describe("X4 wallet-proof threading", () => {
+    const proof = { nonce: "n1", address: "0xabc", signature: "0xsig" };
+
+    beforeEach(() => {
+      mockGetWalletProof.mockReset();
+      mockGetWalletProof.mockResolvedValue(undefined);
+    });
+
+    it("threads the signed proof into stop", async () => {
+      vi.mocked(tradingApi.stopBot).mockResolvedValue({ success: true });
+      mockGetWalletProof.mockResolvedValue(proof);
+
+      renderWithClient(
+        <BotControls
+          strategyId="strategy-1"
+          bot={botRow}
+          onStatusChange={() => {}}
+        />
+      );
+
+      fireEvent.click(await screen.findByText("Stop Bot"));
+      await waitFor(() =>
+        expect(tradingApi.stopBot).toHaveBeenCalledWith("bot-1", proof)
+      );
+      expect(mockGetWalletProof).toHaveBeenCalledWith("bot:stop");
+    });
+
+    it("threads the signed proof into resume", async () => {
+      vi.mocked(tradingApi.resumeBot).mockResolvedValue({ success: true });
+      mockGetWalletProof.mockResolvedValue(proof);
+
+      renderWithClient(
+        <BotControls
+          strategyId="strategy-1"
+          bot={botRow}
+          onStatusChange={() => {}}
+        />
+      );
+
+      fireEvent.click(await screen.findByText("Resume Bot"));
+      await waitFor(() =>
+        expect(tradingApi.resumeBot).toHaveBeenCalledWith("bot-1", proof)
+      );
+      expect(mockGetWalletProof).toHaveBeenCalledWith("bot:resume");
+    });
+
+    it("does not call stop when the proof is refused (friendly throw)", async () => {
+      mockGetWalletProof.mockRejectedValue(
+        new Error("Connect the wallet linked to your account.")
+      );
+
+      renderWithClient(
+        <BotControls
+          strategyId="strategy-1"
+          bot={botRow}
+          onStatusChange={() => {}}
+        />
+      );
+
+      fireEvent.click(await screen.findByText("Stop Bot"));
+      await waitFor(() => expect(tradingApi.stopBot).not.toHaveBeenCalled());
+    });
+
+    it("emergency-stop never requests or sends a proof", async () => {
+      vi.mocked(tradingApi.emergencyStop).mockResolvedValue({ success: true });
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      vi.mocked(useBotState).mockReturnValue(botState("RUNNING"));
+
+      renderWithClient(
+        <BotControls
+          strategyId="strategy-1"
+          bot={botRow}
+          onStatusChange={() => {}}
+        />
+      );
+
+      fireEvent.click(await screen.findByText("Emergency Stop"));
+      await waitFor(() =>
+        expect(tradingApi.emergencyStop).toHaveBeenCalledWith("bot-1")
+      );
+      expect(mockGetWalletProof).not.toHaveBeenCalled();
+    });
   });
 });

@@ -144,4 +144,25 @@ describe("walletApi", () => {
       expect(result).toEqual(mockResponse);
     });
   });
+
+  describe("createChallenge (X4)", () => {
+    it("should POST the action to the challenge endpoint", async () => {
+      const mockResponse = {
+        success: true,
+        data: {
+          nonce: "nonce-1",
+          message: "Trade Bot wallet proof …",
+          expiresAt: "2026-01-01T00:05:00.000Z",
+        },
+      };
+      mockPost.mockResolvedValue({ data: mockResponse });
+
+      const result = await walletApi.createChallenge("bot:start");
+
+      expect(mockPost).toHaveBeenCalledWith("/api/wallets/challenge", {
+        action: "bot:start",
+      });
+      expect(result).toEqual(mockResponse);
+    });
+  });
 });

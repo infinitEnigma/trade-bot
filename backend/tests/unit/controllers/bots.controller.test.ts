@@ -75,6 +75,9 @@ jest.mock("../../../src/core/bots/bot-lifecycle.service", () => ({
     createAndStart: jest.fn(),
     stop: jest.fn(),
     start: jest.fn(),
+    emergencyStop: jest.fn(),
+    attachStrategyRun: jest.fn(),
+    detachStrategyRun: jest.fn(),
     handleEngineEvent: jest.fn(),
     sweepTimedOutCommands: jest.fn(),
     setSocketServer: jest.fn(),
@@ -191,6 +194,21 @@ jest.mock("../../../src/infrastructure/cache/redis.service", () => ({
     isHealthy: jest.fn().mockResolvedValue(true),
   },
 }));
+
+// X4: the proof service the requireWalletProof middleware calls. `enabled`
+// toggles the gate (mirrors WALLET_PROOF_REQUIRED); `consumeProof` resolves a
+// verified address by default and rejects with a WalletProofError otherwise.
+jest.mock("../../../src/core/wallet/wallet-proof.service", () => {
+  const actual = jest.requireActual(
+    "../../../src/core/wallet/wallet-proof.service"
+  );
+  return {
+    ...actual,
+    walletProofEnabled: jest.fn(() => false),
+    consumeProof: jest.fn(),
+    checkAccountWalletBinding: jest.fn().mockResolvedValue({ ok: true }),
+  };
+});
 
 jest.mock("../../../src/core/notifications/error-notification.service", () => ({
   errorNotificationService: {
@@ -471,6 +489,180 @@ describe("Bots Controller", () => {
         expect(response.status).toBe(400);
         expect(response.body.success).toBe(false);
         expect(response.body.error).toContain("not listed on lighter");
+      });
+    });
+
+    // X4 (D1/D3): the wallet-owner proof gate on start/stop/resume/runs,
+    // with emergency-stop exempt. The proof service is mocked; `enabled`
+    // mirrors WALLET_PROOF_REQUIRED.
+    describe("X4 — wallet-proof gate (start/stop/resume/runs)", () => {
+      const proof = {
+        nonce: "11111111-1111-4111-8111-111111111111",
+        address: "0x1234567890abcdef1234567890abcdef12345678",
+        signature: "0xsignature",
+      };
+      const testBotId = "c1d2e3f4-9f41-4b1d-8b62-b3b42b7a5f8d";
+      const accountId = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
+      const strategyId = "d290f1ee-6c54-4b01-90e6-d701748f0851";
+
+      const proofService = () =>
+        require("../../../src/core/wallet/wallet-proof.service");
+      const lifecycle = () =>
+        require("../../../src/core/bots/bot-lifecycle.service").botLifecycleService;
+      const query = () => require("../../../src/database/pool").query;
+      const accountRepo = () =>
+        require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter")
+          .exchangeAccountRepositoryAdapter;
+
+      beforeEach(() => {
+        proofService().walletProofEnabled.mockReturnValue(true);
+        proofService().consumeProof.mockResolvedValue({ address: proof.address });
+        proofService().checkAccountWalletBinding.mockResolvedValue({ ok: true });
+        query().mockResolvedValue({ rows: [{ exchange_account_id: accountId }] });
+        accountRepo().getAccountWithSecret.mockResolvedValue({
+          id: accountId,
+          userId: "user-123",
+          exchange: "kodiak",
+          environment: "testnet",
+          accountRef: "kodiak-account-id",
+          status: "ACTIVE",
+          verifiedAt: null,
+          lastVerifiedAt: null,
+          meta: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        lifecycle().createAndStart.mockResolvedValue({
+          botId: testBotId,
+          desiredState: "RUNNING",
+          actualState: "STARTING",
+          correlationId: "cid",
+        });
+        lifecycle().stop.mockResolvedValue({
+          botId: testBotId,
+          desiredState: "STOPPED",
+          actualState: "STOPPING",
+          correlationId: "cid",
+        });
+        lifecycle().start.mockResolvedValue({
+          botId: testBotId,
+          desiredState: "RUNNING",
+          actualState: "STARTING",
+          correlationId: "cid",
+        });
+        lifecycle().attachStrategyRun.mockResolvedValue("run-1");
+        lifecycle().emergencyStop.mockResolvedValue({
+          botId: testBotId,
+          status: "FORCE_STOPPING",
+          desiredState: "STOPPED",
+          actualState: "STOPPING",
+          action: "FULL_SHUTDOWN",
+          correlationId: "cid",
+        });
+      });
+
+      afterEach(() => {
+        proofService().walletProofEnabled.mockReturnValue(false);
+      });
+
+      it("403s /start with no proof", async () => {
+        const response = await request(app)
+          .post("/api/bot/management/start")
+          .send({ strategyId, exchangeAccountId: accountId, notionalAmount: 1000.5 });
+        expect(response.status).toBe(403);
+        expect(response.body.code).toBe("PROOF_REQUIRED");
+        expect(lifecycle().createAndStart).not.toHaveBeenCalled();
+      });
+
+      it("403s /stop with no proof", async () => {
+        const response = await request(app)
+          .post("/api/bot/management/stop")
+          .send({ botId: testBotId });
+        expect(response.status).toBe(403);
+        expect(response.body.code).toBe("PROOF_REQUIRED");
+        expect(lifecycle().stop).not.toHaveBeenCalled();
+      });
+
+      it("403s /resume with no proof", async () => {
+        const response = await request(app)
+          .post("/api/bot/management/resume")
+          .send({ botId: testBotId });
+        expect(response.status).toBe(403);
+        expect(response.body.code).toBe("PROOF_REQUIRED");
+        expect(lifecycle().start).not.toHaveBeenCalled();
+      });
+
+      it("403s /runs with no proof", async () => {
+        const response = await request(app)
+          .post("/api/bot/management/runs")
+          .send({ botId: testBotId, strategyId, notionalAmount: 1000.5 });
+        expect(response.status).toBe(403);
+        expect(response.body.code).toBe("PROOF_REQUIRED");
+        expect(lifecycle().attachStrategyRun).not.toHaveBeenCalled();
+      });
+
+      it("passes /start with a valid proof (202) and consumes the proof", async () => {
+        const response = await request(app)
+          .post("/api/bot/management/start")
+          .send({
+            strategyId,
+            exchangeAccountId: accountId,
+            notionalAmount: 1000.5,
+            walletProof: proof,
+          });
+        expect(response.status).toBe(202);
+        expect(proofService().consumeProof).toHaveBeenCalledWith(
+          "user-123",
+          "bot:start",
+          proof
+        );
+      });
+
+      it("passes /stop and /resume with a valid proof", async () => {
+        const stop = await request(app)
+          .post("/api/bot/management/stop")
+          .send({ botId: testBotId, walletProof: proof });
+        expect(stop.status).toBe(202);
+
+        const resume = await request(app)
+          .post("/api/bot/management/resume")
+          .send({ botId: testBotId, walletProof: proof });
+        expect(resume.status).toBe(202);
+      });
+
+      it("403s a binding mismatch (fail-closed, D2)", async () => {
+        proofService().checkAccountWalletBinding.mockResolvedValue({
+          ok: false,
+          error: "wallet does not match bound account",
+        });
+        const response = await request(app)
+          .post("/api/bot/management/stop")
+          .send({ botId: testBotId, walletProof: proof });
+        expect(response.status).toBe(403);
+        expect(response.body.code).toBe("WALLET_BINDING_MISMATCH");
+        expect(lifecycle().stop).not.toHaveBeenCalled();
+      });
+
+      it("passes start/stop with no proof when the flag is OFF (D3 harness)", async () => {
+        proofService().walletProofEnabled.mockReturnValue(false);
+        const start = await request(app)
+          .post("/api/bot/management/start")
+          .send({ strategyId, exchangeAccountId: accountId, notionalAmount: 1000.5 });
+        expect(start.status).toBe(202);
+
+        const stop = await request(app)
+          .post("/api/bot/management/stop")
+          .send({ botId: testBotId });
+        expect(stop.status).toBe(202);
+      });
+
+      it("emergency-stop needs NO proof even when the gate is ON", async () => {
+        proofService().consumeProof.mockClear();
+        const response = await request(app)
+          .post("/api/bot/management/emergency-stop")
+          .send({ botId: testBotId });
+        expect(response.status).toBe(202);
+        expect(proofService().consumeProof).not.toHaveBeenCalled();
       });
     });
 

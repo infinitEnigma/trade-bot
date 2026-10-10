@@ -223,6 +223,21 @@ export const commonSchemas = {
       "string.uri": "Must be a valid HTTP or HTTPS URL",
       "string.uriCustomScheme": "Must be a valid HTTP or HTTPS URL",
     }),
+
+  // X4: wallet-owner proof payload (optional at the schema level —
+  // requireWalletProof 403s when the gate is on and the field is absent).
+  walletProof: Joi.object({
+    nonce: Joi.string().uuid({ version: "uuidv4" }).required().messages({
+      "string.uuid": "Invalid wallet challenge nonce",
+      "any.required": "Wallet challenge nonce is required",
+    }),
+    address: Joi.string().trim().required().messages({
+      "any.required": "Wallet address is required",
+    }),
+    signature: Joi.string().trim().required().messages({
+      "any.required": "Wallet signature is required",
+    }),
+  }).optional(),
 };
 
 /**
@@ -277,6 +292,10 @@ export const validators = {
         "number.positive": "Notional amount must be positive",
         "any.required": "Notional amount is required",
       }),
+      // X4: wallet-owner proof (optional here — the gate lives in
+      // requireWalletProof, which 403s when WALLET_PROOF_REQUIRED is on and
+      // the field is absent; the schema only checks shape when present).
+      walletProof: commonSchemas.walletProof,
     }),
     { errorPrefix: "Bot start validation failed" }
   ),
@@ -286,6 +305,7 @@ export const validators = {
       botId: commonSchemas.uuid.messages({
         "any.required": "Bot ID is required",
       }),
+      walletProof: commonSchemas.walletProof,
     }),
     { errorPrefix: "Bot stop validation failed" }
   ),
@@ -298,6 +318,7 @@ export const validators = {
       botId: commonSchemas.uuid.messages({
         "any.required": "Bot ID is required",
       }),
+      walletProof: commonSchemas.walletProof,
     }),
     { errorPrefix: "Bot resume validation failed" }
   ),
@@ -316,6 +337,7 @@ export const validators = {
         "number.positive": "Notional amount must be positive",
         "any.required": "Notional amount is required",
       }),
+      walletProof: commonSchemas.walletProof,
     }),
     { errorPrefix: "Run attach validation failed" }
   ),

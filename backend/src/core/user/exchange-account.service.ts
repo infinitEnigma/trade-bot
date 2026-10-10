@@ -16,6 +16,7 @@ import type {
   ExchangeAccountStatus,
 } from "@trade-bot/shared";
 import { getCredentialAdapter } from "../../infrastructure/external/exchange-accounts/credential-adapters";
+import { shortAddress } from "../wallet/wallet-proof.service";
 
 export interface ExchangeAccountServiceDeps {
   exchangeAccountRepository: {
@@ -49,6 +50,17 @@ export interface ExchangeAccountServiceDeps {
       encryptionVersion: number | null
     ): Promise<boolean>;
     deleteAccount(userId: string, accountId: string): Promise<boolean>;
+    /**
+     * X4: persist the venue-verified binding into `meta.walletBinding`.
+     * Optional so pre-X4 harnesses keep working; production wiring provides
+     * it. A missing method means the binding is not stored — the start gate
+     * then fails closed ("re-verify in Settings").
+     */
+    setWalletBinding?(
+      userId: string,
+      accountId: string,
+      binding: { address: string; verifiedAt: string; source: "venue" }
+    ): Promise<boolean>;
   };
   encryption: {
     encryptWithVersion(plaintext: string): Promise<string>;
@@ -60,6 +72,22 @@ export interface ExchangeAccountServiceDeps {
   verifyConnectivity: (
     request: ConnectExchangeAccountRequest
   ) => Promise<{ verified: boolean; error?: string }>;
+  /**
+   * X4: venue-asserted ownership. `venueOwner` resolves the owner wallet from
+   * the venue's public account endpoint (`venue-owner.ts`); `wallets` lists
+   * the user's linked wallets for the membership check. Both optional so
+   * pre-X4 harnesses keep working — when either is absent the binding step is
+   * skipped and the account lands without `meta.walletBinding` (the start
+   * gate then fails closed: "re-verify in Settings").
+   */
+  venueOwner?: (
+    request: ConnectExchangeAccountRequest
+  ) => Promise<string | null>;
+  wallets?: {
+    listWallets(
+      userId: string
+    ): Promise<Array<{ chain: string; address: string }>>;
+  };
   userLevel: { recompute(userId: string): Promise<unknown> };
   /**
    * Profile-cache invalidation hook (Fix B). The user profile
@@ -229,6 +257,25 @@ export class ExchangeAccountService {
       durationMs: verificationMs,
     });
 
+    // X4: venue-verified wallet binding — the venue's asserted owner must be
+    // one of the user's linked wallets, else the connect is rejected.
+    const bindResult = await this.bindVenueOwner(userId, account.id, request);
+    if (!bindResult.ok) {
+      await this.deps.exchangeAccountRepository.setStatus(
+        userId,
+        account.id,
+        "INVALID",
+        false
+      );
+      await this.deps.userLevel.recompute(userId);
+      await this.notifyLevelChanged(userId);
+      return {
+        success: false,
+        message: bindResult.message,
+        error: bindResult.error,
+      };
+    }
+
     await this.deps.exchangeAccountRepository.setStatus(
       userId,
       account.id,
@@ -341,6 +388,26 @@ export class ExchangeAccountService {
       stored.credentialsEncrypted,
       request
     );
+
+    // X4: (re-)resolve the venue-verified binding on every verify — this is
+    // the recovery path for pre-X4 rows ("re-verify in Settings to bind").
+    // A failure here fails the verify but never downgrades an already-ACTIVE
+    // account: the credentials were proven, only the binding could not be.
+    const bindResult = await this.bindVenueOwner(userId, accountId, request);
+    if (!bindResult.ok) {
+      this.deps.logger?.warn("Exchange account wallet binding rejected", {
+        userId,
+        accountId,
+        exchange: request.exchange,
+        reason: bindResult.error,
+      });
+      return {
+        success: false,
+        message: bindResult.message,
+        error: bindResult.error,
+      };
+    }
+
     await this.deps.exchangeAccountRepository.setStatus(
       userId,
       accountId,
@@ -625,5 +692,76 @@ export class ExchangeAccountService {
         accountId,
       });
     }
+  }
+
+  /**
+   * X4: resolve the venue-asserted owner, require it to be one of the user's
+   * linked wallets, and persist `meta.walletBinding`. Returns `ok:false` with
+   * a user-facing message on any failure — including an unresolved owner
+   * (fail-closed: no owner, no binding, no connect).
+   *
+   * Without the optional deps (pre-X4 harnesses) the binding is skipped; the
+   * account then has no `meta.walletBinding` and the start gate fails closed
+   * with "re-verify in Settings".
+   */
+  private async bindVenueOwner(
+    userId: string,
+    accountId: string,
+    request: ConnectExchangeAccountRequest
+  ): Promise<{ ok: true } | { ok: false; message: string; error: string }> {
+    if (!this.deps.venueOwner || !this.deps.wallets) return { ok: true };
+
+    const owner = await this.deps.venueOwner(request);
+    if (!owner) {
+      this.deps.logger?.warn("Venue owner unresolved", {
+        userId,
+        accountId,
+        exchange: request.exchange,
+        environment: request.environment,
+      });
+      return {
+        ok: false,
+        message: `Could not determine which wallet owns this ${request.exchange} account (${request.environment}). The venue did not return an owner — try again later.`,
+        error: "VENUE_OWNER_UNRESOLVED",
+      };
+    }
+
+    const linked = await this.deps.wallets.listWallets(userId);
+    const isLinked = linked.some(
+      wallet => wallet.chain === "evm" && wallet.address.toLowerCase() === owner
+    );
+    if (!isLinked) {
+      return {
+        ok: false,
+        message: `This account is owned by ${shortAddress(owner)} — link that wallet first, then reconnect the account.`,
+        error: "VENUE_OWNER_NOT_LINKED",
+      };
+    }
+
+    if (this.deps.exchangeAccountRepository.setWalletBinding) {
+      const stored = await this.deps.exchangeAccountRepository.setWalletBinding(
+        userId,
+        accountId,
+        {
+          address: owner,
+          verifiedAt: new Date().toISOString(),
+          source: "venue",
+        }
+      );
+      if (!stored) {
+        this.deps.logger?.warn("Wallet binding not stored", {
+          userId,
+          accountId,
+        });
+      }
+    }
+
+    this.deps.logger?.info("Venue wallet binding stored", {
+      userId,
+      accountId,
+      exchange: request.exchange,
+      owner,
+    });
+    return { ok: true };
   }
 }

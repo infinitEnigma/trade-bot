@@ -262,6 +262,8 @@ describe("Service Factory Interface", () => {
           "exchangeAccountRepository",
           "encryption",
           "verifyConnectivity",
+          "venueOwner",
+          "wallets",
           "userLevel",
           "auditLogRepository",
           "onLevelChanged",

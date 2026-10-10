@@ -29,6 +29,7 @@ import { lighterVerifierFromEnv } from "../infrastructure/external/exchange-acco
 import { UserLevelService } from "./auth/user-level.service";
 import { walletRepositoryAdapter } from "../infrastructure/adapters/repositories/wallet-repository.adapter";
 import { exchangeAccountRepositoryAdapter } from "../infrastructure/adapters/repositories/exchange-account-repository.adapter";
+import { resolveVenueOwner } from "../infrastructure/external/exchange-accounts/venue-owner";
 import { query as poolQuery } from "../database/pool";
 import { encryptionService } from "../infrastructure/security/encryption.service";
 import { kodiakIntegrationService } from "../infrastructure/external/kodiak-integration.service";
@@ -381,6 +382,17 @@ export class ServiceFactory implements IServiceFactory {
           kodiakIntegrationService,
           lighterVerifier: lighterVerifierFromEnv(),
         }),
+        // X4: venue-verified wallet binding. Owner comes from the venue's
+        // public account endpoint; membership is checked against linked wallets.
+        venueOwner: async request =>
+          resolveVenueOwner({
+            exchange: request.exchange,
+            environment: request.environment,
+            ...(request.exchange === "kodiak"
+              ? { accountId: request.accountId }
+              : { accountIndex: request.accountIndex }),
+          }),
+        wallets: walletRepositoryAdapter,
         userLevel: this.createUserLevelService(),
         auditLogRepository: diContainer.auditLogRepository,
         // Fix B: clear the cached profile (user:profile:{userId}) on every

@@ -18,6 +18,12 @@ import { serviceProvider } from "../../../core/service-provider";
 import { createErrorResponse } from "@trade-bot/shared";
 import { getCorrelationId } from "../../../shared/utils/context";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
+import {
+  WalletProofError,
+  consumeProof,
+  walletProofEnabled,
+} from "../../../core/wallet/wallet-proof.service";
+import { commonSchemas } from "../../middleware/validation.middleware";
 
 const router = Router();
 
@@ -54,6 +60,11 @@ const connectSchema = Joi.object({
     then: Joi.required(),
     otherwise: Joi.forbidden(),
   }),
+  // X4: optional bind proof (action `account:bind`). The authoritative gate
+  // is the service's venue-owner ∈ linked-wallets check; this signature is an
+  // extra signal the frontend sends when a wallet is connected, and is
+  // verified only when present.
+  walletProof: commonSchemas.walletProof,
 });
 
 // GET /api/accounts
@@ -97,6 +108,25 @@ router.post(
           .json({ success: false, error: error.details[0].message });
       }
       const userId = req.user.userId as string;
+
+      // X4: verify the optional bind proof (action `account:bind`) when the
+      // client sent one. Absent proof is allowed here — the service's
+      // venue-owner ∈ linked-wallets check is the authoritative gate.
+      if (walletProofEnabled() && value.walletProof) {
+        try {
+          await consumeProof(userId, "account:bind", value.walletProof);
+        } catch (err) {
+          if (err instanceof WalletProofError) {
+            return res.status(err.statusCode).json({
+              success: false,
+              code: err.code,
+              error: err.message,
+            });
+          }
+          throw err;
+        }
+      }
+
       const result = await serviceProvider
         .getExchangeAccountService()
         .connectAccount(userId, value);

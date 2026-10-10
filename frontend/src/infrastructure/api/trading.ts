@@ -3,6 +3,7 @@
 import { httpClient } from "./client";
 import { globalRequestManager } from "../request-manager";
 import type { EmergencyStopAction } from "@trade-bot/shared";
+import type { WalletProofPayload } from "./wallet";
 
 /**
  * Trading API endpoints
@@ -93,11 +94,15 @@ export const tradingApi = {
    * Start (or restart) a bot on an explicit venue account (C3a).
    * The account and size are required: with many accounts per user the
    * backend refuses to guess which one trades.
+   *
+   * X4: `walletProof` is a signed single-use challenge (see `useWalletProof`);
+   * required by the backend when WALLET_PROOF_REQUIRED is on.
    */
   async startBot(
     strategyId: string,
     exchangeAccountId: string,
-    notionalAmount: number
+    notionalAmount: number,
+    walletProof?: WalletProofPayload
   ) {
     const response = await httpClient
       .getClient()
@@ -105,14 +110,18 @@ export const tradingApi = {
         strategyId,
         exchangeAccountId,
         notionalAmount,
+        ...(walletProof ? { walletProof } : {}),
       });
     return response.data;
   },
 
-  async stopBot(botId: string) {
+  async stopBot(botId: string, walletProof?: WalletProofPayload) {
     const response = await httpClient
       .getClient()
-      .post("/api/bot/management/stop", { botId });
+      .post("/api/bot/management/stop", {
+        botId,
+        ...(walletProof ? { walletProof } : {}),
+      });
     return response.data;
   },
 
@@ -124,10 +133,13 @@ export const tradingApi = {
    * create a SECOND live bot on the same venue account. Resume re-drives the
    * existing botId so the engine rehydrates from its own snapshot.
    */
-  async resumeBot(botId: string) {
+  async resumeBot(botId: string, walletProof?: WalletProofPayload) {
     const response = await httpClient
       .getClient()
-      .post("/api/bot/management/resume", { botId });
+      .post("/api/bot/management/resume", {
+        botId,
+        ...(walletProof ? { walletProof } : {}),
+      });
     return response.data;
   },
 

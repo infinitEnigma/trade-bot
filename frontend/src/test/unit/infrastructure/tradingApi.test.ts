@@ -213,6 +213,33 @@ describe("tradingApi", () => {
         });
         expect(result).toEqual(mockResponse);
       });
+
+      it("sends the walletProof payload when provided (X4)", async () => {
+        const walletProof = {
+          nonce: "n1",
+          address: "0xabc",
+          signature: "0xsig",
+        };
+        mockPost.mockResolvedValue({ data: { success: true } });
+
+        await tradingApi.startBot("1", "acct", 1000, walletProof);
+
+        expect(mockPost).toHaveBeenCalledWith("/api/bot/management/start", {
+          strategyId: "1",
+          exchangeAccountId: "acct",
+          notionalAmount: 1000,
+          walletProof,
+        });
+      });
+
+      it("omits walletProof from the body when none is given", async () => {
+        mockPost.mockResolvedValue({ data: { success: true } });
+
+        await tradingApi.startBot("1", "acct", 1000);
+
+        const body = mockPost.mock.calls[0][1];
+        expect(body).not.toHaveProperty("walletProof");
+      });
     });
 
     describe("stopBot", () => {
@@ -232,6 +259,22 @@ describe("tradingApi", () => {
           botId,
         });
         expect(result).toEqual(mockResponse);
+      });
+
+      it("sends the walletProof payload when provided (X4)", async () => {
+        const walletProof = {
+          nonce: "n2",
+          address: "0xabc",
+          signature: "0xsig",
+        };
+        mockPost.mockResolvedValue({ data: { success: true } });
+
+        await tradingApi.stopBot("bot-1", walletProof);
+
+        expect(mockPost).toHaveBeenCalledWith("/api/bot/management/stop", {
+          botId: "bot-1",
+          walletProof,
+        });
       });
     });
 
@@ -265,6 +308,22 @@ describe("tradingApi", () => {
           "/api/bot/management/start",
           expect.anything()
         );
+      });
+
+      it("sends the walletProof payload when provided (X4)", async () => {
+        const walletProof = {
+          nonce: "n3",
+          address: "0xabc",
+          signature: "0xsig",
+        };
+        mockPost.mockResolvedValue({ data: { success: true } });
+
+        await tradingApi.resumeBot("bot-1", walletProof);
+
+        expect(mockPost).toHaveBeenCalledWith("/api/bot/management/resume", {
+          botId: "bot-1",
+          walletProof,
+        });
       });
     });
 

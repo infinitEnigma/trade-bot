@@ -37,6 +37,7 @@ import {
 } from "../../../../infrastructure/api/accounts";
 import { useAuth } from "../../../auth";
 import { OperationToasts } from "../../../../shared/utils/toast";
+import { useWalletProof } from "../../../../shared/hooks/useWalletProof";
 import {
   useBotState,
   BOT_INSTANCES_QUERY_KEY,
@@ -307,6 +308,10 @@ export const BotControls: React.FC<BotControlsProps> = ({
     bot?.id ?? strategyId
   );
 
+  // X4: wallet-owner proof for start/stop/resume (emergency-stop stays
+  // ungated — the panic button never requires a signature).
+  const { getWalletProof } = useWalletProof();
+
   // C3a: a bot trades on one explicit venue account — only verified accounts
   // can back it, and the picker never offers anything else.
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -383,9 +388,18 @@ export const BotControls: React.FC<BotControlsProps> = ({
   };
 
   // Start bot mutation — bound to the picked account and size (C3a)
+  // X4: a single-use wallet proof is signed first (no-op when the flag is
+  // off); its friendly throw surfaces through the existing onError toast.
   const startMutation = useMutation({
-    mutationFn: () =>
-      tradingApi.startBot(strategyId, effectiveAccountId, parsedAmount),
+    mutationFn: async () => {
+      const walletProof = await getWalletProof("bot:start");
+      return tradingApi.startBot(
+        strategyId,
+        effectiveAccountId,
+        parsedAmount,
+        walletProof
+      );
+    },
     onSuccess: () => {
       OperationToasts.botStarted("Strategy");
       invalidateCache();
@@ -406,7 +420,11 @@ export const BotControls: React.FC<BotControlsProps> = ({
   // it must never be used to recover a bot that already exists — that is how a
   // crashed bot used to gain a SECOND live sibling on the same venue account.
   const resumeMutation = useMutation({
-    mutationFn: () => tradingApi.resumeBot(bot!.id),
+    mutationFn: async () => {
+      // X4: same proof + binding gate as start, scoped to the resumed bot.
+      const walletProof = await getWalletProof("bot:resume");
+      return tradingApi.resumeBot(bot!.id, walletProof);
+    },
     onSuccess: () => {
       OperationToasts.botStarted("Strategy");
       invalidateCache();
@@ -425,7 +443,11 @@ export const BotControls: React.FC<BotControlsProps> = ({
 
   // Stop bot mutation
   const stopMutation = useMutation({
-    mutationFn: () => tradingApi.stopBot(bot!.id),
+    mutationFn: async () => {
+      // X4: stop is gated too (D1) — sign the proof before issuing the stop.
+      const walletProof = await getWalletProof("bot:stop");
+      return tradingApi.stopBot(bot!.id, walletProof);
+    },
     onSuccess: () => {
       OperationToasts.botStopped("Strategy");
       invalidateCache();
@@ -547,6 +569,10 @@ export const BotControls: React.FC<BotControlsProps> = ({
             ? `Trades ${parsedAmount} USDC on the selected account`
             : "Select an account and size to begin"}
         </div>
+        {/* X4: wallet-owner proof gate (D1). */}
+        <div className="text-xs text-textMuted text-center">
+          Requires a wallet signature.
+        </div>
       </div>
     );
   }
@@ -589,6 +615,11 @@ export const BotControls: React.FC<BotControlsProps> = ({
             Trading Active • {bot.total_trades} trades • $
             {Number(bot.total_pnl || 0).toFixed(2)} P&L
           </span>
+        </div>
+        {/* X4: wallet-owner proof gate (D1). Emergency stop stays exempt. */}
+        <div className="text-xs text-textMuted text-center">
+          Start, stop and resume require a wallet signature. Emergency stop does
+          not.
         </div>
       </div>
     );
@@ -659,6 +690,10 @@ export const BotControls: React.FC<BotControlsProps> = ({
           <CheckCircle className="w-3 h-3 inline mr-1" />
           Bot ready to trade • Last session: {bot.total_trades} trades
         </div>
+        {/* X4: wallet-owner proof gate (D1). */}
+        <div className="text-xs text-textMuted text-center">
+          Requires a wallet signature.
+        </div>
       </div>
     );
   }
@@ -705,6 +740,10 @@ export const BotControls: React.FC<BotControlsProps> = ({
               ? "Connection lost • Resume restarts this bot without duplicating it"
               : "Bot in error state • Check logs for details"}
         </span>
+      </div>
+      {/* X4: stop and resume are gated (D1). */}
+      <div className="text-xs text-textMuted text-center">
+        Requires a wallet signature.
       </div>
     </div>
   );

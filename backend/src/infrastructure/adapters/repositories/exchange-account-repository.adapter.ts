@@ -198,6 +198,32 @@ export class ExchangeAccountRepositoryAdapter implements IExchangeAccountReposit
     return (result.rowCount ?? 0) > 0;
   }
 
+  /**
+   * X4: persist the venue-verified wallet binding into `meta.walletBinding`.
+   * Shallow-merges into the existing meta so concurrent meta writers (e.g.
+   * backfill flags) survive. Returns false when the row is not owned.
+   */
+  async setWalletBinding(
+    userId: string,
+    accountId: string,
+    binding: {
+      address: string;
+      verifiedAt: string;
+      source: "venue";
+    }
+  ): Promise<boolean> {
+    const result = await query(
+      `UPDATE exchange_accounts
+       SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
+             'walletBinding', $3::jsonb
+           ),
+           updated_at = now()
+       WHERE id = $1 AND user_id = $2`,
+      [accountId, userId, JSON.stringify(binding)]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   async rewriteEnvelope(
     userId: string,
     accountId: string,

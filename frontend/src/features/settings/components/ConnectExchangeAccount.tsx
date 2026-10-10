@@ -14,6 +14,7 @@ import {
   isLighterPrivateKeyShape,
 } from "../../../infrastructure/api/accounts";
 import { useAuth } from "../../auth/hooks";
+import { useWalletProof } from "../../../shared/hooks/useWalletProof";
 import { SmartToast } from "../../../shared/utils/toast";
 
 interface FormState {
@@ -75,6 +76,8 @@ export const ConnectExchangeAccount: React.FC<ConnectExchangeAccountProps> = ({
 }) => {
   const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
+  // X4: optional wallet-owner proof for the account bind (action `account:bind`).
+  const { getWalletProof } = useWalletProof();
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [showSecrets, setShowSecrets] = useState(false);
   const [formError, setFormError] = useState("");
@@ -139,25 +142,35 @@ export const ConnectExchangeAccount: React.FC<ConnectExchangeAccountProps> = ({
     return "";
   };
 
-  const buildRequest = (): ConnectAccountRequest =>
-    isKodiak
+  const buildRequest = (
+    walletProof?: ConnectAccountRequest["walletProof"]
+  ): ConnectAccountRequest => {
+    const base = isKodiak
       ? {
-          exchange: "kodiak",
+          exchange: "kodiak" as const,
           environment: form.environment,
           accountId: form.accountId.trim(),
           apiKey: form.apiKey.trim(),
           secretKey: form.secretKey.trim(),
         }
       : {
-          exchange: "lighter",
+          exchange: "lighter" as const,
           environment: form.environment,
           accountIndex: Number(form.accountIndex),
           apiKeyIndex: Number(form.apiKeyIndex),
           privateKey: form.privateKey.trim(),
         };
+    return walletProof ? { ...base, walletProof } : base;
+  };
 
   const connectMutation = useMutation({
-    mutationFn: () => accountsApi.connectAccount(buildRequest()),
+    mutationFn: async () => {
+      // X4: sign the optional bind proof (no-op when the flag is off or the
+      // backend reports proofRequired:false). Its friendly throw surfaces via
+      // onError below.
+      const walletProof = await getWalletProof("account:bind");
+      return accountsApi.connectAccount(buildRequest(walletProof));
+    },
     onSuccess: response => {
       if (!response.success) {
         const message =
@@ -179,7 +192,21 @@ export const ConnectExchangeAccount: React.FC<ConnectExchangeAccountProps> = ({
       refreshUser();
     },
     onError: error => {
-      const message = apiMessage(error);
+      const candidate = error as {
+        response?: {
+          data?: { error?: string; message?: string; code?: string };
+        };
+        message?: string;
+      };
+      let message = apiMessage(error);
+      // X4: the connect was rejected because the venue-asserted owner is not
+      // one of the user's linked wallets — point them at linking it first.
+      if (
+        candidate?.response?.data?.code === "VENUE_OWNER_NOT_LINKED" ||
+        /owned by/i.test(message)
+      ) {
+        message = `${message} Link that wallet in Settings → Wallets, then reconnect.`;
+      }
       setFormError(message);
       SmartToast.error(message);
     },

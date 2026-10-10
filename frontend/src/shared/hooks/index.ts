@@ -6,3 +6,5 @@ export { usePageBackground } from "./usePageBackground";
 export { useChartData } from "./useChartData";
 export { useBalance } from "./useBalance";
 export { usePortfolioSummary } from "./usePortfolioSummary";
+export { useWalletProof } from "./useWalletProof";
+export type { WalletProofAction } from "./useWalletProof";

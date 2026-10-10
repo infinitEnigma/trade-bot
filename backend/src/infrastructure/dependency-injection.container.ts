@@ -59,6 +59,7 @@ import { UserLevelService } from "../core/auth/user-level.service";
 import { ExchangeAccountService } from "../core/user/exchange-account.service";
 import { kodiakIntegrationService } from "./external/kodiak-integration.service";
 import { lighterVerifierFromEnv } from "./external/exchange-accounts/lighter-verifier";
+import { resolveVenueOwner } from "./external/exchange-accounts/venue-owner";
 import { encryptionService } from "./security/encryption.service";
 
 /**
@@ -409,6 +410,16 @@ export class DependencyInjectionContainer {
         kodiakIntegrationService,
         lighterVerifier: lighterVerifierFromEnv(),
       }),
+      // X4: venue-verified wallet binding (same wiring as the service factory).
+      venueOwner: async request =>
+        resolveVenueOwner({
+          exchange: request.exchange,
+          environment: request.environment,
+          ...(request.exchange === "kodiak"
+            ? { accountId: request.accountId }
+            : { accountIndex: request.accountIndex }),
+        }),
+      wallets: this.walletRepository,
       userLevel,
       auditLogRepository: this.auditLogRepository,
       logger: this.loggerService,

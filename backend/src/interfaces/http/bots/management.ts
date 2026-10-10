@@ -86,6 +86,10 @@ import {
 } from "../../../shared/utils/context";
 import { validators } from "../../middleware/validation.middleware";
 import {
+  requireWalletProof,
+  botBoundAccountId,
+} from "../../middleware/wallet-proof.middleware";
+import {
   DEFAULT_EMERGENCY_STOP_ACTION,
   EMERGENCY_STOP_ACTIONS,
   EmergencyStopAction,
@@ -333,12 +337,20 @@ router.post(
       return res.status(403).json({
         success: false,
         error:
-          "Bot functions require VERIFIED user level. Please complete wallet verification.",
+          "Bot functions require VERIFIED user level. Please connect and verify an exchange account.",
       });
     }
     next();
   },
   validators.startBot,
+  // X4: wallet-owner proof + venue-verified binding. The account id comes
+  // from the (already Joi-validated) body; a missing one stays the
+  // handler's 400.
+  requireWalletProof("bot:start", {
+    resolveAccountId: (userId, req) =>
+      (req.body as { exchangeAccountId?: string } | undefined)
+        ?.exchangeAccountId,
+  }),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = getUserId(req);
@@ -477,12 +489,22 @@ router.post(
       return res.status(403).json({
         success: false,
         error:
-          "Bot functions require VERIFIED user level. Please complete wallet verification.",
+          "Bot functions require VERIFIED user level. Please connect and verify an exchange account.",
       });
     }
     next();
   },
   validators.stopBot,
+  // X4: wallet-owner proof + binding scoped to the bot's bound account.
+  // botBoundAccountId returns undefined only when the bot row is absent —
+  // the handler's 404 owns that case.
+  requireWalletProof("bot:stop", {
+    resolveAccountId: (userId, req) =>
+      botBoundAccountId(
+        userId,
+        (req.body as { botId?: string }).botId as string
+      ),
+  }),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = getUserId(req);
@@ -565,12 +587,20 @@ router.post(
       return res.status(403).json({
         success: false,
         error:
-          "Bot functions require VERIFIED user level. Please complete wallet verification.",
+          "Bot functions require VERIFIED user level. Please connect and verify an exchange account.",
       });
     }
     next();
   },
   validators.resumeBot,
+  // X4: same gate as stop — the resumed bot's binding must match the proof.
+  requireWalletProof("bot:resume", {
+    resolveAccountId: (userId, req) =>
+      botBoundAccountId(
+        userId,
+        (req.body as { botId?: string }).botId as string
+      ),
+  }),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = getUserId(req);
@@ -964,6 +994,15 @@ botSessionRunsRoutes.post(
   "/runs",
   authMiddleware,
   validators.attachRun,
+  // X4: attaching a run mutates exposure like a start — same proof + binding
+  // gate, scoped to the hosting bot's bound account.
+  requireWalletProof("runs:attach", {
+    resolveAccountId: (userId, req) =>
+      botBoundAccountId(
+        userId,
+        (req.body as { botId?: string }).botId as string
+      ),
+  }),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = getUserId(req);

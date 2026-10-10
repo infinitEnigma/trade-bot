@@ -19,6 +19,13 @@ import { serviceProvider } from "../../../core/service-provider";
 import { createErrorResponse } from "@trade-bot/shared";
 import { getCorrelationId } from "../../../shared/utils/context";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
+import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
+import {
+  WALLET_PROOF_ACTIONS,
+  WalletProofAction,
+  issueChallenge,
+  walletProofEnabled,
+} from "../../../core/wallet/wallet-proof.service";
 
 const router = Router();
 
@@ -29,6 +36,17 @@ const walletVerifySchema = Joi.object({
   label: Joi.string().max(64).optional(),
   signature: Joi.string().required(),
   message: Joi.string().required(),
+});
+
+// X4: which action the caller is requesting a proof challenge for.
+const walletChallengeSchema = Joi.object({
+  action: Joi.string()
+    .valid(...WALLET_PROOF_ACTIONS)
+    .required()
+    .messages({
+      "any.only": `Action must be one of: ${WALLET_PROOF_ACTIONS.join(", ")}`,
+      "any.required": "Action is required",
+    }),
 });
 
 // GET /api/wallets
@@ -43,7 +61,12 @@ router.get(
       const wallets = authService.getWallets
         ? await authService.getWallets(userId)
         : [];
-      res.json({ success: true, data: { wallets } });
+      // X4: additive flag so the frontend can skip the signing flow entirely
+      // when WALLET_PROOF_REQUIRED is off.
+      res.json({
+        success: true,
+        data: { wallets, proofRequired: walletProofEnabled() },
+      });
     } catch (error) {
       logger.error("List wallets error", error as Error, {
         ...createErrorResponse(
@@ -53,6 +76,42 @@ router.get(
         userId: req.user?.userId,
       });
       res.status(500).json({ success: false, error: "Failed to list wallets" });
+    }
+  }
+);
+
+// POST /api/wallets/challenge — issue a single-use proof challenge (X4).
+// The returned message is built server-side; the client signs it verbatim.
+router.post(
+  "/challenge",
+  authMiddleware,
+  RateLimiters.auth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      if (!req.user) throw new Error("User not authenticated");
+      const { error, value } = walletChallengeSchema.validate(req.body);
+      if (error) {
+        return res
+          .status(400)
+          .json({ success: false, error: error.details[0].message });
+      }
+      const userId = req.user.userId as string;
+      const challenge = await issueChallenge(
+        userId,
+        value.action as WalletProofAction
+      );
+      res.json({ success: true, data: challenge });
+    } catch (error) {
+      logger.error("Wallet challenge error", error as Error, {
+        ...createErrorResponse(
+          error instanceof Error ? error : new Error(String(error)),
+          getCorrelationId()
+        ),
+        userId: req.user?.userId,
+      });
+      res
+        .status(500)
+        .json({ success: false, error: "Failed to issue wallet challenge" });
     }
   }
 );

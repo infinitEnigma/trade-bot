@@ -41,6 +41,11 @@ if (process.env.NODE_ENV === "test" || process.env.JEST_WORKER_ID) {
       process.env.TEST_DB_TIMEOUT = "5000"; // Shorter timeouts for tests
       process.env.LOG_LEVEL = "error"; // Only show errors during tests
 
+      // X4 (D3): the wallet-proof gate's harness/e2e escape hatch. Default the
+      // whole suite to OFF so pre-X4 suites that drive /start|/stop|/resume
+      // without a proof stay green. X4 controller tests flip it ON per-case.
+      process.env.WALLET_PROOF_REQUIRED = "false";
+
       // Initialize database pool for tests with test-specific configuration
       initializePool();
     } catch (_error) {

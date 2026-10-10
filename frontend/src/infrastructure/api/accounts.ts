@@ -1,6 +1,7 @@
 /** @format */
 
 import { httpClient } from "./client";
+import type { WalletProofPayload } from "./wallet";
 
 /**
  * Exchange accounts API (C2) — generic venue/environment accounts.
@@ -27,7 +28,7 @@ export interface ExchangeAccountDto {
   updatedAt: string;
 }
 
-export type ConnectAccountRequest =
+export type ConnectAccountRequest = (
   | {
       exchange: "kodiak";
       environment: AccountEnvironment;
@@ -41,7 +42,15 @@ export type ConnectAccountRequest =
       accountIndex: number;
       apiKeyIndex: number;
       privateKey: string;
-    };
+    }
+) & {
+  /**
+   * X4: optional wallet-owner proof (action `account:bind`). The
+   * authoritative gate is the backend's venue-owner ∈ linked-wallets check;
+   * this signature is sent when a wallet is connected.
+   */
+  walletProof?: WalletProofPayload;
+};
 
 export interface AccountsListResponse {
   success: boolean;

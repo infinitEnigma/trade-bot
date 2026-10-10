@@ -19,12 +19,42 @@ export interface WalletDto {
   verifiedAt?: string | null;
 }
 
+/** X4: a signed wallet-proof payload sent with gated bot/account actions. */
+export interface WalletProofPayload {
+  nonce: string;
+  address: string;
+  signature: string;
+}
+
+/** X4: server-built challenge the client signs verbatim. */
+export interface WalletChallenge {
+  nonce: string;
+  message: string;
+  expiresAt: string;
+}
+
 export const walletApi = {
   async listWallets(): Promise<{
     success: boolean;
-    data?: { wallets: WalletDto[] };
+    data?: { wallets: WalletDto[]; proofRequired?: boolean };
   }> {
     const response = await httpClient.getClient().get("/api/wallets");
+    return response.data;
+  },
+
+  /**
+   * X4: issue a single-use proof challenge for a gated action
+   * (`bot:start` | `bot:stop` | `bot:resume` | `runs:attach` | `account:bind`).
+   * The returned message is built server-side; sign it verbatim.
+   */
+  async createChallenge(action: string): Promise<{
+    success: boolean;
+    data?: WalletChallenge;
+    error?: string;
+  }> {
+    const response = await httpClient
+      .getClient()
+      .post("/api/wallets/challenge", { action });
     return response.data;
   },
 
