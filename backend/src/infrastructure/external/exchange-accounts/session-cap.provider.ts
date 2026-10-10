@@ -42,10 +42,11 @@ export function createSessionCapProvider(): SessionCapProvider {
       userId: string,
       exchangeAccountId: string
     ): Promise<number> {
-      const account = await exchangeAccountRepositoryAdapter.getAccountWithSecret(
-        userId,
-        exchangeAccountId
-      );
+      const account =
+        await exchangeAccountRepositoryAdapter.getAccountWithSecret(
+          userId,
+          exchangeAccountId
+        );
       if (!account) {
         throw new Error(
           `No exchange account ${exchangeAccountId} for user; cannot determine session cap`

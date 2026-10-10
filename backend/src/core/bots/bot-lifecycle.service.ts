@@ -73,10 +73,7 @@ export type { BotLifecycleResult };
  * currently exposes free/available collateral.
  */
 export interface SessionCapProvider {
-  getSessionCap(
-    userId: string,
-    exchangeAccountId: string
-  ): Promise<number>;
+  getSessionCap(userId: string, exchangeAccountId: string): Promise<number>;
 }
 
 export class BotLifecycleService {
@@ -541,7 +538,8 @@ export class BotLifecycleService {
       const error = new Error(
         "Session cap unavailable: notional admission provider is not wired. Refusing to start or size a session."
       );
-      (error as Error & { statusCode?: number; code?: string }).statusCode = 503;
+      (error as Error & { statusCode?: number; code?: string }).statusCode =
+        503;
       (error as Error & { code?: string }).code = "SESSION_CAP_UNAVAILABLE";
       throw error;
     }
@@ -549,7 +547,8 @@ export class BotLifecycleService {
       const error = new Error(
         "Session has no bound exchange account; cannot determine the notional cap."
       );
-      (error as Error & { statusCode?: number; code?: string }).statusCode = 503;
+      (error as Error & { statusCode?: number; code?: string }).statusCode =
+        503;
       (error as Error & { code?: string }).code = "SESSION_CAP_UNAVAILABLE";
       throw error;
     }
@@ -563,7 +562,8 @@ export class BotLifecycleService {
           err instanceof Error ? err.message : String(err)
         }`
       );
-      (error as Error & { statusCode?: number; code?: string }).statusCode = 503;
+      (error as Error & { statusCode?: number; code?: string }).statusCode =
+        503;
       (error as Error & { code?: string }).code = "SESSION_CAP_UNAVAILABLE";
       throw error;
     }

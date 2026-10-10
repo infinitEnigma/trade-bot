@@ -38,12 +38,15 @@ jest.mock("../../src/database/pool", () => {
   const actual = { query: jest.fn() };
   return {
     ...actual,
-    transaction: jest.fn(async (cb: (client: { query: unknown }) => unknown) => {
-      const client = {
-        query: (text: string, params?: unknown[]) => actual.query(text, params),
-      };
-      return cb(client);
-    }),
+    transaction: jest.fn(
+      async (cb: (client: { query: unknown }) => unknown) => {
+        const client = {
+          query: (text: string, params?: unknown[]) =>
+            actual.query(text, params),
+        };
+        return cb(client);
+      }
+    ),
     getClient: jest.fn(),
   };
 });

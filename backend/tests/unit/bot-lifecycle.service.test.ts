@@ -28,12 +28,15 @@ jest.mock("../../src/database/pool", () => {
     // F1: attachRun runs its INSERT inside a transaction that first locks the
     // session row. Route the transaction client's queries through the same
     // mock so the existing per-SQL implementations cover both paths.
-    transaction: jest.fn(async (cb: (client: { query: unknown }) => unknown) => {
-      const client = {
-        query: (text: string, params?: unknown[]) => actual.query(text, params),
-      };
-      return cb(client);
-    }),
+    transaction: jest.fn(
+      async (cb: (client: { query: unknown }) => unknown) => {
+        const client = {
+          query: (text: string, params?: unknown[]) =>
+            actual.query(text, params),
+        };
+        return cb(client);
+      }
+    ),
     getClient: jest.fn(),
   };
 });

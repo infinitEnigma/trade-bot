@@ -87,7 +87,10 @@ describe("SessionCapProvider (F1)", () => {
   });
 
   it("fails closed on an unsupported venue", async () => {
-    getAccountWithSecret.mockResolvedValue({ id: "acc-1", exchange: "binance" });
+    getAccountWithSecret.mockResolvedValue({
+      id: "acc-1",
+      exchange: "binance",
+    });
 
     await expect(
       createSessionCapProvider().getSessionCap("u1", "acc-1")
