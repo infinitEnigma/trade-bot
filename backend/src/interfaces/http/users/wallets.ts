@@ -23,6 +23,7 @@ import { RateLimiters } from "../../../infrastructure/security/rate-limiter.serv
 import {
   WALLET_PROOF_ACTIONS,
   WalletProofAction,
+  WalletProofError,
   issueChallenge,
   walletProofEnabled,
 } from "../../../core/wallet/wallet-proof.service";
@@ -102,6 +103,17 @@ router.post(
       );
       res.json({ success: true, data: challenge });
     } catch (error) {
+      // Preserve the proof-service error contract: a challenge-store outage
+      // (REDIS_UNAVAILABLE) is 503, not a generic 500 — clients/monitoring can
+      // tell "try again later" from an unexpected server error.
+      if (error instanceof WalletProofError) {
+        return res.status(error.statusCode).json({
+          success: false,
+          code: error.code,
+          error: error.message,
+          timestamp: Date.now(),
+        });
+      }
       logger.error("Wallet challenge error", error as Error, {
         ...createErrorResponse(
           error instanceof Error ? error : new Error(String(error)),

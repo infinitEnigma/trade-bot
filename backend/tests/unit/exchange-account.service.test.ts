@@ -323,7 +323,7 @@ describe("ExchangeAccountService", () => {
           wallets: {
             listWallets: jest
               .fn()
-              .mockResolvedValue([{ chain: "evm", address: "0x" + "9".repeat(40) }]),
+              .mockResolvedValue([{ chain: "evm", address: `0x${"9".repeat(40)}` }]),
           },
         });
         const service = new ExchangeAccountService(deps);
@@ -545,6 +545,102 @@ describe("ExchangeAccountService", () => {
         "INVALID",
         false
       );
+    });
+  });
+
+  describe("verifyAccount — X4 stale-binding invalidation", () => {
+    const OWNER_A = "0x933e111111111111111111111111111111111111";
+
+    /** Verify deps with a decryptable envelope + an ACTIVE row already bound. */
+    const verifyBindingDeps = (
+      ownerOverrides: {
+        venueOwner?: jest.Mock;
+        wallets?: { listWallets: jest.Mock };
+      } = {}
+    ) => {
+      const deps = createDeps({
+        venueOwner:
+          ownerOverrides.venueOwner ?? jest.fn().mockResolvedValue(OWNER_A),
+        wallets:
+          ownerOverrides.wallets ??
+          ({ listWallets: jest.fn().mockResolvedValue([{ chain: "evm", address: OWNER_A }]) } as {
+            listWallets: jest.Mock;
+          }),
+        ...(ownerOverrides as object),
+      });
+      // Simulate an ACTIVE row whose stored envelope decrypts cleanly so the
+      // verify reaches the binding step.
+      (
+        deps.exchangeAccountRepository.getAccountWithSecret as jest.Mock
+      ).mockResolvedValue({
+        ...activeAccount,
+        credentialsEncrypted: "versioned-ciphertext",
+        encryptionVersion: 2,
+      });
+      (deps.encryption.decryptWithVersion as jest.Mock).mockResolvedValue(
+        JSON.stringify({
+          v: EXCHANGE_ENVELOPE_VERSION,
+          kind: "kodiak",
+          accountId: "kodiak-account-id",
+          apiKey: "ed25519:public-key",
+          secretKey: "s".repeat(32),
+        })
+      );
+      deps.exchangeAccountRepository.setWalletBinding = jest
+        .fn()
+        .mockResolvedValue(true);
+      deps.exchangeAccountRepository.clearWalletBinding = jest
+        .fn()
+        .mockResolvedValue(true);
+      return deps;
+    };
+
+    it("clears the stale binding on a definitive owner mismatch and does NOT downgrade ACTIVE", async () => {
+      // Venue now reports an owner that is NOT one of the user's linked wallets.
+      const deps = verifyBindingDeps({
+        venueOwner: jest.fn().mockResolvedValue(`0x${"b".repeat(40)}`),
+        wallets: {
+          listWallets: jest
+            .fn()
+            .mockResolvedValue([{ chain: "evm", address: OWNER_A }]),
+        },
+      });
+      const service = new ExchangeAccountService(deps);
+
+      const result = await service.verifyAccount("test-user-id", "account-1");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("VENUE_OWNER_NOT_LINKED");
+      // The obsolete binding is invalidated so the start gate fails closed.
+      expect(
+        deps.exchangeAccountRepository.clearWalletBinding
+      ).toHaveBeenCalledWith("test-user-id", "account-1");
+      // Credentials were proven, so the account is NOT downgraded to INVALID.
+      expect(
+        deps.exchangeAccountRepository.setStatus
+      ).not.toHaveBeenCalledWith(
+        "test-user-id",
+        "account-1",
+        "INVALID",
+        false
+      );
+    });
+
+    it("does NOT clear the binding when the venue owner is merely unresolved (transient-safe)", async () => {
+      // Venue lookup returned null (e.g. transient outage) — the existing
+      // binding must survive so a network blip can't destroy a valid binding.
+      const deps = verifyBindingDeps({
+        venueOwner: jest.fn().mockResolvedValue(null),
+      });
+      const service = new ExchangeAccountService(deps);
+
+      const result = await service.verifyAccount("test-user-id", "account-1");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("VENUE_OWNER_UNRESOLVED");
+      expect(
+        deps.exchangeAccountRepository.clearWalletBinding
+      ).not.toHaveBeenCalled();
     });
   });
 

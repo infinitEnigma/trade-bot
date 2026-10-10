@@ -61,6 +61,12 @@ export interface ExchangeAccountServiceDeps {
       accountId: string,
       binding: { address: string; verifiedAt: string; source: "venue" }
     ): Promise<boolean>;
+    /**
+     * X4: remove `meta.walletBinding` after a definitive venue-owner mismatch
+     * on re-verify, so an obsolete binding can't keep authorising bot starts.
+     * Optional for the same pre-X4-harness reason as `setWalletBinding`.
+     */
+    clearWalletBinding?(userId: string, accountId: string): Promise<boolean>;
   };
   encryption: {
     encryptWithVersion(plaintext: string): Promise<string>;
@@ -399,8 +405,25 @@ export class ExchangeAccountService {
         userId,
         accountId,
         exchange: request.exchange,
+        environment: request.environment,
         reason: bindResult.error,
       });
+      // Definitive owner mismatch (the venue asserts an owner that is NOT one
+      // of the user's linked wallets): the cached binding is now stale and
+      // could keep authorising bot starts against an address the venue no
+      // longer credits. Invalidate it so the start gate fails closed until
+      // ownership is re-established. A merely *unresolved* owner (VENUE_OWNER_
+      // UNRESOLVED) can be a transient venue outage — leave the binding intact
+      // so a network blip can't destroy a still-valid binding.
+      if (
+        bindResult.error === "VENUE_OWNER_NOT_LINKED" &&
+        this.deps.exchangeAccountRepository.clearWalletBinding
+      ) {
+        await this.deps.exchangeAccountRepository.clearWalletBinding(
+          userId,
+          accountId
+        );
+      }
       return {
         success: false,
         message: bindResult.message,

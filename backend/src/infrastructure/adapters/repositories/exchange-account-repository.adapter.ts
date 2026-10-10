@@ -224,6 +224,26 @@ export class ExchangeAccountRepositoryAdapter implements IExchangeAccountReposit
     return (result.rowCount ?? 0) > 0;
   }
 
+  /**
+   * X4: remove `meta.walletBinding` after a definitive venue-owner mismatch so
+   * a stale binding can't keep authorising bot starts. Uses jsonb `-` to drop
+   * the key while leaving the rest of `meta` intact. Returns false when the
+   * row is not owned.
+   */
+  async clearWalletBinding(
+    userId: string,
+    accountId: string
+  ): Promise<boolean> {
+    const result = await query(
+      `UPDATE exchange_accounts
+        SET meta = COALESCE(meta, '{}'::jsonb) - 'walletBinding',
+            updated_at = now()
+        WHERE id = $1 AND user_id = $2`,
+      [accountId, userId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   async rewriteEnvelope(
     userId: string,
     accountId: string,

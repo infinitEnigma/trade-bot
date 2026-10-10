@@ -175,6 +175,22 @@ class RedisService {
     };
   }
 
+  /**
+   * Atomic get-and-delete (single-use consume). Returns the value and deletes
+   * the key in one Redis step — the first caller gets the value, concurrent
+   * callers get `null`. See RedisOperations.getDel / GETDEL_SCRIPT.
+   */
+  public async getDel(
+    key: string
+  ): Promise<{ success: boolean; data: string | null; error?: string }> {
+    const result = await this.operations.getDel(key);
+    return {
+      success: result.success,
+      data: result.data ?? null,
+      error: result.error,
+    };
+  }
+
   public async set(
     key: string,
     value: string

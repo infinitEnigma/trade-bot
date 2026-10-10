@@ -24,6 +24,21 @@ export interface RedisResult<T = string | null> {
   error?: string;
 }
 
+/**
+ * Atomic get-and-delete (single-use consume). Redis 6.0 has no native GETDEL
+ * (added in 6.2), so this runs a Lua script that reads the value and deletes
+ * the key in one indivisible step. The first caller gets the value; every
+ * concurrent/subsequent caller gets `null` — there is no check-then-delete
+ * window for a replay to slip through.
+ */
+export const GETDEL_SCRIPT = `
+local value = redis.call("GET", KEYS[1])
+if value then
+  redis.call("DEL", KEYS[1])
+end
+return value
+`;
+
 export class RedisOperations {
   constructor(private connectionManager: RedisConnectionManager) {}
 
@@ -39,6 +54,29 @@ export class RedisOperations {
     } catch (error) {
       const errorMessage = (error as Error).message;
       logger.error("Redis GET error", error as Error, {
+        key,
+        error: errorMessage,
+      });
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Atomic get-and-delete: read a key's value and delete it in one Lua step
+   * (see GETDEL_SCRIPT). Returns the value, or `null` when the key was absent
+   * (already consumed/expired). Used for single-use challenge consumption.
+   */
+  async getDel(key: string): Promise<RedisResult> {
+    try {
+      const client = this.connectionManager.getClient();
+      const data = (await client.eval(GETDEL_SCRIPT, {
+        keys: [key],
+        arguments: [],
+      })) as string | null;
+      return { success: true, data: data ?? null };
+    } catch (error) {
+      const errorMessage = (error as Error).message;
+      logger.error("Redis GETDEL error", error as Error, {
         key,
         error: errorMessage,
       });

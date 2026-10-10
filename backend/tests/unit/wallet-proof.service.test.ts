@@ -26,7 +26,12 @@ import { redisService } from "../../src/infrastructure/cache/redis.service";
 import { walletRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/wallet-repository.adapter";
 
 jest.mock("../../src/infrastructure/cache/redis.service", () => ({
-  redisService: { get: jest.fn(), setex: jest.fn(), del: jest.fn() },
+  redisService: {
+    get: jest.fn(),
+    getDel: jest.fn(),
+    setex: jest.fn(),
+    del: jest.fn(),
+  },
 }));
 
 jest.mock("../../src/infrastructure/adapters/repositories/wallet-repository.adapter", () => ({
@@ -36,7 +41,7 @@ jest.mock("../../src/infrastructure/adapters/repositories/wallet-repository.adap
 const USER_ID = "user-123";
 const wallet = ethers.Wallet.createRandom();
 
-/** Simple in-memory Redis honouring get/setex/del. */
+/** Simple in-memory Redis honouring get/setex/del/getDel. */
 function makeRedis(): Map<string, string> {
   const store = new Map<string, string>();
   (redisService.setex as jest.Mock).mockImplementation(
@@ -50,6 +55,14 @@ function makeRedis(): Map<string, string> {
   });
   (redisService.del as jest.Mock).mockImplementation(async (key: string) => {
     return { success: true, data: store.delete(key) ? 1 : 0 };
+  });
+  // Atomic get-and-delete: read then delete synchronously (no await between)
+  // so it faithfully models real Redis GETDEL — a concurrent caller that
+  // interleaves here can never observe the value after the first caller.
+  (redisService.getDel as jest.Mock).mockImplementation(async (key: string) => {
+    const value = store.get(key) ?? null;
+    if (value !== null) store.delete(key);
+    return { success: true, data: value };
   });
   return store;
 }
@@ -191,8 +204,8 @@ describe("WalletProofService", () => {
       ).rejects.toMatchObject({ code: "WALLET_NOT_LINKED", statusCode: 403 });
     });
 
-    it("fails closed (503) when Redis GET is down", async () => {
-      (redisService.get as jest.Mock).mockResolvedValue({ success: false });
+    it("fails closed (503) when Redis GETDEL is down", async () => {
+      (redisService.getDel as jest.Mock).mockResolvedValue({ success: false });
       await expect(
         consumeProof(USER_ID, "bot:start", {
           nonce: "x",
@@ -200,6 +213,39 @@ describe("WalletProofService", () => {
           signature: "0x",
         })
       ).rejects.toMatchObject({ code: "REDIS_UNAVAILABLE", statusCode: 503 });
+    });
+
+    it("rejects concurrent double-consume: exactly one succeeds (atomic GETDEL)", async () => {
+      makeRedis();
+      const challenge = await issueChallenge(USER_ID, "runs:attach");
+      const signature = await sign(challenge.message);
+
+      // Fire two consumes for the SAME nonce concurrently. Atomic consumption
+      // means only the first can observe the stored value; the loser must be
+      // rejected with CHALLENGE_NOT_FOUND (403).
+      const results = await Promise.allSettled([
+        consumeProof(USER_ID, "runs:attach", {
+          nonce: challenge.nonce,
+          address: wallet.address,
+          signature,
+        }),
+        consumeProof(USER_ID, "runs:attach", {
+          nonce: challenge.nonce,
+          address: wallet.address,
+          signature,
+        }),
+      ]);
+
+      const fulfilled = results.filter(r => r.status === "fulfilled");
+      const rejected = results.filter(r => r.status === "rejected");
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(
+        (rejected[0] as PromiseRejectedResult).reason
+      ).toMatchObject({ code: "CHALLENGE_NOT_FOUND", statusCode: 403 });
+      // The single winner returned the verified linked address.
+      expect((fulfilled[0] as PromiseFulfilledResult<{ address: string }>).value
+        .address).toBe(wallet.address);
     });
   });
 

@@ -157,10 +157,13 @@ export async function issueChallenge(
 }
 
 /**
- * Consume a proof: load the stored challenge (single-use — DELed before the
- * signature check so a burn cannot be retried), verify the signature over the
- * *stored* message, and require the signing address to be one of the user's
- * linked EVM wallets. Every failure is a typed 403 (or 503 on Redis outage).
+ * Consume a proof: atomically read-and-delete the stored challenge in a single
+ * Redis step (single-use — D4), verify the signature over the *stored* message,
+ * and require the signing address to be one of the user's linked EVM wallets.
+ *
+ * The read+delete is atomic (`getDel`), so two concurrent requests for the same
+ * nonce cannot both proceed: the loser observes `null` and is rejected with
+ * CHALLENGE_NOT_FOUND. Every failure is a typed 403 (or 503 on Redis outage).
  */
 export async function consumeProof(
   userId: string,
@@ -169,7 +172,10 @@ export async function consumeProof(
 ): Promise<VerifiedWalletProof> {
   const key = challengeKey(userId, proof.nonce);
 
-  const record = await redisService.get(key);
+  // Atomic single-use (D4): GET+DEL in one Redis step. The first caller gets
+  // the stored value; every later/concurrent caller gets null (already used),
+  // so there is no check-then-delete window for a replay to exploit.
+  const record = await redisService.getDel(key);
   if (!record.success) {
     throw new WalletProofError(
       "Wallet proof is temporarily unavailable. Please try again.",
@@ -197,16 +203,6 @@ export async function consumeProof(
     throw new WalletProofError(
       "This signature was issued for a different action. Request a new signature.",
       "ACTION_MISMATCH"
-    );
-  }
-
-  // Single-use (D4): burn the challenge before the expensive checks so the
-  // same nonce can never be replayed, even against a slow verify.
-  const deleted = await redisService.del(key);
-  if (!deleted.success) {
-    throw new WalletProofError(
-      "Wallet proof is temporarily unavailable. Please try again.",
-      "REDIS_UNAVAILABLE"
     );
   }
 
