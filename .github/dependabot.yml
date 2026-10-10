@@ -21,6 +21,11 @@ updates:
       # PRs so contracts/migrations get human sign-off.
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # `@types/node` is pinned by the root `overrides` ("~24.13.5") to dedupe
+      # all workspaces onto one copy. Dependabot bumps the per-workspace ranges
+      # but not the override, so the two drift and `npm ci` fails. Bump it
+      # deliberately by editing the override + regenerating the lock.
+      - dependency-name: "@types/node"
     groups:
       minor-and-patch:
         update-types:
