@@ -50,48 +50,70 @@ export class DashboardService {
   }
 
   /**
-   * Calculate portfolio performance from trades.
+   * Trade-derived performance series (Kodiak fallback path — Lighter has a
+   * venue-computed level series and never uses this).
    *
-   * Prefers the venue-reported `realized_pnl` (Kodiak round-trips, Lighter
-   * fills carry "0"); falls back to (close − open) × qty when the venue
-   * does not report realized PnL.
+   * F4 semantics — what this curve is and is NOT:
+   * - With `initialBalance` (a real, appropriately-timed equity baseline the
+   *   caller sourced), the points are an EQUITY curve: baseline + cumulative
+   *   venue-reported `realized_pnl`.
+   * - Without one, the points are cumulative REALISED PnL anchored at 0 —
+   *   labelled as PnL, never as account equity. The old behaviour invented a
+   *   $10,000 start and clamped the curve at 0; both are gone.
+   * - Trades whose venue `realized_pnl` is absent or unparseable are SKIPPED,
+   *   not approximated by `(close − open) × qty` — that fallback omits fees,
+   *   funding and partial-close accounting and was never venue truth
+   *   (Lighter fill rows carry `realized_pnl: "0"` by construction).
    */
   calculatePortfolioPerformance(
     trades: Trade[],
-    initialBalance: number = 10000
+    initialBalance?: number
   ): PortfolioPerformancePoint[] {
     if (!trades || trades.length === 0) {
-      return [{ time: "No data", value: initialBalance }];
+      return initialBalance === undefined
+        ? []
+        : [{ time: "No data", value: initialBalance }];
     }
 
-    // Sort trades by close timestamp
-    const sortedTrades = [...trades].sort(
-      (a, b) => (a.close_timestamp || 0) - (b.close_timestamp || 0)
-    );
+    // Only venue-reported realised PnL moves the curve; unknown is skipped.
+    const realizedRows = trades
+      .map(trade => {
+        const realized = parseFloat(trade.realized_pnl ?? "");
+        return {
+          realized,
+          timestamp: trade.close_timestamp || trade.open_timestamp || 0,
+        };
+      })
+      .filter(
+        (row): row is { realized: number; timestamp: number } =>
+          Number.isFinite(row.realized) && row.timestamp > 0
+      )
+      .sort((a, b) => a.timestamp - b.timestamp);
 
-    const performance = [{ time: "Start", value: initialBalance }];
-    let currentBalance = initialBalance;
+    if (realizedRows.length === 0) {
+      // Nothing venue-reported to plot: unavailable, not fabricated.
+      return initialBalance === undefined
+        ? []
+        : [{ time: "No data", value: initialBalance }];
+    }
 
-    sortedTrades.forEach(trade => {
-      const realized = parseFloat(trade.realized_pnl ?? "");
-      const pnl = Number.isFinite(realized)
-        ? realized
-        : (parseFloat(trade.avg_close_price || "0") -
-            parseFloat(trade.avg_open_price || "0")) *
-          parseFloat(trade.closed_position_qty || "0");
-      currentBalance += pnl;
+    const performance: PortfolioPerformancePoint[] = [
+      initialBalance === undefined
+        ? { time: "Start", value: 0 }
+        : { time: "Start", value: initialBalance },
+    ];
+    let current = initialBalance ?? 0;
 
-      const timestamp = new Date(
-        trade.close_timestamp || trade.open_timestamp || Date.now()
-      );
-      const timeString = timestamp.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-
+    realizedRows.forEach(row => {
+      current += row.realized;
+      // No non-negative clamp: a drawdown below the baseline is information,
+      // not a rendering defect.
       performance.push({
-        time: timeString,
-        value: Math.max(0, currentBalance), // Ensure non-negative
+        time: new Date(row.timestamp).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        value: current,
       });
     });
 

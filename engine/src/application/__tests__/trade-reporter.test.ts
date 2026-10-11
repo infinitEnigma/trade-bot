@@ -11,8 +11,12 @@
  * @format
  */
 
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { FillReport, LedgerTradeReporter } from "../trade-reporter";
 import { RedisStreamOperations } from "../../infrastructure/redis/streams";
+import { listPendingFills } from "../../infrastructure/state/pending-fill-journal";
 import { synthesizeFillId } from "../../utils/fill-id";
 import { TradeExecutedEventPayload } from "@trade-bot/shared";
 
@@ -20,13 +24,29 @@ const BOT = "bot-1";
 const CLIENT = "bot1-00-B";
 const EXCHANGE = "idx-1";
 
+let snapTmpDir: string | undefined;
+
+beforeEach(() => {
+  // reportFill journals to GRID_SNAPSHOT_DIR (F1) — keep it out of the repo.
+  snapTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trade-reporter-"));
+  process.env.GRID_SNAPSHOT_DIR = snapTmpDir;
+});
+
+afterEach(() => {
+  delete process.env.GRID_SNAPSHOT_DIR;
+  if (snapTmpDir) {
+    fs.rmSync(snapTmpDir, { recursive: true, force: true });
+    snapTmpDir = undefined;
+  }
+});
+
 function makeStream() {
   return {
     publish: jest.fn().mockResolvedValue({ success: true, id: "1-0" }),
   };
 }
 
-function makeReporter(stream = makeStream()) {
+function makeReporter(stream: ReturnType<typeof makeStream> = makeStream()) {
   return {
     reporter: new LedgerTradeReporter(
       stream as unknown as RedisStreamOperations,
@@ -132,5 +152,101 @@ describe("LedgerTradeReporter fill identity (Phase 4)", () => {
     expect(publishedPayload(stream).fillId).toBe(
       synthesizeFillId(BOT, CLIENT, EXCHANGE)
     );
+  });
+
+  describe("LedgerTradeReporter durable fill journal (F1)", () => {
+    /** A stream whose publish always fails (Redis outage). */
+    function makeFailingStream() {
+      return {
+        publish: jest.fn().mockResolvedValue({ success: false, error: "down" }),
+      };
+    }
+
+    it("clears the journal entry after an accepted publish", async () => {
+      const { reporter } = makeReporter();
+
+      await reporter.reportFill(fill());
+
+      expect(listPendingFills()).toEqual([]);
+    });
+
+    it("keeps the journal entry when the publish fails (durable outbox)", async () => {
+      const { reporter } = makeReporter(makeFailingStream());
+
+      await reporter.reportFill(fill({ segment: { from: 0, to: 1, full: 1 } }));
+
+      const pending = listPendingFills();
+      expect(pending).toHaveLength(1);
+      expect(pending[0].fillId).toBe(
+        synthesizeFillId(BOT, CLIENT, EXCHANGE, { from: 0, to: 1, full: 1 })
+      );
+      // The journaled payload is the published one, minus engine identity
+      // (replay restamps it from the live process).
+      expect(pending[0].payload).toMatchObject({
+        botId: BOT,
+        clientOrderId: CLIENT,
+        side: "BUY",
+        price: 100,
+        quantity: 1,
+      });
+      expect(pending[0].payload).not.toHaveProperty("engineId");
+      expect(pending[0].payload).not.toHaveProperty("engineEpoch");
+    });
+
+    it("survives a restart: a fresh reporter replays the journaled fill under the live identity", async () => {
+      // "Restart": a new process (new reporter, bumped epoch) with Redis back.
+      const outageStream = makeFailingStream();
+      const first = makeReporter(outageStream);
+      await first.reporter.reportFill(fill());
+
+      const stream = makeStream();
+      const restarted = new LedgerTradeReporter(
+        stream as unknown as RedisStreamOperations,
+        "engine-1",
+        8
+      );
+
+      const replayed = await restarted.replayPendingFills();
+      expect(replayed).toBe(1);
+      const message = stream.publish.mock.calls[0][1] as {
+        type: string;
+        payload: TradeExecutedEventPayload;
+      };
+      expect(message.type).toBe("TRADE_EXECUTED");
+      // Live identity, original fill identity: authority passes, dedup holds.
+      expect(message.payload.engineEpoch).toBe(8);
+      expect(message.payload.fillId).toBe(
+        synthesizeFillId(BOT, CLIENT, EXCHANGE)
+      );
+      expect(message.payload.quantity).toBe(1);
+      expect(listPendingFills()).toEqual([]);
+    });
+
+    it("stops replay at the first failure and keeps the rest journaled", async () => {
+      // Two journaled fills via a failing stream.
+      const outage = makeFailingStream();
+      const first = makeReporter(outage);
+      await first.reporter.reportFill(
+        fill({ segment: { from: 0, to: 0.4, full: 1 }, quantity: 0.4 })
+      );
+      await first.reporter.reportFill(
+        fill({ segment: { from: 0.4, to: 1, full: 1 }, quantity: 0.6 })
+      );
+      expect(listPendingFills()).toHaveLength(2);
+
+      // Replay into a still-down Redis: nothing is cleared, order preserved.
+      const stillDown = makeReporter(makeFailingStream());
+      const replayed = await stillDown.reporter.replayPendingFills();
+
+      expect(replayed).toBe(0);
+      expect(listPendingFills()).toHaveLength(2);
+    });
+
+    it("replaying against an empty journal is a no-op", async () => {
+      const { reporter, stream } = makeReporter();
+
+      await expect(reporter.replayPendingFills()).resolves.toBe(0);
+      expect(stream.publish).not.toHaveBeenCalled();
+    });
   });
 });

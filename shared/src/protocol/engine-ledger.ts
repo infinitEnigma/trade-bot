@@ -88,6 +88,13 @@ export interface TradeExecutedEventPayload {
    */
   fee?: number;
   /**
+   * Fee-rate provenance (F5): true when `fee` is an upper-bound estimate
+   * (taker rate without a known liquidity role, unmapped tier, unapplied
+   * discount), false when the rate was the venue's exact published rate.
+   * Absent together with `fee` (older engines predate this field).
+   */
+  feeIsEstimate?: boolean;
+  /**
    * Realised PnL contributed by this fill: `0 - fee` on an entry leg (its
    * spread is unrealised until the paired exit) and
    * `(sellExec - entryExec) × quantity - fee` on the closing leg — so

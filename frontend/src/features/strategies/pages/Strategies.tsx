@@ -488,6 +488,17 @@ const Strategies: React.FC = React.memo(() => {
                   Across {portfolioSummary.activeAccountCount || 0} account
                   {portfolioSummary.activeAccountCount === 1 ? "" : "s"}
                 </p>
+                {portfolioSummary.totalIsPartial ? (
+                  // F3: partial sum is labelled and names the unreadable
+                  // accounts — never presented as the complete portfolio.
+                  <p className="text-xs text-warning mt-1">
+                    Partial —{" "}
+                    {portfolioSummary.failedAccounts
+                      .map(a => a.label)
+                      .join(", ")}{" "}
+                    unreadable
+                  </p>
+                ) : null}
               </div>
             </div>
           ) : null}

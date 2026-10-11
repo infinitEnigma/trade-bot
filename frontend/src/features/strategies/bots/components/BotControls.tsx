@@ -613,7 +613,13 @@ export const BotControls: React.FC<BotControlsProps> = ({
           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
           <span>
             Trading Active • {bot.total_trades} trades • $
+            {/* F2: an incomplete total is a LOWER BOUND — prefix ≥ and name
+                the unknown fills rather than implying net PnL. */}
+            {(bot.total_pnl_incomplete_fills ?? 0) > 0 ? "≥" : ""}
             {Number(bot.total_pnl || 0).toFixed(2)} P&L
+            {(bot.total_pnl_incomplete_fills ?? 0) > 0
+              ? ` (${bot.total_pnl_incomplete_fills} fills unknown)`
+              : ""}
           </span>
         </div>
         {/* X4: wallet-owner proof gate (D1). Emergency stop stays exempt. */}

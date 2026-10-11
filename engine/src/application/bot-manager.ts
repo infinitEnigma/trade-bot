@@ -662,6 +662,10 @@ export class BotManager {
         this.engineId,
         this.epoch
       );
+      // F1: fills journaled during a Redis outage (or a previous crash
+      // mid-publish) are re-delivered before this session trades on. The
+      // backend dedups replays, so this is safe even if one already landed.
+      await tradeReporter.replayPendingFills();
       const runs = new Map<string, StrategyRunState>();
       let primarySymbol = "";
       let primaryStrategy: GridTradingStrategy | null = null;

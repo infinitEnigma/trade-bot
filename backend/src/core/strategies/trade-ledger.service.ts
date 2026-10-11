@@ -138,7 +138,10 @@ export class TradeLedgerService {
       !FILL_STATUSES.has(payload.status) ||
       !Number.isFinite(Date.parse(payload.executedAt)) ||
       (payload.fee !== undefined && !isNonNegativeFinite(payload.fee)) ||
-      (payload.pnl !== undefined && !isFiniteNumber(payload.pnl))
+      (payload.pnl !== undefined && !isFiniteNumber(payload.pnl)) ||
+      // F5: fee provenance is optional (older engines) but must be a boolean.
+      (payload.feeIsEstimate !== undefined &&
+        typeof payload.feeIsEstimate !== "boolean")
     ) {
       return this.ignore(event, "invalid TRADE_EXECUTED fields");
     }
@@ -152,8 +155,12 @@ export class TradeLedgerService {
       side: payload.side,
       quantity: payload.quantity,
       price: payload.price,
-      fee: payload.fee ?? 0,
-      pnl: payload.pnl ?? 0,
+      // F2: undefined travels as undefined → stored NULL. The engine omits
+      // fee/pnl when the venue's rate could not be sourced; collapsing that
+      // to 0 would book an unknown fee as fee-free and overstate net profit.
+      fee: payload.fee,
+      feeIsEstimate: payload.feeIsEstimate,
+      pnl: payload.pnl,
       status: narrowFillStatus(payload.status),
       executedAt: new Date(Date.parse(payload.executedAt)).toISOString(),
     });
@@ -181,7 +188,9 @@ export class TradeLedgerService {
         side: payload.side,
         price: payload.price,
         quantity: payload.quantity,
-        pnl: payload.pnl ?? 0,
+        // NULL/absent = unknown (F2), never silently reported as zero.
+        pnl: payload.pnl,
+        fee: payload.fee,
         messageId: event.messageId,
       });
     }

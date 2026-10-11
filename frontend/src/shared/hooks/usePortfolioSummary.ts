@@ -32,6 +32,10 @@
  *                                treated as "no venue series", never an
  *                                error).
  * 5. **totalAcrossExchanges**  — sum of every ACTIVE account's total balance.
+ *    F3: an unreadable account is excluded from the sum AND reported — the
+ *    total is flagged `totalIsPartial` with the `failedAccounts` named, and
+ *    the hook-level error fires. A failed read is never folded into a silent
+ *    $0 that understates the portfolio.
  *
  * Each figure carries its own loading/error so a failed read renders
  * "unavailable" for that card only — never a fabricated $0 (L15 pattern).
@@ -98,6 +102,14 @@ export interface PortfolioSummary {
   venuePnlLoading: boolean;
   /** Count of ACTIVE accounts backing the "total across exchanges" figure. */
   activeAccountCount: number;
+  /**
+   * True when at least one ACTIVE account's balance could not be read (F3):
+   * `totalAcrossExchanges` is then a PARTIAL sum of the readable accounts and
+   * must be labelled as such — never rendered as the complete portfolio.
+   */
+  totalIsPartial: boolean;
+  /** Accounts excluded from the partial total (unreadable balances). */
+  failedAccounts: Array<{ accountId: string; label: string }>;
   loading: boolean;
   /** True while the very first load is in flight (no data yet at all). */
   initialLoading: boolean;
@@ -238,28 +250,56 @@ export const usePortfolioSummary = (
         );
 
   // 4. Total across every ACTIVE account (one balance read per account).
+  // F3: a failed account read is recorded as FAILED, never folded into a 0 —
+  // an unreadable account must not silently understate the aggregate. The
+  // total is only presented as complete when every account was readable;
+  // otherwise it is a labelled partial sum and the failures surface in the
+  // hook-level error.
   const totalQuery = useQuery({
     queryKey: ["portfolio-total", user?.id, activeAccounts.map(a => a.id)],
     queryFn: async () => {
       const perAccount = await Promise.all(
         activeAccounts.map(async account => {
+          const label = `${account.exchange} (${account.environment}) ${account.accountRef}`;
           try {
             const res = await kodiakApi.getKodiakBalance(account.id);
-            return toNumber(res?.data?.totalBalance);
+            return {
+              accountId: account.id,
+              label,
+              balance: toNumber(res?.data?.totalBalance),
+              ok: true as const,
+            };
           } catch {
-            return 0; // a single unreadable account must not zero the total
+            return {
+              accountId: account.id,
+              label,
+              balance: 0,
+              ok: false as const,
+            };
           }
         })
       );
-      return perAccount.reduce((sum, v) => sum + v, 0);
+      return perAccount;
     },
     enabled: activeAccounts.length > 0 && isVerified,
     staleTime: 30 * 1000,
     retry: false,
   });
 
+  // Readable accounts contribute; unreadable ones are excluded AND reported.
+  const failedAccounts = (totalQuery.data ?? [])
+    .filter(a => !a.ok)
+    .map(a => ({ accountId: a.accountId, label: a.label }));
+  const totalIsPartial = failedAccounts.length > 0;
+  const totalAcrossExchanges = (totalQuery.data ?? [])
+    .filter(a => a.ok)
+    .reduce((sum, a) => sum + a.balance, 0);
+
   const error =
-    walletQuery.error || balanceQuery.error || totalQuery.error
+    walletQuery.error ||
+    balanceQuery.error ||
+    totalQuery.error ||
+    totalIsPartial
       ? "Some portfolio figures are unavailable right now."
       : null;
 
@@ -278,8 +318,10 @@ export const usePortfolioSummary = (
     exchangeBalance: balanceQuery.data ?? 0,
     unrealizedPnl,
     realizedPnl,
-    totalAcrossExchanges: totalQuery.data ?? 0,
+    totalAcrossExchanges,
     activeAccountCount: activeAccounts.length,
+    totalIsPartial,
+    failedAccounts,
     // Raw rows for single-source consumers (Dashboard tables read these —
     // no second query under a different key for the same endpoint).
     positions: positionsQuery.data ?? [],

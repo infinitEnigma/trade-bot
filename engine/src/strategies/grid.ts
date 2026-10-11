@@ -622,7 +622,8 @@ export class GridTradingStrategy {
     const submitted = this.manager?.getBySlot(levelIndex, side);
     const executedPrice =
       segment.executedPrice ?? submitted?.price ?? level.price;
-    const fee = await this.resolveFee(executedPrice, quantity);
+    const resolvedFee = await this.resolveFee(executedPrice, quantity);
+    const fee = resolvedFee?.fee;
 
     // Segment bounds (A1): the cumulative before this fill is the cumulative
     // after it minus what it booked. When a venue reports no cumulative at all
@@ -721,6 +722,7 @@ export class GridTradingStrategy {
         price: executedPrice,
         quantity,
         fee,
+        feeIsEstimate: resolvedFee?.feeIsEstimate,
         pnl: tradePnl,
         status: segment.status,
         clientOrderId,
@@ -954,11 +956,15 @@ export class GridTradingStrategy {
    * direction for money the venue never confirmed. Resolves `undefined` (never
    * `0`) when the adapter has no fee source or the read fails: an unknown rate
    * must not be booked as fee-free.
+   *
+   * F5: the result also carries `feeIsEstimate` — true unless the rate was
+   * both exact AND role-agnostic (maker == taker) — so the ledger can tell a
+   * conservative upper-bound estimate from the venue's own number.
    */
   private async resolveFee(
     executedPrice: number,
     quantity: number
-  ): Promise<number | undefined> {
+  ): Promise<{ fee: number; feeIsEstimate: boolean } | undefined> {
     const source = this.exchange.getFeeRates;
     if (!source) return undefined;
     let rates: ExchangeFeeRates;
@@ -974,7 +980,13 @@ export class GridTradingStrategy {
       });
       return undefined;
     }
-    return Number((executedPrice * quantity * rates.takerRate).toFixed(8));
+    return {
+      fee: Number((executedPrice * quantity * rates.takerRate).toFixed(8)),
+      // Exact only when the published rate itself is exact AND maker == taker
+      // (the venue's silence on liquidity role then cannot change the number).
+      feeIsEstimate:
+        rates.exact === false || rates.makerRate !== rates.takerRate,
+    };
   }
 
   /**

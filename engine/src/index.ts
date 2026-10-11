@@ -14,6 +14,7 @@ import { BotManager } from "./application/bot-manager";
 import { listenForCommands } from "./protocol/command-consumer";
 import { startHeartbeat, stopAll } from "./application/lifecycle-coordinator";
 import { loadOrCreateEngineIdentity } from "./domain/engine-identity";
+import { LedgerTradeReporter } from "./application/trade-reporter";
 
 let activeBotManager: BotManager | null = null;
 
@@ -36,6 +37,17 @@ async function main(): Promise<void> {
       engineId: identity.engineId,
       epoch: identity.epoch,
     });
+
+    // F1: re-deliver fills journaled by the previous process (Redis outage or
+    // crash between fill detection and stream acceptance) under this
+    // process's identity, before any command starts trading. Never rejects;
+    // a still-unreachable Redis simply leaves the journal intact for the
+    // bot-session-start replay.
+    await new LedgerTradeReporter(
+      streamOps,
+      identity.engineId,
+      identity.epoch
+    ).replayPendingFills();
 
     // Create bot manager
     activeBotManager = new BotManager(identity);

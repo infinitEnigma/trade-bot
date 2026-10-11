@@ -40,6 +40,7 @@ import { UserProgressCard } from "../../../shared/components/user/UserProgressCa
 import { LoadingSpinner } from "../../../shared/components/ui";
 import { usePortfolioSummary } from "../../../shared/hooks";
 import type { VenuePnlPoint } from "../../../shared/hooks/usePortfolioSummary";
+import { dashboardService } from "../services/dashboardService";
 import { globalBalanceManager } from "../../../shared/services/balance-manager";
 import {
   Container,
@@ -54,6 +55,8 @@ interface StatsCardProps {
   value: number;
   icon: React.ComponentType<{ className?: string }>;
   format?: "currency" | "number" | "pnl";
+  /** Extra honesty line under the title (e.g. partial-total warnings, F3). */
+  note?: string;
 }
 
 interface PortfolioChartProps {
@@ -77,7 +80,13 @@ const WalletConnectDialog = React.lazy(() =>
   }))
 );
 // Components removed during cleanup - using simple alternatives
-const StatsCard = ({ title, value, icon: Icon, format }: StatsCardProps) => (
+const StatsCard = ({
+  title,
+  value,
+  icon: Icon,
+  format,
+  note,
+}: StatsCardProps) => (
   <div className="glass-card p-6">
     <div className="flex items-center justify-between mb-4">
       <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
@@ -100,6 +109,7 @@ const StatsCard = ({ title, value, icon: Icon, format }: StatsCardProps) => (
           : value}
     </h3>
     <p className="text-xs text-textMuted">{title}</p>
+    {note ? <p className="text-xs text-warning mt-1">{note}</p> : null}
   </div>
 );
 
@@ -233,50 +243,22 @@ const formatRelativeTime = (timestampMs: number): string => {
   return `${Math.floor(hours / 24)}d ago`;
 };
 
-// Calculate real portfolio performance from trades data
-// (Kodiak fallback path — Lighter plots the venue series instead.)
+// F4: the trade-derived fallback lives in `dashboardService` — the local
+// copy (synthetic-baseline + clamp twin) is gone; one implementation, one
+// set of semantics: cumulative realised PnL anchored at 0 without a real
+// equity baseline, venue `realized_pnl` only, no non-negative clamp.
 const calculatePortfolioPerformance = (
   trades: {
     realized_pnl?: string | number;
     close_timestamp?: number;
     open_timestamp?: number;
-  }[],
-  initialBalance: number,
-  currentTime = Date.now()
-) => {
-  if (!trades || trades.length === 0) {
-    // D2: no fabricated point — the chart renders its own empty state.
-    return [];
-  }
-
-  // Sort trades by close timestamp
-  const sortedTrades = [...trades].sort(
-    (a, b) => (a.close_timestamp || 0) - (b.close_timestamp || 0)
+  }[]
+): { time: string; value: number }[] =>
+  dashboardService.calculatePortfolioPerformance(
+    trades as Parameters<
+      typeof dashboardService.calculatePortfolioPerformance
+    >[0]
   );
-
-  const performance = [{ time: "Start", value: initialBalance }];
-  let currentBalance = initialBalance;
-
-  sortedTrades.forEach(trade => {
-    const pnl = parseFloat(String(trade.realized_pnl ?? "0"));
-    currentBalance += pnl;
-
-    const timestamp = new Date(
-      trade.close_timestamp || trade.open_timestamp || currentTime
-    );
-    const timeString = timestamp.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-    performance.push({
-      time: timeString,
-      value: Math.max(0, currentBalance), // Ensure non-negative
-    });
-  });
-
-  return performance;
-};
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -400,6 +382,9 @@ const Dashboard: React.FC = () => {
   // (hourly buckets), not per-trade accumulation — Lighter fill rows carry
   // realized_pnl "0" by construction, which is why the old curve was flat.
   // Kodiak (no venue series) keeps the trade-derived curve from real rows.
+  // F4: the trade-derived fallback is cumulative REALISED PnL anchored at 0 —
+  // the current balance is a snapshot now, not a historical baseline, and
+  // using it as a "Start" value fabricated an equity curve.
   const toSeriesTime = (timestampMs: number): string =>
     new Date(timestampMs).toLocaleString([], {
       month: "short",
@@ -418,7 +403,7 @@ const Dashboard: React.FC = () => {
           .sort((a, b) => a.t - b.t)
           .map(p => ({ time: toSeriesTime(p.t), value: p.v }))
       : trades.length > 0
-        ? calculatePortfolioPerformance(trades, totalBalance)
+        ? calculatePortfolioPerformance(trades)
         : [];
 
   return (
@@ -549,6 +534,19 @@ const Dashboard: React.FC = () => {
                 value={portfolioSummary.totalAcrossExchanges}
                 icon={TrendingUp}
                 format="currency"
+                note={
+                  // F3: an unreadable account must never look like a complete
+                  // total — label the sum as partial and name what's missing.
+                  portfolioSummary.totalIsPartial
+                    ? `Partial — ${portfolioSummary.failedAccounts.length} of ${
+                        portfolioSummary.activeAccountCount
+                      } account${
+                        portfolioSummary.activeAccountCount === 1 ? "" : "s"
+                      } unreadable (${portfolioSummary.failedAccounts
+                        .map(a => a.label)
+                        .join(", ")})`
+                    : undefined
+                }
               />
             </Grid>
           </div>

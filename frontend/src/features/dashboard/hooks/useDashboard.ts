@@ -88,10 +88,12 @@ export const useDashboard = () => {
       }
     : null;
 
-  // Calculate performance data
+  // Calculate performance data. F4: no synthetic baseline — without a real
+  // equity baseline the series is cumulative realised PnL anchored at 0
+  // (never a fabricated $10,000 "Start").
   const performanceData = dashboardService.calculatePortfolioPerformance(
     trades,
-    balance?.accountBalance || 10000
+    balance?.accountBalance
   );
 
   // Manual refresh function

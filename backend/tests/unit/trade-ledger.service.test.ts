@@ -103,11 +103,31 @@ describe("TradeLedgerService", () => {
         side: "BUY",
         quantity: 1,
         price: 100,
-        fee: 0,
+        // F2: the payload carried no fee — unknown must stay undefined
+        // (stored NULL downstream), never be flattened to a made-up zero.
+        fee: undefined,
         pnl: 2.5,
         status: "FILLED",
         executedAt: "2026-10-02T10:00:00.000Z",
       });
+    });
+
+    it("passes an unknown fee AND pnl through as undefined (F2: unknown ≠ zero)", async () => {
+      // The engine omits both whenever the venue's rate cannot be sourced.
+      await service.handle(tradeEvent({ fee: undefined, pnl: undefined }));
+
+      const fill = repo.recordFill.mock.calls[0][0] as LedgerFill;
+      expect(fill.fee).toBeUndefined();
+      expect(fill.pnl).toBeUndefined();
+    });
+
+    it("keeps a sourced zero distinct from unknown (F2)", async () => {
+      // Lighter's zero-fee tier is a KNOWN zero and must arrive as 0.
+      await service.handle(tradeEvent({ fee: 0, pnl: 0 }));
+
+      const fill = repo.recordFill.mock.calls[0][0] as LedgerFill;
+      expect(fill.fee).toBe(0);
+      expect(fill.pnl).toBe(0);
     });
 
     it("maps PARTIALLY_FILLED to the CHECK-allowed PARTIAL (N7 vocabulary)", async () => {

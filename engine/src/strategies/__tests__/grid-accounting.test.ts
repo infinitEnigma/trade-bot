@@ -364,10 +364,55 @@ describe("GridTradingStrategy realised PnL with fees (N6)", () => {
     await fillBuy(s, exchange, 0, 97.4);
     expect(fillsOf(reporter)[0].fee).toBe(0);
     expect(fillsOf(reporter)[0].pnl).toBe(0);
+    // Role-agnostic exact rate (maker == taker, exact): NOT an estimate.
+    expect(fillsOf(reporter)[0].feeIsEstimate).toBe(false);
 
     await tickAt(s, exchange, LEVEL_0 + 0.5);
     await fillSell(s, exchange, 0, 100.5);
     expect(fillsOf(reporter)[1].pnl).toBeCloseTo((100.5 - 97.4) * 1, 8);
+  });
+
+  it("stamps fee provenance: maker ≠ taker or inexact rate → estimate (F5)", async () => {
+    // 1. exact rate but maker ≠ taker: the venue never reports the fill's
+    //    liquidity role, so the taker-rate fee can only be an upper bound.
+    const roleBound = makeExchange();
+    roleBound.getFeeRates = jest.fn().mockResolvedValue(FEE_RATES); // 0.0001 / 0.001
+    const reporterA = makeReporter();
+    const sA = makeStrategy("bot-f5-role", roleBound, CONFIG, reporterA);
+    await sA.initialize(100);
+    await sA.start();
+    await sA.tick();
+    await fillBuy(sA, roleBound, 0, 97.4);
+    expect(fillsOf(reporterA)[0].feeIsEstimate).toBe(true);
+
+    // 2. inexact rate (unmapped tier / unapplied discount) → estimate even
+    //    when maker == taker.
+    const inexact = makeExchange();
+    inexact.getFeeRates = jest.fn().mockResolvedValue({
+      makerRate: 0.0005,
+      takerRate: 0.0005,
+      tier: "mystery",
+      venueReported: false,
+      exact: false,
+    });
+    const reporterB = makeReporter();
+    const sB = makeStrategy("bot-f5-inexact", inexact, CONFIG, reporterB);
+    await sB.initialize(100);
+    await sB.start();
+    await sB.tick();
+    await fillBuy(sB, inexact, 0, 97.4);
+    expect(fillsOf(reporterB)[0].feeIsEstimate).toBe(true);
+
+    // 3. no fee source at all → fee AND provenance absent together.
+    const noRate = makeExchange();
+    const reporterC = makeReporter();
+    const sC = makeStrategy("bot-f5-absent", noRate, CONFIG, reporterC);
+    await sC.initialize(100);
+    await sC.start();
+    await sC.tick();
+    await fillBuy(sC, noRate, 0, 97.4);
+    expect(fillsOf(reporterC)[0].fee).toBeUndefined();
+    expect(fillsOf(reporterC)[0].feeIsEstimate).toBeUndefined();
   });
 });
 

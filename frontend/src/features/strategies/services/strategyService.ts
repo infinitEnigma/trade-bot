@@ -133,6 +133,9 @@ export class StrategyService {
             status: bot.status,
             total_trades: bot.total_trades,
             total_pnl: bot.total_pnl,
+            // F2: keep the incompleteness counter — dropping it here would
+            // hide that total_pnl is a lower bound.
+            total_pnl_incomplete_fills: bot.total_pnl_incomplete_fills,
             last_updated: bot.last_updated,
             config: bot.config || {
               type: StrategyType.GRID,
@@ -168,6 +171,7 @@ export class StrategyService {
             status: string;
             total_trades: number;
             total_pnl: number;
+            total_pnl_incomplete_fills?: number;
             last_updated: string;
             config?: unknown;
           }) => ({
@@ -178,6 +182,8 @@ export class StrategyService {
               "RUNNING" | "STOPPED" | "ERROR" | "STARTING" | "STOPPING",
             total_trades: bot.total_trades,
             total_pnl: bot.total_pnl,
+            // F2: incompleteness counter travels to the render surface.
+            total_pnl_incomplete_fills: bot.total_pnl_incomplete_fills,
             last_updated: bot.last_updated,
             config: bot.config || {
               type: StrategyType.GRID,

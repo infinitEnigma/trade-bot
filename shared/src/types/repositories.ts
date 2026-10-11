@@ -369,6 +369,11 @@ export interface BotInstanceRecord {
   running_time: number;
   total_trades: number;
   total_pnl: number;
+  /**
+   * F2: fills booked with unknown PnL (migration 023). Present on rows
+   * selected via `bi.*`; optional so pre-023 shaped fixtures still typecheck.
+   */
+  total_pnl_incomplete_fills?: number;
   created_at: Date;
   updated_at: Date;
   /** Canonical lifecycle states; present on `SELECT *` row reads. */

@@ -121,6 +121,7 @@ export function useBotLifecycle(botId?: string) {
           status: string;
           total_trades: number;
           total_pnl: number;
+          total_pnl_incomplete_fills?: number;
           last_updated: string;
           config?: unknown;
           needs_user_action?: boolean;
@@ -140,6 +141,11 @@ export function useBotLifecycle(botId?: string) {
           // and throwing (e.g. `("12.5").toFixed is not a function`).
           total_trades: Number(bot.total_trades) || 0,
           total_pnl: Number(bot.total_pnl) || 0,
+          // F2: incompleteness counter — how many fills booked with unknown
+          // PnL. Carried through so a rendering surface can label total_pnl
+          // as a lower bound instead of net PnL.
+          total_pnl_incomplete_fills:
+            Number(bot.total_pnl_incomplete_fills) || 0,
           last_updated: bot.last_updated,
           // P0-3: carry the backend's "needs action" verdict through so the UI
           // can say so explicitly instead of leaving a dead bot looking merely

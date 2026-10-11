@@ -133,10 +133,73 @@ describe("TradeLedgerRepository", () => {
       const [totalsSql, totalsParams] = clientQuery.mock.calls[5];
       expect(totalsSql).toContain("UPDATE bot_instances");
       expect(totalsSql).toContain("total_trades = total_trades + 1");
-      expect(totalsSql).toContain("total_pnl = total_pnl + $2");
+      // F2: a KNOWN pnl adds to total_pnl; the incompleteness counter only
+      // moves when the pnl is NULL (unknown).
+      expect(totalsSql).toContain("total_pnl = total_pnl + COALESCE($2, 0)");
+      expect(totalsSql).toContain("total_pnl_incomplete_fills");
+      expect(totalsSql).toContain("CASE WHEN $2::numeric IS NULL THEN 1 ELSE 0 END");
       expect(totalsSql).toContain("WHERE id = $1");
       expect(totalsSql).not.toContain("strategy_id");
       expect(totalsParams).toEqual([BOT_ID, -1.25]);
+    });
+
+    it("stores an unknown fee/pnl as NULL and counts the fill as incomplete (F2)", async () => {
+      clientQuery
+        .mockResolvedValueOnce({ rows: [{ user_id: "user-1" }] })
+        .mockResolvedValueOnce({ rows: [{ strategy_id: "strat-1" }] })
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: "fill-row" }] })
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rowCount: 1 });
+
+      const result = await repo.recordFill({
+        ...FILL,
+        fee: undefined,
+        pnl: undefined,
+      });
+
+      expect(result).toBe("INSERTED");
+      // Ledger row: NULLs, not zeros.
+      const [, ledgerParams] = clientQuery.mock.calls[2];
+      expect(ledgerParams[10]).toBeNull(); // fee
+      expect(ledgerParams[12]).toBeNull(); // pnl
+      // Display row gets the same NULLs.
+      const [, tradesParams] = clientQuery.mock.calls[3];
+      expect(tradesParams[8]).toBeNull(); // fee
+      expect(tradesParams[9]).toBeNull(); // pnl
+      // Totals: nothing added to total_pnl, incompleteness counter bumped.
+      const [, totalsParams] = clientQuery.mock.calls[5];
+      expect(totalsParams).toEqual([BOT_ID, null]);
+    });
+
+    it("defaults missing fee provenance to the conservative estimate (F5)", async () => {
+      clientQuery
+        .mockResolvedValueOnce({ rows: [{ user_id: "user-1" }] })
+        .mockResolvedValueOnce({ rows: [{ strategy_id: "strat-1" }] })
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: "fill-row" }] })
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rowCount: 1 });
+
+      await repo.recordFill(FILL); // FILL carries no feeIsEstimate
+
+      const [, ledgerParams] = clientQuery.mock.calls[2];
+      expect(ledgerParams[11]).toBe(true); // fee_is_estimate
+
+      // …and an explicit exact rate is preserved.
+      clientQuery.mockClear();
+      clientQuery
+        .mockResolvedValueOnce({ rows: [{ user_id: "user-1" }] })
+        .mockResolvedValueOnce({ rows: [{ strategy_id: "strat-1" }] })
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: "fill-row" }] })
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rowCount: 1 });
+
+      await repo.recordFill({ ...FILL, feeIsEstimate: false });
+
+      const [, exactParams] = clientQuery.mock.calls[2];
+      expect(exactParams[11]).toBe(false);
     });
 
     it("on a duplicate: short-circuits — no display row, no totals increment", async () => {

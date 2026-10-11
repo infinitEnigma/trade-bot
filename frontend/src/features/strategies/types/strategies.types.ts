@@ -57,6 +57,12 @@ export interface BotInstance {
   status: "RUNNING" | "STOPPED" | "ERROR" | "STARTING" | "STOPPING";
   total_trades: number;
   total_pnl: number;
+  /**
+   * Fills booked with unknown PnL (F2). Non-zero means `total_pnl` is a
+   * LOWER BOUND of realised PnL, not net PnL — surfaces rendering it must
+   * say so.
+   */
+  total_pnl_incomplete_fills?: number;
   last_updated: string;
   config: StrategyConfig;
   /**

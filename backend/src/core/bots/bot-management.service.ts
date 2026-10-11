@@ -43,6 +43,11 @@ export interface BotManagementServiceDependencies {
 export interface BotPerformanceMetrics {
   totalTrades: number;
   totalPnL: number;
+  /**
+   * Fills booked with unknown PnL (F2). Non-zero means `totalPnL` is a
+   * lower bound of realised PnL, not net PnL.
+   */
+  totalPnlIncompleteFills: number;
   winRate: number;
   avgTrade: number;
   bestTrade: number;
@@ -107,6 +112,9 @@ export class BotManagementService {
       const performance = {
         totalTrades: botInstance.total_trades || 0,
         totalPnL: botInstance.total_pnl || 0,
+        // F2: surface the incompleteness so callers can tell "no profit"
+        // from "profit not fully accounted" — totalPnL sums only known PnL.
+        totalPnlIncompleteFills: botInstance.total_pnl_incomplete_fills || 0,
         winRate: 0,
         avgTrade: 0,
         bestTrade: 0,

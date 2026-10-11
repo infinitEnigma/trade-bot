@@ -13,7 +13,11 @@
  *   replayed event returns DUPLICATE and changes nothing.
  * - `bot_instances.total_trades` / `total_pnl` are incremented by `bot_id`
  *   ONLY in the same transaction as an actual ledger insert, so the totals
- *   always reconcile with `SUM(bot_trade_fills.pnl)` (Phase 4 exit criterion).
+ *   reconcile with `SUM(bot_trade_fills.pnl)` (Phase 4 exit criterion). F2:
+ *   a fill whose fee/PnL the engine could not source arrives `undefined`,
+ *   is stored as NULL (unknown ≠ zero), and is counted in
+ *   `total_pnl_incomplete_fills` — `total_pnl` therefore sums only KNOWN
+ *   realised PnL and any non-zero counter marks it a lower bound.
  * - The `trades` display row is written in the same transaction, so there is
  *   never a display row without a ledger row (or a double display row from a
  *   replay).
@@ -43,8 +47,18 @@ export interface LedgerFill {
   side: "BUY" | "SELL";
   quantity: number;
   price: number;
-  fee: number;
-  pnl: number;
+  /**
+   * Venue fee for this fill. Undefined = unknown (the rate could not be
+   * sourced) → stored NULL; never collapsed to a made-up zero (F2).
+   */
+  fee?: number;
+  /**
+   * Fee provenance (F5): true = upper-bound estimate, false = exact venue
+   * rate. Undefined (older engines / unknown fee) → stored as estimate.
+   */
+  feeIsEstimate?: boolean;
+  /** Realised PnL net of fees. Undefined = unknown → stored NULL (F2). */
+  pnl?: number;
   status: LedgerStatus;
   /** ISO-8601 execution time as observed by the engine. */
   executedAt: string;
@@ -117,8 +131,9 @@ export class TradeLedgerRepository {
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO bot_trade_fills (
            bot_id, user_id, strategy_id, client_order_id, exchange_order_id,
-           fill_id, symbol, side, quantity, price, fee, pnl, status, executed_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+           fill_id, symbol, side, quantity, price, fee, fee_is_estimate,
+           pnl, status, executed_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          ON CONFLICT (bot_id, client_order_id, exchange_order_id, fill_id)
            DO NOTHING
          RETURNING id`,
@@ -133,8 +148,13 @@ export class TradeLedgerRepository {
           fill.side,
           fill.quantity,
           fill.price,
-          fill.fee,
-          fill.pnl,
+          // F2: unknown ≠ zero — undefined becomes NULL in both the ledger
+          // and the display row (their columns are nullable since 023).
+          fill.fee ?? null,
+          // F5: absent provenance is treated as an estimate (upper bound) —
+          // the conservative reading.
+          fill.feeIsEstimate ?? true,
+          fill.pnl ?? null,
           fill.status,
           fill.executedAt,
         ]
@@ -160,8 +180,9 @@ export class TradeLedgerRepository {
           fill.side,
           fill.quantity,
           fill.price,
-          fill.fee,
-          fill.pnl,
+          // F2: same NULL semantics as the ledger row above.
+          fill.fee ?? null,
+          fill.pnl ?? null,
           fill.status,
           fill.executedAt,
         ]
@@ -176,14 +197,18 @@ export class TradeLedgerRepository {
         [fill.botId, fill.clientOrderId]
       );
 
-      // Totals keyed by bot_id — NEVER strategy_id (N7).
+      // Totals keyed by bot_id — NEVER strategy_id (N7). F2: an unknown pnl
+      // adds nothing to total_pnl but bumps the incompleteness counter, so a
+      // reader can tell "no profit" from "profit not fully accounted".
       await client.query(
         `UPDATE bot_instances
             SET total_trades = total_trades + 1,
-                total_pnl = total_pnl + $2,
+                total_pnl = total_pnl + COALESCE($2, 0),
+                total_pnl_incomplete_fills = total_pnl_incomplete_fills
+                  + CASE WHEN $2::numeric IS NULL THEN 1 ELSE 0 END,
                 updated_at = CURRENT_TIMESTAMP
           WHERE id = $1`,
-        [fill.botId, fill.pnl]
+        [fill.botId, fill.pnl ?? null]
       );
 
       return "INSERTED" as const;

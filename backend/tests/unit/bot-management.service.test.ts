@@ -159,6 +159,8 @@ describe("BotManagementService", () => {
       expect(result).toEqual({
         totalTrades: 10,
         totalPnL: 500,
+        // F2: absent counter means every fill's PnL was known.
+        totalPnlIncompleteFills: 0,
         winRate: 0,
         avgTrade: 0,
         bestTrade: 0,
@@ -168,6 +170,30 @@ describe("BotManagementService", () => {
         testBotId
       );
       expect(deps.logger.debug).toHaveBeenCalled();
+    });
+
+    it("flags an incomplete totalPnL when fills booked with unknown PnL exist (F2)", async () => {
+      const deps = createMockDependencies();
+      const botManagementService = new BotManagementService(deps);
+
+      const mockBotInstance = {
+        id: "bot-123",
+        user_id: "user-123",
+        status: "RUNNING",
+        total_trades: 10,
+        total_pnl: 500,
+        // 3 fills whose PnL the engine could not source: 500 is a LOWER
+        // BOUND, and the caller can now tell.
+        total_pnl_incomplete_fills: 3,
+      };
+      (
+        deps.botInstanceRepository.getBotInstance as jest.Mock
+      ).mockResolvedValue(mockBotInstance);
+
+      const result = await botManagementService.getBotPerformance("bot-123");
+
+      expect(result.totalPnL).toBe(500);
+      expect(result.totalPnlIncompleteFills).toBe(3);
     });
 
     it("should handle bot without performance data", async () => {
@@ -189,6 +215,7 @@ describe("BotManagementService", () => {
       expect(result).toEqual({
         totalTrades: 0,
         totalPnL: 0,
+        totalPnlIncompleteFills: 0,
         winRate: 0,
         avgTrade: 0,
         bestTrade: 0,

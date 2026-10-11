@@ -135,13 +135,21 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
             <div className="flex justify-between">
               {/* P1: ledger total_pnl is realized only — labeled as such so
                   the card never implies total PnL. Venue-exact unrealized
-                  lives on the portfolio strip (per-bot thread is future). */}
+                  lives on the portfolio strip (per-bot thread is future).
+                  F2: with unknown-PnL fills the figure is a lower bound —
+                  ≥ prefix + count, never presented as net PnL. */}
               <span className="text-textMuted">Realized PnL:</span>
               <span
                 className={`font-medium ${
                   (bot.total_pnl || 0) >= 0 ? "text-success" : "text-danger"
                 }`}
+                title={
+                  (bot.total_pnl_incomplete_fills ?? 0) > 0
+                    ? `${bot.total_pnl_incomplete_fills} fill(s) have unknown PnL — this is a lower bound, not net PnL`
+                    : undefined
+                }
               >
+                {(bot.total_pnl_incomplete_fills ?? 0) > 0 ? "≥" : ""}
                 {formatCurrency(bot.total_pnl || 0)}
               </span>
             </div>
