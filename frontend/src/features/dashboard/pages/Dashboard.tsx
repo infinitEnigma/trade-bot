@@ -42,6 +42,7 @@ import { usePortfolioSummary } from "../../../shared/hooks";
 import type { VenuePnlPoint } from "../../../shared/hooks/usePortfolioSummary";
 import { dashboardService } from "../services/dashboardService";
 import { globalBalanceManager } from "../../../shared/services/balance-manager";
+import { EngineJournalIntegrityNotice } from "../../strategies/components/EngineJournalIntegrityNotice";
 import {
   Container,
   ElectricalNetworkBackground,
@@ -726,19 +727,18 @@ const Dashboard: React.FC = () => {
                         : "Not running"}
                   </span>
                 </div>
-                {/* F4 journal integrity: sticky alert only. Kept distinct from
-                    the liveness row above — an unresolved accounting gap is not
-                    an engine-connectivity state and must not clear on a healthy
-                    heartbeat. */}
-                {engineStatus?.data?.journalIntegrityAlert === true && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-text">Fill Journal</span>
-                    <span className="flex items-center gap-2 text-sm text-danger">
-                      <span className="w-2 h-2 rounded-full bg-danger" />
-                      Reconciliation required
-                    </span>
-                  </div>
-                )}
+                {/* F4 journal integrity: sticky reconciliation alert (red) OR
+                    verification-pending (amber), distinct from the liveness row
+                    above — an accounting state is not an engine-connectivity
+                    state and must not clear on a healthy heartbeat. Precedence
+                    and copy live in the component. */}
+                <EngineJournalIntegrityNotice
+                  journalIntegrity={engineStatus?.data?.journalIntegrity}
+                  journalIntegrityAlert={
+                    engineStatus?.data?.journalIntegrityAlert
+                  }
+                  variant="row"
+                />
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-text">Last Sync</span>
                   <span className="text-sm text-textMuted">
