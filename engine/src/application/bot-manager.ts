@@ -38,6 +38,7 @@ import {
 } from "./residual-capacity";
 import { StrategyRunner } from "./strategy-runner";
 import { LedgerTradeReporter } from "./trade-reporter";
+import { symbolsMatch } from "../utils/symbol";
 
 const TICK_INTERVAL_MS = 5000;
 
@@ -896,22 +897,6 @@ export class BotManager {
       throw new CommandError(false, "Bot initialization cancelled");
     }
   }
-}
-
-/**
- * Compare a venue-reported position symbol with the bot's configured symbol.
- * Case/whitespace-insensitive only — a mismatch (unknown symbol format) must
- * skip the flatten rather than close the wrong market.
- */
-function symbolsMatch(venueSymbol: string, configSymbol: string): boolean {
-  return (
-    String(venueSymbol ?? "")
-      .trim()
-      .toUpperCase() ===
-    String(configSymbol ?? "")
-      .trim()
-      .toUpperCase()
-  );
 }
 
 /**

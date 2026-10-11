@@ -34,6 +34,7 @@ type Overrides = {
   createOrder?: () => Promise<{ orderId: string }>;
   cancelOrder?: () => Promise<{ status: string }>;
   listOpenOrders?: () => Promise<unknown[]>;
+  getPositions?: () => Promise<unknown[]>;
 };
 
 type MockExchange = {
@@ -64,7 +65,7 @@ function makeExchange(
     cancelOrder: jest.fn(
       overrides.cancelOrder ?? (async () => ({ status: "CANCELLED" }))
     ),
-    getPositions: jest.fn().mockResolvedValue([]),
+    getPositions: jest.fn(overrides.getPositions ?? (async () => [])),
     getAccountInfo: jest
       .fn()
       .mockResolvedValue({ total_value: 0, max_leverage: 1 }),
@@ -274,6 +275,107 @@ describe("Phase 1 — snapshot restore requires execution-config match", () => {
     await s.initialize(100);
     // A v1 snapshot is never trusted to restore: fresh grid, no adopted handle.
     expect(levelsOf(s)[1].buyOrderId).toBeUndefined();
+  });
+});
+describe("Phase 2 — position-aware recovery gate (untrusted snapshot)", () => {
+  // These all take the untrusted path (no snapshot seeded), so the startup gate
+  // must verify BOTH an empty order book AND a flat account before building.
+
+  it("refuses to build a fresh grid when the account holds exposure", async () => {
+    const exchange = makeExchange({
+      getPositions: async () => [
+        { symbol: CONFIG.symbol, position_qty: 0.5, mark_price: 100 },
+      ],
+    });
+    const s = new GridTradingStrategy("bot-p2-position", CONFIG, exchange);
+    await expect(s.initialize(100)).rejects.toThrow(
+      /non-zero.*position|reconcile the existing exposure/i
+    );
+  });
+
+  it("does NOT auto-flatten: it refuses and places no orders", async () => {
+    const exchange = makeExchange({
+      getPositions: async () => [
+        { symbol: CONFIG.symbol, position_qty: 1, mark_price: 100 },
+      ],
+    });
+    const s = new GridTradingStrategy("bot-p2-noflatten", CONFIG, exchange);
+    await expect(s.initialize(100)).rejects.toThrow(/Refusing to start/);
+    // Refusal happens before any order placement — no exposure manipulation.
+    expect(exchange.createOrder).not.toHaveBeenCalled();
+    expect(exchange.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the position read cannot be completed", async () => {
+    const exchange = makeExchange({
+      getPositions: async () => {
+        throw new Error("positions unreachable");
+      },
+    });
+    const s = new GridTradingStrategy("bot-p2-posfail", CONFIG, exchange);
+    await expect(s.initialize(100)).rejects.toThrow(/cannot verify positions/);
+  });
+
+  it("fails closed on a malformed / non-finite position quantity", async () => {
+    const exchange = makeExchange({
+      getPositions: async () => [
+        {
+          symbol: CONFIG.symbol,
+          position_qty: "not-a-number",
+          mark_price: 100,
+        },
+      ],
+    });
+    const s = new GridTradingStrategy("bot-p2-posmalformed", CONFIG, exchange);
+    await expect(s.initialize(100)).rejects.toThrow(/not a finite number/);
+  });
+
+  it("ignores a position for an unrelated symbol (case-insensitive match)", async () => {
+    const exchange = makeExchange({
+      getPositions: async () => [
+        { symbol: "SOME_OTHER_PERP", position_qty: 5, mark_price: 100 },
+      ],
+    });
+    const s = new GridTradingStrategy("bot-p2-othersym", CONFIG, exchange);
+    // Unrelated exposure does not block a legitimate flat cold start.
+    await expect(s.initialize(100)).resolves.toBeUndefined();
+  });
+
+  it("matches the configured symbol case-insensitively when checking exposure", async () => {
+    const exchange = makeExchange({
+      getPositions: async () => [
+        {
+          symbol: CONFIG.symbol.toLowerCase(),
+          position_qty: 0.3,
+          mark_price: 100,
+        },
+      ],
+    });
+    const s = new GridTradingStrategy("bot-p2-case", CONFIG, exchange);
+    await expect(s.initialize(100)).rejects.toThrow(
+      /non-zero.*position|reconcile the existing exposure/i
+    );
+  });
+
+  it("builds a fresh grid on a legitimately flat + empty cold start", async () => {
+    const exchange = makeExchange({
+      listOpenOrders: async () => [],
+      getPositions: async () => [
+        { symbol: CONFIG.symbol, position_qty: 0, mark_price: 100 },
+      ],
+    });
+    const s = new GridTradingStrategy("bot-p2-flat", CONFIG, exchange);
+    await expect(s.initialize(100)).resolves.toBeUndefined();
+    expect(levelsOf(s).length).toBe(CONFIG.gridSize + 1);
+  });
+
+  it("still refuses on live orders even when the account is flat", async () => {
+    const exchange = makeExchange({
+      listOpenOrders: async () => [{ orderId: "live-1", status: "OPEN" }],
+      getPositions: async () => [],
+    });
+    const s = new GridTradingStrategy("bot-p2-orders", CONFIG, exchange);
+    await expect(s.initialize(100)).rejects.toThrow(/Refusing to start/);
   });
 });
 

@@ -226,6 +226,10 @@ describe("GridTradingStrategy venue position reconciliation (N6)", () => {
     await s.initialize(100);
     await s.start();
 
+    // The startup recovery gate also reads positions (Phase 2); this test is
+    // about the *running* N6 throttle cadence, so isolate it from startup.
+    exchange.getPositions.mockClear();
+
     // First tick right after start(): the interval has not elapsed.
     await s.tick();
     expect(exchange.getPositions).not.toHaveBeenCalled();

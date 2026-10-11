@@ -34,6 +34,7 @@ import {
   UndurableFillError,
 } from "../application/trade-reporter";
 import { FillSegment } from "../utils/fill-id";
+import { symbolsMatch } from "../utils/symbol";
 
 /**
  * How often a single slot's order is re-checked against the exchange (ms).
@@ -189,9 +190,11 @@ export class GridTradingStrategy {
       });
     } else {
       // No trustworthy snapshot: before rebuilding (which would re-place levels
-      // whose orders may still be live) refuse when the venue holds orders we
-      // cannot map, or when we cannot ask (D1 — fail closed).
-      await this.requireEmptyBook(snapResult);
+      // whose orders may still be live, and re-arm entries that ignore an
+      // existing position) refuse when the venue holds orders we cannot map,
+      // holds exposure we cannot explain, or when we cannot ask (D1 — fail
+      // closed; recovery requires explicit operator reconciliation).
+      await this.requireSafeToInitialize(snapResult);
       this.levels = this.buildLevels(currentPrice);
       this.baselinePrice = currentPrice;
       logger.info("Grid strategy initialized", {
@@ -260,13 +263,39 @@ export class GridTradingStrategy {
   }
 
   /**
-   * Fail closed when there is no snapshot to trust. If the venue already holds
-   * orders for the symbol (or cannot be asked), rebuilding the grid could place
-   * a second order at a level that is already live — so refuse to start instead.
+   * Fail closed when there is no snapshot to trust — before a fresh grid is
+   * built (which would re-place levels and re-arm entries that ignore whatever
+   * the account already holds).
+   *
+   * Both venue reads are mandatory and must resolve to *known, benign* state:
+   *
+   *  - **Open orders.** If the venue already holds orders for the symbol (or
+   *    cannot be asked), rebuilding could place a second order at a level that
+   *    is already live.
+   *  - **Position.** If the account already holds exposure for the symbol, a
+   *    fresh grid would begin placing new entries without representing that
+   *    exposure in its per-level inventory — the strategy would grow a position
+   *    it never accounted for. We do **not** silently flatten: recovery requires
+   *    explicit operator reconciliation, so we refuse.
+   *
+   * A read that cannot be completed (throws), a position row that is malformed
+   * or non-finite, or a symbol we cannot confidently match all fail closed —
+   * "unknown" is never treated as "absent/flat". The two reads are not an atomic
+   * exchange-wide snapshot (a position can appear between them); that is
+   * acceptable because the bot remains unable to trade until both checks pass,
+   * and the running position cross-check continues to guard afterwards.
    */
-  private async requireEmptyBook(
+  private async requireSafeToInitialize(
     snapResult: SnapshotLoadResult
   ): Promise<void> {
+    const detail =
+      snapResult.status === "CORRUPT"
+        ? `corrupt snapshot (${snapResult.detail})`
+        : snapResult.status === "MISSING"
+          ? "no snapshot"
+          : "snapshot does not match this config";
+
+    // 1) No unmapped live orders for this symbol.
     let open: ExchangeOpenOrder[];
     try {
       open = await this.exchange.listOpenOrders(this.config.symbol);
@@ -277,16 +306,43 @@ export class GridTradingStrategy {
       );
     }
     if (open.length > 0) {
-      const detail =
-        snapResult.status === "CORRUPT"
-          ? `corrupt snapshot (${snapResult.detail})`
-          : snapResult.status === "MISSING"
-            ? "no snapshot"
-            : "snapshot does not match this config";
       throw new CommandError(
         false,
         `Refusing to start: ${detail} while ${open.length} live order(s) exist for ${this.config.symbol}`
       );
+    }
+
+    // 2) No existing position for this symbol. A non-zero position the fresh
+    //    grid cannot explain must block the build (never auto-flattened).
+    let positions: ExchangePosition[];
+    try {
+      positions = await this.exchange.getPositions();
+    } catch (error) {
+      throw new CommandError(
+        false,
+        `Refusing to start: cannot verify positions for ${this.config.symbol} (${messageOf(error)})`
+      );
+    }
+    const venuePosition = positions.find(p =>
+      symbolsMatch(p.symbol, this.config.symbol)
+    );
+    if (venuePosition !== undefined) {
+      // A successful response is not necessarily a valid position: a missing or
+      // non-finite quantity cannot be read as "flat" — fail closed instead.
+      const raw = venuePosition.position_qty;
+      const qty = Number(raw);
+      if (!Number.isFinite(qty)) {
+        throw new CommandError(
+          false,
+          `Refusing to start: ${detail} but the ${this.config.symbol} position quantity is not a finite number (${String(raw)}); reconcile exposure before trading resumes`
+        );
+      }
+      if (qty !== 0) {
+        throw new CommandError(
+          false,
+          `Refusing to start: ${detail} while the account holds a non-zero ${this.config.symbol} position (${qty}); reconcile the existing exposure before trading resumes`
+        );
+      }
     }
   }
 
