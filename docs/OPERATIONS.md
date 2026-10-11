@@ -250,7 +250,50 @@ double-placed order.
    holds no per-account state, so there is never a reason to run more than
    one. Kodiak traffic is unaffected by its absence.
 
-### 5.8 Post-incident checklist
+### 5.8 Engine fill-journal integrity alert (F4)
+
+The engine publishes `pendingFillsUnknown` on every heartbeat. The backend
+persists it on `engine_registry` and raises a **sticky** `journal_integrity_alert`
+when it sees `UNKNOWN` — surfaced on `GET /api/bot/engine/status`
+(`journalIntegrity` = live aggregate `OK`/`UNKNOWN`/`UNVERIFIED`;
+`journalIntegrityAlert` = unresolved operator action) and as a red banner in the
+UI. The alert does **not** clear on a later healthy heartbeat: unknown financial
+state must never be silently converted back into apparently-healthy state.
+
+Recovery is an explicit, admin-authorized, reconciliation-attested action:
+
+1. **Quarantine is automatic.** A corrupt journal is copied to
+   `$GRID_SNAPSHOT_DIR/pending-fills.json.corrupt-*`; the original bytes are
+   never overwritten (the journal writer refuses to mutate while integrity is
+   unknown). Preserve that file.
+2. **Reconcile from venue history.** For each affected bot, compare
+   `bot_trade_fills` against the venue's fill/order history for the session's
+   client-order-id prefix (see `docs/FINANCIAL_RECONCILIATION.md`). Replay the
+   journal (`pending-fills.json`, or the quarantined bytes) to recover any fill
+   the ledger is missing — the backend's unique fill key keeps replay idempotent.
+3. **Confirm the engine is healthy and drained.** The engine's heartbeat must
+   report `pendingFillsUnknown: false` and `pendingFills: 0` — i.e.
+   `engine_registry.journal_integrity = 'OK'` and `pending_fills = 0`.
+4. **Clear the alert (admin):**
+   `POST /api/bot/management/engine/journal/recover`
+   with `{ "engineId": "<id>", "reconciled": true, "reconciliationRef": "<ticket/incident id>" }`.
+   Admin-only (an engine credential can never clear its own alert). The service
+   re-checks `OK` + `pending_fills = 0` + alert-set **atomically** with the clear,
+   so a concurrent heartbeat that flips the state to `UNKNOWN` forces the call to
+   `409`. The admin id and `reconciliationRef` are recorded
+   (`journal_recovered_by` / `journal_recovery_ref` / `journal_recovered_at`).
+
+This is an operator **attestation**: the system records that an admin asserted
+reconciliation after checking venue history; it is not independent proof. The
+evidence to check is defined in `docs/FINANCIAL_RECONCILIATION.md`.
+
+> Rollout note: journal-integrity persistence requires `heartbeatSeq` on the
+> heartbeat (migration 025 + this backend). Engine and backend deploy together in
+> this monorepo and the engine restarts on deploy, so no pre-025 engine that
+> omits the field remains active; a heartbeat without a valid sequence is
+> rejected for integrity purposes (liveness still updates) and logged.
+
+### 5.9 Post-incident checklist
 
 1. Confirm order/fill/position state **at the exchange**.
 2. Confirm backend state: `GET /api/bot/management/status/:botId`, then `bot_lifecycle_events`

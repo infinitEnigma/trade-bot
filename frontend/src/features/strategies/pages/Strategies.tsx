@@ -517,6 +517,29 @@ const Strategies: React.FC = React.memo(() => {
           </div>
         )}
 
+        {/* Journal-integrity banner (F4): keyed on the STICKY alert, not the
+            live state — an unresolved financial-integrity gap must stay visible
+            even if the engine's latest heartbeat reports healthy. Distinct from
+            the connectivity warning above: this is an accounting problem, not a
+            "engine down" one. Recovery is an admin, reconciliation-attested
+            action (docs/FINANCIAL_RECONCILIATION.md). */}
+        {engineStatus?.data?.journalIntegrityAlert === true && (
+          <div className="glass-card p-4 flex items-start gap-3 border-danger/20 bg-danger/5">
+            <AlertTriangle className="w-5 h-5 text-danger shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium text-danger">
+                Accounting reconciliation required
+              </p>
+              <p className="text-sm text-textMuted">
+                An engine's fill journal could not be verified — some fills may
+                be unaccounted for. Do not resume trading until the fills are
+                reconciled from venue history. See
+                docs/FINANCIAL_RECONCILIATION.md.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Strategies Grid */}
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

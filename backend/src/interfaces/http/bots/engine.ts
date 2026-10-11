@@ -324,6 +324,28 @@ router.get("/status", async (req: Request, res: Response) => {
       totalBots: parseInt(botStats.total_bots || "0"),
       stoppedBots: parseInt(botStats.stopped_bots || "0"),
       errorBots: parseInt(botStats.error_bots || "0"),
+      // F4 journal integrity (migration 025). Two distinct notions:
+      //  - journalIntegrity: LIVE aggregate — worst live state across engines
+      //    (UNKNOWN > UNVERIFIED > OK).
+      //  - journalIntegrityAlert: STICKY — any engine with an unresolved
+      //    operator action. The UI banner keys on THIS, not the live state, so
+      //    a transient healthy heartbeat cannot hide an unreconciled gap.
+      journalIntegrity: liveness.engines.some(
+        e => e.journalIntegrity === "UNKNOWN"
+      )
+        ? "UNKNOWN"
+        : liveness.engines.length > 0 &&
+            liveness.engines.every(e => e.journalIntegrity === "OK")
+          ? "OK"
+          : "UNVERIFIED",
+      journalIntegrityAlert: liveness.engines.some(
+        e => e.journalIntegrityAlert
+      ),
+      pendingFills: liveness.engines.reduce(
+        (n, e) => n + (e.pendingFills ?? 0),
+        0
+      ),
+      // Per-engine detail so the UI/operator can see WHICH engine needs action.
       engines: liveness.engines,
       lastUpdate: Date.now(),
     };

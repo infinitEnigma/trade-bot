@@ -60,6 +60,10 @@ export function startHeartbeat(
   );
 
   let retryInFlight = false;
+  // Per-process heartbeat sequence, +1 each beat. Paired with `epoch` by the
+  // backend to order journal-integrity writes; resets every restart (a new
+  // epoch), which is exactly what makes the (epoch, seq) composite restart-safe.
+  let heartbeatSeq = 0;
   const retryId = setInterval(() => {
     if (retryInFlight) return;
     const status = pendingFillStatus();
@@ -100,6 +104,7 @@ export function startHeartbeat(
         version: ENGINE_VERSION,
         pendingFills: pendingFillCount(),
         pendingFillsUnknown: pendingFillStatus().unknown,
+        heartbeatSeq: ++heartbeatSeq,
       },
       crypto.randomUUID()
     );

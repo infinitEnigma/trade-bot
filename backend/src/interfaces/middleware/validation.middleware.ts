@@ -329,6 +329,31 @@ export const validators = {
     { errorPrefix: "Bot resume validation failed" }
   ),
 
+  // F4: admin operator-verified recovery of an engine fill-journal integrity
+  // alert. `reconciled` must be exactly true (an explicit attestation that the
+  // operator reconciled fills from venue history); `reconciliationRef` is a
+  // short, non-sensitive reference (ticket/incident id or note) recorded for
+  // audit — never venue credentials or trading data. `engineId` is the engine
+  // whose alert is cleared; the admin identity is taken from the JWT, not here.
+  recoverEngineJournal: validateRequest(
+    Joi.object({
+      engineId: Joi.string().trim().min(1).max(64).required().messages({
+        "any.required": "Engine ID is required",
+        "string.empty": "Engine ID is required",
+      }),
+      reconciled: Joi.boolean().valid(true).required().messages({
+        "any.required": "Operator must attest reconciliation (reconciled: true)",
+        "any.only": "Operator must attest reconciliation (reconciled: true)",
+      }),
+      reconciliationRef: Joi.string().trim().min(1).max(256).required().messages({
+        "any.required": "A reconciliation reference is required",
+        "string.empty": "A reconciliation reference is required",
+        "string.max": "Reconciliation reference must be at most 256 characters",
+      }),
+    }),
+    { errorPrefix: "Engine journal recovery validation failed" }
+  ),
+
   // D2 sessions: attach a strategy to a live session as a new run.
   attachRun: validateRequest(
     Joi.object({

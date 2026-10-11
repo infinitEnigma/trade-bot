@@ -20,7 +20,7 @@ import {
   isEngineRegisterEvent,
   BotEvent,
 } from "@trade-bot/shared";
-import { query } from "../../database/pool";
+import { query, getClient } from "../../database/pool";
 import { redisLogger as logger } from "../../core/logging/context-aware-logger.service";
 import { botLifecycleService } from "./bot-lifecycle.service";
 
@@ -42,6 +42,12 @@ interface EngineRow {
   status: string;
   version: string | null;
   last_seen_at: Date;
+  /** Live latest-known journal integrity (migration 025). */
+  journal_integrity?: string;
+  /** Sticky operator-action-required flag (migration 025). */
+  journal_integrity_alert?: boolean;
+  /** Latest journaled-but-undelivered fill count (migration 025). */
+  pending_fills?: number | string;
 }
 
 /**
@@ -180,6 +186,21 @@ export class EngineRegistryService {
         return;
       }
 
+      // F4: persist the journal-integrity signal. Runs only AFTER the stale-
+      // epoch guard above, so a superseded-epoch heartbeat never reaches it.
+      // A failure here is logged loudly and never treated as a successful
+      // integrity update — the liveness write above is already committed, but
+      // the safety signal is not, and a monitor must be able to see that.
+      try {
+        await this.recordJournalIntegrity(payload);
+      } catch (error) {
+        logger.error("FAILED to persist engine journal-integrity signal", undefined, {
+          engineId: payload.engineId,
+          epoch: payload.epoch,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
       // The engine is healthy and tells us which bots it actually runs -
       // use that inventory to detect drift against persisted state.
       try {
@@ -199,6 +220,208 @@ export class EngineRegistryService {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  /**
+   * Persist the engine's fill-journal integrity signal (F4). Called only after
+   * the stale-epoch guard in `heartbeat()`.
+   *
+   * Ordering is the composite (epoch, heartbeatSeq): the last ACCEPTED pair is
+   * stored and an incoming heartbeat is applied only if its pair is strictly
+   * newer. An equal pair is a duplicate redelivery and is NOT reapplied. A
+   * heartbeat without a valid sequence is REJECTED for integrity purposes
+   * (liveness still updates via the separate upsert) — this monorepo deploys
+   * engine and backend together, so no pre-025 engine that omits `heartbeatSeq`
+   * remains active (see the deploy note in engine-lifecycle.ts).
+   *
+   * The prior-state read and the transition happen inside one row-locking
+   * transaction, so concurrent heartbeats serialize and exactly one can observe
+   * the pre-raise state — the UNKNOWN error log fires once, on the committed
+   * false→true edge. Any DB error is thrown (observable) and rolled back.
+   */
+  private async recordJournalIntegrity(
+    payload: EngineHeartbeatEventPayload
+  ): Promise<void> {
+    const isUnknown = payload.pendingFillsUnknown === true;
+    const isOk = payload.pendingFillsUnknown === false;
+    const pending =
+      typeof payload.pendingFills === "number" &&
+      Number.isInteger(payload.pendingFills) &&
+      payload.pendingFills >= 0
+        ? payload.pendingFills
+        : null;
+
+    // A valid sequence is REQUIRED for an integrity write. Missing/malformed
+    // epoch or seq is rejected as invalid — never normalized to 0 and applied.
+    if (
+      typeof payload.epoch !== "number" ||
+      !Number.isSafeInteger(payload.epoch) ||
+      payload.epoch < 0
+    ) {
+      logger.warn("Engine heartbeat rejected for integrity: invalid epoch", {
+        engineId: payload.engineId,
+        epoch: payload.epoch,
+      });
+      return;
+    }
+    if (
+      typeof payload.heartbeatSeq !== "number" ||
+      !Number.isSafeInteger(payload.heartbeatSeq) ||
+      payload.heartbeatSeq < 1
+    ) {
+      logger.warn(
+        "Engine heartbeat rejected for integrity: missing/invalid heartbeatSeq",
+        { engineId: payload.engineId, epoch: payload.epoch }
+      );
+      return;
+    }
+    const epoch = payload.epoch;
+    const seq = payload.heartbeatSeq;
+
+    const client = await getClient();
+    try {
+      await client.query("BEGIN");
+
+      // Lock the engine row so the prior-state read and the transition form one
+      // critical section: exactly one concurrent heartbeat can observe the
+      // pre-raise state, so the error log is emitted once, on the real edge.
+      const { rows } = await client.query<{
+        journal_integrity_alert: boolean;
+        last_hb_epoch: number | string;
+        last_hb_seq: number | string;
+      }>(
+        `SELECT journal_integrity_alert, last_hb_epoch, last_hb_seq
+           FROM engine_registry WHERE engine_id = $1 FOR UPDATE`,
+        [payload.engineId]
+      );
+      const row = rows[0];
+      // The liveness upsert just wrote this row; if it is somehow absent, fail
+      // closed (throw) rather than silently dropping the safety signal.
+      if (!row) {
+        throw new Error(`engine_registry row missing for ${payload.engineId}`);
+      }
+
+      const lastEpoch = normalizeEpoch(row.last_hb_epoch) ?? 0;
+      const lastSeq = normalizeEpoch(row.last_hb_seq) ?? 0;
+
+      // Ordering decision on the composite pair.
+      let apply = false;
+      let nextEpoch = lastEpoch;
+      let nextSeq = lastSeq;
+      if (epoch > lastEpoch) {
+        // Epoch advanced (e.g. a restart): the new process's seq RESETS, so the
+        // pair moves as a unit — do NOT keep the old high seq.
+        apply = true;
+        nextEpoch = epoch;
+        nextSeq = seq;
+      } else if (epoch === lastEpoch && seq > lastSeq) {
+        apply = true;
+        nextEpoch = epoch;
+        nextSeq = seq;
+      } else if (epoch === lastEpoch && seq === lastSeq) {
+        // Duplicate redelivery of an already-applied pair: do not reapply the
+        // payload (no identity guarantee a re-sent pair carries the same bytes).
+        await client.query("COMMIT");
+        return;
+      }
+      // else: stale (older epoch, or same-epoch older seq) -> drop.
+
+      if (!apply) {
+        await client.query("COMMIT");
+        return;
+      }
+
+      const wasAlerted = row.journal_integrity_alert;
+
+      await client.query(
+        `UPDATE engine_registry
+            SET journal_integrity = CASE
+                  WHEN $2 THEN 'UNKNOWN'
+                  WHEN $3 THEN 'OK'
+                  ELSE journal_integrity
+                END,
+                pending_fills = CASE
+                  WHEN $4::int IS NOT NULL THEN $4 ELSE pending_fills END,
+                journal_integrity_alert = CASE
+                  WHEN $2 THEN TRUE ELSE journal_integrity_alert END,
+                journal_unknown_since = CASE
+                  WHEN $2 AND NOT journal_integrity_alert THEN CURRENT_TIMESTAMP
+                  ELSE journal_unknown_since END,
+                last_hb_epoch = $5,
+                last_hb_seq = $6,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE engine_id = $1`,
+        [payload.engineId, isUnknown, isOk, pending, nextEpoch, nextSeq]
+      );
+
+      await client.query("COMMIT");
+
+      // Reliable edge log: only the transaction that actually flipped the
+      // sticky alert false→true logs, and it does so after a committed change.
+      if (isUnknown && !wasAlerted) {
+        logger.error(
+          "Engine fill-journal integrity UNKNOWN - operator reconciliation required",
+          undefined,
+          { engineId: payload.engineId, epoch, pendingFills: pending }
+        );
+      }
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        /* ignore — the connection is being released anyway */
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Explicit, admin-authorized, reconciliation-attested recovery of a sticky
+   * journal-integrity alert. The precondition (live 'OK' AND fully drained AND
+   * currently alerted) and the clear are ONE conditional UPDATE, so a
+   * concurrent heartbeat that flips the live state to UNKNOWN cannot slip
+   * between a read and the clear — Postgres re-evaluates the WHERE against the
+   * locked row, so the UPDATE matches 0 rows and recovery fails.
+   *
+   * This is an operator ATTESTATION (the admin has reconciled fills from venue
+   * history and supplied `reconciliationRef`), not independent proof — the
+   * runbook defines the evidence the operator is expected to check. Returns
+   * `{ recovered: false }` when there is no active alert or the journal is not
+   * currently OK and fully drained.
+   */
+  async recoverJournalIntegrity(
+    engineId: string,
+    operatorUserId: string,
+    reconciliationRef: string
+  ): Promise<{ recovered: boolean; reason?: string }> {
+    const res = await query(
+      `UPDATE engine_registry
+          SET journal_integrity_alert = FALSE,
+              journal_unknown_since = NULL,
+              journal_recovered_at = CURRENT_TIMESTAMP,
+              journal_recovered_by = $2,
+              journal_recovery_ref = $3,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE engine_id = $1
+          AND journal_integrity = 'OK'
+          AND pending_fills = 0
+          AND journal_integrity_alert = TRUE`,
+      [engineId, operatorUserId, reconciliationRef]
+    );
+    if ((res.rowCount ?? 0) === 1) {
+      logger.warn("Engine fill-journal integrity recovered (operator-attested)", {
+        engineId,
+        operatorUserId,
+        reconciliationRef,
+      });
+      return { recovered: true };
+    }
+    return {
+      recovered: false,
+      reason: "no active alert, or journal not currently OK and fully drained",
+    };
   }
 
   /**
@@ -261,10 +484,18 @@ export class EngineRegistryService {
    */
   async getEngineLiveness(): Promise<{
     running: boolean;
-    engines: Array<{ engineId: string; status: string; lastSeenAt: Date }>;
+    engines: Array<{
+      engineId: string;
+      status: string;
+      lastSeenAt: Date;
+      journalIntegrity: "OK" | "UNKNOWN" | "UNVERIFIED";
+      journalIntegrityAlert: boolean;
+      pendingFills: number;
+    }>;
   }> {
     const result = await query<EngineRow>(
-      `SELECT engine_id, epoch, status, version, last_seen_at
+      `SELECT engine_id, epoch, status, version, last_seen_at,
+              journal_integrity, journal_integrity_alert, pending_fills
              FROM engine_registry
              ORDER BY last_seen_at DESC`
     );
@@ -273,6 +504,17 @@ export class EngineRegistryService {
       engineId: row.engine_id,
       status: row.status,
       lastSeenAt: row.last_seen_at,
+      journalIntegrity: (row.journal_integrity ?? "UNVERIFIED") as
+        | "OK"
+        | "UNKNOWN"
+        | "UNVERIFIED",
+      journalIntegrityAlert: row.journal_integrity_alert ?? false,
+      // pending_fills is INTEGER (not BIGINT), but parse defensively in case a
+      // driver ever hands back a string.
+      pendingFills:
+        typeof row.pending_fills === "number"
+          ? row.pending_fills
+          : Number(row.pending_fills ?? 0) || 0,
     }));
     const running = result.rows.some(
       row =>

@@ -96,6 +96,7 @@ import {
 } from "@trade-bot/shared";
 import { serviceProvider } from "../../../core/service-provider";
 import { botLifecycleService } from "../../../core/bots/bot-lifecycle.service";
+import { engineRegistryService } from "../../../core/bots/engine-registry.service";
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
@@ -668,6 +669,59 @@ router.post(
                 : "Failed to resume bot",
         timestamp: Date.now(),
       });
+    }
+  }
+);
+
+// POST /api/bot/management/engine/journal/recover
+//
+// F4: explicit, admin-authorized, reconciliation-attested recovery of an engine
+// fill-journal integrity alert (migration 025). Run AFTER the operator has
+// reconciled the engine's fills against venue history
+// (docs/FINANCIAL_RECONCILIATION.md). Admin-only — an engine credential must
+// never be able to clear its own financial-integrity alert, so this is NOT on
+// the botEngineAuth (/engine) router. The operator must explicitly attest
+// reconciliation (`reconciled: true`) and supply a short reference; both are
+// validated and recorded alongside the admin identity (from the JWT, never the
+// body). The service additionally requires the engine to be currently OK and
+// fully drained, checked atomically with the clear.
+router.post(
+  "/engine/journal/recover",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const userId = getUserId(req);
+    const rms = serviceProvider.getRoleManagementService();
+    if (!rms || !(await rms.isAdminUser(userId))) {
+      return res
+        .status(403)
+        .json({ success: false, error: "Administrator role required" });
+    }
+    next();
+  },
+  validators.recoverEngineJournal,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { engineId, reconciliationRef } = req.body;
+      const { recovered, reason } =
+        await engineRegistryService.recoverJournalIntegrity(
+          engineId,
+          getUserId(req),
+          reconciliationRef
+        );
+      if (!recovered) {
+        return res.status(409).json({ success: false, error: reason });
+      }
+      logger.info("Engine journal-integrity recovery accepted", {
+        engineId,
+        userId: req.user?.userId,
+        reconciliationRef,
+      });
+      res.json({ success: true, data: { engineId, recovered: true } });
+    } catch (err) {
+      logger.error("Engine journal recovery error", err as Error, {
+        userId: req.user?.userId,
+      });
+      res.status(500).json({ success: false, error: "Failed to recover engine journal integrity" });
     }
   }
 );

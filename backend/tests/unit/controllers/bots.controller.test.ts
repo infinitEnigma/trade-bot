@@ -41,6 +41,9 @@ jest.mock("../../../src/interfaces/middleware/validation.middleware", () => ({
     resumeBot: jest
       .fn()
       .mockImplementation((req: any, res: any, next: any) => next()),
+    recoverEngineJournal: jest
+      .fn()
+      .mockImplementation((req: any, res: any, next: any) => next()),
     // D2 sessions: run attach/detach routes (management.ts) register these;
     // without them router.post receives undefined and every route in the
     // suite dies with "argument handler must be a function".
@@ -87,6 +90,7 @@ jest.mock("../../../src/core/bots/bot-lifecycle.service", () => ({
 jest.mock("../../../src/core/bots/engine-registry.service", () => ({
   engineRegistryService: {
     getEngineLiveness: jest.fn(),
+    recoverJournalIntegrity: jest.fn(),
   },
 }));
 
@@ -126,6 +130,9 @@ jest.mock("../../../src/core/service-provider", () => ({
       ensureEngineRunning: jest.fn().mockResolvedValue(undefined),
       stopEngineIfNoActiveBots: jest.fn().mockResolvedValue(undefined),
       getEngineStatus: jest.fn().mockResolvedValue({ running: true }),
+    }),
+    getRoleManagementService: jest.fn().mockReturnValue({
+      isAdminUser: jest.fn().mockResolvedValue(true),
     }),
   },
 }));
@@ -1057,6 +1064,9 @@ describe("Bots Controller", () => {
               engineId: "engine-1",
               status: "ONLINE",
               lastSeenAt: new Date(),
+              journalIntegrity: "UNKNOWN",
+              journalIntegrityAlert: true,
+              pendingFills: 2,
             },
           ],
         });
@@ -1073,6 +1083,11 @@ describe("Bots Controller", () => {
         expect(response.body.data.activeBots).toBe(0);
         expect(response.body.data.totalBots).toBe(5);
         expect(response.body.data.engines).toHaveLength(1);
+        // F4: journal integrity surfaces alongside liveness; `running` is
+        // unchanged. Live aggregate is UNKNOWN, sticky alert true, count summed.
+        expect(response.body.data.journalIntegrity).toBe("UNKNOWN");
+        expect(response.body.data.journalIntegrityAlert).toBe(true);
+        expect(response.body.data.pendingFills).toBe(2);
       });
 
       it("reports offline when no live engine is registered, even with RUNNING bot rows", async () => {
@@ -1101,6 +1116,74 @@ describe("Bots Controller", () => {
         expect(response.body.data.status).toBe("offline");
         expect(response.body.data.activeBots).toBe(3);
         expect(response.body.data.engines).toEqual([]);
+      });
+    });
+
+    describe("POST /api/bot/management/engine/journal/recover", () => {
+      const { engineRegistryService } = jest.requireMock(
+        "../../../src/core/bots/engine-registry.service"
+      );
+      const { serviceProvider } = jest.requireMock(
+        "../../../src/core/service-provider"
+      );
+
+      it("clears the alert for an admin and records the operator + reference", async () => {
+        engineRegistryService.recoverJournalIntegrity.mockResolvedValue({
+          recovered: true,
+        });
+
+        const response = await request(app)
+          .post("/api/bot/management/engine/journal/recover")
+          .send({
+            engineId: "engine-1",
+            reconciled: true,
+            reconciliationRef: "INC-1234",
+          })
+          .expect(200);
+
+        expect(response.body.success).toBe(true);
+        // Admin identity comes from the authenticated request (user-123), never
+        // the body; the reference is forwarded for the audit trail.
+        expect(
+          engineRegistryService.recoverJournalIntegrity
+        ).toHaveBeenCalledWith("engine-1", "user-123", "INC-1234");
+      });
+
+      it("returns 409 when the precondition is unmet (not OK / not drained)", async () => {
+        engineRegistryService.recoverJournalIntegrity.mockResolvedValue({
+          recovered: false,
+          reason: "no active alert, or journal not currently OK and fully drained",
+        });
+
+        const response = await request(app)
+          .post("/api/bot/management/engine/journal/recover")
+          .send({
+            engineId: "engine-1",
+            reconciled: true,
+            reconciliationRef: "INC-1234",
+          })
+          .expect(409);
+
+        expect(response.body.success).toBe(false);
+      });
+
+      it("returns 403 for a non-admin", async () => {
+        serviceProvider.getRoleManagementService().isAdminUser.mockResolvedValueOnce(
+          false
+        );
+
+        await request(app)
+          .post("/api/bot/management/engine/journal/recover")
+          .send({
+            engineId: "engine-1",
+            reconciled: true,
+            reconciliationRef: "INC-1234",
+          })
+          .expect(403);
+
+        expect(
+          engineRegistryService.recoverJournalIntegrity
+        ).not.toHaveBeenCalled();
       });
     });
 

@@ -29,13 +29,27 @@ reference implementation of remediation item 5 of the financial-plane review
    caller sees an explicit gap, never a log-only loss). Replay runs at engine
    startup, at bot-session start, and on a 30s periodic loop
    (`PENDING_FILL_RETRY_INTERVAL_MS`); the heartbeat carries `pendingFills`
-   so the backend can alert on a journal that never drains. A session start
+   and `pendingFillsUnknown` (with a per-process `heartbeatSeq`) so the backend
+   can alert on a journal that never drains. A session start
    with `remaining > 0` aborts (INIT_FAILED, retryable) — a session never
    trades behind undelivered fills. The backend's unique
    `(bot_id, client_order_id, exchange_order_id, fill_id)` key keeps replay
    idempotent. Corruption path: malformed rows are quarantined
    (`pending-fills.json.corrupt-*`) and `.prev` is consulted even when the
    primary is missing, so the only copy of a fill is never silently dropped.
+   **Integrity alerting (F4).** The backend persists the signal on
+   `engine_registry` and raises a **sticky** `journal_integrity_alert` on
+   `UNKNOWN`, surfaced on `GET /api/bot/engine/status` (`journalIntegrity` =
+   live `OK`/`UNKNOWN`/`UNVERIFIED`; `journalIntegrityAlert` = unresolved
+   action) and as a UI banner. Writes are ordered by the composite
+   `(epoch, heartbeatSeq)` so a stale/redelivered heartbeat cannot overwrite a
+   newer signal, and the alert is **cleared only by an admin,
+   reconciliation-attested recovery** (`POST /management/engine/journal/recover`,
+   which requires the engine to be `OK` and `pending_fills = 0`, checked
+   atomically with the clear) — never by a later healthy heartbeat. "Verified
+   recovery" = an operator reconciled the fills from venue history (recorded as
+   `journal_recovery_ref`) AND the engine currently reports healthy and drained.
+   Runbook: `docs/OPERATIONS.md` §5.8.
 3. **Unknown ≠ zero (F2).** The engine omits `fee`/`pnl` when the venue rate
    could not be sourced; the backend stores NULL (never a flattened 0).
    `bot_instances.total_pnl` sums only KNOWN fill PnL;

@@ -726,6 +726,19 @@ const Dashboard: React.FC = () => {
                         : "Not running"}
                   </span>
                 </div>
+                {/* F4 journal integrity: sticky alert only. Kept distinct from
+                    the liveness row above — an unresolved accounting gap is not
+                    an engine-connectivity state and must not clear on a healthy
+                    heartbeat. */}
+                {engineStatus?.data?.journalIntegrityAlert === true && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-text">Fill Journal</span>
+                    <span className="flex items-center gap-2 text-sm text-danger">
+                      <span className="w-2 h-2 rounded-full bg-danger" />
+                      Reconciliation required
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-text">Last Sync</span>
                   <span className="text-sm text-textMuted">

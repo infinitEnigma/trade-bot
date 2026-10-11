@@ -54,6 +54,21 @@ export interface EngineHeartbeatEventPayload {
    * and refuse auto-recovery, never treat it as "drained".
    */
   pendingFillsUnknown?: boolean;
+  /**
+   * Monotonically increasing within ONE engine process, +1 each heartbeat,
+   * resetting to 1 on restart. The backend orders journal-integrity writes by
+   * the composite (epoch, heartbeatSeq) so a stale/redelivered heartbeat can
+   * never overwrite a newer one — including across a process restart (epoch
+   * advances, seq resets) or a delayed message from a superseded epoch.
+   *
+   * Required for journal-integrity persistence: the backend REJECTS a
+   * heartbeat that lacks a valid sequence for that purpose (liveness still
+   * updates regardless). Deployment note — `pendingFillsUnknown` and
+   * `heartbeatSeq` must ship together with backend migration 025; the
+   * coordinated monorepo deploy restarts every engine, so no pre-025 engine
+   * (which omits this field) remains active against a 025 backend.
+   */
+  heartbeatSeq?: number;
 }
 
 export type EngineLifecycleEventPayload =
