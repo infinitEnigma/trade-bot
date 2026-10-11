@@ -18,7 +18,11 @@ import {
   EngineIdentity,
   StrategyRunState,
 } from "../domain/bot-runtime";
-import { ExchangeOpenOrder, ExchangePosition } from "../domain/exchange";
+import {
+  ExchangeClient,
+  ExchangeOpenOrder,
+  ExchangePosition,
+} from "../domain/exchange";
 import {
   publishEvent,
   publishAccepted,
@@ -26,6 +30,12 @@ import {
 } from "../protocol/event-publisher";
 import { fetchCredentials } from "../protocol/credential-fetcher";
 import { CommandError } from "./command-error";
+import {
+  assertEngineResidualCapacity,
+  sessionCapLeverage,
+  sessionRequestedNotional,
+  sumPositionExposure,
+} from "./residual-capacity";
 import { StrategyRunner } from "./strategy-runner";
 import { LedgerTradeReporter } from "./trade-reporter";
 
@@ -200,19 +210,20 @@ export class BotManager {
     }
     this.initializing.add(botId);
     try {
-      // Session fan-out: one entry per run, else the legacy single run.
-      const runSpecs =
-        runs && runs.length > 0
-          ? runs
-          : [
-              {
-                runId: undefined as unknown as string,
-                strategyId,
-                configVersion: 1,
-                config,
-                notionalAmount: 0,
-              },
-            ];
+      // Session fan-out: one entry per run, else the legacy single run. A
+      // legacy payload declares no notional (fabricated 0 below) — the
+      // residual-capacity backstop then gates on live venue exposure only
+      // ("no declared intent"), never on a made-up size.
+      const declaredRuns = runs && runs.length > 0 ? runs : null;
+      const runSpecs = declaredRuns ?? [
+        {
+          runId: undefined as unknown as string,
+          strategyId,
+          configVersion: 1,
+          config,
+          notionalAmount: 0,
+        },
+      ];
       await this.doStartSession(
         streamOps,
         botId,
@@ -220,7 +231,8 @@ export class BotManager {
         strategyId,
         config,
         correlationId,
-        runSpecs
+        runSpecs,
+        declaredRuns !== null
       );
     } finally {
       this.initializing.delete(botId);
@@ -594,7 +606,9 @@ export class BotManager {
       configVersion: number;
       config: Record<string, unknown>;
       notionalAmount: number;
-    }>
+    }>,
+    /** False only for legacy payloads (no runs[]) → no declared notional. */
+    hasDeclaredNotional: boolean
   ): Promise<void> {
     const startedRunners: StrategyRunner[] = [];
     const stopAllRunners = (): void => {
@@ -625,7 +639,24 @@ export class BotManager {
       const exchangeClient = createExchangeClient(credentials);
       this.throwIfCancelled(botId);
 
-      // 3. One strategy + runner per run, sharing the session client.
+      // 3. Residual-capacity backstop (defense in depth, Model A spirit):
+      // refuse to arm ANY run when the venue account has no residual room
+      // left for this session — `Σ|qty×mark| + Σnotional ≤ total_value ×
+      // SESSION_CAP_LEVERAGE`. Live reads through the session's own client
+      // make the engine independent of the backend admission path (which
+      // stays authoritative for attach concurrency and STOPPED stacks).
+      // Fail-closed by design: an unreadable account/positions, an unknown
+      // notional, or an invalid leverage env all land in the catch below →
+      // COMMAND_FAILED + STARTING→ERROR, with zero runners started.
+      await this.assertResidualCapacity(
+        botId,
+        exchangeClient,
+        runSpecs,
+        hasDeclaredNotional
+      );
+      this.throwIfCancelled(botId);
+
+      // 4. One strategy + runner per run, sharing the session client.
       const tradeReporter = new LedgerTradeReporter(
         streamOps,
         this.engineId,
@@ -758,6 +789,82 @@ export class BotManager {
       const reported = new CommandError(false, err.message);
       reported.stack = err.stack ?? reported.stack;
       throw reported;
+    }
+  }
+
+  /**
+   * One fail-closed Model A re-check per session start: live venue exposure
+   * plus the session's declared notionals must fit `total_value ×
+   * SESSION_CAP_LEVERAGE`. Uses only the session's own `ExchangeClient`
+   * (`getAccountInfo`/`getPositions` — both already on the interface, so no
+   * venue API additions). Throws on every failure mode so the
+   * {@link doStartSession} catch converts it into the existing INIT_FAILED
+   * control-plane path (COMMAND_FAILED + STARTING→ERROR, non-retryable) with
+   * zero runners started. Not a per-order gate — the grid sizes from base-unit
+   * `orderQuantity`, a different unit than USD `notionalAmount`.
+   */
+  private async assertResidualCapacity(
+    botId: string,
+    exchangeClient: ExchangeClient,
+    runSpecs: ReadonlyArray<{ runId?: string; notionalAmount: number }>,
+    hasDeclaredNotional: boolean
+  ): Promise<void> {
+    // Resolve pure inputs first so an invalid SESSION_CAP_LEVERAGE or a
+    // malformed notional refuses before any venue round-trip.
+    const leverage = sessionCapLeverage();
+    // Legacy payloads (no runs[]) declare no notional — treat as "no
+    // declared intent" (requested 0). The exposure half still applies, so an
+    // account already over cap refuses to start anything.
+    const requested = hasDeclaredNotional
+      ? sessionRequestedNotional(runSpecs)
+      : 0;
+
+    if (
+      typeof exchangeClient.getAccountInfo !== "function" ||
+      typeof exchangeClient.getPositions !== "function"
+    ) {
+      throw new Error(
+        "Exchange client does not expose getAccountInfo/getPositions; cannot verify engine residual capacity (fail-closed)"
+      );
+    }
+    const [accountInfo, positions] = await Promise.all([
+      exchangeClient.getAccountInfo(),
+      exchangeClient.getPositions(),
+    ]);
+    if (!Array.isArray(positions)) {
+      throw new Error(
+        `Positions payload is not an array (${typeof positions}); cannot compute engine exposure (fail-closed)`
+      );
+    }
+    const exposure = sumPositionExposure(
+      positions.map(p => ({
+        qty: p.position_qty,
+        mark: p.mark_price,
+        symbol: p.symbol,
+      }))
+    );
+    const totalValue = Number(
+      accountInfo === null || accountInfo === undefined
+        ? Number.NaN
+        : (accountInfo as { total_value?: unknown }).total_value
+    );
+    try {
+      assertEngineResidualCapacity({
+        exposure,
+        requested,
+        totalValue,
+        leverage,
+      });
+    } catch (error) {
+      logger.warn("Engine residual-capacity backstop refused the start", {
+        botId,
+        exposure,
+        requested,
+        totalValue,
+        leverage,
+        error: messageOf(error),
+      });
+      throw error;
     }
   }
 

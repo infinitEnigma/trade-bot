@@ -148,7 +148,23 @@ BACKEND_URL=http://localhost:3000
 # Engine Identity (optional)
 ENGINE_ID=my-engine-1  # Optional: persistent engine identifier
 ENGINE_STATE_FILE=./.engine-state.json
+
+# Residual-capacity backstop (session notional cap)
+# cap = venue account total_value × leverage; default 10, max 100.
+# Keep in sync with the backend's F1 admission gate (same env, same meaning).
+SESSION_CAP_LEVERAGE=10
 ```
+
+The engine enforces a **fail-closed residual-capacity backstop** at session
+start: `Σ live position notional + Σ run notionalAmount ≤ total_value ×
+SESSION_CAP_LEVERAGE`, computed from live venue reads through the session's
+own exchange client (`getAccountInfo`/`getPositions`). It is defense in depth
+behind the backend's Model A admission gate — if the backend was bypassed,
+stale, or wrong, the engine still refuses to arm runs on an account with no
+residual capacity. A breach, an unreadable venue account/positions, an
+unknown run notional, or an invalid `SESSION_CAP_LEVERAGE` refuses the start
+(`COMMAND_FAILED` + `STARTING→ERROR`); no runner is armed and no order is
+placed.
 
 ### Development
 

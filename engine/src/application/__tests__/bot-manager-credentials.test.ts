@@ -72,6 +72,24 @@ function makeManager(): BotManager {
   return manager;
 }
 
+/**
+ * Healthy residual-capacity venue reads for the engine backstop (see
+ * `residual-capacity.test.ts`): this suite is about the credential contract,
+ * so the gate only needs a large healthy cap to let the start through.
+ */
+function healthyVenueReads(): {
+  getAccountInfo: jest.Mock;
+  getPositions: jest.Mock;
+} {
+  return {
+    getAccountInfo: jest.fn(async () => ({
+      total_value: 100000,
+      max_leverage: 50,
+    })),
+    getPositions: jest.fn(async () => []),
+  };
+}
+
 describe("BotManager.handleStart credential-contract slice (workstream A)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -115,6 +133,7 @@ describe("BotManager.handleStart credential-contract slice (workstream A)", () =
       getTicker: jest
         .fn()
         .mockResolvedValue({ symbol: "S", price: 100, mark_price: 100 }),
+      ...healthyVenueReads(),
     };
     createExchangeClientMock.mockReturnValue(client);
 
@@ -204,6 +223,7 @@ describe("BotManager.handleStart credential-contract slice (workstream A)", () =
       getTicker: jest
         .fn()
         .mockRejectedValue(new Error("Request failed with status code 409")),
+      ...healthyVenueReads(),
     });
 
     const manager = makeManager();
@@ -246,6 +266,7 @@ describe("BotManager.handleStart credential-contract slice (workstream A)", () =
         price: 100,
         mark_price: 100,
       })),
+      ...healthyVenueReads(),
     };
     createExchangeClientMock.mockReturnValue(client);
 
