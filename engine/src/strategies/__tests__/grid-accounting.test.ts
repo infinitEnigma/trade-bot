@@ -441,20 +441,25 @@ describe("GridTradingStrategy entry-price durability (N6)", () => {
 
   it("never arms an exit at or below the entry (degenerate grid)", async () => {
     const exchange = makeExchange();
-    // At a price of 1 with a 0.1% range every 2dp line collapses onto 1.00, so
-    // no exit can be priced above the entry.
+    // Baseline 2 at a 1% range with 100 levels: the step is 0.0002, so 2dp
+    // quantization collapses every line onto 2.00. BUY still arms on level 0
+    // (price 2 <= level 2.00), but the exit has no price strictly above the
+    // 2.00 entry — step and top-line fallback both round back to 2.00 — and
+    // stays unarmed. gridRangePercent=1/gridSize=100 are the documented
+    // bounds (Phase 4 boundary); the degeneracy comes from quantization, not
+    // from an out-of-bounds config.
     const s = makeStrategy("bot-n6-degenerate", exchange, {
       ...CONFIG,
       gridSize: 100,
-      gridRangePercent: 0.1,
+      gridRangePercent: 1,
     });
-    await s.initialize(1);
+    await s.initialize(2);
     await s.start();
     await s.tick();
-    await fillBuy(s, exchange, 0, 1);
+    await fillBuy(s, exchange, 0, 2);
     expect(levelsOf(s)[0].filled).toBe(true);
 
-    await tickAt(s, exchange, 1);
+    await tickAt(s, exchange, 2);
 
     expect(placedOrders(exchange, "SELL")).toHaveLength(0);
     expect(levelsOf(s)[0].sellOrderId).toBeUndefined();

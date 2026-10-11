@@ -218,30 +218,43 @@ export class StrategyService {
     const errors: string[] = [];
 
     switch (type) {
-      case StrategyType.GRID:
+      case StrategyType.GRID: {
         if (!config.symbol || typeof config.symbol !== "string") {
           errors.push("Symbol is required");
         }
         if (
-          !config.gridSize ||
-          (typeof config.gridSize === "number" && config.gridSize < 2)
+          typeof config.gridSize !== "number" ||
+          !Number.isInteger(config.gridSize) ||
+          config.gridSize < 2 ||
+          config.gridSize > 100
         ) {
-          errors.push("Grid size must be at least 2");
+          errors.push("Grid size must be an integer between 2 and 100");
         }
         if (
-          !config.gridRange ||
-          (typeof config.gridRange === "number" && config.gridRange <= 0)
+          typeof config.gridRange !== "number" ||
+          !Number.isFinite(config.gridRange) ||
+          config.gridRange < 1 ||
+          config.gridRange > 50
         ) {
-          errors.push("Grid range must be positive");
+          errors.push("Grid range must be a number between 1 and 50");
         }
         if (
-          !config.orderQuantity ||
-          (typeof config.orderQuantity === "number" &&
-            config.orderQuantity <= 0)
+          typeof config.orderQuantity !== "number" ||
+          !Number.isFinite(config.orderQuantity) ||
+          config.orderQuantity <= 0
         ) {
-          errors.push("Order quantity must be positive");
+          errors.push("Order quantity must be a finite positive number");
+        }
+        if (
+          config.takeProfit !== undefined &&
+          (typeof config.takeProfit !== "number" ||
+            !Number.isFinite(config.takeProfit) ||
+            config.takeProfit <= 0)
+        ) {
+          errors.push("Take profit must be a finite positive number");
         }
         break;
+      }
 
       default:
         errors.push(`Strategy type ${type} validation not implemented`);

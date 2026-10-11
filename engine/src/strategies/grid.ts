@@ -35,6 +35,7 @@ import {
 } from "../application/trade-reporter";
 import { FillSegment } from "../utils/fill-id";
 import { symbolsMatch } from "../utils/symbol";
+import { assertValidGridConfig } from "./grid-config";
 
 /**
  * How often a single slot's order is re-checked against the exchange (ms).
@@ -144,6 +145,11 @@ export class GridTradingStrategy {
     reporter?: TradeReporter,
     runId?: string
   ) {
+    // Phase 4: engine-side safety invariant. BotManager resolves through
+    // resolveGridConfig, but direct construction must not smuggle an invalid
+    // geometry past the boundary — a bad config here builds a nonsensical
+    // or empty grid.
+    assertValidGridConfig(config);
     this.botId = botId;
     this.config = config;
     this.exchange = exchange;

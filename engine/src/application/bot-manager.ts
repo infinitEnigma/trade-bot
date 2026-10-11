@@ -39,6 +39,7 @@ import {
 import { StrategyRunner } from "./strategy-runner";
 import { LedgerTradeReporter } from "./trade-reporter";
 import { symbolsMatch } from "../utils/symbol";
+import { resolveGridConfig } from "../strategies/grid-config";
 
 const TICK_INTERVAL_MS = 5000;
 
@@ -690,10 +691,15 @@ export class BotManager {
 
       for (const spec of runSpecs) {
         const runConfig = spec.config ?? config;
-        const symbol = String(runConfig.symbol || "");
-        if (!symbol) {
-          throw new CommandError(false, "Strategy config is missing symbol");
-        }
+        // Phase 4: one boundary resolver — missing numerics keep historical
+        // defaults, but any explicitly invalid field refuses the start
+        // (non-retryable) instead of trading on a substituted guess. Symbol
+        // support stays the backend's venue-catalog gate; the engine checks
+        // non-empty only, since it is venue-agnostic by design.
+        const gridConfig = resolveGridConfig(
+          runConfig as Record<string, unknown>
+        );
+        const symbol = gridConfig.symbol;
         this.throwIfCancelled(botId);
         const ticker = await exchangeClient.getTicker(symbol);
         this.throwIfCancelled(botId);
@@ -707,16 +713,7 @@ export class BotManager {
 
         const gridStrategy = new GridTradingStrategy(
           botId,
-          {
-            symbol,
-            gridSize: Number(runConfig.gridSize) || 10,
-            gridRangePercent: Number(runConfig.gridRange) || 5,
-            orderQuantity: Number(runConfig.orderQuantity) || 1,
-            takeProfitPercent:
-              Number(runConfig.takeProfit) > 0
-                ? Number(runConfig.takeProfit)
-                : undefined,
-          },
+          gridConfig,
           exchangeClient,
           tradeReporter,
           spec.runId
