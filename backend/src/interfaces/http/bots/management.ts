@@ -721,7 +721,10 @@ router.post(
       logger.error("Engine journal recovery error", err as Error, {
         userId: req.user?.userId,
       });
-      res.status(500).json({ success: false, error: "Failed to recover engine journal integrity" });
+      res.status(500).json({
+        success: false,
+        error: "Failed to recover engine journal integrity",
+      });
     }
   }
 );

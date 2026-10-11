@@ -342,14 +342,21 @@ export const validators = {
         "string.empty": "Engine ID is required",
       }),
       reconciled: Joi.boolean().valid(true).required().messages({
-        "any.required": "Operator must attest reconciliation (reconciled: true)",
+        "any.required":
+          "Operator must attest reconciliation (reconciled: true)",
         "any.only": "Operator must attest reconciliation (reconciled: true)",
       }),
-      reconciliationRef: Joi.string().trim().min(1).max(256).required().messages({
-        "any.required": "A reconciliation reference is required",
-        "string.empty": "A reconciliation reference is required",
-        "string.max": "Reconciliation reference must be at most 256 characters",
-      }),
+      reconciliationRef: Joi.string()
+        .trim()
+        .min(1)
+        .max(256)
+        .required()
+        .messages({
+          "any.required": "A reconciliation reference is required",
+          "string.empty": "A reconciliation reference is required",
+          "string.max":
+            "Reconciliation reference must be at most 256 characters",
+        }),
     }),
     { errorPrefix: "Engine journal recovery validation failed" }
   ),

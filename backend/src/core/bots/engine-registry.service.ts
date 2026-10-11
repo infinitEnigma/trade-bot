@@ -194,11 +194,15 @@ export class EngineRegistryService {
       try {
         await this.recordJournalIntegrity(payload);
       } catch (error) {
-        logger.error("FAILED to persist engine journal-integrity signal", undefined, {
-          engineId: payload.engineId,
-          epoch: payload.epoch,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        logger.error(
+          "FAILED to persist engine journal-integrity signal",
+          undefined,
+          {
+            engineId: payload.engineId,
+            epoch: payload.epoch,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
       }
 
       // The engine is healthy and tells us which bots it actually runs -
@@ -411,11 +415,14 @@ export class EngineRegistryService {
       [engineId, operatorUserId, reconciliationRef]
     );
     if ((res.rowCount ?? 0) === 1) {
-      logger.warn("Engine fill-journal integrity recovered (operator-attested)", {
-        engineId,
-        operatorUserId,
-        reconciliationRef,
-      });
+      logger.warn(
+        "Engine fill-journal integrity recovered (operator-attested)",
+        {
+          engineId,
+          operatorUserId,
+          reconciliationRef,
+        }
+      );
       return { recovered: true };
     }
     return {
@@ -505,9 +512,7 @@ export class EngineRegistryService {
       status: row.status,
       lastSeenAt: row.last_seen_at,
       journalIntegrity: (row.journal_integrity ?? "UNVERIFIED") as
-        | "OK"
-        | "UNKNOWN"
-        | "UNVERIFIED",
+        "OK" | "UNKNOWN" | "UNVERIFIED",
       journalIntegrityAlert: row.journal_integrity_alert ?? false,
       // pending_fills is INTEGER (not BIGINT), but parse defensively in case a
       // driver ever hands back a string.
