@@ -12,7 +12,10 @@ import { logger } from "../utils/logger";
 import { BotRuntime } from "../domain/bot-runtime";
 import { publishEvent } from "../protocol/event-publisher";
 import { LedgerTradeReporter } from "./trade-reporter";
-import { pendingFillCount } from "../infrastructure/state/pending-fill-journal";
+import {
+  pendingFillCount,
+  pendingFillStatus,
+} from "../infrastructure/state/pending-fill-journal";
 
 const ENGINE_HEARTBEAT_INTERVAL_MS = Number(
   process.env.ENGINE_HEARTBEAT_INTERVAL_MS || 10_000
@@ -59,13 +62,16 @@ export function startHeartbeat(
   let retryInFlight = false;
   const retryId = setInterval(() => {
     if (retryInFlight) return;
-    let pending = 0;
-    try {
-      pending = pendingFillCount();
-    } catch {
-      return;
+    const status = pendingFillStatus();
+    if (status.unknown) {
+      // Nothing iterable to replay, but the backend must hear about it:
+      // UNKNOWN integrity is a distinct alert from "drained".
+      logger.error(
+        "Fill-journal integrity unknown - operator reconciliation required",
+        { engineId, epoch }
+      );
     }
-    if (pending === 0) return;
+    if (status.pending === 0) return;
     retryInFlight = true;
     void new LedgerTradeReporter(streamOps, engineId, epoch)
       .replayPendingFills()
@@ -93,6 +99,7 @@ export function startHeartbeat(
         activeBotIds: getActiveBotIds(),
         version: ENGINE_VERSION,
         pendingFills: pendingFillCount(),
+        pendingFillsUnknown: pendingFillStatus().unknown,
       },
       crypto.randomUUID()
     );

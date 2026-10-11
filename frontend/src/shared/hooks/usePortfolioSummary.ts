@@ -89,14 +89,18 @@ const toNumber = (value: unknown): number => {
  * `toNumber()` coerces missing/invalid values to 0, which lets a malformed
  * balance response masquerade as a readable zero. Balance aggregation must
  * distinguish a legitimate numeric zero from "unavailable": only a finite
- * number (or a numeric string parsing to one) counts as readable.
+ * number (or a string that is ENTIRELY numeric) counts as readable.
+ * `parseFloat` alone is insufficient — it accepts "12abc" as 12.
  */
+const NUMERIC_STRING = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
 const parseBalance = (value: unknown): number | null => {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : null;
   }
-  if (typeof value === "string" && value.trim().length > 0) {
-    const n = parseFloat(value);
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length === 0 || !NUMERIC_STRING.test(trimmed)) return null;
+    const n = Number(trimmed);
     return Number.isFinite(n) ? n : null;
   }
   return null;

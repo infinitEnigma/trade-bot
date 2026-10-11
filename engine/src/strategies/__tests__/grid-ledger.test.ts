@@ -16,6 +16,7 @@ import {
   PerformanceReport,
   PositionReport,
   TradeReporter,
+  UndurableFillError,
 } from "../../application/trade-reporter";
 import * as os from "os";
 import * as path from "path";
@@ -202,9 +203,11 @@ describe("GridTradingStrategy ledger emission (Phase 4)", () => {
     expect(reporter.reportFill).not.toHaveBeenCalled();
   });
 
-  it("keeps ticking when fill reporting fails (reporting never breaks the loop)", async () => {
+  it("keeps ticking when a replayable fill report fails (reporting never breaks the loop)", async () => {
     const exchange = makeExchange();
     const reporter = makeReporter();
+    // A generic publish failure is NOT undurable: the fill was journaled, so
+    // it is replayable. The tick must keep placing the remaining slots.
     reporter.reportFill.mockRejectedValue(new Error("redis down"));
     const s = new GridTradingStrategy(
       "bot-ledger",
@@ -218,10 +221,61 @@ describe("GridTradingStrategy ledger emission (Phase 4)", () => {
     scriptFilledSlot(exchange, deriveId(s, 0, "BUY"));
 
     await expect(s.tick()).resolves.toBeUndefined();
+    expect(s.isLedgerHalted()).toBe(false);
 
     // The remaining slots still went through the intent gate + placement.
     expect(reporter.reportOrderIntent).toHaveBeenCalledTimes(2);
     expect(exchange.createOrder).toHaveBeenCalledTimes(2);
+  });
+
+  it("halts new placements after an undurable fill (no durable record)", async () => {
+    const exchange = makeExchange();
+    const reporter = makeReporter();
+    // No durable copy: the reporter rejects with UndurableFillError (F1
+    // fail-closed). The strategy must halt NEW placements, not keep trading
+    // behind an unguaranteed ledger record.
+    reporter.reportFill.mockRejectedValue(
+      new UndurableFillError("fill-1", "bot-ledger", "bot-ledger-00-BUY")
+    );
+    const s = new GridTradingStrategy(
+      "bot-ledger",
+      CONFIG,
+      exchange as unknown as ExchangeClient,
+      reporter
+    );
+    await s.initialize(100);
+    await s.start();
+
+    scriptFilledSlot(exchange, deriveId(s, 0, "BUY"));
+
+    // The undurable fill propagates out of the tick (after persisting the
+    // snapshot) so the runner's onError can surface the halt.
+    await expect(s.tick()).rejects.toBeInstanceOf(UndurableFillError);
+    expect(s.isLedgerHalted()).toBe(true);
+    expect(s.ledgerHaltReasonText()).toContain("could not be journaled");
+
+    // No snapshot was lost: the undurable fill survives a restart.
+    const snapshot = fs.readFileSync(
+      path.join(snapTmpDir, "bot-ledger.json"),
+      "utf8"
+    );
+    expect(snapshot).toContain("bot-ledger");
+
+    // Subsequent ticks place NOTHING while halted (early-return), even as the
+    // price keeps calling for entries.
+    exchange.createOrder.mockClear();
+    await expect(s.tick()).resolves.toBeUndefined();
+    expect(exchange.createOrder).not.toHaveBeenCalled();
+
+    // Stop still works while halted — a halt never blocks flattening/cancels.
+    // (No live orders exist in this path — slot 0's undurable fill threw before
+    // the other slots placed — so the invariant is that stop() resolves cleanly
+    // with no problems rather than throwing or hanging on the halt.)
+    await expect(s.stop()).resolves.toEqual([]);
+
+    // An explicit Resume (re)start clears the sticky halt.
+    await s.start();
+    expect(s.isLedgerHalted()).toBe(false);
   });
 
   it("runs without a reporter (strategy unit tests / legacy wiring)", async () => {

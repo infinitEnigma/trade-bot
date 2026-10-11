@@ -667,8 +667,15 @@ export class BotManager {
       // backend dedups replays, so this is safe even if one already landed.
       // Fail-closed gate: a session must NOT trade while fills are still
       // undelivered — abort the start (retryable) so a quiet journal can
-      // never sit behind a live strategy.
+      // never sit behind a live strategy. UNKNOWN integrity (files exist
+      // but nothing trustworthy recovered) also aborts: it is never "clean".
       const replay = await tradeReporter.replayPendingFills();
+      if (replay.unknown) {
+        throw new CommandError(
+          true,
+          "Refusing to start: fill-journal integrity unknown (quarantine retained); reconcile from venue history before trading resumes"
+        );
+      }
       if (replay.remaining > 0) {
         throw new CommandError(
           true,
@@ -728,6 +735,8 @@ export class BotManager {
               logger.error("Strategy tick error", {
                 botId,
                 runId: spec.runId,
+                ledgerHalted: gridStrategy.isLedgerHalted(),
+                ledgerHaltReason: gridStrategy.ledgerHaltReasonText(),
                 error: error instanceof Error ? error.message : String(error),
               }),
             onSkip: () =>

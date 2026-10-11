@@ -43,7 +43,7 @@ import { synthesizeFillId, FillSegment } from "../utils/fill-id";
 import {
   clearPendingFill,
   journalPendingFill,
-  listPendingFills,
+  readPendingFills,
 } from "../infrastructure/state/pending-fill-journal";
 import { logger } from "../utils/logger";
 
@@ -148,6 +148,35 @@ export interface PendingFillReplayResult {
   replayed: number;
   /** Entries still journaled after this pass (0 = fully drained). */
   remaining: number;
+  /**
+   * Journal integrity could not be verified (files exist but no trustworthy
+   * copy recovered). Gates MUST fail closed on this, never treat it as
+   * "no pending fills".
+   */
+  unknown: boolean;
+}
+
+/**
+ * A fill the engine observed on the venue but could not durably record.
+ * The fill already happened — this cannot undo it. It signals the strategy
+ * to HALT new order placement: without a journal entry a publish failure
+ * leaves no replay path, so further exposure must not accrue behind an
+ * unguaranteed accounting record. Cancels/flattening still proceed.
+ */
+export class UndurableFillError extends Error {
+  readonly fillId: string;
+  readonly botId: string;
+  readonly clientOrderId: string;
+
+  constructor(fillId: string, botId: string, clientOrderId: string) {
+    super(
+      `Fill ${fillId} could not be journaled; refusing to treat it as delivered`
+    );
+    this.name = "UndurableFillError";
+    this.fillId = fillId;
+    this.botId = botId;
+    this.clientOrderId = clientOrderId;
+  }
 }
 
 export class LedgerTradeReporter implements TradeReporter {
@@ -208,9 +237,7 @@ export class LedgerTradeReporter implements TradeReporter {
           fillId,
         }
       );
-      throw new Error(
-        `Fill ${fillId} could not be journaled; refusing to treat it as delivered`
-      );
+      throw new UndurableFillError(fillId, fill.botId, fill.clientOrderId);
     }
 
     const result = await publishTradeExecuted(
@@ -249,12 +276,24 @@ export class LedgerTradeReporter implements TradeReporter {
    * bumps it. The fill identity (fillId …) is untouched, so a replay that
    * actually landed before the crash dedups to a no-op downstream.
    *
-   * Never rejects; returns `{ replayed, remaining }` so the session-start
-   * gate can refuse to trade while `remaining > 0`.
+   * Never rejects; returns `{ replayed, remaining, unknown }` so the
+   * session-start gate can refuse to trade while `remaining > 0` OR
+   * `unknown` (unverifiable integrity is never "no pending fills").
    */
   async replayPendingFills(): Promise<PendingFillReplayResult> {
-    const pending = listPendingFills();
-    if (pending.length === 0) return { replayed: 0, remaining: 0 };
+    const read = readPendingFills();
+    if (read.status === "UNKNOWN") {
+      // Nothing iterable to replay, but the gate must fail closed: report
+      // unknown loudly rather than a clean {0, 0}.
+      logger.error(
+        "Pending-fill journal integrity unknown - refusing to treat as drained",
+        { engineId: this.engineId, engineEpoch: this.engineEpoch }
+      );
+      return { replayed: 0, remaining: 0, unknown: true };
+    }
+    const pending = read.entries;
+    if (pending.length === 0)
+      return { replayed: 0, remaining: 0, unknown: false };
 
     let replayed = 0;
     for (const entry of pending) {
@@ -303,7 +342,7 @@ export class LedgerTradeReporter implements TradeReporter {
         }
       );
     }
-    return { replayed, remaining };
+    return { replayed, remaining, unknown: false };
   }
 
   async reportPosition(position: PositionReport): Promise<void> {

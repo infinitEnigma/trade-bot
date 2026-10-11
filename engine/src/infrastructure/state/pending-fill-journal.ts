@@ -81,19 +81,39 @@ function isPendingFillEntry(value: unknown): value is PendingFillEntry {
 }
 
 /**
- * Parse one journal file; null when unreadable or structurally invalid.
- * Malformed rows are quarantined (count logged at error level) rather than
- * silently dropped — they may be the only copy of a fill.
+ * Journal read outcome. A journal whose integrity cannot be verified is
+ * NEVER reported as empty: `UNKNOWN` means "files exist but no trustworthy
+ * copy could be recovered" and every trading gate must fail closed on it.
  */
-function readJournalFile(file: string): PendingFillEntry[] | null {
+export type JournalReadStatus = "EMPTY" | "PENDING" | "UNKNOWN";
+
+export interface JournalReadResult {
+  status: JournalReadStatus;
+  /** Recovered entries (union of primary + .prev on partial corruption). */
+  entries: PendingFillEntry[];
+}
+
+/** One file's parse outcome: missing vs parsed vs unusable. */
+type FileReadOutcome =
+  | { kind: "missing" }
+  | { kind: "ok"; entries: PendingFillEntry[]; corrupt: number }
+  | { kind: "unusable" };
+
+function readJournalFileOutcome(file: string): FileReadOutcome {
   let raw: string;
   try {
     raw = fs.readFileSync(file, "utf-8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return null;
+    // ENOENT and any other read failure are both "no data from this copy".
+    // A hard read error (permissions, IO) is logged loudly: it is not
+    // absence, and the caller decides EMPTY vs UNKNOWN from the full picture.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      logger.error("Pending-fill journal file unreadable", {
+        file,
+        error: messageOf(error),
+      });
     }
-    return null;
+    return { kind: "missing" };
   }
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -102,10 +122,10 @@ function readJournalFile(file: string): PendingFillEntry[] | null {
         file,
       });
       quarantineCorruptJournal(file, raw);
-      return null;
+      return { kind: "unusable" };
     }
-    const valid = parsed.filter(isPendingFillEntry);
-    const corrupt = parsed.length - valid.length;
+    const entries = parsed.filter(isPendingFillEntry);
+    const corrupt = parsed.length - entries.length;
     if (corrupt > 0) {
       logger.error(
         "Pending-fill journal has corrupt rows - quarantined, not replayed",
@@ -117,13 +137,13 @@ function readJournalFile(file: string): PendingFillEntry[] | null {
       );
       quarantineCorruptJournal(file, raw);
     }
-    return valid;
+    return { kind: "ok", entries, corrupt };
   } catch {
     logger.error("Pending-fill journal is not valid JSON - quarantined", {
       file,
     });
     quarantineCorruptJournal(file, raw);
-    return null;
+    return { kind: "unusable" };
   }
 }
 
@@ -145,41 +165,126 @@ function quarantineCorruptJournal(file: string, raw: string): void {
 }
 
 /**
+ * Read the journal with integrity. Union of primary + `.prev` when the
+ * primary is partially corrupt (a fill recoverable from the previous copy
+ * must never be omitted); `.prev` fallback when the primary is missing or
+ * wholly unusable. Returns:
+ * - EMPTY: neither file exists — verified clean, safe to trade.
+ * - PENDING: recovered entries (possibly empty array with corrupt rows
+ *   quarantined but a trustworthy copy present — still replays what's there).
+ * - UNKNOWN: files exist but nothing trustworthy could be recovered.
+ *   Callers MUST fail closed: never trade, never report "no pending fills".
+ */
+export function readPendingFills(): JournalReadResult {
+  const file = journalPath();
+  const primary = readJournalFileOutcome(file);
+  const previous = readJournalFileOutcome(`${file}.prev`);
+
+  // Verified clean: nothing was ever journaled.
+  if (primary.kind === "missing" && previous.kind === "missing") {
+    return { status: "EMPTY", entries: [] };
+  }
+
+  // Primary fully usable: consult .prev too when rows were corrupt, so a
+  // fill present only in the previous copy is still replayed. Primary wins
+  // on fillId conflicts.
+  if (primary.kind === "ok" && primary.corrupt === 0) {
+    return {
+      status: primary.entries.length > 0 ? "PENDING" : "EMPTY",
+      entries: primary.entries,
+    };
+  }
+  if (primary.kind === "ok") {
+    const merged = new Map<string, PendingFillEntry>();
+    if (previous.kind === "ok") {
+      for (const e of previous.entries) merged.set(e.fillId, e);
+    }
+    for (const e of primary.entries) merged.set(e.fillId, e);
+    const entries = [...merged.values()];
+    if (previous.kind === "ok") {
+      logger.warn(
+        "Pending-fill journal partially corrupt - merged with previous version",
+        { file, recovered: entries.length }
+      );
+    }
+    return {
+      status: entries.length > 0 ? "PENDING" : "UNKNOWN",
+      entries,
+    };
+  }
+
+  // Primary missing or unusable: fall back to .prev.
+  if (previous.kind === "ok") {
+    logger.warn("Pending-fill journal corrupt - reading previous version", {
+      file,
+      recovered: previous.entries.length,
+    });
+    return {
+      status: previous.entries.length > 0 ? "PENDING" : "UNKNOWN",
+      entries: previous.entries,
+    };
+  }
+
+  // Files exist but nothing trustworthy could be recovered. UNKNOWN, loudly:
+  // this is the condition every trading gate must refuse to trade behind.
+  // (A verified-empty journal — an `[]` primary with a good read and no
+  // corruption — already returned EMPTY at the top of this function.)
+  logger.error(
+    "Pending-fill journal integrity unknown - refusing to treat as empty",
+    { file }
+  );
+  return { status: "UNKNOWN", entries: [] };
+}
+
+/**
  * All journaled fills. Empty when no journal exists; falls back to the
  * `.prev` copy when the primary is missing OR corrupt (mirrors grid
  * snapshots — an absent primary must still attempt recovery, it may mean a
  * crash between temp-write and rename). Corrupt bytes are quarantined for
- * manual reconciliation. Returns empty — loudly — only when every copy is
- * unusable.
+ * manual reconciliation.
+ *
+ * NOTE: on UNKNOWN integrity this returns [] for replay-iteration
+ * convenience — gates MUST use `readPendingFills().status`, never the
+ * length of this array, to decide whether trading may proceed.
  */
 export function listPendingFills(): PendingFillEntry[] {
-  const file = journalPath();
-  const primary = readJournalFile(file);
-  if (primary !== null) return primary;
+  return readPendingFills().entries;
+}
 
-  const previous = readJournalFile(`${file}.prev`);
-  if (previous !== null) {
-    logger.warn("Pending-fill journal corrupt - reading previous version", {
-      file,
-      recovered: previous.length,
-    });
-    return previous;
+/**
+ * Journal integrity for trading gates. `pending` counts recovered entries;
+ * `unknown` means files exist but nothing trustworthy could be recovered —
+ * gates must fail closed on it, never treat it as "no pending fills".
+ */
+export interface PendingFillStatus {
+  pending: number;
+  unknown: boolean;
+}
+
+/** Gate-grade journal status: count + integrity in one read. */
+export function pendingFillStatus(): PendingFillStatus {
+  try {
+    const read = readPendingFills();
+    return {
+      pending: read.entries.length,
+      unknown: read.status === "UNKNOWN",
+    };
+  } catch {
+    // A throw from the read path itself is also "integrity unknown".
+    return { pending: 0, unknown: true };
   }
-  logger.error("Pending-fill journal unreadable - treating as empty", { file });
-  return [];
 }
 
 /**
  * Number of fills currently awaiting ledger delivery. Cheap synchronous
  * read — the heartbeat and the periodic retry loop use it to decide whether
  * a replay pass is worth attempting.
+ *
+ * NOTE: returns 0 on UNKNOWN integrity (nothing iterable to replay) — gates
+ * MUST consult `pendingFillStatus().unknown`, never this count alone.
  */
 export function pendingFillCount(): number {
-  try {
-    return listPendingFills().length;
-  } catch {
-    return 0;
-  }
+  return pendingFillStatus().pending;
 }
 
 /**

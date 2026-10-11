@@ -207,7 +207,7 @@ describe("LedgerTradeReporter fill identity (Phase 4)", () => {
       );
 
       const replayed = await restarted.replayPendingFills();
-      expect(replayed).toEqual({ replayed: 1, remaining: 0 });
+      expect(replayed).toEqual({ replayed: 1, remaining: 0, unknown: false });
       const message = stream.publish.mock.calls[0][1] as {
         type: string;
         payload: TradeExecutedEventPayload;
@@ -256,7 +256,7 @@ describe("LedgerTradeReporter fill identity (Phase 4)", () => {
       const stillDown = makeReporter(makeFailingStream());
       const result = await stillDown.reporter.replayPendingFills();
 
-      expect(result).toEqual({ replayed: 0, remaining: 2 });
+      expect(result).toEqual({ replayed: 0, remaining: 2, unknown: false });
       expect(listPendingFills()).toHaveLength(2);
     });
 
@@ -266,6 +266,23 @@ describe("LedgerTradeReporter fill identity (Phase 4)", () => {
       await expect(reporter.replayPendingFills()).resolves.toEqual({
         replayed: 0,
         remaining: 0,
+        unknown: false,
+      });
+      expect(stream.publish).not.toHaveBeenCalled();
+    });
+
+    it("reports unknown:true when journal integrity cannot be verified", async () => {
+      // A wholly corrupt primary with no trustworthy .prev: the gate must
+      // fail closed (unknown), never report a clean drained {0, 0}.
+      const { reporter, stream } = makeReporter();
+      const dir = snapTmpDir;
+      if (!dir) throw new Error("snapTmpDir not set");
+      fs.writeFileSync(path.join(dir, "pending-fills.json"), "not json at all");
+
+      await expect(reporter.replayPendingFills()).resolves.toEqual({
+        replayed: 0,
+        remaining: 0,
+        unknown: true,
       });
       expect(stream.publish).not.toHaveBeenCalled();
     });

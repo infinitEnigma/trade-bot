@@ -15,6 +15,9 @@ import {
   clearPendingFill,
   journalPendingFill,
   listPendingFills,
+  pendingFillCount,
+  pendingFillStatus,
+  readPendingFills,
   PendingFillEntry,
 } from "../pending-fill-journal";
 
@@ -62,6 +65,10 @@ describe("pending-fill journal", () => {
 
   it("lists empty when no journal exists (never throws)", () => {
     expect(listPendingFills()).toEqual([]);
+    // Verified-clean: absent files are EMPTY, not UNKNOWN — safe to trade.
+    expect(readPendingFills().status).toBe("EMPTY");
+    expect(pendingFillStatus()).toEqual({ pending: 0, unknown: false });
+    expect(pendingFillCount()).toBe(0);
   });
 
   it("appends multiple fills and clears only the acknowledged one", () => {
@@ -137,9 +144,45 @@ describe("pending-fill journal", () => {
     expect(quarantined).toHaveLength(1);
   });
 
-  it("returns empty when both the journal and its fallback are unusable", () => {
+  it("reports UNKNOWN (not empty) when both the journal and its fallback are unusable", () => {
     fs.writeFileSync(path.join(tmpDir, JOURNAL), "not json at all");
 
+    // Iteration still yields [] (nothing trustworthy to replay)...
     expect(listPendingFills()).toEqual([]);
+    // ...but the integrity gate MUST see UNKNOWN and fail closed: an
+    // unreadable journal is never "no pending fills".
+    expect(readPendingFills().status).toBe("UNKNOWN");
+    expect(pendingFillStatus()).toEqual({ pending: 0, unknown: true });
+  });
+
+  it("unions the previous copy when the primary is partially corrupt", () => {
+    // f-1 lands in .prev when f-2 is journaled (durableWrite promotion).
+    journalPendingFill(entry("f-1"));
+    journalPendingFill(entry("f-2"));
+    // Overwrite the primary with f-2 VALID plus a corrupt row: a partial
+    // corruption must still merge the .prev copy (f-1) so a fill present
+    // only there is never omitted from replay. Primary wins on conflicts.
+    fs.writeFileSync(
+      path.join(tmpDir, JOURNAL),
+      JSON.stringify([entry("f-2"), { fillId: 42 }])
+    );
+
+    const listed = listPendingFills().map(e => e.fillId);
+    expect(listed).toContain("f-1"); // recovered from .prev
+    expect(listed).toContain("f-2"); // recovered from the valid primary row
+    expect(readPendingFills().status).toBe("PENDING");
+  });
+
+  it("marks UNKNOWN when a partially corrupt primary has no good .prev", () => {
+    // Primary has a corrupt row but zero valid entries, and there is no
+    // trustworthy .prev: nothing recoverable -> UNKNOWN, fail closed.
+    fs.writeFileSync(
+      path.join(tmpDir, JOURNAL),
+      JSON.stringify([{ fillId: 42 }, null])
+    );
+
+    expect(listPendingFills()).toEqual([]);
+    expect(readPendingFills().status).toBe("UNKNOWN");
+    expect(pendingFillStatus().unknown).toBe(true);
   });
 });

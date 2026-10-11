@@ -48,6 +48,12 @@ export interface EngineHeartbeatEventPayload {
    * engines); present and > 0 = degraded delivery in progress.
    */
   pendingFills?: number;
+  /**
+   * Journal integrity could not be verified (files exist but no trustworthy
+   * copy recovered). Distinct from pendingFills: 0 — the backend must alert
+   * and refuse auto-recovery, never treat it as "drained".
+   */
+  pendingFillsUnknown?: boolean;
 }
 
 export type EngineLifecycleEventPayload =

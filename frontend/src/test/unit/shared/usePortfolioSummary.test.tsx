@@ -142,6 +142,43 @@ describe("usePortfolioSummary total across exchanges (F3)", () => {
     ]);
   });
 
+  it('rejects partially-numeric strings ("12abc") as unavailable, not 12', async () => {
+    // Regression for the parseFloat prefix bug: parseFloat(\"12abc\") === 12,
+    // which a strict validator must reject — only an ENTIRELY-numeric string
+    // counts as readable.
+    const get = vi.mocked(kodiakApi.getKodiakBalance);
+    get.mockImplementation(async (accountId?: string) => {
+      if (accountId === "acct-a")
+        return { success: true, data: { totalBalance: "12abc" } } as never;
+      return { success: true, data: { totalBalance: "100" } } as never;
+    });
+
+    const { result } = renderHook(() => usePortfolioSummary(), { wrapper });
+
+    await waitFor(() => expect(result.current.totalIsPartial).toBe(true));
+    // "12abc" is excluded (not read as 12), so only acct-b's 100 contributes.
+    expect(result.current.totalAcrossExchanges).toBe(100);
+    expect(result.current.failedAccounts).toEqual([
+      { accountId: "acct-a", label: "lighter (testnet) idx-a" },
+    ]);
+  });
+
+  it("accepts scientific-notation strings and plain zeros as readable", async () => {
+    const get = vi.mocked(kodiakApi.getKodiakBalance);
+    get.mockImplementation(async (accountId?: string) => {
+      if (accountId === "acct-a")
+        return { success: true, data: { totalBalance: "1e3" } } as never;
+      return { success: true, data: { totalBalance: "0.00" } } as never;
+    });
+
+    const { result } = renderHook(() => usePortfolioSummary(), { wrapper });
+
+    // 1e3 + 0.00 = 1000, both fully-numeric strings → readable, not partial.
+    await waitFor(() => expect(result.current.totalAcrossExchanges).toBe(1000));
+    expect(result.current.totalIsPartial).toBe(false);
+    expect(result.current.failedAccounts).toEqual([]);
+  });
+
   it("a total where EVERY account fails is an empty partial, not $0-as-truth", async () => {
     vi.mocked(kodiakApi.getKodiakBalance).mockRejectedValue(
       new Error("Balance unavailable: all down")

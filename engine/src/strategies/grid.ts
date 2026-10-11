@@ -28,7 +28,11 @@ import {
 import { CommandError } from "../application/command-error";
 import { OrderManager, QTY_EPSILON } from "../application/order-manager";
 import { OrderReconciliationService } from "../application/order-reconciliation.service";
-import { PositionReport, TradeReporter } from "../application/trade-reporter";
+import {
+  PositionReport,
+  TradeReporter,
+  UndurableFillError,
+} from "../application/trade-reporter";
 import { FillSegment } from "../utils/fill-id";
 
 /**
@@ -100,6 +104,17 @@ export class GridTradingStrategy {
    */
   private runId?: string;
   private running: boolean = false;
+  /**
+   * Ledger halt (P1 trading-safety): set when a fill could not be durably
+   * recorded (`UndurableFillError` — the fill happened on the venue but has
+   * no journal entry, so a publish failure leaves no replay path). While
+   * halted the strategy places NO new orders; `tick()` returns early and
+   * `stop()`/cancels still proceed (a halt must never block flattening).
+   * Sticky until an explicit operator Resume (which re-runs the
+   * session-start replay gate) — never auto-cleared by a later tick.
+   */
+  private ledgerHalted: boolean = false;
+  private ledgerHaltReason: string | null = null;
   private currentPrice: number = 0;
   private baselinePrice: number = 0;
   private totalPnl: number = 0;
@@ -271,6 +286,12 @@ export class GridTradingStrategy {
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    // A Resume after a ledger halt re-runs the session-start replay gate in
+    // bot-manager (which refuses to trade on UNKNOWN/remaining) — but the
+    // sticky halt itself clears only here, on explicit (re)start, never on a
+    // passing tick. A fresh start is never halted.
+    this.ledgerHalted = false;
+    this.ledgerHaltReason = null;
     // First venue position cross-check runs one interval after start.
     this.lastPositionReconcile = Date.now();
     logger.info("Grid strategy bot started", {
@@ -280,10 +301,24 @@ export class GridTradingStrategy {
   }
 
   /**
+   * Whether new order placement is halted after an undurable fill (P1).
+   * The runner/backend read this to surface "ledger degraded" instead of a
+   * healthy RUNNING.
+   */
+  isLedgerHalted(): boolean {
+    return this.ledgerHalted;
+  }
+
+  /** Why placement halted (null when not halted). Operator-facing. */
+  ledgerHaltReasonText(): string | null {
+    return this.ledgerHaltReason;
+  }
+
+  /**
    * Stop the strategy and cancel its live orders. Returns one human-readable
    * problem per order whose cancellation could not be confirmed (N5): the
    * caller decides how to report it — a clean STOPPED must never hide live
-   * orders.
+   * orders. A ledger halt never blocks stopping: cancels proceed normally.
    */
   async stop(): Promise<string[]> {
     this.running = false;
@@ -368,6 +403,17 @@ export class GridTradingStrategy {
 
   async tick(): Promise<void> {
     if (!this.running || !this.reconcile) return;
+    if (this.ledgerHalted) {
+      // No new exposure while the accounting record is unguaranteed. The
+      // tick loop keeps running (so stop()/cancels still work) but places
+      // nothing — recovery is an explicit operator Resume, never a tick.
+      logger.warn("Grid tick skipped - ledger halted (undurable fill)", {
+        botId: this.botId,
+        symbol: this.config.symbol,
+        reason: this.ledgerHaltReason,
+      });
+      return;
+    }
 
     try {
       // Get current price
@@ -474,6 +520,15 @@ export class GridTradingStrategy {
         botId: this.botId,
         symbol: this.config.symbol,
       });
+      if (error instanceof UndurableFillError) {
+        // The fill is now ledger-halted (bookSegment set the sticky flag).
+        // Still persist the snapshot so the undurable fill survives a restart
+        // (it must not be re-detected as brand-new after the halt clears), then
+        // rethrow so the runner's onError surfaces the halt to the backend —
+        // a halt confined to a log line is not risk containment.
+        await this.persistSnapshot();
+        throw error;
+      }
     }
   }
 
@@ -559,8 +614,12 @@ export class GridTradingStrategy {
   /**
    * Book one fill **segment** and its executed-price accounting (N6), then emit
    * the durable ledger events (TRADE_EXECUTED + POSITION_UPDATED +
-   * PERFORMANCE_SNAPSHOT). Reporting never throws — a tick must not die on a
-   * publish failure (the reporter logs the payload for replay).
+   * PERFORMANCE_SNAPSHOT). A journaled-but-unpublished fill resolves normally
+   * (replay path intact); a fill that could not be JOURNALED throws
+   * `UndurableFillError` and HALTS new order placement (P1 trading-safety) —
+   * the fill already happened on the venue, so the halt contains further
+   * exposure rather than undoing anything. Publish failures must never kill
+   * the tick; journal failures must never be silent.
    *
    * Phase 4: the ledger books `delta` only — the quantity *this* observation
    * added — never the order and never the venue's cumulative (risk A2: a prior
@@ -737,6 +796,22 @@ export class GridTradingStrategy {
         totalPnl: this.totalPnl,
       });
     } catch (error) {
+      if (error instanceof UndurableFillError) {
+        // Fail closed: the venue fill exists but has no durable record. Halt
+        // NEW placements (sticky; tick() early-returns) while still allowing
+        // cancels/flattening. Escalate loudly — a log line alone is not risk
+        // containment. Recovery is an explicit operator Resume.
+        this.ledgerHalted = true;
+        this.ledgerHaltReason = error.message;
+        logger.error("Ledger halted - fill undurable, no new orders", {
+          error: error.message,
+          fillId: error.fillId,
+          botId: this.botId,
+          symbol: this.config.symbol,
+          clientOrderId,
+        });
+        throw error;
+      }
       logger.error("Failed to emit ledger events for fill", {
         error: messageOf(error),
         botId: this.botId,
