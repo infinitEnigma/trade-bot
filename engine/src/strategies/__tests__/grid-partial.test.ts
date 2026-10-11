@@ -108,6 +108,7 @@ function levelsOf(s: GridTradingStrategy) {
         sellFilledQty?: number;
         buyGen?: number;
         sellGen?: number;
+        exitOnly?: boolean;
       }>;
     }
   ).levels;
@@ -437,7 +438,7 @@ describe("GridTradingStrategy partial-fill lifecycle (Phase 4)", () => {
     ).toHaveLength(buysAtLevel);
   });
 
-  it("declares the level long when a below-minimum remainder is refused (C2)", async () => {
+  it("marks the level exit-only when a below-minimum remainder is refused (C2/Phase 3)", async () => {
     const exchange = makeExchange();
     const reporter = makeReporter();
     const s = makeStrategy("bot-partial-g", exchange, reporter);
@@ -468,15 +469,147 @@ describe("GridTradingStrategy partial-fill lifecycle (Phase 4)", () => {
     );
     await tickAt(s, exchange, LEVEL_0);
 
-    // Declared long, so the reduce-only exit arms and the venue caps it to the
-    // true position — the level is not wedged holding an unexitable long.
-    expect(levelsOf(s)[0].heldQty).toBe(1);
-    expect(levelsOf(s)[0].filled).toBe(true);
+    // Phase 3: the level is flagged exit-only, but heldQty stays at the real
+    // 0.96 — NO phantom inventory is invented for the un-executable remainder.
+    // `filled` keeps its strict meaning (not fully long).
+    expect(levelsOf(s)[0].exitOnly).toBe(true);
+    expect(levelsOf(s)[0].heldQty).toBeCloseTo(0.96, 8);
+    expect(levelsOf(s)[0].filled).toBe(false);
     // Nothing was booked for the refused remainder: no fill happened.
     expect(fillsOf(reporter)).toHaveLength(1);
+    // A reduce-only exit arms, sized to the REAL 0.96 (never the slot's 1), so
+    // the venue closes the true position instead of the level wedging on a
+    // refusal it can never clear.
     const sells = placedOrders(exchange, "SELL");
     expect(sells).toHaveLength(1);
+    expect(sells[0].orderQuantity).toBeCloseTo(0.96, 8);
     expect(sells[0].orderPrice).toBe(LEVEL_0 + LEVEL_1_SPACING);
+  });
+
+  it("exit-only: never re-enters, and clears only after a confirmed exit to flat (Phase 3)", async () => {
+    const exchange = makeExchange();
+    const reporter = makeReporter();
+    const s = makeStrategy("bot-partial-exitonly", exchange, reporter);
+    await s.initialize(100);
+    await s.start();
+    await s.tick();
+
+    const handle = buyHandle(s, 0);
+    await observe(s, exchange, handle, {
+      status: "OPEN",
+      executedQuantity: 0.96,
+      executedPrice: LEVEL_0 - 0.1,
+    });
+    await observe(s, exchange, handle, {
+      status: "CANCELLED",
+      executedQuantity: 0.96,
+    });
+
+    // Refuse the top-up as a below-minimum size error → exit-only.
+    exchange.createOrder.mockRejectedValueOnce(
+      new CommandError(
+        false,
+        "lighter create refused: 21706 order size is below the minimum 0.01"
+      )
+    );
+    await tickAt(s, exchange, LEVEL_0);
+    expect(levelsOf(s)[0].exitOnly).toBe(true);
+
+    // Price back below the level: an ordinary level would re-arm a BUY, but an
+    // exit-only level must NOT place a new entry while it still holds real
+    // inventory (that would grow a position the slot cannot represent).
+    const buysBefore = placedOrders(exchange, "BUY").length;
+    await tickAt(s, exchange, LEVEL_0 - 2);
+    expect(placedOrders(exchange, "BUY").length).toBe(buysBefore);
+
+    // The reduce-only exit fills the whole real 0.96 → flat → exit-only clears.
+    const sellHandle = levelsOf(s)[0].sellOrderId as string;
+    expect(sellHandle).toBeTruthy();
+    await observe(s, exchange, sellHandle, {
+      status: "FILLED",
+      executedQuantity: 0.96,
+      executedPrice: LEVEL_0 + LEVEL_1_SPACING,
+    });
+    expect(levelsOf(s)[0].heldQty).toBeCloseTo(0, 8);
+    expect(levelsOf(s)[0].exitOnly).toBe(false);
+    // The exit closed the long; no duplicate exit was placed and no re-entry
+    // happened while residual exposure remained.
+    expect(placedOrders(exchange, "SELL").length).toBe(1);
+  });
+  it("exit-only survives a restart with heldQty still meaning confirmed fills (Phase 3)", async () => {
+    const botId = "bot-partial-exitonly-restart";
+    const exchange = makeExchange();
+    const s = makeStrategy(botId, exchange, makeReporter());
+    await s.initialize(100);
+    await s.start();
+    await s.tick();
+
+    const handle = buyHandle(s, 0);
+    await observe(s, exchange, handle, {
+      status: "OPEN",
+      executedQuantity: 0.96,
+      executedPrice: LEVEL_0 - 0.1,
+    });
+    await observe(s, exchange, handle, {
+      status: "CANCELLED",
+      executedQuantity: 0.96,
+    });
+    exchange.createOrder.mockRejectedValueOnce(
+      new CommandError(
+        false,
+        "lighter create refused: 21706 order size is below the minimum 0.01"
+      )
+    );
+    await tickAt(s, exchange, LEVEL_0);
+    expect(levelsOf(s)[0].exitOnly).toBe(true);
+
+    // The snapshot records exitOnly beside the real heldQty.
+    const snapshot = loadGridSnapshot(botId);
+    expect(snapshot?.levels[0]).toEqual(
+      expect.objectContaining({ exitOnly: true, heldQty: 0.96 })
+    );
+
+    // Restart: exit-only and the real 0.96 both survive, meaning unchanged.
+    const restarted = makeExchange();
+    restarted.getOrder.mockImplementation(async (id: string) =>
+      id === handle
+        ? { orderId: id, status: "CANCELLED", executedQuantity: 0.96 }
+        : { orderId: id, status: "OPEN" }
+    );
+    const s2 = makeStrategy(botId, restarted, makeReporter());
+    await s2.initialize(100);
+    await s2.start();
+    expect(levelsOf(s2)[0].exitOnly).toBe(true);
+    expect(levelsOf(s2)[0].heldQty).toBeCloseTo(0.96, 8);
+  });
+
+  it("does NOT enter exit-only on an ambiguous/unreachable refusal (Phase 3)", async () => {
+    // A transport freeze must never be read as "mark exit-only" — only a clear
+    // size refusal qualifies, and a miss degrades to the ordinary retry path.
+    const exchange = makeExchange();
+    const s = makeStrategy("bot-partial-noambig", exchange, makeReporter());
+    await s.initialize(100);
+    await s.start();
+    await s.tick();
+
+    const handle = buyHandle(s, 0);
+    await observe(s, exchange, handle, {
+      status: "OPEN",
+      executedQuantity: 0.96,
+      executedPrice: LEVEL_0 - 0.1,
+    });
+    await observe(s, exchange, handle, {
+      status: "CANCELLED",
+      executedQuantity: 0.96,
+    });
+
+    // An unreachable/timeout refusal — NOT a size refusal.
+    exchange.createOrder.mockRejectedValueOnce(
+      new CommandError(false, "lighter unreachable (create timed out)")
+    );
+    await tickAt(s, exchange, LEVEL_0);
+    expect(levelsOf(s)[0].exitOnly).not.toBe(true);
+    expect(levelsOf(s)[0].heldQty).toBeCloseTo(0.96, 8);
   });
 
   it("restores a partial long with its entry and never re-books its cumulative (A4/E3/C3)", async () => {

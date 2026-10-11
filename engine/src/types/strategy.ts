@@ -52,6 +52,19 @@ export interface GridLevel {
   buyFilledQty?: number;
   /** Booked cumulative of the resting SELL instance — see `buyFilledQty`. */
   sellFilledQty?: number;
+  /**
+   * Exit-only state (Phase 3, risk C2). Set when a remainder BUY is refused
+   * outright as below the venue's minimum size: the level holds real inventory
+   * it can never top up to a full slot, so it must (a) never place another
+   * entry, and (b) exit its remaining *real* inventory via a reduce-only SELL.
+   *
+   * This is deliberately separate from `heldQty` (which always reflects
+   * confirmed fills — never an unexecuted remainder) and from `filled` (which
+   * keeps its strict "held ≥ slot" meaning). `exitOnly` clears only once a
+   * confirmed exit drives `heldQty` to zero, at which point the level is
+   * eligible for ordinary entry placement again. Survives restart unchanged.
+   */
+  exitOnly?: boolean;
 }
 
 export interface BotStatus {

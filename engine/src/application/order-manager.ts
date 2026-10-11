@@ -386,6 +386,13 @@ export class OrderManager {
     if (isBuy) level.buyFilledQty = record.filledQty;
     else level.sellFilledQty = record.filledQty;
     level.filled = this.isFullyLong(held);
+    // Exit-only (Phase 3) clears only once a *confirmed* exit has driven the
+    // real held quantity to zero — never on a rejected/ambiguous exit, and
+    // never while residual exposure remains. Until then the level stays locked
+    // out of new entries and keeps exiting its real inventory.
+    if (level.exitOnly === true && held <= QTY_EPSILON) {
+      level.exitOnly = false;
+    }
   }
 
   /**
@@ -424,26 +431,38 @@ export class OrderManager {
   }
 
   /**
-   * Declare a level fully long **without booking a fill** (Phase 4, risk C2).
+   * Mark a level **exit-only** without booking a fill (Phase 3, risk C2).
    *
    * A venue can refuse a remainder BUY outright when what is left to buy is
    * below its minimum size (Lighter: under 0.01 → `21706`). Retrying that
-   * refusal every tick wedges the level: it holds inventory it can never
-   * complete and never arms the exit that would close it. This declares the
-   * level long instead, so the `reduce_only` SELL arms and the venue caps it to
-   * the true position (proven live in Gate 4).
+   * refusal every tick wedges the level: it holds real inventory it can never
+   * top up, and never arms the exit that would close it.
    *
-   * Deliberately **not** a booking: nothing executed at the venue, so nothing
-   * reaches the ledger and no instance cumulative moves — the next observation
-   * still deltas against what really filled. The projection is optimistic by
-   * the un-filled remainder, which is exactly the drift the N6 venue
-   * cross-check exists to report.
+   * Unlike the old `snapFullyLong`, this does **not** inflate `heldQty`: the
+   * projection always reflects confirmed fills, so the level's `heldQty` stays
+   * at the real booked quantity. It only sets `exitOnly`, which tells the
+   * strategy to (a) never place another entry at this level, and (b) exit the
+   * remaining real inventory via a reduce-only SELL the venue caps to the true
+   * position (proven live in Gate 4). Nothing reaches the ledger — no fill
+   * happened — and no instance cumulative moves, so the next observation still
+   * deltas against what really filled.
+   *
+   * The flag clears only when a confirmed SELL drives `heldQty` to zero (see
+   * `projectFill`), never on a rejected/ambiguous exit.
    */
-  snapFullyLong(levelIndex: number): void {
+  markExitOnly(levelIndex: number): void {
     const level = this.levels[levelIndex];
     if (!level) return;
-    level.heldQty = this.orderQuantity;
-    level.filled = this.isFullyLong(level.heldQty);
+    level.exitOnly = true;
+  }
+
+  /**
+   * Whether a level is in the exit-only state (Phase 3). The strategy reads
+   * this to gate entry placement and to arm a reduce-only exit for a level
+   * that holds real inventory but can never reach a full slot.
+   */
+  isExitOnly(levelIndex: number): boolean {
+    return this.levels[levelIndex]?.exitOnly === true;
   }
 
   /**

@@ -48,6 +48,12 @@ export interface GridSnapshotLevel {
   buyFilledQty?: number;
   /** Booked cumulative of the resting SELL instance — see `buyFilledQty`. */
   sellFilledQty?: number;
+  /**
+   * Exit-only state (Phase 3, risk C2) — see `GridLevel.exitOnly`. Persisted so
+   * the "cannot top up, must exit real inventory" decision survives a restart
+   * with `heldQty` still meaning confirmed fills only.
+   */
+  exitOnly?: boolean;
 }
 
 /** Persisted snapshot for one bot's grid. */

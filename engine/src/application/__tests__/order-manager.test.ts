@@ -237,18 +237,23 @@ describe("OrderManager — markNotFound id spending (B1)", () => {
   });
 });
 
-describe("OrderManager — snapFullyLong declares a level without booking (C2)", () => {
-  it("sets the held quantity to the slot size and flags the level long", () => {
+describe("OrderManager — markExitOnly flags a level without booking (C2/Phase 3)", () => {
+  it("sets exitOnly but leaves heldQty at the confirmed quantity (no phantom inventory)", () => {
     const { manager, levels } = setup();
     const id = openBuy(manager);
     manager.markBooked(id, 0.96);
     expect(levels[0].heldQty).toBeCloseTo(0.96, 8);
     expect(levels[0].filled).toBe(false);
 
-    manager.snapFullyLong(0);
+    manager.markExitOnly(0);
 
-    expect(levels[0].heldQty).toBe(1);
-    expect(levels[0].filled).toBe(true);
+    // The whole point of Phase 3: the level is flagged exit-only, but heldQty
+    // stays at the 0.96 the venue actually filled — never the full slot. No
+    // inventory is invented for the un-executable remainder.
+    expect(levels[0].exitOnly).toBe(true);
+    expect(levels[0].heldQty).toBeCloseTo(0.96, 8);
+    expect(levels[0].filled).toBe(false);
+    expect(manager.isExitOnly(0)).toBe(true);
   });
 
   it("books nothing: the instance cumulative still says what the venue filled", () => {
@@ -256,19 +261,52 @@ describe("OrderManager — snapFullyLong declares a level without booking (C2)",
     const id = openBuy(manager);
     manager.markBooked(id, 0.96);
 
-    manager.snapFullyLong(0);
+    manager.markExitOnly(0);
 
-    // A snap is a model decision, never a fill: the record is untouched, so
+    // Marking is a model decision, never a fill: the record is untouched, so
     // the next real execution still deltas against the venue's 0.96.
     expect(manager.markBooked(id, 0.96)).toBeNull();
     expect(manager.markBooked(id, 0.97)).toBeCloseTo(0.01, 8);
     expect(levels[0].buyFilledQty).toBeCloseTo(0.97, 8);
-    // …and the declared long never slips past the slot size (C5 clamps it).
-    expect(levels[0].heldQty).toBe(1);
+    // heldQty tracks real fills only — it never slips to the slot size (C5).
+    expect(levels[0].heldQty).toBeCloseTo(0.97, 8);
+  });
+
+  it("clears exitOnly once a confirmed SELL drives heldQty to zero", () => {
+    const { manager, levels } = setup();
+    const buy = openBuy(manager);
+    manager.markBooked(buy, 0.96);
+    manager.markExitOnly(0);
+    expect(levels[0].exitOnly).toBe(true);
+
+    // The reduce-only exit closes exactly the real 0.96.
+    const sell = openSell(manager);
+    manager.markBooked(sell, 0.96);
+
+    expect(levels[0].heldQty).toBeCloseTo(0, 8);
+    // Now the level holds nothing, so it is eligible for normal entry again.
+    expect(levels[0].exitOnly).toBe(false);
+    expect(manager.isExitOnly(0)).toBe(false);
+  });
+
+  it("keeps exitOnly set while residual exposure remains after a partial exit", () => {
+    const { manager, levels } = setup();
+    const buy = openBuy(manager);
+    manager.markBooked(buy, 0.96);
+    manager.markExitOnly(0);
+
+    // A partial exit closes only half: residual inventory remains, so the level
+    // must stay exit-only (locked out of new entries, still exiting).
+    const sell = openSell(manager);
+    manager.markBooked(sell, 0.48);
+
+    expect(levels[0].heldQty).toBeCloseTo(0.48, 8);
+    expect(levels[0].exitOnly).toBe(true);
   });
 
   it("is a no-op for an out-of-range level", () => {
     const { manager } = setup();
-    expect(() => manager.snapFullyLong(9)).not.toThrow();
+    expect(() => manager.markExitOnly(9)).not.toThrow();
+    expect(manager.isExitOnly(9)).toBe(false);
   });
 });

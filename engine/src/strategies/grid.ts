@@ -492,12 +492,15 @@ export class GridTradingStrategy {
         // flag: buy while the level still holds less than a full slot, but
         // never while either side has an order live — a resting exit means the
         // level already holds what it can, and arming an entry beside it would
-        // open a second long.
+        // open a second long. An exit-only level (C2) never buys again: it
+        // holds real inventory it must exit, and re-entering would grow a
+        // position the slot can no longer represent (Phase 3).
         if (
           this.currentPrice <= level.price &&
           !level.buyOrderId &&
           !level.sellOrderId &&
-          !this.isFullyLong(level)
+          !this.isFullyLong(level) &&
+          !this.isExitOnly(level)
         ) {
           // Only the shortfall is bought: a level that already booked a partial
           // segment tops up to one slot instead of buying a second (C2).
@@ -513,20 +516,23 @@ export class GridTradingStrategy {
             quantity < this.config.orderQuantity - QTY_EPSILON &&
             isSizeRefusal(outcome.reason)
           ) {
-            // The venue can never fill this remainder (C2): declare the level
-            // long so the reduce-only exit arms and closes the real position.
+            // The venue can never fill this remainder (C2): mark the level
+            // exit-only so it stops trying to top up and instead exits its real
+            // inventory. heldQty stays at the confirmed quantity — no phantom
+            // inventory is invented for the un-executed remainder (Phase 3).
             logger.warn(
-              "Remainder BUY refused on size - declaring the level long (C2)",
+              "Remainder BUY refused on size - marking the level exit-only (C2)",
               {
                 botId: this.botId,
                 symbol: this.config.symbol,
                 levelPrice: level.price,
                 remainder: quantity,
+                heldQty: this.heldQtyOf(level),
                 orderQuantity: this.config.orderQuantity,
                 reason: outcome.reason,
               }
             );
-            this.manager?.snapFullyLong(i);
+            this.manager?.markExitOnly(i);
           } else {
             await this.bookOutcome(i, level, "BUY", outcome);
           }
@@ -536,10 +542,22 @@ export class GridTradingStrategy {
         // `sellTargetPrice` — the next grid line up, or the configured take
         // profit above the *executed* entry — never `level.price`, which is
         // the very price the buy just filled at (zero spread before fees: N6).
+        // Sell order: the exit of a level's long. Its price comes from
+        // `sellTargetPrice` — the next grid line up, or the configured take
+        // profit above the *executed* entry — never `level.price`, which is
+        // the very price the buy just filled at (zero spread before fees: N6).
+        //
+        // Two ways to arm (Phase 3): a fully-long level (held ≥ slot − ε) exits
+        // a full slot; an exit-only level (C2 — a below-minimum remainder it can
+        // never top up) exits exactly its *verified remaining* inventory, never
+        // the configured slot size (that quantity was never filled).
+        const fullyLong = this.isFullyLong(level);
+        const exitOnlyWithInventory =
+          this.isExitOnly(level) && this.heldQtyOf(level) > QTY_EPSILON;
         if (
           this.currentPrice >= level.price &&
           !level.sellOrderId &&
-          this.isFullyLong(level)
+          (fullyLong || exitOnlyWithInventory)
         ) {
           const sellPrice = this.sellTargetPrice(i, level);
           if (sellPrice === undefined) {
@@ -553,15 +571,19 @@ export class GridTradingStrategy {
               }
             );
           } else {
-            // One slot's worth: the level is fully long (held ≥ qty − ε), and a
-            // reduce-only exit is capped by the venue to the true position.
+            // Size the exit to what the level actually holds: a full slot when
+            // fully long, otherwise the verified remaining quantity. The exit
+            // is reduce-only (N6), so the venue caps it to the true position
+            // regardless — its only job is to close this level's long, never to
+            // open a short.
+            const exitQty = fullyLong
+              ? this.config.orderQuantity
+              : this.heldQtyOf(level);
             const outcome = await this.reconcile.ensureSlotOrder(
               i,
               "SELL",
               sellPrice,
-              this.config.orderQuantity,
-              // Reduce-only (N6): the exit's only job is to close this level's
-              // long, so a stale sell must never open a short.
+              exitQty,
               true
             );
             await this.bookOutcome(i, level, "SELL", outcome);
@@ -901,6 +923,16 @@ export class GridTradingStrategy {
   }
 
   /**
+   * Whether a level is in the exit-only state (Phase 3, risk C2): it holds real
+   * inventory a below-minimum remainder means it can never top up, so it must
+   * exit rather than re-enter. Read straight off the level so it survives a
+   * restart with the same meaning as its confirmed `heldQty`.
+   */
+  private isExitOnly(level: GridLevel): boolean {
+    return level.exitOnly === true;
+  }
+
+  /**
    * Size of the BUY that would complete this level: `orderQuantity − held`
    * (Phase 4). A level that already booked a partial segment tops up instead of
    * buying a second slot, and every quantity the venue sees is a plain 8-dp
@@ -1223,6 +1255,10 @@ export class GridTradingStrategy {
           entryPrice: stillLong ? savedLevel.entryPrice : undefined,
           buyGen: genFor(savedLevel.buyGen, savedLevel.buyOrderId),
           sellGen: genFor(savedLevel.sellGen, savedLevel.sellOrderId),
+          // Exit-only (Phase 3): restored verbatim so a level that could not
+          // top up a below-minimum remainder keeps exiting its real inventory
+          // across a restart — `heldQty` still means confirmed fills only.
+          exitOnly: savedLevel.exitOnly,
         };
       }
       return { ...level };
@@ -1260,6 +1296,11 @@ export class GridTradingStrategy {
         heldQty: l.heldQty,
         buyFilledQty: l.buyFilledQty,
         sellFilledQty: l.sellFilledQty,
+        // Exit-only state (Phase 3): persisted so the "cannot top up, must exit
+        // real inventory" decision survives a restart. Left `undefined` (absent
+        // from the JSON) on a normal level, keeping a never-touched snapshot
+        // byte-identical.
+        exitOnly: l.exitOnly,
       })),
       savedAt: new Date().toISOString(),
     };
