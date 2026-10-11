@@ -85,11 +85,12 @@ interface LevelState {
 
 async function seedState(botId: string, state: LevelState): Promise<void> {
   await saveGridSnapshot({
-    version: 1,
+    version: 2,
     botId,
     symbol: CONFIG.symbol,
     gridSize: CONFIG.gridSize,
     gridRangePercent: CONFIG.gridRangePercent,
+    orderQuantity: CONFIG.orderQuantity,
     baselinePrice: 100,
     levels: [
       { price: LEVEL_0, filled: false, ...state },

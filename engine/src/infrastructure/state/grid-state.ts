@@ -24,6 +24,7 @@ import * as path from "path";
 import {
   GridSnapshot,
   GRID_SNAPSHOT_VERSION,
+  LEGACY_SNAPSHOT_VERSION,
   computeSnapshotChecksum,
 } from "../../domain/grid-snapshot";
 import { durableWriteSync } from "./durable-write";
@@ -44,9 +45,20 @@ function snapshotFile(botId: string, runId?: string): string {
   return path.join(getSnapshotDir(), botId, `${runId}.json`);
 }
 
-/** Outcome of reading one snapshot file, distinguishing absent from invalid. */
+/**
+ * Outcome of reading one snapshot file, distinguishing absent from invalid.
+ *
+ * A loaded snapshot may be `legacy` (version 1): it round-trips for
+ * diagnostics, but the strategy treats it exactly like an untrusted snapshot —
+ * it never authorizes a restore, only the safe reconciliation gate.
+ */
 export type SnapshotLoadResult =
-  | { status: "OK"; snapshot: GridSnapshot; migratedFromLegacy?: boolean }
+  | {
+      status: "OK";
+      snapshot: GridSnapshot;
+      migratedFromLegacy?: boolean;
+      legacy?: boolean;
+    }
   | { status: "MISSING" }
   | { status: "CORRUPT"; detail: string };
 
@@ -87,14 +99,33 @@ function readSnapshotFile(file: string, botId: string): SnapshotLoadResult {
     }
   }
 
-  return { status: "OK", snapshot: parsed as GridSnapshot };
+  const snapshot = parsed as GridSnapshot;
+  // A known-legacy (v1) schema loads and round-trips, but the strategy must not
+  // restore from it — flag it so the caller routes it through the safe gate.
+  const legacy = snapshot.version === LEGACY_SNAPSHOT_VERSION;
+  if (legacy) {
+    logger.warn(
+      "Loaded a legacy grid snapshot - it will not be trusted to restore",
+      {
+        botId,
+        version: snapshot.version,
+      }
+    );
+  }
+  return { status: "OK", snapshot, ...(legacy ? { legacy: true } : {}) };
 }
 
 function validateSnapshot(
   parsed: Partial<GridSnapshot>,
   botId: string
 ): Validation {
-  if (parsed.version !== GRID_SNAPSHOT_VERSION) {
+  // Version 2 authorizes restore; version 1 is a known-legacy schema that loads
+  // (flagged `legacy`) but is never trusted to restore. Any other version is
+  // unknown and treated as corruption.
+  if (
+    parsed.version !== GRID_SNAPSHOT_VERSION &&
+    parsed.version !== LEGACY_SNAPSHOT_VERSION
+  ) {
     return { ok: false, detail: `unsupported version ${parsed.version}` };
   }
   if (parsed.botId !== botId) {
@@ -111,6 +142,16 @@ function validateSnapshot(
     typeof parsed.gridRangePercent !== "number"
   ) {
     return { ok: false, detail: "missing grid dimensions" };
+  }
+  // Execution-config compatibility set (Phase 1). Optional so legacy v1
+  // snapshots still load; a present-but-invalid value is corruption.
+  if (
+    parsed.orderQuantity !== undefined &&
+    (typeof parsed.orderQuantity !== "number" ||
+      !Number.isFinite(parsed.orderQuantity) ||
+      parsed.orderQuantity <= 0)
+  ) {
+    return { ok: false, detail: "invalid orderQuantity" };
   }
   if (!Array.isArray(parsed.levels)) {
     return { ok: false, detail: "levels is not an array" };

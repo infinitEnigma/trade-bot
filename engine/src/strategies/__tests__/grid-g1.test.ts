@@ -99,17 +99,18 @@ afterEach(() => {
   }
 });
 
-/** Legacy (pre-G1) snapshot: no generation fields anywhere. */
+/** Pre-G1 snapshot: no generation fields anywhere (v2 schema, legacy gens). */
 async function seedLegacySnapshot(
   botId: string,
   midLevelBuyHandle?: string
 ): Promise<void> {
   await saveGridSnapshot({
-    version: 1,
+    version: 2,
     botId,
     symbol: CONFIG.symbol,
     gridSize: CONFIG.gridSize,
     gridRangePercent: CONFIG.gridRangePercent,
+    orderQuantity: CONFIG.orderQuantity,
     baselinePrice: 100,
     levels: [
       { price: 97.5, filled: false },

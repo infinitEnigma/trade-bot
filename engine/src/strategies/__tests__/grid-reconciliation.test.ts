@@ -132,11 +132,12 @@ describe("N3 — a vanished order frees its slot", () => {
 
 async function seedSnapshot(botId: string): Promise<void> {
   await saveGridSnapshot({
-    version: 1,
+    version: 2,
     botId,
     symbol: CONFIG.symbol,
     gridSize: CONFIG.gridSize,
     gridRangePercent: CONFIG.gridRangePercent,
+    orderQuantity: CONFIG.orderQuantity,
     baselinePrice: 100,
     levels: [
       { price: 97.5, filled: false },
@@ -195,6 +196,84 @@ describe("N4 — startup never rebuilds over live orders", () => {
     await expect(s.initialize(100)).rejects.toThrow(
       /could not reach the exchange/
     );
+  });
+});
+describe("Phase 1 — snapshot restore requires execution-config match", () => {
+  /** A v2 snapshot with a chosen slot size, one resting handle at level 1. */
+  async function seedV2(botId: string, orderQuantity: number): Promise<void> {
+    await saveGridSnapshot({
+      version: 2,
+      botId,
+      symbol: CONFIG.symbol,
+      gridSize: CONFIG.gridSize,
+      gridRangePercent: CONFIG.gridRangePercent,
+      orderQuantity,
+      baselinePrice: 100,
+      levels: [
+        { price: 97.5, filled: false },
+        { price: 100, filled: false, buyOrderId: "H1" },
+        { price: 102.5, filled: false },
+      ],
+      savedAt: new Date().toISOString(),
+    });
+  }
+
+  it("restores a v2 snapshot whose orderQuantity matches the config", async () => {
+    await seedV2("bot-p1-match", CONFIG.orderQuantity);
+    const exchange = makeExchange({
+      listOpenOrders: async () => [
+        { orderId: "H1", symbol: CONFIG.symbol, status: "OPEN" },
+      ],
+      getOrder: async (orderId: string) => ({ orderId, status: "OPEN" }),
+    });
+    const s = new GridTradingStrategy("bot-p1-match", CONFIG, exchange);
+    await s.initialize(100);
+    // The saved handle is adopted onto level 1 (a restore, not a rebuild).
+    expect(levelsOf(s)[1].buyOrderId).toBe("H1");
+  });
+
+  it("does NOT restore when orderQuantity differs — treats it as untrusted", async () => {
+    // Snapshot was built at slot 0.01; the bot now runs at 1 (CONFIG).
+    await seedV2("bot-p1-mismatch", 0.01);
+    const exchange = makeExchange();
+    const s = new GridTradingStrategy("bot-p1-mismatch", CONFIG, exchange);
+    // Untrusted path requires an empty book + flat; here it is empty/flat, so it
+    // rebuilds fresh rather than adopting the stale H1 handle.
+    await s.initialize(100);
+    expect(levelsOf(s)[1].buyOrderId).toBeUndefined();
+  });
+
+  it("refuses to build over a live order when orderQuantity differs", async () => {
+    await seedV2("bot-p1-mismatch-live", 0.01);
+    const exchange = makeExchange({
+      listOpenOrders: async () => [
+        { orderId: "H1", symbol: CONFIG.symbol, status: "OPEN" },
+      ],
+    });
+    const s = new GridTradingStrategy("bot-p1-mismatch-live", CONFIG, exchange);
+    await expect(s.initialize(100)).rejects.toThrow(/Refusing to start/);
+  });
+
+  it("does NOT restore a legacy (v1) snapshot — routes through the safe gate", async () => {
+    await saveGridSnapshot({
+      version: 1,
+      botId: "bot-p1-legacy",
+      symbol: CONFIG.symbol,
+      gridSize: CONFIG.gridSize,
+      gridRangePercent: CONFIG.gridRangePercent,
+      baselinePrice: 100,
+      levels: [
+        { price: 97.5, filled: false },
+        { price: 100, filled: false, buyOrderId: "H1" },
+        { price: 102.5, filled: false },
+      ],
+      savedAt: new Date().toISOString(),
+    });
+    const exchange = makeExchange();
+    const s = new GridTradingStrategy("bot-p1-legacy", CONFIG, exchange);
+    await s.initialize(100);
+    // A v1 snapshot is never trusted to restore: fresh grid, no adopted handle.
+    expect(levelsOf(s)[1].buyOrderId).toBeUndefined();
   });
 });
 

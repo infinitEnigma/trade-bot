@@ -156,12 +156,19 @@ export class GridTradingStrategy {
 
     const snapResult = loadGridSnapshotResult(this.botId, this.runId);
     const snapshot = snapResult.status === "OK" ? snapResult.snapshot : null;
+    // Restore is only authorized for a fully-compatible version-2 snapshot.
+    // The compatibility set is every parameter that gives restored orders /
+    // inventory their meaning: symbol, grid geometry, and the per-order slot
+    // size. A legacy (v1) snapshot, an unknown version, a config mismatch, or a
+    // missing/corrupt file all fall through to the untrusted path, which the
+    // Phase-2 recovery gate protects (empty book + flat, or refuse).
     const canRestore =
       snapshot !== null &&
       snapshot.version === GRID_SNAPSHOT_VERSION &&
       snapshot.symbol === this.config.symbol &&
       snapshot.gridSize === this.config.gridSize &&
-      snapshot.gridRangePercent === this.config.gridRangePercent;
+      snapshot.gridRangePercent === this.config.gridRangePercent &&
+      snapshot.orderQuantity === this.config.orderQuantity;
 
     if (canRestore && snapshot) {
       // Restore at the saved baseline so level prices (and the live order IDs
@@ -1176,6 +1183,10 @@ export class GridTradingStrategy {
       symbol: this.config.symbol,
       gridSize: this.config.gridSize,
       gridRangePercent: this.config.gridRangePercent,
+      // Execution-config compatibility set (Phase 1): restored inventory and
+      // fill cumulatives are only meaningful under this slot size, so it is
+      // recorded and compared on restore.
+      orderQuantity: this.config.orderQuantity,
       baselinePrice: this.baselinePrice,
       levels: this.levels.map((l): GridSnapshotLevel => ({
         price: l.price,

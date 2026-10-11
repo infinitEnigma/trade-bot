@@ -52,8 +52,14 @@ export interface GridSnapshotLevel {
 
 /** Persisted snapshot for one bot's grid. */
 export interface GridSnapshot {
-  /** Format version - reject/ignore unknown versions on load. */
-  version: 1;
+  /**
+   * Format version. `2` (GRID_SNAPSHOT_VERSION) is the only version that
+   * authorizes restore; `1` (LEGACY_SNAPSHOT_VERSION) is a known-legacy schema
+   * that loads for diagnostics but is never trusted to restore a grid (the
+   * execution-config compatibility set, incl. `orderQuantity`, is not recorded
+   * there). Any other value is unknown and treated as corruption.
+   */
+  version: number;
   botId: string;
   /**
    * D3 sessions: the run this snapshot belongs to. Optional so pre-D
@@ -63,6 +69,14 @@ export interface GridSnapshot {
   symbol: string;
   gridSize: number;
   gridRangePercent: number;
+  /**
+   * Size per order the grid was built with (Phase 1 remediation). Restored
+   * `heldQty` and fill cumulatives are only meaningful under the slot size they
+   * were booked at, so this is part of the compatibility set: a snapshot whose
+   * `orderQuantity` differs from the running config is not trusted to restore.
+   * Absent on legacy (v1) snapshots, which are never trusted to restore.
+   */
+  orderQuantity?: number;
   /**
    * Price the grid was built around. Restoring at this baseline keeps level
    * prices stable so saved order IDs map back onto the right levels.
@@ -78,7 +92,21 @@ export interface GridSnapshot {
   checksum?: string;
 }
 
-export const GRID_SNAPSHOT_VERSION = 1;
+/**
+ * The only snapshot version that authorizes restore. Version 2 added the
+ * execution-config compatibility set (notably `orderQuantity`) so a slot-size
+ * change can never silently restore inventory booked under the old size.
+ */
+export const GRID_SNAPSHOT_VERSION = 2;
+
+/**
+ * A known-legacy schema: it loads (and round-trips) for diagnostics, but the
+ * strategy never trusts it to restore a grid — it lacks the compatibility set
+ * — so a v1 snapshot routes through the same safe reconciliation gate as an
+ * untrusted/missing snapshot. Distinct from an *unknown* version, which is
+ * treated as corruption.
+ */
+export const LEGACY_SNAPSHOT_VERSION = 1;
 
 /**
  * Deterministic JSON with object keys sorted, so the same logical snapshot

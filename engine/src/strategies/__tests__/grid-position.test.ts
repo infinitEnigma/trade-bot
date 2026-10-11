@@ -244,11 +244,12 @@ describe("GridTradingStrategy position report (Phase 4, C4)", () => {
   /** The grid around 100 at 5% / 2: 97.5 | 100 | 102.5. */
   const seedReportLevels = () =>
     saveGridSnapshot({
-      version: 1,
+      version: 2,
       botId: "bot-report",
       symbol: CONFIG.symbol,
       gridSize: CONFIG.gridSize,
       gridRangePercent: CONFIG.gridRangePercent,
+      orderQuantity: CONFIG.orderQuantity,
       baselinePrice: 100,
       levels: [
         // A partial long: 0.4 booked at an executed 97.4…

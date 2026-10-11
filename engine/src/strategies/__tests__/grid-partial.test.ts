@@ -495,9 +495,11 @@ describe("GridTradingStrategy partial-fill lifecycle (Phase 4)", () => {
       executedPrice: LEVEL_0 - 0.1,
     });
 
-    // The quantity state is persisted beside the flags, no version bump (E3).
+    // The quantity state is persisted beside the flags (E3); the execution-config
+    // compatibility set (orderQuantity) is recorded at the v2 schema (Phase 1).
     const snapshot = loadGridSnapshot(botId);
-    expect(snapshot?.version).toBe(1);
+    expect(snapshot?.version).toBe(2);
+    expect(snapshot?.orderQuantity).toBe(CONFIG.orderQuantity);
     expect(snapshot?.levels[0]).toEqual(
       expect.objectContaining({
         heldQty: 0.4,

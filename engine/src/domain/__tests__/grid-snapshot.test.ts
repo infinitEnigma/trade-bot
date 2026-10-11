@@ -20,11 +20,12 @@ function useTempDir(): string {
 
 function validSnapshot(botId = "bot-1"): GridSnapshot {
   return {
-    version: 1,
+    version: 2,
     botId,
     symbol: "PERP_BTC_USDC",
     gridSize: 4,
     gridRangePercent: 5,
+    orderQuantity: 0.01,
     baselinePrice: 100,
     levels: [
       { price: 95, filled: false, buyOrderId: "b1" },
@@ -33,6 +34,13 @@ function validSnapshot(botId = "bot-1"): GridSnapshot {
     ],
     savedAt: new Date().toISOString(),
   };
+}
+
+/** A known-legacy (v1) snapshot: no `orderQuantity`, version 1. */
+function legacySnapshot(botId = "bot-1"): GridSnapshot {
+  const { orderQuantity: _dropped, ...rest } = validSnapshot(botId);
+  void _dropped;
+  return { ...rest, version: 1 };
 }
 
 describe("grid-snapshot state persistence", () => {
@@ -78,6 +86,53 @@ describe("grid-snapshot state persistence", () => {
       "utf-8"
     );
     expect(loadGridSnapshot("bot-1")).toBeNull();
+  });
+
+  it("loads a known-legacy (v1) snapshot but flags it as legacy", async () => {
+    useTempDir();
+    await saveGridSnapshot(legacySnapshot());
+
+    const result = loadGridSnapshotResult("bot-1");
+    expect(result.status).toBe("OK");
+    if (result.status === "OK") {
+      // It round-trips for diagnostics, but is not a restore-authorized v2.
+      expect(result.snapshot.version).toBe(1);
+      expect(result.snapshot.orderQuantity).toBeUndefined();
+      expect(result.legacy).toBe(true);
+    }
+  });
+
+  it("does not flag a current (v2) snapshot as legacy", async () => {
+    useTempDir();
+    await saveGridSnapshot(validSnapshot());
+
+    const result = loadGridSnapshotResult("bot-1");
+    expect(result.status).toBe("OK");
+    if (result.status === "OK") {
+      expect(result.snapshot.version).toBe(2);
+      expect(result.legacy).toBeUndefined();
+    }
+  });
+
+  it("round-trips the orderQuantity compatibility field (v2)", async () => {
+    useTempDir();
+    await saveGridSnapshot(validSnapshot());
+
+    const loaded = loadGridSnapshot("bot-1");
+    expect(loaded?.version).toBe(2);
+    expect(loaded?.orderQuantity).toBe(0.01);
+  });
+
+  it("rejects a v2 snapshot whose orderQuantity is present but invalid", () => {
+    useTempDir();
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const bad = { ...validSnapshot(), orderQuantity: -1 };
+    fs.writeFileSync(
+      path.join(tmpDir, "bot-1.json"),
+      JSON.stringify(bad),
+      "utf-8"
+    );
+    expect(loadGridSnapshotResult("bot-1").status).toBe("CORRUPT");
   });
 
   it("rejects a snapshot whose botId does not match the requested botId", async () => {
