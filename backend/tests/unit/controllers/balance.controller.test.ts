@@ -76,9 +76,8 @@ jest.mock("../../../src/core/logging/logger.service", () => ({
 // Get the mock blockchain service
 const mockBlockchainService =
   require("../../../src/infrastructure/external/blockchain.service").createBlockchainService();
-const mockWalletRepository = require(
-  "../../../src/infrastructure/adapters/repositories/wallet-repository.adapter"
-).walletRepositoryAdapter;
+const mockWalletRepository =
+  require("../../../src/infrastructure/adapters/repositories/wallet-repository.adapter").walletRepositoryAdapter;
 
 const mockEvmWallet = {
   id: "wallet-1",

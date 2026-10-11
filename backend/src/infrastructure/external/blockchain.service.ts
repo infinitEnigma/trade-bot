@@ -102,16 +102,13 @@ export class BlockchainService {
         process.env.ETHERSCAN_API_KEY ||
         "your-etherscan-key",
       chainId:
-        config.chainId ||
-        parsePositiveInt(process.env.ONCHAIN_CHAIN_ID, 80094),
+        config.chainId || parsePositiveInt(process.env.ONCHAIN_CHAIN_ID, 80094),
       chainName:
         config.chainName ||
         process.env.ONCHAIN_CHAIN_NAME ||
         "Berachain Mainnet",
       nativeSymbol:
-        config.nativeSymbol ||
-        process.env.ONCHAIN_NATIVE_SYMBOL ||
-        "BERA",
+        config.nativeSymbol || process.env.ONCHAIN_NATIVE_SYMBOL || "BERA",
       cacheTtl:
         config.cacheTtl ||
         parsePositiveInt(process.env.ONCHAIN_BALANCE_CACHE_TTL_SEC, 60),

@@ -475,5 +475,4 @@ describe("BlockchainService", () => {
       expect(logger.error).toHaveBeenCalled();
     });
   });
-
 });
