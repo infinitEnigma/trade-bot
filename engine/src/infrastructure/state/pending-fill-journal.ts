@@ -93,9 +93,19 @@ export interface JournalReadResult {
   entries: PendingFillEntry[];
 }
 
-/** One file's parse outcome: missing vs parsed vs unusable. */
+/**
+ * One file's read outcome.
+ * - `missing`:    genuine absence (ENOENT) — the file does not exist.
+ * - `unreadable`: the file exists but could not be read (permissions, IO,
+ *   EISDIR, ...). NEVER treated as absence: an unreadable copy is on-disk
+ *   state we cannot verify, so it can never contribute to a verified-clean
+ *   EMPTY (finding 1).
+ * - `ok`:         read + parsed as an array; `corrupt` counts dropped rows.
+ * - `unusable`:   the read succeeded but the bytes are not a usable JSON array.
+ */
 type FileReadOutcome =
   | { kind: "missing" }
+  | { kind: "unreadable" }
   | { kind: "ok"; entries: PendingFillEntry[]; corrupt: number }
   | { kind: "unusable" };
 
@@ -104,16 +114,19 @@ function readJournalFileOutcome(file: string): FileReadOutcome {
   try {
     raw = fs.readFileSync(file, "utf-8");
   } catch (error) {
-    // ENOENT and any other read failure are both "no data from this copy".
-    // A hard read error (permissions, IO) is logged loudly: it is not
-    // absence, and the caller decides EMPTY vs UNKNOWN from the full picture.
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      logger.error("Pending-fill journal file unreadable", {
-        file,
-        error: messageOf(error),
-      });
+    // Only a genuine ENOENT means "this copy does not exist". Any OTHER read
+    // failure (permissions, IO, the path being a directory, ...) means the
+    // file exists but we could not read it — that is NOT absence, and must
+    // never let the caller conclude EMPTY (finding 1). It is logged loudly
+    // and surfaced as `unreadable` so the caller decides from the full picture.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { kind: "missing" };
     }
-    return { kind: "missing" };
+    logger.error("Pending-fill journal file unreadable", {
+      file,
+      error: messageOf(error),
+    });
+    return { kind: "unreadable" };
   }
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -165,75 +178,97 @@ function quarantineCorruptJournal(file: string, raw: string): void {
 }
 
 /**
- * Read the journal with integrity. Union of primary + `.prev` when the
- * primary is partially corrupt (a fill recoverable from the previous copy
- * must never be omitted); `.prev` fallback when the primary is missing or
- * wholly unusable. Returns:
- * - EMPTY: neither file exists — verified clean, safe to trade.
- * - PENDING: recovered entries (possibly empty array with corrupt rows
- *   quarantined but a trustworthy copy present — still replays what's there).
- * - UNKNOWN: files exist but nothing trustworthy could be recovered.
- *   Callers MUST fail closed: never trade, never report "no pending fills".
+ * Union the valid entries from both copies (primary wins on a fillId
+ * conflict). Used only to populate the recovered set on an UNKNOWN result —
+ * for reconciliation/replay visibility, never as proof of completeness.
+ */
+function unionValidEntries(
+  primary: FileReadOutcome,
+  previous: FileReadOutcome
+): PendingFillEntry[] {
+  const merged = new Map<string, PendingFillEntry>();
+  if (previous.kind === "ok") {
+    for (const e of previous.entries) merged.set(e.fillId, e);
+  }
+  if (primary.kind === "ok") {
+    for (const e of primary.entries) merged.set(e.fillId, e);
+  }
+  return [...merged.values()];
+}
+
+/** Emit an UNKNOWN result with the recovered set, logged loudly (fail-closed). */
+function unknownResult(
+  file: string,
+  entries: PendingFillEntry[]
+): JournalReadResult {
+  logger.error(
+    "Pending-fill journal integrity unknown - refusing to treat as empty",
+    { file, recovered: entries.length }
+  );
+  return { status: "UNKNOWN", entries };
+}
+
+/**
+ * Read the journal with integrity. The governing invariant: if the system
+ * cannot PROVE that every potentially undelivered fill is accounted for, the
+ * status is UNKNOWN and every trading gate must fail closed. Returns:
+ * - EMPTY: verified clean — a fully-usable non-corrupt primary with no
+ *   entries, or genuine absence (ENOENT) of both copies. Safe to trade.
+ * - PENDING: a trustworthy, COMPLETE copy was recovered (a clean primary, or
+ *   a genuinely-absent primary whose `.prev` is clean). Every fill is
+ *   accounted for; replay what is listed.
+ * - UNKNOWN: the on-disk state cannot be proven complete — a partially
+ *   corrupt, wholly unusable, or unreadable copy (findings 1 & 2), or a
+ *   fallback that is itself corrupt/unreadable. `entries` still carries
+ *   whatever was recovered for reconciliation/replay visibility, but the
+ *   corrupt/unreadable bytes may be fills present in NEITHER copy, so callers
+ *   MUST fail closed: never trade, never report "no pending fills".
  */
 export function readPendingFills(): JournalReadResult {
   const file = journalPath();
   const primary = readJournalFileOutcome(file);
   const previous = readJournalFileOutcome(`${file}.prev`);
 
-  // Verified clean: nothing was ever journaled.
-  if (primary.kind === "missing" && previous.kind === "missing") {
-    return { status: "EMPTY", entries: [] };
-  }
-
-  // Primary fully usable: consult .prev too when rows were corrupt, so a
-  // fill present only in the previous copy is still replayed. Primary wins
-  // on fillId conflicts.
+  // (1) A fully-usable, non-corrupt primary IS the authoritative current
+  //     state and proves completeness. `.prev` is only ever a fallback for an
+  //     untrustworthy primary, so its state is irrelevant here.
   if (primary.kind === "ok" && primary.corrupt === 0) {
     return {
       status: primary.entries.length > 0 ? "PENDING" : "EMPTY",
       entries: primary.entries,
     };
   }
-  if (primary.kind === "ok") {
-    const merged = new Map<string, PendingFillEntry>();
-    if (previous.kind === "ok") {
-      for (const e of previous.entries) merged.set(e.fillId, e);
+
+  // (2) A genuinely absent primary (ENOENT) is trustworthy absence — the
+  //     documented crash-between-temp-write-and-rename case, where `.prev`
+  //     holds the last complete state. Only a fully-clean `.prev` lets us
+  //     account for every fill; any other `.prev` state fails closed.
+  if (primary.kind === "missing") {
+    if (previous.kind === "missing") {
+      return { status: "EMPTY", entries: [] };
     }
-    for (const e of primary.entries) merged.set(e.fillId, e);
-    const entries = [...merged.values()];
-    if (previous.kind === "ok") {
+    if (previous.kind === "ok" && previous.corrupt === 0) {
       logger.warn(
-        "Pending-fill journal partially corrupt - merged with previous version",
-        { file, recovered: entries.length }
+        "Pending-fill journal primary absent - recovered from previous version",
+        { file, recovered: previous.entries.length }
       );
+      return {
+        status: previous.entries.length > 0 ? "PENDING" : "EMPTY",
+        entries: previous.entries,
+      };
     }
-    return {
-      status: entries.length > 0 ? "PENDING" : "UNKNOWN",
-      entries,
-    };
+    // `.prev` is itself corrupt or unreadable: recover any valid rows for
+    // reconciliation visibility, but integrity is unprovable.
+    return unknownResult(file, unionValidEntries(primary, previous));
   }
 
-  // Primary missing or unusable: fall back to .prev.
-  if (previous.kind === "ok") {
-    logger.warn("Pending-fill journal corrupt - reading previous version", {
-      file,
-      recovered: previous.entries.length,
-    });
-    return {
-      status: previous.entries.length > 0 ? "PENDING" : "UNKNOWN",
-      entries: previous.entries,
-    };
-  }
-
-  // Files exist but nothing trustworthy could be recovered. UNKNOWN, loudly:
-  // this is the condition every trading gate must refuse to trade behind.
-  // (A verified-empty journal — an `[]` primary with a good read and no
-  // corruption — already returned EMPTY at the top of this function.)
-  logger.error(
-    "Pending-fill journal integrity unknown - refusing to treat as empty",
-    { file }
-  );
-  return { status: "UNKNOWN", entries: [] };
+  // (3) The primary is PRESENT but not fully trustworthy: partially corrupt,
+  //     wholly unusable, or unreadable (finding 1 & 2). Its bytes exist on
+  //     disk and we cannot prove their full contents, so any fill in them is
+  //     potentially unaccounted for. Union `.prev` to recover as much as
+  //     possible for reconciliation/replay, but the status is UNKNOWN —
+  //     corrupt or unreadable rows may be fills present in NEITHER copy.
+  return unknownResult(file, unionValidEntries(primary, previous));
 }
 
 /**
@@ -243,8 +278,9 @@ export function readPendingFills(): JournalReadResult {
  * crash between temp-write and rename). Corrupt bytes are quarantined for
  * manual reconciliation.
  *
- * NOTE: on UNKNOWN integrity this returns [] for replay-iteration
- * convenience — gates MUST use `readPendingFills().status`, never the
+ * NOTE: on UNKNOWN integrity this returns whatever was RECOVERABLE (the
+ * primary+`.prev` union) for reconciliation/replay visibility — it is NOT a
+ * completeness signal. Gates MUST use `readPendingFills().status`, never the
  * length of this array, to decide whether trading may proceed.
  */
 export function listPendingFills(): PendingFillEntry[] {
@@ -276,12 +312,13 @@ export function pendingFillStatus(): PendingFillStatus {
 }
 
 /**
- * Number of fills currently awaiting ledger delivery. Cheap synchronous
- * read — the heartbeat and the periodic retry loop use it to decide whether
- * a replay pass is worth attempting.
+ * Number of fills currently recovered and awaiting ledger delivery. Cheap
+ * synchronous read — the heartbeat and the periodic retry loop use it to
+ * decide whether a replay pass is worth attempting.
  *
- * NOTE: returns 0 on UNKNOWN integrity (nothing iterable to replay) — gates
- * MUST consult `pendingFillStatus().unknown`, never this count alone.
+ * NOTE: on UNKNOWN integrity this counts the RECOVERABLE entries (the
+ * primary+`.prev` union), not zero — gates MUST consult
+ * `pendingFillStatus().unknown`, never this count alone.
  */
 export function pendingFillCount(): number {
   return pendingFillStatus().pending;
@@ -292,10 +329,26 @@ export function pendingFillCount(): number {
  * durable copy could be written (the caller must REJECT the fill: without a
  * journal entry a publish failure leaves no replay path). Re-journaling the
  * same fillId replaces the entry in place.
+ *
+ * Fail-closed on UNKNOWN integrity (finding 3): if the current journal cannot
+ * be proven complete, appending to the recovered subset and rewriting would
+ * OVERWRITE the unrecovered/corrupt fills — destroying the very evidence an
+ * operator needs to reconcile. In that state we refuse to write (return false)
+ * so `reportFill` throws `UndurableFillError` and the strategy halts rather
+ * than silently converting unknown financial state into apparently-healthy
+ * state. The original and quarantined bytes are left untouched.
  */
 export function journalPendingFill(entry: PendingFillEntry): boolean {
   try {
-    const entries = listPendingFills();
+    const read = readPendingFills();
+    if (read.status === "UNKNOWN") {
+      logger.error(
+        "Refusing to journal pending fill - journal integrity unknown; preserving evidence for reconciliation",
+        { fillId: entry.fillId, botId: entry.payload.botId }
+      );
+      return false;
+    }
+    const entries = read.entries;
     const index = entries.findIndex(e => e.fillId === entry.fillId);
     if (index >= 0) {
       entries[index] = entry;
@@ -322,10 +375,24 @@ export function journalPendingFill(entry: PendingFillEntry): boolean {
  * Drop a fill from the journal — called only after the stream accepted it.
  * Idempotent: an already-absent entry is a success (a lost clear is safe
  * anyway — the backend dedup key makes the redundant replay a no-op).
+ *
+ * Fail-closed on UNKNOWN integrity (finding 3): rewriting the journal from the
+ * recovered subset would discard unrecovered/corrupt fills, so we refuse to
+ * mutate and return false. The entry simply stays for the next (post-
+ * reconciliation) replay, which the backend dedups — a redundant replay is
+ * always safe, a lost fill never is.
  */
 export function clearPendingFill(fillId: string): boolean {
   try {
-    const entries = listPendingFills();
+    const read = readPendingFills();
+    if (read.status === "UNKNOWN") {
+      logger.error(
+        "Refusing to clear pending fill - journal integrity unknown; preserving evidence for reconciliation",
+        { fillId }
+      );
+      return false;
+    }
+    const entries = read.entries;
     const remaining = entries.filter(e => e.fillId !== fillId);
     if (remaining.length === entries.length) return true;
     durableWriteSync(
