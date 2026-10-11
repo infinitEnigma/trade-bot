@@ -3,10 +3,10 @@
 import request from "supertest";
 import { Express } from "express";
 
-// Mock blockchain service
+// Mock blockchain service (provider only — wallet resolution lives in the
+// wallet repository adapter, C2 multi-wallet).
 jest.mock("../../../src/infrastructure/external/blockchain.service", () => {
   const mockBlockchainService = {
-    getUserWalletAddress: jest.fn(),
     getNativeBalance: jest.fn(),
     invalidateUserCache: jest.fn(),
   };
@@ -15,6 +15,17 @@ jest.mock("../../../src/infrastructure/external/blockchain.service", () => {
     createBlockchainService: jest.fn().mockReturnValue(mockBlockchainService),
   };
 });
+
+// Mock the wallet repository (ownership-scoped wallet resolution).
+jest.mock(
+  "../../../src/infrastructure/adapters/repositories/wallet-repository.adapter",
+  () => ({
+    walletRepositoryAdapter: {
+      listWallets: jest.fn(),
+      getOwnedWallet: jest.fn(),
+    },
+  })
+);
 
 // Mock rate limiters. balance.ts imports RateLimiters directly from the
 // rate-limiter module (same convention as every other route file), so the
@@ -65,6 +76,40 @@ jest.mock("../../../src/core/logging/logger.service", () => ({
 // Get the mock blockchain service
 const mockBlockchainService =
   require("../../../src/infrastructure/external/blockchain.service").createBlockchainService();
+const mockWalletRepository = require(
+  "../../../src/infrastructure/adapters/repositories/wallet-repository.adapter"
+).walletRepositoryAdapter;
+
+const mockEvmWallet = {
+  id: "wallet-1",
+  userId: "user-123",
+  chain: "evm",
+  address: "0x1234567890abcdef1234567890abcdef12345678",
+  label: null,
+  isPrimary: true,
+  verifiedAt: new Date("2026-01-01T00:00:00.000Z"),
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+};
+
+const mockSolanaWallet = {
+  ...mockEvmWallet,
+  id: "wallet-sol",
+  chain: "solana",
+  address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+  isPrimary: false,
+};
+
+const mockBalance = {
+  address: mockEvmWallet.address,
+  nativeBalance: "1000000000000000000",
+  nativeBalanceFormatted: "1.0",
+  chainId: 80094,
+  chainName: "Berachain Mainnet",
+  symbol: "BERA",
+  timestamp: "2026-01-01T00:00:00.000Z",
+  cacheHit: false,
+};
 
 // Create a test app
 function createTestApp(): Express {
@@ -88,6 +133,25 @@ function createTestApp(): Express {
   app.use(handleErrors);
 
   return app;
+}
+
+function mockAuthAs(userLevel: string | null): void {
+  jest
+    .spyOn(
+      require("../../../src/interfaces/middleware/auth.middleware"),
+      "authMiddleware"
+    )
+    .mockImplementation((req: any, res: any, next: any) => {
+      req.user = userLevel
+        ? {
+            userId: "user-123",
+            email: "test@example.com",
+            userLevel,
+            roles: [],
+          }
+        : null;
+      next();
+    });
 }
 
 describe("Balance Controller Tests", () => {
@@ -118,23 +182,7 @@ describe("Balance Controller Tests", () => {
 
   describe("GET /api/balance/current", () => {
     it("should return null balance for BASIC user", async () => {
-      // Temporarily override auth middleware to set user as BASIC
-      jest
-        .spyOn(
-          require("../../../src/interfaces/middleware/auth.middleware"),
-          "authMiddleware"
-        )
-        .mockImplementation((req: any, res: any, next: any) => {
-          req.user = {
-            userId: "user-123",
-            email: "test@example.com",
-            userLevel: "BASIC",
-            roles: [],
-          };
-          next();
-        });
-
-      // Recreate app with the overridden middleware
+      mockAuthAs("BASIC");
       app = createTestApp();
 
       const response = await request(app)
@@ -146,268 +194,175 @@ describe("Balance Controller Tests", () => {
         data: null,
         message: "Wallet balance data available after wallet connection",
       });
+      // BASIC short-circuit must not touch wallet or provider layers.
+      expect(mockWalletRepository.listWallets).not.toHaveBeenCalled();
+      expect(mockBlockchainService.getNativeBalance).not.toHaveBeenCalled();
     });
 
-    it("should return current balance for VERIFIED user with connected wallet", async () => {
-      // Ensure we're using VERIFIED user
-      jest
-        .spyOn(
-          require("../../../src/interfaces/middleware/auth.middleware"),
-          "authMiddleware"
-        )
-        .mockImplementation((req: any, res: any, next: any) => {
-          req.user = {
-            userId: "user-123",
-            email: "test@example.com",
-            userLevel: "VERIFIED",
-            roles: [],
-          };
-          next();
-        });
-
+    it("should return on-chain balance for VERIFIED user with primary EVM wallet", async () => {
+      mockAuthAs("VERIFIED");
       app = createTestApp();
 
-      const mockWalletAddress = "0x1234567890abcdef1234567890abcdef12345678";
-      const mockBalance = "100.50";
-
-      mockBlockchainService.getUserWalletAddress.mockResolvedValue(
-        mockWalletAddress
-      );
+      mockWalletRepository.listWallets.mockResolvedValue([mockEvmWallet]);
       mockBlockchainService.getNativeBalance.mockResolvedValue(mockBalance);
 
       const response = await request(app)
         .get("/api/balance/current")
         .expect(200);
 
-      expect(response.body).toEqual({
-        success: true,
-        data: mockBalance,
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toEqual({
+        source: "onchain",
+        walletId: "wallet-1",
+        address: mockEvmWallet.address,
+        chainId: 80094,
+        chainName: "Berachain Mainnet",
+        symbol: "BERA",
+        nativeBalance: "1000000000000000000",
+        nativeBalanceFormatted: "1.0",
+        timestamp: mockBalance.timestamp,
+        observedAt: mockBalance.timestamp,
+        cache: "miss",
       });
-
-      expect(mockBlockchainService.getUserWalletAddress).toHaveBeenCalledWith(
-        "user-123"
-      );
       expect(mockBlockchainService.getNativeBalance).toHaveBeenCalledWith(
-        mockWalletAddress
+        mockEvmWallet.address
       );
     });
 
-    it("should throw validation error when wallet is not connected for VERIFIED user", async () => {
-      // Ensure we're using VERIFIED user
-      jest
-        .spyOn(
-          require("../../../src/interfaces/middleware/auth.middleware"),
-          "authMiddleware"
-        )
-        .mockImplementation((req: any, res: any, next: any) => {
-          req.user = {
-            userId: "user-123",
-            email: "test@example.com",
-            userLevel: "VERIFIED",
-            roles: [],
-          };
-          next();
-        });
-
+    it("should return balance for REGISTERED user who owns a wallet", async () => {
+      // Regression: REGISTERED (wallet linked) used to be rejected with
+      // "requires VERIFIED account status".
+      mockAuthAs("REGISTERED");
       app = createTestApp();
 
-      mockBlockchainService.getUserWalletAddress.mockResolvedValue(null);
+      mockWalletRepository.listWallets.mockResolvedValue([mockEvmWallet]);
+      mockBlockchainService.getNativeBalance.mockResolvedValue(mockBalance);
+
+      const response = await request(app)
+        .get("/api/balance/current")
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.source).toBe("onchain");
+      expect(response.body.data.nativeBalanceFormatted).toBe("1.0");
+    });
+
+    it("should report cache hits", async () => {
+      mockAuthAs("VERIFIED");
+      app = createTestApp();
+
+      mockWalletRepository.listWallets.mockResolvedValue([mockEvmWallet]);
+      mockBlockchainService.getNativeBalance.mockResolvedValue({
+        ...mockBalance,
+        cacheHit: true,
+      });
+
+      const response = await request(app)
+        .get("/api/balance/current")
+        .expect(200);
+
+      expect(response.body.data.cache).toBe("hit");
+    });
+
+    it("should return 400 when the user has no EVM wallet", async () => {
+      mockAuthAs("VERIFIED");
+      app = createTestApp();
+
+      mockWalletRepository.listWallets.mockResolvedValue([]);
 
       const response = await request(app)
         .get("/api/balance/current")
         .expect(400);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain("Wallet not connected");
+      expect(response.body.error).toContain("No connected wallet found");
     });
 
-    it("should throw external service error when blockchain service fails", async () => {
-      // Ensure we're using VERIFIED user
-      jest
-        .spyOn(
-          require("../../../src/interfaces/middleware/auth.middleware"),
-          "authMiddleware"
-        )
-        .mockImplementation((req: any, res: any, next: any) => {
-          req.user = {
-            userId: "user-123",
-            email: "test@example.com",
-            userLevel: "VERIFIED",
-            roles: [],
-          };
-          next();
-        });
-
+    it("should return 503 when the provider fails", async () => {
+      mockAuthAs("VERIFIED");
       app = createTestApp();
 
-      const mockWalletAddress = "0x1234567890abcdef1234567890abcdef12345678";
-      mockBlockchainService.getUserWalletAddress.mockResolvedValue(
-        mockWalletAddress
-      );
+      mockWalletRepository.listWallets.mockResolvedValue([mockEvmWallet]);
       mockBlockchainService.getNativeBalance.mockRejectedValue(
         new Error("Failed to get balance from blockchain")
       );
 
       const response = await request(app)
         .get("/api/balance/current")
-        .expect(502);
+        .expect(503);
 
       expect(response.body.success).toBe(false);
       expect(response.body.error).toBeDefined();
     });
 
-    it("should throw validation error for Kodiak account errors", async () => {
-      // Ensure we're using VERIFIED user
-      jest
-        .spyOn(
-          require("../../../src/interfaces/middleware/auth.middleware"),
-          "authMiddleware"
-        )
-        .mockImplementation((req: any, res: any, next: any) => {
-          req.user = {
-            userId: "user-123",
-            email: "test@example.com",
-            userLevel: "VERIFIED",
-            roles: [],
-          };
-          next();
-        });
-
+    it("should return 503 for unexpected provider errors (fail-closed)", async () => {
+      mockAuthAs("VERIFIED");
       app = createTestApp();
 
-      const mockWalletAddress = "0x1234567890abcdef1234567890abcdef12345678";
-      mockBlockchainService.getUserWalletAddress.mockResolvedValue(
-        mockWalletAddress
-      );
-      mockBlockchainService.getNativeBalance.mockRejectedValue(
-        new Error("no Kodiak account connected")
-      );
-
-      const response = await request(app)
-        .get("/api/balance/current")
-        .expect(400);
-
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain("Wallet not connected");
-    });
-
-    it("should throw validation error for Kodiak credentials errors", async () => {
-      // Ensure we're using VERIFIED user
-      jest
-        .spyOn(
-          require("../../../src/interfaces/middleware/auth.middleware"),
-          "authMiddleware"
-        )
-        .mockImplementation((req: any, res: any, next: any) => {
-          req.user = {
-            userId: "user-123",
-            email: "test@example.com",
-            userLevel: "VERIFIED",
-            roles: [],
-          };
-          next();
-        });
-
-      app = createTestApp();
-
-      const mockWalletAddress = "0x1234567890abcdef1234567890abcdef12345678";
-      mockBlockchainService.getUserWalletAddress.mockResolvedValue(
-        mockWalletAddress
-      );
-      mockBlockchainService.getNativeBalance.mockRejectedValue(
-        new Error("Kodiak credentials not found")
-      );
-
-      const response = await request(app)
-        .get("/api/balance/current")
-        .expect(400);
-
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain("Wallet not connected");
-    });
-
-    it("should throw not found error for unexpected failures", async () => {
-      // Ensure we're using VERIFIED user
-      jest
-        .spyOn(
-          require("../../../src/interfaces/middleware/auth.middleware"),
-          "authMiddleware"
-        )
-        .mockImplementation((req: any, res: any, next: any) => {
-          req.user = {
-            userId: "user-123",
-            email: "test@example.com",
-            userLevel: "VERIFIED",
-            roles: [],
-          };
-          next();
-        });
-
-      app = createTestApp();
-
-      const mockWalletAddress = "0x1234567890abcdef1234567890abcdef12345678";
-      mockBlockchainService.getUserWalletAddress.mockResolvedValue(
-        mockWalletAddress
-      );
+      mockWalletRepository.listWallets.mockResolvedValue([mockEvmWallet]);
       mockBlockchainService.getNativeBalance.mockRejectedValue(
         new Error("Unexpected error")
       );
 
       const response = await request(app)
         .get("/api/balance/current")
+        .expect(503);
+
+      expect(response.body.success).toBe(false);
+    });
+
+    it("should scope the read to an owned walletId", async () => {
+      mockAuthAs("VERIFIED");
+      app = createTestApp();
+
+      mockWalletRepository.getOwnedWallet.mockResolvedValue(mockEvmWallet);
+      mockBlockchainService.getNativeBalance.mockResolvedValue(mockBalance);
+
+      const response = await request(app)
+        .get("/api/balance/current?walletId=wallet-1")
+        .expect(200);
+
+      expect(mockWalletRepository.getOwnedWallet).toHaveBeenCalledWith(
+        "user-123",
+        "wallet-1"
+      );
+      expect(response.body.data.walletId).toBe("wallet-1");
+      expect(mockBlockchainService.getNativeBalance).toHaveBeenCalledWith(
+        mockEvmWallet.address
+      );
+    });
+
+    it("should return 404 for a foreign or missing walletId", async () => {
+      mockAuthAs("VERIFIED");
+      app = createTestApp();
+
+      mockWalletRepository.getOwnedWallet.mockResolvedValue(null);
+
+      const response = await request(app)
+        .get("/api/balance/current?walletId=not-mine")
         .expect(404);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain("temporarily unavailable");
+      expect(mockBlockchainService.getNativeBalance).not.toHaveBeenCalled();
     });
 
-    it("should throw validation error for non-VERIFIED (REGISTERED) users", async () => {
-      // Temporarily override auth middleware to set user as REGISTERED
-      jest
-        .spyOn(
-          require("../../../src/interfaces/middleware/auth.middleware"),
-          "authMiddleware"
-        )
-        .mockImplementation((req: any, res: any, next: any) => {
-          req.user = {
-            userId: "user-123",
-            email: "test@example.com",
-            userLevel: "REGISTERED",
-            roles: [],
-          };
-          next();
-        });
-
+    it("should return 400 when walletId points to a non-EVM wallet", async () => {
+      mockAuthAs("VERIFIED");
       app = createTestApp();
 
-      const mockWalletAddress = "0x1234567890abcdef1234567890abcdef12345678";
-      mockBlockchainService.getUserWalletAddress.mockResolvedValue(
-        mockWalletAddress
-      );
-      mockBlockchainService.getNativeBalance.mockRejectedValue(
-        new Error("Some error")
-      );
+      mockWalletRepository.getOwnedWallet.mockResolvedValue(mockSolanaWallet);
 
       const response = await request(app)
-        .get("/api/balance/current")
+        .get("/api/balance/current?walletId=wallet-sol")
         .expect(400);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain("requires VERIFIED account status");
+      expect(response.body.error).toContain("not supported");
+      expect(mockBlockchainService.getNativeBalance).not.toHaveBeenCalled();
     });
 
     it("should handle unauthenticated user scenario", async () => {
-      // Temporarily override auth middleware to not set user
-      jest
-        .spyOn(
-          require("../../../src/interfaces/middleware/auth.middleware"),
-          "authMiddleware"
-        )
-        .mockImplementation((req: any, res: any, next: any) => {
-          req.user = null;
-          next();
-        });
-
+      mockAuthAs(null);
       app = createTestApp();
 
       const response = await request(app)
@@ -420,116 +375,84 @@ describe("Balance Controller Tests", () => {
   });
 
   describe("POST /api/balance/refresh", () => {
-    it("should refresh balance successfully for user with connected wallet", async () => {
-      // Ensure we're using VERIFIED user
-      jest
-        .spyOn(
-          require("../../../src/interfaces/middleware/auth.middleware"),
-          "authMiddleware"
-        )
-        .mockImplementation((req: any, res: any, next: any) => {
-          req.user = {
-            userId: "user-123",
-            email: "test@example.com",
-            userLevel: "VERIFIED",
-            roles: [],
-          };
-          next();
-        });
-
+    it("should invalidate cache, refetch, and return the on-chain shape", async () => {
+      mockAuthAs("VERIFIED");
       app = createTestApp();
 
-      const mockWalletAddress = "0x1234567890abcdef1234567890abcdef12345678";
-      const mockBalance = "200.75";
-
-      mockBlockchainService.getUserWalletAddress.mockResolvedValue(
-        mockWalletAddress
-      );
+      mockWalletRepository.listWallets.mockResolvedValue([mockEvmWallet]);
       mockBlockchainService.invalidateUserCache.mockResolvedValue(undefined);
-      mockBlockchainService.getNativeBalance.mockResolvedValue(mockBalance);
+      mockBlockchainService.getNativeBalance.mockResolvedValue({
+        ...mockBalance,
+        cacheHit: false,
+      });
 
       const response = await request(app)
         .post("/api/balance/refresh")
         .expect(200);
 
-      expect(response.body).toEqual({
-        success: true,
-        data: mockBalance,
-      });
-
-      expect(mockBlockchainService.getUserWalletAddress).toHaveBeenCalledWith(
-        "user-123"
-      );
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.source).toBe("onchain");
+      expect(response.body.data.cache).toBe("miss");
       expect(mockBlockchainService.invalidateUserCache).toHaveBeenCalledWith(
         "user-123",
-        mockWalletAddress
+        mockEvmWallet.address
       );
       expect(mockBlockchainService.getNativeBalance).toHaveBeenCalledWith(
-        mockWalletAddress
+        mockEvmWallet.address
       );
     });
 
-    it("should return validation error when wallet is not connected", async () => {
-      // Ensure we're using VERIFIED user
-      jest
-        .spyOn(
-          require("../../../src/interfaces/middleware/auth.middleware"),
-          "authMiddleware"
-        )
-        .mockImplementation((req: any, res: any, next: any) => {
-          req.user = {
-            userId: "user-123",
-            email: "test@example.com",
-            userLevel: "VERIFIED",
-            roles: [],
-          };
-          next();
-        });
-
+    it("should accept an optional walletId in the body", async () => {
+      mockAuthAs("VERIFIED");
       app = createTestApp();
 
-      mockBlockchainService.getUserWalletAddress.mockResolvedValue(null);
+      mockWalletRepository.getOwnedWallet.mockResolvedValue(mockEvmWallet);
+      mockBlockchainService.invalidateUserCache.mockResolvedValue(undefined);
+      mockBlockchainService.getNativeBalance.mockResolvedValue(mockBalance);
 
       const response = await request(app)
         .post("/api/balance/refresh")
-        .expect(500);
+        .send({ walletId: "wallet-1" })
+        .expect(200);
 
-      expect(response.body.success).toBe(true);
+      expect(mockWalletRepository.getOwnedWallet).toHaveBeenCalledWith(
+        "user-123",
+        "wallet-1"
+      );
+      expect(response.body.data.walletId).toBe("wallet-1");
+    });
+
+    it("should return a structured 400 when wallet is not connected", async () => {
+      // Regression: used to be 500 with success: true.
+      mockAuthAs("VERIFIED");
+      app = createTestApp();
+
+      mockWalletRepository.listWallets.mockResolvedValue([]);
+
+      const response = await request(app)
+        .post("/api/balance/refresh")
+        .expect(400);
+
+      expect(response.body.success).toBe(false);
       expect(response.body.error).toContain("No connected wallet found");
     });
 
-    it("should handle refresh failure and return error", async () => {
-      // Ensure we're using VERIFIED user
-      jest
-        .spyOn(
-          require("../../../src/interfaces/middleware/auth.middleware"),
-          "authMiddleware"
-        )
-        .mockImplementation((req: any, res: any, next: any) => {
-          req.user = {
-            userId: "user-123",
-            email: "test@example.com",
-            userLevel: "VERIFIED",
-            roles: [],
-          };
-          next();
-        });
-
+    it("should return a structured 503 when the provider fails", async () => {
+      // Regression: used to be 500 with success: true.
+      mockAuthAs("VERIFIED");
       app = createTestApp();
 
-      const mockWalletAddress = "0x1234567890abcdef1234567890abcdef12345678";
-      const mockError = new Error("Blockchain connection timeout");
-
-      mockBlockchainService.getUserWalletAddress.mockResolvedValue(
-        mockWalletAddress
+      mockWalletRepository.listWallets.mockResolvedValue([mockEvmWallet]);
+      mockBlockchainService.invalidateUserCache.mockResolvedValue(undefined);
+      mockBlockchainService.getNativeBalance.mockRejectedValue(
+        new Error("Failed to get balance from blockchain")
       );
-      mockBlockchainService.invalidateUserCache.mockRejectedValue(mockError);
 
       const response = await request(app)
         .post("/api/balance/refresh")
-        .expect(500);
+        .expect(503);
 
-      expect(response.body.success).toBe(true);
+      expect(response.body.success).toBe(false);
       expect(response.body.error).toBeDefined();
     });
   });

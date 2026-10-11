@@ -82,6 +82,45 @@ describe("BlockchainService", () => {
     it("should initialize with custom configuration", () => {
       expect(blockchainService).toBeDefined();
     });
+
+    it("should default to honest Berachain values for chain 80094", () => {
+      const service = new BlockchainService();
+      const config = (service as unknown as { config: Record<string, unknown> })
+        .config;
+      expect(config.chainId).toBe(80094);
+      expect(config.chainName).toBe("Berachain Mainnet");
+      expect(config.nativeSymbol).toBe("BERA");
+    });
+
+    it("should read chain config from ONCHAIN_* env vars", () => {
+      process.env.ONCHAIN_CHAIN_ID = "1";
+      process.env.ONCHAIN_CHAIN_NAME = "Ethereum Mainnet";
+      process.env.ONCHAIN_NATIVE_SYMBOL = "ETH";
+      process.env.ONCHAIN_BALANCE_CACHE_TTL_SEC = "30";
+      try {
+        const service = new BlockchainService();
+        const config = (
+          service as unknown as { config: Record<string, unknown> }
+        ).config;
+        expect(config.chainId).toBe(1);
+        expect(config.chainName).toBe("Ethereum Mainnet");
+        expect(config.nativeSymbol).toBe("ETH");
+        expect(config.cacheTtl).toBe(30);
+      } finally {
+        delete process.env.ONCHAIN_CHAIN_ID;
+        delete process.env.ONCHAIN_CHAIN_NAME;
+        delete process.env.ONCHAIN_NATIVE_SYMBOL;
+        delete process.env.ONCHAIN_BALANCE_CACHE_TTL_SEC;
+      }
+    });
+
+    it("should warn when ETHERSCAN_API_KEY is missing", () => {
+      delete process.env.ETHERSCAN_API_KEY;
+      new BlockchainService();
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("ETHERSCAN_API_KEY is not set")
+      );
+    });
   });
 
   describe("getNativeBalance", () => {
@@ -103,6 +142,7 @@ describe("BlockchainService", () => {
         chainName: mockConfig.chainName,
         symbol: mockConfig.nativeSymbol,
         timestamp: new Date().toISOString(),
+        cacheHit: false,
       };
 
       (redisService.get as jest.Mock).mockResolvedValue({
@@ -112,7 +152,8 @@ describe("BlockchainService", () => {
 
       const result = await blockchainService.getNativeBalance(validAddress);
 
-      expect(result).toEqual(mockBalance);
+      // Cached blob is returned with the hit flag stamped on top.
+      expect(result).toEqual({ ...mockBalance, cacheHit: true });
       expect(redisService.get).toHaveBeenCalled();
       expect(logger.debug).toHaveBeenCalledWith(
         "Blockchain balance cache hit",
@@ -148,6 +189,12 @@ describe("BlockchainService", () => {
 
       expect(result.address).toEqual(validAddress);
       expect(parseFloat(result.nativeBalanceFormatted)).toBeGreaterThan(0);
+      expect(result.cacheHit).toBe(false);
+      // Provider calls must carry a timeout signal (fail-closed on hangs).
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("etherscan.io"),
+        expect.objectContaining({ signal: expect.anything() })
+      );
       expect(redisService.get).toHaveBeenCalled();
       expect(redisService.setex).toHaveBeenCalled();
       expect(logger.debug).toHaveBeenCalledWith(
@@ -429,102 +476,4 @@ describe("BlockchainService", () => {
     });
   });
 
-  describe("getUserWalletAddress", () => {
-    it("should return null if no verified wallet address found", async () => {
-      const poolModule = await import("../../src/database/pool");
-      (poolModule.query as jest.Mock).mockResolvedValue({ rows: [] });
-
-      const result = await blockchainService.getUserWalletAddress(
-        "550e8400-e29b-41d4-a716-446655440000"
-      );
-
-      expect(result).toBeNull();
-      expect(logger.debug).toHaveBeenCalledWith(
-        "No wallet address found for user",
-        expect.objectContaining({
-          userId: "550e8400-e29b-41d4-a716-446655440000",
-        })
-      );
-    });
-
-    it("should return null if wallet address is invalid format", async () => {
-      const poolModule = await import("../../src/database/pool");
-      (poolModule.query as jest.Mock).mockResolvedValue({
-        rows: [
-          {
-            id: "wallet-1",
-            user_id: "550e8400-e29b-41d4-a716-446655440000",
-            chain: "evm",
-            address: "invalid-wallet-address",
-            label: null,
-            is_primary: true,
-            verified_at: "2024-01-01T00:00:00.000Z",
-            created_at: "2024-01-01T00:00:00.000Z",
-            updated_at: "2024-01-01T00:00:00.000Z",
-          },
-        ],
-      });
-
-      const result = await blockchainService.getUserWalletAddress(
-        "550e8400-e29b-41d4-a716-446655440000"
-      );
-
-      expect(result).toBeNull();
-      expect(logger.warn).toHaveBeenCalledWith(
-        "Invalid wallet address format in database",
-        expect.objectContaining({
-          userId: "550e8400-e29b-41d4-a716-446655440000",
-        })
-      );
-    });
-
-    it("should return valid wallet address from database", async () => {
-      const validAddress = "0x1234567890123456789012345678901234567890";
-      const poolModule = await import("../../src/database/pool");
-      (poolModule.query as jest.Mock).mockResolvedValue({
-        rows: [
-          {
-            id: "wallet-1",
-            user_id: "550e8400-e29b-41d4-a716-446655440000",
-            chain: "evm",
-            address: validAddress,
-            label: null,
-            is_primary: true,
-            verified_at: "2024-01-01T00:00:00.000Z",
-            created_at: "2024-01-01T00:00:00.000Z",
-            updated_at: "2024-01-01T00:00:00.000Z",
-          },
-        ],
-      });
-
-      const result = await blockchainService.getUserWalletAddress(
-        "550e8400-e29b-41d4-a716-446655440000"
-      );
-
-      expect(result).toEqual(validAddress);
-      expect(logger.debug).toHaveBeenCalledWith(
-        "Wallet address retrieved from database",
-        expect.objectContaining({
-          userId: "550e8400-e29b-41d4-a716-446655440000",
-          walletAddress: validAddress,
-        })
-      );
-    });
-
-    it("should handle database query errors", async () => {
-      const poolModule = await import("../../src/database/pool");
-      (poolModule.query as jest.Mock).mockRejectedValue(
-        new Error("Database connection failed")
-      );
-
-      await expect(
-        blockchainService.getUserWalletAddress(
-          "550e8400-e29b-41d4-a716-446655440000"
-        )
-      ).rejects.toThrow(
-        `Failed to get wallet address for user 550e8400-e29b-41d4-a716-446655440000`
-      );
-      expect(logger.error).toHaveBeenCalled();
-    });
-  });
 });

@@ -104,6 +104,29 @@ describe("WalletRepositoryAdapter", () => {
     });
   });
 
+  describe("getOwnedWallet", () => {
+    it("should scope the lookup to the owner (id + user_id)", async () => {
+      mockQuery.mockResolvedValue({ rows: [walletRow()] });
+
+      const wallet = await adapter.getOwnedWallet("test-user-id", "wallet-1");
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining("WHERE id = $1 AND user_id = $2"),
+        ["wallet-1", "test-user-id"]
+      );
+      expect(wallet?.id).toBe("wallet-1");
+      expect(wallet?.userId).toBe("test-user-id");
+    });
+
+    it("should return null for a missing or foreign wallet (no leak)", async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+
+      await expect(
+        adapter.getOwnedWallet("test-user-id", "someone-elses-wallet")
+      ).resolves.toBeNull();
+    });
+  });
+
   describe("upsertVerified", () => {
     it("should insert a verified wallet and let the first one become primary", async () => {
       mockQuery.mockResolvedValue({ rows: [walletRow({ is_primary: false })] });

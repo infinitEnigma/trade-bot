@@ -50,11 +50,13 @@ interface EtherscanTokenTransactionsResponse {
 export interface BlockchainBalance {
   address: string;
   nativeBalance: string; // In wei
-  nativeBalanceFormatted: string; // In ETH
+  nativeBalanceFormatted: string; // In native units (e.g. BERA)
   chainId: number;
   chainName: string;
   symbol: string;
   timestamp: string;
+  /** True when the value came from Redis instead of a live provider call. */
+  cacheHit: boolean;
 }
 
 export interface TokenBalance {
@@ -74,6 +76,15 @@ export interface BlockchainServiceConfig {
   cacheTtl: number;
 }
 
+/** Parse a positive int env var, falling back on invalid/missing values. */
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/** Provider HTTP timeout — a hung explorer must not hold a request open. */
+const PROVIDER_TIMEOUT_MS = 5000;
+
 /**
  * Blockchain Service
  */
@@ -81,17 +92,36 @@ export class BlockchainService {
   private config: BlockchainServiceConfig;
 
   constructor(config: Partial<BlockchainServiceConfig> = {}) {
-    // Set default configuration with fallback values
+    // Env-driven chain config (Phase A). Defaults describe the chain the
+    // default chainId actually is — 80094 is Berachain mainnet, so the name
+    // and symbol must not claim Ethereum/ETH. Explicit constructor config
+    // (tests) still wins over env.
     this.config = {
       etherscanApiKey:
         config.etherscanApiKey ||
         process.env.ETHERSCAN_API_KEY ||
         "your-etherscan-key",
-      chainId: config.chainId || 80094, // Default to specified chain (80094)
-      chainName: config.chainName || "Ethereum Mainnet",
-      nativeSymbol: config.nativeSymbol || "ETH",
-      cacheTtl: config.cacheTtl || 60, // 60 seconds cache
+      chainId:
+        config.chainId ||
+        parsePositiveInt(process.env.ONCHAIN_CHAIN_ID, 80094),
+      chainName:
+        config.chainName ||
+        process.env.ONCHAIN_CHAIN_NAME ||
+        "Berachain Mainnet",
+      nativeSymbol:
+        config.nativeSymbol ||
+        process.env.ONCHAIN_NATIVE_SYMBOL ||
+        "BERA",
+      cacheTtl:
+        config.cacheTtl ||
+        parsePositiveInt(process.env.ONCHAIN_BALANCE_CACHE_TTL_SEC, 60),
     };
+
+    if (this.config.etherscanApiKey === "your-etherscan-key") {
+      logger.warn(
+        "ETHERSCAN_API_KEY is not set — on-chain balance requests will fail until it is configured"
+      );
+    }
 
     logger.info("Blockchain service initialized", {
       chainId: this.config.chainId,
@@ -128,7 +158,8 @@ export class BlockchainService {
           walletAddress,
           chainId: this.config.chainId,
         });
-        return JSON.parse(cachedResult.data);
+        // Mark the hit even when the cached blob predates the cacheHit field.
+        return { ...JSON.parse(cachedResult.data), cacheHit: true };
       }
 
       logger.debug("Fetching blockchain balance from Etherscan API", {
@@ -138,7 +169,9 @@ export class BlockchainService {
       // Fetch balance from Etherscan API
       const apiUrl = `https://api.etherscan.io/v2/api?apikey=${this.config.etherscanApiKey}&chainid=${this.config.chainId}&module=account&action=balance&address=${walletAddress}&tag=latest`;
 
-      const response = await fetch(apiUrl);
+      const response = await fetch(apiUrl, {
+        signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+      });
       if (!response.ok) {
         throw new Error(
           `Etherscan API request failed with status: ${response.status}`
@@ -165,6 +198,7 @@ export class BlockchainService {
         chainName: this.config.chainName,
         symbol: this.config.nativeSymbol,
         timestamp: new Date().toISOString(),
+        cacheHit: false,
       };
 
       // Cache the result
@@ -194,6 +228,11 @@ export class BlockchainService {
 
   /**
    * Get token balance for a wallet address
+   *
+   * @deprecated Reconstructed from `tokentx` transfer history, which misses
+   * pre-history holdings and paginated pages — wrong and expensive. Nothing
+   * calls it; a future token phase must use `balanceOf` via `eth_call`
+   * instead. Kept only so the quarantine decision stays reversible.
    */
   async getTokenBalance(
     walletAddress: string,
@@ -231,7 +270,9 @@ export class BlockchainService {
       // Fetch token transaction history from Etherscan API
       const apiUrl = `https://api.etherscan.io/v2/api?apikey=${this.config.etherscanApiKey}&chainid=${this.config.chainId}&module=account&action=tokentx&contractaddress=${tokenAddress}&address=${walletAddress}`;
 
-      const response = await fetch(apiUrl);
+      const response = await fetch(apiUrl, {
+        signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+      });
       if (!response.ok) {
         throw new Error(
           `Etherscan API request failed with status: ${response.status}`
@@ -249,7 +290,7 @@ export class BlockchainService {
 
       // Calculate token balance from transactions
       let balance = BigInt(0);
-      let tokenSymbol = "UNKNOWN";
+      let tokenSymbol = "";
       let tokenDecimals = decimals;
 
       for (const tx of data.result) {
@@ -276,6 +317,9 @@ export class BlockchainService {
       // Ensure balance can't be negative (shouldn't happen with valid data)
       if (balance < BigInt(0)) {
         balance = BigInt(0);
+      }
+      if (!tokenSymbol) {
+        tokenSymbol = "UNKNOWN";
       }
 
       const balanceFormatted = ethers.formatUnits(balance, tokenDecimals);
@@ -313,51 +357,6 @@ export class BlockchainService {
       });
       throw new Error(
         `Failed to get token balance for ${walletAddress}: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  /**
-   * Get primary wallet address from database for a user (C2 multi-wallet).
-   *
-   * Reads the `wallets` table (primary row first). Returns null when the
-   * user has no linked wallet.
-   */
-  async getUserWalletAddress(userId: string): Promise<string | null> {
-    try {
-      const { walletRepositoryAdapter } =
-        await import("../adapters/repositories/wallet-repository.adapter");
-
-      const primary = await walletRepositoryAdapter.getPrimaryWallet(userId);
-
-      if (!primary) {
-        logger.debug("No wallet address found for user", { userId });
-        return null;
-      }
-
-      const walletAddress = primary.address;
-
-      // Validate the wallet address
-      if (!this.isValidWalletAddress(walletAddress)) {
-        logger.warn("Invalid wallet address format in database", {
-          userId,
-          walletAddress,
-        });
-        return null;
-      }
-
-      logger.debug("Wallet address retrieved from database", {
-        userId,
-        walletAddress,
-      });
-
-      return walletAddress;
-    } catch (error) {
-      logger.error("Failed to get user wallet address", error as Error, {
-        userId,
-      });
-      throw new Error(
-        `Failed to get wallet address for user ${userId}: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
@@ -402,7 +401,9 @@ export class BlockchainService {
       const testAddress = "0x0000000000000000000000000000000000000000";
       const apiUrl = `https://api.etherscan.io/v2/api?apikey=${this.config.etherscanApiKey}&chainid=${this.config.chainId}&module=account&action=balance&address=${testAddress}&tag=latest`;
 
-      const response = await fetch(apiUrl);
+      const response = await fetch(apiUrl, {
+        signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+      });
       if (!response.ok) {
         throw new Error(
           `Etherscan API request failed with status: ${response.status}`

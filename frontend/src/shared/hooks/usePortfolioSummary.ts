@@ -130,18 +130,34 @@ export const usePortfolioSummary = (
     activeAccounts.find(a => a.id === selectedAccountId) ?? activeAccounts[0];
 
   // 1. On-chain wallet balance (native balance of the linked wallet).
+  // Gated on non-BASIC (a REGISTERED user owns a linked wallet and can
+  // read its balance); the VERIFIED gate stays on the venue reads below.
+  const canReadWallet = !!user && user.userLevel !== "BASIC";
   const walletQuery = useQuery({
     queryKey: ["wallet-balance", user?.id],
     queryFn: async () => {
       const res = await balanceApi.getCurrentBalance();
       const data = res?.data as
-        { balance?: string | number } | string | number | undefined;
-      if (typeof data === "object" && data && "balance" in data) {
-        return toNumber(data.balance);
+        | {
+            nativeBalanceFormatted?: string | number;
+            balance?: string | number;
+          }
+        | string
+        | number
+        | undefined;
+      if (typeof data === "object" && data) {
+        // Backend on-chain shape (source: "onchain").
+        if ("nativeBalanceFormatted" in data) {
+          return toNumber(data.nativeBalanceFormatted);
+        }
+        // Legacy defensive path.
+        if ("balance" in data) {
+          return toNumber(data.balance);
+        }
       }
       return toNumber(data);
     },
-    enabled: !!user && isVerified,
+    enabled: canReadWallet,
     staleTime: 60 * 1000,
     retry: false,
   });

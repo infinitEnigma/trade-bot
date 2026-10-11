@@ -78,6 +78,8 @@ export interface ErrorContext {
   correlationId?: string;
   userId?: string;
   userLevel?: string;
+  /** Wallet scoping for wallet-domain errors (C2 multi-wallet). */
+  walletId?: string;
   service?: string;
   operation?: string;
   required?: number;

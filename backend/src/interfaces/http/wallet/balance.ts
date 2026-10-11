@@ -5,7 +5,11 @@ import {
   authMiddleware,
   AuthenticatedRequest,
 } from "../../middleware/auth.middleware";
-import { createBlockchainService } from "../../../infrastructure/external/blockchain.service";
+import {
+  createBlockchainService,
+  BlockchainBalance,
+} from "../../../infrastructure/external/blockchain.service";
+import { walletRepositoryAdapter } from "../../../infrastructure/adapters/repositories/wallet-repository.adapter";
 
 // Create blockchain service instance on demand
 const getBlockchainService = () => createBlockchainService();
@@ -13,201 +17,212 @@ import { httpLogger as logger } from "../../../core/logging/context-aware-logger
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
 import {
   UserLevel,
+  Wallet,
   ValidationError,
   NotFoundError,
-  ExternalServiceError,
+  ServiceUnavailableError,
 } from "@trade-bot/shared";
 
 const router = Router();
 
 /**
+ * Resolve the EVM wallet whose on-chain balance a user may read.
+ *
+ * Ownership policy (C2 multi-wallet):
+ * - `walletId` given → that exact wallet, but only if the user owns it.
+ *   A missing or foreign wallet maps to 404 — never leak existence of
+ *   another user's wallet.
+ * - `walletId` omitted → the user's primary EVM wallet, falling back to
+ *   their first EVM wallet. A non-EVM primary (solana/bitcoin) must not
+ *   silently look like "no wallet" the way the old address-format check
+ *   did.
+ * - A resolved non-EVM wallet is an explicit 400: EVM-only reader.
+ */
+async function resolveEvmWallet(
+  userId: string,
+  walletId?: string
+): Promise<Wallet> {
+  if (walletId) {
+    const wallet = await walletRepositoryAdapter.getOwnedWallet(
+      userId,
+      walletId
+    );
+    if (!wallet) {
+      throw new NotFoundError("Wallet", {
+        userId,
+        walletId,
+        operation: "wallet_balance_fetch",
+      });
+    }
+    if (wallet.chain !== "evm") {
+      throw new ValidationError(
+        `Chain '${wallet.chain}' is not supported for on-chain balance yet. Only EVM wallets are.`,
+        { userId, walletId, operation: "wallet_balance_fetch" }
+      );
+    }
+    return wallet;
+  }
+
+  const wallets = await walletRepositoryAdapter.listWallets(userId);
+  const evmWallets = wallets.filter(wallet => wallet.chain === "evm");
+  const wallet =
+    evmWallets.find(candidate => candidate.isPrimary) ?? evmWallets[0];
+  if (!wallet) {
+    throw new ValidationError(
+      "No connected wallet found. Please connect your wallet in Settings.",
+      { userId, operation: "wallet_balance_fetch" }
+    );
+  }
+  return wallet;
+}
+
+/**
+ * Shape the wire response for an on-chain native balance read.
+ * `source` separates this from venue balances; `observedAt` is the
+ * freshness tag (research-balance Q5); `timestamp` is kept as a
+ * back-compat alias; `cache` makes Redis hits visible to the client.
+ */
+function toBalanceResponse(wallet: Wallet, balance: BlockchainBalance) {
+  return {
+    source: "onchain",
+    walletId: wallet.id,
+    address: balance.address,
+    chainId: balance.chainId,
+    chainName: balance.chainName,
+    symbol: balance.symbol,
+    nativeBalance: balance.nativeBalance,
+    nativeBalanceFormatted: balance.nativeBalanceFormatted,
+    timestamp: balance.timestamp,
+    observedAt: balance.timestamp,
+    cache: balance.cacheHit ? "hit" : "miss",
+  };
+}
+
+/**
+ * Fail-closed error mapping: wallet-resolution errors are already
+ * structured (400/404) and pass through; anything else is a provider
+ * failure and becomes 503 — never a fabricated balance, never a 500 with
+ * `success: true`.
+ */
+function mapBalanceError(
+  error: unknown,
+  userId: string,
+  operation: string
+): Error {
+  if (error instanceof ValidationError || error instanceof NotFoundError) {
+    return error;
+  }
+  logger.error("Wallet balance provider failure", error as Error, {
+    userId,
+    operation,
+  });
+  return new ServiceUnavailableError("Blockchain", {
+    userId,
+    operation,
+    service: "blockchain_rpc",
+  });
+}
+
+function requireUser(
+  req: AuthenticatedRequest,
+  operation: string
+): { userId: string; userLevel: UserLevel } {
+  if (!req.user) {
+    throw new ValidationError("User not authenticated", { operation });
+  }
+  // The auth middleware carries userLevel as a plain string; narrow to the
+  // enum for downstream comparisons.
+  return {
+    userId: req.user.userId,
+    userLevel: req.user.userLevel as UserLevel,
+  };
+}
+
+/**
  * GET /api/balance/current
- * Get user's current wallet balance from connected blockchain wallet
+ * Get user's current wallet balance from connected blockchain wallet.
+ * Optional `?walletId=` scopes the read to one owned wallet (404 for
+ * foreign/missing ids); omitted → primary EVM wallet.
  */
 router.get(
   "/current",
   RateLimiters.balance,
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
-    // Ensure user is authenticated (should always be true due to authMiddleware)
-    if (!req.user) {
-      throw new ValidationError("User not authenticated", {
-        operation: "wallet_balance_fetch",
+    const { userId, userLevel } = requireUser(req, "wallet_balance_fetch");
+
+    // BASIC users have no linked wallets by definition (unlink downgrades
+    // the level) — skip provider work and answer honestly.
+    if (userLevel === UserLevel.BASIC) {
+      logger.debug(
+        "Wallet balance request from BASIC user, skipping rpc call",
+        {
+          userId,
+          userLevel,
+        }
+      );
+      return res.json({
+        success: true,
+        data: null,
+        message: "Wallet balance data available after wallet connection",
       });
     }
 
-    const userId = req.user.userId;
-    const userLevel = req.user.userLevel;
+    const walletId =
+      typeof req.query.walletId === "string" ? req.query.walletId : undefined;
 
     try {
-      // BASIC users don't have wallet balance data yet - skip API calls
-      if (userLevel === UserLevel.BASIC) {
-        logger.debug(
-          "Wallet balance request from BASIC user, skipping rpc call",
-          {
-            userId,
-            userLevel,
-          }
-        );
-        return res.json({
-          success: true,
-          data: null,
-          message: "Wallet balance data available after wallet connection",
-        });
-      }
+      const wallet = await resolveEvmWallet(userId, walletId);
+      const balance = await getBlockchainService().getNativeBalance(
+        wallet.address
+      );
 
-      // Get user's wallet address from database
-      const walletAddress =
-        await getBlockchainService().getUserWalletAddress(userId);
-
-      if (!walletAddress) {
-        logger.debug("No wallet address found for user", {
-          userId,
-          userLevel,
-        });
-        throw new ValidationError(
-          "No connected wallet found. Please connect your wallet in Settings.",
-          {
-            userId,
-            operation: "wallet_balance_fetch",
-          }
-        );
-      }
-
-      // VERIFIED users get real wallet balance data from blockchain
-      const balance =
-        await getBlockchainService().getNativeBalance(walletAddress);
-
-      res.json({
+      return res.json({
         success: true,
-        data: balance,
+        data: toBalanceResponse(wallet, balance),
       });
     } catch (error) {
-      const errorMessage = (error as Error).message;
-
-      // Log differently based on user level
-      if (userLevel === UserLevel.VERIFIED) {
-        // Only log as error for VERIFIED users (unexpected failures)
-        logger.error(
-          "Wallet balance fetch failed for VERIFIED user",
-          error as Error,
-          {
-            userId,
-            userLevel,
-          }
-        );
-
-        // Throw structured errors for VERIFIED users
-        if (
-          errorMessage.includes("no Kodiak account connected") ||
-          errorMessage.includes("Kodiak credentials not found") ||
-          errorMessage.includes("No connected wallet found")
-        ) {
-          throw new ValidationError(
-            "Wallet not connected. Please connect your wallet in Settings.",
-            {
-              userId,
-              operation: "wallet_balance_fetch",
-            }
-          );
-        }
-
-        // Blockchain service errors
-        if (
-          errorMessage.includes("Failed to get balance") ||
-          errorMessage.includes("blockchain")
-        ) {
-          throw new ExternalServiceError("Blockchain", {
-            userId,
-            operation: "wallet_balance_fetch",
-            service: "blockchain_rpc",
-          });
-        }
-
-        // Generic internal error for unexpected failures
-        throw new NotFoundError("Wallet balance data temporarily unavailable", {
-          userId,
-          operation: "wallet_balance_fetch",
-        });
-      } else {
-        // Log as debug for non-VERIFIED users (expected behavior)
-        logger.debug(
-          "Wallet balance fetch skipped/failed for non-VERIFIED user",
-          {
-            userId,
-            userLevel,
-            error: errorMessage,
-          }
-        );
-
-        // For non-VERIFIED users, still return user-friendly error
-        throw new ValidationError(
-          "Wallet balance data requires VERIFIED account status",
-          {
-            userId,
-            userLevel,
-            operation: "wallet_balance_fetch",
-          }
-        );
-      }
+      throw mapBalanceError(error, userId, "wallet_balance_fetch");
     }
   }
 );
 
 /**
  * POST /api/balance/refresh
- * Force refresh wallet balance from blockchain
+ * Invalidate the cached balance for an owned wallet and re-read it.
+ * Optional body `{ walletId }`; same response shape and error contract
+ * as GET /current.
  */
 router.post(
   "/refresh",
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
+    const { userId } = requireUser(req, "wallet_balance_refresh");
+
+    const walletId =
+      typeof req.body?.walletId === "string" ? req.body.walletId : undefined;
+
     try {
-      // Ensure user is authenticated (should always be true due to authMiddleware)
-      if (!req.user) {
-        throw new ValidationError("User not authenticated", {
-          operation: "wallet_balance_refresh",
-        });
-      }
-
-      const userId = req.user.userId;
-
-      // Get user's wallet address
-      const walletAddress =
-        await getBlockchainService().getUserWalletAddress(userId);
-
-      if (!walletAddress) {
-        logger.debug("No wallet address found for refresh", { userId });
-        throw new ValidationError(
-          "No connected wallet found. Please connect your wallet in Settings.",
-          {
-            userId,
-            operation: "wallet_balance_refresh",
-          }
-        );
-      }
+      const wallet = await resolveEvmWallet(userId, walletId);
 
       // ✅ Invalidate cache to force fresh fetch
-      await getBlockchainService().invalidateUserCache(userId, walletAddress);
+      await getBlockchainService().invalidateUserCache(userId, wallet.address);
 
-      const balance =
-        await getBlockchainService().getNativeBalance(walletAddress);
+      const balance = await getBlockchainService().getNativeBalance(
+        wallet.address
+      );
 
-      logger.info("Wallet balance manually refreshed", { userId });
+      logger.info("Wallet balance manually refreshed", {
+        userId,
+        walletId: wallet.id,
+      });
 
-      res.json({
+      return res.json({
         success: true,
-        data: balance,
+        data: toBalanceResponse(wallet, balance),
       });
     } catch (error) {
-      logger.error("Refresh wallet balance error", error as Error, {
-        userId: (req as AuthenticatedRequest).user?.userId,
-      });
-
-      res.status(500).json({
-        success: true,
-        error: (error as Error).message,
-      });
+      throw mapBalanceError(error, userId, "wallet_balance_refresh");
     }
   }
 );

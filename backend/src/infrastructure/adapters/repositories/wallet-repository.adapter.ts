@@ -62,6 +62,14 @@ export class WalletRepositoryAdapter implements IWalletRepository {
     return result.rows.length > 0 ? mapRow(result.rows[0]) : null;
   }
 
+  async getOwnedWallet(userId: string, walletId: string): Promise<Wallet | null> {
+    const result = await query<WalletRow>(
+      `SELECT ${SELECT_COLS} FROM wallets WHERE id = $1 AND user_id = $2`,
+      [walletId, userId]
+    );
+    return result.rows.length > 0 ? mapRow(result.rows[0]) : null;
+  }
+
   async upsertVerified(
     userId: string,
     wallet: {

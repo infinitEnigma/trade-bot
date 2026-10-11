@@ -135,6 +135,13 @@ export interface IWalletRepository {
   getPrimaryWallet(userId: string): Promise<Wallet | null>;
 
   /**
+   * One wallet by id, scoped to the owner — `null` when the wallet does not
+   * exist OR belongs to another user (callers map both to 404; never leak
+   * existence of foreign wallets).
+   */
+  getOwnedWallet(userId: string, walletId: string): Promise<Wallet | null>;
+
+  /**
    * Insert or re-verify a wallet. The first verified wallet for a user
    * becomes primary; later wallets are secondary unless `makePrimary`.
    */
