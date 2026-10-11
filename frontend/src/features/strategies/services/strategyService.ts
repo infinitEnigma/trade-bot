@@ -134,7 +134,7 @@ export class StrategyService {
             total_trades: bot.total_trades,
             total_pnl: bot.total_pnl,
             // F2: keep the incompleteness counter — dropping it here would
-            // hide that total_pnl is a lower bound.
+            // hide that total_pnl sums known fills only (incomplete).
             total_pnl_incomplete_fills: bot.total_pnl_incomplete_fills,
             last_updated: bot.last_updated,
             config: bot.config || {

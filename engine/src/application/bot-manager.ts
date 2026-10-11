@@ -665,7 +665,16 @@ export class BotManager {
       // F1: fills journaled during a Redis outage (or a previous crash
       // mid-publish) are re-delivered before this session trades on. The
       // backend dedups replays, so this is safe even if one already landed.
-      await tradeReporter.replayPendingFills();
+      // Fail-closed gate: a session must NOT trade while fills are still
+      // undelivered — abort the start (retryable) so a quiet journal can
+      // never sit behind a live strategy.
+      const replay = await tradeReporter.replayPendingFills();
+      if (replay.remaining > 0) {
+        throw new CommandError(
+          true,
+          `Refusing to start: ${replay.remaining} fill(s) still pending ledger delivery (replayed ${replay.replayed}); retry after Redis recovers`
+        );
+      }
       const runs = new Map<string, StrategyRunState>();
       let primarySymbol = "";
       let primaryStrategy: GridTradingStrategy | null = null;

@@ -25,18 +25,23 @@ reference implementation of remediation item 5 of the financial-plane review
 2. **Fill delivery is durable (F1).** Every detected fill is journaled to
    the engine-side pending-fill outbox (`$GRID_SNAPSHOT_DIR/pending-fills.json`)
    *before* the `TRADE_EXECUTED` publish and cleared only after the stream
-   accepts it. Replay runs at engine startup and at bot-session start, and
-   opportunistically after a successful publish. A Redis outage or crash
-   mid-publish cannot lose a fill; the backend's unique
+   accepts it. A journal-write failure REJECTS the fill (fail-closed — the
+   caller sees an explicit gap, never a log-only loss). Replay runs at engine
+   startup, at bot-session start, and on a 30s periodic loop
+   (`PENDING_FILL_RETRY_INTERVAL_MS`); the heartbeat carries `pendingFills`
+   so the backend can alert on a journal that never drains. A session start
+   with `remaining > 0` aborts (INIT_FAILED, retryable) — a session never
+   trades behind undelivered fills. The backend's unique
    `(bot_id, client_order_id, exchange_order_id, fill_id)` key keeps replay
-   idempotent. **Gap:** replay is triggered at startup/session-start/fill —
-   a journal entry with no subsequent trigger waits for the next engine
-   restart (no periodic retry loop yet).
+   idempotent. Corruption path: malformed rows are quarantined
+   (`pending-fills.json.corrupt-*`) and `.prev` is consulted even when the
+   primary is missing, so the only copy of a fill is never silently dropped.
 3. **Unknown ≠ zero (F2).** The engine omits `fee`/`pnl` when the venue rate
    could not be sourced; the backend stores NULL (never a flattened 0).
    `bot_instances.total_pnl` sums only KNOWN fill PnL;
    `total_pnl_incomplete_fills` counts fills booked with unknown PnL — a
-   non-zero counter marks `total_pnl` as a **lower bound**, not net PnL.
+   non-zero counter marks `total_pnl` as INCOMPLETE with unknown direction
+   (an omitted fill may have been a loss), never a lower bound or net PnL.
    Any surface rendering `total_pnl` must surface the counter when non-zero.
    *(Known limitation: pre-023 rows already collapsed unknowns to 0 and
    cannot be repaired retroactively.)*
@@ -50,11 +55,16 @@ reference implementation of remediation item 5 of the financial-plane review
 5. **Aggregates fail loudly (F3).** The portfolio total is a sum of readable
    accounts only when it can be — an unreadable account makes the result
    `totalIsPartial` with `failedAccounts` named and trips the hook error.
-   A failed read is never folded into a silent $0.
+   A failed read is never folded into a silent $0. A resolved response with
+   a missing or non-numeric `totalBalance` counts as unreadable (P2) — only
+   a finite numeric balance marks an account readable, so a legitimate zero
+   and "unavailable" stay distinct.
 6. **No fabricated equity (F4).** Trade-derived curves plot cumulative
    realised PnL anchored at 0 unless the caller supplies a real equity
    baseline; venue `realized_pnl` is the only per-row input (rows without it
-   are skipped, never `(close − open) × qty`); no non-negative clamp.
+   are skipped, never `(close − open) × qty`); no non-negative clamp. The
+   chart is labelled "Cumulative realized PnL", never "Equity" — no verified
+   equity baseline is constructed on the Dashboard.
 
 ## Reconciliation procedure (ledger ↔ venue)
 

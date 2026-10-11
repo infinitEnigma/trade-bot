@@ -182,8 +182,9 @@ describe("BotManagementService", () => {
         status: "RUNNING",
         total_trades: 10,
         total_pnl: 500,
-        // 3 fills whose PnL the engine could not source: 500 is a LOWER
-        // BOUND, and the caller can now tell.
+        // 3 fills whose PnL the engine could not source: 500 sums known
+        // fills only (incomplete, unknown direction), and the caller can
+        // now tell.
         total_pnl_incomplete_fills: 3,
       };
       (

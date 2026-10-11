@@ -17,7 +17,8 @@
  *   a fill whose fee/PnL the engine could not source arrives `undefined`,
  *   is stored as NULL (unknown ≠ zero), and is counted in
  *   `total_pnl_incomplete_fills` — `total_pnl` therefore sums only KNOWN
- *   realised PnL and any non-zero counter marks it a lower bound.
+ *   realised PnL and any non-zero counter marks it INCOMPLETE (unknown
+ *   direction, never a lower bound: an omitted fill may have been a loss).
  * - The `trades` display row is written in the same transaction, so there is
  *   never a display row without a ledger row (or a double display row from a
  *   replay).

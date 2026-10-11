@@ -42,6 +42,12 @@ export interface EngineHeartbeatEventPayload {
   /** Bot ids the engine currently considers active (STARTING/RUNNING/STOPPING). */
   activeBotIds: string[];
   version: string;
+  /**
+   * Fills journaled but not yet accepted by the ledger stream (F1). Lets the
+   * backend alert on a journal that never drains. Absent = unknown (older
+   * engines); present and > 0 = degraded delivery in progress.
+   */
+  pendingFills?: number;
 }
 
 export type EngineLifecycleEventPayload =

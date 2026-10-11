@@ -114,7 +114,7 @@ const StatsCard = ({
 );
 
 /**
- * Portfolio equity curve.
+ * Portfolio realized-PnL chart.
  *
  * P0: fed by the venue's own trade_pnl LEVEL series (hourly buckets) via
  * `portfolio-venue-pnl` — the same source as the realized card. The old
@@ -139,9 +139,10 @@ const PortfolioChart = ({ data }: PortfolioChartProps) => {
       <div className="h-80 flex items-center justify-center">
         <div className="text-center">
           <Activity className="w-12 h-12 text-textMuted mx-auto mb-4" />
-          <p className="text-textMuted">No portfolio data</p>
+          <p className="text-textMuted">No realized-PnL data</p>
           <p className="text-xs text-textMuted mt-2">
-            Closed trades will build the equity curve here.
+            Closed trades will build the cumulative realized-PnL curve here (not
+            account equity).
           </p>
         </div>
       </div>
@@ -202,7 +203,7 @@ const PortfolioChart = ({ data }: PortfolioChartProps) => {
                         Trade #{point.index} • {point.time}
                       </p>
                       <p className="text-sm text-primary">
-                        Equity: $
+                        Cum. realized PnL: $
                         {point.value.toLocaleString(undefined, {
                           maximumFractionDigits: 2,
                         })}
@@ -216,7 +217,7 @@ const PortfolioChart = ({ data }: PortfolioChartProps) => {
             <Area
               type="monotone"
               dataKey="value"
-              name="Equity"
+              name="Cumulative realized PnL"
               stroke="var(--primary)"
               fill="var(--primary)"
               fillOpacity={0.15}
@@ -378,7 +379,7 @@ const Dashboard: React.FC = () => {
       }
     : null;
 
-  // P0: the equity curve plots the venue's own trade_pnl LEVEL series
+  // P0: the chart plots the venue's own trade_pnl LEVEL series
   // (hourly buckets), not per-trade accumulation — Lighter fill rows carry
   // realized_pnl "0" by construction, which is why the old curve was flat.
   // Kodiak (no venue series) keeps the trade-derived curve from real rows.
@@ -603,9 +604,10 @@ const Dashboard: React.FC = () => {
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Chart Section — realized-only equity curve (unrealized overlay
+          {/* Chart Section — cumulative realized-PnL curve (unrealized overlay
               stays an Analytics-boundary item). Caption keeps a flat 0
-              readable as information, not breakage. */}
+              readable as information, not breakage. Never labelled equity:
+              no verified equity baseline is constructed here. */}
           <Card className="lg:col-span-2">
             <Suspense
               fallback={

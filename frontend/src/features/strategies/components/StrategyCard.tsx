@@ -136,8 +136,9 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
               {/* P1: ledger total_pnl is realized only — labeled as such so
                   the card never implies total PnL. Venue-exact unrealized
                   lives on the portfolio strip (per-bot thread is future).
-                  F2: with unknown-PnL fills the figure is a lower bound —
-                  ≥ prefix + count, never presented as net PnL. */}
+                  F2: with unknown-PnL fills the figure is INCOMPLETE
+                  (unknown direction, never a lower bound) — incomplete
+                  marker + count, never presented as net PnL. */}
               <span className="text-textMuted">Realized PnL:</span>
               <span
                 className={`font-medium ${
@@ -145,12 +146,14 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
                 }`}
                 title={
                   (bot.total_pnl_incomplete_fills ?? 0) > 0
-                    ? `${bot.total_pnl_incomplete_fills} fill(s) have unknown PnL — this is a lower bound, not net PnL`
+                    ? `${bot.total_pnl_incomplete_fills} fill(s) have unknown PnL — total shows known fills only (incomplete, not net PnL)`
                     : undefined
                 }
               >
-                {(bot.total_pnl_incomplete_fills ?? 0) > 0 ? "≥" : ""}
                 {formatCurrency(bot.total_pnl || 0)}
+                {(bot.total_pnl_incomplete_fills ?? 0) > 0
+                  ? ` (incomplete, ${bot.total_pnl_incomplete_fills} unknown)`
+                  : ""}
               </span>
             </div>
           </div>

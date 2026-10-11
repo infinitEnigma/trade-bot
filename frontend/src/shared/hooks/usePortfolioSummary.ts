@@ -83,6 +83,25 @@ const toNumber = (value: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+/**
+ * P2: strict balance parse — finite numeric only, else null.
+ *
+ * `toNumber()` coerces missing/invalid values to 0, which lets a malformed
+ * balance response masquerade as a readable zero. Balance aggregation must
+ * distinguish a legitimate numeric zero from "unavailable": only a finite
+ * number (or a numeric string parsing to one) counts as readable.
+ */
+const parseBalance = (value: unknown): number | null => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const n = parseFloat(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+};
+
 export interface PortfolioSummary {
   walletBalance: number;
   exchangeBalance: number;
@@ -97,7 +116,7 @@ export interface PortfolioSummary {
   trades: PortfolioTrade[];
   tradesLoading: boolean;
   tradesError: unknown;
-  /** Venue realized series (plot-ready levels) for the equity curve. */
+  /** Venue realized series (plot-ready levels) for the realized-PnL chart. */
   venuePnlPoints: VenuePnlPoint[];
   venuePnlLoading: boolean;
   /** Count of ACTIVE accounts backing the "total across exchanges" figure. */
@@ -175,11 +194,17 @@ export const usePortfolioSummary = (
   });
 
   // 2. Selected account's exchange balance.
+  // P2: a malformed payload (missing/non-numeric totalBalance) throws so the
+  // query errors and the card renders "unavailable" — never a false $0.
   const balanceQuery = useQuery({
     queryKey: ["portfolio-balance", selectedAccount?.id],
     queryFn: async () => {
       const res = await kodiakApi.getKodiakBalance(selectedAccount!.id);
-      return toNumber(res?.data?.totalBalance);
+      const parsed = parseBalance(res?.data?.totalBalance);
+      if (parsed === null) {
+        throw new Error("Malformed balance response: totalBalance unavailable");
+      }
+      return parsed;
     },
     enabled: !!selectedAccount && isVerified,
     staleTime: 30 * 1000,
@@ -213,12 +238,18 @@ export const usePortfolioSummary = (
       const points = (res?.data?.points ?? []) as VenuePnlPoint[];
       // trade_pnl is a cumulative realized level, not per-bucket deltas —
       // the windowed figure is last − first (sorted by timestamp). A sum
-      // would fabricate millions.
+      // would fabricate millions. P2: points with an unparseable level are
+      // skipped (never coerced to 0, which would shift last−first).
       const levels = points
         .map(p => ({
           t: toNumber(p.timestamp),
-          v: toNumber(p.tradePnl ?? p.trade_pnl),
+          raw: p.tradePnl ?? p.trade_pnl,
         }))
+        .filter(
+          (p): p is { t: number; raw: string | number } =>
+            Number.isFinite(p.t) && parseBalance(p.raw) !== null
+        )
+        .map(p => ({ t: p.t, v: parseBalance(p.raw) as number }))
         .sort((a, b) => a.t - b.t);
       return {
         points,
@@ -263,10 +294,23 @@ export const usePortfolioSummary = (
           const label = `${account.exchange} (${account.environment}) ${account.accountRef}`;
           try {
             const res = await kodiakApi.getKodiakBalance(account.id);
+            // P2: a resolved response that omits totalBalance (or carries a
+            // non-numeric one) is UNAVAILABLE, not a readable zero. Only a
+            // finite numeric balance marks the account ok; anything else
+            // excludes it from the sum AND names it in failedAccounts.
+            const parsed = parseBalance(res?.data?.totalBalance);
+            if (parsed === null) {
+              return {
+                accountId: account.id,
+                label,
+                balance: 0,
+                ok: false as const,
+              };
+            }
             return {
               accountId: account.id,
               label,
-              balance: toNumber(res?.data?.totalBalance),
+              balance: parsed,
               ok: true as const,
             };
           } catch {
@@ -330,7 +374,7 @@ export const usePortfolioSummary = (
     trades: tradesQuery.data ?? [],
     tradesLoading: tradesQuery.isLoading,
     tradesError: tradesQuery.error,
-    // Venue realized series (plot-ready levels) for the equity curve.
+    // Venue realized series (plot-ready levels) for the realized-PnL chart.
     venuePnlPoints: venuePnlQuery.data?.points ?? [],
     venuePnlLoading: venuePnlQuery.isLoading,
     loading:

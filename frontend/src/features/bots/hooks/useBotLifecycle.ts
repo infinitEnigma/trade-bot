@@ -143,7 +143,7 @@ export function useBotLifecycle(botId?: string) {
           total_pnl: Number(bot.total_pnl) || 0,
           // F2: incompleteness counter — how many fills booked with unknown
           // PnL. Carried through so a rendering surface can label total_pnl
-          // as a lower bound instead of net PnL.
+          // as incomplete (unknown direction), never as net PnL.
           total_pnl_incomplete_fills:
             Number(bot.total_pnl_incomplete_fills) || 0,
           last_updated: bot.last_updated,

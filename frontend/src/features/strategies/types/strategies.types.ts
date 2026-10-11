@@ -58,9 +58,10 @@ export interface BotInstance {
   total_trades: number;
   total_pnl: number;
   /**
-   * Fills booked with unknown PnL (F2). Non-zero means `total_pnl` is a
-   * LOWER BOUND of realised PnL, not net PnL — surfaces rendering it must
-   * say so.
+   * Fills booked with unknown PnL (F2). Non-zero means `total_pnl` sums known
+   * fills only and is INCOMPLETE with unknown direction — never a lower
+   * bound (an omitted fill may have been a loss). Surfaces rendering it
+   * must say "incomplete", never "≥" / net PnL.
    */
   total_pnl_incomplete_fills?: number;
   last_updated: string;

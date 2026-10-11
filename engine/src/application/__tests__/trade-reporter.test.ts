@@ -207,7 +207,7 @@ describe("LedgerTradeReporter fill identity (Phase 4)", () => {
       );
 
       const replayed = await restarted.replayPendingFills();
-      expect(replayed).toBe(1);
+      expect(replayed).toEqual({ replayed: 1, remaining: 0 });
       const message = stream.publish.mock.calls[0][1] as {
         type: string;
         payload: TradeExecutedEventPayload;
@@ -222,7 +222,25 @@ describe("LedgerTradeReporter fill identity (Phase 4)", () => {
       expect(listPendingFills()).toEqual([]);
     });
 
-    it("stops replay at the first failure and keeps the rest journaled", async () => {
+    it("rejects the fill when the journal write fails (fail-closed)", async () => {
+      // Simulate an unwritable snapshot dir: journalPendingFill returns false
+      // and reportFill must reject so the gap is explicit, not log-only.
+      const { reporter } = makeReporter();
+      const journal =
+        await import("../../infrastructure/state/pending-fill-journal");
+      const spy = jest
+        .spyOn(journal, "journalPendingFill")
+        .mockReturnValue(false);
+      try {
+        await expect(
+          reporter.reportFill(fill({ segment: { from: 0, to: 1, full: 1 } }))
+        ).rejects.toThrow(/could not be journaled/);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("returns replayed/remaining so the session gate can refuse to trade", async () => {
       // Two journaled fills via a failing stream.
       const outage = makeFailingStream();
       const first = makeReporter(outage);
@@ -236,16 +254,19 @@ describe("LedgerTradeReporter fill identity (Phase 4)", () => {
 
       // Replay into a still-down Redis: nothing is cleared, order preserved.
       const stillDown = makeReporter(makeFailingStream());
-      const replayed = await stillDown.reporter.replayPendingFills();
+      const result = await stillDown.reporter.replayPendingFills();
 
-      expect(replayed).toBe(0);
+      expect(result).toEqual({ replayed: 0, remaining: 2 });
       expect(listPendingFills()).toHaveLength(2);
     });
 
     it("replaying against an empty journal is a no-op", async () => {
       const { reporter, stream } = makeReporter();
 
-      await expect(reporter.replayPendingFills()).resolves.toBe(0);
+      await expect(reporter.replayPendingFills()).resolves.toEqual({
+        replayed: 0,
+        remaining: 0,
+      });
       expect(stream.publish).not.toHaveBeenCalled();
     });
   });

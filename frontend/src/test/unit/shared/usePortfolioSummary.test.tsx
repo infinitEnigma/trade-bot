@@ -108,6 +108,40 @@ describe("usePortfolioSummary total across exchanges (F3)", () => {
     );
   });
 
+  it("a MALFORMED response (missing balance) is unavailable, not a readable $0", async () => {
+    const get = vi.mocked(kodiakApi.getKodiakBalance);
+    get.mockImplementation(async (accountId?: string) => {
+      if (accountId === "acct-b") return { success: true, data: {} } as never;
+      return { success: true, data: { totalBalance: "100" } } as never;
+    });
+
+    const { result } = renderHook(() => usePortfolioSummary(), { wrapper });
+
+    await waitFor(() => expect(result.current.totalIsPartial).toBe(true));
+    expect(result.current.totalAcrossExchanges).toBe(100);
+    expect(result.current.failedAccounts).toEqual([
+      { accountId: "acct-b", label: "lighter (testnet) idx-b" },
+    ]);
+  });
+
+  it("a non-numeric balance is unavailable; a legitimate zero stays readable", async () => {
+    const get = vi.mocked(kodiakApi.getKodiakBalance);
+    get.mockImplementation(async (accountId?: string) => {
+      if (accountId === "acct-a")
+        return { success: true, data: { totalBalance: "0" } } as never;
+      return { success: true, data: { totalBalance: "abc" } } as never;
+    });
+
+    const { result } = renderHook(() => usePortfolioSummary(), { wrapper });
+
+    await waitFor(() => expect(result.current.totalIsPartial).toBe(true));
+    // Legitimate zero contributes; the malformed account is excluded + named.
+    expect(result.current.totalAcrossExchanges).toBe(0);
+    expect(result.current.failedAccounts).toEqual([
+      { accountId: "acct-b", label: "lighter (testnet) idx-b" },
+    ]);
+  });
+
   it("a total where EVERY account fails is an empty partial, not $0-as-truth", async () => {
     vi.mocked(kodiakApi.getKodiakBalance).mockRejectedValue(
       new Error("Balance unavailable: all down")

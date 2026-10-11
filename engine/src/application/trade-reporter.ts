@@ -12,15 +12,21 @@
  *   published — the caller must NOT place the order (intent-before-create:
  *   no durable intent, no submission; a Redis outage means the engine is
  *   deaf, and not placing is the fail-closed answer, mirroring D1).
- * - `reportFill` never rejects, and it is durable (F1): every fill is
- *   journaled to the on-disk pending-fill outbox BEFORE the publish is
- *   attempted and cleared only after the stream accepts it. A failed
- *   publish leaves the journal entry; `replayPendingFills` (bot-session
- *   start + engine startup) re-publishes it under the live engine identity,
- *   and the backend's unique fill key keeps the replay idempotent.
+ * - `reportFill` REJECTS when no durable copy could be journaled (F1,
+ *   fail-closed): without a journal entry a subsequent publish failure
+ *   would leave the fill with no replay path, so the caller must treat
+ *   the fill as undelivered (the grid logs loudly and keeps telemetry
+ *   moving, but the ledger gap is explicit). A journaled-but-unpublished
+ *   fill resolves normally — the entry stays for replay.
  * - `reportPosition` / `reportPerformance` never reject: they are latest-wins
  *   telemetry superseded by the next report, so a publish failure is logged
  *   (payload included) and dropped — never journaled.
+ *
+ * Session-start gate: `replayPendingFills` returns `{ replayed, remaining }`.
+ * A session MUST NOT trade while `remaining > 0` — bot-manager aborts the
+ * start (INIT_FAILED, retryable) so a quiet journal can never sit behind a
+ * live strategy. A periodic retry loop (lifecycle-coordinator) keeps
+ * re-attempting delivery while the engine is otherwise idle.
  *
  * @format
  */
@@ -125,9 +131,23 @@ export interface PerformanceReport {
 export interface TradeReporter {
   /** Resolves false when the intent did not reach the stream (do not place). */
   reportOrderIntent(intent: OrderIntentReport): Promise<boolean>;
+  /**
+   * Report a fill. Rejects ONLY when no durable journal copy could be
+   * written (the fill then has no replay path — fail-closed). A
+   * journaled-but-unpublished fill resolves: the journal entry stays for
+   * replay and the backend dedups the eventual redelivery.
+   */
   reportFill(fill: FillReport): Promise<void>;
   reportPosition(position: PositionReport): Promise<void>;
   reportPerformance(perf: PerformanceReport): Promise<void>;
+}
+
+/** Outcome of a pending-fill replay pass. */
+export interface PendingFillReplayResult {
+  /** Entries the stream accepted (and cleared) on this pass. */
+  replayed: number;
+  /** Entries still journaled after this pass (0 = fully drained). */
+  remaining: number;
 }
 
 export class LedgerTradeReporter implements TradeReporter {
@@ -178,14 +198,18 @@ export class LedgerTradeReporter implements TradeReporter {
       queuedAt: new Date().toISOString(),
     });
     if (!journalWritten) {
-      // No durable copy: the loud log below is again the only trace. Disk
-      // failure must not swallow a fill silently, so say so explicitly.
+      // No durable copy: fail CLOSED. If the publish below then also fails,
+      // the fill would have no replay path at all — the caller must see a
+      // rejection so the ledger gap is explicit rather than log-only.
       logger.error(
-        "Fill journal write failed - fill is undurable until replay",
+        "Fill journal write failed - rejecting fill as undelivered (F1 fail-closed)",
         {
           ...fill,
           fillId,
         }
+      );
+      throw new Error(
+        `Fill ${fillId} could not be journaled; refusing to treat it as delivered`
       );
     }
 
@@ -225,11 +249,12 @@ export class LedgerTradeReporter implements TradeReporter {
    * bumps it. The fill identity (fillId …) is untouched, so a replay that
    * actually landed before the crash dedups to a no-op downstream.
    *
-   * Never rejects; returns the number of fills the stream accepted.
+   * Never rejects; returns `{ replayed, remaining }` so the session-start
+   * gate can refuse to trade while `remaining > 0`.
    */
-  async replayPendingFills(): Promise<number> {
+  async replayPendingFills(): Promise<PendingFillReplayResult> {
     const pending = listPendingFills();
-    if (pending.length === 0) return 0;
+    if (pending.length === 0) return { replayed: 0, remaining: 0 };
 
     let replayed = 0;
     for (const entry of pending) {
@@ -256,15 +281,29 @@ export class LedgerTradeReporter implements TradeReporter {
       replayed++;
     }
 
+    const remaining = pending.length - replayed;
     if (replayed > 0) {
       logger.info("Replayed journaled fills to the ledger stream", {
         replayed,
-        remaining: pending.length - replayed,
+        remaining,
         engineId: this.engineId,
         engineEpoch: this.engineEpoch,
       });
     }
-    return replayed;
+    if (remaining > 0) {
+      // Loud by design: a non-zero remainder is the condition the
+      // session-start gate refuses to trade behind.
+      logger.error(
+        "Pending fills remain after replay - session start must wait",
+        {
+          replayed,
+          remaining,
+          engineId: this.engineId,
+          engineEpoch: this.engineEpoch,
+        }
+      );
+    }
+    return { replayed, remaining };
   }
 
   async reportPosition(position: PositionReport): Promise<void> {

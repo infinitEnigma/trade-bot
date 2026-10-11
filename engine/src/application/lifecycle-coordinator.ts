@@ -11,15 +11,31 @@ import { RedisStreamOperations } from "../infrastructure/redis/streams";
 import { logger } from "../utils/logger";
 import { BotRuntime } from "../domain/bot-runtime";
 import { publishEvent } from "../protocol/event-publisher";
+import { LedgerTradeReporter } from "./trade-reporter";
+import { pendingFillCount } from "../infrastructure/state/pending-fill-journal";
 
 const ENGINE_HEARTBEAT_INTERVAL_MS = Number(
   process.env.ENGINE_HEARTBEAT_INTERVAL_MS || 10_000
 );
 const ENGINE_VERSION = "kodiak@1.0.0";
+/**
+ * Idle retry cadence for journaled fills (F1): a pending entry with no
+ * subsequent trigger (no startup, no session start, no new fill) must not
+ * wait indefinitely. Skips the pass when the journal is empty.
+ */
+const PENDING_FILL_RETRY_INTERVAL_MS = Number(
+  process.env.PENDING_FILL_RETRY_INTERVAL_MS || 30_000
+);
 
 /**
  * Start the heartbeat loop. Periodically publishes ENGINE_HEARTBEAT
  * events with the engine's runtime inventory.
+ *
+ * Also starts the pending-fill retry loop (F1): every
+ * PENDING_FILL_RETRY_INTERVAL_MS the journal is re-played while entries
+ * remain, so a quiet bot cannot leave fills pending indefinitely. The
+ * heartbeat payload carries `pendingFills` so the backend can alert on a
+ * journal that never drains.
  */
 export function startHeartbeat(
   streamOps: RedisStreamOperations,
@@ -40,6 +56,32 @@ export function startHeartbeat(
     crypto.randomUUID()
   );
 
+  let retryInFlight = false;
+  const retryId = setInterval(() => {
+    if (retryInFlight) return;
+    let pending = 0;
+    try {
+      pending = pendingFillCount();
+    } catch {
+      return;
+    }
+    if (pending === 0) return;
+    retryInFlight = true;
+    void new LedgerTradeReporter(streamOps, engineId, epoch)
+      .replayPendingFills()
+      .catch((error: unknown) => {
+        // replayPendingFills never rejects; this is defence in depth.
+        logger.error("Periodic pending-fill replay threw", {
+          engineId,
+          epoch,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => {
+        retryInFlight = false;
+      });
+  }, PENDING_FILL_RETRY_INTERVAL_MS);
+
   // Start periodic heartbeat
   const intervalId = setInterval(() => {
     void publishEvent(
@@ -50,6 +92,7 @@ export function startHeartbeat(
         epoch,
         activeBotIds: getActiveBotIds(),
         version: ENGINE_VERSION,
+        pendingFills: pendingFillCount(),
       },
       crypto.randomUUID()
     );
@@ -58,11 +101,13 @@ export function startHeartbeat(
   logger.info("Engine heartbeat started", {
     engineId,
     intervalMs: ENGINE_HEARTBEAT_INTERVAL_MS,
+    pendingFillRetryMs: PENDING_FILL_RETRY_INTERVAL_MS,
   });
 
   // Return cleanup function
   return (): void => {
     clearInterval(intervalId);
+    clearInterval(retryId);
     logger.info("Engine heartbeat stopped", { engineId });
   };
 }

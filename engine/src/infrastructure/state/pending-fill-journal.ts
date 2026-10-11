@@ -63,7 +63,9 @@ function journalPath(): string {
   return path.join(getSnapshotDir(), JOURNAL_FILE);
 }
 
-/** Shape check for one entry; corrupt rows are dropped, never replayed. */
+/**
+ * Shape check for one entry; corrupt rows are quarantined, never replayed.
+ */
 function isPendingFillEntry(value: unknown): value is PendingFillEntry {
   const entry = value as Partial<PendingFillEntry> | null;
   return (
@@ -78,30 +80,77 @@ function isPendingFillEntry(value: unknown): value is PendingFillEntry {
   );
 }
 
-/** Parse one journal file; null when unreadable or structurally invalid. */
+/**
+ * Parse one journal file; null when unreadable or structurally invalid.
+ * Malformed rows are quarantined (count logged at error level) rather than
+ * silently dropped — they may be the only copy of a fill.
+ */
 function readJournalFile(file: string): PendingFillEntry[] | null {
   let raw: string;
   try {
     raw = fs.readFileSync(file, "utf-8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return [];
+      return null;
     }
     return null;
   }
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
-    return parsed.filter(isPendingFillEntry);
+    if (!Array.isArray(parsed)) {
+      logger.error("Pending-fill journal is not a JSON array - quarantined", {
+        file,
+      });
+      quarantineCorruptJournal(file, raw);
+      return null;
+    }
+    const valid = parsed.filter(isPendingFillEntry);
+    const corrupt = parsed.length - valid.length;
+    if (corrupt > 0) {
+      logger.error(
+        "Pending-fill journal has corrupt rows - quarantined, not replayed",
+        {
+          file,
+          total: parsed.length,
+          corrupt,
+        }
+      );
+      quarantineCorruptJournal(file, raw);
+    }
+    return valid;
   } catch {
+    logger.error("Pending-fill journal is not valid JSON - quarantined", {
+      file,
+    });
+    quarantineCorruptJournal(file, raw);
     return null;
+  }
+}
+
+/** Preserve the exact corrupt bytes for manual reconciliation (venue history). */
+function quarantineCorruptJournal(file: string, raw: string): void {
+  try {
+    const quarantine = `${file}.corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    fs.writeFileSync(quarantine, raw, "utf-8");
+    logger.error("Quarantined corrupt pending-fill journal", {
+      file,
+      quarantine,
+    });
+  } catch (error) {
+    logger.error("Failed to quarantine corrupt pending-fill journal", {
+      file,
+      error: messageOf(error),
+    });
   }
 }
 
 /**
  * All journaled fills. Empty when no journal exists; falls back to the
- * `.prev` copy when the primary is corrupt (mirrors grid snapshots), and
- * returns empty — loudly — when both are unusable.
+ * `.prev` copy when the primary is missing OR corrupt (mirrors grid
+ * snapshots — an absent primary must still attempt recovery, it may mean a
+ * crash between temp-write and rename). Corrupt bytes are quarantined for
+ * manual reconciliation. Returns empty — loudly — only when every copy is
+ * unusable.
  */
 export function listPendingFills(): PendingFillEntry[] {
   const file = journalPath();
@@ -121,9 +170,23 @@ export function listPendingFills(): PendingFillEntry[] {
 }
 
 /**
+ * Number of fills currently awaiting ledger delivery. Cheap synchronous
+ * read — the heartbeat and the periodic retry loop use it to decide whether
+ * a replay pass is worth attempting.
+ */
+export function pendingFillCount(): number {
+  try {
+    return listPendingFills().length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Durably record a fill before its publish attempt. Returns false when no
- * durable copy could be written (the caller must log loudly: that fill has
- * no replay path). Re-journaling the same fillId replaces the entry in place.
+ * durable copy could be written (the caller must REJECT the fill: without a
+ * journal entry a publish failure leaves no replay path). Re-journaling the
+ * same fillId replaces the entry in place.
  */
 export function journalPendingFill(entry: PendingFillEntry): boolean {
   try {

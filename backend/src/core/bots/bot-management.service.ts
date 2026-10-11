@@ -44,8 +44,8 @@ export interface BotPerformanceMetrics {
   totalTrades: number;
   totalPnL: number;
   /**
-   * Fills booked with unknown PnL (F2). Non-zero means `totalPnL` is a
-   * lower bound of realised PnL, not net PnL.
+   * Fills booked with unknown PnL (F2). Non-zero means `totalPnL` sums known
+   * fills only and is INCOMPLETE (unknown direction, never a lower bound).
    */
   totalPnlIncompleteFills: number;
   winRate: number;

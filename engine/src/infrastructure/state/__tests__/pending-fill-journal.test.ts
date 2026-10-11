@@ -98,13 +98,43 @@ describe("pending-fill journal", () => {
     expect(listPendingFills().map(e => e.fillId)).toEqual(["f-1"]);
   });
 
-  it("drops malformed entries instead of replaying garbage", () => {
+  it("recovers from .prev when the primary file is absent", () => {
+    journalPendingFill(entry("f-1"));
+    journalPendingFill(entry("f-2")); // f-1 moves to .prev by durableWrite
+    // Crash between temp-write and rename can leave no primary at all —
+    // the .prev copy must still be consulted, not treated as empty.
+    fs.unlinkSync(path.join(tmpDir, JOURNAL));
+
+    expect(listPendingFills().map(e => e.fillId)).toEqual(["f-1"]);
+  });
+
+  it("quarantines malformed entries instead of silently dropping them", () => {
     fs.writeFileSync(
       path.join(tmpDir, JOURNAL),
       JSON.stringify([entry("f-1"), { fillId: 42 }, null, "junk"])
     );
 
     expect(listPendingFills().map(e => e.fillId)).toEqual(["f-1"]);
+    // The corrupt bytes are preserved for manual reconciliation (venue
+    // history), not discarded: a .corrupt-* sibling must exist.
+    const quarantined = fs
+      .readdirSync(tmpDir)
+      .filter(f => f.startsWith(`${JOURNAL}.corrupt-`));
+    expect(quarantined).toHaveLength(1);
+  });
+
+  it("quarantines a wholly corrupt primary before falling back to .prev", () => {
+    journalPendingFill(entry("f-1"));
+    journalPendingFill(entry("f-2")); // f-1 moves to .prev by durableWrite
+    fs.writeFileSync(path.join(tmpDir, JOURNAL), "{not json");
+
+    // Recovery still returns the last good version — and the corrupt bytes
+    // are quarantined for manual reconciliation, not silently discarded.
+    expect(listPendingFills().map(e => e.fillId)).toEqual(["f-1"]);
+    const quarantined = fs
+      .readdirSync(tmpDir)
+      .filter(f => f.startsWith(`${JOURNAL}.corrupt-`));
+    expect(quarantined).toHaveLength(1);
   });
 
   it("returns empty when both the journal and its fallback are unusable", () => {
