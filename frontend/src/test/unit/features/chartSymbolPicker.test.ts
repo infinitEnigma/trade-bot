@@ -12,6 +12,7 @@ import {
   decodeChartOption,
   encodeChartOption,
   FALLBACK_CHART_SELECTION,
+  ORPHAN_CHART_VENUE,
   resolveChartSelection,
   type VenueCatalog,
 } from "../../../features/strategies/utils/chartSymbolPicker";
@@ -32,7 +33,7 @@ const KODIAK: VenueCatalog = {
 
 describe("buildChartSymbolGroups", () => {
   it("builds one alphabetized group per available catalog with X1 labels", () => {
-    const groups = buildChartSymbolGroups([LIGHTER, KODIAK], [], LIGHTER);
+    const groups = buildChartSymbolGroups([LIGHTER, KODIAK], []);
 
     expect(groups).toEqual([
       {
@@ -56,8 +57,7 @@ describe("buildChartSymbolGroups", () => {
         { ...LIGHTER, available: false, symbols: [] },
         { ...KODIAK, symbols: [] },
       ],
-      ["PERP_ETH_USDC"],
-      KODIAK
+      ["PERP_ETH_USDC"]
     );
 
     expect(groups).toEqual([
@@ -70,16 +70,19 @@ describe("buildChartSymbolGroups", () => {
     ]);
   });
 
-  it("appends unlisted strategy symbols to a defensive group on orphanVenue", () => {
+  it("charts unlisted strategy symbols on the ORPHAN venue (Kodiak mainnet), never an account venue", () => {
+    // The prod-2026-10-12 regression this pins: a Lighter-only user's legacy
+    // PERP_* strategy symbol was charted against Lighter → tv/history 400.
     const groups = buildChartSymbolGroups(
       [LIGHTER],
-      ["ETH", "PERP_LINK_USDC", "eth/usdc-odd"],
-      KODIAK
+      ["ETH", "PERP_LINK_USDC", "eth/usdc-odd"]
     );
 
     expect(groups).toHaveLength(2);
     // "ETH" is listed by the Lighter catalog → only the true orphans move.
     expect(groups[1].label).toBe("Strategy symbols");
+    expect(groups[1].exchange).toBe(ORPHAN_CHART_VENUE.exchange);
+    expect(groups[1].environment).toBe(ORPHAN_CHART_VENUE.environment);
     expect(groups[1].exchange).toBe("kodiak");
     expect(groups[1].environment).toBe("mainnet");
     expect(groups[1].symbols).toHaveLength(2);
@@ -89,81 +92,57 @@ describe("buildChartSymbolGroups", () => {
   });
 
   it("adds no orphan group when every strategy symbol is listed", () => {
-    const groups = buildChartSymbolGroups([LIGHTER], ["eth", "BTC"], LIGHTER);
+    const groups = buildChartSymbolGroups([LIGHTER], ["eth", "BTC"]);
     expect(groups).toHaveLength(1);
   });
 });
 
 describe("resolveChartSelection", () => {
   it("defaults to the first strategy's symbol with its catalog venue (case-insensitive)", () => {
-    expect(
-      resolveChartSelection(
-        [KODIAK, LIGHTER],
-        ["perp_eth_usdc"],
-        [
-          { exchange: "kodiak", environment: "mainnet" },
-          { exchange: "lighter", environment: "testnet" },
-        ]
-      )
-    ).toEqual({
-      symbol: "perp_eth_usdc",
+    expect(resolveChartSelection([KODIAK, LIGHTER], ["perp_eth_usdc"])).toEqual(
+      {
+        symbol: "perp_eth_usdc",
+        exchange: "kodiak",
+        environment: "mainnet",
+      }
+    );
+  });
+
+  it("breaks membership ties by catalog (account) order — first catalog wins", () => {
+    const both: VenueCatalog[] = [
+      { ...KODIAK, symbols: ["BTC"] },
+      { ...LIGHTER, symbols: ["BTC"] },
+    ];
+    expect(resolveChartSelection(both, ["BTC"])).toMatchObject({
       exchange: "kodiak",
       environment: "mainnet",
     });
   });
 
-  it("breaks membership ties by ACTIVE-account order (first catalog wins)", () => {
-    const both: VenueCatalog[] = [
-      { ...KODIAK, symbols: ["BTC"] },
-      { ...LIGHTER, symbols: ["BTC"] },
-    ];
-    expect(
-      resolveChartSelection(
-        both,
-        ["BTC"],
-        [
-          { exchange: "kodiak", environment: "mainnet" },
-          { exchange: "lighter", environment: "testnet" },
-        ]
-      )
-    ).toMatchObject({ exchange: "kodiak", environment: "mainnet" });
-  });
-
-  it("uses the first ACTIVE account's venue when no catalog lists the symbol", () => {
-    expect(
-      resolveChartSelection(
-        [LIGHTER],
-        ["PERP_LINK_USDC"],
-        [
-          { exchange: "lighter", environment: "testnet" },
-          { exchange: "kodiak", environment: "mainnet" },
-        ]
-      )
-    ).toEqual({
+  it("uses ORPHAN_CHART_VENUE when no catalog lists the symbol (never the account venue)", () => {
+    // Prod 2026-10-12: Lighter-only user + legacy PERP_LINK_USDC defaulted
+    // to Lighter → tv/history 400. Orphans now chart on Kodiak mainnet.
+    expect(resolveChartSelection([LIGHTER], ["PERP_LINK_USDC"])).toEqual({
       symbol: "PERP_LINK_USDC",
-      exchange: "lighter",
-      environment: "testnet",
+      exchange: ORPHAN_CHART_VENUE.exchange,
+      environment: ORPHAN_CHART_VENUE.environment,
     });
   });
 
   it("falls back to the Kodiak default with no strategies and no venues", () => {
-    expect(resolveChartSelection([], [], [])).toEqual(FALLBACK_CHART_SELECTION);
+    expect(resolveChartSelection([], [])).toEqual(FALLBACK_CHART_SELECTION);
   });
 
   it("charts BTC on the first usable catalog's venue when there are no strategies", () => {
     // Lighter lists bare BTC — the historic default symbol, venue-corrected.
-    expect(resolveChartSelection([LIGHTER], [], [])).toEqual({
+    expect(resolveChartSelection([LIGHTER], [])).toEqual({
       symbol: "BTC",
       exchange: "lighter",
       environment: "testnet",
     });
     // Unavailable catalogs are not usable.
     expect(
-      resolveChartSelection(
-        [{ ...LIGHTER, available: false, symbols: [] }],
-        [],
-        [{ exchange: "lighter", environment: "testnet" }]
-      )
+      resolveChartSelection([{ ...LIGHTER, available: false, symbols: [] }], [])
     ).toEqual(FALLBACK_CHART_SELECTION);
   });
 });

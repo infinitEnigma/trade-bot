@@ -11,10 +11,12 @@
  *
  * Default-selection rules (locked product decision):
  * 1. first strategy's symbol → venue by **catalog membership**
- *    (case-insensitive; ties → first ACTIVE account's venue, same account
- *    order `usePortfolioSummary` uses);
- * 2. that symbol in no catalog (defensive — catalog unavailable) → first
- *    ACTIVE account's venue;
+ *    (case-insensitive; ties → first matching catalog, same account order
+ *    `usePortfolioSummary` uses);
+ * 2. that symbol in no catalog (defensive — catalog unavailable or a legacy
+ *    symbol no account's venue lists) → `ORPHAN_CHART_VENUE` (Kodiak
+ *    mainnet — see the constant: charting `PERP_*` orphans against the
+ *    first account's venue produced tv/history 400s);
  * 3. no strategies → BTC on the first usable catalog's venue (the historic
  *    default symbol, venue-corrected so it is a real dropdown option);
  * 4. no strategies + no usable catalog → the historic `PERP_BTC_USDC`
@@ -62,6 +64,23 @@ export const FALLBACK_CHART_SELECTION: ChartSelection = {
   environment: "mainnet",
 };
 
+/**
+ * Venue for symbols NO account catalog lists (the "Strategy symbols" orphan
+ * group, and rule 2 of the default selection). Kodiak/Orderly mainnet, NOT
+ * the first ACTIVE account's venue: the known orphan class is legacy
+ * `PERP_*` symbols (Kodiak naming) held by Lighter-only users, and charting
+ * them against Lighter produced `tv/history` **400s** (prod 2026-10-12:
+ * `symbol=PERP_BTC_USDC&exchange=lighter` — Lighter lists bare `BTC`).
+ * Kodiak's market API is public (no account needed), so this works for
+ * every user. The narrow edge case — a bare symbol orphan because the
+ * Lighter catalog fetch failed (fail-open, refetches every 5 min) — now
+ * 400s instead of working; transient and self-healing, accepted.
+ */
+export const ORPHAN_CHART_VENUE: ChartVenueRef = {
+  exchange: "kodiak",
+  environment: "mainnet",
+};
+
 /** `"lighter"` + `"testnet"` → `"Lighter testnet"` (X1 optgroup labels). */
 export const venueLabel = (
   exchange: AccountExchange,
@@ -85,13 +104,13 @@ const uniqueSorted = (symbols: string[]): string[] => {
  * Build the dropdown groups: one per catalog that answered with symbols
  * (unavailable/empty catalogs contribute no group), then a defensive
  * "Strategy symbols" group for symbols no catalog lists — those still need
- * somewhere to render, charted on `orphanVenue` (the first ACTIVE account's
- * venue, or the Kodiak fallback).
+ * somewhere to render, charted on `ORPHAN_CHART_VENUE` (Kodiak mainnet:
+ * public data and the historical home of the legacy `PERP_*` names — see
+ * the constant for why the first ACTIVE account's venue was wrong there).
  */
 export function buildChartSymbolGroups(
   catalogs: VenueCatalog[],
-  strategySymbols: string[],
-  orphanVenue: ChartVenueRef
+  strategySymbols: string[]
 ): ChartSymbolGroup[] {
   const groups: ChartSymbolGroup[] = [];
   const listed = new Set<string>();
@@ -114,8 +133,8 @@ export function buildChartSymbolGroups(
   if (orphans.length > 0) {
     groups.push({
       label: "Strategy symbols",
-      exchange: orphanVenue.exchange,
-      environment: orphanVenue.environment,
+      exchange: ORPHAN_CHART_VENUE.exchange,
+      environment: ORPHAN_CHART_VENUE.environment,
       symbols: orphans,
     });
   }
@@ -128,8 +147,7 @@ export function buildChartSymbolGroups(
  */
 export function resolveChartSelection(
   catalogs: VenueCatalog[],
-  strategySymbols: string[],
-  activeVenues: ChartVenueRef[]
+  strategySymbols: string[]
 ): ChartSelection {
   const first = strategySymbols[0];
   if (first) {
@@ -145,15 +163,10 @@ export function resolveChartSelection(
         };
       }
     }
-    // Not listed anywhere (defensive) → first ACTIVE account's venue.
-    const venue = activeVenues[0];
-    return venue
-      ? {
-          symbol: first,
-          exchange: venue.exchange,
-          environment: venue.environment,
-        }
-      : { ...FALLBACK_CHART_SELECTION };
+    // Not listed in any catalog (defensive) → the orphan venue, same as the
+    // dropdown's orphan group: charting a legacy `PERP_*` name against the
+    // first account's venue is what produced the tv/history 400s.
+    return { symbol: first, ...ORPHAN_CHART_VENUE };
   }
 
   // Rule 3: no strategies → chart BTC on the user's own venue (the historic

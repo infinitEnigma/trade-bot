@@ -16,7 +16,6 @@ import {
   buildChartSymbolGroups,
   decodeChartOption,
   encodeChartOption,
-  FALLBACK_CHART_SELECTION,
   resolveChartSelection,
   type ChartSelection,
   type ChartVenueRef,
@@ -206,14 +205,9 @@ const Strategies: React.FC = React.memo(() => {
   // Default = first strategy's symbol (venue by catalog membership); the
   // operator's explicit pick always wins (derived during render, P1 pattern).
   const chartSelection =
-    chartSelectionOverride ??
-    resolveChartSelection(catalogs, strategySymbols, activeVenues);
+    chartSelectionOverride ?? resolveChartSelection(catalogs, strategySymbols);
   const chartSymbol = chartSelection.symbol;
-  const chartGroups = buildChartSymbolGroups(
-    catalogs,
-    strategySymbols,
-    activeVenues[0] ?? FALLBACK_CHART_SELECTION
-  );
+  const chartGroups = buildChartSymbolGroups(catalogs, strategySymbols);
   const chartOptionCount = chartGroups.reduce(
     (count, group) => count + group.symbols.length,
     0
