@@ -60,7 +60,10 @@ function makeLockedClient(selectRow: Record<string, unknown> | null) {
         return { rows: [], rowCount: 0 };
       }
       if (s.includes("FOR UPDATE")) {
-        return { rows: selectRow ? [selectRow] : [], rowCount: selectRow ? 1 : 0 };
+        return {
+          rows: selectRow ? [selectRow] : [],
+          rowCount: selectRow ? 1 : 0,
+        };
       }
       if (s.startsWith("UPDATE")) return { rows: [], rowCount: 1 };
       return { rows: [], rowCount: 0 };
@@ -395,6 +398,58 @@ describe("EngineRegistryService", () => {
         botLifecycleService.markBotsUnknownForEngine
       ).not.toHaveBeenCalled();
     });
+
+    it("prunes dead OFFLINE rows past retention without affecting the marked count", async () => {
+      mockQuery.mockImplementation((sql: string) => {
+        if (String(sql).startsWith("SELECT")) {
+          return Promise.resolve({ rows: [] });
+        }
+        if (String(sql).startsWith("DELETE")) {
+          return Promise.resolve({ rows: [], rowCount: 2 });
+        }
+        return Promise.resolve({ rows: [], rowCount: 0 });
+      });
+
+      const marked = await service.sweepOfflineEngines();
+
+      expect(marked).toBe(0);
+      const pruneCall = mockQuery.mock.calls.find(call =>
+        String(call[0]).startsWith("DELETE")
+      );
+      expect(pruneCall).toBeDefined();
+      expect(String(pruneCall![0])).toContain("status = 'OFFLINE'");
+      expect(String(pruneCall![0])).toContain("last_seen_at");
+    });
+
+    it("keeps sweeping when the prune DELETE fails", async () => {
+      mockQuery.mockImplementation((sql: string) => {
+        if (String(sql).startsWith("SELECT")) {
+          return Promise.resolve({
+            rows: [
+              {
+                engine_id: "engine-1",
+                epoch: 3,
+                status: "ONLINE",
+                version: null,
+                last_seen_at: new Date(),
+              },
+            ],
+          });
+        }
+        if (String(sql).startsWith("DELETE")) {
+          return Promise.reject(new Error("prune boom"));
+        }
+        return Promise.resolve({ rows: [], rowCount: 1 });
+      });
+
+      const marked = await service.sweepOfflineEngines();
+
+      // The mark still succeeds; the prune failure is logged, not thrown.
+      expect(marked).toBe(1);
+      expect(botLifecycleService.markBotsUnknownForEngine).toHaveBeenCalledWith(
+        "engine-1"
+      );
+    });
   });
 
   describe("getEngineLiveness", () => {
@@ -418,6 +473,8 @@ describe("EngineRegistryService", () => {
           engineId: "engine-1",
           status: "ONLINE",
           lastSeenAt: expect.any(Date),
+          // Live: ONLINE with a fresh heartbeat (same predicate as `running`).
+          live: true,
           // F4: a row without journal_* columns (pre-025 shape) defaults to
           // UNVERIFIED / no-alert / 0 pending.
           journalIntegrity: "UNVERIFIED",
@@ -442,6 +499,9 @@ describe("EngineRegistryService", () => {
 
       expect(liveness.running).toBe(false);
       expect(liveness.engines).toHaveLength(1);
+      // Stale ONLINE heartbeat: not live (sweep hasn't flipped it yet, but
+      // aggregates must already treat it as dead).
+      expect(liveness.engines[0].live).toBe(false);
     });
 
     it("is not running when the engine is OFFLINE", async () => {
@@ -450,6 +510,7 @@ describe("EngineRegistryService", () => {
       const liveness = await service.getEngineLiveness();
 
       expect(liveness.running).toBe(false);
+      expect(liveness.engines[0].live).toBe(false);
     });
 
     it("is not running when the registry is empty", async () => {
@@ -480,7 +541,11 @@ describe("EngineRegistryService", () => {
       mockGetClient.mockResolvedValue(client);
 
       await service.handleEngineEvent(
-        heartbeatEvent({ heartbeatSeq: 1, epoch: 8, pendingFillsUnknown: false })
+        heartbeatEvent({
+          heartbeatSeq: 1,
+          epoch: 8,
+          pendingFillsUnknown: false,
+        })
       );
 
       const upd = updateCall();
@@ -499,7 +564,11 @@ describe("EngineRegistryService", () => {
       mockGetClient.mockResolvedValue(client);
 
       await service.handleEngineEvent(
-        heartbeatEvent({ heartbeatSeq: 2, epoch: 8, pendingFillsUnknown: false })
+        heartbeatEvent({
+          heartbeatSeq: 2,
+          epoch: 8,
+          pendingFillsUnknown: false,
+        })
       );
 
       expect(updateCall()!.params?.[5]).toBe(2);
@@ -545,7 +614,11 @@ describe("EngineRegistryService", () => {
       mockGetClient.mockResolvedValue(client);
 
       await service.handleEngineEvent(
-        heartbeatEvent({ heartbeatSeq: 999, epoch: 8, pendingFillsUnknown: true })
+        heartbeatEvent({
+          heartbeatSeq: 999,
+          epoch: 8,
+          pendingFillsUnknown: true,
+        })
       );
 
       expect(updateCall()).toBeUndefined();
@@ -579,7 +652,11 @@ describe("EngineRegistryService", () => {
       mockGetClient.mockResolvedValue(makeLockedClient(null).client);
 
       await service.handleEngineEvent(
-        heartbeatEvent({ epoch: -1, heartbeatSeq: 1, pendingFillsUnknown: true })
+        heartbeatEvent({
+          epoch: -1,
+          heartbeatSeq: 1,
+          pendingFillsUnknown: true,
+        })
       );
 
       expect(mockGetClient).not.toHaveBeenCalled();
@@ -642,7 +719,11 @@ describe("EngineRegistryService", () => {
       mockGetClient.mockResolvedValue(client);
 
       await service.handleEngineEvent(
-        heartbeatEvent({ heartbeatSeq: 2, epoch: 8, pendingFillsUnknown: false })
+        heartbeatEvent({
+          heartbeatSeq: 2,
+          epoch: 8,
+          pendingFillsUnknown: false,
+        })
       );
 
       const upd = updateCall();
@@ -659,7 +740,11 @@ describe("EngineRegistryService", () => {
           if (String(sql).includes("FOR UPDATE")) {
             return {
               rows: [
-                { journal_integrity_alert: false, last_hb_epoch: "8", last_hb_seq: "1" },
+                {
+                  journal_integrity_alert: false,
+                  last_hb_epoch: "8",
+                  last_hb_seq: "1",
+                },
               ],
               rowCount: 1,
             };
@@ -672,7 +757,11 @@ describe("EngineRegistryService", () => {
 
       await expect(
         service.handleEngineEvent(
-          heartbeatEvent({ heartbeatSeq: 2, epoch: 8, pendingFillsUnknown: true })
+          heartbeatEvent({
+            heartbeatSeq: 2,
+            epoch: 8,
+            pendingFillsUnknown: true,
+          })
         )
       ).resolves.toBe(true);
 
@@ -705,7 +794,10 @@ describe("EngineRegistryService", () => {
       expect(upd![1]).toEqual(["engine-1", "admin-42", "INC-1234"]);
       expect(mockLogger.warn).toHaveBeenCalledWith(
         "Engine fill-journal integrity recovered (operator-attested)",
-        expect.objectContaining({ engineId: "engine-1", operatorUserId: "admin-42" })
+        expect.objectContaining({
+          engineId: "engine-1",
+          operatorUserId: "admin-42",
+        })
       );
     });
 

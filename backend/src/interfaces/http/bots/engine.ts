@@ -317,6 +317,9 @@ router.get("/status", async (req: Request, res: Response) => {
       status = activeBots > 0 ? "running" : "idle";
     }
 
+    // Live fleet only: ONLINE with a fresh heartbeat. Dead rows stay in
+    // `engines[]` below for operator visibility, but never feed aggregates.
+    const liveEngines = liveness.engines.filter(e => e.live === true);
     const engineStatus = {
       running: liveness.running,
       status,
@@ -325,26 +328,25 @@ router.get("/status", async (req: Request, res: Response) => {
       stoppedBots: parseInt(botStats.stopped_bots || "0"),
       errorBots: parseInt(botStats.error_bots || "0"),
       // F4 journal integrity (migration 025). Two distinct notions:
-      //  - journalIntegrity: LIVE aggregate — worst live state across engines
-      //    (UNKNOWN > UNVERIFIED > OK).
-      //  - journalIntegrityAlert: STICKY — any engine with an unresolved
-      //    operator action. The UI banner keys on THIS, not the live state, so
-      //    a transient healthy heartbeat cannot hide an unreconciled gap.
-      journalIntegrity: liveness.engines.some(
-        e => e.journalIntegrity === "UNKNOWN"
-      )
+      //  - journalIntegrity: LIVE aggregate — worst live state across LIVE
+      //    engines only (UNKNOWN > UNVERIFIED > OK). Dead OFFLINE rows keep
+      //    their last signal forever (e.g. UNVERIFIED from before migration
+      //    025) and must never poison the banner for the running fleet.
+      //    No live engine (empty fleet or all dead) reads as UNVERIFIED —
+      //    there is nothing verified to report — never as a fake OK.
+      //  - journalIntegrityAlert: STICKY — a live engine with an unresolved
+      //    operator action. Dead rows cannot hold the banner hostage: their
+      //    alert died with the process (its bots already went UNKNOWN via
+      //    the sweep), and pruning removes the row entirely.
+      //  - pendingFills: summed over live engines only, for the same reason.
+      journalIntegrity: liveEngines.some(e => e.journalIntegrity === "UNKNOWN")
         ? "UNKNOWN"
-        : liveness.engines.length > 0 &&
-            liveness.engines.every(e => e.journalIntegrity === "OK")
+        : liveEngines.length > 0 &&
+            liveEngines.every(e => e.journalIntegrity === "OK")
           ? "OK"
           : "UNVERIFIED",
-      journalIntegrityAlert: liveness.engines.some(
-        e => e.journalIntegrityAlert
-      ),
-      pendingFills: liveness.engines.reduce(
-        (n, e) => n + (e.pendingFills ?? 0),
-        0
-      ),
+      journalIntegrityAlert: liveEngines.some(e => e.journalIntegrityAlert),
+      pendingFills: liveEngines.reduce((n, e) => n + (e.pendingFills ?? 0), 0),
       // Per-engine detail so the UI/operator can see WHICH engine needs action.
       engines: liveness.engines,
       lastUpdate: Date.now(),

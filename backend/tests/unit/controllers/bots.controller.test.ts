@@ -515,7 +515,8 @@ describe("Bots Controller", () => {
       const proofService = () =>
         require("../../../src/core/wallet/wallet-proof.service");
       const lifecycle = () =>
-        require("../../../src/core/bots/bot-lifecycle.service").botLifecycleService;
+        require("../../../src/core/bots/bot-lifecycle.service")
+          .botLifecycleService;
       const query = () => require("../../../src/database/pool").query;
       const accountRepo = () =>
         require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter")
@@ -523,9 +524,15 @@ describe("Bots Controller", () => {
 
       beforeEach(() => {
         proofService().walletProofEnabled.mockReturnValue(true);
-        proofService().consumeProof.mockResolvedValue({ address: proof.address });
-        proofService().checkAccountWalletBinding.mockResolvedValue({ ok: true });
-        query().mockResolvedValue({ rows: [{ exchange_account_id: accountId }] });
+        proofService().consumeProof.mockResolvedValue({
+          address: proof.address,
+        });
+        proofService().checkAccountWalletBinding.mockResolvedValue({
+          ok: true,
+        });
+        query().mockResolvedValue({
+          rows: [{ exchange_account_id: accountId }],
+        });
         accountRepo().getAccountWithSecret.mockResolvedValue({
           id: accountId,
           userId: "user-123",
@@ -575,7 +582,11 @@ describe("Bots Controller", () => {
       it("403s /start with no proof", async () => {
         const response = await request(app)
           .post("/api/bot/management/start")
-          .send({ strategyId, exchangeAccountId: accountId, notionalAmount: 1000.5 });
+          .send({
+            strategyId,
+            exchangeAccountId: accountId,
+            notionalAmount: 1000.5,
+          });
         expect(response.status).toBe(403);
         expect(response.body.code).toBe("PROOF_REQUIRED");
         expect(lifecycle().createAndStart).not.toHaveBeenCalled();
@@ -654,7 +665,11 @@ describe("Bots Controller", () => {
         proofService().walletProofEnabled.mockReturnValue(false);
         const start = await request(app)
           .post("/api/bot/management/start")
-          .send({ strategyId, exchangeAccountId: accountId, notionalAmount: 1000.5 });
+          .send({
+            strategyId,
+            exchangeAccountId: accountId,
+            notionalAmount: 1000.5,
+          });
         expect(start.status).toBe(202);
 
         const stop = await request(app)
@@ -1064,6 +1079,7 @@ describe("Bots Controller", () => {
               engineId: "engine-1",
               status: "ONLINE",
               lastSeenAt: new Date(),
+              live: true,
               journalIntegrity: "UNKNOWN",
               journalIntegrityAlert: true,
               pendingFills: 2,
@@ -1117,6 +1133,100 @@ describe("Bots Controller", () => {
         expect(response.body.data.activeBots).toBe(3);
         expect(response.body.data.engines).toEqual([]);
       });
+
+      it("ignores dead OFFLINE ghost rows when aggregating journal integrity", async () => {
+        // Prod 2026-10-12: one live OK engine + two stale pre-025 OFFLINE
+        // ghosts stuck at UNVERIFIED. The aggregate must read the live fleet
+        // (OK), while `engines[]` keeps all rows for operator visibility.
+        query.mockResolvedValueOnce({
+          rows: [
+            {
+              total_bots: "2",
+              running_bots: "0",
+              stopped_bots: "2",
+              error_bots: "0",
+            },
+          ],
+        });
+        engineRegistryService.getEngineLiveness.mockResolvedValue({
+          running: true,
+          engines: [
+            {
+              engineId: "engine-live",
+              status: "ONLINE",
+              lastSeenAt: new Date(),
+              live: true,
+              journalIntegrity: "OK",
+              journalIntegrityAlert: false,
+              pendingFills: 0,
+            },
+            {
+              engineId: "engine-ghost-1",
+              status: "OFFLINE",
+              lastSeenAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+              live: false,
+              journalIntegrity: "UNVERIFIED",
+              journalIntegrityAlert: false,
+              pendingFills: 0,
+            },
+            {
+              engineId: "engine-ghost-2",
+              status: "OFFLINE",
+              lastSeenAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
+              live: false,
+              journalIntegrity: "UNVERIFIED",
+              journalIntegrityAlert: false,
+              pendingFills: 0,
+            },
+          ],
+        });
+
+        const response = await request(app)
+          .get("/api/bot/engine/status")
+          .expect(200);
+
+        expect(response.body.data.running).toBe(true);
+        expect(response.body.data.journalIntegrity).toBe("OK");
+        expect(response.body.data.journalIntegrityAlert).toBe(false);
+        expect(response.body.data.pendingFills).toBe(0);
+        // Ghosts stay visible per-engine — only the aggregate ignores them.
+        expect(response.body.data.engines).toHaveLength(3);
+      });
+
+      it("reads UNVERIFIED (never fake OK) when no engine is live", async () => {
+        query.mockResolvedValueOnce({
+          rows: [
+            {
+              total_bots: "0",
+              running_bots: "0",
+              stopped_bots: "0",
+              error_bots: "0",
+            },
+          ],
+        });
+        engineRegistryService.getEngineLiveness.mockResolvedValue({
+          running: false,
+          engines: [
+            {
+              engineId: "engine-dead",
+              status: "OFFLINE",
+              lastSeenAt: new Date(Date.now() - 60 * 60 * 1000),
+              live: false,
+              journalIntegrity: "OK",
+              journalIntegrityAlert: false,
+              pendingFills: 0,
+            },
+          ],
+        });
+
+        const response = await request(app)
+          .get("/api/bot/engine/status")
+          .expect(200);
+
+        // A dead row's last OK must not certify a fleet with nothing alive.
+        expect(response.body.data.journalIntegrity).toBe("UNVERIFIED");
+        expect(response.body.data.journalIntegrityAlert).toBe(false);
+      });
     });
 
     describe("POST /api/bot/management/engine/journal/recover", () => {
@@ -1152,7 +1262,8 @@ describe("Bots Controller", () => {
       it("returns 409 when the precondition is unmet (not OK / not drained)", async () => {
         engineRegistryService.recoverJournalIntegrity.mockResolvedValue({
           recovered: false,
-          reason: "no active alert, or journal not currently OK and fully drained",
+          reason:
+            "no active alert, or journal not currently OK and fully drained",
         });
 
         const response = await request(app)
@@ -1168,9 +1279,9 @@ describe("Bots Controller", () => {
       });
 
       it("returns 403 for a non-admin", async () => {
-        serviceProvider.getRoleManagementService().isAdminUser.mockResolvedValueOnce(
-          false
-        );
+        serviceProvider
+          .getRoleManagementService()
+          .isAdminUser.mockResolvedValueOnce(false);
 
         await request(app)
           .post("/api/bot/management/engine/journal/recover")

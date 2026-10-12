@@ -28,6 +28,14 @@ import { botLifecycleService } from "./bot-lifecycle.service";
 export const ENGINE_HEARTBEAT_TIMEOUT_MS = Number(
   process.env.ENGINE_HEARTBEAT_TIMEOUT_MS ?? 30_000
 );
+/**
+ * How long a dead (OFFLINE) engine row is kept for operator forensics
+ * before the supervision sweep prunes it. Live aggregation ignores dead
+ * rows regardless, so this only bounds table growth — not signal correctness.
+ */
+export const ENGINE_DEAD_ROW_RETENTION_MS = Number(
+  process.env.ENGINE_DEAD_ROW_RETENTION_MS ?? 7 * 24 * 60 * 60 * 1000
+);
 const SWEEP_INTERVAL_MS = Number(
   process.env.ENGINE_SWEEP_INTERVAL_MS ?? 10_000
 );
@@ -488,6 +496,12 @@ export class EngineRegistryService {
    * stays correct even if the periodic sweep has not run yet to flip a
    * stale ONLINE row to OFFLINE. DB errors THROW (fail closed: the caller
    * must not conclude "running" when the registry could not be read).
+   *
+   * Each engine carries `live` (same ONLINE-and-fresh predicate).
+   * Aggregates (journal integrity, pending fills, sticky alert) MUST be
+   * computed over live engines only: dead rows keep their last signal
+   * forever (e.g. UNVERIFIED from before migration 025) and would
+   * otherwise poison the aggregate long after the engine is gone.
    */
   async getEngineLiveness(): Promise<{
     running: boolean;
@@ -495,6 +509,8 @@ export class EngineRegistryService {
       engineId: string;
       status: string;
       lastSeenAt: Date;
+      /** ONLINE with a fresh heartbeat (same predicate as `running`). */
+      live: boolean;
       journalIntegrity: "OK" | "UNKNOWN" | "UNVERIFIED";
       journalIntegrityAlert: boolean;
       pendingFills: number;
@@ -507,10 +523,14 @@ export class EngineRegistryService {
              ORDER BY last_seen_at DESC`
     );
     const freshnessCutoffMs = Date.now() - ENGINE_HEARTBEAT_TIMEOUT_MS * 2;
+    const isLive = (row: EngineRow): boolean =>
+      row.status === "ONLINE" &&
+      new Date(row.last_seen_at).getTime() >= freshnessCutoffMs;
     const engines = result.rows.map(row => ({
       engineId: row.engine_id,
       status: row.status,
       lastSeenAt: row.last_seen_at,
+      live: isLive(row),
       journalIntegrity: (row.journal_integrity ?? "UNVERIFIED") as
         "OK" | "UNKNOWN" | "UNVERIFIED",
       journalIntegrityAlert: row.journal_integrity_alert ?? false,
@@ -521,11 +541,7 @@ export class EngineRegistryService {
           ? row.pending_fills
           : Number(row.pending_fills ?? 0) || 0,
     }));
-    const running = result.rows.some(
-      row =>
-        row.status === "ONLINE" &&
-        new Date(row.last_seen_at).getTime() >= freshnessCutoffMs
-    );
+    const running = result.rows.some(isLive);
     return { running, engines };
   }
 
@@ -535,7 +551,13 @@ export class EngineRegistryService {
 
   /**
    * Mark engines whose heartbeat has timed out as OFFLINE and transition
-   * their RUNNING bots to UNKNOWN. Returns the number of engines marked.
+   * their RUNNING bots to UNKNOWN. Then prune dead OFFLINE rows older than
+   * ENGINE_DEAD_ROW_RETENTION_MS so the registry stops accumulating ghosts.
+   * Pruning is forensics-bounded, never signal-affecting: live aggregation
+   * already ignores dead rows, and a pruned engine re-registers cleanly on
+   * its next heartbeat (the heartbeat upsert is self-healing). Returns the
+   * number of engines marked OFFLINE (pruned count is logged, not returned,
+   * to keep the existing caller contract).
    */
   async sweepOfflineEngines(): Promise<number> {
     const expired = await query<EngineRow>(
@@ -565,6 +587,30 @@ export class EngineRegistryService {
       });
 
       await botLifecycleService.markBotsUnknownForEngine(engine.engine_id);
+    }
+
+    // Prune dead rows past retention (ghost cleanup). Predicate on status +
+    // last_seen_at only — never on the alert flag, so an unreconciled engine
+    // is NOT deleted early to hide its alert: within retention the dead row
+    // stays visible in `engines[]` (aggregates already ignore it). Failures
+    // here must not fail the sweep: log loudly, keep the marked count.
+    try {
+      const pruned = await query(
+        `DELETE FROM engine_registry
+               WHERE status = 'OFFLINE'
+                 AND last_seen_at < NOW() - make_interval(secs => $1)`,
+        [ENGINE_DEAD_ROW_RETENTION_MS / 1000]
+      );
+      if ((pruned.rowCount ?? 0) > 0) {
+        logger.info("Pruned dead engine registry rows past retention", {
+          pruned: pruned.rowCount,
+          retentionMs: ENGINE_DEAD_ROW_RETENTION_MS,
+        });
+      }
+    } catch (error) {
+      logger.error("Dead engine registry prune failed", undefined, {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
 
     return marked;
