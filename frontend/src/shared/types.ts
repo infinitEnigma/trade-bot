@@ -201,6 +201,8 @@ export class Strategy {
 
 // StrategyConfig interface for frontend use
 export interface StrategyConfig {
+  /** Stored inside the config JSON by the backend (also mirrored on Strategy). */
+  symbol?: string;
   leverage?: number;
   gridSize?: number;
   gridRange?: number;

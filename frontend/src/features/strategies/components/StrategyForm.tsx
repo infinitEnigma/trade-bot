@@ -1,39 +1,32 @@
 /** @format */
 
+/**
+ * StrategyForm — modal orchestrator for the per-type create/edit flows.
+ *
+ * Replaces the old one-size 478-line form (type `<select>` + conditional
+ * sections that let trend-only fields — leverage, stopLoss, entry/exit
+ * thresholds — masquerade as grid options). The engine implements exactly
+ * one strategy (`GridTradingStrategy`), so:
+ *
+ *  - CREATE: step 1 is the `StrategyTypeChooser` (Grid clickable, Trend /
+ *    Arbitrage disabled "Coming soon"); picking Grid advances to step 2,
+ *    `GridStrategyForm`. When a type ships, its card enables and its own
+ *    form mounts here — this shell never grows conditional sections.
+ *  - EDIT: a GRID row mounts `GridStrategyForm` in edit mode. A non-GRID
+ *    row (impossible today — 29/29 prod rows are GRID) hits the defensive
+ *    read-only branch instead of pretending to be editable.
+ *
+ * This component owns the overlay shell (frame, title, close) so switching
+ * steps never re-renders the frame — the body-only chooser/forms mount
+ * inside it.
+ */
+
 import React, { useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { useMutation } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { tradingApi } from "../../../infrastructure/api";
+import { X, Zap } from "lucide-react";
 import { Strategy, StrategyType } from "../../../shared/types";
-import { X, Loader2 } from "lucide-react";
 import { getStrategyConfig } from "../types/strategies.types";
-
-// Form validation schema
-const strategySchema = z.object({
-  name: z.string().min(1, "Strategy name is required").max(100),
-  type: z.enum([
-    StrategyType.GRID,
-    StrategyType.TREND_FOLLOWING,
-    StrategyType.ARBITRAGE,
-  ]),
-  symbol: z.string().min(1, "Trading symbol is required"),
-  leverage: z.number().min(1).max(20).optional(),
-  gridSize: z.number().min(2).max(100).optional(),
-  gridRange: z.number().min(1).max(50).optional(),
-  orderQuantity: z
-    .number()
-    .positive("Order quantity must be positive")
-    .optional(),
-  takeProfit: z.number().positive().optional(),
-  entryThreshold: z.number().optional(),
-  exitThreshold: z.number().optional(),
-  stopLoss: z.number().positive().optional(),
-});
-
-type StrategyFormData = z.infer<typeof strategySchema>;
+import { StrategyTypeChooser } from "./StrategyTypeChooser";
+import { GridStrategyForm } from "./GridStrategyForm";
 
 interface StrategyFormProps {
   strategy?: Strategy;
@@ -42,436 +35,130 @@ interface StrategyFormProps {
   onSuccess: (created?: Strategy | null) => void;
 }
 
-// Symbols grouped by the venue that lists them. The two venues use different
-// symbol conventions — Kodiak/Orderly perps are `PERP_<X>_USDC`; Lighter lists
-// bare markets (`ETH`, `ETH/USDC`). Strategy creation stays venue-agnostic (the
-// account is only bound at start), but the picker must not let a user silently
-// pick a symbol that only exists on the *other* venue: without grouping, both
-// venues expose an "ETH" and the label `.replace()` collapses them to one
-// identical option — the exact confusion that fails at start with a Lighter
-// account (L20). Grouping + venue labels keep each venue's "ETH" distinct. The
-// start gate (`assertSymbolSupported`) remains the authoritative backstop.
-const SYMBOL_GROUPS: { venue: string; symbols: string[] }[] = [
-  {
-    venue: "Kodiak / Orderly",
-    symbols: [
-      "PERP_BTC_USDC",
-      "PERP_ETH_USDC",
-      "PERP_SOL_USDC",
-      "PERP_AVAX_USDC",
-      "PERP_MATIC_USDC",
-      "PERP_LINK_USDC",
-    ],
-  },
-  {
-    venue: "Lighter",
-    symbols: ["BTC", "SOL", "ETH", "ETH/USDC", "LIT/USDC"],
-  },
-];
+const formatStrategyType = (type: StrategyType): string =>
+  type
+    .toLowerCase()
+    .split("_")
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
+/**
+ * Read-only details for the defensive edit branch — a strategy type with no
+ * form yet is shown honestly rather than silently rejected or, worse,
+ * editable with another type's fields.
+ */
+const ReadOnlyDetails: React.FC<{ strategy: Strategy }> = ({ strategy }) => {
+  const strategyConfig = getStrategyConfig(strategy);
+  return (
+    <div className="p-6 space-y-4">
+      <div className="p-4 rounded-xl border border-warning/20 bg-warning/5">
+        <p className="text-sm text-warning">
+          {formatStrategyType(strategy.type)} strategies are not editable yet —
+          only Grid strategies have a form today. You can delete this strategy
+          and recreate it once its form ships.
+        </p>
+      </div>
+      <div className="space-y-2 text-sm">
+        <div className="flex justify-between">
+          <span className="text-textMuted">Name</span>
+          <span className="text-text font-medium">{strategy.name}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-textMuted">Type</span>
+          <span className="text-text font-medium">
+            {formatStrategyType(strategy.type)}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-textMuted">Symbol</span>
+          <span className="text-text font-medium">
+            {strategyConfig && "symbol" in strategyConfig.config
+              ? (strategyConfig.config.symbol as string) || "N/A"
+              : "N/A"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const StrategyForm: React.FC<StrategyFormProps> = ({
   strategy,
   onClose,
   onSuccess,
 }) => {
-  const [selectedType, setSelectedType] = useState<StrategyType>(
-    strategy?.type || StrategyType.GRID
+  // Create flow starts on the type chooser; edit skips it (type is fixed).
+  // `null` = chooser step; a StrategyType = that type's form step. Only
+  // GRID is selectable today, but the state is typed for the future forms.
+  const [selectedType, setSelectedType] = useState<StrategyType | null>(
+    strategy ? strategy.type : null
   );
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    setValue,
-    reset,
-  } = useForm<StrategyFormData>({
-    resolver: zodResolver(strategySchema),
-    defaultValues: strategy
-      ? (() => {
-          const strategyConfig = getStrategyConfig(strategy);
-          if (!strategyConfig) {
-            return {
-              name: strategy.name,
-              type: strategy.type,
-              symbol: "",
-              leverage: 1,
-              gridSize: 10,
-              gridRange: 5,
-              orderQuantity: 1,
-            };
-          }
+  const title = strategy
+    ? "Edit Strategy"
+    : selectedType
+      ? `Create ${formatStrategyType(selectedType)} Strategy`
+      : "Create New Strategy";
 
-          switch (strategyConfig.type) {
-            case StrategyType.GRID:
-              return {
-                name: strategy.name,
-                type: strategy.type,
-                symbol: strategyConfig.config.symbol,
-                leverage: strategyConfig.config.leverage,
-                gridSize: strategyConfig.config.gridSize,
-                gridRange: strategyConfig.config.gridRange,
-                orderQuantity: strategyConfig.config.orderQuantity,
-                takeProfit: strategyConfig.config.takeProfit,
-                entryThreshold: strategyConfig.config.entryThreshold,
-                exitThreshold: strategyConfig.config.exitThreshold,
-                stopLoss: strategyConfig.config.stopLoss,
-              };
-            case StrategyType.TREND_FOLLOWING:
-              return {
-                name: strategy.name,
-                type: strategy.type,
-                symbol: strategyConfig.config.symbol,
-                leverage: strategyConfig.config.leverage,
-                entryThreshold: strategyConfig.config.entryThreshold,
-                exitThreshold: strategyConfig.config.exitThreshold,
-                takeProfit: strategyConfig.config.takeProfit,
-                stopLoss: strategyConfig.config.stopLoss,
-              };
-            case StrategyType.ARBITRAGE:
-              return {
-                name: strategy.name,
-                type: strategy.type,
-                symbol: strategyConfig.config.symbol,
-                leverage: strategyConfig.config.leverage,
-                takeProfit: strategyConfig.config.takeProfit,
-                stopLoss: strategyConfig.config.stopLoss,
-              };
-            default:
-              return {
-                name: strategy.name,
-                type: strategy.type,
-                symbol: "",
-                leverage: 1,
-              };
-          }
-        })()
-      : {
-          type: StrategyType.GRID,
-          leverage: 1,
-          gridSize: 10,
-          gridRange: 5,
-          orderQuantity: 1,
-        },
-  });
-
-  // Create strategy mutation
-  const createMutation = useMutation({
-    mutationFn: (data: StrategyFormData) => {
-      const config: Record<string, unknown> = {
-        symbol: data.symbol,
-        leverage: data.leverage,
-      };
-
-      // Add type-specific config
-      if (data.type === StrategyType.GRID) {
-        config.gridSize = data.gridSize;
-        config.gridRange = data.gridRange;
-        config.orderQuantity = data.orderQuantity;
-      }
-
-      // Add optional fields if provided
-      if (data.takeProfit) config.takeProfit = data.takeProfit;
-      if (data.entryThreshold) config.entryThreshold = data.entryThreshold;
-      if (data.exitThreshold) config.exitThreshold = data.exitThreshold;
-      if (data.stopLoss) config.stopLoss = data.stopLoss;
-
-      return tradingApi.createStrategy({
-        name: data.name,
-        type: data.type,
-        config,
-      });
-    },
-    onSuccess: response => {
-      onSuccess(response?.data);
-      reset();
-    },
-    onError: (error: unknown) => {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : typeof error === "object" && error !== null && "response" in error
-            ? (error as { response: { data: { error: string } } }).response.data
-                .error
-            : "Failed to create strategy";
-      toast.error(errorMessage);
-    },
-  });
-
-  // Update strategy mutation
-  const updateMutation = useMutation({
-    mutationFn: (data: StrategyFormData) => {
-      const config: Record<string, unknown> = {
-        symbol: data.symbol,
-        leverage: data.leverage,
-      };
-
-      // Add type-specific config
-      if (data.type === StrategyType.GRID) {
-        config.gridSize = data.gridSize;
-        config.gridRange = data.gridRange;
-        config.orderQuantity = data.orderQuantity;
-      }
-
-      // Add optional fields if provided
-      if (data.takeProfit) config.takeProfit = data.takeProfit;
-      if (data.entryThreshold) config.entryThreshold = data.entryThreshold;
-      if (data.exitThreshold) config.exitThreshold = data.exitThreshold;
-      if (data.stopLoss) config.stopLoss = data.stopLoss;
-
-      return tradingApi.updateStrategy(strategy!.id, {
-        name: data.name,
-        type: data.type,
-        config,
-      });
-    },
-    onSuccess: () => {
-      onSuccess();
-      reset();
-    },
-    onError: (error: unknown) => {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : typeof error === "object" && error !== null && "response" in error
-            ? (error as { response: { data: { error: string } } }).response.data
-                .error
-            : "Failed to update strategy";
-      toast.error(errorMessage);
-    },
-  });
-
-  const onSubmit = (data: StrategyFormData) => {
-    if (strategy) {
-      updateMutation.mutate(data);
-    } else {
-      createMutation.mutate(data);
+  const renderBody = () => {
+    // Create flow, step 1: pick a type.
+    if (selectedType === null) {
+      return <StrategyTypeChooser onSelect={setSelectedType} />;
     }
+    // Every flow below is the chosen type's form. Edit routes by the row's
+    // own type; a non-GRID row falls through to the read-only branch.
+    const formType = strategy ? strategy.type : selectedType;
+    if (formType === StrategyType.GRID) {
+      return (
+        <GridStrategyForm
+          strategy={strategy}
+          onClose={onClose}
+          onSuccess={onSuccess}
+        />
+      );
+    }
+    // Defensive: no form exists for this type yet (no non-GRID row can be
+    // created today, and none exists in prod).
+    if (strategy) return <ReadOnlyDetails strategy={strategy} />;
+    // A future type selected in the chooser before its form ships.
+    return (
+      <div className="p-6">
+        <p className="text-sm text-textMuted">
+          The {formatStrategyType(formType)} form is not available yet.
+        </p>
+      </div>
+    );
   };
-
-  const isLoading = createMutation.isPending || updateMutation.isPending;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="glass-card rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-white/5">
-          <h2 className="text-xl font-bold text-text-primary">
-            {strategy ? "Edit Strategy" : "Create New Strategy"}
-          </h2>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Zap className="w-4 h-5 text-primary" />
+            </div>
+            <h2 className="text-xl font-bold text-text-primary">{title}</h2>
+            {/* Back to the chooser mid-create — never shown for edit, whose
+                only exits are cancel/save. */}
+            {!strategy && selectedType && (
+              <button
+                onClick={() => setSelectedType(null)}
+                className="text-sm text-textMuted hover:text-text-primary"
+              >
+                ← Change type
+              </button>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="text-text-tertiary hover:text-text-primary p-1"
+            title="Close"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
-
-        <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-6">
-          {/* Basic Information */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
-                Strategy Name
-              </label>
-              <input
-                {...register("name")}
-                type="text"
-                className="input w-full"
-                placeholder="My Grid Strategy"
-              />
-              {errors.name && (
-                <p className="text-danger text-sm mt-1">
-                  {errors.name.message}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
-                Strategy Type
-              </label>
-              <select
-                {...register("type")}
-                onChange={e => {
-                  const newType = e.target.value as StrategyType;
-                  setSelectedType(newType);
-                  setValue("type", newType);
-                }}
-                className="input w-full"
-              >
-                <option value={StrategyType.GRID}>Grid Trading</option>
-                <option value={StrategyType.TREND_FOLLOWING}>
-                  Trend Following
-                </option>
-                <option value={StrategyType.ARBITRAGE}>Arbitrage</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Trading Symbol — grouped by venue so a symbol like "ETH" is
-              unambiguous (Lighter's bare ETH vs Kodiak's PERP_ETH_USDC). */}
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-2">
-              Trading Symbol
-            </label>
-            <select {...register("symbol")} className="input w-full">
-              {SYMBOL_GROUPS.map(group => (
-                <optgroup key={group.venue} label={group.venue}>
-                  {group.symbols.map(symbol => (
-                    <option key={symbol} value={symbol}>
-                      {symbol.replace("PERP_", "").replace("_USDC", "")}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-            <p className="text-xs text-text-tertiary mt-1">
-              Pick the symbol from the venue your exchange account uses — the
-              strategy can only start on an account that lists it.
-            </p>
-            {errors.symbol && (
-              <p className="text-danger text-sm mt-1">
-                {errors.symbol.message}
-              </p>
-            )}
-          </div>
-
-          {/* Leverage */}
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-2">
-              Leverage (1x - 20x)
-            </label>
-            <input
-              {...register("leverage", { valueAsNumber: true })}
-              type="number"
-              min="1"
-              max="20"
-              className="input w-full"
-            />
-            {errors.leverage && (
-              <p className="text-danger text-sm mt-1">
-                {errors.leverage.message}
-              </p>
-            )}
-          </div>
-
-          {/* Grid Trading Configuration */}
-          {selectedType === StrategyType.GRID && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-medium text-text-primary">
-                Grid Configuration
-              </h3>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-2">
-                    Grid Size (2-100 levels)
-                  </label>
-                  <input
-                    {...register("gridSize", { valueAsNumber: true })}
-                    type="number"
-                    min="2"
-                    max="100"
-                    className="input w-full"
-                  />
-                  {errors.gridSize && (
-                    <p className="text-danger text-sm mt-1">
-                      {errors.gridSize.message}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-2">
-                    Grid Range (1-50%)
-                  </label>
-                  <input
-                    {...register("gridRange", { valueAsNumber: true })}
-                    type="number"
-                    min="1"
-                    max="50"
-                    step="0.1"
-                    className="input w-full"
-                  />
-                  {errors.gridRange && (
-                    <p className="text-danger text-sm mt-1">
-                      {errors.gridRange.message}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-2">
-                    Order Quantity
-                  </label>
-                  <input
-                    {...register("orderQuantity", { valueAsNumber: true })}
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    className="input w-full"
-                  />
-                  {errors.orderQuantity && (
-                    <p className="text-danger text-sm mt-1">
-                      {errors.orderQuantity.message}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Risk Management */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-medium text-text-primary">
-              Risk Management (Optional)
-            </h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">
-                  Take Profit (%)
-                </label>
-                <input
-                  {...register("takeProfit", { valueAsNumber: true })}
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  className="input w-full"
-                  placeholder="Leave empty to disable"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">
-                  Stop Loss (%)
-                </label>
-                <input
-                  {...register("stopLoss", { valueAsNumber: true })}
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  className="input w-full"
-                  placeholder="Leave empty to disable"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Form Actions */}
-          <div className="flex justify-end gap-3 pt-6 border-t border-border-light">
-            <button type="button" onClick={onClose} className="btn-secondary">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="btn-primary flex items-center gap-2"
-            >
-              {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {strategy ? "Update Strategy" : "Create Strategy"}
-            </button>
-          </div>
-        </form>
+        {renderBody()}
       </div>
     </div>
   );
