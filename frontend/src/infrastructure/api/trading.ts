@@ -6,6 +6,30 @@ import type { EmergencyStopAction } from "@trade-bot/shared";
 import type { WalletProofPayload } from "./wallet";
 
 /**
+ * One row of `GET /api/trades` — the platform's OWN ledger (fills recorded
+ * by the durable trade ledger), not the venue proxy at /api/market/trades.
+ * Attribution fields and fee/pnl are nullable by contract: NULL = unknown
+ * (F2), never rendered as a fabricated 0.
+ */
+export interface LedgerTradeRow {
+  id: string;
+  strategyId: string | null;
+  strategyName: string | null;
+  botId: string | null;
+  exchangeAccountId: string | null;
+  orderId: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  quantity: number;
+  price: number;
+  fee: number | null;
+  pnl: number | null;
+  status: string;
+  /** ISO-8601. */
+  executedAt: string;
+}
+
+/**
  * Trading API endpoints
  * Handles strategies, bots, and trading operations with global deduplication
  */
@@ -156,5 +180,35 @@ export const tradingApi = {
         ...(action ? { action } : {}),
       });
     return response.data;
+  },
+
+  /**
+   * Ledger trades (the platform's own fills) with optional account/strategy
+   * scoping — the read model behind the Dashboard "all accounts" table and
+   * the strategy-card fills list. Latest-N semantics (default 50, cap 200);
+   * distinct from the per-account venue proxy `getKodiakTrades`.
+   */
+  async getLedgerTrades(
+    filters: {
+      exchangeAccountId?: string;
+      strategyId?: string;
+      limit?: number;
+    } = {}
+  ) {
+    const params = new URLSearchParams();
+    if (filters.exchangeAccountId)
+      params.set("exchangeAccountId", filters.exchangeAccountId);
+    if (filters.strategyId) params.set("strategyId", filters.strategyId);
+    if (filters.limit !== undefined) params.set("limit", String(filters.limit));
+    const qs = params.toString();
+    return globalRequestManager.deduplicateRequest(
+      `trades:ledger:${qs}`,
+      () =>
+        httpClient
+          .getClient()
+          .get(`/api/trades${qs ? `?${qs}` : ""}`)
+          .then(r => r.data),
+      "tradingApi"
+    );
   },
 };
