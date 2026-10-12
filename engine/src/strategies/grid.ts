@@ -1373,8 +1373,12 @@ export class GridTradingStrategy {
         );
       }
     }
+    const firstLevel = levels[0];
+    const secondLevel = levels[1];
     const spacing =
-      levels.length >= 2 ? levels[1]!.price - levels[0]!.price : 0;
+      firstLevel !== undefined && secondLevel !== undefined
+        ? secondLevel.price - firstLevel.price
+        : 0;
     if (this.config.gridSize >= 1 && !(spacing > 0)) {
       throw new CommandError(
         false,
