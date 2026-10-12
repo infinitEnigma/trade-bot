@@ -1,9 +1,11 @@
 /** @format */
 
-import React, { Suspense } from "react";
+import React, { Suspense, useState } from "react";
 import { Strategy, StrategyType } from "../../../shared/types";
-import { Zap, Edit, Trash2 } from "lucide-react";
+import { Zap, Edit, Trash2, ChevronDown } from "lucide-react";
 import { Card } from "../../../shared/components/ui";
+import { RecentTradesTable } from "../../../shared/components/user/RecentTrades";
+import { useRecentTrades } from "../../../shared/hooks";
 import { BotControls } from "../bots/components/BotControls";
 import { getStrategyConfig, BotInstance } from "../types/strategies.types";
 
@@ -33,6 +35,19 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
 }) => {
   const strategyConfig = getStrategyConfig(strategy);
   //const config = strategyConfig?.config || {};
+  // Strategy fills (Batch 4): the strategy's latest ledger fills, compact
+  // variant — collapsed by default. Rendered only for a bot-backed strategy
+  // (a fills section for a bot-less strategy would just be an empty table).
+  const [fillsOpen, setFillsOpen] = useState(false);
+  const {
+    trades: strategyFills,
+    isLoading: strategyFillsLoading,
+    error: strategyFillsError,
+  } = useRecentTrades({
+    strategyId: strategy.id,
+    limit: 5,
+    enabled: !!bot,
+  });
 
   return (
     <Card className="p-6">
@@ -205,6 +220,36 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
           <Trash2 className="w-4 h-4 text-danger hover:text-danger" />
         </button>
       </div>
+
+      {/* Recent fills — this strategy's latest ledger fills (strategyId
+          filter, latest 5). Only bot-backed strategies can have fills; a
+          bot-less card would only ever render the empty state. */}
+      {bot && (
+        <div className="mt-4 border-t border-white/5 pt-3">
+          <button
+            type="button"
+            onClick={() => setFillsOpen(open => !open)}
+            aria-expanded={fillsOpen}
+            className="flex w-full items-center justify-between text-sm text-textMuted hover:text-text transition-colors"
+          >
+            <span className="font-medium">Recent trades</span>
+            <ChevronDown
+              className={`w-4 h-4 transition-transform ${fillsOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+          {fillsOpen && (
+            <div className="mt-2 max-h-64 overflow-y-auto">
+              <RecentTradesTable
+                trades={strategyFills}
+                isLoading={strategyFillsLoading}
+                error={strategyFillsError}
+                variant="compact"
+                title=""
+              />
+            </div>
+          )}
+        </div>
+      )}
     </Card>
   );
 };
