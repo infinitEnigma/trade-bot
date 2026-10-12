@@ -30,15 +30,16 @@ import {
   X,
 } from "lucide-react";
 
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Card } from "../../../shared/components/ui/Card";
 import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
 import { tradingApi } from "../../../infrastructure/api";
 import { websocketClient } from "../../../infrastructure/websocket/client";
 
 import { UserProgressCard } from "../../../shared/components/user/UserProgressCard";
+import { RecentTradesTable } from "../../../shared/components/user/RecentTrades";
 import { LoadingSpinner } from "../../../shared/components/ui";
-import { usePortfolioSummary } from "../../../shared/hooks";
+import { usePortfolioSummary, useRecentTrades } from "../../../shared/hooks";
 import type { VenuePnlPoint } from "../../../shared/hooks/usePortfolioSummary";
 import { dashboardService } from "../services/dashboardService";
 import { globalBalanceManager } from "../../../shared/services/balance-manager";
@@ -355,17 +356,51 @@ const Dashboard: React.FC = () => {
     p => parseFloat(String(p.unsettled_pnl ?? "0")) >= 0
   ).length;
 
-  // Trades table — single-source from the hook (Kodiak native rows).
-  const trades = portfolioSummary.trades;
-  const tradesLoading = portfolioSummary.tradesLoading;
-  const tradesError = portfolioSummary.tradesError;
+  // Trades table — the platform's own ledger (GET /api/trades), NOT the
+  // venue proxy. The hook's `trades` rows stay the realized-PnL/chart source
+  // (Kodiak fallback path) — the table is a separate consumer with its own
+  // account filter. Latest-N semantics; "All accounts" is the default.
+  const venueTrades = portfolioSummary.trades;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tradesAccountParam = searchParams.get("tradesAccount");
+  // A stale/foreign id in the URL (or a non-ACTIVE account) falls back to
+  // "all" — never to a scoped query the user didn't ask for.
+  const tradesAccountId =
+    tradesAccountParam &&
+    portfolioAccounts.some(a => a.id === tradesAccountParam)
+      ? tradesAccountParam
+      : "";
+  const setTradesAccountId = (id: string) => {
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        if (id) {
+          next.set("tradesAccount", id);
+        } else {
+          next.delete("tradesAccount");
+        }
+        return next;
+      },
+      { replace: true }
+    );
+  };
+  const {
+    trades: ledgerTrades,
+    isLoading: ledgerTradesLoading,
+    error: ledgerTradesError,
+  } = useRecentTrades(
+    tradesAccountId ? { exchangeAccountId: tradesAccountId } : {}
+  );
+  const accountLabels: Record<string, string> = Object.fromEntries(
+    portfolioAccounts.map(a => [
+      a.id,
+      `${a.exchange} (${a.environment}) ${a.accountRef}`,
+    ])
+  );
 
   // P0: the D1 dead trio (pnl/pnlPercent/dailyVolume = 0) is gone. The
   // portfolio gate reads the hook's exchange balance, not useBalance.
   const totalBalance = portfolioSummary.exchangeBalance;
-  // Stable render-time fallback for rows missing both timestamps
-  // (react-hooks/purity: no Date.now() inside render).
-  const [renderTime] = useState(() => Date.now());
 
   // For VERIFIED users, always show portfolio (even with zero balances)
   // For REGISTERED users, show if balance data exists
@@ -376,7 +411,7 @@ const Dashboard: React.FC = () => {
   const portfolio = shouldShowPortfolio
     ? {
         totalBalance,
-        totalTrades: trades.length,
+        totalTrades: venueTrades.length,
       }
     : null;
 
@@ -404,8 +439,8 @@ const Dashboard: React.FC = () => {
           .filter(p => Number.isFinite(p.t) && Number.isFinite(p.v))
           .sort((a, b) => a.t - b.t)
           .map(p => ({ time: toSeriesTime(p.t), value: p.v }))
-      : trades.length > 0
-        ? calculatePortfolioPerformance(trades)
+      : venueTrades.length > 0
+        ? calculatePortfolioPerformance(venueTrades)
         : [];
 
   return (
@@ -947,115 +982,44 @@ const Dashboard: React.FC = () => {
             </div>
           </Card>
 
-          {/* Recent Trades */}
+          {/* Recent Trades — platform ledger (Batch 3). "All accounts" by
+              default; the filter scopes the ledger query by account. */}
           <Card>
-            <h2 className="text-lg font-semibold text-text mb-4">
-              Recent Trades
-            </h2>
-            <div className="max-h-96 overflow-y-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="text-left text-sm text-textMuted">
-                    <th className="pb-3 font-medium">Date & Time</th>
-                    <th className="pb-3 font-medium">Symbol</th>
-                    <th className="pb-3 font-medium">Side</th>
-                    <th className="pb-3 font-medium">Price</th>
-                    <th className="pb-3 font-medium text-right">Size</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tradesLoading ? (
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center">
-                        <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
-                        <p className="text-sm text-textMuted">
-                          Loading trades...
-                        </p>
-                      </td>
-                    </tr>
-                  ) : tradesError ? (
-                    // Surface fetch failures honestly at EVERY level — an
-                    // unreadable venue is not "no trades" (the old VERIFIED
-                    // exception hid real outages behind the empty state).
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center">
-                        <p className="text-sm text-danger">
-                          Unable to load trades data
-                        </p>
-                      </td>
-                    </tr>
-                  ) : trades.length === 0 ? (
-                    // Success with genuinely empty history.
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center">
-                        <p className="text-sm text-textMuted">
-                          No recent trades
-                        </p>
-                      </td>
-                    </tr>
-                  ) : (
-                    trades.map((trade, index: number) => {
-                      const timestamp = new Date(
-                        trade.close_timestamp ||
-                          trade.open_timestamp ||
-                          renderTime
-                      );
-                      const dateString = timestamp.toLocaleDateString([], {
-                        month: "short",
-                        day: "numeric",
-                      });
-                      const timeString = timestamp.toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      });
-
-                      return (
-                        <tr key={index} className="border-t border-white/5">
-                          <td className="py-3 text-sm text-textMuted">
-                            <div className="flex flex-col">
-                              <span className="font-medium">{dateString}</span>
-                              <span className="text-xs opacity-75">
-                                {timeString}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-3 text-sm text-text font-medium">
-                            {trade.symbol
-                              ?.replace("PERP_", "")
-                              .replace("_USDC", "") || "N/A"}
-                          </td>
-                          <td className="py-3">
-                            <span
-                              className={`px-2 py-1 text-xs font-medium rounded ${
-                                trade.side === "LONG"
-                                  ? "bg-success/20 text-success"
-                                  : "bg-danger/20 text-danger"
-                              }`}
-                            >
-                              {trade.side === "LONG" ? "LONG" : "SHORT"}
-                            </span>
-                          </td>
-                          <td className="py-3 text-sm text-text">
-                            $
-                            {parseFloat(
-                              String(
-                                trade.avg_close_price ??
-                                  trade.avg_open_price ??
-                                  "0"
-                              )
-                            ).toLocaleString()}
-                          </td>
-                          <td className="py-3 text-sm text-text text-right">
-                            {parseFloat(
-                              String(trade.closed_position_qty ?? "0")
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
+            <SectionHeader
+              title="Recent Trades"
+              subtitle={
+                tradesAccountId
+                  ? `Latest fills · ${accountLabels[tradesAccountId] ?? tradesAccountId}`
+                  : `Latest fills · all accounts`
+              }
+              actions={
+                <>
+                  {portfolioAccounts.length > 0 && (
+                    <select
+                      value={tradesAccountId}
+                      onChange={event => setTradesAccountId(event.target.value)}
+                      aria-label="Filter trades by exchange account"
+                      className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-text focus:border-primary/50 focus:outline-none"
+                    >
+                      <option value="">All accounts</option>
+                      {portfolioAccounts.map(account => (
+                        <option key={account.id} value={account.id}>
+                          {account.exchange} · {account.environment} ·{" "}
+                          {account.accountRef}
+                        </option>
+                      ))}
+                    </select>
                   )}
-                </tbody>
-              </table>
+                </>
+              }
+            />
+            <div className="max-h-96 overflow-y-auto">
+              <RecentTradesTable
+                trades={ledgerTrades}
+                isLoading={ledgerTradesLoading}
+                error={ledgerTradesError}
+                accountLabels={accountLabels}
+              />
             </div>
           </Card>
         </div>
