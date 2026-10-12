@@ -101,6 +101,7 @@ export class MiddlewareConfig {
     app.use("/api/accounts", csrfMiddleware);
     app.use("/api/market", csrfMiddleware);
     app.use("/api/strategies", csrfMiddleware);
+    app.use("/api/trades", csrfMiddleware);
     app.use("/api/bot", csrfMiddleware);
     app.use("/api/bot-management", csrfMiddleware);
     app.use("/api/balance", csrfMiddleware);

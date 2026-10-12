@@ -18,6 +18,47 @@ import { query } from "../../../database/pool";
 import { databaseLogger as logger } from "../../../core/logging/context-aware-logger.service";
 
 /**
+ * DTO returned by `getTradesFiltered` — the unified row shape behind the
+ * Dashboard's "all recent trades" table and the strategy-card fills list.
+ * `fee`/`pnl` are NULL when the engine could not source them (F2: unknown ≠
+ * zero); attribution fields are NULL when the row has no strategy/bot link.
+ */
+export interface FilteredTrade {
+  id: string;
+  strategyId: string | null;
+  strategyName: string | null;
+  botId: string | null;
+  exchangeAccountId: string | null;
+  orderId: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  quantity: number;
+  price: number;
+  fee: number | null;
+  pnl: number | null;
+  status: string;
+  executedAt: Date;
+}
+
+/** Raw joined row from the `trades ⋈ strategies ⋈ bot_instances` query. */
+interface FilteredTradeRow {
+  id: string;
+  strategy_id: string | null;
+  strategy_name: string | null;
+  bot_id: string | null;
+  exchange_account_id: string | null;
+  order_id: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  quantity: string;
+  price: string;
+  fee: string | null;
+  pnl: string | null;
+  status: string;
+  executed_at: string;
+}
+
+/**
  * Trade Repository Adapter
  *
  * Implements the ITradeRepository interface using PostgreSQL database operations.
@@ -96,6 +137,97 @@ export class TradeRepositoryAdapter implements ITradeRepository {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to get trades by strategy: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Filtered read for the Dashboard / strategy-card Recent-Trades surfaces
+   * (Batch 1 of the multi-account trades plan).
+   *
+   * Reads the local `trades` display rows — written in the same transaction
+   * as the durable ledger — so every row carries its `strategy_id` attribution
+   * and resolves to an exchange account through `bot_id → bot_instances`.
+   * Joins `strategies` (display name) and `bot_instances` (account) with
+   * LEFT JOINs: a row whose session had no runs (NULL strategy) or whose bot
+   * was deleted (NULL bot) still shows up in the unfiltered view, labelled
+   * honestly as absent, and is simply excluded when the matching filter is on.
+   *
+   * Ownership is `user_id = $1` — a foreign strategyId/accountId can only
+   * ever match the caller's own rows (it narrows, never widens), so no
+   * separate ownership pre-check is needed and a foreign id is
+   * indistinguishable from "no trades" (no existence leak).
+   *
+   * NULL fee/pnl (unknown at fill time, F2) are preserved as NULL — never
+   * collapsed to a made-up zero, never dropped (the legacy `mapRowToTrade`
+   * drops such rows; this DTO keeps them and lets the UI say "unknown").
+   */
+  async getTradesFiltered(
+    userId: string,
+    filters: {
+      exchangeAccountId?: string;
+      strategyId?: string;
+      limit?: number;
+    } = {}
+  ): Promise<FilteredTrade[]> {
+    try {
+      const conditions: string[] = ["t.user_id = $1"];
+      const params: unknown[] = [userId];
+      if (filters.strategyId) {
+        params.push(filters.strategyId);
+        conditions.push(`t.strategy_id = $${params.length}`);
+      }
+      if (filters.exchangeAccountId) {
+        params.push(filters.exchangeAccountId);
+        conditions.push(`bi.exchange_account_id = $${params.length}`);
+      }
+      params.push(filters.limit ?? 50);
+
+      const result = await query<FilteredTradeRow>(
+        `SELECT
+            t.id,
+            t.strategy_id,
+            t.bot_id,
+            t.order_id,
+            t.symbol,
+            t.side,
+            t.quantity,
+            t.price,
+            t.fee,
+            t.pnl,
+            t.status,
+            t.executed_at,
+            s.name AS strategy_name,
+            bi.exchange_account_id
+          FROM trades t
+          LEFT JOIN strategies s ON s.id = t.strategy_id
+          LEFT JOIN bot_instances bi ON bi.id = t.bot_id
+          WHERE ${conditions.join(" AND ")}
+          ORDER BY t.executed_at DESC
+          LIMIT $${params.length}`,
+        params
+      );
+
+      return result.rows.map(row => ({
+        id: row.id,
+        strategyId: row.strategy_id ?? null,
+        strategyName: row.strategy_name ?? null,
+        botId: row.bot_id ?? null,
+        exchangeAccountId: row.exchange_account_id ?? null,
+        orderId: row.order_id,
+        symbol: row.symbol,
+        side: row.side,
+        quantity: parseFloat(row.quantity),
+        price: parseFloat(row.price),
+        fee: row.fee === null ? null : parseFloat(row.fee),
+        pnl: row.pnl === null ? null : parseFloat(row.pnl),
+        status: row.status,
+        executedAt: new Date(row.executed_at),
+      }));
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to get filtered trades", error as Error);
+      throw new Error(`Failed to get trades: ${errorMessage}`);
     }
   }
 

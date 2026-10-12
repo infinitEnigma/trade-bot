@@ -13,7 +13,11 @@ import {
   walletsRoutes,
   exchangeAccountRoutes,
 } from "../interfaces/http/users";
-import { marketRoutes, strategyRoutes } from "../interfaces/http/trading";
+import {
+  marketRoutes,
+  strategyRoutes,
+  tradesRoutes,
+} from "../interfaces/http/trading";
 import { botRoutes } from "../interfaces/http/bots";
 import { walletRoutes, walletBalanceRoutes } from "../interfaces/http/wallet";
 import { securityRoutes } from "../interfaces/http/system/security";
@@ -264,9 +268,12 @@ export class RouteConfig {
     try {
       app.use("/api/market", marketRoutes);
       app.use("/api/strategies", strategyRoutes);
+      // Batch-1 trades read model: the local ledger rows (strategy + account
+      // attributed), distinct from the venue proxy at /api/market/trades.
+      app.use("/api/trades", tradesRoutes);
       marketTimer.success();
       this.routeLogger.debug("Market and trading routes registered", {
-        routes: ["/api/market", "/api/strategies"],
+        routes: ["/api/market", "/api/strategies", "/api/trades"],
         component: "market-trading",
       });
     } catch (error) {
@@ -275,7 +282,7 @@ export class RouteConfig {
         "Failed to register market and trading routes",
         error as Error,
         {
-          routes: ["/api/market", "/api/strategies"],
+          routes: ["/api/market", "/api/strategies", "/api/trades"],
           component: "market-trading",
         }
       );

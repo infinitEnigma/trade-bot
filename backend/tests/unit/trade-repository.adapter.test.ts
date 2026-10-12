@@ -354,4 +354,111 @@ describe("TradeRepositoryAdapter", () => {
       mockLoggerInfo.mockRestore();
     });
   });
+
+  describe("getTradesFiltered", () => {
+    const JOINED_ROW = {
+      id: "t1",
+      strategy_id: "s1",
+      strategy_name: "My Grid",
+      bot_id: "b1",
+      exchange_account_id: "acc1",
+      order_id: "o1",
+      symbol: "ETH",
+      side: "BUY",
+      quantity: "0.01",
+      price: "2000.5",
+      fee: null,
+      pnl: "1.25",
+      status: "FILLED",
+      executed_at: "2026-10-12T00:00:00.000Z",
+    };
+
+    it("scopes by user_id only when no filters are given", async () => {
+      (query as jest.Mock).mockResolvedValue({ rows: [] });
+      const adapter = new TradeRepositoryAdapter();
+
+      await adapter.getTradesFiltered("u1");
+
+      const [sql, params] = (query as jest.Mock).mock.calls[0];
+      expect(sql).toContain("FROM trades t");
+      expect(sql).toContain("LEFT JOIN strategies");
+      expect(sql).toContain("LEFT JOIN bot_instances");
+      expect(sql).toContain("t.user_id = $1");
+      expect(sql).toContain("ORDER BY t.executed_at DESC");
+      expect(sql).not.toContain("strategy_id = $2");
+      expect(params).toEqual(["u1", 50]);
+    });
+
+    it("adds both filter conditions with positional params and respects limit", async () => {
+      (query as jest.Mock).mockResolvedValue({ rows: [] });
+      const adapter = new TradeRepositoryAdapter();
+
+      await adapter.getTradesFiltered("u1", {
+        strategyId: "s1",
+        exchangeAccountId: "acc1",
+        limit: 10,
+      });
+
+      const [sql, params] = (query as jest.Mock).mock.calls[0];
+      expect(sql).toContain("t.strategy_id = $2");
+      expect(sql).toContain("bi.exchange_account_id = $3");
+      expect(params).toEqual(["u1", "s1", "acc1", 10]);
+    });
+
+    it("maps joined rows and preserves NULL fee (unknown, not zero)", async () => {
+      (query as jest.Mock).mockResolvedValue({ rows: [JOINED_ROW] });
+      const adapter = new TradeRepositoryAdapter();
+
+      const rows = await adapter.getTradesFiltered("u1");
+
+      expect(rows).toEqual([
+        {
+          id: "t1",
+          strategyId: "s1",
+          strategyName: "My Grid",
+          botId: "b1",
+          exchangeAccountId: "acc1",
+          orderId: "o1",
+          symbol: "ETH",
+          side: "BUY",
+          quantity: 0.01,
+          price: 2000.5,
+          fee: null,
+          pnl: 1.25,
+          status: "FILLED",
+          executedAt: new Date("2026-10-12T00:00:00.000Z"),
+        },
+      ]);
+    });
+
+    it("keeps unattributed rows as NULL labels (LEFT JOIN semantics)", async () => {
+      (query as jest.Mock).mockResolvedValue({
+        rows: [
+          {
+            ...JOINED_ROW,
+            strategy_id: null,
+            strategy_name: null,
+            bot_id: null,
+            exchange_account_id: null,
+          },
+        ],
+      });
+      const adapter = new TradeRepositoryAdapter();
+
+      const rows = await adapter.getTradesFiltered("u1");
+
+      expect(rows[0].strategyId).toBeNull();
+      expect(rows[0].strategyName).toBeNull();
+      expect(rows[0].exchangeAccountId).toBeNull();
+    });
+
+    it("wraps failures with the get-trades message", async () => {
+      (query as jest.Mock).mockRejectedValue(new Error("db down"));
+      const adapter = new TradeRepositoryAdapter();
+
+      await expect(adapter.getTradesFiltered("u1")).rejects.toThrow(
+        "Failed to get trades: db down"
+      );
+    });
+  });
 });

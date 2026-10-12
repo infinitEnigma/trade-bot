@@ -67,6 +67,25 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
   }
 
   /**
+   * Ownership check for filtered reads (trades route): does this strategy
+   * exist AND belong to `userId`? Answers with a bare existence boolean —
+   * a foreign id is indistinguishable from a missing one (no leak).
+   */
+  async strategyExistsForUser(strategyId: string, userId: string) {
+    try {
+      const result = await query<{ id: string }>(
+        "SELECT id FROM strategies WHERE id = $1 AND user_id = $2",
+        [strategyId, userId]
+      );
+      return result.rows.length > 0;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to check strategy ownership: ${errorMessage}`);
+    }
+  }
+
+  /**
    * Create a new strategy
    */
   async createStrategy(
