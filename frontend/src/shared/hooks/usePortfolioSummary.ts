@@ -266,13 +266,20 @@ export const usePortfolioSummary = (
     staleTime: 60 * 1000,
     retry: false,
   });
+  // Trades feed BOTH the Dashboard's Recent-Trades table (display) and the
+  // realized-PnL fallback (below). It must therefore run whenever a verified
+  // account is selected — the earlier `venuePnl count === 0` gate turned it
+  // into a Kodiak-only PnL fallback and starved exactly the accounts that
+  // HAVE trade history: on Lighter the venue series is non-empty, so the
+  // table never fetched and rendered "No recent trades" forever (prod
+  // 2026-10-12: /pnl 9x200 for the account with fills, /trades 0 requests).
   const tradesQuery = useQuery({
     queryKey: ["portfolio-trades", selectedAccount?.id],
     queryFn: async () => {
       const res = await kodiakApi.getKodiakTrades(50, selectedAccount!.id);
       return (res?.data?.rows ?? []) as PortfolioTrade[];
     },
-    enabled: !!selectedAccount && isVerified && venuePnlQuery.data?.count === 0,
+    enabled: !!selectedAccount && isVerified,
     staleTime: 30 * 1000,
     retry: false,
   });

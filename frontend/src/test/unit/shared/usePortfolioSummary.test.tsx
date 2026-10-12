@@ -192,3 +192,66 @@ describe("usePortfolioSummary total across exchanges (F3)", () => {
     expect(result.current.error).not.toBeNull();
   });
 });
+
+/**
+ * Regression (prod 2026-10-12): the trades query used to be gated on
+ * `venuePnl count === 0`, turning it into a Kodiak-only PnL fallback and
+ * starving exactly the accounts that HAVE trade history — on Lighter the
+ * venue series is non-empty, so the Recent-Trades table never fetched and
+ * rendered "No recent trades" forever. Trades must fetch whenever a
+ * verified account is selected, regardless of the venue PnL series.
+ */
+describe("usePortfolioSummary trades query gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    vi.mocked(accountsApi.listAccounts).mockResolvedValue({
+      data: { accounts: [ACCOUNT_A] },
+    } as never);
+    vi.mocked(kodiakApi.getKodiakPositions).mockResolvedValue({
+      data: { rows: [] },
+    } as never);
+    vi.mocked(kodiakApi.getKodiakTrades).mockResolvedValue({
+      data: { rows: [{ symbol: "ETH", realized_pnl: "1.5" }] },
+    } as never);
+    vi.mocked(kodiakApi.getKodiakBalance).mockResolvedValue({
+      success: true,
+      data: { totalBalance: "100" },
+    } as never);
+  });
+
+  it("fetches trades even when the venue PnL series is non-empty (Lighter)", async () => {
+    // Non-empty venue series — the old gate would have disabled trades.
+    // Cumulative levels: last(14) − first(4) = 10.
+    vi.mocked(kodiakApi.getVenuePnl).mockResolvedValue({
+      data: {
+        points: [
+          { timestamp: "1", trade_pnl: "4" },
+          { timestamp: "2", trade_pnl: "14" },
+        ],
+      },
+    } as never);
+
+    const { result } = renderHook(() => usePortfolioSummary(), { wrapper });
+
+    await waitFor(() =>
+      expect(vi.mocked(kodiakApi.getKodiakTrades)).toHaveBeenCalled()
+    );
+    await waitFor(() => expect(result.current.trades).toHaveLength(1));
+    // With a venue series present, realized PnL reads the series (last −
+    // first), never the row sum.
+    expect(result.current.realizedPnl).toBe(10);
+  });
+
+  it("falls back to summing trade rows when no venue series exists (Kodiak)", async () => {
+    vi.mocked(kodiakApi.getVenuePnl).mockResolvedValue({
+      data: { points: [] },
+    } as never);
+
+    const { result } = renderHook(() => usePortfolioSummary(), { wrapper });
+
+    await waitFor(() => expect(result.current.realizedPnl).toBe(1.5));
+  });
+});

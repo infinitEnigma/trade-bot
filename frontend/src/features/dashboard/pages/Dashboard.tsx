@@ -973,8 +973,10 @@ const Dashboard: React.FC = () => {
                         </p>
                       </td>
                     </tr>
-                  ) : tradesError && user?.userLevel !== "VERIFIED" ? (
-                    // Show error for REGISTERED users if API fails
+                  ) : tradesError ? (
+                    // Surface fetch failures honestly at EVERY level — an
+                    // unreadable venue is not "no trades" (the old VERIFIED
+                    // exception hid real outages behind the empty state).
                     <tr>
                       <td colSpan={5} className="py-8 text-center">
                         <p className="text-sm text-danger">
@@ -983,7 +985,7 @@ const Dashboard: React.FC = () => {
                       </td>
                     </tr>
                   ) : trades.length === 0 ? (
-                    // Show "No recent trades" for all cases (success with empty data, or API error for VERIFIED users)
+                    // Success with genuinely empty history.
                     <tr>
                       <td colSpan={5} className="py-8 text-center">
                         <p className="text-sm text-textMuted">
