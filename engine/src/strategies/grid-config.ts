@@ -28,6 +28,8 @@ import { GridStrategyConfig } from "../types/strategy";
 /** Documented maximums shared with the backend/frontend validation surface. */
 export const MAX_GRID_SIZE = 100;
 export const MAX_GRID_RANGE_PERCENT = 50;
+export const MIN_STOP_LOSS_PERCENT = 0.1;
+export const MAX_STOP_LOSS_PERCENT = 50;
 
 /** Minimum grid size: a 1-level "grid" has no step and no exit above entry. */
 export const MIN_GRID_SIZE = 2;
@@ -136,12 +138,28 @@ export function resolveGridConfig(
     takeProfitPercent = takeProfit;
   }
 
+  // Aggregate stop-loss (v1, Model A). Absent = disabled (INACTIVE). A present
+  // value is the max adverse move, in percent, from the reference before the
+  // persisted stop-loss state machine trips. Bounds mirror Joi/frontend.
+  const stopLoss = coerceNumber(raw, "stopLoss", "stopLoss");
+  let stopLossPercent: number | undefined;
+  if (stopLoss !== undefined) {
+    assertInRange(
+      "stopLoss",
+      stopLoss,
+      MIN_STOP_LOSS_PERCENT,
+      MAX_STOP_LOSS_PERCENT
+    );
+    stopLossPercent = stopLoss;
+  }
+
   return {
     symbol,
     gridSize,
     gridRangePercent,
     orderQuantity,
     takeProfitPercent,
+    stopLossPercent,
   };
 }
 
@@ -184,5 +202,17 @@ export function assertValidGridConfig(config: GridStrategyConfig): void {
       false,
       `Invalid grid config: takeProfitPercent must be positive when supplied (got ${config.takeProfitPercent})`
     );
+  }
+  if (config.stopLossPercent !== undefined) {
+    if (
+      !Number.isFinite(config.stopLossPercent) ||
+      config.stopLossPercent < MIN_STOP_LOSS_PERCENT ||
+      config.stopLossPercent > MAX_STOP_LOSS_PERCENT
+    ) {
+      throw new CommandError(
+        false,
+        `Invalid grid config: stopLossPercent must be in ${MIN_STOP_LOSS_PERCENT}–${MAX_STOP_LOSS_PERCENT} when supplied (got ${config.stopLossPercent})`
+      );
+    }
   }
 }

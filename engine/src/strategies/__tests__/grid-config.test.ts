@@ -110,6 +110,31 @@ describe("resolveGridConfig (Phase 4 boundary)", () => {
     expect(resolveGridConfig(BASE).takeProfitPercent).toBeUndefined();
   });
 
+  it("resolves an in-range stopLoss into stopLossPercent, allows omission", () => {
+    expect(resolveGridConfig({ ...BASE, stopLoss: 5 }).stopLossPercent).toBe(5);
+    expect(resolveGridConfig(BASE).stopLossPercent).toBeUndefined();
+  });
+
+  it("accepts stopLoss numeric strings and boundary values", () => {
+    expect(
+      resolveGridConfig({ ...BASE, stopLoss: "2.5" }).stopLossPercent
+    ).toBe(2.5);
+    expect(resolveGridConfig({ ...BASE, stopLoss: 0.1 }).stopLossPercent).toBe(
+      0.1
+    );
+    expect(resolveGridConfig({ ...BASE, stopLoss: 50 }).stopLossPercent).toBe(
+      50
+    );
+  });
+
+  it("rejects out-of-range / non-finite stopLoss", () => {
+    rejectsInvalid({ ...BASE, stopLoss: 0 }, /stopLoss/);
+    rejectsInvalid({ ...BASE, stopLoss: 0.05 }, /stopLoss/);
+    rejectsInvalid({ ...BASE, stopLoss: 51 }, /stopLoss/);
+    rejectsInvalid({ ...BASE, stopLoss: -3 }, /stopLoss/);
+    rejectsInvalid({ ...BASE, stopLoss: "nope" }, /finite/);
+  });
+
   it("assertValidGridConfig mirrors the boundary for direct construction", () => {
     expect(() =>
       assertValidGridConfig({

@@ -1,11 +1,13 @@
 /** @format */
 
 /**
- * GridStrategyForm contract (product decision 2026-10-12): the ONLY live
- * strategy form contains exactly the fields the grid engine consumes — no
- * leverage (never per-strategy), no stop-loss (grid doesn't implement one),
- * no entry/exit thresholds (trend-only), no type picker (type is GRID).
- * Submit payloads must carry `type: GRID` and only grid config keys.
+ * GridStrategyForm contract (product decision 2026-10-12, updated with the
+ * aggregate stop-loss): the ONLY live strategy form contains exactly the
+ * fields the grid engine consumes — symbol, grid geometry, order size, an
+ * optional take-profit, and an OPTIONAL aggregate stop-loss (v1, Model A).
+ * It still has no leverage (never per-strategy), no entry/exit thresholds
+ * (trend-only), and no type picker (type is GRID). Submit payloads must carry
+ * `type: GRID`; the stop-loss key appears only when the user sets one.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -57,7 +59,7 @@ describe("GridStrategyForm field policy", () => {
     vi.clearAllMocks();
   });
 
-  it("renders ONLY the grid engine surface — no leverage/stop-loss/thresholds/type", () => {
+  it("renders the grid engine surface — stop-loss present, no leverage/thresholds/type", () => {
     renderForm(<GridStrategyForm onClose={() => {}} onSuccess={() => {}} />);
 
     expect(screen.getByLabelText(/strategy name/i)).toBeDefined();
@@ -66,11 +68,12 @@ describe("GridStrategyForm field policy", () => {
     expect(screen.getByLabelText(/grid range/i)).toBeDefined();
     expect(screen.getByLabelText(/order size/i)).toBeDefined();
     expect(screen.getByLabelText(/take profit/i)).toBeDefined();
+    // Optional aggregate stop-loss (v1, Model A) is now a supported field.
+    expect(screen.getByLabelText(/stop loss/i)).toBeDefined();
 
     const html = document.body.innerHTML;
     for (const forbidden of [
       /leverage/i,
-      /stop loss/i,
       /entry threshold/i,
       /exit threshold/i,
       /strategy type/i,
@@ -127,6 +130,36 @@ describe("GridStrategyForm submissions", () => {
     expect(payload.config).not.toHaveProperty("stopLoss");
     expect(payload.config).not.toHaveProperty("entryThreshold");
     expect(payload.config).not.toHaveProperty("exitThreshold");
+    expect(onSuccess).toHaveBeenCalled();
+  });
+
+  it("includes stopLoss in the payload only when the user sets one", async () => {
+    vi.mocked(tradingApi.createStrategy).mockResolvedValue({
+      success: true,
+      data: { id: "s2", name: "My Grid" },
+    } as never);
+    const onSuccess = vi.fn();
+
+    renderForm(<GridStrategyForm onClose={() => {}} onSuccess={onSuccess} />);
+    fillValidGridForm();
+    fireEvent.change(screen.getByLabelText(/stop loss/i), {
+      target: { value: "7.5" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /create strategy/i }));
+
+    await waitFor(() =>
+      expect(tradingApi.createStrategy).toHaveBeenCalledWith({
+        name: "My Grid",
+        type: StrategyType.GRID,
+        config: {
+          symbol: "PERP_BTC_USDC",
+          gridSize: 10,
+          gridRange: 5,
+          orderQuantity: 1,
+          stopLoss: 7.5,
+        },
+      })
+    );
     expect(onSuccess).toHaveBeenCalled();
   });
 

@@ -104,6 +104,26 @@ export interface GridSnapshot {
    * verified whenever present (a mismatch is treated as corruption).
    */
   checksum?: string;
+  /**
+   * Persisted aggregate stop-loss state (v1, Model A). Additive and optional:
+   * a snapshot without it (pre-stop-loss builds) loads and simply means the stop
+   * was INACTIVE. Once present, an active phase is restored so a restart
+   * re-enters the machine mid-stop rather than re-arming entries. NOT part of
+   * the execution-config compatibility set — changing `stopLossPercent` never
+   * alone routes a snapshot to the untrusted rebuild path.
+   */
+  stopLoss?: {
+    /** The configured percent at the time it was written. */
+    percent: number;
+    /** The persisted stop-loss phase. */
+    phase: string;
+    /** Reference price locked at trip (undefined while merely monitoring). */
+    referencePrice?: number;
+    /** The percent in effect when the machine tripped (audit). */
+    percentAtTrip?: number;
+    /** ISO timestamp of the trip. */
+    trippedAt?: string;
+  };
 }
 
 /**

@@ -14,8 +14,11 @@
  *    uses the platform's `SESSION_CAP_LEVERAGE` policy — a per-strategy
  *    field could never do anything. Position size is the Notional size
  *    picker at start.
- *  - NO stop-loss: grid doesn't implement one; it belongs to the future
- *    Trend Following form (with entry/exit thresholds), not here.
+ *  - Stop-loss: an OPTIONAL aggregate stop (`stopLoss` → engine
+ *    `stopLossPercent`, bounds 0.1–50). It is a persisted risk-off state
+ *    machine (freeze entries → cancel BUYs → reduce-only exit the grid's
+ *    confirmed inventory), not a per-level or trailing stop. Engine
+ *    `resolveGridConfig` validates the same bounds; absent = disabled.
  *  - NO type picker: type is GRID, fixed. Trend/Arbitrage are separate
  *    cards in `StrategyTypeChooser`.
  *
@@ -52,6 +55,9 @@ const gridStrategySchema = z.object({
   gridRange: z.number().min(1).max(50).optional(),
   orderQuantity: z.number().positive("Order size must be positive").optional(),
   takeProfit: z.number().positive().optional(),
+  // Aggregate stop-loss (v1, Model A) — bounds mirror the engine resolver
+  // (0.1–50%). Empty ⇒ disabled (INACTIVE).
+  stopLoss: z.number().min(0.1).max(50).optional(),
 });
 
 type GridStrategyFormData = z.infer<typeof gridStrategySchema>;
@@ -132,6 +138,7 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
             gridRange: config.gridRange,
             orderQuantity: config.orderQuantity,
             takeProfit: config.takeProfit,
+            stopLoss: config.stopLoss,
           };
         })()
       : {
@@ -149,6 +156,7 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
       orderQuantity: data.orderQuantity,
     };
     if (data.takeProfit) config.takeProfit = data.takeProfit;
+    if (data.stopLoss) config.stopLoss = data.stopLoss;
     return config;
   };
 
@@ -332,9 +340,7 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
 
       {/* Exit */}
       <div className="space-y-4">
-        <h3 className="text-lg font-medium text-text-primary">
-          Take Profit (Optional)
-        </h3>
+        <h3 className="text-lg font-medium text-text-primary">Exit</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label
@@ -359,6 +365,36 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
             {errors.takeProfit && (
               <p className="text-danger text-sm mt-1">
                 {errors.takeProfit.message}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label
+              htmlFor="grid-strategy-stop-loss"
+              className="block text-sm font-medium text-text-secondary mb-2"
+            >
+              Stop Loss (%)
+            </label>
+            <input
+              id="grid-strategy-stop-loss"
+              {...register("stopLoss", { setValueAs: emptyToNumber })}
+              type="number"
+              min="0.1"
+              max="50"
+              step="0.1"
+              className="input w-full"
+              placeholder="Leave empty to disable"
+            />
+            <p className="text-xs text-text-tertiary mt-1">
+              Aggregate risk-off: if price falls this far below your average
+              entry (or the build price while flat), the grid stops buying,
+              cancels open buys, and sells its confirmed inventory to flat. Not
+              a per-level or trailing stop.
+            </p>
+            {errors.stopLoss && (
+              <p className="text-danger text-sm mt-1">
+                {errors.stopLoss.message}
               </p>
             )}
           </div>

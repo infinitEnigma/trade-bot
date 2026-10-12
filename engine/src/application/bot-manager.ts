@@ -718,6 +718,16 @@ export class BotManager {
           tradeReporter,
           spec.runId
         );
+        // Co-tenancy (correction #1): the venue position is account × symbol,
+        // not bot-scoped. Tell the stop-loss machine whether another live engine
+        // bot trades this symbol, so CLEARED gates on this run's confirmed
+        // inventory only rather than waiting on a position a co-tenant owns.
+        const symbolShared = Array.from(this.bots.values()).some(
+          other => other.botId !== botId && other.symbol === symbol
+        );
+        // Guarded: some BotManager tests inject a mocked strategy without the
+        // method; the real strategy always has it.
+        gridStrategy.setSymbolShared?.(symbolShared);
         await gridStrategy.initialize(currentPrice);
         this.throwIfCancelled(botId);
         await gridStrategy.start();

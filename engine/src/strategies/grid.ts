@@ -36,6 +36,11 @@ import {
 import { FillSegment } from "../utils/fill-id";
 import { symbolsMatch } from "../utils/symbol";
 import { assertValidGridConfig } from "./grid-config";
+import {
+  GridStopLossController,
+  StopPhase,
+  weightedEntryPrice,
+} from "./grid-stop-loss";
 import { MarketRules, resolveMarketRules } from "../domain/market-rules";
 import {
   isTickMultiple,
@@ -125,6 +130,19 @@ export class GridTradingStrategy {
   private ledgerHaltReason: string | null = null;
   private currentPrice: number = 0;
   private baselinePrice: number = 0;
+  /**
+   * Aggregate stop-loss state machine (v1, Model A). `null` when no controller
+   * is wired (unit tests); production always constructs one. Pure — it decides
+   * the phase, the grid performs the I/O.
+   */
+  private stopLoss: GridStopLossController | null = null;
+  /**
+   * Whether another live engine bot trades this symbol on the same account.
+   * Set by `BotManager` at start (it owns the roster); `false` in unit tests.
+   * Drives the CLEARED venue-flat check: under co-tenancy the venue position is
+   * account-scoped, so CLEARED gates on this grid's confirmed inventory only.
+   */
+  private symbolShared: boolean = false;
   /**
    * Authoritative market rules for this strategy's market (Phase B/D).
    *
@@ -286,6 +304,32 @@ export class GridTradingStrategy {
       this.reporter ?? undefined
     );
 
+    // Aggregate stop-loss machine (v1, Model A). Restored from the snapshot's
+    // `stopLoss` block so a restart re-enters a mid-stop phase (never re-arms).
+    // `stopLossPercent` is NOT in the snapshot compatibility set — a config
+    // change never alone routes here — so the live config is what arms a fresh
+    // INACTIVE/ARMED; a restored active phase is sticky and ignores the config.
+    const restoredStop = snapshot?.stopLoss;
+    this.stopLoss = new GridStopLossController(
+      this.config.stopLossPercent,
+      restoredStop
+        ? {
+            percent: restoredStop.percent,
+            phase: restoredStop.phase as StopPhase,
+            referencePrice: restoredStop.referencePrice,
+            percentAtTrip: restoredStop.percentAtTrip,
+            trippedAt: restoredStop.trippedAt,
+          }
+        : undefined
+    );
+    logger.info("Grid stop-loss initialized", {
+      botId: this.botId,
+      symbol: this.config.symbol,
+      percent: this.config.stopLossPercent,
+      phase: this.stopLoss.getPhase(),
+      referencePrice: this.stopLoss.getReferencePrice(),
+    });
+
     if (canRestore) {
       const report = await this.reconcile.reconcileSymbol();
       if (!report.reachable) {
@@ -443,6 +487,26 @@ export class GridTradingStrategy {
   }
 
   /**
+   * Whether another live engine bot trades this symbol on the same account.
+   * Set by `BotManager` (it owns the roster) before the first tick; drives the
+   * CLEARED venue-flat cross-check (correction #1 — venue positions are
+   * account-scoped, so under co-tenancy CLEARED is local-confirmed only).
+   */
+  setSymbolShared(shared: boolean): void {
+    this.symbolShared = shared;
+  }
+
+  /** Current stop-loss phase (INACTIVE when no controller is wired). */
+  stopLossPhaseText(): string {
+    return this.stopLoss?.getPhase() ?? StopPhase.INACTIVE;
+  }
+
+  /** True once the stop is on the active path (tripped..halted) or cleared. */
+  isStopLossBlockingEntries(): boolean {
+    return this.stopLoss?.blocksEntries() ?? false;
+  }
+
+  /**
    * Stop the strategy and cancel its live orders. Returns one human-readable
    * problem per order whose cancellation could not be confirmed (N5): the
    * caller decides how to report it — a clean STOPPED must never hide live
@@ -529,6 +593,219 @@ export class GridTradingStrategy {
     this.manager?.markNotFound(clientOrderId);
   }
 
+  // ---------------------------------------------------------------------------
+  // Aggregate stop-loss (v1, Model A). The pure machine (`GridStopLossController`)
+  // decides the phase; these methods perform the venue I/O the phase implies,
+  // reusing the grid's own cancel / reduce-only / booking primitives — never a
+  // second order stack, never an account-wide flatten (that would steal a
+  // co-tenant's exposure; see `emergencyClosePosition`).
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Reference price for the stop: the weighted-average entry of open held
+   * inventory once the grid holds anything, else the build baseline
+   * (monitoring-only — nothing to exit while flat). `undefined` when neither is
+   * usable, so `monitor` cannot trip on bad data.
+   */
+  private stopReferencePrice(): number {
+    const holdings = this.levels.map(l => ({
+      heldQty: this.heldQtyOf(l),
+      entryPrice: l.entryPrice,
+      price: l.price,
+    }));
+    const weighted = weightedEntryPrice(holdings);
+    return weighted ?? this.baselinePrice;
+  }
+
+  /** This grid's confirmed aggregate held quantity (`Σ heldQty`). */
+  private aggregateHeldQty(): number {
+    return this.levels.reduce((sum, l) => sum + this.heldQtyOf(l), 0);
+  }
+
+  /** Number of owned resting entry-BUY handles still outstanding. */
+  private outstandingEntryBuys(): number {
+    return this.levels.filter(l => l.buyOrderId).length;
+  }
+
+  /**
+   * Cancel every owned resting entry BUY (best-effort). Reuses the confirmed
+   * cancel path (`reconcileCancelledSlot`); an unconfirmed cancel simply leaves
+   * its handle, so the machine stays in CANCELING_ENTRIES and retries next tick.
+   */
+  private async cancelEntryBuys(): Promise<void> {
+    for (let i = 0; i < this.levels.length; i++) {
+      const handle = this.levels[i].buyOrderId;
+      if (!handle) continue;
+      try {
+        await this.exchange.cancelOrder(handle, this.config.symbol);
+        await this.reconcileCancelledSlot(i, "BUY");
+      } catch (error) {
+        // Not confirmed: the handle stays, the phase stays CANCELING_ENTRIES.
+        logger.warn("Stop-loss: entry BUY cancel unconfirmed", {
+          botId: this.botId,
+          symbol: this.config.symbol,
+          levelPrice: this.levels[i].price,
+          error: messageOf(error),
+        });
+      }
+    }
+  }
+
+  /**
+   * Exit this grid's confirmed inventory with per-level reduce-only SELLs sized
+   * to each level's real `heldQty` (never a phantom slot). The venue caps a
+   * reduce-only order to the true position, so it can never open a short. A
+   * resting exit at a level is left in place — `reconcileOrders` books its fill
+   * and the next `evaluateExitComplete` sees the reduced `heldQty`.
+   */
+  private async exitInventoryReduceOnly(): Promise<void> {
+    for (let i = 0; i < this.levels.length; i++) {
+      const level = this.levels[i];
+      const held = this.heldQtyOf(level);
+      if (held <= QTY_EPSILON || level.sellOrderId) continue;
+      let validatedSell: number;
+      try {
+        // Marketable reduce-only: sell at/through the current mark so a
+        // stop-loss actually exits in a falling market, quantized down to the
+        // tick so it never rests unfilled above the book.
+        const mark = this.currentPrice > 0 ? this.currentPrice : level.price;
+        const sellPrice = quantizePriceNumber(mark, this.requireTick(), "down");
+        validatedSell = this.requireTickValid(sellPrice, "SELL");
+      } catch (error) {
+        logger.error(
+          "Stop-loss: refusing reduce-only exit - price failed tick validation",
+          {
+            botId: this.botId,
+            symbol: this.config.symbol,
+            levelPrice: level.price,
+            error: messageOf(error),
+          }
+        );
+        continue;
+      }
+      try {
+        const outcome = await this.reconcile?.ensureSlotOrder(
+          i,
+          "SELL",
+          validatedSell,
+          Number(held.toFixed(8)),
+          true // reduce-only (N6): close this level's long, never open a short
+        );
+        if (outcome) await this.bookOutcome(i, level, "SELL", outcome);
+      } catch (error) {
+        logger.error("Stop-loss: reduce-only exit placement failed", {
+          botId: this.botId,
+          symbol: this.config.symbol,
+          levelPrice: level.price,
+          heldQty: held,
+          error: messageOf(error),
+        });
+      }
+    }
+  }
+
+  /**
+   * Read the venue's position for the symbol (exclusive-symbol safety net).
+   * A failed read is `readable: false` so the caller fails closed rather than
+   * claiming a flat it never verified.
+   */
+  private async readVenuePositionQty(): Promise<{
+    readable: boolean;
+    qty?: number;
+  }> {
+    try {
+      const positions = await this.exchange.getPositions();
+      const venue = positions.find(p =>
+        symbolsMatch(p.symbol, this.config.symbol)
+      );
+      const qty = Number(venue?.position_qty ?? 0);
+      return { readable: true, qty: Number.isFinite(qty) ? qty : 0 };
+    } catch (error) {
+      logger.warn("Stop-loss: venue position read failed", {
+        botId: this.botId,
+        symbol: this.config.symbol,
+        error: messageOf(error),
+      });
+      return { readable: false };
+    }
+  }
+
+  /**
+   * One step of the stop-loss machine. Idempotent and cheap when INACTIVE.
+   * Called every tick before normal arming so a trip freezes entries at once.
+   */
+  private async driveStopLoss(): Promise<void> {
+    const stop = this.stopLoss;
+    if (!stop) return;
+
+    if (stop.getPhase() === StopPhase.ARMED) {
+      const decision = stop.monitor(
+        this.currentPrice,
+        this.stopReferencePrice()
+      );
+      if (decision.changed) {
+        logger.warn("Stop-loss tripped - freezing entries", {
+          botId: this.botId,
+          symbol: this.config.symbol,
+          reason: decision.reason,
+        });
+      }
+    }
+
+    if (stop.getPhase() === StopPhase.TRIPPED) {
+      stop.beginCancelingEntries();
+    }
+
+    if (stop.getPhase() === StopPhase.CANCELING_ENTRIES) {
+      await this.cancelEntryBuys();
+      const remaining = this.outstandingEntryBuys();
+      const decision = stop.entriesCanceled(remaining);
+      if (decision.changed) {
+        logger.warn("Stop-loss: entry BUYs cleared - exiting inventory", {
+          botId: this.botId,
+          symbol: this.config.symbol,
+          remainingEntryBuys: remaining,
+        });
+      }
+    }
+
+    if (stop.getPhase() === StopPhase.EXITING) {
+      await this.exitInventoryReduceOnly();
+      const venue = this.symbolShared
+        ? { readable: true, qty: 0 } // co-tenant owns the venue position; skip
+        : await this.readVenuePositionQty();
+      const decision = stop.evaluateExitComplete({
+        localHeldQty: this.aggregateHeldQty(),
+        entriesCleared: this.outstandingEntryBuys() === 0,
+        venueQty: venue.qty,
+        venueReadable: venue.readable,
+        symbolShared: this.symbolShared,
+        venueTolerance:
+          this.config.orderQuantity * POSITION_DRIFT_TOLERANCE_FRACTION,
+      });
+      if (decision.changed) {
+        if (decision.phase === StopPhase.CLEARED) {
+          logger.warn("Stop-loss: grid confirmed flat (entries stay frozen)", {
+            botId: this.botId,
+            symbol: this.config.symbol,
+            reason: decision.reason,
+          });
+        } else if (decision.phase === StopPhase.HALTED_RESIDUAL) {
+          logger.error(
+            "Stop-loss: HALTED_RESIDUAL - operator action required",
+            {
+              botId: this.botId,
+              symbol: this.config.symbol,
+              reason: decision.reason,
+            }
+          );
+        }
+      }
+    }
+    // HALTED_RESIDUAL / CLEARED are terminal: no further per-tick action beyond
+    // what the normal (entry-frozen) loop already does.
+  }
+
   async tick(): Promise<void> {
     if (!this.running || !this.reconcile) return;
     if (this.ledgerHalted) {
@@ -548,6 +825,12 @@ export class GridTradingStrategy {
       const ticker = await this.exchange.getTicker(this.config.symbol);
       this.currentPrice = Number(ticker.mark_price || ticker.price);
 
+      // Drive the aggregate stop-loss machine (v1, Model A): monitor in ARMED,
+      // then cancel entries / reduce-only exit / verify flat once tripped. This
+      // runs before normal arming so a trip freezes entries on the very tick it
+      // is detected.
+      await this.driveStopLoss();
+
       // Check each grid level
       for (let i = 0; i < this.levels.length; i++) {
         const level = this.levels[i];
@@ -565,7 +848,10 @@ export class GridTradingStrategy {
           !level.buyOrderId &&
           !level.sellOrderId &&
           !this.isFullyLong(level) &&
-          !this.isExitOnly(level)
+          !this.isExitOnly(level) &&
+          // Stop-loss (v1, Model A): once tripped, new entries are frozen. The
+          // risk-off sequence exits confirmed inventory; it never adds exposure.
+          !this.isStopLossBlockingEntries()
         ) {
           // Only the shortfall is bought: a level that already booked a partial
           // segment tops up to one slot instead of buying a second (C2).
@@ -1503,6 +1789,11 @@ export class GridTradingStrategy {
         exitOnly: l.exitOnly,
       })),
       savedAt: new Date().toISOString(),
+      // Aggregate stop-loss state (v1, Model A). Additive and optional: written
+      // only once a controller exists, so a never-armed grid keeps a
+      // byte-identical snapshot. Persisting the phase (plus the trip reference)
+      // is what lets a restart resume mid-stop instead of re-arming entries.
+      ...(this.stopLoss ? { stopLoss: this.stopLoss.toSnapshot() } : {}),
     };
   }
 
