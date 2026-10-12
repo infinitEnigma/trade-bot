@@ -70,6 +70,11 @@ function makeExchange(
       .fn()
       .mockResolvedValue({ total_value: 0, max_leverage: 1 }),
     listOpenOrders: jest.fn(overrides.listOpenOrders ?? (async () => [])),
+    getMarketRules: jest.fn(async () => ({
+      exchange: "fake",
+      symbol: CONFIG.symbol,
+      priceTickSize: "0.01",
+    })),
     queryOrderByClientOrderId: jest
       .fn()
       .mockResolvedValue({ kind: "NOT_FOUND" }),
@@ -139,6 +144,7 @@ async function seedSnapshot(botId: string): Promise<void> {
     gridSize: CONFIG.gridSize,
     gridRangePercent: CONFIG.gridRangePercent,
     orderQuantity: CONFIG.orderQuantity,
+    priceTickSize: "0.01",
     baselinePrice: 100,
     levels: [
       { price: 97.5, filled: false },
@@ -209,6 +215,7 @@ describe("Phase 1 — snapshot restore requires execution-config match", () => {
       gridSize: CONFIG.gridSize,
       gridRangePercent: CONFIG.gridRangePercent,
       orderQuantity,
+      priceTickSize: "0.01",
       baselinePrice: 100,
       levels: [
         { price: 97.5, filled: false },

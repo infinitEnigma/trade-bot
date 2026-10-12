@@ -42,6 +42,7 @@ import {
   ExchangeOrderResponse,
   ExchangePosition,
   ExchangeTicker,
+  MarketRules,
   OrderLookup,
 } from "../../domain/exchange";
 import {
@@ -51,6 +52,13 @@ import {
   TransactionSigner,
 } from "../../domain/signer";
 import { CommandError } from "../../application/command-error";
+import { validateMarketRules } from "../../domain/market-rules";
+import {
+  isTickMultiple,
+  numberToDecimalString,
+  quantizePriceNumber,
+} from "../../utils/price-quantization";
+import { tickSizeFromPriceDecimals } from "./tick-size";
 import { isNonceDrift } from "./refusals";
 import { logger } from "../../utils/logger";
 import { resolveLighterStatus, LighterResolution } from "./status-map";
@@ -386,6 +394,20 @@ export class LighterClient implements ExchangeClient {
   }
 
   /**
+   * Authoritative price rules: tick = 10^-supported_price_decimals as a
+   * decimal string. Throws (never guesses) when metadata is missing.
+   */
+  async getMarketRules(symbol: string): Promise<MarketRules> {
+    const market = await this.marketOf(symbol);
+    const priceTickSize = tickSizeFromPriceDecimals(market.priceDecimals);
+    return validateMarketRules({
+      exchange: "lighter",
+      symbol: market.symbol,
+      priceTickSize,
+    });
+  }
+
+  /**
    * Venue-reported fee rates for this account (`GET /api/v1/accountLimits`,
    * authenticated) — the only account-scoped fee signal the venue exposes
    * (Phase-1 finding, see `fees.ts`): no REST tape carries a per-fill fee, and
@@ -412,6 +434,10 @@ export class LighterClient implements ExchangeClient {
     request: ExchangeOrderRequest
   ): Promise<ExchangeOrderResponse> {
     const market = await this.marketOf(request.symbol);
+    // Authoritative tick for this market, derived once and used both to
+    // quantize an adapter-generated MARKET crossing price and to validate the
+    // final `orderPrice` at the submission boundary.
+    const tickSize = tickSizeFromPriceDecimals(market.priceDecimals);
     // The signer signs LIMIT orders only (venue fact: the sidecar request has
     // no market type this adapter can trust), so a MARKET request is executed
     // as an IOC limit priced through the book — see MARKET_ORDER_SLIPPAGE_BPS.
@@ -427,10 +453,19 @@ export class LighterClient implements ExchangeClient {
         );
       }
       const band = MARKET_ORDER_SLIPPAGE_BPS / 10_000;
-      orderPrice =
+      const crossing =
         request.side === "SELL"
           ? reference * (1 - band)
           : reference * (1 + band);
+      // This crossing price is adapter-owned (no engine-quantized price exists
+      // for a MARKET request), so the adapter quantizes it — but strictly in
+      // the crossing direction so the IOC stays marketable: SELL rounds down,
+      // BUY rounds up. Rounding toward the mark could make it non-marketable.
+      orderPrice = quantizePriceNumber(
+        crossing,
+        tickSize,
+        request.side === "SELL" ? "down" : "up"
+      );
       timeInForce = LIGHTER_TIME_IN_FORCE_IOC;
     } else {
       if (
@@ -448,6 +483,18 @@ export class LighterClient implements ExchangeClient {
       throw new CommandError(
         false,
         "orderQuantity must be a finite positive number"
+      );
+    }
+    // B.0 gate: the adapter scales — it must never re-round. `orderPrice`
+    // must already be tick-quantized by the engine (`quantizePriceNumber`
+    // against these same rules): verify off-tick input fails closed instead
+    // of `Math.round` silently moving the price. Float noise is washed via
+    // `numberToDecimalString` so `100.05` stored as `100.0499999999` still
+    // reads as tick-valid.
+    if (!isTickMultiple(numberToDecimalString(orderPrice), tickSize)) {
+      throw new CommandError(
+        false,
+        `lighter order price ${orderPrice} is not a multiple of tick ${tickSize} for ${request.symbol} (engine must quantize before submission)`
       );
     }
     const price = Math.round(orderPrice * 10 ** market.priceDecimals);

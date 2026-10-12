@@ -368,9 +368,12 @@ describe("LighterClient", () => {
       clientOrderId: "11",
     });
 
-    // mark 2500.5 × (1 − 1%) = 2475.495 → scaled by the 2 price decimals.
+    // mark 2500.5 × (1 − 1%) = 2475.495 → SELL crossing quantizes DOWN to
+    // the 2475.49 tick (247549 scaled), staying below the reference so the
+    // IOC still crosses the book. Rounding nearest would nudge it up to
+    // 2475.50 and shrink the cross.
     expect(signed).toHaveLength(1);
-    expect(signed[0].price).toBe(247550);
+    expect(signed[0].price).toBe(247549);
     expect(signed[0].isAsk).toBe(true);
     // 0 = IOC: fills what it can, cancels the rest (no resting residue).
     expect(signed[0].timeInForce).toBe(0);

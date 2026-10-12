@@ -61,6 +61,7 @@ type MockExchange = {
   getPositions: jest.Mock;
   listOpenOrders: jest.Mock;
   queryOrderByClientOrderId: jest.Mock;
+  getMarketRules: jest.Mock;
   /** Absent by default: an exchange with no account fee tier. */
   getFeeRates?: jest.Mock;
 };
@@ -80,6 +81,11 @@ function makeExchange(): MockExchange {
     queryOrderByClientOrderId: jest
       .fn()
       .mockResolvedValue({ kind: "NOT_FOUND" }),
+    getMarketRules: jest.fn().mockResolvedValue({
+      exchange: "fake",
+      symbol: CONFIG.symbol,
+      priceTickSize: "0.01",
+    }),
   };
 }
 
@@ -439,29 +445,26 @@ describe("GridTradingStrategy entry-price durability (N6)", () => {
     expect(levelsOf(s2)[0].entryPrice).toBe(97.4);
   });
 
-  it("never arms an exit at or below the entry (degenerate grid)", async () => {
+  it("refuses to build a degenerate grid whose quantized levels collapse (Phase D)", async () => {
     const exchange = makeExchange();
-    // Baseline 2 at a 1% range with 100 levels: the step is 0.0002, so 2dp
-    // quantization collapses every line onto 2.00. BUY still arms on level 0
-    // (price 2 <= level 2.00), but the exit has no price strictly above the
-    // 2.00 entry — step and top-line fallback both round back to 2.00 — and
-    // stays unarmed. gridRangePercent=1/gridSize=100 are the documented
-    // bounds (Phase 4 boundary); the degeneracy comes from quantization, not
-    // from an out-of-bounds config.
+    // Baseline 2 at a 1% range with 100 levels: the step is 0.0002, so at the
+    // 0.01 tick every line quantizes onto 2.00 — the grid would have no
+    // distinct levels and no exit price strictly above the 2.00 entry.
+    // gridRangePercent=1/gridSize=100 are the documented bounds (Phase 4
+    // boundary); the degeneracy comes from quantization, not from an
+    // out-of-bounds config. Phase D fails closed at construction rather than
+    // silently merging levels into a single price — a stricter and earlier
+    // guarantee than the previous "build then never arm the exit" behaviour.
     const s = makeStrategy("bot-n6-degenerate", exchange, {
       ...CONFIG,
       gridSize: 100,
       gridRangePercent: 1,
     });
-    await s.initialize(2);
-    await s.start();
-    await s.tick();
-    await fillBuy(s, exchange, 0, 2);
-    expect(levelsOf(s)[0].filled).toBe(true);
+    await expect(s.initialize(2)).rejects.toThrow(
+      /collapse to duplicate price/
+    );
 
-    await tickAt(s, exchange, 2);
-
-    expect(placedOrders(exchange, "SELL")).toHaveLength(0);
-    expect(levelsOf(s)[0].sellOrderId).toBeUndefined();
+    // Nothing was placed: construction failed before any order could arm.
+    expect(exchange.createOrder).not.toHaveBeenCalled();
   });
 });

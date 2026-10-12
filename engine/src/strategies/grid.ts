@@ -36,6 +36,12 @@ import {
 import { FillSegment } from "../utils/fill-id";
 import { symbolsMatch } from "../utils/symbol";
 import { assertValidGridConfig } from "./grid-config";
+import { MarketRules, resolveMarketRules } from "../domain/market-rules";
+import {
+  isTickMultiple,
+  numberToDecimalString,
+  quantizePriceNumber,
+} from "../utils/price-quantization";
 
 /**
  * How often a single slot's order is re-checked against the exchange (ms).
@@ -119,6 +125,15 @@ export class GridTradingStrategy {
   private ledgerHaltReason: string | null = null;
   private currentPrice: number = 0;
   private baselinePrice: number = 0;
+  /**
+   * Authoritative market rules for this strategy's market (Phase B/D).
+   *
+   * Resolved once in `initialize` before any level is built and pinned for
+   * the strategy's life: every grid price is quantized against this tick,
+   * snapshots fingerprint it, and a rules change never reprices live
+   * levels — new placements freeze instead (Phase E).
+   */
+  private marketRules: MarketRules | null = null;
   private totalPnl: number = 0;
   private totalTrades: number = 0;
   private trades: Trade[] = [];
@@ -161,6 +176,21 @@ export class GridTradingStrategy {
   async initialize(currentPrice: number): Promise<void> {
     this.currentPrice = currentPrice;
 
+    // Phase B/D: market rules are authoritative and required before any
+    // level is built or any order placed. A missing method, a fetch
+    // failure, or an invalid tick fails closed — never a 2-dp fallback.
+    const rules = await resolveMarketRules(
+      this.exchange,
+      this.config.symbol,
+      "grid"
+    );
+    this.marketRules = rules;
+    logger.info("Grid market rules resolved", {
+      botId: this.botId,
+      symbol: this.config.symbol,
+      priceTickSize: rules.priceTickSize,
+    });
+
     const snapResult = loadGridSnapshotResult(this.botId, this.runId);
     const snapshot = snapResult.status === "OK" ? snapResult.snapshot : null;
     // Restore is only authorized for a fully-compatible version-2 snapshot.
@@ -169,13 +199,42 @@ export class GridTradingStrategy {
     // size. A legacy (v1) snapshot, an unknown version, a config mismatch, or a
     // missing/corrupt file all fall through to the untrusted path, which the
     // Phase-2 recovery gate protects (empty book + flat, or refuse).
+    // Phase B/D: the market-rules fingerprint joins the set. A snapshot
+    // built under a different tick (or a v2 snapshot that predates the
+    // fingerprint) cannot authorize a restore — quantized levels would map
+    // onto the wrong prices.
+    const tickMatches =
+      snapshot?.priceTickSize === undefined
+        ? false
+        : snapshot.priceTickSize === rules.priceTickSize;
+    if (snapshot !== null && snapshot.priceTickSize === undefined) {
+      logger.warn(
+        "Grid snapshot predates market-rules fingerprint; treating as untrusted",
+        {
+          botId: this.botId,
+          symbol: this.config.symbol,
+          snapshotVersion: snapshot.version,
+        }
+      );
+    } else if (snapshot !== null && !tickMatches) {
+      logger.warn(
+        "Grid snapshot market rules mismatch; treating as untrusted",
+        {
+          botId: this.botId,
+          symbol: this.config.symbol,
+          snapshotTick: snapshot.priceTickSize,
+          currentTick: rules.priceTickSize,
+        }
+      );
+    }
     const canRestore =
       snapshot !== null &&
       snapshot.version === GRID_SNAPSHOT_VERSION &&
       snapshot.symbol === this.config.symbol &&
       snapshot.gridSize === this.config.gridSize &&
       snapshot.gridRangePercent === this.config.gridRangePercent &&
-      snapshot.orderQuantity === this.config.orderQuantity;
+      snapshot.orderQuantity === this.config.orderQuantity &&
+      tickMatches;
 
     if (canRestore && snapshot) {
       // Restore at the saved baseline so level prices (and the live order IDs
@@ -510,13 +569,29 @@ export class GridTradingStrategy {
         ) {
           // Only the shortfall is bought: a level that already booked a partial
           // segment tops up to one slot instead of buying a second (C2).
+          // Defense in depth: the level price was quantized at build, but the
+          // final price is validated again here — never trust, always verify.
           const quantity = this.buyRemainder(level);
-          const outcome = await this.reconcile.ensureSlotOrder(
-            i,
-            "BUY",
-            level.price,
-            quantity
-          );
+          let outcome;
+          try {
+            outcome = await this.reconcile.ensureSlotOrder(
+              i,
+              "BUY",
+              this.requireTickValid(level.price, "BUY"),
+              quantity
+            );
+          } catch (error) {
+            logger.error(
+              "Refusing BUY placement: final price failed tick validation",
+              {
+                botId: this.botId,
+                symbol: this.config.symbol,
+                levelPrice: level.price,
+                error: messageOf(error),
+              }
+            );
+            continue;
+          }
           if (
             outcome.kind === "UNAVAILABLE" &&
             quantity < this.config.orderQuantity - QTY_EPSILON &&
@@ -585,10 +660,29 @@ export class GridTradingStrategy {
             const exitQty = fullyLong
               ? this.config.orderQuantity
               : this.heldQtyOf(level);
+            // Defense in depth: `sellTargetPrice` already quantizes up, but
+            // the final price is validated again — an off-tick exit never
+            // reaches the venue.
+            let validatedSell: number;
+            try {
+              validatedSell = this.requireTickValid(sellPrice, "SELL");
+            } catch (error) {
+              logger.error(
+                "Refusing SELL placement: final price failed tick validation",
+                {
+                  botId: this.botId,
+                  symbol: this.config.symbol,
+                  levelPrice: level.price,
+                  sellPrice,
+                  error: messageOf(error),
+                }
+              );
+              continue;
+            }
             const outcome = await this.reconcile.ensureSlotOrder(
               i,
               "SELL",
-              sellPrice,
+              validatedSell,
               exitQty,
               true
             );
@@ -1078,25 +1172,31 @@ export class GridTradingStrategy {
    * The sell used to be placed at `level.price` — the very price the buy had
    * just filled at, i.e. zero spread before fees. The exit now sits one grid
    * step above the level, or `takeProfitPercent` above the *executed* entry
-   * when the bot configures a take profit.
+   * when the bot configures a take profit. SELL limits round up (never sell
+   * below the calculated target), then the result is re-validated against
+   * the executed entry — a target at or below entry leaves the slot unarmed.
    *
    * Returns undefined when neither geometry yields a price strictly above the
-   * entry (a degenerate grid — e.g. a spacing that rounds to zero at the
-   * symbol's price scale). The caller then leaves the slot unarmed rather than
-   * placing a guaranteed-loss exit.
+   * entry. The caller then leaves the slot unarmed rather than placing a
+   * guaranteed-loss exit.
    */
   private sellTargetPrice(
     levelIndex: number,
     level: GridLevel
   ): number | undefined {
+    const tick = this.requireTick();
     const entry = level.entryPrice ?? level.price;
     const stepPrice = this.priceAboveLevel(levelIndex, level);
     const takeProfit = this.config.takeProfitPercent;
-    const target =
-      takeProfit !== undefined && takeProfit > 0
-        ? Number((entry * (1 + takeProfit / 100)).toFixed(2))
-        : stepPrice;
+    let target: number | undefined;
+    if (takeProfit !== undefined && takeProfit > 0) {
+      target = quantizePriceNumber(entry * (1 + takeProfit / 100), tick, "up");
+    } else {
+      target = stepPrice;
+    }
     if (target === undefined) return undefined;
+    // Defense in depth: the quantized price must still be tick-valid.
+    if (!isTickMultiple(target, tick)) return undefined;
     if (target > entry) return target;
     // Take-profit rounding can land back on the entry at coarse price scales;
     // the grid step (strictly above the level line) is the safe fallback.
@@ -1109,17 +1209,61 @@ export class GridTradingStrategy {
     levelIndex: number,
     level: GridLevel
   ): number | undefined {
+    const tick = this.requireTick();
     const above = this.levels[levelIndex + 1];
     if (above) return above.price;
     const spacing = this.gridSpacing();
     if (!(spacing > 0)) return undefined;
-    return Number((level.price + spacing).toFixed(2));
+    const quantized = quantizePriceNumber(level.price + spacing, tick, "up");
+    // The top-line projection must stay tick-valid and strictly above the
+    // level; otherwise the exit cannot be priced and stays unarmed.
+    if (!isTickMultiple(quantized, tick)) return undefined;
+    if (!(quantized > level.price)) return undefined;
+    return quantized;
   }
 
   /** Distance between adjacent grid lines (0 when the grid degenerates). */
   private gridSpacing(): number {
     if (this.levels.length < 2) return 0;
     return this.levels[1].price - this.levels[0].price;
+  }
+
+  /**
+   * Pinned tick for this strategy's market. Every price the grid builds or
+   * submits is quantized against it. Throws when rules were never resolved
+   * (a programming error — `initialize` resolves them first).
+   */
+  private requireTick(): string {
+    const tick = this.marketRules?.priceTickSize;
+    if (typeof tick !== "string" || tick.trim() === "") {
+      throw new CommandError(
+        false,
+        `Grid market rules missing for ${this.config.symbol} (refusing to price without a tick)`
+      );
+    }
+    return tick;
+  }
+
+  /**
+   * Validate one final price immediately before submission (defense in
+   * depth): it must be finite, positive, and an exact tick multiple. The
+   * strategy already quantizes, so a failure here is a bug — fail closed.
+   */
+  private requireTickValid(price: number, side: "BUY" | "SELL"): number {
+    const tick = this.requireTick();
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new CommandError(
+        false,
+        `Refusing to place ${side}: non-finite/non-positive price ${String(price)} for ${this.config.symbol}`
+      );
+    }
+    if (!isTickMultiple(numberToDecimalString(price), tick)) {
+      throw new CommandError(
+        false,
+        `Refusing to place ${side}: price ${price} is not a multiple of tick ${tick} for ${this.config.symbol}`
+      );
+    }
+    return price;
   }
 
   /**
@@ -1187,20 +1331,55 @@ export class GridTradingStrategy {
 
   /**
    * Build a fresh set of empty grid levels around a center price.
+   *
+   * Every level is quantized against the pinned market tick: BUY limits
+   * round down (never pay more than the calculated target). A grid whose
+   * quantized levels collapse (duplicates), leave the configured range, or
+   * degenerate to zero spacing fails init — levels are never silently
+   * merged and user parameters are never altered.
    */
   private buildLevels(centerPrice: number): GridLevel[] {
+    const tick = this.requireTick();
     const priceRange = centerPrice * (this.config.gridRangePercent / 100);
     const minPrice = centerPrice - priceRange / 2;
     const maxPrice = centerPrice + priceRange / 2;
     const gridSpacing = (maxPrice - minPrice) / this.config.gridSize;
 
     const levels: GridLevel[] = [];
+    const seen = new Set<string>();
     for (let i = 0; i <= this.config.gridSize; i++) {
-      const price = minPrice + i * gridSpacing;
-      levels.push({
-        price: Number(price.toFixed(2)),
-        filled: false,
-      });
+      const raw = minPrice + i * gridSpacing;
+      const price = quantizePriceNumber(raw, tick, "down");
+      const key = numberToDecimalString(price);
+      if (seen.has(key)) {
+        throw new CommandError(
+          false,
+          `Grid construction failed: quantized levels collapse to duplicate price ${key} at tick ${tick} (gridSize ${this.config.gridSize}, range ${this.config.gridRangePercent}%). Refusing to merge levels.`
+        );
+      }
+      seen.add(key);
+      levels.push({ price, filled: false });
+    }
+    // Post-quantize range guard: rounding down may pull the bottom level
+    // below the configured band. Fail closed rather than trade a level the
+    // user did not configure.
+    const bandMin = minPrice;
+    const bandMax = maxPrice;
+    for (const level of levels) {
+      if (level.price < bandMin || level.price > bandMax) {
+        throw new CommandError(
+          false,
+          `Grid construction failed: quantized price ${level.price} left the configured range [${bandMin}, ${bandMax}] at tick ${tick}. Refusing to trade outside the band.`
+        );
+      }
+    }
+    const spacing =
+      levels.length >= 2 ? levels[1]!.price - levels[0]!.price : 0;
+    if (this.config.gridSize >= 1 && !(spacing > 0)) {
+      throw new CommandError(
+        false,
+        `Grid construction failed: quantized spacing collapsed to ${spacing} at tick ${tick}. Refusing a degenerate grid.`
+      );
     }
     return levels;
   }
@@ -1209,6 +1388,12 @@ export class GridTradingStrategy {
    * Merge saved slot state onto freshly-built levels by exact price match.
    * Saved buyOrderId/sellOrderId/filled are carried over only when the level
    * price still exists in the rebuilt grid (guards against config changes).
+   *
+   * Phase B/D: matching is on the canonical decimal string, never raw
+   * float identity — `"100.5"` and `"100.50"` are the same level even if
+   * the JSON round-trip changed their binary form. A tick change rebuilds
+   * different prices and must miss here (the restore gate already refused
+   * the snapshot), never silently adopt a level at the wrong price.
    *
    * Slot id generations (G1): entries written by current builds always carry
    * both generations and are restored verbatim. A legacy (pre-G1) entry has
@@ -1221,13 +1406,13 @@ export class GridTradingStrategy {
     base: GridLevel[],
     saved: GridSnapshotLevel[]
   ): GridLevel[] {
-    const byPrice = new Map<number, GridSnapshotLevel>();
+    const byPrice = new Map<string, GridSnapshotLevel>();
     for (const entry of saved) {
-      byPrice.set(entry.price, entry);
+      byPrice.set(numberToDecimalString(entry.price), entry);
     }
 
     return base.map(level => {
-      const savedLevel = byPrice.get(level.price);
+      const savedLevel = byPrice.get(numberToDecimalString(level.price));
       if (savedLevel) {
         const currentGen =
           savedLevel.buyGen !== undefined || savedLevel.sellGen !== undefined;
@@ -1285,6 +1470,11 @@ export class GridTradingStrategy {
       // fill cumulatives are only meaningful under this slot size, so it is
       // recorded and compared on restore.
       orderQuantity: this.config.orderQuantity,
+      // Phase B/D market-rules fingerprint: the tick every level was
+      // quantized against. Restore compares it — a mismatch (or a v2
+      // snapshot that predates it) routes to the untrusted path instead of
+      // silently adopting levels built under different rules.
+      priceTickSize: this.marketRules?.priceTickSize,
       baselinePrice: this.baselinePrice,
       levels: this.levels.map((l): GridSnapshotLevel => ({
         price: l.price,

@@ -84,6 +84,14 @@ export interface GridSnapshot {
    */
   orderQuantity?: number;
   /**
+   * Market-rules fingerprint (Phase B/D): the `priceTickSize` every level
+   * was quantized against. Part of the restore compatibility set — a
+   * snapshot whose tick differs from the live rules (or predates the
+   * fingerprint) routes to the untrusted path. Optional so pre-fingerprint
+   * v2 snapshots still load (they just never authorize a restore).
+   */
+  priceTickSize?: string;
+  /**
    * Price the grid was built around. Restoring at this baseline keeps level
    * prices stable so saved order IDs map back onto the right levels.
    */

@@ -41,6 +41,7 @@ type MockExchange = {
   getPositions: jest.Mock;
   listOpenOrders: jest.Mock;
   queryOrderByClientOrderId: jest.Mock;
+  getMarketRules: jest.Mock;
 };
 
 function makeExchange(handles: string[] = []): MockExchange {
@@ -69,6 +70,11 @@ function makeExchange(handles: string[] = []): MockExchange {
     queryOrderByClientOrderId: jest
       .fn()
       .mockResolvedValue({ kind: "NOT_FOUND" }),
+    getMarketRules: jest.fn().mockResolvedValue({
+      exchange: "fake",
+      symbol: CONFIG.symbol,
+      priceTickSize: "0.01",
+    }),
   };
 }
 
@@ -91,6 +97,7 @@ async function seedState(botId: string, state: LevelState): Promise<void> {
     gridSize: CONFIG.gridSize,
     gridRangePercent: CONFIG.gridRangePercent,
     orderQuantity: CONFIG.orderQuantity,
+    priceTickSize: "0.01",
     baselinePrice: 100,
     levels: [
       { price: LEVEL_0, filled: false, ...state },

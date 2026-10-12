@@ -42,6 +42,11 @@ function fakeExchange(script: Script): ExchangeClient & {
     getPositions: async () => [],
     getAccountInfo: async () => ({ total_value: 0, max_leverage: 1 }),
     listOpenOrders: async () => [],
+    getMarketRules: async () => ({
+      exchange: "fake",
+      symbol: CONFIG.symbol,
+      priceTickSize: "0.01",
+    }),
     queryOrderByClientOrderId: async (_symbol: string, id: string) =>
       script.query(id),
   };

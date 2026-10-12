@@ -29,8 +29,14 @@ import { OrderRequest, OrderResponse } from "../../types/strategy";
 import {
   DEFAULT_EXCHANGE_HTTP_TIMEOUT_MS,
   ExchangeOpenOrder,
+  MarketRules,
   OrderLookup,
 } from "../../domain/exchange";
+import {
+  validateMarketRules,
+  isValidTickSizeString,
+} from "../../domain/market-rules";
+import { CommandError } from "../../application/command-error";
 import { toOrderlyOrderPayload } from "./payload";
 
 interface OrderlyPosition {
@@ -477,6 +483,47 @@ export class OrderlyClient {
     return response.data.data;
   }
 
+  /**
+   * Authoritative price rules from `GET /v1/public/info/{symbol}`.
+   *
+   * The venue's rule is `quote_tick` with the price filter
+   * `(price - quote_min) % quote_tick == 0` — the engine quantizes against
+   * `quote_tick` and validates after. A missing/unparseable `quote_tick`
+   * fails closed (never guessed).
+   */
+  async getMarketRules(symbol: string): Promise<MarketRules> {
+    const path = `/v1/public/info/${encodeURIComponent(symbol)}`;
+    let payload: unknown;
+    try {
+      const response = await this.client.get(path);
+      payload = response.data?.data ?? response.data;
+    } catch (error) {
+      throw new CommandError(
+        false,
+        `Market rules unavailable for kodiak:${symbol}: ${messageOf(error)}`
+      );
+    }
+    const row = (payload ?? {}) as Record<string, unknown>;
+    const quoteTick = row.quote_tick;
+    const tickStr =
+      typeof quoteTick === "number"
+        ? String(quoteTick)
+        : typeof quoteTick === "string"
+          ? quoteTick.trim()
+          : "";
+    if (!isValidTickSizeString(tickStr)) {
+      throw new CommandError(
+        false,
+        `Invalid quote_tick ${JSON.stringify(quoteTick)} for kodiak:${symbol} (no guessed precision)`
+      );
+    }
+    return validateMarketRules({
+      exchange: "kodiak",
+      symbol: String(row.symbol ?? symbol),
+      priceTickSize: tickStr,
+    });
+  }
+
   async getKlines(
     symbol: string,
     interval: string = "1m",
@@ -486,6 +533,10 @@ export class OrderlyClient {
     const response = await this.client.get(path);
     return response.data.data.rows || [];
   }
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function createOrderlyClient(

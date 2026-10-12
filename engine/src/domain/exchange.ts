@@ -153,6 +153,18 @@ export interface ExchangeOpenOrder {
 export const DEFAULT_EXCHANGE_HTTP_TIMEOUT_MS = 8000;
 
 /**
+ * Price rules for one exchange market (Phase B).
+ *
+ * `priceTickSize` is a decimal string at the API boundary (`"0.05"`), never
+ * a float: decimal places and tick size are not the same thing.
+ */
+export interface MarketRules {
+  exchange: string;
+  symbol: string;
+  priceTickSize: string;
+}
+
+/**
  * Exchange client interface.
  * All exchange implementations must implement this interface.
  */
@@ -202,6 +214,18 @@ export interface ExchangeClient {
    * `queryOrderByClientOrderId` rather than treating them as "absent".
    */
   listOpenOrders(symbol: string): Promise<ExchangeOpenOrder[]>;
+
+  /**
+   * Price rules for a symbol — the market's authoritative tick size.
+   *
+   * Optional on the type so third-party / legacy fakes still compile, but
+   * REQUIRED at runtime on the grid path: `resolveMarketRules` fails closed
+   * when the method is absent. Implementations derive it from venue metadata
+   * (Lighter: `supported_price_decimals`; Kodiak: `quote_tick` from
+   * `GET /v1/public/info/{symbol}`) and must throw — never guess — when
+   * metadata is missing or malformed.
+   */
+  getMarketRules?(symbol: string): Promise<MarketRules>;
 
   /**
    * Look up one order by the client order id the engine assigned at

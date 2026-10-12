@@ -52,6 +52,11 @@ function fakeExchange(script: Script): ExchangeClient & {
       script.listOpenOrders ? script.listOpenOrders() : [],
     queryOrderByClientOrderId: async (_s: string, id: string) =>
       script.query ? script.query(id) : notFound(),
+    getMarketRules: async (symbol: string) => ({
+      exchange: "fake",
+      symbol,
+      priceTickSize: "0.01",
+    }),
   } as unknown as ExchangeClient & { created: unknown[] };
 }
 

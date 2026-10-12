@@ -24,6 +24,7 @@ import {
   ExchangeOrderResponse,
   ExchangePosition,
   ExchangeTicker,
+  MarketRules,
   OrderLookup,
 } from "../../../domain/exchange";
 
@@ -37,6 +38,7 @@ export interface FakeExchangeHandlers {
   getAccountInfo?: () => unknown;
   getFeeRates?: () => unknown;
   listOpenOrders?: (symbol: string) => unknown;
+  getMarketRules?: (symbol: string) => unknown;
   queryOrderByClientOrderId?: (
     symbol: string,
     clientOrderId: string
@@ -69,6 +71,8 @@ export class FakeExchange implements ExchangeClient {
     venueReported: false,
     exact: true,
   };
+  /** Tick the fake market trades at — `0.01` keeps legacy prices valid. */
+  priceTickSize = "0.01";
 
   private handlers: FakeExchangeHandlers = {};
   private failures = new Map<
@@ -174,6 +178,13 @@ export class FakeExchange implements ExchangeClient {
     const s = this.scripted("listOpenOrders", symbol);
     if (s !== undefined) return s as ExchangeOpenOrder[];
     return this.openOrders;
+  }
+
+  async getMarketRules(symbol: string): Promise<MarketRules> {
+    this.enter("getMarketRules", symbol);
+    const s = this.scripted("getMarketRules", symbol);
+    if (s !== undefined) return s as MarketRules;
+    return { exchange: "fake", symbol, priceTickSize: this.priceTickSize };
   }
 
   async queryOrderByClientOrderId(

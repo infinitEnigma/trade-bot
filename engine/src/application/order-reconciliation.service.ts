@@ -48,6 +48,11 @@ import {
 import { CommandError } from "./command-error";
 import { TradeReporter } from "./trade-reporter";
 import { OrderManager } from "./order-manager";
+import { resolveMarketRules } from "../domain/market-rules";
+import {
+  isTickMultiple,
+  numberToDecimalString,
+} from "../utils/price-quantization";
 import { logger } from "../utils/logger";
 
 /** Venue status vocabulary → the machine. Covers Orderly and Lighter. */
@@ -96,6 +101,49 @@ export class OrderReconciliationService {
     reduceOnly = false
   ): Promise<SlotOutcome> {
     const clientOrderId = this.manager.idFor(levelIndex, side);
+    // Phase B/D order-boundary guard: the final price is validated against
+    // the market's authoritative tick before anything reaches the adapter.
+    // This is defense in depth behind the strategy's own quantization — an
+    // off-tick price here is a bug, and it fails closed without a venue call.
+    try {
+      const rules = await resolveMarketRules(
+        this.exchange,
+        this.symbol,
+        "order-boundary"
+      );
+      if (
+        !Number.isFinite(price) ||
+        price <= 0 ||
+        !isTickMultiple(numberToDecimalString(price), rules.priceTickSize)
+      ) {
+        const reason = `price ${String(price)} is not a multiple of tick ${rules.priceTickSize} for ${this.symbol} (refusing placement)`;
+        logger.error("Order boundary rejected off-tick price", {
+          botId: this.botId,
+          symbol: this.symbol,
+          side,
+          price,
+          priceTickSize: rules.priceTickSize,
+        });
+        return { kind: "UNAVAILABLE", reason };
+      }
+    } catch (error) {
+      // Rules themselves unavailable: fail closed without a venue call.
+      // Retryable only when the underlying error says so (transport), else
+      // the slot freezes until rules resolve — never guessed precision.
+      const retryable = error instanceof CommandError ? error.retryable : true;
+      const reason = error instanceof Error ? error.message : String(error);
+      if (!retryable) {
+        logger.error("Order boundary refused placement: market rules invalid", {
+          botId: this.botId,
+          symbol: this.symbol,
+          side,
+          reason,
+        });
+      }
+      this.manager.markUnavailable(clientOrderId, reason);
+      return { kind: "UNAVAILABLE", reason };
+    }
+
     this.manager.beginSubmit(clientOrderId, levelIndex, side, price, quantity);
     this.manager.markSubmitting(clientOrderId);
 

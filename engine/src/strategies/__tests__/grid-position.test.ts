@@ -44,6 +44,7 @@ type MockExchange = {
   getPositions: jest.Mock;
   listOpenOrders: jest.Mock;
   queryOrderByClientOrderId: jest.Mock;
+  getMarketRules: jest.Mock;
 };
 
 function makeExchange(): MockExchange {
@@ -61,6 +62,11 @@ function makeExchange(): MockExchange {
     queryOrderByClientOrderId: jest
       .fn()
       .mockResolvedValue({ kind: "NOT_FOUND" }),
+    getMarketRules: jest.fn().mockResolvedValue({
+      exchange: "fake",
+      symbol: CONFIG.symbol,
+      priceTickSize: "0.01",
+    }),
   };
 }
 
@@ -254,6 +260,7 @@ describe("GridTradingStrategy position report (Phase 4, C4)", () => {
       gridSize: CONFIG.gridSize,
       gridRangePercent: CONFIG.gridRangePercent,
       orderQuantity: CONFIG.orderQuantity,
+      priceTickSize: "0.01",
       baselinePrice: 100,
       levels: [
         // A partial long: 0.4 booked at an executed 97.4…

@@ -37,6 +37,7 @@ type MockExchange = {
   getPositions: jest.Mock;
   listOpenOrders: jest.Mock;
   queryOrderByClientOrderId: jest.Mock;
+  getMarketRules: jest.Mock;
 };
 
 function makeExchange(): MockExchange {
@@ -50,6 +51,11 @@ function makeExchange(): MockExchange {
     queryOrderByClientOrderId: jest
       .fn()
       .mockResolvedValue({ kind: "NOT_FOUND" }),
+    getMarketRules: jest.fn().mockResolvedValue({
+      exchange: "fake",
+      symbol: CONFIG.symbol,
+      priceTickSize: "0.01",
+    }),
   };
 }
 
