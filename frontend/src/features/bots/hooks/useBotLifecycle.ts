@@ -126,6 +126,7 @@ export function useBotLifecycle(botId?: string) {
           config?: unknown;
           needs_user_action?: boolean;
           needs_user_action_reason?: string | null;
+          exchange_account_id?: string | null;
           runs?: BotInstance["runs"];
         }) => ({
           // L19: `id` is the session id, never a strategy id — stop,
@@ -152,6 +153,10 @@ export function useBotLifecycle(botId?: string) {
           // connection-lost.
           needsUserAction: bot.needs_user_action === true,
           needsUserActionReason: bot.needs_user_action_reason ?? null,
+          // Phase 3: bound venue account of the session (C3a); null on
+          // legacy rows — strategy→account resolution goes through
+          // `getExchangeAccountForStrategy`, never the strategy row.
+          exchange_account_id: bot.exchange_account_id ?? null,
           // D4 sessions: runs attached to this session (backend list query).
           runs: bot.runs,
           config: bot.config || {

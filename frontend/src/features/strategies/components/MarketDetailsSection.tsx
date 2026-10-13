@@ -9,6 +9,7 @@ import {
   type ChartSymbolGroup,
 } from "../utils/chartSymbolPicker";
 import type { PortfolioSummary } from "../../../shared/hooks/usePortfolioSummary";
+import type { OpenOrderRow } from "../../../infrastructure/api/market";
 
 // Lazy load the heavy chart for the same performance reason the page did.
 const CandlestickChart = lazy(
@@ -23,6 +24,12 @@ interface MarketDetailsSectionProps {
   onChartSelectionChange: (selection: ChartSelection) => void;
   portfolioSummary: PortfolioSummary;
   isVerified: boolean;
+  /**
+   * Phase 3: the open-orders book for the charted market — forwarded to the
+   * chart, which draws the levels/markers. The page scopes it to the charted
+   * venue's ACTIVE account; rows arrive already filtered by symbol.
+   */
+  orders?: OpenOrderRow[];
 }
 
 /**
@@ -42,6 +49,7 @@ export const MarketDetailsSection: React.FC<MarketDetailsSectionProps> = ({
   onChartSelectionChange,
   portfolioSummary,
   isVerified,
+  orders,
 }) => {
   const [open, setOpen] = useState(true);
 
@@ -132,6 +140,7 @@ export const MarketDetailsSection: React.FC<MarketDetailsSectionProps> = ({
                   exchange: chartSelection.exchange,
                   environment: chartSelection.environment,
                 }}
+                orders={orders}
               />
             </Suspense>
           </div>

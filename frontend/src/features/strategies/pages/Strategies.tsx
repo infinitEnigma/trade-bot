@@ -8,7 +8,6 @@ import {
   tradingApi,
   accountsApi,
 } from "../../../infrastructure/api";
-import { strategyService } from "../services/strategyService";
 import { Strategy } from "../../../shared/types";
 import { Plus, BarChart3, AlertTriangle } from "lucide-react";
 import { EngineJournalIntegrityNotice } from "../components/EngineJournalIntegrityNotice";
@@ -22,13 +21,11 @@ import {
 } from "../utils/chartSymbolPicker";
 import { StrategyOverview } from "../components/StrategyOverview";
 import { MarketDetailsSection } from "../components/MarketDetailsSection";
+import { StrategyMasterList } from "../components/StrategyMasterList";
+import { StrategyWorkspace } from "../components/StrategyWorkspace";
+import { useOpenOrders } from "../hooks";
 
 // Lazy load heavy components for better performance
-const StrategyCard = lazy(() =>
-  import("../components/StrategyCard").then(module => ({
-    default: module.StrategyCard,
-  }))
-);
 const StrategyForm = lazy(() =>
   import("../components/StrategyForm").then(module => ({
     default: module.StrategyForm,
@@ -41,6 +38,7 @@ import { usePortfolioSummary } from "../../../shared/hooks";
 import { useAuth } from "../../auth";
 import { useBotsList, getStateDisplayInfo } from "../../bots/hooks";
 import {
+  getExchangeAccountForStrategy,
   getSessionForStrategy,
   getStrategyConfig,
 } from "../types/strategies.types";
@@ -65,6 +63,14 @@ const Strategies: React.FC = React.memo(() => {
   // ConfirmDialog (replacing the native confirm()); we hold the full object so
   // the dialog can name it and show whether a bot is attached + its state.
   const [pendingDelete, setPendingDelete] = useState<Strategy | null>(null);
+  // Phase 3 (slice 4): master-list selection — the workspace renders this
+  // strategy. Derived during render (P1 pattern): an id that no longer
+  // resolves (deleted row, refetch reorder) falls back to the first strategy,
+  // so a non-empty list always shows a workspace and the detail pane never
+  // blanks.
+  const [selectedStrategyId, setSelectedStrategyId] = useState<string | null>(
+    null
+  );
   const queryClient = useQueryClient();
 
   // Note: exchange connectivity check removed for simplicity
@@ -151,6 +157,13 @@ const Strategies: React.FC = React.memo(() => {
   const { bots } = useBotsList();
 
   const strategies = strategiesData?.success ? strategiesData.data : [];
+  // Phase 3 (slice 4): the workspace's strategy — the operator's explicit
+  // pick wins; anything else falls back to the first row (initial load,
+  // deleted selection). Pure derivation, no effect needed.
+  const selectedStrategy =
+    (strategies as Strategy[]).find(s => s.id === selectedStrategyId) ??
+    (strategies as Strategy[])[0] ??
+    null;
 
   // P1: all strategy symbols for the chart picker (locked decision: every
   // strategy, not just RUNNING).
@@ -227,6 +240,46 @@ const Strategies: React.FC = React.memo(() => {
     0
   );
 
+  // Phase 3 (slice 3): the open-orders book for the charted market, drawn as
+  // levels/markers on the chart. Orders are account-scoped on the backend, so
+  // scope to the first ACTIVE account of the CHARTED venue — the chart is a
+  // market view; the master-detail workspace (slice 4) scopes by the selected
+  // strategy's own account. `symbol` matches the chart selection (backend
+  // normalises venue forms, bare `BTC` included). No ACTIVE account of the
+  // charted venue ⇒ nothing of ours can rest there, so the query stays off.
+  const chartAccountId = (accountsQuery.data?.data?.accounts ?? []).find(
+    account =>
+      account.status === "ACTIVE" &&
+      account.exchange === chartSelection.exchange &&
+      account.environment === chartSelection.environment
+  )?.id;
+  const chartOrdersQuery = useOpenOrders(
+    { exchangeAccountId: chartAccountId, symbol: chartSymbol },
+    { enabled: !!chartAccountId }
+  );
+
+  // Phase 3 (slice 4): the workspace's open-orders table — scoped to the
+  // SELECTED STRATEGY's venue account (strategy → hosting session → account
+  // via getExchangeAccountForStrategy; sessions carry the binding, strategy
+  // rows never do). A null resolution (no session, or a legacy row predating
+  // the C3a binding) falls back to the backend's default-account read — the
+  // documented D4 unscoped fallback — and the strategy's symbol narrows the
+  // book. Same hook as the chart's levels: an identical scope shares one
+  // cache entry; the chart above stays a market view of the charted venue.
+  const workspaceOrdersQuery = useOpenOrders(
+    {
+      exchangeAccountId:
+        (selectedStrategy &&
+          getExchangeAccountForStrategy(bots, selectedStrategy.id)) ||
+        undefined,
+      symbol:
+        (selectedStrategy &&
+          getStrategyConfig(selectedStrategy)?.config.symbol) ||
+        undefined,
+    },
+    { enabled: !!selectedStrategy }
+  );
+
   // Delete strategy mutation.
   // P1: surface the server's actionable error (e.g. a bot that must be stopped
   // first, an ownership/lifecycle refusal) instead of a generic toast. The
@@ -266,18 +319,6 @@ const Strategies: React.FC = React.memo(() => {
   // accounts. Each reads its own real source (replaces the old useBalance
   // strip where all four cards showed the same venue total).
   const portfolioSummary = usePortfolioSummary();
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(value);
-  };
-
-  const formatStrategyType = (type: Strategy["type"]) =>
-    strategyService.formatStrategyType(type);
-  const getStrategyTypeColor = (type: Strategy["type"]) =>
-    strategyService.getStrategyTypeColor(type);
 
   return (
     <PageLayout
@@ -411,39 +452,36 @@ const Strategies: React.FC = React.memo(() => {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {strategies.map((strategy: Strategy) => {
-              const bot = getBotForStrategy(strategy.id);
-
-              return (
-                <Suspense
-                  key={strategy.id}
-                  fallback={
-                    <div className="glass-card p-6">
-                      <div className="animate-pulse">
-                        <div className="w-24 h-6 bg-white/10 rounded mb-4"></div>
-                        <div className="w-full h-4 bg-white/10 rounded"></div>
-                      </div>
-                    </div>
-                  }
-                >
-                  <StrategyCard
-                    strategy={strategy}
-                    bot={bot}
-                    onEdit={setEditingStrategy}
-                    onDelete={handleDeleteStrategy}
-                    onBotStatusChange={() => {
-                      queryClient.invalidateQueries({
-                        queryKey: ["bot-instances"],
-                      });
-                    }}
-                    formatCurrency={formatCurrency}
-                    formatStrategyType={formatStrategyType}
-                    getStrategyTypeColor={getStrategyTypeColor}
-                  />
-                </Suspense>
-              );
-            })}
+          /* Phase 3 (slice 4): master–detail — the compact selectable list
+             beside the selected strategy's workspace (control panel). The
+             market/portfolio reference stays below (Phase 2 IA); the chart
+             remains a market view (first ACTIVE account of the charted
+             venue) while the workspace's orders scope to the selected
+             strategy's own account. */
+          <div className="grid grid-cols-1 lg:grid-cols-[19rem_minmax(0,1fr)] gap-6 items-start">
+            <StrategyMasterList
+              strategies={strategies as Strategy[]}
+              bots={bots}
+              selectedId={selectedStrategy?.id}
+              onSelect={strategy => setSelectedStrategyId(strategy.id)}
+            />
+            {selectedStrategy && (
+              <StrategyWorkspace
+                strategy={selectedStrategy}
+                bot={getBotForStrategy(selectedStrategy.id)}
+                orders={workspaceOrdersQuery.data?.data ?? []}
+                ordersLoading={workspaceOrdersQuery.isLoading}
+                ordersError={workspaceOrdersQuery.isError}
+                ordersUpdatedAt={workspaceOrdersQuery.dataUpdatedAt}
+                onEdit={setEditingStrategy}
+                onDelete={handleDeleteStrategy}
+                onBotStatusChange={() => {
+                  queryClient.invalidateQueries({
+                    queryKey: ["bot-instances"],
+                  });
+                }}
+              />
+            )}
           </div>
         )}
 
@@ -457,6 +495,7 @@ const Strategies: React.FC = React.memo(() => {
           onChartSelectionChange={setChartSelectionOverride}
           portfolioSummary={portfolioSummary}
           isVerified={user?.userLevel === "VERIFIED"}
+          orders={chartOrdersQuery.data?.data ?? []}
         />
 
         {/* Strategy Form Modals */}
@@ -485,7 +524,12 @@ const Strategies: React.FC = React.memo(() => {
                 queryClient.invalidateQueries({ queryKey: ["strategies"] });
                 toast.success("Strategy created successfully!");
                 // Phase 2: created inactive → offer the start flow at once.
-                if (created) setStartPromptStrategy(created);
+                // Phase 3: also bind the workspace to the new strategy so
+                // the prompt's target and the detail pane agree.
+                if (created) {
+                  setStartPromptStrategy(created);
+                  setSelectedStrategyId(created.id);
+                }
               }}
             />
           </Suspense>

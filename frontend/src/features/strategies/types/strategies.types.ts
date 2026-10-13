@@ -84,6 +84,13 @@ export interface BotInstance {
    * D4 sessions: runs attached to this session (backend list query).
    */
   runs?: StrategyRun[];
+  /**
+   * Phase 3: the session's bound venue account (C3a
+   * `bot_instances.exchange_account_id`; nullable on legacy rows). Sessions
+   * carry it, strategies do not — the workspace resolves its account via
+   * `getExchangeAccountForStrategy`.
+   */
+  exchange_account_id?: string | null;
 }
 
 /**
@@ -109,6 +116,23 @@ export function getSessionForStrategy<
   T extends { runs?: StrategyRun[]; strategy_id?: string },
 >(bots: T[], strategyId: string): T | undefined {
   return bots.find(b => b.runs?.some(r => r.strategy_id === strategyId));
+}
+
+/**
+ * Phase 3: the venue account the selected strategy trades on — via its
+ * hosting session (strategies themselves carry no account, so the path is
+ * strategy → session → account). `null` when the strategy has no session or
+ * the session predates the C3a binding; the caller then falls back to the
+ * unscoped read (backend answers its default account).
+ */
+export function getExchangeAccountForStrategy<
+  T extends {
+    runs?: StrategyRun[];
+    strategy_id?: string;
+    exchange_account_id?: string | null;
+  },
+>(bots: T[], strategyId: string): string | null {
+  return getSessionForStrategy(bots, strategyId)?.exchange_account_id ?? null;
 }
 
 export interface TradingBalance {

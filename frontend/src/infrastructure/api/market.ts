@@ -5,6 +5,38 @@ import { globalRequestManager } from "../request-manager";
 import type { AccountExchange, AccountEnvironment } from "./accounts";
 
 /**
+ * One row of `GET /api/market/orders` — the strategy workspace's open-orders
+ * table (Phase 3).
+ *
+ * Mirrors `OpenOrderRow` in `backend/src/infrastructure/external/
+ * open-orders.ts` — the venue-neutral contract both Kodiak/Orderly and
+ * Lighter readers map onto. Re-declared here because the frontend never
+ * imports backend modules (same pattern as `LedgerTradeRow` in trading.ts).
+ */
+export interface OpenOrderRow {
+  /** Venue order handle — Orderly `order_id`; Lighter client order index. */
+  orderId: string;
+  /** Human-readable client id when the venue echoes one (else `null`). */
+  clientOrderId: string | null;
+  symbol: string;
+  side: "BUY" | "SELL";
+  /** Venue-native order type uppercased (`LIMIT`, `MARKET`); `""` if absent. */
+  orderType: string;
+  /** Limit price in human units; `null` when the row carries no fixed price. */
+  price: number | null;
+  /** Order size in base units; `null` when the row carries none. */
+  quantity: number | null;
+  /** Venue cumulative fill in base units — never conflated with `quantity`. */
+  filledQuantity: number;
+  /** Venue-native status uppercased (`NEW`, `OPEN`, `PARTIALLY_FILLED`…). */
+  status: string;
+  /** Created-at epoch milliseconds; `null` when the venue omits it. */
+  createdAtMs: number | null;
+  /** Which venue answered — lets the table badge rows without a second call. */
+  exchange: "kodiak" | "lighter";
+}
+
+/**
  * Market data API endpoints
  * Handles market prices, trading data, and TradingView integration with global deduplication
  */
@@ -92,6 +124,34 @@ export const marketApi = {
         httpClient
           .getClient()
           .get("/api/market/positions")
+          .then(r => r.data),
+      "marketApi"
+    );
+  },
+
+  /**
+   * Phase 3: the workspace's open-orders read — venue-direct rows for one
+   * account, optionally narrowed to `symbol`. The backend scopes by
+   * `exchangeAccountId` (legacy Kodiak account when omitted) and dispatches
+   * to the right venue reader. Both params participate in the dedupe key so
+   * two accounts (or two symbols) never share one in-flight entry.
+   */
+  async getOpenOrders(
+    params: { exchangeAccountId?: string; symbol?: string } = {}
+  ) {
+    const key = `market:orders:${params.exchangeAccountId ?? "default"}:${params.symbol ?? "all"}`;
+    // Only present keys go on the query string — the backend reads blank/
+    // absent values as "whole book", never as an empty-string filter.
+    const query: { exchangeAccountId?: string; symbol?: string } = {};
+    if (params.exchangeAccountId)
+      query.exchangeAccountId = params.exchangeAccountId;
+    if (params.symbol) query.symbol = params.symbol;
+    return globalRequestManager.deduplicateRequest(
+      key,
+      () =>
+        httpClient
+          .getClient()
+          .get("/api/market/orders", { params: query })
           .then(r => r.data),
       "marketApi"
     );

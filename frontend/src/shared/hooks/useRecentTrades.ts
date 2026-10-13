@@ -39,6 +39,11 @@ export interface RecentTradesResult {
   isLoading: boolean;
   isFetching: boolean;
   error: unknown;
+  /**
+   * Epoch ms of the last successful fetch — the slice-5 freshness chips age
+   * this; 0 while the query has never resolved.
+   */
+  dataUpdatedAt: number;
   /** Re-fetch on demand (e.g. a refresh button). */
   refetch: () => void;
 }
@@ -74,6 +79,7 @@ export const useRecentTrades = (
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     error: query.error,
+    dataUpdatedAt: query.dataUpdatedAt,
     refetch: () => void query.refetch(),
   };
 };

@@ -136,6 +136,24 @@ describe("useBotLifecycle bot-instances mapping (L19)", () => {
     await waitFor(() => expect(result.current.bot?.id).toBe("session-1"));
   });
 
+  it("carries the session's exchange_account_id through the mapping (Phase 3)", async () => {
+    vi.mocked(tradingApi.getBotInstances).mockResolvedValue({
+      success: true,
+      data: [{ ...API_ROW, exchange_account_id: "acct-7" }],
+    });
+    const { result } = renderHook(() => useBotLifecycle("bot-1"), { wrapper });
+    await waitFor(() => expect(result.current.bot?.id).toBe("bot-1"));
+    expect(result.current.bot?.exchange_account_id).toBe("acct-7");
+  });
+
+  it("maps rows without a bound account to exchange_account_id null (Phase 3)", async () => {
+    const { result } = renderHook(() => useBotLifecycle("bot-1"), { wrapper });
+    await waitFor(() => expect(result.current.bot?.id).toBe("bot-1"));
+    // Legacy rows predate the C3a binding — the workspace must read that as
+    // "no account" (unscoped fallback), never as undefined-vs-null ambiguity.
+    expect(result.current.bot?.exchange_account_id).toBeNull();
+  });
+
   it("coerces stringified DECIMAL total_pnl/total_trades to numbers", async () => {
     // Postgres DECIMAL(20,8) columns come back from node-postgres as strings.
     // A string sneaking into `total_pnl` made BotControls' RUNNING branch throw

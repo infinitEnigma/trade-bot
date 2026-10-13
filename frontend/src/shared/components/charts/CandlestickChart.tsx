@@ -3,16 +3,22 @@
 import React, { useEffect, useRef } from "react";
 import {
   createChart,
+  createSeriesMarkers,
   IChartApi,
   ISeriesApi,
+  IPriceLine,
+  ISeriesMarkersPluginApi,
   ColorType,
   CrosshairMode,
   CandlestickSeries,
   HistogramSeries,
+  LineStyle,
+  SeriesMarker,
   Time,
 } from "lightweight-charts";
 import { useChartData, ChartVenue } from "../../hooks/useChartData";
 import { useVisibility } from "../../hooks/useVisibility";
+import type { OpenOrderRow } from "../../../infrastructure/api/market";
 
 export interface CandleData {
   time: number;
@@ -23,12 +29,38 @@ export interface CandleData {
   volume?: number;
 }
 
+/** Phase 3: shared colour for an order's price level + placement marker. */
+const ORDER_SIDE_COLOR = {
+  BUY: "#10b981",
+  SELL: "#ef4444",
+} as const;
+
+/**
+ * Compare an order row's symbol against the charted `symbol`. Backend order
+ * rows always carry the `PERP_*_USDC` display form (both venues normalise —
+ * see backend `open-orders.ts`), while the chart dropdown can select the
+ * Lighter bare form (`BTC`), so normalise before comparing.
+ */
+const toDisplaySymbol = (raw: string): string => {
+  const symbol = raw.trim().toUpperCase();
+  if (!symbol) return "";
+  return symbol.includes("_") ? symbol : `PERP_${symbol}_USDC`;
+};
+
 interface CandlestickChartProps {
   symbol: string;
   interval: string;
   height?: number;
   /** X3: venue whose candles to chart (absent → Kodiak/Orderly default). */
   venue?: ChartVenue;
+  /**
+   * Phase 3: the open-orders book for the charted market — each priced order
+   * draws a dashed side-coloured limit level (labelled side + size on the
+   * price axis) and each order with a creation timestamp draws a placement
+   * marker at that time. Rows for other symbols are ignored defensively
+   * (`toDisplaySymbol`), so callers may pass an unfiltered account book.
+   */
+  orders?: OpenOrderRow[];
 }
 
 export const CandlestickChart: React.FC<CandlestickChartProps> = ({
@@ -36,11 +68,16 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   interval,
   height = 400,
   venue,
+  orders,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  // Phase 3: the v5 markers plugin holding the order-placement arrows (the
+  // price lines live only inside the orders effect below — its cleanup owns
+  // their removal via the effect closure).
+  const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const isChartReady = useRef(false);
 
   // Visibility detection - pause WebSocket when page loses focus
@@ -168,6 +205,9 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       chartRef.current = chart;
       candlestickSeriesRef.current = candlestickSeries;
       volumeSeriesRef.current = volumeSeries;
+      // Phase 3: markers are a lightweight-charts v5 series plugin — created
+      // once per chart so the order effect below only swaps the marker list.
+      markersPluginRef.current = createSeriesMarkers(candlestickSeries, []);
       isChartReady.current = true;
 
       // Handle window resize
@@ -183,6 +223,9 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
 
       return () => {
         window.removeEventListener("resize", handleResize);
+        // Drop the plugin ref BEFORE the chart dies so a later orders-effect
+        // run never calls into a destroyed plugin.
+        markersPluginRef.current = null;
         if (chart) {
           chart.remove();
         }
@@ -270,6 +313,87 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     // `chartData` is read above (last candle), so it is a genuine dependency:
     // a redraw must re-apply the current mark price to the newest candle.
   }, [chartData, markPriceData]);
+
+  // Phase 3: draw the open-orders book for this market. Redraws whenever the
+  // order set, the loaded candles (they gate marker placement) or the symbol
+  // change; cleanup removes the lines it created and empties the markers so a
+  // scope/symbol switch never leaves stale levels on the pane.
+  useEffect(() => {
+    const series = candlestickSeriesRef.current;
+    const markersPlugin = markersPluginRef.current;
+    if (!isChartReady.current || !series || !markersPlugin) return;
+
+    // Lines created by THIS run — the cleanup below owns their removal via
+    // this closure (the unmount teardown order makes a shared ref unsafe: the
+    // chart-init effect's cleanup runs first and would null it).
+    const lines: IPriceLine[] = [];
+    try {
+      const drawnSymbol = toDisplaySymbol(symbol);
+      const visibleOrders = (orders ?? []).filter(
+        order => toDisplaySymbol(order.symbol) === drawnSymbol
+      );
+
+      // Limit levels — one dashed line per priced order, side-coloured,
+      // labelled with side + size on the price axis.
+      for (const order of visibleOrders) {
+        if (order.price == null || !Number.isFinite(order.price)) continue;
+        lines.push(
+          series.createPriceLine({
+            price: order.price,
+            color: ORDER_SIDE_COLOR[order.side],
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `${order.side} ${order.quantity ?? ""}`.trim(),
+          })
+        );
+      }
+
+      // Placement markers at the orders' creation time. The plugin only
+      // renders markers inside the loaded candle range, so older (or
+      // venue-clock-skewed future) timestamps clamp to the first/last candle
+      // instead of silently disappearing; rows without a timestamp (MARKET
+      // fills) get a level only.
+      if (chartData && chartData.length > 0) {
+        const firstTime = chartData[0].time;
+        const lastTime = chartData[chartData.length - 1].time;
+        const markers: SeriesMarker<Time>[] = [];
+        for (const order of visibleOrders) {
+          if (order.createdAtMs == null) continue;
+          const createdAt = Math.floor(order.createdAtMs / 1000);
+          markers.push({
+            time: Math.min(Math.max(createdAt, firstTime), lastTime) as Time,
+            position: order.side === "BUY" ? "belowBar" : "aboveBar",
+            shape: order.side === "BUY" ? "arrowUp" : "arrowDown",
+            color: ORDER_SIDE_COLOR[order.side],
+            text: order.orderType || undefined,
+          });
+        }
+        markersPlugin.setMarkers(markers);
+      } else {
+        markersPlugin.setMarkers([]);
+      }
+    } catch (ordersError) {
+      console.error("Failed to draw open orders:", ordersError);
+    }
+
+    return () => {
+      // On unmount React tears effects down in declaration order, so the
+      // chart may already be destroyed — the try/catch keeps the removal
+      // attempt safe either way (the lines die with their series regardless).
+      for (const line of lines) {
+        try {
+          series.removePriceLine(line);
+        } catch {
+          // Series already gone — nothing left to remove.
+        }
+      }
+      try {
+        markersPlugin.setMarkers([]);
+      } catch {
+        // Plugin already detached with its series.
+      }
+    };
+  }, [orders, chartData, symbol]);
 
   return (
     <div className="w-full bg-surface rounded-lg shadow-sm border border-white/10">

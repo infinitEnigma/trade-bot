@@ -1,6 +1,9 @@
 /** @format */
 
-export { StrategyCard } from "./StrategyCard";
+export { StrategyMasterList } from "./StrategyMasterList";
+export { StrategyWorkspace } from "./StrategyWorkspace";
+export { OpenOrdersTable } from "./OpenOrdersTable";
+export { FreshnessIndicator } from "./FreshnessIndicator";
 export { StrategyOverview } from "./StrategyOverview";
 export { MarketDetailsSection } from "./MarketDetailsSection";
 export { BotStatusBadge } from "./BotStatusBadge";

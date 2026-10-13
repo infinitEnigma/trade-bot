@@ -224,6 +224,72 @@ describe("marketApi", () => {
       });
     });
 
+    describe("getOpenOrders", () => {
+      it("should scope the open-orders read to account + symbol", async () => {
+        const mockResponse = {
+          success: true,
+          data: [
+            {
+              orderId: "o-1",
+              clientOrderId: null,
+              symbol: "PERP_BTC_USDC",
+              side: "BUY",
+              orderType: "LIMIT",
+              price: 65000,
+              quantity: 0.1,
+              filledQuantity: 0,
+              status: "NEW",
+              createdAtMs: 1760000000000,
+              exchange: "kodiak",
+            },
+          ],
+          timestamp: 1760000000000,
+        };
+        mockGet.mockResolvedValue({ data: mockResponse });
+        (globalRequestManager.deduplicateRequest as Mock).mockImplementation(
+          (_key: string, fn: () => unknown) => fn()
+        );
+
+        const result = await marketApi.getOpenOrders({
+          exchangeAccountId: "acct-1",
+          symbol: "PERP_BTC_USDC",
+        });
+
+        // Both scope params participate in the dedupe key so two accounts
+        // (or two symbols) never share one in-flight entry.
+        expect(globalRequestManager.deduplicateRequest).toHaveBeenCalledWith(
+          "market:orders:acct-1:PERP_BTC_USDC",
+          expect.any(Function),
+          "marketApi"
+        );
+        expect(mockGet).toHaveBeenCalledWith("/api/market/orders", {
+          params: { exchangeAccountId: "acct-1", symbol: "PERP_BTC_USDC" },
+        });
+        expect(result).toEqual(mockResponse);
+      });
+
+      it("should read the default whole book when unscoped", async () => {
+        const mockResponse = { success: true, data: [], timestamp: 1 };
+        mockGet.mockResolvedValue({ data: mockResponse });
+        (globalRequestManager.deduplicateRequest as Mock).mockImplementation(
+          (_key: string, fn: () => unknown) => fn()
+        );
+
+        const result = await marketApi.getOpenOrders();
+
+        expect(globalRequestManager.deduplicateRequest).toHaveBeenCalledWith(
+          "market:orders:default:all",
+          expect.any(Function),
+          "marketApi"
+        );
+        // Absent params stay absent — no empty-string filters on the wire.
+        expect(mockGet).toHaveBeenCalledWith("/api/market/orders", {
+          params: {},
+        });
+        expect(result).toEqual(mockResponse);
+      });
+    });
+
     describe("getVenueSymbols", () => {
       it("should call the venue-symbols endpoint with exchange + environment", async () => {
         const mockResponse = {

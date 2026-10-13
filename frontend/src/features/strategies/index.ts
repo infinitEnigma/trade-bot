@@ -19,7 +19,6 @@ export type {
 } from "./types/strategies.types";
 
 // Strategies subdomain
-export { StrategyCard } from "./components";
 //export { useStrategies } from "./strategies/hooks";
 export { strategyService } from "./services";
 
