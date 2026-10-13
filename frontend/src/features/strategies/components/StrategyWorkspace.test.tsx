@@ -15,22 +15,44 @@ import type { ReactElement } from "react";
 import { Strategy, StrategyType } from "../../../shared/types";
 import type { BotInstance } from "../types/strategies.types";
 import type { OpenOrderRow } from "../../../infrastructure/api/market";
+import type { AccountPositionRow } from "../../../infrastructure/api/market";
+import type { ExchangeAccountDto } from "../../../infrastructure/api/accounts";
+import type {
+  ChartSelection,
+  ChartSymbolGroup,
+} from "../utils/chartSymbolPicker";
 import { StrategyWorkspace } from "./StrategyWorkspace";
 
 vi.mock("../bots/components/BotControls", () => ({
   BotControls: () => <div data-testid="bot-controls" />,
 }));
 
+// The workspace lazy-loads the real chart (lightweight-charts); stub it for a
+// fast, stable test that still proves symbol + book forwarding (Phase 3.1).
+vi.mock("../../../shared/components/charts/CandlestickChart", () => ({
+  default: (props: { symbol?: string; orders?: unknown }) => (
+    <div
+      data-testid="candlestick-chart"
+      data-symbol={props.symbol ?? ""}
+      data-orders={JSON.stringify(props.orders ?? null)}
+    />
+  ),
+}));
+
 // The workspace calls the real hook (query-keyed per strategyId); the hook is
 // the only seam, mocked at the module boundary with per-key rows.
 const fillsByStrategy: Record<string, unknown[]> = {};
+const recentTradesCalls: Array<{ strategyId?: string; limit?: number }> = [];
 vi.mock("../../../shared/hooks", () => ({
-  useRecentTrades: (filters?: { strategyId?: string }) => ({
-    trades: fillsByStrategy[filters?.strategyId ?? ""] ?? [],
-    isLoading: false,
-    error: null,
-    dataUpdatedAt: 0,
-  }),
+  useRecentTrades: (filters?: { strategyId?: string; limit?: number }) => {
+    recentTradesCalls.push(filters ?? {});
+    return {
+      trades: fillsByStrategy[filters?.strategyId ?? ""] ?? [],
+      isLoading: false,
+      error: null,
+      dataUpdatedAt: 0,
+    };
+  },
 }));
 
 const FILL = {
@@ -112,16 +134,38 @@ const workspaceProps = (
     ordersLoading: boolean;
     ordersError: boolean;
     ordersUpdatedAt: number;
+    account?: ExchangeAccountDto | null;
+    positions?: AccountPositionRow[];
+    positionsLoading?: boolean;
+    positionsError?: boolean;
+    positionsUpdatedAt?: number;
+    chartSelection?: ChartSelection;
+    chartGroups?: ChartSymbolGroup[];
+    chartOptionCount?: number;
+    onChartSelectionChange?: (s: ChartSelection) => void;
     onEdit: (s: Strategy) => void;
     onDelete: (s: Strategy) => void;
   }> = {}
 ) => ({
   strategy: STRATEGY,
   bot: BOT,
+  account: null,
+  chartSelection: {
+    symbol: "PERP_ETH_USDC",
+    exchange: "lighter",
+    environment: "mainnet",
+  } as ChartSelection,
+  chartGroups: [] as ChartSymbolGroup[],
+  chartOptionCount: 1,
+  onChartSelectionChange: vi.fn(),
   orders: [] as OpenOrderRow[],
   ordersLoading: false,
   ordersError: false,
   ordersUpdatedAt: 0,
+  positions: [] as AccountPositionRow[],
+  positionsLoading: false,
+  positionsError: false,
+  positionsUpdatedAt: 0,
   onEdit: vi.fn(),
   onDelete: vi.fn(),
   onBotStatusChange: vi.fn(),
@@ -131,6 +175,7 @@ const workspaceProps = (
 describe("StrategyWorkspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    recentTradesCalls.length = 0;
     for (const key of Object.keys(fillsByStrategy)) delete fillsByStrategy[key];
   });
 
@@ -221,6 +266,149 @@ describe("StrategyWorkspace", () => {
   it("ages the active tab's source honestly (never-fetched = Never updated)", () => {
     renderWorkspace(<StrategyWorkspace {...workspaceProps()} />);
 
-    expect(screen.getByText("Never updated")).toBeDefined();
+    // The strip chip (below xl) plus each xl panel header chip — every one
+    // must honestly say "Never updated" rather than inventing an age.
+    expect(screen.getAllByText("Never updated").length).toBeGreaterThanOrEqual(
+      1
+    );
+  });
+
+  it("charts the strategy's market and forwards the strategy-scoped book", async () => {
+    renderWorkspace(
+      <StrategyWorkspace {...workspaceProps({ orders: [ORDER] })} />
+    );
+
+    const chart = await screen.findByTestId("candlestick-chart");
+    expect(chart.getAttribute("data-symbol")).toBe("PERP_ETH_USDC");
+    expect(chart.getAttribute("data-orders")).toContain("ord-1");
+    expect(chart.getAttribute("data-orders")).toContain("2500");
+  });
+
+  it("shows the picker when several symbols are offered", async () => {
+    renderWorkspace(
+      <StrategyWorkspace
+        {...workspaceProps({
+          chartOptionCount: 2,
+          chartGroups: [
+            {
+              label: "Lighter mainnet",
+              exchange: "lighter",
+              environment: "mainnet",
+              symbols: ["ETH", "BTC"],
+            },
+          ],
+        })}
+      />
+    );
+
+    expect(screen.getByLabelText("Chart symbol")).toBeDefined();
+    await screen.findByTestId("candlestick-chart");
+  });
+
+  it("draws no order levels once the chart detaches to another market", async () => {
+    renderWorkspace(
+      <StrategyWorkspace
+        {...workspaceProps({
+          orders: [ORDER],
+          chartSelection: {
+            symbol: "PERP_BTC_USDC",
+            exchange: "kodiak",
+            environment: "mainnet",
+          },
+        })}
+      />
+    );
+
+    const chart = await screen.findByTestId("candlestick-chart");
+    expect(chart.getAttribute("data-orders")).toBe("[]");
+  });
+
+  it("narrows the positions book to the strategy's market and labels the attribution", () => {
+    renderWorkspace(
+      <StrategyWorkspace
+        {...workspaceProps({
+          positions: [
+            {
+              symbol: "PERP_ETH_USDC",
+              position_qty: "0.5",
+              unsettled_pnl: "10",
+              mark_price: "2500",
+              average_open_price: "2400",
+            },
+            {
+              symbol: "PERP_BTC_USDC",
+              position_qty: "-1",
+              unsettled_pnl: "",
+              mark_price: "65000",
+              average_open_price: "66000",
+            },
+          ],
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /positions/i }));
+    expect(screen.getByText(/not strategy-attributed/)).toBeDefined();
+    // Only the strategy's market survives the filter — the foreign BTC row
+    // never renders, and the count badge reflects the filtered book.
+    expect(screen.getByText("PERP_ETH_USDC")).toBeDefined();
+    expect(screen.queryByText("PERP_BTC_USDC")).toBeNull();
+    expect(screen.getByRole("tab", { name: /positions \(1\)/i })).toBeDefined();
+  });
+
+  it("positions tab reports the flat state when the market filter empties the book", () => {
+    renderWorkspace(
+      <StrategyWorkspace
+        {...workspaceProps({
+          positions: [
+            {
+              symbol: "PERP_BTC_USDC",
+              position_qty: "-1",
+              unsettled_pnl: "",
+              mark_price: "65000",
+              average_open_price: "66000",
+            },
+          ],
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /positions/i }));
+    expect(screen.getByText(/No position on this market/)).toBeDefined();
+  });
+
+  it("reads up to 25 recent fills for the trades view (review P2-3)", () => {
+    renderWorkspace(<StrategyWorkspace {...workspaceProps()} />);
+
+    expect(recentTradesCalls[recentTradesCalls.length - 1]?.limit).toBe(25);
+  });
+
+  it("names the bound venue account in the header (review P2-5)", () => {
+    renderWorkspace(
+      <StrategyWorkspace
+        {...workspaceProps({
+          account: {
+            id: "acct-7",
+            userId: "u1",
+            exchange: "lighter",
+            environment: "testnet",
+            accountRef: "42",
+            status: "ACTIVE",
+            createdAt: "",
+            updatedAt: "",
+          },
+        })}
+      />
+    );
+
+    expect(screen.getByText("Lighter testnet · 42")).toBeDefined();
+  });
+
+  it("says plainly when no venue account is bound", () => {
+    renderWorkspace(
+      <StrategyWorkspace {...workspaceProps({ account: null })} />
+    );
+
+    expect(screen.getByText("No venue account bound")).toBeDefined();
   });
 });

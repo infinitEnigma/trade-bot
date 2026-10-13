@@ -200,7 +200,7 @@ describe("marketApi", () => {
     });
 
     describe("getPositions", () => {
-      it("should call get positions endpoint", async () => {
+      it("should call get positions endpoint unscoped (legacy default account)", async () => {
         const mockResponse = {
           success: true,
           data: [
@@ -216,11 +216,35 @@ describe("marketApi", () => {
         const result = await marketApi.getPositions();
 
         expect(globalRequestManager.deduplicateRequest).toHaveBeenCalledWith(
-          "market:positions",
+          "market:positions:all",
           expect.any(Function),
           "marketApi"
         );
         expect(result).toEqual(mockResponse);
+      });
+
+      it("should scope the request to one account (Phase 3.1, C3b)", async () => {
+        (globalRequestManager.deduplicateRequest as Mock).mockResolvedValue({
+          success: true,
+          data: [],
+        });
+
+        await marketApi.getPositions("acct-7");
+
+        expect(globalRequestManager.deduplicateRequest).toHaveBeenCalledWith(
+          "market:positions:acct-7",
+          expect.any(Function),
+          "marketApi"
+        );
+        // The account goes on the query string — the backend dispatches the
+        // venue reader from it (market-portfolio.routes C3b).
+        mockGet.mockResolvedValue({ data: { success: true, data: [] } });
+        const calls = (globalRequestManager.deduplicateRequest as Mock).mock
+          .calls;
+        await calls[calls.length - 1][1]();
+        expect(mockGet).toHaveBeenCalledWith("/api/market/positions", {
+          params: { exchangeAccountId: "acct-7" },
+        });
       });
     });
 

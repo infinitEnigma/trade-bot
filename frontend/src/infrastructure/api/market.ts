@@ -37,6 +37,24 @@ export interface OpenOrderRow {
 }
 
 /**
+ * One row of `GET /api/market/positions` — the workspace's positions view
+ * (Phase 3.1, review P2-4). Venue truth for ONE account (C3b scoping);
+ * positions are account × market, NOT strategy-attributed — consumers must
+ * label that distinction. Field names are the venue-normalised snake_case
+ * the position readers emit (same shape the Dashboard's Position type
+ * consumes); numeric fields are strings on the wire.
+ */
+export interface AccountPositionRow {
+  symbol: string;
+  /** Signed base quantity. */
+  position_qty: string;
+  /** Venue-exact unrealized PnL (empty string when unknown). */
+  unsettled_pnl: string;
+  mark_price: string;
+  average_open_price: string;
+}
+
+/**
  * Market data API endpoints
  * Handles market prices, trading data, and TradingView integration with global deduplication
  */
@@ -117,13 +135,21 @@ export const marketApi = {
     );
   },
 
-  async getPositions() {
+  /**
+   * Phase 3.1 (review P2-4): C3b account scoping (`?exchangeAccountId=`) —
+   * the workspace's positions view reads ONE account's book; absent the
+   * param the backend answers the caller's whole (legacy Kodiak default)
+   * scope, exactly as before C3b.
+   */
+  async getPositions(exchangeAccountId?: string) {
     return globalRequestManager.deduplicateRequest(
-      "market:positions",
+      `market:positions:${exchangeAccountId ?? "all"}`,
       () =>
         httpClient
           .getClient()
-          .get("/api/market/positions")
+          .get("/api/market/positions", {
+            params: exchangeAccountId ? { exchangeAccountId } : undefined,
+          })
           .then(r => r.data),
       "marketApi"
     );

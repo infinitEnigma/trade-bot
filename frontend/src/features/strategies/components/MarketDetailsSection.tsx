@@ -1,55 +1,28 @@
 /** @format */
 
-import React, { Suspense, lazy, useState } from "react";
+import React, { useState } from "react";
 import { ChevronDown, LineChart } from "lucide-react";
-import {
-  decodeChartOption,
-  encodeChartOption,
-  type ChartSelection,
-  type ChartSymbolGroup,
-} from "../utils/chartSymbolPicker";
 import type { PortfolioSummary } from "../../../shared/hooks/usePortfolioSummary";
-import type { OpenOrderRow } from "../../../infrastructure/api/market";
-
-// Lazy load the heavy chart for the same performance reason the page did.
-const CandlestickChart = lazy(
-  () => import("../../../shared/components/charts/CandlestickChart")
-);
 
 interface MarketDetailsSectionProps {
-  chartOptionCount: number;
-  chartGroups: ChartSymbolGroup[];
-  chartSelection: ChartSelection;
-  chartSymbol: string;
-  onChartSelectionChange: (selection: ChartSelection) => void;
   portfolioSummary: PortfolioSummary;
   isVerified: boolean;
-  /**
-   * Phase 3: the open-orders book for the charted market — forwarded to the
-   * chart, which draws the levels/markers. The page scopes it to the charted
-   * venue's ACTIVE account; rows arrive already filtered by symbol.
-   */
-  orders?: OpenOrderRow[];
 }
 
 /**
- * Phase 2 IA: the chart + portfolio figures are REFERENCE detail, not the
- * strategy-management task. They render in a collapsible section placed below
- * the strategy list (they used to lead the page and push the list down).
+ * Phase 2 IA (Phase 3.1 re-scoped): the portfolio figures are REFERENCE
+ * detail, not the strategy-management task — they render in a collapsible
+ * section below the strategy workspace. The chart MOVED into the selected
+ * strategy's workspace (review P1-1: it follows the selected strategy
+ * instead of being a detached market view), so this section keeps only the
+ * portfolio-wide summary the reviewer asked to preserve here.
  *
  * Defaults open to preserve existing visibility while letting the operator
- * tuck it away to focus on the list; collapsed state names the chart symbol so
- * the section isn't a dead end.
+ * tuck it away to focus on the workspace.
  */
 export const MarketDetailsSection: React.FC<MarketDetailsSectionProps> = ({
-  chartOptionCount,
-  chartGroups,
-  chartSelection,
-  chartSymbol,
-  onChartSelectionChange,
   portfolioSummary,
   isVerified,
-  orders,
 }) => {
   const [open, setOpen] = useState(true);
 
@@ -64,14 +37,7 @@ export const MarketDetailsSection: React.FC<MarketDetailsSectionProps> = ({
       >
         <span className="flex items-center gap-2">
           <LineChart className="w-4 h-4 text-textMuted" />
-          <span className="text-lg font-semibold text-text">
-            Market &amp; portfolio
-          </span>
-          {!open && chartOptionCount > 1 && (
-            <span className="text-xs text-textMuted">
-              — {chartSymbol.replace("PERP_", "").replace("_USDC", "")}
-            </span>
-          )}
+          <span className="text-lg font-semibold text-text">Portfolio</span>
         </span>
         <ChevronDown
           className={`w-5 h-5 text-textMuted transition-transform duration-200 ${
@@ -82,75 +48,8 @@ export const MarketDetailsSection: React.FC<MarketDetailsSectionProps> = ({
 
       {open && (
         <div id="strategies-market-details" className="mt-4 space-y-6">
-          {/* Candlestick Chart - Advanced trading data for verified users */}
-          {/* P1/X3: symbol AND venue follow the dropdown (all venue-listed
-              symbols, grouped by venue — X1 pattern); the venue drives the
-              backend's candle dispatch and the Orderly-WS skip. */}
-          <div>
-            {chartOptionCount > 1 && (
-              <div className="flex items-center gap-2 mb-3">
-                <label
-                  htmlFor="strategies-chart-symbol"
-                  className="text-sm text-textMuted"
-                >
-                  Chart symbol
-                </label>
-                <select
-                  id="strategies-chart-symbol"
-                  value={encodeChartOption(chartSelection)}
-                  onChange={event => {
-                    const decoded = decodeChartOption(event.target.value);
-                    if (decoded) onChartSelectionChange(decoded);
-                  }}
-                  aria-label="Chart symbol"
-                  className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-text focus:border-primary/50 focus:outline-none"
-                >
-                  {chartGroups.map(group => (
-                    <optgroup key={group.label} label={group.label}>
-                      {group.symbols.map(sym => (
-                        <option
-                          key={sym}
-                          value={encodeChartOption({
-                            symbol: sym,
-                            exchange: group.exchange,
-                            environment: group.environment,
-                          })}
-                        >
-                          {sym.replace("PERP_", "").replace("_USDC", "")}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </div>
-            )}
-            <Suspense
-              fallback={
-                <div className="glass-card p-6 animate-pulse">
-                  <div className="w-32 h-5 bg-surface rounded mb-4"></div>
-                  <div className="bg-surface rounded-lg h-110"></div>
-                </div>
-              }
-            >
-              <CandlestickChart
-                symbol={chartSymbol}
-                interval="1h"
-                height={450}
-                venue={{
-                  exchange: chartSelection.exchange,
-                  environment: chartSelection.environment,
-                }}
-                orders={orders}
-              />
-            </Suspense>
-          </div>
-
           {/* Account Balance Overview - real venue balances (VERIFIED users) */}
           <div>
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-text">Portfolio</h3>
-            </div>
-
             {portfolioSummary.initialLoading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {[1, 2, 3, 4].map(i => (

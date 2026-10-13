@@ -22,6 +22,7 @@ const fakes = vi.hoisted(() => {
   const candleSeries = {
     setData: vi.fn(),
     update: vi.fn(),
+    applyOptions: vi.fn(),
     createPriceLine: vi.fn((options: { price: number }) => ({
       __priceLine: true,
       price: options.price,
@@ -72,6 +73,9 @@ vi.mock("../../../shared/hooks/useVisibility", () => ({
 import { createSeriesMarkers } from "lightweight-charts";
 import { CandlestickChart } from "../../../shared/components/charts/CandlestickChart";
 
+/** Stable default candles; individual tests may swap `fakes.candles`. */
+const DEFAULT_CANDLES = fakes.candles;
+
 /** One row as `GET /api/market/orders` returns it (backend `OpenOrderRow`). */
 const order = (overrides: Partial<OpenOrderRow> = {}): OpenOrderRow => ({
   orderId: "o-1",
@@ -100,6 +104,7 @@ const renderChart = (props: { symbol?: string; orders?: OpenOrderRow[] }) =>
 describe("CandlestickChart order levels + markers (Phase 3)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fakes.candles = DEFAULT_CANDLES;
     // The component logs a data-update debug line; keep test output clean.
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
@@ -204,5 +209,25 @@ describe("CandlestickChart order levels + markers (Phase 3)", () => {
   it("creates the markers plugin once per chart", () => {
     renderChart({ orders: [order()] });
     expect(createSeriesMarkers).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-applies a bounded fine-tick price format (review P1-2)", () => {
+    // The live PERP_1000PEPE_USDC case: closes at 1e-7-scale prices must NOT
+    // render through the historic 2-decimal format.
+    fakes.candles = [
+      {
+        time: 1000,
+        open: 0.0000011,
+        high: 0.0000015,
+        low: 0.0000009,
+        close: 0.0000012,
+        volume: 5,
+      },
+    ];
+    renderChart({ orders: [order({ price: 0.0000008 })] });
+
+    expect(fakes.candleSeries.applyOptions).toHaveBeenCalledWith({
+      priceFormat: { type: "price", precision: 7, minMove: 1e-7 },
+    });
   });
 });

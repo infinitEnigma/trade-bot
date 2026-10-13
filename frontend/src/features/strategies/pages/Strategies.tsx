@@ -14,16 +14,18 @@ import { EngineJournalIntegrityNotice } from "../components/EngineJournalIntegri
 import { ConfirmDialog } from "../../../shared/components/ui";
 import {
   buildChartSymbolGroups,
-  resolveChartSelection,
-  type ChartSelection,
   type ChartVenueRef,
   type VenueCatalog,
 } from "../utils/chartSymbolPicker";
+import {
+  resolveWorkspaceChartSelection,
+  type ChartSelectionOverride,
+} from "../utils/workspaceChartSelection";
 import { StrategyOverview } from "../components/StrategyOverview";
 import { MarketDetailsSection } from "../components/MarketDetailsSection";
 import { StrategyMasterList } from "../components/StrategyMasterList";
 import { StrategyWorkspace } from "../components/StrategyWorkspace";
-import { useOpenOrders } from "../hooks";
+import { useOpenOrders, useAccountPositions } from "../hooks";
 
 // Lazy load heavy components for better performance
 const StrategyForm = lazy(() =>
@@ -52,13 +54,14 @@ const Strategies: React.FC = React.memo(() => {
   // inactive; starting a bot on it (C3a account pick + size) is the start.
   const [startPromptStrategy, setStartPromptStrategy] =
     useState<Strategy | null>(null);
-  // P1/X3: chart symbol + venue follow the dropdown override below (default
-  // = first strategy's symbol, venue by catalog membership — see
-  // chartSymbolPicker.ts). Absent strategies/catalogs fall back to the
-  // historic BTC default. Stored Kodiak form (PERP_ETH_USDC) passes through
-  // unchanged — CandlestickChart/useChartData already handle it.
+  // Phase 3.1 (review P1-1): the chart lives in the selected strategy's
+  // workspace and follows it. The dropdown pick is KEYED to the strategy it
+  // was made for — selecting another strategy rebinds the chart (the stale
+  // pick is ignored, never remembered across selections). Derived during
+  // render; stored Kodiak form (PERP_ETH_USDC) passes through unchanged —
+  // CandlestickChart/useChartData already handle it.
   const [chartSelectionOverride, setChartSelectionOverride] =
-    useState<ChartSelection | null>(null);
+    useState<ChartSelectionOverride | null>(null);
   // P1: the strategy awaiting delete confirmation. Non-null opens the in-app
   // ConfirmDialog (replacing the native confirm()); we hold the full object so
   // the dialog can name it and show whether a bot is attached + its state.
@@ -229,34 +232,36 @@ const Strategies: React.FC = React.memo(() => {
   });
   const catalogs: VenueCatalog[] = catalogsQuery.data ?? [];
 
-  // Default = first strategy's symbol (venue by catalog membership); the
-  // operator's explicit pick always wins (derived during render, P1 pattern).
-  const chartSelection =
-    chartSelectionOverride ?? resolveChartSelection(catalogs, strategySymbols);
-  const chartSymbol = chartSelection.symbol;
+  // Phase 3.1: the chart follows the SELECTED strategy (venue by catalog
+  // membership; orphan/fallback rules unchanged — see
+  // workspaceChartSelection.ts); the operator's pick wins only while that
+  // strategy stays selected (P1 pattern, no effect).
+  const chartSelection = resolveWorkspaceChartSelection(
+    catalogs,
+    selectedStrategy
+      ? {
+          id: selectedStrategy.id,
+          symbol: getStrategyConfig(selectedStrategy)?.config.symbol,
+        }
+      : null,
+    chartSelectionOverride
+  );
   const chartGroups = buildChartSymbolGroups(catalogs, strategySymbols);
   const chartOptionCount = chartGroups.reduce(
     (count, group) => count + group.symbols.length,
     0
   );
 
-  // Phase 3 (slice 3): the open-orders book for the charted market, drawn as
-  // levels/markers on the chart. Orders are account-scoped on the backend, so
-  // scope to the first ACTIVE account of the CHARTED venue — the chart is a
-  // market view; the master-detail workspace (slice 4) scopes by the selected
-  // strategy's own account. `symbol` matches the chart selection (backend
-  // normalises venue forms, bare `BTC` included). No ACTIVE account of the
-  // charted venue ⇒ nothing of ours can rest there, so the query stays off.
-  const chartAccountId = (accountsQuery.data?.data?.accounts ?? []).find(
-    account =>
-      account.status === "ACTIVE" &&
-      account.exchange === chartSelection.exchange &&
-      account.environment === chartSelection.environment
-  )?.id;
-  const chartOrdersQuery = useOpenOrders(
-    { exchangeAccountId: chartAccountId, symbol: chartSymbol },
-    { enabled: !!chartAccountId }
-  );
+  // The selected strategy's venue account — ONE resolution shared by the
+  // orders, positions and the header's account chip (Phase 3.1, review P2-5).
+  const workspaceAccountId =
+    (selectedStrategy &&
+      getExchangeAccountForStrategy(bots, selectedStrategy.id)) ||
+    undefined;
+  const workspaceAccount =
+    (accountsQuery.data?.data?.accounts ?? []).find(
+      account => account.id === workspaceAccountId
+    ) ?? null;
 
   // Phase 3 (slice 4): the workspace's open-orders table — scoped to the
   // SELECTED STRATEGY's venue account (strategy → hosting session → account
@@ -264,19 +269,26 @@ const Strategies: React.FC = React.memo(() => {
   // rows never do). A null resolution (no session, or a legacy row predating
   // the C3a binding) falls back to the backend's default-account read — the
   // documented D4 unscoped fallback — and the strategy's symbol narrows the
-  // book. Same hook as the chart's levels: an identical scope shares one
-  // cache entry; the chart above stays a market view of the charted venue.
+  // book. These SAME rows feed the workspace chart's levels while it shows
+  // this strategy's market (Phase 3.1) — one scope, one book, so the chart
+  // and the table can never disagree about whose orders they show.
   const workspaceOrdersQuery = useOpenOrders(
     {
-      exchangeAccountId:
-        (selectedStrategy &&
-          getExchangeAccountForStrategy(bots, selectedStrategy.id)) ||
-        undefined,
+      exchangeAccountId: workspaceAccountId,
       symbol:
         (selectedStrategy &&
           getStrategyConfig(selectedStrategy)?.config.symbol) ||
         undefined,
     },
+    { enabled: !!selectedStrategy }
+  );
+
+  // Phase 3.1 (review P2-4): the workspace positions view — same D4 account
+  // scope/fallback as the open-orders read. Positions are ACCOUNT × MARKET
+  // venue truth (never strategy-attributed); the workspace filters the book
+  // to the selected strategy's market and labels the attribution.
+  const workspacePositionsQuery = useAccountPositions(
+    { exchangeAccountId: workspaceAccountId },
     { enabled: !!selectedStrategy }
   );
 
@@ -452,12 +464,11 @@ const Strategies: React.FC = React.memo(() => {
             </button>
           </div>
         ) : (
-          /* Phase 3 (slice 4): master–detail — the compact selectable list
-             beside the selected strategy's workspace (control panel). The
-             market/portfolio reference stays below (Phase 2 IA); the chart
-             remains a market view (first ACTIVE account of the charted
-             venue) while the workspace's orders scope to the selected
-             strategy's own account. */
+          /* Phase 3 (slice 4 + 3.1): master–detail — the compact selectable
+             list beside the selected strategy's workspace (control panel).
+             The chart lives INSIDE that workspace now (review P1-1: it
+             follows the selected strategy and shares its order scope); the
+             portfolio summary stays in the lower reference section. */
           <div className="grid grid-cols-1 lg:grid-cols-[19rem_minmax(0,1fr)] gap-6 items-start">
             <StrategyMasterList
               strategies={strategies as Strategy[]}
@@ -469,10 +480,24 @@ const Strategies: React.FC = React.memo(() => {
               <StrategyWorkspace
                 strategy={selectedStrategy}
                 bot={getBotForStrategy(selectedStrategy.id)}
+                account={workspaceAccount}
+                chartSelection={chartSelection}
+                chartGroups={chartGroups}
+                chartOptionCount={chartOptionCount}
+                onChartSelectionChange={selection =>
+                  setChartSelectionOverride({
+                    strategyId: selectedStrategy.id,
+                    selection,
+                  })
+                }
                 orders={workspaceOrdersQuery.data?.data ?? []}
                 ordersLoading={workspaceOrdersQuery.isLoading}
                 ordersError={workspaceOrdersQuery.isError}
                 ordersUpdatedAt={workspaceOrdersQuery.dataUpdatedAt}
+                positions={workspacePositionsQuery.data?.data ?? []}
+                positionsLoading={workspacePositionsQuery.isLoading}
+                positionsError={workspacePositionsQuery.isError}
+                positionsUpdatedAt={workspacePositionsQuery.dataUpdatedAt}
                 onEdit={setEditingStrategy}
                 onDelete={handleDeleteStrategy}
                 onBotStatusChange={() => {
@@ -488,14 +513,8 @@ const Strategies: React.FC = React.memo(() => {
         {/* Market + portfolio figures: reference detail moved BELOW the
             strategy list (Phase 2 IA) into a collapsible section. */}
         <MarketDetailsSection
-          chartOptionCount={chartOptionCount}
-          chartGroups={chartGroups}
-          chartSelection={chartSelection}
-          chartSymbol={chartSymbol}
-          onChartSelectionChange={setChartSelectionOverride}
           portfolioSummary={portfolioSummary}
           isVerified={user?.userLevel === "VERIFIED"}
-          orders={chartOrdersQuery.data?.data ?? []}
         />
 
         {/* Strategy Form Modals */}

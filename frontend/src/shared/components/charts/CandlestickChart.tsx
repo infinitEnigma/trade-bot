@@ -1,6 +1,6 @@
 /** @format */
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import {
   createChart,
   createSeriesMarkers,
@@ -19,6 +19,7 @@ import {
 import { useChartData, ChartVenue } from "../../hooks/useChartData";
 import { useVisibility } from "../../hooks/useVisibility";
 import type { OpenOrderRow } from "../../../infrastructure/api/market";
+import { derivePriceFormat } from "./derivePriceFormat";
 
 export interface CandleData {
   time: number;
@@ -95,6 +96,27 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     interval,
     venue,
   });
+
+  // Phase 3.1 (review P1-2): the series' price format follows what is
+  // actually on screen — the finest decimal digit across candles AND order
+  // levels, bounded [2, 8] (see derivePriceFormat). The ref feeds the
+  // creation effect without widening its deps; later changes re-apply via
+  // the dedicated effect below.
+  const priceFormat = useMemo(
+    () =>
+      derivePriceFormat([
+        ...(chartData?.map(candle => candle.close) ?? []),
+        ...(orders?.map(order => order.price) ?? []),
+      ]),
+    [chartData, orders]
+  );
+  const priceFormatRef = useRef(priceFormat);
+  // Effect (not render) so the react-hooks/refs rule holds; declared BEFORE
+  // the creation effect so mount order still feeds the first creation the
+  // current format. Later changes never recreate the chart (see below).
+  useEffect(() => {
+    priceFormatRef.current = priceFormat;
+  }, [priceFormat]);
 
   // Debug logging for chart data
   useEffect(() => {
@@ -180,8 +202,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         wickDownColor: "#ef4444",
         priceFormat: {
           type: "price",
-          precision: 2,
-          minMove: 0.01,
+          ...priceFormatRef.current,
         },
       });
 
@@ -235,6 +256,20 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       console.error("Failed to create chart:", chartError);
     }
   }, [height, chartError]);
+
+  // Phase 3.1 (review P1-2): re-apply the derived format when the visible
+  // precision changes (candles / order book arriving) WITHOUT recreating the
+  // chart — a recreation would blank the series until data re-arrives and
+  // would reset the operator's zoom.
+  useEffect(() => {
+    candlestickSeriesRef.current?.applyOptions({
+      priceFormat: {
+        type: "price",
+        precision: priceFormat.precision,
+        minMove: priceFormat.minMove,
+      },
+    });
+  }, [priceFormat]);
 
   // Update chart data when historical/kline data changes (full redraw)
   useEffect(() => {
