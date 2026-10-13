@@ -10,7 +10,9 @@
  * - market-ticker.routes.ts        -> /ticker, /tickers
  * - market-klines.routes.ts        -> /klines
  * - market-futures.routes.ts       -> /orderbook, /futures/:symbol, /markprice/:symbol
- * - market-portfolio.routes.ts     -> /positions, /balance (auth)
+ * - market-portfolio.routes.ts     -> /positions, /balance, /trades, /pnl (auth)
+ * - market-orders.routes.ts        -> /orders (auth; venue-direct open orders
+ *   for the Phase 3 strategy workspace)
  * - market-ws-url.routes.ts        -> /ws-url (auth + verified creds)
  * - market-tv.routes.ts            -> /tv/config, /tv/symbols, /tv/history
  * - market-kline-history.routes.ts -> /kline-history (auth + verified creds)
@@ -27,6 +29,7 @@ import { tickerRoutes } from "./market-ticker.routes";
 import { klinesRoutes } from "./market-klines.routes";
 import { futuresRoutes } from "./market-futures.routes";
 import { portfolioRoutes } from "./market-portfolio.routes";
+import { ordersRoutes } from "./market-orders.routes";
 import { wsUrlRoutes } from "./market-ws-url.routes";
 import { tvRoutes } from "./market-tv.routes";
 import { klineHistoryRoutes } from "./market-kline-history.routes";
@@ -38,6 +41,7 @@ router.use(tickerRoutes);
 router.use(klinesRoutes);
 router.use(futuresRoutes);
 router.use(portfolioRoutes);
+router.use(ordersRoutes);
 router.use(wsUrlRoutes);
 router.use(tvRoutes);
 router.use(klineHistoryRoutes);

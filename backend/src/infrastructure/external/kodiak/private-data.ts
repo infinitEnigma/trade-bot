@@ -33,6 +33,12 @@ import type {
   KodiakPosition,
   KodiakTrade,
 } from "./types";
+import {
+  OPEN_ORDERS_TTL_MS,
+  mapKodiakOrderRow,
+  orderRowsFromEnvelope,
+} from "../open-orders";
+import type { OpenOrderRow } from "../open-orders";
 
 /** Venue string/number → finite number (never poison a numeric column). */
 function num(value: unknown): number {
@@ -295,6 +301,107 @@ export const privateDataMethods = {
       return {
         success: false,
         error: "Failed to get Kodiak trades",
+      };
+    }
+  },
+
+  /**
+   * Get Kodiak (Orderly) open orders for a user — Phase 3 slice 1, the
+   * strategy workspace's open-orders table.
+   *
+   * `GET /v1/orders[?symbol=]` via `makeKodiakRequest` (the path is
+   * prefixed `/v1` there), unwrapped defensively: Orderly answers
+   * `{ success, data: { rows } }`. Same account-scoped cache contract as
+   * positions/trades, with two deliberate differences:
+   * - the key carries the symbol, so a per-symbol read can never serve
+   *   another symbol's book;
+   * - the TTL is short (`OPEN_ORDERS_TTL_MS`) — a resting-order table that
+   *   lags the venue is worse than none.
+   *
+   * Reads the venue directly, so it keeps answering while the engine is
+   * down (the orders were placed there; they rest at the venue).
+   */
+  async getOrders(
+    this: KodiakIntegrationService,
+    userId: string,
+    exchangeAccountId?: string,
+    symbol?: string
+  ): Promise<KodiakApiResponse<OpenOrderRow[]>> {
+    try {
+      const cacheKey = `orders:${userId}${
+        exchangeAccountId ? `:${exchangeAccountId}` : ""
+      }${symbol ? `:${symbol}` : ""}`;
+
+      // Check cache first
+      const cached = kodiakCache.get(cacheKey);
+      if (cached) {
+        externalTrafficObserver.recordKodiakCacheHit("orders", userId);
+        logger.debug("Returning cached Kodiak orders", {
+          userId,
+          exchangeAccountId,
+          symbol,
+        });
+        if (cached && typeof cached === "object" && "success" in cached) {
+          return cached as KodiakApiResponse<OpenOrderRow[]>;
+        }
+        kodiakCache.delete(cacheKey);
+      } else {
+        externalTrafficObserver.recordKodiakCacheMiss("orders", userId);
+      }
+
+      // Get account + credentials (C3b: account-scoped resolution)
+      const resolved = await this.resolveKodiakAccount(
+        userId,
+        exchangeAccountId
+      );
+      if (!resolved) {
+        return {
+          success: false,
+          error: "No verified Kodiak credentials found",
+        };
+      }
+
+      const path = symbol
+        ? `/orders?symbol=${encodeURIComponent(symbol)}`
+        : "/orders";
+      const raw = await this.makeKodiakRequest<unknown>(
+        "GET",
+        path,
+        resolved.credentials
+      );
+      externalTrafficObserver.recordKodiakRequest("orders", userId);
+
+      const rows: OpenOrderRow[] = [];
+      for (const entry of orderRowsFromEnvelope(raw)) {
+        const row = mapKodiakOrderRow(entry, symbol);
+        if (row) rows.push(row);
+      }
+
+      const result: KodiakApiResponse<OpenOrderRow[]> = {
+        success: true,
+        data: rows,
+      };
+      kodiakCache.set(cacheKey, result, OPEN_ORDERS_TTL_MS);
+
+      logger.debug("Kodiak orders retrieved and cached", {
+        userId,
+        exchangeAccountId: resolved.id,
+        symbol,
+        ordersCount: rows.length,
+      });
+
+      return result;
+    } catch (error) {
+      logger.error("Get Kodiak orders error", error as Error, {
+        userId,
+        exchangeAccountId,
+        symbol,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return {
+        success: false,
+        error: "Failed to get Kodiak orders",
       };
     }
   },

@@ -53,6 +53,8 @@ import type {
   KodiakBalance,
 } from "../kodiak/types";
 import type { LighterCredentials } from "../exchange-accounts/lighter-verifier";
+import { OPEN_ORDERS_TTL_MS, mapLighterOrderRow } from "../open-orders";
+import type { OpenOrderRow } from "../open-orders";
 import {
   lighterBaseUrl,
   lighterVerifierConfigFromEnv,
@@ -780,6 +782,86 @@ export async function getLighterTrades(
         error instanceof LighterPortfolioSourceError
           ? error.message
           : "Failed to get Lighter trades",
+    };
+  }
+}
+
+/**
+ * `GET /api/v1/accountActiveOrders` → normalized `OpenOrderRow[]` —
+ * Phase 3 slice 1, the strategy workspace's open-orders table (Lighter
+ * arm of `kodiakIntegrationService.getOrders`).
+ *
+ * Same defence contract as the other Lighter readers (account-scoped
+ * resolution, memory-cache rows, sidecar token, secret-free failures).
+ * The venue lists ALL of the account's active orders — only
+ * `account_index` is a Phase-0-verified query param (the engine applies
+ * its market filter to the returned rows for exactly this reason), so
+ * `symbol` narrows client-side against the mapped display symbol.
+ * Cache TTL is `OPEN_ORDERS_TTL_MS` (a resting-order table that lags the
+ * venue is worse than none).
+ */
+export async function getLighterOrders(
+  userId: string,
+  exchangeAccountId: string,
+  symbol?: string
+): Promise<KodiakApiResponse<OpenOrderRow[]>> {
+  const cacheKey = `lighter:orders:${userId}:${exchangeAccountId}${
+    symbol ? `:${symbol}` : ""
+  }`;
+  try {
+    const cached = kodiakCache.get(cacheKey);
+    if (cached && typeof cached === "object" && "success" in cached) {
+      logger.debug("Returning cached Lighter orders", {
+        userId,
+        exchangeAccountId,
+      });
+      return cached as KodiakApiResponse<OpenOrderRow[]>;
+    }
+
+    const resolved = await resolveLighterAccount(userId, exchangeAccountId);
+    if (!resolved) {
+      return { success: false, error: "No verified Lighter credentials found" };
+    }
+
+    const body = await authorizedGet(
+      resolved.credentials,
+      "/api/v1/accountActiveOrders",
+      { account_index: resolved.credentials.accountIndex }
+    );
+    const directory = await marketDirectory(resolved.credentials.environment);
+    const wanted = symbol ? displaySymbol(symbol) : null;
+    const orders = Array.isArray(body.orders) ? body.orders : [];
+    const rows: OpenOrderRow[] = [];
+    for (const raw of orders) {
+      const row = mapLighterOrderRow(raw, directory);
+      if (!row) continue;
+      if (wanted && row.symbol !== wanted) continue;
+      rows.push(row);
+    }
+
+    const result: KodiakApiResponse<OpenOrderRow[]> = {
+      success: true,
+      data: rows,
+    };
+    kodiakCache.set(cacheKey, result, OPEN_ORDERS_TTL_MS);
+    logger.debug("Lighter orders retrieved and cached", {
+      userId,
+      exchangeAccountId: resolved.id,
+      ordersCount: rows.length,
+    });
+    return result;
+  } catch (error) {
+    logger.error("Get Lighter orders error", error as Error, {
+      userId,
+      exchangeAccountId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {
+      success: false,
+      error:
+        error instanceof LighterPortfolioSourceError
+          ? error.message
+          : "Failed to get Lighter orders",
     };
   }
 }

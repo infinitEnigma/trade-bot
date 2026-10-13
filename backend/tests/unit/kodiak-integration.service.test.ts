@@ -444,6 +444,148 @@ describe("KodiakIntegrationService", () => {
     });
   });
 
+  describe("getOrders", () => {
+    const ORDERLY_ROW = {
+      order_id: "o-1",
+      client_order_id: "bot-a-3-B",
+      symbol: "PERP_ETH_USDC",
+      side: "SELL",
+      order_type: "LIMIT",
+      order_price: "2745.14",
+      order_quantity: "0.0100",
+      executed_quantity: "0.0025",
+      status: "NEW",
+      created_time: 1790116529366,
+    };
+
+    function patchAccountAndRequest(rawResponse?: unknown) {
+      (service as any).resolveKodiakAccount = jest.fn().mockResolvedValue({
+        id: "account-1",
+        accountRef: "test-account",
+        credentials: {
+          accountId: "test-account",
+          apiKey: "test-api-key",
+          secretKey: "test-secret-key",
+        },
+      });
+      const makeRequest = jest.fn();
+      if (rawResponse !== undefined) {
+        makeRequest.mockResolvedValue(rawResponse);
+      }
+      (service as any).makeKodiakRequest = makeRequest;
+      return makeRequest;
+    }
+
+    it("serves the cached rows under the account- and symbol-scoped key", async () => {
+      const cached = { success: true, data: [] };
+      (kodiakCache.get as jest.Mock).mockReturnValue(cached);
+
+      const result = await service.getOrders(
+        "test-user-id",
+        "acct-uuid-1",
+        "PERP_ETH_USDC"
+      );
+
+      expect(result).toBe(cached);
+      expect(kodiakCache.get).toHaveBeenCalledWith(
+        "orders:test-user-id:acct-uuid-1:PERP_ETH_USDC"
+      );
+    });
+
+    it("fetches /orders, unwraps the venue envelope and caches the rows", async () => {
+      (kodiakCache.get as jest.Mock).mockReturnValue(null);
+      const makeRequest = patchAccountAndRequest({
+        success: true,
+        data: { rows: [ORDERLY_ROW, { symbol: "PERP_ETH_USDC" }] },
+      });
+
+      const result = await service.getOrders(
+        "test-user-id",
+        undefined,
+        "PERP_ETH_USDC"
+      );
+
+      expect(makeRequest).toHaveBeenCalledWith(
+        "GET",
+        "/orders?symbol=PERP_ETH_USDC",
+        expect.objectContaining({ accountId: "test-account" })
+      );
+      expect(result.success).toBe(true);
+      // The id-less row is dropped — it cannot be keyed in the table.
+      expect(result.data).toEqual([
+        {
+          orderId: "o-1",
+          clientOrderId: "bot-a-3-B",
+          symbol: "PERP_ETH_USDC",
+          side: "SELL",
+          orderType: "LIMIT",
+          price: 2745.14,
+          quantity: 0.01,
+          filledQuantity: 0.0025,
+          status: "NEW",
+          createdAtMs: 1790116529366,
+          exchange: "kodiak",
+        },
+      ]);
+      expect(kodiakCache.set).toHaveBeenCalledWith(
+        "orders:test-user-id:PERP_ETH_USDC",
+        result,
+        5000
+      );
+    });
+
+    it("lists the whole book when no symbol is given", async () => {
+      (kodiakCache.get as jest.Mock).mockReturnValue(null);
+      const makeRequest = patchAccountAndRequest({
+        success: true,
+        data: { rows: [] },
+      });
+
+      const result = await service.getOrders("test-user-id");
+
+      expect(makeRequest).toHaveBeenCalledWith(
+        "GET",
+        "/orders",
+        expect.anything()
+      );
+      expect(result).toEqual({ success: true, data: [] });
+      expect(kodiakCache.set).toHaveBeenCalledWith(
+        "orders:test-user-id",
+        result,
+        5000
+      );
+    });
+
+    it("answers no-credentials closed (never throws the read)", async () => {
+      (kodiakCache.get as jest.Mock).mockReturnValue(null);
+      (service as any).resolveKodiakAccount = jest.fn().mockResolvedValue(null);
+
+      const result = await service.getOrders("test-user-id");
+
+      expect(result).toEqual({
+        success: false,
+        error: "No verified Kodiak credentials found",
+      });
+      expect(kodiakCache.set).not.toHaveBeenCalled();
+    });
+
+    it("maps venue failures to a reader error", async () => {
+      (kodiakCache.get as jest.Mock).mockReturnValue(null);
+      patchAccountAndRequest();
+      (service as any).makeKodiakRequest = jest
+        .fn()
+        .mockRejectedValue(new Error("API error"));
+
+      const result = await service.getOrders("test-user-id");
+
+      expect(result).toEqual({
+        success: false,
+        error: "Failed to get Kodiak orders",
+      });
+      expect(kodiakCache.set).not.toHaveBeenCalled();
+    });
+  });
+
   describe("getTrades", () => {
     it("should return cached trades when available", async () => {
       const mockCachedResult = {

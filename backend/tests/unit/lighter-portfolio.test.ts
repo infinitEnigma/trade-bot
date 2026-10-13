@@ -423,6 +423,156 @@ describe("lighter portfolio reader", () => {
     });
   });
 
+  describe("getLighterOrders", () => {
+    const ORDERS_PAYLOAD = {
+      code: 200,
+      orders: [
+        {
+          order_id: "560123456789000",
+          client_order_index: "31",
+          client_order_id: "bot-a-3-B",
+          market_id: 4095,
+          status: "open",
+          is_ask: true,
+          price: "2600",
+          initial_base_amount: "1",
+          remaining_base_amount: "0.75",
+          filled_base_amount: "0.25",
+          transaction_time: 1790116529366,
+        },
+        {
+          client_order_index: "32",
+          market_id: 4096,
+          status: "partially_filled",
+          is_ask: false,
+          price: "65000",
+          initial_base_amount: "0.01",
+          filled_base_amount: "0.004",
+          transaction_time: 1790116509366,
+        },
+      ],
+    };
+
+    function venueHandlers() {
+      venueGet.mockImplementation((path: string) => {
+        if (path === "/api/v1/accountActiveOrders") {
+          return { data: ORDERS_PAYLOAD };
+        }
+        if (path === "/api/v1/orderBooks") return { data: BOOKS_PAYLOAD };
+        throw new Error(`unexpected path ${path}`);
+      });
+    }
+
+    it("maps active orders (human units, client index handle)", async () => {
+      venueHandlers();
+
+      const result = await portfolio.getLighterOrders("u1", "acc-lighter-1");
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual([
+        {
+          orderId: "31",
+          clientOrderId: "bot-a-3-B",
+          symbol: "PERP_ETH_USDC",
+          side: "SELL",
+          orderType: "",
+          price: 2600,
+          quantity: 1,
+          filledQuantity: 0.25,
+          status: "OPEN",
+          createdAtMs: 1790116529366,
+          exchange: "lighter",
+        },
+        {
+          orderId: "32",
+          clientOrderId: null,
+          // Directory miss → raw id, same convention as the trades reader.
+          symbol: "PERP_4096_USDC",
+          side: "BUY",
+          orderType: "",
+          price: 65000,
+          quantity: 0.01,
+          filledQuantity: 0.004,
+          status: "PARTIALLY_FILLED",
+          createdAtMs: 1790116509366,
+          exchange: "lighter",
+        },
+      ]);
+
+      // Only `account_index` is a verified query param — pin the call.
+      const [path, options] = venueGet.mock.calls[0];
+      expect(path).toBe("/api/v1/accountActiveOrders");
+      expect(options.params).toEqual({ account_index: 404 });
+      expect(memoryCacheSet).toHaveBeenCalledWith(
+        "lighter:orders:u1:acc-lighter-1",
+        result,
+        5000
+      );
+    });
+
+    it("narrows to the requested symbol client-side", async () => {
+      venueHandlers();
+
+      const one = await portfolio.getLighterOrders(
+        "u1",
+        "acc-lighter-1",
+        "ETH"
+      );
+      expect(one.data?.map(row => row.orderId)).toEqual(["31"]);
+
+      const none = await portfolio.getLighterOrders(
+        "u1",
+        "acc-lighter-1",
+        "BTC"
+      );
+      expect(none.data).toEqual([]);
+    });
+
+    it("serves the memory cache without touching the venue", async () => {
+      const cached = { success: true, data: [] };
+      memoryCacheGet.mockReturnValue(cached);
+
+      const result = await portfolio.getLighterOrders("u1", "acc-lighter-1");
+
+      expect(result).toBe(cached);
+      expect(venueGet).not.toHaveBeenCalled();
+      expect(sidecarPost).not.toHaveBeenCalled();
+    });
+
+    it("answers no-credentials closed (never throws the read)", async () => {
+      resolveAccount.mockResolvedValueOnce({
+        ...ACCOUNT_ROW,
+        status: "REVOKED",
+      });
+
+      const result = await portfolio.getLighterOrders("u1", "acc-lighter-1");
+
+      expect(result).toEqual({
+        success: false,
+        error: "No verified Lighter credentials found",
+      });
+    });
+
+    it("surfaces a venue rejection as a secret-free reader error", async () => {
+      venueGet.mockImplementation((path: string) => {
+        if (path === "/api/v1/accountActiveOrders") {
+          throw Object.assign(new Error("Request failed"), {
+            isAxiosError: true,
+            response: { status: 400, data: { message: "bad request" } },
+          });
+        }
+        if (path === "/api/v1/orderBooks") return { data: BOOKS_PAYLOAD };
+        throw new Error(`unexpected path ${path}`);
+      });
+
+      const result = await portfolio.getLighterOrders("u1", "acc-lighter-1");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("accountActiveOrders");
+      expect(result.error).not.toContain("PK-NEVER-LOGGED");
+    });
+  });
+
   describe("getLighterPnl", () => {
     const PNL_PAYLOAD = {
       code: 200,
