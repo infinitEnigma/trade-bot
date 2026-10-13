@@ -7,13 +7,14 @@ import { Card } from "../../../shared/components/ui";
 import { RecentTradesTable } from "../../../shared/components/user/RecentTrades";
 import { useRecentTrades } from "../../../shared/hooks";
 import { BotControls } from "../bots/components/BotControls";
+import { BotStatusBadge } from "./BotStatusBadge";
 import { getStrategyConfig, BotInstance } from "../types/strategies.types";
 
 interface StrategyCardProps {
   strategy: Strategy;
   bot?: BotInstance;
   onEdit: (strategy: Strategy) => void;
-  onDelete: (strategyId: string) => void;
+  onDelete: (strategy: Strategy) => void;
   onBotStatusChange: () => void;
   formatCurrency: (value: number) => string;
   getStrategyTypeColor: (type: StrategyType) => string;
@@ -72,8 +73,13 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
                 ? "bg-success/20 text-success"
                 : "bg-gray-500/20 text-gray-400"
             }`}
+            title={
+              strategy.active
+                ? "Strategy enabled — a bot can run on it. Bot state is shown separately below."
+                : "Strategy disabled — no bot can run on it."
+            }
           >
-            {strategy.active ? "Active" : "Inactive"}
+            {strategy.active ? "Enabled" : "Disabled"}
           </span>
         </div>
       </div>
@@ -128,19 +134,15 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
           className={`bg-surface rounded p-3 mb-4 ${getStrategyTypeColor(strategy.type)}`}
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-text">Bot Status</span>
-            <span
-              className={`px-2 py-1 text-xs rounded ${
-                bot.status === "RUNNING"
-                  ? "bg-success/20 text-success"
-                  : bot.status === "STOPPED"
-                    ? "bg-warning/20 text-warning"
-                    : "bg-danger/20 text-danger"
-              }`}
-            >
-              {bot.status}
-            </span>
+            <span className="text-sm font-medium text-text">Bot</span>
+            <BotStatusBadge bot={bot} hideDetail />
           </div>
+          {/* P1: bot lifecycle is distinct from the strategy's Enabled/Disabled
+              state above. "Needs attention" (reconcile-park or lost engine)
+              carries its own one-line explanation of the next safe action. */}
+          {bot.needsUserAction || bot.status === "UNKNOWN" ? (
+            <BotStatusBadge bot={bot} />
+          ) : null}
 
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="flex justify-between">
@@ -213,7 +215,7 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
         </button>
 
         <button
-          onClick={() => onDelete(strategy.id)}
+          onClick={() => onDelete(strategy)}
           className="p-2 rounded-lg hover:bg-surface transition-colors"
           title="Delete Strategy"
         >

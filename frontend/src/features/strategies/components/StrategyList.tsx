@@ -12,7 +12,7 @@ interface StrategyListProps {
   getBotForStrategy: (strategyId: string) => BotInstance | undefined;
   onCreateStrategy: () => void;
   onEditStrategy: (strategy: Strategy) => void;
-  onDeleteStrategy: (strategyId: string) => void;
+  onDeleteStrategy: (strategy: Strategy) => void;
   onBotStatusChange: () => void;
   isLoading: boolean;
   formatCurrency: (value: number) => string;

@@ -54,7 +54,13 @@ export interface BotInstance {
    * typecheck; strategy resolution must use `runs`.
    */
   strategy_id?: string;
-  status: "RUNNING" | "STOPPED" | "ERROR" | "STARTING" | "STOPPING";
+  /**
+   * Lifecycle status. Includes UNKNOWN: the reconciler parks a bot in UNKNOWN
+   * when the engine is unreachable / heartbeat is lost (see useBotLifecycle,
+   * which already casts `status as BotActualState`). Kept in sync with
+   * `BotActualState` in bots/types/bot-lifecycle.types.ts.
+   */
+  status: "RUNNING" | "STOPPED" | "ERROR" | "STARTING" | "STOPPING" | "UNKNOWN";
   total_trades: number;
   total_pnl: number;
   /**

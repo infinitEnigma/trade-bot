@@ -12,6 +12,7 @@ import { strategyService } from "../services/strategyService";
 import { Strategy } from "../../../shared/types";
 import { Plus, BarChart3, AlertTriangle } from "lucide-react";
 import { EngineJournalIntegrityNotice } from "../components/EngineJournalIntegrityNotice";
+import { ConfirmDialog } from "../../../shared/components/ui";
 import {
   buildChartSymbolGroups,
   decodeChartOption,
@@ -41,7 +42,7 @@ const BotControls = lazy(() =>
 );
 import { usePortfolioSummary } from "../../../shared/hooks";
 import { useAuth } from "../../auth";
-import { useBotsList } from "../../bots/hooks";
+import { useBotsList, getStateDisplayInfo } from "../../bots/hooks";
 import {
   getSessionForStrategy,
   getStrategyConfig,
@@ -63,6 +64,10 @@ const Strategies: React.FC = React.memo(() => {
   // unchanged — CandlestickChart/useChartData already handle it.
   const [chartSelectionOverride, setChartSelectionOverride] =
     useState<ChartSelection | null>(null);
+  // P1: the strategy awaiting delete confirmation. Non-null opens the in-app
+  // ConfirmDialog (replacing the native confirm()); we hold the full object so
+  // the dialog can name it and show whether a bot is attached + its state.
+  const [pendingDelete, setPendingDelete] = useState<Strategy | null>(null);
   const queryClient = useQueryClient();
 
   // Note: exchange connectivity check removed for simplicity
@@ -101,7 +106,19 @@ const Strategies: React.FC = React.memo(() => {
   }, [queryClient]);
 
   // Fetch strategies
-  const { data: strategiesData, isLoading } = useQuery({
+  // P1: loading, a successful empty list, and a failed fetch are three
+  // DIFFERENT states and must render three different things. Before, only
+  // `isLoading` was read and a failed fetch fell through to the "No Strategies
+  // Yet" empty state — making an API failure look like an empty account. Keep
+  // `isError`/`error`/`refetch` so the page can show "Couldn't load strategies"
+  // with a Retry action instead.
+  const {
+    data: strategiesData,
+    isLoading,
+    isError,
+    error: strategiesError,
+    refetch: refetchStrategies,
+  } = useQuery({
     queryKey: ["strategies"],
     queryFn: () => tradingApi.getStrategies(),
     staleTime: 2 * 60 * 1000, // 2 minutes - strategies don't change often
@@ -213,23 +230,32 @@ const Strategies: React.FC = React.memo(() => {
     0
   );
 
-  // Delete strategy mutation
+  // Delete strategy mutation.
+  // P1: surface the server's actionable error (e.g. a bot that must be stopped
+  // first, an ownership/lifecycle refusal) instead of a generic toast. The
+  // dialog stays open on failure so the operator sees WHY; it closes on
+  // success. Backend ownership/lifecycle checks remain authoritative.
   const deleteMutation = useMutation({
     mutationFn: (strategyId: string) => tradingApi.deleteStrategy(strategyId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["strategies"] });
       queryClient.invalidateQueries({ queryKey: ["bot-instances"] });
+      setPendingDelete(null);
       toast.success("Strategy deleted successfully");
     },
-    onError: () => {
-      toast.error("Failed to delete strategy");
+    onError: (error: unknown) => {
+      toast.error(readDeleteErrorMessage(error, "Failed to delete strategy"), {
+        duration: 6000,
+      });
     },
   });
 
-  const handleDeleteStrategy = (strategyId: string) => {
-    if (confirm("Are you sure you want to delete this strategy?")) {
-      deleteMutation.mutate(strategyId);
-    }
+  const handleDeleteStrategy = (strategy: Strategy) => {
+    setPendingDelete(strategy);
+  };
+
+  const confirmDeleteStrategy = () => {
+    if (pendingDelete) deleteMutation.mutate(pendingDelete.id);
   };
 
   const getBotForStrategy = (strategyId: string) => {
@@ -523,8 +549,30 @@ const Strategies: React.FC = React.memo(() => {
           variant="banner"
         />
 
-        {/* Strategies Grid */}
-        {isLoading ? (
+        {/* Strategy list — four distinct states, in precedence order:
+            ERROR (couldn't fetch — never imply an empty account) → loading
+            skeleton → genuinely-empty (no strategies exist) → the grid. */}
+        {isError ? (
+          <div className="glass-card p-12 text-center">
+            <AlertTriangle className="w-12 h-12 text-danger mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-text mb-2">
+              Couldn't load strategies
+            </h3>
+            <p className="text-textMuted mb-6 max-w-md mx-auto">
+              We couldn't reach the strategies service. This doesn't mean you
+              have no strategies — your list simply couldn't be retrieved. Try
+              again; if it keeps failing, check your connection.
+            </p>
+            {strategiesError instanceof Error && strategiesError.message ? (
+              <p className="text-xs text-textMuted mb-6 font-mono break-words">
+                {strategiesError.message}
+              </p>
+            ) : null}
+            <button onClick={() => refetchStrategies()} className="btn-primary">
+              Try again
+            </button>
+          </div>
+        ) : isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[1, 2, 3].map(i => (
               <div key={i} className="glass-card p-6">
@@ -675,6 +723,60 @@ const Strategies: React.FC = React.memo(() => {
           </div>
         )}
 
+        {/* P1: in-app delete confirmation (replaces native confirm()). Names
+            the strategy and — when a bot is bound to it — its current lifecycle
+            state, and states the stop-first prerequisite. Backend ownership /
+            lifecycle checks remain authoritative; this only frames the action
+            and surfaces whatever the server returns. */}
+        <ConfirmDialog
+          open={!!pendingDelete}
+          onClose={() => {
+            // Only allow closing when no delete is in flight (the dialog is
+            // non-dismissible while loading), so a stray close can't strand a
+            // half-open confirmation.
+            if (!deleteMutation.isPending) setPendingDelete(null);
+          }}
+          onConfirm={confirmDeleteStrategy}
+          title="Delete strategy?"
+          tone="danger"
+          confirmLabel={deleteMutation.isPending ? "Deleting…" : "Delete"}
+          loading={deleteMutation.isPending}
+        >
+          {(() => {
+            const bot = pendingDelete
+              ? getBotForStrategy(pendingDelete.id)
+              : undefined;
+            const botIsLive =
+              !!bot && bot.status !== "STOPPED" && bot.status !== "ERROR";
+            return (
+              <>
+                <p>
+                  You're about to permanently delete{" "}
+                  <span className="font-medium text-text">
+                    “{pendingDelete?.name}”
+                  </span>
+                  . This removes the strategy and its configuration. It can't be
+                  undone.
+                </p>
+                {bot ? (
+                  <p className="text-warning">
+                    A bot is currently associated with this strategy and is{" "}
+                    <span className="font-medium">
+                      {getStateDisplayInfo(bot.status).label}
+                    </span>
+                    .{" "}
+                    {botIsLive
+                      ? "Stop the bot first — a running bot can't be deleted."
+                      : "Its history row will be removed with the strategy."}
+                  </p>
+                ) : (
+                  <p>No bot is associated with this strategy.</p>
+                )}
+              </>
+            );
+          })()}
+        </ConfirmDialog>
+
         {editingStrategy && (
           <Suspense
             fallback={
@@ -710,5 +812,28 @@ const Strategies: React.FC = React.memo(() => {
 });
 
 Strategies.displayName = "Strategies";
+
+/**
+ * Extract an actionable message from a delete failure. Same error-shape
+ * handling the strategy form uses (Error / axios `response.data.error` /
+ * fallback) so a backend refusal (e.g. "stop the bot first", ownership) reads
+ * as a real reason rather than a generic toast.
+ */
+function readDeleteErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "object" && error !== null && "response" in error) {
+    const response = (error as { response?: { data?: unknown } }).response;
+    const data = response?.data;
+    if (
+      typeof data === "object" &&
+      data !== null &&
+      "error" in data &&
+      typeof (data as { error: unknown }).error === "string"
+    ) {
+      return (data as { error: string }).error;
+    }
+  }
+  return fallback;
+}
 
 export default Strategies;
