@@ -13,6 +13,10 @@ import * as crypto from "crypto";
 import type { AddressInfo } from "net";
 import { OrderlyClient } from "../client";
 import { DEFAULT_EXCHANGE_HTTP_TIMEOUT_MS } from "../../../domain/exchange";
+import {
+  isTickMultiple,
+  quantizePrice,
+} from "../../../utils/price-quantization";
 
 jest.mock("@noble/ed25519", () => {
   const nodeCrypto = jest.requireActual("crypto") as typeof import("crypto");
@@ -251,5 +255,98 @@ describe("OrderlyClient.cancelOrder confirmation", () => {
     } finally {
       await stub.close();
     }
+  });
+
+  /**
+   * `getMarketRules` against a mocked `GET /v1/public/info/{symbol}` response,
+   * exercising the adapter end to end (fetch → normalize → validate → return).
+   *
+   * The venue returns `quote_tick` as a JSON number. A fine tick like `1e-7`
+   * (`PERP_1000PEPE_USDC`, live) must survive stringification: the previous
+   * `String(quoteTick)` produced `"1e-7"`, which the plain-decimal validator
+   * rejected, wrongly refusing a market the venue lists.
+   */
+  describe("OrderlyClient.getMarketRules", () => {
+    function infoStub(row: Record<string, unknown>) {
+      return startStub((req, _body, json) => {
+        const path = (req.url ?? "").split("?")[0];
+        if (req.method === "GET" && path.startsWith("/v1/public/info/")) {
+          return json(200, { success: true, data: row });
+        }
+        return json(404, { success: false });
+      });
+    }
+
+    it("normalizes a scientific-notation tick (1e-7) to a canonical decimal string", async () => {
+      // Mirrors the live PERP_1000PEPE_USDC row: quote_min 0, quote_tick 1e-7.
+      const stub = await infoStub({
+        symbol: "PERP_1000PEPE_USDC",
+        quote_min: 0,
+        quote_tick: 1e-7,
+      });
+      try {
+        const rules = await makeClient(stub.baseUrl).getMarketRules(
+          "PERP_1000PEPE_USDC"
+        );
+        expect(rules).toEqual({
+          exchange: "kodiak",
+          symbol: "PERP_1000PEPE_USDC",
+          priceTickSize: "0.0000001",
+        });
+        // Quantization at that precision is exact, not drifted.
+        expect(quantizePrice("0.123456789", rules.priceTickSize, "up")).toBe(
+          "0.1234568"
+        );
+        expect(isTickMultiple("0.1234568", rules.priceTickSize)).toBe(true);
+        // Half a 1e-7 tick is genuinely off-tick (…05 is not a 1e-7 multiple).
+        expect(isTickMultiple("0.12345605", rules.priceTickSize)).toBe(false);
+      } finally {
+        await stub.close();
+      }
+    });
+
+    it("accepts an ordinary decimal tick unchanged", async () => {
+      const stub = await infoStub({
+        symbol: "PERP_ETH_USDC",
+        quote_min: 0,
+        quote_tick: 0.01,
+      });
+      try {
+        const rules = await makeClient(stub.baseUrl).getMarketRules(
+          "PERP_ETH_USDC"
+        );
+        expect(rules.priceTickSize).toBe("0.01");
+      } finally {
+        await stub.close();
+      }
+    });
+
+    it("fails closed on a nonzero quote_min (offset price filter is unmodeled)", async () => {
+      // No live market reports this today; the guard exists so a future venue
+      // change is caught loudly rather than pricing against the wrong origin.
+      const stub = await infoStub({
+        symbol: "PERP_WEIRD_USDC",
+        quote_min: 0.03,
+        quote_tick: 0.05,
+      });
+      try {
+        await expect(
+          makeClient(stub.baseUrl).getMarketRules("PERP_WEIRD_USDC")
+        ).rejects.toThrow(/nonzero quote_min/);
+      } finally {
+        await stub.close();
+      }
+    });
+
+    it("fails closed on a missing/unparseable quote_tick (never guesses precision)", async () => {
+      const stub = await infoStub({ symbol: "PERP_BAD_USDC", quote_min: 0 });
+      try {
+        await expect(
+          makeClient(stub.baseUrl).getMarketRules("PERP_BAD_USDC")
+        ).rejects.toThrow(/Invalid quote_tick/);
+      } finally {
+        await stub.close();
+      }
+    });
   });
 });

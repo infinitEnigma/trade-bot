@@ -108,3 +108,26 @@ export async function resolveMarketRules(
   }
   return validateMarketRules(rules);
 }
+
+/**
+ * Stable identity of a resolved rules set, for change detection at the order
+ * boundary (Phase E). Encodes every field that affects how a price is
+ * quantized or validated — today the tick size, on the venue's symbol. When
+ * an offset-aware price filter is later modeled (a nonzero `priceOrigin`),
+ * it must be appended here so a change in the origin is detected too.
+ */
+export function marketRulesFingerprint(rules: MarketRules): string {
+  return `${rules.exchange}:${rules.symbol}:${rules.priceTickSize}`;
+}
+
+/**
+ * True when two resolved rule sets are identical for pricing purposes. A
+ * strategy pins its init-time rules; the order boundary re-resolves them and
+ * uses this to freeze placements when the venue's rules have changed — even
+ * when the new tick still accepts the strategy's existing prices (a tick that
+ * shrank from `0.01` to `0.001` leaves `100.12` valid, but the grid was built
+ * under the old rules and must not silently continue).
+ */
+export function marketRulesMatch(a: MarketRules, b: MarketRules): boolean {
+  return marketRulesFingerprint(a) === marketRulesFingerprint(b);
+}

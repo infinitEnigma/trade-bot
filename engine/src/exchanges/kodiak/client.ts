@@ -36,6 +36,7 @@ import {
   validateMarketRules,
   isValidTickSizeString,
 } from "../../domain/market-rules";
+import { numberToDecimalString } from "../../utils/price-quantization";
 import { CommandError } from "../../application/command-error";
 import { toOrderlyOrderPayload } from "./payload";
 
@@ -487,9 +488,21 @@ export class OrderlyClient {
    * Authoritative price rules from `GET /v1/public/info/{symbol}`.
    *
    * The venue's rule is `quote_tick` with the price filter
-   * `(price - quote_min) % quote_tick == 0` — the engine quantizes against
-   * `quote_tick` and validates after. A missing/unparseable `quote_tick`
-   * fails closed (never guessed).
+   * `(price - quote_min) % quote_tick == 0`. The engine models the zero-origin
+   * case (`price % quote_tick == 0`), which is verified against live metadata:
+   * every market on both public Orderly environments (`api.orderly.org` and
+   * `testnet-api.orderly.org`) currently reports `quote_min === 0`. That is
+   * observed live metadata, not a venue guarantee — a nonzero `quote_min`
+   * would require offset-aware quantization, so this adapter fails closed
+   * loudly rather than silently pricing against the wrong origin.
+   *
+   * The tick is normalized to a canonical decimal string *before* validation:
+   * the venue returns `quote_tick` as a JSON number, and a fine tick like
+   * `1e-7` (`PERP_1000PEPE_USDC`) stringifies to scientific notation
+   * (`String(1e-7) === "1e-7"`), which the plain-decimal tick validator
+   * rejects. `numberToDecimalString` recovers `"0.0000001"` so the market is
+   * not wrongly refused. A missing/unparseable `quote_tick` fails closed
+   * (never guessed).
    */
   async getMarketRules(symbol: string): Promise<MarketRules> {
     const path = `/v1/public/info/${encodeURIComponent(symbol)}`;
@@ -504,13 +517,34 @@ export class OrderlyClient {
       );
     }
     const row = (payload ?? {}) as Record<string, unknown>;
+    // Zero-origin guard: the engine quantizes `price % quote_tick == 0`. A
+    // nonzero quote_min would need offset-aware arithmetic the contract does
+    // not model, so refuse rather than price against the wrong origin.
+    const quoteMin = row.quote_min;
+    if (quoteMin !== undefined && quoteMin !== null && Number(quoteMin) !== 0) {
+      throw new CommandError(
+        false,
+        `kodiak:${symbol} reports nonzero quote_min ${JSON.stringify(
+          quoteMin
+        )} (offset price filter ` +
+          `(price - quote_min) % quote_tick == 0); the engine models only the ` +
+          `zero-origin tick grid and refuses to guess the price origin`
+      );
+    }
     const quoteTick = row.quote_tick;
-    const tickStr =
-      typeof quoteTick === "number"
-        ? String(quoteTick)
-        : typeof quoteTick === "string"
-          ? quoteTick.trim()
-          : "";
+    // Normalize a numeric tick to a canonical decimal string so scientific
+    // notation (e.g. 1e-7) becomes "0.0000001" before the tick-shape check.
+    let tickStr: string;
+    try {
+      tickStr =
+        typeof quoteTick === "number"
+          ? numberToDecimalString(quoteTick)
+          : typeof quoteTick === "string"
+            ? quoteTick.trim()
+            : "";
+    } catch {
+      tickStr = "";
+    }
     if (!isValidTickSizeString(tickStr)) {
       throw new CommandError(
         false,

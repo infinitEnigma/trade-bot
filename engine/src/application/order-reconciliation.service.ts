@@ -48,7 +48,12 @@ import {
 import { CommandError } from "./command-error";
 import { TradeReporter } from "./trade-reporter";
 import { OrderManager } from "./order-manager";
-import { resolveMarketRules } from "../domain/market-rules";
+import {
+  MarketRules,
+  marketRulesFingerprint,
+  marketRulesMatch,
+  resolveMarketRules,
+} from "../domain/market-rules";
 import {
   isTickMultiple,
   numberToDecimalString,
@@ -70,7 +75,15 @@ export class OrderReconciliationService {
     private symbol: string,
     private manager: OrderManager,
     /** Phase 4 ledger emission; absent in strategy unit tests. */
-    private reporter?: TradeReporter
+    private reporter?: TradeReporter,
+    /**
+     * Market rules pinned at strategy init (Phase E). When present, every
+     * placement re-resolves the live rules and refuses to submit if they no
+     * longer match — a rules change freezes new placements rather than
+     * silently trading a grid built under different rules. Absent in tests
+     * that do not pin rules, where only the fresh tick-multiple check applies.
+     */
+    private pinnedRules: MarketRules | null = null
   ) {}
 
   /**
@@ -111,6 +124,27 @@ export class OrderReconciliationService {
         this.symbol,
         "order-boundary"
       );
+      // Phase E: a rules change since init freezes placements. The live rules
+      // are compared against the strategy's pinned rules by full fingerprint,
+      // not just a tick-multiple re-check: a tick that shrank (0.01 -> 0.001)
+      // still accepts the grid's existing prices, so only an explicit mismatch
+      // catches that the grid is now trading under rules it was not built for.
+      if (this.pinnedRules && !marketRulesMatch(this.pinnedRules, rules)) {
+        const reason = `market rules changed since init (pinned ${marketRulesFingerprint(
+          this.pinnedRules
+        )} -> current ${marketRulesFingerprint(
+          rules
+        )}) for ${this.symbol}; refusing placement until reconciled or restarted`;
+        logger.error("Order boundary market-rules mismatch", {
+          botId: this.botId,
+          symbol: this.symbol,
+          side,
+          price,
+          reason,
+        });
+        this.manager.markUnavailable(clientOrderId, reason);
+        return { kind: "UNAVAILABLE", reason };
+      }
       if (
         !Number.isFinite(price) ||
         price <= 0 ||

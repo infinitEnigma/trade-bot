@@ -301,7 +301,12 @@ export class GridTradingStrategy {
       this.exchange,
       this.config.symbol,
       this.manager,
-      this.reporter ?? undefined
+      this.reporter ?? undefined,
+      // Phase E: pin the init-time rules so the order boundary refuses new
+      // placements if the venue's rules change (a tick shrink would otherwise
+      // still accept the grid's existing prices). Resolved above, before any
+      // level is built, so it always matches what the grid was constructed with.
+      this.marketRules
     );
 
     // Aggregate stop-loss machine (v1, Model A). Restored from the snapshot's
@@ -1618,24 +1623,54 @@ export class GridTradingStrategy {
   /**
    * Build a fresh set of empty grid levels around a center price.
    *
-   * Every level is quantized against the pinned market tick: BUY limits
-   * round down (never pay more than the calculated target). A grid whose
-   * quantized levels collapse (duplicates), leave the configured range, or
-   * degenerate to zero spacing fails init — levels are never silently
-   * merged and user parameters are never altered.
+   * Every level is quantized against the pinned market tick. The band's outer
+   * edges are first snapped INWARD to valid ticks — the lower edge rounds UP
+   * to the first valid tick inside the band, the upper edge rounds DOWN to the
+   * last valid tick inside the band — so no level can fall outside the
+   * configured range.
+   *
+   * TRADE-OFF (explicit): staying inside the configured band takes precedence
+   * over never exceeding a calculated BUY target. When a boundary is off-tick,
+   * the snapped lower edge can sit a few ticks above the raw calculated target,
+   * so a BUY may rest slightly above where the raw math placed it. The band is
+   * the user's explicit risk boundary and is never widened; trading outside it
+   * is refused instead. Intermediate levels are spaced uniformly across the
+   * snapped band and quantized down; the top level is clamped exactly to the
+   * snapped upper edge.
+   *
+   * A grid whose quantized levels collapse (duplicates), whose band contains
+   * no valid tick, or that degenerates to zero spacing fails init — levels are
+   * never silently merged and user parameters are never altered.
    */
   private buildLevels(centerPrice: number): GridLevel[] {
     const tick = this.requireTick();
     const priceRange = centerPrice * (this.config.gridRangePercent / 100);
-    const minPrice = centerPrice - priceRange / 2;
-    const maxPrice = centerPrice + priceRange / 2;
-    const gridSpacing = (maxPrice - minPrice) / this.config.gridSize;
+    // The configured band the user authorized. Every level MUST land inside it.
+    const bandMin = centerPrice - priceRange / 2;
+    const bandMax = centerPrice + priceRange / 2;
+
+    // Endpoint policy: snap the band's outer edges inward to valid ticks.
+    const bottom = quantizePriceNumber(bandMin, tick, "up");
+    const top = quantizePriceNumber(bandMax, tick, "down");
+    if (top < bottom) {
+      throw new CommandError(
+        false,
+        `Grid construction failed: the configured band [${bandMin}, ${bandMax}] contains no valid ${tick} tick for ${this.config.symbol}. Refusing to guess a grid.`
+      );
+    }
+    // Uniform spacing across the snapped band. Every intermediate raw is
+    // >= bottom (itself a tick multiple), so rounding DOWN keeps it in-band;
+    // the final level is clamped exactly to `top`.
+    const gridSpacing = (top - bottom) / this.config.gridSize;
 
     const levels: GridLevel[] = [];
     const seen = new Set<string>();
     for (let i = 0; i <= this.config.gridSize; i++) {
-      const raw = minPrice + i * gridSpacing;
-      const price = quantizePriceNumber(raw, tick, "down");
+      const raw = bottom + i * gridSpacing;
+      const price =
+        i === this.config.gridSize
+          ? top
+          : quantizePriceNumber(raw, tick, "down");
       const key = numberToDecimalString(price);
       if (seen.has(key)) {
         throw new CommandError(
@@ -1646,11 +1681,9 @@ export class GridTradingStrategy {
       seen.add(key);
       levels.push({ price, filled: false });
     }
-    // Post-quantize range guard: rounding down may pull the bottom level
-    // below the configured band. Fail closed rather than trade a level the
-    // user did not configure.
-    const bandMin = minPrice;
-    const bandMax = maxPrice;
+    // Defense in depth: the snapped endpoints guarantee in-band levels, but
+    // keep the guard so any future change that reintroduces drift still fails
+    // closed rather than trading outside the user's band.
     for (const level of levels) {
       if (level.price < bandMin || level.price > bandMax) {
         throw new CommandError(

@@ -852,4 +852,89 @@ describe("OrderReconciliationService — partial-fill observation (Phase 4)", ()
 
     expect(report.fills).toEqual([]);
   });
+
+  describe("OrderReconciliationService — pinned market rules (Phase E)", () => {
+    /**
+     * A service built with rules pinned at init. The exchange can then be made
+     * to report different rules at placement time, mimicking a live rules change.
+     */
+    function setupPinned(pinnedTick: string) {
+      const levels: GridLevel[] = [{ price: 100, filled: false }];
+      const ids = new ClientOrderIdGenerator("bot-x");
+      const manager = new OrderManager(levels, ids, 1);
+      let currentTick = pinnedTick;
+      const exchange = {
+        created: [] as unknown[],
+        getTicker: async () => ({ symbol: SYMBOL, price: 100 }),
+        getOrder: async (orderId: string) => ({ orderId, status: "OPEN" }),
+        createOrder: async (request: unknown) => {
+          exchange.created.push(request);
+          return { orderId: `new-${exchange.created.length}` };
+        },
+        cancelOrder: async () => ({ status: "CANCELLED" }),
+        getPositions: async () => [],
+        getAccountInfo: async () => ({ total_value: 0, max_leverage: 1 }),
+        listOpenOrders: async () => [],
+        queryOrderByClientOrderId: async () => notFound(),
+        getMarketRules: async (symbol: string) => ({
+          exchange: "fake",
+          symbol,
+          priceTickSize: currentTick,
+        }),
+      } as unknown as ExchangeClient & { created: unknown[] };
+
+      const pinned = {
+        exchange: "fake",
+        symbol: SYMBOL,
+        priceTickSize: pinnedTick,
+      };
+      const service = new OrderReconciliationService(
+        "bot-x",
+        exchange,
+        SYMBOL,
+        manager,
+        undefined,
+        pinned
+      );
+      return {
+        levels,
+        exchange,
+        service,
+        setTick: (t: string) => {
+          currentTick = t;
+        },
+      };
+    }
+
+    it("refuses a placement when the live tick differs from the pinned tick", async () => {
+      const { service, exchange, setTick } = setupPinned("0.01");
+      // The venue now reports a different tick than the grid was built under.
+      setTick("0.001");
+      const outcome = await service.ensureSlotOrder(0, "BUY", 100.12, 1);
+      expect(outcome.kind).toBe("UNAVAILABLE");
+      if (outcome.kind === "UNAVAILABLE") {
+        expect(outcome.reason).toMatch(/market rules changed since init/);
+      }
+      // No order reached the exchange: the rules mismatch froze the placement.
+      expect(exchange.created).toHaveLength(0);
+    });
+
+    it("places normally when the live tick still matches the pinned tick", async () => {
+      const { service, exchange } = setupPinned("0.01");
+      const outcome = await service.ensureSlotOrder(0, "BUY", 100.12, 1);
+      expect(outcome.kind).not.toBe("UNAVAILABLE");
+      expect(exchange.created).toHaveLength(1);
+    });
+
+    it("still rejects an off-tick price under unchanged rules", async () => {
+      const { service, exchange } = setupPinned("0.01");
+      // 100.123 is not a multiple of 0.01, and the rules are unchanged.
+      const outcome = await service.ensureSlotOrder(0, "BUY", 100.123, 1);
+      expect(outcome.kind).toBe("UNAVAILABLE");
+      if (outcome.kind === "UNAVAILABLE") {
+        expect(outcome.reason).toMatch(/not a multiple of tick/);
+      }
+      expect(exchange.created).toHaveLength(0);
+    });
+  });
 });
