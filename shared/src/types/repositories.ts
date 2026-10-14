@@ -404,6 +404,16 @@ export interface BotInstanceRecord {
   /** Why action is needed, e.g. `desired-running-unconfirmed`. */
   needs_user_action_reason?: string | null;
   /**
+   * The terminal stop reason when a stop could not finish its venue-side
+   * cleanup — carries the engine's `cleanup_incomplete` marker and the
+   * verified residual (e.g. `position 2.5 BTC not flattened (…)`). Written by
+   * the event processor (M1) and NEVER reset, so a clean-looking STOPPED row
+   * can always be distinguished from one whose orders/position may still be
+   * live on the venue. Present on `SELECT *` row reads. Wire contract: the
+   * marker inside the value is the engine/backend `CLEANUP_INCOMPLETE_MARKER`.
+   */
+  force_stop_reason?: string | null;
+  /**
    * Runs attached to this session, oldest first (plan §D, 022 shim-drop).
    * Present on the list query; THE strategy resolution path — the
    * `strategy_*` columns above are the oldest run's display projection.

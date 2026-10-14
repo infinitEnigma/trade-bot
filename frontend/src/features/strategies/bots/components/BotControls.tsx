@@ -42,6 +42,7 @@ import {
   useBotState,
   BOT_INSTANCES_QUERY_KEY,
 } from "../../../bots/hooks/useBotLifecycle";
+import { CleanupIncompleteBanner } from "./CleanupIncompleteBanner";
 import { BotInstance } from "../../../strategies/types/strategies.types";
 
 interface BotControlsProps {
@@ -675,6 +676,15 @@ export const BotControls: React.FC<BotControlsProps> = ({
   if (currentState === "STOPPED") {
     return (
       <div className="flex flex-col gap-3">
+        {/* P0.1: a stop that could not verify its venue cleanup is NEVER
+            presented as a clean "ready to trade" row — the verified residual
+            + a read-only venue re-check come first. Renders null on clean
+            stops (no marker). */}
+        <CleanupIncompleteBanner
+          forceStopReason={bot.forceStopReason}
+          exchangeAccountId={bot.exchange_account_id}
+          symbol={strategySymbol}
+        />
         {/* Restarting creates a fresh bound bot, so the account is picked here. */}
         <AccountSizePicker
           accounts={activeAccounts}
@@ -707,6 +717,13 @@ export const BotControls: React.FC<BotControlsProps> = ({
   // ERROR or UNKNOWN state
   return (
     <div className="space-y-3">
+      {/* P0.1: the residual fact persists across the next transition (the
+          column is never reset) — an errored row may hold it too. */}
+      <CleanupIncompleteBanner
+        forceStopReason={bot.forceStopReason}
+        exchangeAccountId={bot.exchange_account_id}
+        symbol={strategySymbol}
+      />
       <AccountSizePicker
         accounts={activeAccounts}
         isLoading={accountsQuery.isLoading}

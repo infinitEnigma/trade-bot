@@ -41,6 +41,12 @@ vi.mock("../../../../infrastructure/api", () => ({
   authApi: {
     checkQualification: vi.fn(),
   },
+  // P0.1: the CleanupIncompleteBanner mounted in the STOPPED/ERROR branches
+  // reads these on "Re-check venue" (read-only venue re-verification).
+  marketApi: {
+    getPositions: vi.fn(),
+    getOpenOrders: vi.fn(),
+  },
 }));
 
 vi.mock("../../../../infrastructure/api/accounts", () => ({

@@ -127,6 +127,7 @@ export function useBotLifecycle(botId?: string) {
           needs_user_action?: boolean;
           needs_user_action_reason?: string | null;
           exchange_account_id?: string | null;
+          force_stop_reason?: string | null;
           runs?: BotInstance["runs"];
         }) => ({
           // L19: `id` is the session id, never a strategy id — stop,
@@ -157,6 +158,11 @@ export function useBotLifecycle(botId?: string) {
           // legacy rows — strategy→account resolution goes through
           // `getExchangeAccountForStrategy`, never the strategy row.
           exchange_account_id: bot.exchange_account_id ?? null,
+          // P0.1 (prod 2026-10-14): the stop's VERIFIED outcome — carries the
+          // `cleanup_incomplete` marker + residual when the panic flatten
+          // could not confirm the venue flat. Surfaced by the banner; never
+          // dropped here, or the STOPPED row reads clean by omission.
+          forceStopReason: bot.force_stop_reason ?? null,
           // D4 sessions: runs attached to this session (backend list query).
           runs: bot.runs,
           config: bot.config || {

@@ -173,6 +173,7 @@ export class StrategyService {
             total_pnl: number;
             total_pnl_incomplete_fills?: number;
             last_updated: string;
+            force_stop_reason?: string | null;
             config?: unknown;
           }) => ({
             // L19: the session id (what /management/stop expects), never a
@@ -185,6 +186,11 @@ export class StrategyService {
             // F2: incompleteness counter travels to the render surface.
             total_pnl_incomplete_fills: bot.total_pnl_incomplete_fills,
             last_updated: bot.last_updated,
+            // P0.1: carry the stop's verified outcome (the `cleanup_incomplete`
+            // residual) — both mappers feed the shared ["bot-instances"]
+            // cache, and a dropped field would make the banner flicker
+            // depending on which mapper wrote last.
+            forceStopReason: bot.force_stop_reason ?? null,
             config: bot.config || {
               type: StrategyType.GRID,
               config: {

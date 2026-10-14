@@ -91,6 +91,16 @@ export interface BotInstance {
    * `getExchangeAccountForStrategy`.
    */
   exchange_account_id?: string | null;
+  /**
+   * The session's terminal stop reason when a stop could not finish its
+   * venue-side cleanup (`bot_instances.force_stop_reason`, never reset).
+   * Carries the engine's `cleanup_incomplete` marker + the verified residual
+   * (e.g. `position 2.5 BTC not flattened (…)`), so a STOPPED row can never
+   * look clean while orders/position may still be live on the venue
+   * (prod 2026-10-14: the 2 BTC the panic flatten left open). Renders via
+   * `CleanupIncompleteBanner`; null/absent = the stop verified clean.
+   */
+  forceStopReason?: string | null;
 }
 
 /**

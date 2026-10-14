@@ -179,4 +179,30 @@ describe("useBotLifecycle bot-instances mapping (L19)", () => {
     // The exact expression BotControls renders must not throw on a string row.
     expect(Number(result.current.bot?.total_pnl || 0).toFixed(2)).toBe("12.50");
   });
+
+  it("carries force_stop_reason (the cleanup residual) through the mapping (P0.1)", async () => {
+    // Prod 2026-10-14: the engine's verified residual travelled DB → HTTP but
+    // died at this mapping — nothing in the frontend ever read the column, so
+    // a STOPPED row with live venue exposure looked clean.
+    const reason =
+      "emergency_stop:FULL_SHUTDOWN; cleanup_incomplete: position 2.5 BTC not flattened";
+    vi.mocked(tradingApi.getBotInstances).mockResolvedValue({
+      success: true,
+      data: [{ ...API_ROW, force_stop_reason: reason }],
+    });
+
+    const { result } = renderHook(() => useBotLifecycle("bot-1"), { wrapper });
+
+    await waitFor(() => expect(result.current.bot?.id).toBe("bot-1"));
+    expect(result.current.bot?.forceStopReason).toBe(reason);
+  });
+
+  it("maps rows without force_stop_reason to null (clean stop)", async () => {
+    const { result } = renderHook(() => useBotLifecycle("bot-1"), { wrapper });
+
+    await waitFor(() => expect(result.current.bot?.id).toBe("bot-1"));
+    // Null (never undefined) so the banner's contract is one type, and a
+    // clean stop renders nothing rather than flickering on a missing key.
+    expect(result.current.bot?.forceStopReason).toBeNull();
+  });
 });

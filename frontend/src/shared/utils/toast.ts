@@ -149,7 +149,12 @@ export const OperationToasts = {
 
   botEmergencyStop: (strategyName: string) =>
     SmartToast.success(`🚨 Emergency stop initiated for ${strategyName}!`, {
-      description: "All orders will be cancelled",
+      // Honest dispatch ack (prod 2026-10-14): this fires on HTTP 202 — the
+      // command was ACCEPTED, not completed. The verified outcome (flat, or
+      // the exact residual) arrives later via the bot card's
+      // CleanupIncompleteBanner; a success toast must never be the last word.
+      description:
+        "Cancelling orders and closing positions — the bot card reports the verified venue outcome.",
       duration: 8000,
     }),
 
