@@ -156,7 +156,10 @@ describe("resolveChartSelection", () => {
       available: true,
       symbols: undefined,
     } as unknown as VenueCatalog;
-    const nullSymbols = { ...malformed, symbols: null };
+    const nullSymbols = {
+      ...malformed,
+      symbols: null,
+    } as unknown as VenueCatalog;
 
     expect(() => buildChartSymbolGroups([malformed], ["ETH"])).not.toThrow();
     expect(buildChartSymbolGroups([malformed], ["ETH"])).toEqual([

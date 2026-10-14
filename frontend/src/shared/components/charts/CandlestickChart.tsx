@@ -138,9 +138,25 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     symbol,
   ]);
 
-  // Initialize chart
+  // Initialize chart.
+  //
+  // F4: the deps are `[height]` ONLY — deliberately NOT `chartError`. The
+  // historical poll flaps `null → message → null` on every retry/failure
+  // (`useChartData` surfaces `historicalQuery.error?.message`, retry 2 +
+  // a dynamic refetchInterval), and every flap used to run this effect's
+  // cleanup (`chart.remove()`) and then bail out of the body — a
+  // dispose/recreate churn that (a) blanked the pane mid-refetch-storm and
+  // (b) was the disposal trigger for the crash below: the orders effect's
+  // cleanup still held the PREVIOUS chart's markers plugin and called
+  // `setMarkers([])` on it after `remove()`, which schedules a
+  // requestAnimationFrame inside lightweight-charts that throws on the
+  // already-disposed canvases — asynchronously, outside any try/catch.
+  // Error, loading and empty are already rendered as overlays over the
+  // canvas (see the JSX below), so a data error never needs the chart
+  // recreated; it is created once per mount and only rebuilt when `height`
+  // actually changes.
   useEffect(() => {
-    if (!containerRef.current || chartError) return;
+    if (!containerRef.current) return;
 
     try {
       // Create chart instance with dark theme to match page style
@@ -250,12 +266,19 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         if (chart) {
           chart.remove();
         }
+        // F4: every handle the other effects read must die WITH the chart.
+        // Leaving `chartRef`/`candlestickSeriesRef`/`volumeSeriesRef`
+        // pointing at a removed chart is how a stale price line or a
+        // `setMarkers` got issued against disposed canvases.
+        chartRef.current = null;
+        candlestickSeriesRef.current = null;
+        volumeSeriesRef.current = null;
         isChartReady.current = false;
       };
     } catch (chartError) {
       console.error("Failed to create chart:", chartError);
     }
-  }, [height, chartError]);
+  }, [height]);
 
   // Phase 3.1 (review P1-2): re-apply the derived format when the visible
   // precision changes (candles / order book arriving) WITHOUT recreating the
@@ -352,7 +375,9 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   // Phase 3: draw the open-orders book for this market. Redraws whenever the
   // order set, the loaded candles (they gate marker placement) or the symbol
   // change; cleanup removes the lines it created and empties the markers so a
-  // scope/symbol switch never leaves stale levels on the pane.
+  // scope/symbol switch never leaves stale levels on the pane — but only
+  // while the chart this run drew with is still the mounted one (see the
+  // F4 note in that cleanup).
   useEffect(() => {
     const series = candlestickSeriesRef.current;
     const markersPlugin = markersPluginRef.current;
@@ -412,9 +437,21 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     }
 
     return () => {
-      // On unmount React tears effects down in declaration order, so the
-      // chart may already be destroyed — the try/catch keeps the removal
-      // attempt safe either way (the lines die with their series regardless).
+      // F4: React tears effects down in declaration order, so by the time
+      // this cleanup runs the chart-init effect's cleanup above may ALREADY
+      // have removed the chart (unmount, or a `height` change). The `try`
+      // blocks that used to sit here could not help: a `setMarkers()` on a
+      // removed chart schedules a requestAnimationFrame inside
+      // lightweight-charts that throws on the disposed canvases
+      // ASYNCHRONOUSLY, where no synchronous try/catch can reach it. Prove
+      // the instances this run drew with are still the mounted chart's
+      // before touching them — a stale one is skipped entirely, which is
+      // also correct: the chart (and with it the lines and the markers
+      // plugin) is gone, so there is nothing left to remove.
+      if (series !== candlestickSeriesRef.current) return;
+      const livePlugin = markersPluginRef.current;
+      if (!livePlugin || livePlugin !== markersPlugin) return;
+
       for (const line of lines) {
         try {
           series.removePriceLine(line);
@@ -423,7 +460,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         }
       }
       try {
-        markersPlugin.setMarkers([]);
+        livePlugin.setMarkers([]);
       } catch {
         // Plugin already detached with its series.
       }

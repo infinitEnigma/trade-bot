@@ -8,10 +8,18 @@
  * bare `BTC`), and cleanup that removes the lines/markers it created. The
  * chart engine and the data/visibility hooks are mocked; only the drawing
  * contract is under test.
+ *
+ * F4: the chart lifecycle is under test too. `setMarkers()` schedules a
+ * requestAnimationFrame inside lightweight-charts, so calling it on a chart
+ * that has already been `remove()`d throws asynchronously on the disposed
+ * canvases — outside any try/catch. The fakes therefore record every
+ * post-dispose touch (`fakes.postDisposeCalls`), and the historical-data
+ * error is controllable (`fakes.chartError`) so the refetch-storm flap that
+ * used to destroy and recreate the chart can be simulated exactly.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import type { OpenOrderRow } from "../../../infrastructure/api/market";
 
 const fakes = vi.hoisted(() => {
@@ -34,20 +42,57 @@ const fakes = vi.hoisted(() => {
     update: vi.fn(),
     priceScale: () => ({ applyOptions: vi.fn() }),
   };
-  const markersPlugin = { setMarkers: vi.fn(), detach: vi.fn() };
+  // F4: a removed chart's plugin is dead. Any call recorded here is the
+  // disposed-chart crash class (the throw lands in a rAF, so it cannot be
+  // caught by the component — it has to be prevented instead).
+  const postDisposeCalls: string[] = [];
+  let disposed = false;
+  const markersPlugin = {
+    setMarkers: vi.fn(() => {
+      if (disposed) postDisposeCalls.push("markersPlugin.setMarkers");
+    }),
+    detach: vi.fn(),
+  };
   const chart = {
     addSeries: vi.fn((seriesType: unknown) =>
       seriesType === "HistogramSeries" ? volumeSeries : candleSeries
     ),
     applyOptions: vi.fn(),
-    remove: vi.fn(),
+    remove: vi.fn(() => {
+      disposed = true;
+    }),
     timeScale: () => ({ fitContent: vi.fn() }),
   };
-  return { candles, candleSeries, volumeSeries, markersPlugin, chart };
+  return {
+    candles,
+    candleSeries,
+    volumeSeries,
+    markersPlugin,
+    chart,
+    postDisposeCalls,
+    /** The historical poll's error message, exactly as `useChartData` surfaces it. */
+    chartError: null as string | null,
+    /**
+     * The fakes reuse ONE chart/series/plugin object, so liveness is tracked
+     * by a flag rather than by identity. A real `createChart()` always
+     * returns a live instance — re-arm that here.
+     */
+    markChartCreated: () => {
+      disposed = false;
+    },
+    /** Between tests: pretend the chart was never disposed again. */
+    resetDisposal: () => {
+      disposed = false;
+      postDisposeCalls.length = 0;
+    },
+  };
 });
 
 vi.mock("lightweight-charts", () => ({
-  createChart: vi.fn(() => fakes.chart),
+  createChart: vi.fn(() => {
+    fakes.markChartCreated();
+    return fakes.chart;
+  }),
   createSeriesMarkers: vi.fn(() => fakes.markersPlugin),
   LineStyle: { Dotted: 0, Dashed: 1, Solid: 2 },
   ColorType: { Solid: "solid" },
@@ -60,7 +105,7 @@ vi.mock("../../../shared/hooks/useChartData", () => ({
   useChartData: () => ({
     data: fakes.candles,
     loading: false,
-    error: null,
+    error: fakes.chartError,
     markPriceData: null,
     connectionStatus: "connected",
   }),
@@ -92,11 +137,16 @@ const order = (overrides: Partial<OpenOrderRow> = {}): OpenOrderRow => ({
   ...overrides,
 });
 
-const renderChart = (props: { symbol?: string; orders?: OpenOrderRow[] }) =>
+const renderChart = (props: {
+  symbol?: string;
+  orders?: OpenOrderRow[];
+  height?: number;
+}) =>
   render(
     <CandlestickChart
       symbol={props.symbol ?? "PERP_BTC_USDC"}
       interval="1h"
+      height={props.height ?? 400}
       {...(props.orders !== undefined ? { orders: props.orders } : {})}
     />
   );
@@ -105,6 +155,8 @@ describe("CandlestickChart order levels + markers (Phase 3)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fakes.candles = DEFAULT_CANDLES;
+    fakes.chartError = null;
+    fakes.resetDisposal();
     // The component logs a data-update debug line; keep test output clean.
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
@@ -196,14 +248,84 @@ describe("CandlestickChart order levels + markers (Phase 3)", () => {
     expect(fakes.markersPlugin.setMarkers).toHaveBeenLastCalledWith([]);
   });
 
-  it("cleans up its levels and markers on unmount", () => {
+  it("disposes the chart with its levels and markers on unmount (F4)", () => {
     const { unmount } = renderChart({ orders: [order()] });
-    const line = fakes.candleSeries.createPriceLine.mock.results[0].value;
+    // Drawn while the chart was live.
+    expect(fakes.markersPlugin.setMarkers).toHaveBeenCalledTimes(1);
 
     unmount();
 
-    expect(fakes.candleSeries.removePriceLine).toHaveBeenCalledWith(line);
-    expect(fakes.markersPlugin.setMarkers).toHaveBeenLastCalledWith([]);
+    // `chart.remove()` takes the price lines and the markers plugin with it,
+    // so the orders cleanup has nothing left to remove — and must not poke
+    // the dead plugin either: that is what scheduled the requestAnimationFrame
+    // which then threw on the disposed canvases, asynchronously, where no
+    // try/catch could reach it.
+    expect(fakes.chart.remove).toHaveBeenCalledTimes(1);
+    expect(fakes.postDisposeCalls).toEqual([]);
+  });
+
+  // ---- F4: the chart's lifetime must not depend on the data poll ----
+
+  it("keeps ONE chart alive across a chartError flap (F4)", () => {
+    // The historical poll flaps null → message → null on every retry during
+    // a refetch storm. Each flap used to run this effect's cleanup
+    // (`chart.remove()`) and then bail out of the body — the dispose/recreate
+    // churn that blanked the pane and armed the disposed-chart crash.
+    // Fresh element each time: re-rendering with the SAME element object
+    // makes React bail out, which would never deliver the new error.
+    const chart = () => (
+      <CandlestickChart
+        symbol="PERP_BTC_USDC"
+        interval="1h"
+        height={400}
+        orders={[order()]}
+      />
+    );
+
+    // 1. Mounted while ALREADY in error (a cached 400, retries pending): the
+    //    chart is still created — the error is an overlay, not a gate.
+    fakes.chartError = "Failed to load historical data";
+    const { rerender } = render(chart());
+    expect(fakes.chart.addSeries).toHaveBeenCalledTimes(2); // candles + volume
+    expect(fakes.chart.remove).not.toHaveBeenCalled();
+    expect(screen.getByText(/Error loading chart/)).toBeDefined();
+
+    // 2. The error clears and data arrives.
+    fakes.chartError = null;
+    rerender(chart());
+    expect(fakes.chart.remove).not.toHaveBeenCalled();
+
+    // 3. It comes back — still the same chart, overlay only.
+    fakes.chartError = "Failed to load historical data";
+    rerender(chart());
+    expect(fakes.chart.addSeries).toHaveBeenCalledTimes(2);
+    expect(fakes.chart.remove).not.toHaveBeenCalled();
+    expect(fakes.postDisposeCalls).toEqual([]);
+  });
+
+  it("recreating for a height change leaves the disposed chart untouched (F4)", () => {
+    // `orders` is a fresh array on every render (callers build it inline), so
+    // the orders effect re-runs here too: its cleanup must skip the chart the
+    // chart-init cleanup just removed, and its body must redraw onto the NEW
+    // live chart.
+    const { rerender } = renderChart({ orders: [order()], height: 400 });
+
+    rerender(
+      <CandlestickChart
+        symbol="PERP_BTC_USDC"
+        interval="1h"
+        height={600}
+        orders={[order()]}
+      />
+    );
+
+    expect(fakes.chart.remove).toHaveBeenCalledTimes(1);
+    expect(fakes.chart.addSeries).toHaveBeenCalledTimes(4); // two charts
+    // Initial draw + the redraw onto the replacement chart — no third call
+    // from a cleanup poking the removed chart.
+    expect(fakes.markersPlugin.setMarkers).toHaveBeenCalledTimes(2);
+    expect(fakes.candleSeries.createPriceLine).toHaveBeenCalledTimes(2);
+    expect(fakes.postDisposeCalls).toEqual([]);
   });
 
   it("creates the markers plugin once per chart", () => {
