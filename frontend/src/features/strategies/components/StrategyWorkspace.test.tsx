@@ -17,26 +17,16 @@ import type { BotInstance } from "../types/strategies.types";
 import type { OpenOrderRow } from "../../../infrastructure/api/market";
 import type { AccountPositionRow } from "../../../infrastructure/api/market";
 import type { ExchangeAccountDto } from "../../../infrastructure/api/accounts";
-import type {
-  ChartSelection,
-  ChartSymbolGroup,
-} from "../utils/chartSymbolPicker";
 import { StrategyWorkspace } from "./StrategyWorkspace";
 
 vi.mock("../bots/components/BotControls", () => ({
   BotControls: () => <div data-testid="bot-controls" />,
 }));
 
-// The workspace lazy-loads the real chart (lightweight-charts); stub it for a
-// fast, stable test that still proves symbol + book forwarding (Phase 3.1).
+// F5: the chart moved to a page-level panel (StrategyChartPanel). Stub it so
+// the regression guard below can prove the workspace never mounts it.
 vi.mock("../../../shared/components/charts/CandlestickChart", () => ({
-  default: (props: { symbol?: string; orders?: unknown }) => (
-    <div
-      data-testid="candlestick-chart"
-      data-symbol={props.symbol ?? ""}
-      data-orders={JSON.stringify(props.orders ?? null)}
-    />
-  ),
+  default: () => <div data-testid="candlestick-chart" />,
 }));
 
 // The workspace calls the real hook (query-keyed per strategyId); the hook is
@@ -139,10 +129,6 @@ const workspaceProps = (
     positionsLoading?: boolean;
     positionsError?: boolean;
     positionsUpdatedAt?: number;
-    chartSelection?: ChartSelection;
-    chartGroups?: ChartSymbolGroup[];
-    chartOptionCount?: number;
-    onChartSelectionChange?: (s: ChartSelection) => void;
     onEdit: (s: Strategy) => void;
     onDelete: (s: Strategy) => void;
   }> = {}
@@ -150,14 +136,6 @@ const workspaceProps = (
   strategy: STRATEGY,
   bot: BOT,
   account: null,
-  chartSelection: {
-    symbol: "PERP_ETH_USDC",
-    exchange: "lighter",
-    environment: "mainnet",
-  } as ChartSelection,
-  chartGroups: [] as ChartSymbolGroup[],
-  chartOptionCount: 1,
-  onChartSelectionChange: vi.fn(),
   orders: [] as OpenOrderRow[],
   ordersLoading: false,
   ordersError: false,
@@ -273,54 +251,17 @@ describe("StrategyWorkspace", () => {
     );
   });
 
-  it("charts the strategy's market and forwards the strategy-scoped book", async () => {
+  it("renders no chart — it lives in the page-level panel now (F5)", () => {
+    // The chart used to be inside this pane, which only renders when a
+    // strategy is selected: a fresh account saw no chart at all and the
+    // create/edit form covered it. It is now StrategyChartPanel, mounted by
+    // the page. This guard keeps it from creeping back in.
     renderWorkspace(
       <StrategyWorkspace {...workspaceProps({ orders: [ORDER] })} />
     );
 
-    const chart = await screen.findByTestId("candlestick-chart");
-    expect(chart.getAttribute("data-symbol")).toBe("PERP_ETH_USDC");
-    expect(chart.getAttribute("data-orders")).toContain("ord-1");
-    expect(chart.getAttribute("data-orders")).toContain("2500");
-  });
-
-  it("shows the picker when several symbols are offered", async () => {
-    renderWorkspace(
-      <StrategyWorkspace
-        {...workspaceProps({
-          chartOptionCount: 2,
-          chartGroups: [
-            {
-              label: "Lighter mainnet",
-              exchange: "lighter",
-              environment: "mainnet",
-              symbols: ["ETH", "BTC"],
-            },
-          ],
-        })}
-      />
-    );
-
-    expect(screen.getByLabelText("Chart symbol")).toBeDefined();
-    await screen.findByTestId("candlestick-chart");
-  });
-
-  it("draws no order levels once the chart detaches to another market", async () => {
-    renderWorkspace(
-      <StrategyWorkspace
-        {...workspaceProps({
-          orders: [ORDER],
-          chartSelection: {
-            symbol: "PERP_BTC_USDC",
-            exchange: "kodiak",
-            environment: "mainnet",
-          },
-        })}
-      />
-    );
-
-    const chart = await screen.findByTestId("candlestick-chart");
-    expect(chart.getAttribute("data-orders")).toBe("[]");
+    expect(screen.queryByTestId("candlestick-chart")).toBeNull();
+    expect(screen.queryByLabelText("Chart symbol")).toBeNull();
   });
 
   it("narrows the positions book to the strategy's market and labels the attribution", () => {

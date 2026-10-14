@@ -1,6 +1,6 @@
 /** @format */
 
-import React, { useState, useEffect, Suspense, lazy } from "react";
+import React, { useState, useEffect, Suspense, lazy, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -25,8 +25,10 @@ import {
 import { StrategyOverview } from "../components/StrategyOverview";
 import { MarketDetailsSection } from "../components/MarketDetailsSection";
 import { StrategyMasterList } from "../components/StrategyMasterList";
+import { StrategyChartPanel } from "../components/StrategyChartPanel";
 import { StrategyWorkspace } from "../components/StrategyWorkspace";
 import { useOpenOrders, useAccountPositions } from "../hooks";
+import type { GridPreviewInput } from "../../../shared/components/charts/gridPreview";
 
 // Lazy load heavy components for better performance
 const StrategyForm = lazy(() =>
@@ -55,11 +57,13 @@ const Strategies: React.FC = React.memo(() => {
   // inactive; starting a bot on it (C3a account pick + size) is the start.
   const [startPromptStrategy, setStartPromptStrategy] =
     useState<Strategy | null>(null);
-  // Phase 3.1 (review P1-1): the chart lives in the selected strategy's
-  // workspace and follows it. The dropdown pick is KEYED to the strategy it
-  // was made for — selecting another strategy rebinds the chart (the stale
-  // pick is ignored, never remembered across selections). Derived during
-  // render; stored Kodiak form (PERP_ETH_USDC) passes through unchanged —
+  // Phase 3.1 (review P1-1), revised by F5: the chart is a PAGE-level market
+  // panel above (StrategyChartPanel) and still follows the selected strategy's
+  // market — with no strategy selected it falls back to BTC on the first
+  // usable venue catalog. The dropdown pick is KEYED to the strategy it was
+  // made for — selecting another strategy rebinds the chart (the stale pick is
+  // ignored, never remembered across selections). Derived during render;
+  // stored Kodiak form (PERP_ETH_USDC) passes through unchanged —
   // CandlestickChart/useChartData already handle it.
   const [chartSelectionOverride, setChartSelectionOverride] =
     useState<ChartSelectionOverride | null>(null);
@@ -67,6 +71,12 @@ const Strategies: React.FC = React.memo(() => {
   // ConfirmDialog (replacing the native confirm()); we hold the full object so
   // the dialog can name it and show whether a bot is attached + its state.
   const [pendingDelete, setPendingDelete] = useState<Strategy | null>(null);
+  // F5: the grid the create/edit form is configuring, live as the operator
+  // types — the chart panel draws it as a preview band. `null` when no form is
+  // open (the panel then draws no preview at all). The setter below only
+  // replaces the value when it actually differs, so the form's watch-driven
+  // callback cannot loop the page into re-rendering itself.
+  const [previewGrid, setPreviewGrid] = useState<GridPreviewInput | null>(null);
   // Phase 3 (slice 4): master-list selection — the workspace renders this
   // strategy. Derived during render (P1 pattern): an id that no longer
   // resolves (deleted row, refetch reorder) falls back to the first strategy,
@@ -339,6 +349,22 @@ const Strategies: React.FC = React.memo(() => {
   // strip where all four cards showed the same venue total).
   const portfolioSummary = usePortfolioSummary();
 
+  /**
+   * F5: the form publishes its watched fields here. Identity-stable (empty
+   * deps) AND value-stable: the state object is only replaced when a field
+   * actually changed, so a `useWatch`-driven effect in the form calling this
+   * on every keystroke cannot bounce the page into an endless render loop.
+   */
+  const handlePreviewChange = useCallback((next: GridPreviewInput | null) => {
+    setPreviewGrid(prev =>
+      prev?.symbol === next?.symbol &&
+      prev?.gridSize === next?.gridSize &&
+      prev?.gridRange === next?.gridRange
+        ? prev
+        : next
+    );
+  }, []);
+
   return (
     <PageLayout
       header={
@@ -413,6 +439,31 @@ const Strategies: React.FC = React.memo(() => {
             derived from live bot state (navigation aid, not metrics). */}
         <StrategyOverview bots={bots} />
 
+        {/* F5: the chart panel is PAGE-level, not strategy-level — it mounts
+            in the empty state (where no strategy, and therefore no
+            workspace, exists) and stays mounted while the create/edit form
+            is open beside it. The selection defaults through the existing
+            rules: with no strategy selected, BTC on the first usable venue
+            catalog (resolveWorkspaceChartSelection → resolveChartSelection).
+            `orders` is the SELECTED strategy's account book; the chart keeps
+            only the rows for the market it is showing, so a detour to
+            another market draws no levels. With no strategy selected the
+            read is disabled, so the panel shows candles only — never a
+            misattributed marker. */}
+        <StrategyChartPanel
+          selection={chartSelection}
+          groups={chartGroups}
+          optionCount={chartOptionCount}
+          onSelectionChange={selection =>
+            setChartSelectionOverride({
+              strategyId: selectedStrategy?.id ?? "",
+              selection,
+            })
+          }
+          orders={unwrapRows(workspaceOrdersQuery.data?.data)}
+          previewGrid={previewGrid}
+        />
+
         {/* Strategy list — four distinct states, in precedence order:
             ERROR (couldn't fetch — never imply an empty account) → loading
             skeleton → genuinely-empty (no strategies exist) → the grid. */}
@@ -473,9 +524,10 @@ const Strategies: React.FC = React.memo(() => {
         ) : (
           /* Phase 3 (slice 4 + 3.1): master–detail — the compact selectable
              list beside the selected strategy's workspace (control panel).
-             The chart lives INSIDE that workspace now (review P1-1: it
-             follows the selected strategy and shares its order scope); the
-             portfolio summary stays in the lower reference section. */
+             The chart is NOT here any more: F5 lifted it to a page-level
+             panel above, so it survives an empty list and stays visible
+             while the create/edit drawer is open. The portfolio summary
+             stays in the lower reference section. */
           <div className="grid grid-cols-1 lg:grid-cols-[19rem_minmax(0,1fr)] gap-6 items-start">
             <StrategyMasterList
               strategies={strategies as Strategy[]}
@@ -488,15 +540,6 @@ const Strategies: React.FC = React.memo(() => {
                 strategy={selectedStrategy}
                 bot={getBotForStrategy(selectedStrategy.id)}
                 account={workspaceAccount}
-                chartSelection={chartSelection}
-                chartGroups={chartGroups}
-                chartOptionCount={chartOptionCount}
-                onChartSelectionChange={selection =>
-                  setChartSelectionOverride({
-                    strategyId: selectedStrategy.id,
-                    selection,
-                  })
-                }
                 orders={unwrapRows(workspaceOrdersQuery.data?.data)}
                 ordersLoading={workspaceOrdersQuery.isLoading}
                 ordersError={workspaceOrdersQuery.isError}
@@ -544,9 +587,14 @@ const Strategies: React.FC = React.memo(() => {
             }
           >
             <StrategyForm
-              onClose={() => setShowCreateForm(false)}
+              onClose={() => {
+                setShowCreateForm(false);
+                setPreviewGrid(null);
+              }}
+              onPreviewChange={handlePreviewChange}
               onSuccess={created => {
                 setShowCreateForm(false);
+                setPreviewGrid(null);
                 queryClient.invalidateQueries({ queryKey: ["strategies"] });
                 toast.success("Strategy created successfully!");
                 // Phase 2: created inactive → offer the start flow at once.
@@ -683,9 +731,14 @@ const Strategies: React.FC = React.memo(() => {
           >
             <StrategyForm
               strategy={editingStrategy}
-              onClose={() => setEditingStrategy(null)}
+              onClose={() => {
+                setEditingStrategy(null);
+                setPreviewGrid(null);
+              }}
+              onPreviewChange={handlePreviewChange}
               onSuccess={() => {
                 setEditingStrategy(null);
+                setPreviewGrid(null);
                 queryClient.invalidateQueries({ queryKey: ["strategies"] });
                 toast.success("Strategy updated successfully!");
               }}

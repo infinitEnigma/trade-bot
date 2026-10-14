@@ -136,6 +136,7 @@ companion doc.
 - **P5** Post-create start prompt explains that a strategy is created inactive and starting = bot + account + size (`Strategies.tsx:495-538`).
 - **P6** Admin overview is genuinely wired (3 real queries, 30–60 s refresh, error states).
 - **P7** SmartNavigation hides analytics/admin by `available:` (role/level), so most users never see those links — the silent-redirect issue (E1) matters mainly for direct URLs.
+- **P8** `/strategies` chart is a page-level market panel (`StrategyChartPanel`, F5, 2026-10-14): it mounts in the empty state — a brand-new account used to see **no chart at all** because the chart lived inside `StrategyWorkspace`, which only renders when a strategy is selected — and the create/edit form is a right-hand drawer whose scrim is click-through from `lg` up, so the chart stays visible *while configuring a grid*. The form publishes its watched `symbol/gridSize/gridRange` (`useWatch`) and the chart draws the band those fields would build (`shared/components/charts/gridPreview.ts`, geometry mirrored from the engine's `buildLevels` minus tick quantization — preview-only, documented as such). A draft naming a market other than the charted one is withheld with a one-line explanation rather than drawn misattributed.
 
 ---
 

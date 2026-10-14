@@ -1,19 +1,13 @@
 /** @format */
 
-import React, { Suspense, lazy, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Strategy, StrategyType } from "../../../shared/types";
 import { Zap, Edit, Trash2 } from "lucide-react";
 import { Card, FreshnessIndicator } from "../../../shared/components/ui";
 import { RecentTradesTable } from "../../../shared/components/user/RecentTrades";
 import { useRecentTrades } from "../../../shared/hooks";
 import { cn } from "../../../shared/utils";
-import {
-  decodeChartOption,
-  encodeChartOption,
-  venueLabel,
-  type ChartSelection,
-  type ChartSymbolGroup,
-} from "../utils/chartSymbolPicker";
+import { venueLabel } from "../utils/chartSymbolPicker";
 import { BotControls } from "../bots/components/BotControls";
 import { BotStatusBadge } from "./BotStatusBadge";
 import { OpenOrdersTable } from "./OpenOrdersTable";
@@ -25,11 +19,6 @@ import type {
   AccountPositionRow,
   OpenOrderRow,
 } from "../../../infrastructure/api/market";
-
-// Lazy load the heavy chart (same performance reason as everywhere else).
-const CandlestickChart = lazy(
-  () => import("../../../shared/components/charts/CandlestickChart")
-);
 
 /** Venue symbol forms differ per venue — bare `BTC` vs `PERP_BTC_USDC`. */
 const normalizeMarketSymbol = (raw: string): string => {
@@ -77,10 +66,15 @@ function useMediaQuery(query: string): boolean {
  * page: everything that operates ONE selected strategy, replacing the old
  * per-card spread (StrategyCard). Top to bottom: identity + enabled state +
  * edit/delete; live bot state + lifecycle controls (BotControls also renders
- * the start flow when no bot is attached); the chart bound to this strategy's
- * market (Phase 3.1, review P1-1); the execution tabs — open orders + recent
- * fills, each aged by an honest freshness chip (slice 5); static configuration
- * last.
+ * the start flow when no bot is attached); the execution tabs — open orders +
+ * recent fills, each aged by an honest freshness chip (slice 5); static
+ * configuration last.
+ *
+ * F5: the chart is NOT here any more. It used to live in this pane, which only
+ * rendered when a strategy was selected — so a brand-new account saw no chart
+ * at all, and the create/edit form covered it with a full-screen modal. It is
+ * now a page-level market panel (`StrategyChartPanel`); this component stays
+ * the per-strategy control pane it was always meant to be.
  *
  * The account scope for orders is resolved on the page (strategy → hosting
  * session → account) and passed in as rows — this component only renders.
@@ -94,11 +88,6 @@ interface StrategyWorkspaceProps {
    * exchange · environment · accountRef; null/undefined = unbound.
    */
   account?: ExchangeAccountDto | null;
-  /** The chart's market + venue (Phase 3.1: bound to this strategy). */
-  chartSelection: ChartSelection;
-  chartGroups: ChartSymbolGroup[];
-  chartOptionCount: number;
-  onChartSelectionChange: (selection: ChartSelection) => void;
   /** Open orders for this strategy's account + market (Phase 3 slice 4). */
   orders: OpenOrderRow[];
   ordersLoading: boolean;
@@ -120,10 +109,6 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
   strategy,
   bot,
   account,
-  chartSelection,
-  chartGroups,
-  chartOptionCount,
-  onChartSelectionChange,
   orders,
   ordersLoading,
   ordersError,
@@ -300,76 +285,6 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
           bot={bot}
           onStatusChange={onBotStatusChange}
         />
-      </div>
-
-      {/* Chart (Phase 3.1, review P1-1): the SELECTED strategy's market —
-          bound here, not in the lower reference section. The levels drawn
-          are THIS scope's book only while the chart shows the strategy's
-          market; a deliberate dropdown detour to another venue gets no
-          levels (the strategy's account cannot rest orders there — never a
-          misattributed marker). */}
-      <div className="border-t border-white/5 pt-4">
-        {chartOptionCount > 1 && (
-          <div className="flex items-center gap-2 mb-3">
-            <label
-              htmlFor="strategies-chart-symbol"
-              className="text-sm text-textMuted"
-            >
-              Chart symbol
-            </label>
-            <select
-              id="strategies-chart-symbol"
-              value={encodeChartOption(chartSelection)}
-              onChange={event => {
-                const decoded = decodeChartOption(event.target.value);
-                if (decoded) onChartSelectionChange(decoded);
-              }}
-              aria-label="Chart symbol"
-              className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-text focus:border-primary/50 focus:outline-none"
-            >
-              {chartGroups.map(group => (
-                <optgroup key={group.label} label={group.label}>
-                  {group.symbols.map(sym => (
-                    <option
-                      key={sym}
-                      value={encodeChartOption({
-                        symbol: sym,
-                        exchange: group.exchange,
-                        environment: group.environment,
-                      })}
-                    >
-                      {sym.replace("PERP_", "").replace("_USDC", "")}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-        )}
-        <Suspense
-          fallback={
-            <div className="glass-card p-6 animate-pulse">
-              <div className="w-32 h-5 bg-surface rounded mb-4"></div>
-              <div className="bg-surface rounded-lg h-110"></div>
-            </div>
-          }
-        >
-          <CandlestickChart
-            symbol={chartSelection.symbol}
-            interval="1h"
-            height={450}
-            venue={{
-              exchange: chartSelection.exchange,
-              environment: chartSelection.environment,
-            }}
-            orders={
-              chartSelection.symbol.trim().toUpperCase() ===
-              (strategyConfig?.config.symbol ?? "").trim().toUpperCase()
-                ? orderRows
-                : []
-            }
-          />
-        </Suspense>
       </div>
 
       {/* Execution views (slice 5, Phase 3.1 re-scoped): below xl the three

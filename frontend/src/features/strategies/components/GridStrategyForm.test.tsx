@@ -230,4 +230,77 @@ describe("GridStrategyForm submissions", () => {
       })
     );
   });
+
+  it("publishes the live grid geometry for the chart preview (F5)", () => {
+    const onPreviewChange = vi.fn();
+    renderForm(
+      <GridStrategyForm
+        onClose={() => {}}
+        onSuccess={() => {}}
+        onPreviewChange={onPreviewChange}
+      />
+    );
+
+    // Create mode opens on the engine defaults and publishes immediately, so
+    // the chart has a band to draw from the start. The symbol picker's first
+    // option is what the browser selects by default.
+    expect(onPreviewChange).toHaveBeenLastCalledWith({
+      symbol: "PERP_BTC_USDC",
+      gridSize: 10,
+      gridRange: 5,
+    });
+
+    // A geometry edit republishes while the operator types — that is what
+    // makes the preview live rather than a snapshot at submit.
+    fireEvent.change(screen.getByLabelText(/grid size/i), {
+      target: { value: "20" },
+    });
+    expect(onPreviewChange).toHaveBeenLastCalledWith({
+      symbol: "PERP_BTC_USDC",
+      gridSize: 20,
+      gridRange: 5,
+    });
+
+    fireEvent.change(screen.getByLabelText(/grid range/i), {
+      target: { value: "12" },
+    });
+    expect(onPreviewChange).toHaveBeenLastCalledWith({
+      symbol: "PERP_BTC_USDC",
+      gridSize: 20,
+      gridRange: 12,
+    });
+  });
+
+  it("publishes the loaded row's geometry in edit mode (F5)", () => {
+    const onPreviewChange = vi.fn();
+    const strategy = new Strategy(
+      "s1",
+      "u1",
+      "Existing",
+      StrategyType.GRID,
+      "PERP_ETH_USDC",
+      {
+        symbol: "PERP_ETH_USDC",
+        gridSize: 20,
+        gridRange: 8,
+        orderQuantity: 2,
+      },
+      true
+    );
+
+    renderForm(
+      <GridStrategyForm
+        strategy={strategy}
+        onClose={() => {}}
+        onSuccess={() => {}}
+        onPreviewChange={onPreviewChange}
+      />
+    );
+
+    expect(onPreviewChange).toHaveBeenLastCalledWith({
+      symbol: "PERP_ETH_USDC",
+      gridSize: 20,
+      gridRange: 8,
+    });
+  });
 });

@@ -1,7 +1,7 @@
 /** @format */
 
 /**
- * StrategyForm — modal orchestrator for the per-type create/edit flows.
+ * StrategyForm — the per-type create/edit flow, in a side drawer.
  *
  * Replaces the old one-size 478-line form (type `<select>` + conditional
  * sections that let trend-only fields — leverage, stopLoss, entry/exit
@@ -16,14 +16,22 @@
  *    row (impossible today — 29/29 prod rows are GRID) hits the defensive
  *    read-only branch instead of pretending to be editable.
  *
- * This component owns the overlay shell (frame, title, close) so switching
+ * This component owns the drawer shell (frame, title, close) so switching
  * steps never re-renders the frame — the body-only chooser/forms mount
  * inside it.
+ *
+ * F5: a DRAWER, not the centred full-screen modal it used to be. The old shell
+ * covered the whole viewport, which hid the chart exactly when the operator
+ * needed it — while configuring a grid. This one anchors to the right edge:
+ * below `lg` it still covers the screen (with a dimming, click-to-close
+ * scrim), from `lg` up the scrim is transparent and click-through so the chart
+ * stays fully visible and usable beside the form.
  */
 
 import React, { useState } from "react";
 import { X, Zap } from "lucide-react";
 import { Strategy, StrategyType } from "../../../shared/types";
+import type { GridPreviewInput } from "../../../shared/components/charts/gridPreview";
 import { getStrategyConfig } from "../types/strategies.types";
 import { StrategyTypeChooser } from "./StrategyTypeChooser";
 import { GridStrategyForm } from "./GridStrategyForm";
@@ -33,6 +41,13 @@ interface StrategyFormProps {
   onClose: () => void;
   /** `created` carries the freshly created strategy (create flow only). */
   onSuccess: (created?: Strategy | null) => void;
+  /**
+   * F5: the mounted form reports the grid it is configuring, live as the
+   * operator types, so the chart panel can draw it. `null` for a step that
+   * configures no grid (the type chooser, the read-only branch). Optional:
+   * callers that do not want a preview simply omit it.
+   */
+  onPreviewChange?: (preview: GridPreviewInput | null) => void;
 }
 
 const formatStrategyType = (type: StrategyType): string =>
@@ -86,6 +101,7 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
   strategy,
   onClose,
   onSuccess,
+  onPreviewChange,
 }) => {
   // Create flow starts on the type chooser; edit skips it (type is fixed).
   // `null` = chooser step; a StrategyType = that type's form step. Only
@@ -114,6 +130,7 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
           strategy={strategy}
           onClose={onClose}
           onSuccess={onSuccess}
+          onPreviewChange={onPreviewChange}
         />
       );
     }
@@ -131,8 +148,22 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="glass-card rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex justify-end">
+      {/* Scrim: dims and catches clicks on small screens, where the drawer
+          covers the viewport. From `lg` up it is transparent AND
+          click-through, so the chart beside the form stays fully visible and
+          usable while editing — the whole point of F5. */}
+      <div
+        className="absolute inset-0 bg-black/40 lg:bg-transparent lg:pointer-events-none"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="relative w-full sm:max-w-md h-full glass-card border-l border-white/10 overflow-y-auto shadow-2xl"
+      >
         <div className="flex items-center justify-between p-6 border-b border-white/5">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">

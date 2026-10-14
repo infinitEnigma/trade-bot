@@ -25,8 +25,8 @@
  * Body-only: `StrategyForm` owns the overlay shell.
  */
 
-import React from "react";
-import { useForm } from "react-hook-form";
+import React, { useEffect } from "react";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation } from "@tanstack/react-query";
@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { tradingApi } from "../../../infrastructure/api";
 import { Strategy, StrategyType } from "../../../shared/types";
+import type { GridPreviewInput } from "../../../shared/components/charts/gridPreview";
 import { getStrategyConfig } from "../types/strategies.types";
 
 // RHF `valueAsNumber` yields NaN for a left-empty number input; zod must see
@@ -109,16 +110,25 @@ interface GridStrategyFormProps {
   onClose: () => void;
   /** `created` carries the freshly created strategy (create flow only). */
   onSuccess: (created?: Strategy | null) => void;
+  /**
+   * F5: publishes the grid being configured, live as the operator types, so
+   * the chart panel can draw it beside the form. Called on every change of
+   * the three geometry fields — the parent's setter is identity-stable and
+   * compares values, so this cannot cause a render loop.
+   */
+  onPreviewChange?: (preview: GridPreviewInput | null) => void;
 }
 
 export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
   strategy,
   onClose,
   onSuccess,
+  onPreviewChange,
 }) => {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
   } = useForm<GridStrategyFormData>({
     resolver: zodResolver(gridStrategySchema),
@@ -142,11 +152,36 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
           };
         })()
       : {
+          // The select's FIRST option is what the browser shows selected, so
+          // make it the form's value too: state, DOM and submit then agree,
+          // and the chart preview has a band to draw from the first frame
+          // instead of waiting for the operator to touch the picker.
+          symbol: SYMBOL_GROUPS[0]?.symbols[0]?.value,
           gridSize: 10,
           gridRange: 5,
           orderQuantity: 1,
         },
   });
+
+  // F5: publish the live grid geometry so the chart beside this form can draw
+  // the band while the operator types. `useWatch` (not `watch()`) is the
+  // subscription-safe form of this read; the parent's setter is
+  // identity-stable and compares values, so this cannot loop. Absent fields
+  // are reported as undefined — the preview helper then applies the same
+  // defaults the engine's resolver would.
+  const [previewSymbol, previewGridSize, previewGridRange] = useWatch({
+    control,
+    name: ["symbol", "gridSize", "gridRange"],
+  });
+  useEffect(() => {
+    onPreviewChange?.({
+      symbol: typeof previewSymbol === "string" ? previewSymbol : "",
+      gridSize:
+        typeof previewGridSize === "number" ? previewGridSize : undefined,
+      gridRange:
+        typeof previewGridRange === "number" ? previewGridRange : undefined,
+    });
+  }, [previewSymbol, previewGridSize, previewGridRange, onPreviewChange]);
 
   const buildConfig = (data: GridStrategyFormData): Record<string, unknown> => {
     const config: Record<string, unknown> = {

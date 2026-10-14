@@ -22,9 +22,20 @@ vi.mock("./StrategyTypeChooser", () => ({
 }));
 
 vi.mock("./GridStrategyForm", () => ({
-  GridStrategyForm: ({ strategy }: { strategy?: { name: string } }) => (
+  GridStrategyForm: ({
+    strategy,
+    onPreviewChange,
+  }: {
+    strategy?: { name: string };
+    onPreviewChange?: (preview: unknown) => void;
+  }) => (
     <div>
       {strategy ? `grid-form:edit:${strategy.name}` : "grid-form:create"}
+      {onPreviewChange ? (
+        <button onClick={() => onPreviewChange({ symbol: "PERP_BTC_USDC" })}>
+          publish-preview
+        </button>
+      ) : null}
     </div>
   ),
 }));
@@ -88,5 +99,33 @@ describe("StrategyForm orchestration", () => {
     expect(screen.getByText(/not editable yet/i)).toBeDefined();
     expect(screen.getByText("Old Trend")).toBeDefined();
     expect(screen.getByText("Trend Following")).toBeDefined();
+  });
+
+  // ---- F5: side drawer + live preview seam ----
+
+  it("opens as a labelled side drawer, not a viewport-covering modal", () => {
+    // The old centred full-screen modal hid the chart exactly while the
+    // operator was configuring a grid. The drawer anchors right, and from
+    // `lg` up its scrim is click-through so the chart stays usable.
+    render(<StrategyForm onClose={() => {}} onSuccess={() => {}} />);
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(dialog.getAttribute("aria-label")).toBe("Create New Strategy");
+  });
+
+  it("forwards the live-preview seam to the grid form", () => {
+    const onPreviewChange = vi.fn();
+    render(
+      <StrategyForm
+        strategy={baseStrategy}
+        onClose={() => {}}
+        onSuccess={() => {}}
+        onPreviewChange={onPreviewChange}
+      />
+    );
+
+    fireEvent.click(screen.getByText("publish-preview"));
+    expect(onPreviewChange).toHaveBeenCalledWith({ symbol: "PERP_BTC_USDC" });
   });
 });
