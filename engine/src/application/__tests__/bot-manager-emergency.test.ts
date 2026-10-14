@@ -50,6 +50,12 @@ interface RuntimeHarness {
 interface RegisterOptions {
   /** Omit `getMarketDepth` so the "adapter without depth" fallback is testable. */
   withoutDepth?: boolean;
+  /**
+   * Account identity the fake client reports (the `getAccountIdentity` seam).
+   * Omit to exercise the "adapter cannot report an account" path, where the
+   * co-tenant guard must treat the sibling as sharing the position.
+   */
+  accountIdentity?: string;
 }
 
 /**
@@ -67,6 +73,7 @@ function registerBot(
   } as EngineIdentity);
   const strategyStop = jest.fn().mockResolvedValue([]);
   const stopTick = jest.fn();
+  const accountIdentity = options.accountIdentity;
   const client = {
     listOpenOrders: jest.fn().mockResolvedValue([]),
     cancelOrder: jest.fn().mockResolvedValue({ status: "CANCELLED" }),
@@ -74,6 +81,11 @@ function registerBot(
     createOrder: jest
       .fn()
       .mockResolvedValue({ orderId: "close-1", status: "SUBMITTED" }),
+    // The account-identity seam: present only when the test asks for it, so
+    // the "adapter cannot report an account" path stays exercisable.
+    ...(accountIdentity !== undefined
+      ? { getAccountIdentity: (): string => accountIdentity }
+      : {}),
     // Deep book (100 ETH inside every band around the tests' 3000 mark):
     // slices stay FULL-size unless a test scripts a thin book.
     ...(options.withoutDepth
@@ -258,12 +270,13 @@ describe("BotManager.handleEmergencyStop (M1)", () => {
     ]);
   });
 
-  it("skips the flatten while another bot trades the same symbol", async () => {
-    const first = registerBot("bot-1", "ETH");
+  it("skips the flatten while a sibling bot shares the account and symbol", async () => {
+    const first = registerBot("bot-1", "ETH", { accountIdentity: "acct-A" });
     // Same account, same symbol: the sibling owns the position too.
-    first.manager
-      .getBotRuntimes()
-      .set("bot-2", { ...first.runtime, botId: "bot-2" });
+    first.manager.getBotRuntimes().set("bot-2", {
+      ...first.runtime,
+      botId: "bot-2",
+    });
     const { ops } = makeStreamOps();
 
     await first.manager.handleEmergencyStop(
@@ -274,10 +287,98 @@ describe("BotManager.handleEmergencyStop (M1)", () => {
       "corr-4"
     );
 
-    expect(first.client.getPositions).not.toHaveBeenCalled();
-    expect(first.client.createOrder).not.toHaveBeenCalled();
     // Orders are still cancelled - only the shared position is left alone.
     expect(first.client.listOpenOrders).toHaveBeenCalledWith("ETH");
+    expect(first.client.createOrder).not.toHaveBeenCalled();
+    // The venue IS read: a skip must know whether anything is still open
+    // rather than claiming a clean stop blindly.
+    expect(first.client.getPositions).toHaveBeenCalled();
+  });
+
+  it("reports the shared position a skipped flatten leaves open", async () => {
+    // The silent-success bug: the guard used to return "no problems" while a
+    // 2 ETH position sat open, so no cleanup_incomplete marker and no banner.
+    const first = registerBot("bot-1", "ETH", { accountIdentity: "acct-A" });
+    first.manager.getBotRuntimes().set("bot-2", {
+      ...first.runtime,
+      botId: "bot-2",
+    });
+    first.client.getPositions.mockResolvedValue([
+      { symbol: "ETH", position_qty: 2, mark_price: 3000 },
+    ]);
+    const { published, ops } = makeStreamOps();
+
+    await first.manager.handleEmergencyStop(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "FULL_SHUTDOWN",
+      "corr-4b"
+    );
+
+    const [, stopped] = reasons(published);
+    expect(stopped).toContain("cleanup_incomplete");
+    expect(stopped).toContain("2 ETH still open");
+    // Names the bot that owns closing it - the operator's next action.
+    expect(stopped).toContain("bot-2");
+    expect(first.client.createOrder).not.toHaveBeenCalled();
+  });
+
+  it("treats an unreportable account identity as shared (never distinct)", async () => {
+    // Guessing "different account" here would close the sibling's position.
+    const first = registerBot("bot-1", "ETH");
+    first.manager.getBotRuntimes().set("bot-2", {
+      ...first.runtime,
+      botId: "bot-2",
+    });
+    first.client.getPositions.mockResolvedValue([
+      { symbol: "ETH", position_qty: 1.5, mark_price: 3000 },
+    ]);
+    const { published, ops } = makeStreamOps();
+
+    await first.manager.handleEmergencyStop(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "FULL_SHUTDOWN",
+      "corr-4c"
+    );
+
+    const [, stopped] = reasons(published);
+    expect(stopped).toContain("1.5 ETH still open");
+    expect(first.client.createOrder).not.toHaveBeenCalled();
+  });
+
+  it("flattens when the sibling bot trades the same symbol on ANOTHER account", async () => {
+    // The two-account case: independent positions, so this bot's exposure is
+    // its own to close. Keyed on account identity, not symbol alone.
+    const first = registerBot("bot-1", "ETH", { accountIdentity: "acct-A" });
+    first.manager.getBotRuntimes().set("bot-2", {
+      ...first.runtime,
+      botId: "bot-2",
+    });
+    const secondClient = {
+      ...first.client,
+      getAccountIdentity: (): string => "acct-B",
+    };
+    first.manager.getBotRuntimes().set("bot-2", {
+      ...first.runtime,
+      botId: "bot-2",
+      exchangeClient: secondClient as unknown as BotRuntime["exchangeClient"],
+    });
+    scriptShrinkingPosition(first, 3);
+    const { published, ops } = makeStreamOps();
+
+    await first.manager.handleEmergencyStop(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "FULL_SHUTDOWN",
+      "corr-4d"
+    );
+
+    expect(first.client.createOrder).toHaveBeenCalled();
+    expect(reasons(published)[1]).not.toContain("cleanup_incomplete");
   });
 
   it("completes with the terminal STOPPED report even when cleanup fails", async () => {

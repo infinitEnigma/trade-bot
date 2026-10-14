@@ -87,6 +87,20 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Which ACCOUNT a runtime trades, when its adapter exposes one.
+ *
+ * `undefined` means unknown — never "no account". Callers must treat an
+ * unknown identity conservatively (as possibly shared), because positions on
+ * these venues belong to the account, not the bot: guessing "distinct" when
+ * the truth is "shared" closes someone else's position.
+ */
+function accountIdentityOf(runtime: BotRuntime): string | undefined {
+  const client = runtime.exchangeClient;
+  if (typeof client.getAccountIdentity !== "function") return undefined;
+  return client.getAccountIdentity();
+}
+
 export class BotManager {
   private bots: Map<string, BotRuntime> = new Map();
   private initializing: Set<string> = new Set();
@@ -529,9 +543,13 @@ export class BotManager {
    *
    * Deliberately conservative — on this venue positions belong to the
    * *account*, not the bot:
-   * - Skipped entirely when another engine bot trades the same symbol (that
-   *   bot owns the same position; closing it would close someone else's
-   *   exposure).
+   * - Skipped when a sibling engine bot shares this bot's ACCOUNT and symbol
+   *   (that bot owns the same position; closing it would close someone else's
+   *   exposure). Keyed on account identity, NOT symbol alone — two accounts
+   *   trading the same symbol hold independent positions, and skipping there
+   *   would strand one bot's exposure. An identity neither side can report is
+   *   treated as shared.
+   * - A skip still READS the position and reports it: never a silent success.
    * - When the venue reports no position for the symbol the step is a no-op.
    * - The POSITION read is the ground truth: it is re-fetched before every
    *   slice, so an order that failed to confirm but filled late is adopted
@@ -556,28 +574,8 @@ export class BotManager {
    * @returns the problems that left exposure open (empty ⇒ flat or nothing to do).
    */
   private async emergencyClosePosition(runtime: BotRuntime): Promise<string[]> {
-    for (const [otherId, other] of this.bots) {
-      if (otherId !== runtime.botId && other.symbol === runtime.symbol) {
-        logger.warn(
-          "Emergency stop: position flatten skipped - another bot trades this symbol",
-          {
-            botId: runtime.botId,
-            otherBotId: otherId,
-            symbol: runtime.symbol,
-          }
-        );
-        return [];
-      }
-    }
-
     const client = runtime.exchangeClient;
     const symbol = runtime.symbol;
-    const startedAt = Date.now();
-    /** Last VERIFIED position magnitude — the loop's progress baseline. */
-    let previousQty: number | null = null;
-    let noProgress = 0;
-    let lastSliceError: string | null = null;
-    let stopReason = `slice budget exhausted (${FLATTEN_MAX_SLICES} slices)`;
 
     /** The account's non-zero position on the bot's symbol; undefined = flat. */
     const livePosition = async (): Promise<ExchangePosition | undefined> => {
@@ -589,6 +587,65 @@ export class BotManager {
           Number(p.position_qty) !== 0
       );
     };
+
+    // Co-tenant guard. Positions on these venues belong to the ACCOUNT, not
+    // the bot, so a bot that shares its account with a sibling trading the
+    // same symbol must not close the sibling's exposure.
+    //
+    // Keyed on ACCOUNT identity + symbol — never symbol alone. Two accounts
+    // trading the same symbol hold INDEPENDENT positions, and skipping there
+    // left one bot's exposure open while reporting a clean stop (a silent
+    // success, which is exactly what this method's contract forbids).
+    //
+    // An identity either side cannot report is treated as SHARED: unproven
+    // distinct is not distinct, and the failure mode of guessing wrong is
+    // closing someone else's position.
+    const myIdentity = accountIdentityOf(runtime);
+    let sharedWith: string | null = null;
+    for (const [otherId, other] of this.bots) {
+      if (otherId === runtime.botId || other.symbol !== runtime.symbol)
+        continue;
+      const otherIdentity = accountIdentityOf(other);
+      const sharesPosition =
+        myIdentity === undefined ||
+        otherIdentity === undefined ||
+        myIdentity === otherIdentity;
+      if (sharesPosition) {
+        sharedWith = otherId;
+        break;
+      }
+    }
+
+    if (sharedWith !== null) {
+      logger.warn(
+        "Emergency stop: position flatten skipped - a sibling bot shares this account and symbol",
+        { botId: runtime.botId, otherBotId: sharedWith, symbol }
+      );
+      // A skip is never a silent success: the venue's own position read
+      // decides what is reported. The position is left to the sibling's stop,
+      // but the operator is told exactly how much is still open and who owns
+      // closing it.
+      let position: ExchangePosition | undefined;
+      try {
+        position = await livePosition();
+      } catch (error) {
+        return [
+          `position on ${symbol} not verified after emergency stop (flatten skipped: sibling bot ${sharedWith} trades this symbol): ${messageOf(error)}`,
+        ];
+      }
+      if (!position) return [];
+      const sharedQty = Math.abs(Number(position.position_qty));
+      return [
+        `position ${sharedQty} ${symbol} still open after emergency stop: flatten skipped because bot ${sharedWith} shares this account and symbol (that bot's stop owns the position)`,
+      ];
+    }
+
+    const startedAt = Date.now();
+    /** Last VERIFIED position magnitude — the loop's progress baseline. */
+    let previousQty: number | null = null;
+    let noProgress = 0;
+    let lastSliceError: string | null = null;
+    let stopReason = `slice budget exhausted (${FLATTEN_MAX_SLICES} slices)`;
 
     for (let slice = 1; slice <= FLATTEN_MAX_SLICES; slice++) {
       if (Date.now() - startedAt >= FLATTEN_TIME_BUDGET_MS) {

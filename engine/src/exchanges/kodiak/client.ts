@@ -501,6 +501,14 @@ export class OrderlyClient {
    * by fiction. Transport failures are retryable (a gateway blip is not a
    * venue verdict).
    */
+  /**
+   * The Orderly account this client trades — the configured account id.
+   * Local and cheap: no venue round-trip (see `ExchangeClient`).
+   */
+  getAccountIdentity(): string {
+    return `orderly:${this.config.accountId}`;
+  }
+
   async getMarketDepth(
     symbol: string,
     options?: { limit?: number }

@@ -253,6 +253,22 @@ export interface ExchangeClient {
   getFeeRates?(): Promise<ExchangeFeeRates>;
 
   /**
+   * Which ACCOUNT this client trades — a stable string for one venue account.
+   *
+   * Optional on the type (same "optional on the type, runtime-checked by the
+   * consumer" pattern as `getFeeRates?`/`getMarketRules?`), and absent means
+   * "unknown", never "no account". Consumers must treat an unknown identity
+   * CONSERVATIVELY — as possibly shared — because positions on these venues
+   * belong to the *account*, not the bot: the emergency flatten uses this to
+   * decide whether a sibling bot trading the same symbol owns the same
+   * position (skip) or an independent one on another account (flatten).
+   *
+   * Must be cheap and local: derived from the credentials/config the client
+   * was built with, never a venue round-trip.
+   */
+  getAccountIdentity?(): string;
+
+  /**
    * List open orders for a symbol — the startup orphan cross-check source.
    * Transport failures reject; callers map them to `UNREACHABLE` via
    * `queryOrderByClientOrderId` rather than treating them as "absent".

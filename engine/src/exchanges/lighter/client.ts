@@ -453,6 +453,14 @@ export class LighterClient implements ExchangeClient {
    * empty book is the venue's truth and returns empty arrays (testnet
    * probe: `market_id=1` answered `{ total_asks: 0, asks: [], … }`).
    */
+  /**
+   * The Lighter account this client trades — the signer's account index.
+   * Local and cheap: no venue round-trip (see `ExchangeClient`).
+   */
+  getAccountIdentity(): string {
+    return `lighter:${String(this.credentials.accountIndex)}`;
+  }
+
   async getMarketDepth(
     symbol: string,
     options?: { limit?: number }
